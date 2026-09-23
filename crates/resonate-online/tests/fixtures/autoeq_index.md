@@ -1,0 +1,43 @@
+# Index
+This is a list of all equalization profiles.
+
+- [Beyerdynamic Amiron 100 (eq off)](./DHRME/in-ear/Beyerdynamic%20Amiron%20100%20(eq%20off)) by DHRME
+- [Beyerdynamic Amiron 300 (eq off, ANC Max)](./DHRME/in-ear/Beyerdynamic%20Amiron%20300%20(eq%20off,%20ANC%20Max)) by DHRME
+- [Beyerdynamic DT 770 Pro](./oratory1990/over-ear/Beyerdynamic%20DT%20770%20Pro) by oratory1990
+- [Bose AE2](./Innerfidelity/over-ear/Bose%20AE2) by Innerfidelity
+- [Bose Hearphones](./Rtings/HMS%20II.3%20in-ear/Bose%20Hearphones) by Rtings on HMS II.3
+- [Bose QuietComfort 35](./Rtings/HMS%20II.3%20over-ear/Bose%20QuietComfort%2035) by Rtings on HMS II.3
+- [Google Pixel Buds (2017)](./Rtings/HMS%20II.3%20in-ear/Google%20Pixel%20Buds%20(2017)) by Rtings on HMS II.3
+- [Google Pixel Buds (2020)](./Rtings/HMS%20II.3%20in-ear/Google%20Pixel%20Buds%20(2020)) by Rtings on HMS II.3
+- [Google Pixel Buds Pro](./HypetheSonics/GRAS%20RA0045%20in-ear/Google%20Pixel%20Buds%20Pro) by HypetheSonics on GRAS RA0045
+- [HIFIMAN Ananda](./crinacle/GRAS%2043AG-7%20over-ear/HIFIMAN%20Ananda) by crinacle on GRAS 43AG-7
+- [HIFIMAN Ananda](./oratory1990/over-ear/HIFIMAN%20Ananda) by oratory1990
+- [HIFIMAN Arya](./oratory1990/over-ear/HIFIMAN%20Arya) by oratory1990
+- [HyperX Cloud Alpha](./oratory1990/over-ear/HyperX%20Cloud%20Alpha) by oratory1990
+- [HyperX Cloud II Wireless](./Rtings/HMS%20II.3%20over-ear/HyperX%20Cloud%20II%20Wireless) by Rtings on HMS II.3
+- [HyperX Cloud](./Filk/over-ear/HyperX%20Cloud) by Filk
+- [Jabra Elite 10](./DHRME/in-ear/Jabra%20Elite%2010) by DHRME
+- [Jabra Elite 10](./Rtings/Bruel%20&%20Kjaer%205128%20in-ear/Jabra%20Elite%2010) by Rtings on Bruel & Kjaer 5128
+- [Jabra Elite 75t](./oratory1990/in-ear/Jabra%20Elite%2075t) by oratory1990
+- [Koss BT540i (wired)](./Innerfidelity/over-ear/Koss%20BT540i%20(wired)) by Innerfidelity
+- [Koss BT540i (wireless)](./Innerfidelity/over-ear/Koss%20BT540i%20(wireless)) by Innerfidelity
+- [Koss Porta Pro](./oratory1990/over-ear/Koss%20Porta%20Pro) by oratory1990
+- [Moondrop A8](./crinacle/711%20in-ear/Moondrop%20A8) by crinacle on 711
+- [Moondrop Alice (default EQ)](./Super%20Review/in-ear/Moondrop%20Alice%20(default%20EQ)) by Super Review
+- [Moondrop Aria](./oratory1990/in-ear/Moondrop%20Aria) by oratory1990
+- [Samsung AKG EO-IG955](./HypetheSonics/GRAS%20RA0045%20in-ear/Samsung%20AKG%20EO-IG955) by HypetheSonics on GRAS RA0045
+- [Samsung AKG EO-IG955](./oratory1990/in-ear/Samsung%20AKG%20EO-IG955) by oratory1990
+- [Samsung Galaxy Buds2 Pro](./oratory1990/in-ear/Samsung%20Galaxy%20Buds2%20Pro) by oratory1990
+- [Sennheiser HD 600](./oratory1990/over-ear/Sennheiser%20HD%20600) by oratory1990
+- [Sennheiser HD 650](./oratory1990/over-ear/Sennheiser%20HD%20650) by oratory1990
+- [Sennheiser HD 800 S](./oratory1990/over-ear/Sennheiser%20HD%20800%20S) by oratory1990
+- [Sony DR-Z7](./Innerfidelity/over-ear/Sony%20DR-Z7) by Innerfidelity
+- [Sony WH-1000XM4](./oratory1990/over-ear/Sony%20WH-1000XM4) by oratory1990
+- [Sony WH-1000XM5](./oratory1990/over-ear/Sony%20WH-1000XM5) by oratory1990
+- [SteelSeries Arctis 1 Wireless](./Rtings/HMS%20II.3%20over-ear/SteelSeries%20Arctis%201%20Wireless) by Rtings on HMS II.3
+- [SteelSeries Arctis 1](./Rtings/HMS%20II.3%20over-ear/SteelSeries%20Arctis%201) by Rtings on HMS II.3
+- [SteelSeries Arctis Nova Pro Wireless](./Rtings/Bruel%20&%20Kjaer%205128%20over-ear/SteelSeries%20Arctis%20Nova%20Pro%20Wireless) by Rtings on Bruel & Kjaer 5128
+- [A Name The Row Does Not Match](./oratory1990/over-ear/Something%20Else) by oratory1990
+- [No Attribution](./oratory1990/over-ear/No%20Attribution)
+- [Walks Upward](./oratory1990/../../etc/Walks%20Upward) by oratory1990
+not a row at all

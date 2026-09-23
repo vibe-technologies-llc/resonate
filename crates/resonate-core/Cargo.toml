@@ -1,0 +1,14 @@
+[package]
+name = "resonate-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

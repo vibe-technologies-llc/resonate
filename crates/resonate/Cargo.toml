@@ -1,0 +1,45 @@
+[package]
+name = "resonate"
+version.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+clap.workspace = true
+clap_complete.workspace = true
+clap_mangen.workspace = true
+
+[features]
+default = ["ui", "online", "mcp", "discord"]
+discord = ["dep:resonate-discord"]
+mcp = ["dep:resonate-mcp"]
+online = ["dep:resonate-online"]
+ui = ["dep:resonate-ui"]
+
+[dependencies]
+clap.workspace = true
+crossbeam-channel.workspace = true
+resonate-codec.workspace = true
+resonate-core.workspace = true
+resonate-discord = { workspace = true, optional = true }
+resonate-engine.workspace = true
+resonate-eq.workspace = true
+resonate-inbox.workspace = true
+resonate-library.workspace = true
+resonate-listen.workspace = true
+resonate-lyrics.workspace = true
+resonate-mcp = { workspace = true, optional = true }
+resonate-mpris.workspace = true
+resonate-online = { workspace = true, optional = true }
+resonate-pipewire.workspace = true
+resonate-providers.workspace = true
+resonate-ui = { workspace = true, optional = true }
+resonate-vault.workspace = true
+signal-hook.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+unicode-width.workspace = true
+
+[lints]
+workspace = true

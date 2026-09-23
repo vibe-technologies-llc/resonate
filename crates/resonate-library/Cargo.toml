@@ -1,0 +1,27 @@
+[package]
+name = "resonate-library"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ahash.workspace = true
+crossbeam-channel.workspace = true
+notify.workspace = true
+parking_lot.workspace = true
+resonate-analysis.workspace = true
+resonate-codec.workspace = true
+resonate-core.workspace = true
+resonate-vault.workspace = true
+resonate-providers.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+unicode-normalization.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+proptest.workspace = true
+rustfft.workspace = true
+
+[lints]
+workspace = true

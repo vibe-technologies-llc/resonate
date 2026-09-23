@@ -1,0 +1,13 @@
+[package]
+name = "resonate-listen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+resonate-core.workspace = true
+resonate-pipewire.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

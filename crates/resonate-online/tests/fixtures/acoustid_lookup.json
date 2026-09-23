@@ -1,0 +1,45 @@
+{
+  "status": "ok",
+  "results": [
+    {
+      "score": 0.972431,
+      "id": "9ff43b6a-4f16-427c-93c2-92307ca505e0",
+      "recordings": [
+        {
+          "duration": 639,
+          "title": "Lower Your Eyelids to Die With the Sun",
+          "id": "cd2e7c47-16f5-46c6-a37c-a1eb7bf599ff",
+          "artists": [
+            { "id": "6d7b7cd4-254b-4c25-83f6-dd20f98ceacd", "name": "M83" }
+          ]
+        },
+        {
+          "id": "0b8e7c47-16f5-46c6-a37c-a1eb7bf599aa"
+        }
+      ]
+    },
+    {
+      "score": 0.51,
+      "id": "1aa43b6a-4f16-427c-93c2-92307ca505e1",
+      "recordings": [
+        {
+          "duration": 212.4,
+          "title": "Echoes",
+          "id": "dd2e7c47-16f5-46c6-a37c-a1eb7bf599ee",
+          "artists": [
+            { "id": "83d91898-7763-47d7-b03b-b92132375c47", "name": "Pink Floyd", "joinphrase": " & " },
+            { "name": "Friends" }
+          ]
+        },
+        {
+          "duration": 639,
+          "title": "Lower Your Eyelids to Die With the Sun",
+          "id": "cd2e7c47-16f5-46c6-a37c-a1eb7bf599ff",
+          "artists": [
+            { "id": "6d7b7cd4-254b-4c25-83f6-dd20f98ceacd", "name": "M83" }
+          ]
+        }
+      ]
+    }
+  ]
+}

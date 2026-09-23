@@ -1,0 +1,16 @@
+[package]
+name = "resonate-pipewire"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+crossbeam-channel.workspace = true
+libspa.workspace = true
+parking_lot.workspace = true
+pipewire.workspace = true
+resonate-core.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

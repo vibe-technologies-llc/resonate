@@ -1,0 +1,17 @@
+[package]
+name = "resonate-analysis"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+image.workspace = true
+resonate-codec.workspace = true
+resonate-core.workspace = true
+resonate-dsp.workspace = true
+rustfft.workspace = true
+rusty-chromaprint.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

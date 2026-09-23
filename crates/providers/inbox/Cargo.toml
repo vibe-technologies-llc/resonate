@@ -1,0 +1,11 @@
+[package]
+name = "resonate-inbox"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+resonate-core.workspace = true
+resonate-providers.workspace = true
+
+[lints]
+workspace = true

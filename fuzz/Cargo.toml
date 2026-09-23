@@ -1,0 +1,55 @@
+[package]
+name = "resonate-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "0.4.11", default-features = false, features = ["link_libfuzzer"] }
+resonate-core.path = "../crates/resonate-core"
+resonate-codec.path = "../crates/resonate-codec"
+resonate-library.path = "../crates/resonate-library"
+resonate-lyrics.path = "../crates/resonate-lyrics"
+
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "probe"
+path = "fuzz_targets/probe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "boxes"
+path = "fuzz_targets/boxes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cue"
+path = "fuzz_targets/cue.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lrc"
+path = "fuzz_targets/lrc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "playlist"
+path = "fuzz_targets/playlist.rs"
+test = false
+doc = false
+bench = false

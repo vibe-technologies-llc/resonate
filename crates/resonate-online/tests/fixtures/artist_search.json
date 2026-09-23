@@ -1,0 +1,303 @@
+{
+ "created": "2026-09-20T12:12:52.192Z",
+ "count": 45,
+ "offset": 0,
+ "artists": [
+  {
+   "id": "83d91898-7763-47d7-b03b-b92132375c47",
+   "type": "Group",
+   "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+   "score": 100,
+   "name": "Pink Floyd",
+   "sort-name": "Pink Floyd",
+   "area": {
+    "id": "9d5dd675-3cf4-4296-9e39-67865ebee758",
+    "type": "Subdivision",
+    "type-id": "fd3d44c5-80a1-3842-9745-2c4972d35afa",
+    "name": "England",
+    "sort-name": "England",
+    "life-span": {
+     "ended": null
+    }
+   },
+   "begin-area": {
+    "id": "f03d09b3-39dc-4083-afd6-159e3f0d462f",
+    "type": "City",
+    "type-id": "6fd8f29a-3d0a-32fc-980d-ea697b69da78",
+    "name": "London",
+    "sort-name": "London",
+    "life-span": {
+     "ended": null
+    }
+   },
+   "isnis": [
+    "0000000109397559"
+   ],
+   "life-span": {
+    "begin": "1965",
+    "end": "2014",
+    "ended": true
+   },
+   "aliases": [
+    {
+     "sort-name": "Pink Floid",
+     "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+     "name": "Pink Floid",
+     "locale": null,
+     "type": "Search hint",
+     "primary": null,
+     "begin-date": null,
+     "end-date": null
+    },
+    {
+     "sort-name": "The Pink Floyd",
+     "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+     "name": "The Pink Floyd",
+     "locale": null,
+     "type": "Search hint",
+     "primary": null,
+     "begin-date": null,
+     "end-date": null
+    },
+    {
+     "sort-name": "Floyd",
+     "type-id": "1937e404-b981-3cb7-8151-4c86ebfc8d8e",
+     "name": "Floyd",
+     "locale": null,
+     "type": "Search hint",
+     "primary": null,
+     "begin-date": null,
+     "end-date": null
+    },
+    {
+     "sort-name": "\ud551\ud06c \ud50c\ub85c\uc774\ub4dc",
+     "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+     "name": "\ud551\ud06c \ud50c\ub85c\uc774\ub4dc",
+     "locale": "ko",
+     "type": "Artist name",
+     "primary": true,
+     "begin-date": null,
+     "end-date": null
+    },
+    {
+     "sort-name": "Pink Floyd",
+     "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+     "name": "Pink Floyd",
+     "locale": "en",
+     "type": "Artist name",
+     "primary": true,
+     "begin-date": null,
+     "end-date": null
+    },
+    {
+     "sort-name": "\u30d4\u30f3\u30af\u30fb\u30d5\u30ed\u30a4\u30c9",
+     "type-id": "894afba6-2816-3c24-8072-eadb66bd04bc",
+     "name": "\u30d4\u30f3\u30af\u30fb\u30d5\u30ed\u30a4\u30c9",
+     "locale": "ja",
+     "type": "Artist name",
+     "primary": true,
+     "begin-date": null,
+     "end-date": null
+    }
+   ],
+   "tags": [
+    {
+     "count": 29,
+     "name": "rock"
+    },
+    {
+     "count": 58,
+     "name": "progressive rock"
+    },
+    {
+     "count": 0,
+     "name": "70s"
+    },
+    {
+     "count": 0,
+     "name": "80s"
+    },
+    {
+     "count": 0,
+     "name": "90s"
+    },
+    {
+     "count": 0,
+     "name": "british"
+    },
+    {
+     "count": 0,
+     "name": "uk"
+    },
+    {
+     "count": -3,
+     "name": "band"
+    },
+    {
+     "count": 0,
+     "name": "60s"
+    },
+    {
+     "count": 0,
+     "name": "hard rock"
+    },
+    {
+     "count": 0,
+     "name": "britannique"
+    },
+    {
+     "count": 9,
+     "name": "progressive"
+    },
+    {
+     "count": 46,
+     "name": "psychedelic rock"
+    },
+    {
+     "count": 4,
+     "name": "psychedelic"
+    },
+    {
+     "count": 3,
+     "name": "blues rock"
+    },
+    {
+     "count": 22,
+     "name": "art rock"
+    },
+    {
+     "count": 4,
+     "name": "classic rock"
+    },
+    {
+     "count": 3,
+     "name": "album rock"
+    },
+    {
+     "count": 2,
+     "name": "psychedelic pop"
+    },
+    {
+     "count": 2,
+     "name": "experimental rock"
+    },
+    {
+     "count": -1,
+     "name": "pop rock"
+    },
+    {
+     "count": 15,
+     "name": "space rock"
+    },
+    {
+     "count": 1,
+     "name": "symphonic rock"
+    },
+    {
+     "count": 0,
+     "name": "avant-garde"
+    },
+    {
+     "count": 2,
+     "name": "acid rock"
+    },
+    {
+     "count": -1,
+     "name": "english"
+    },
+    {
+     "count": 6,
+     "name": "rock opera"
+    },
+    {
+     "count": -2,
+     "name": "film soundtrack"
+    },
+    {
+     "count": 0,
+     "name": "classic pop and rock"
+    },
+    {
+     "count": -2,
+     "name": "roger waters"
+    },
+    {
+     "count": 1,
+     "name": "proto-prog"
+    },
+    {
+     "count": 0,
+     "name": "rolling stones"
+    },
+    {
+     "count": -3,
+     "name": "defacing"
+    },
+    {
+     "count": -1,
+     "name": "dad rock"
+    },
+    {
+     "count": 0,
+     "name": "server name"
+    },
+    {
+     "count": 0,
+     "name": "favoritos"
+    },
+    {
+     "count": 0,
+     "name": "reino unido"
+    },
+    {
+     "count": 0,
+     "name": "vyrzukhisuc-artiest"
+    }
+   ]
+  },
+  {
+   "id": "46899869-22c3-42f2-af3b-6f91775c90cc",
+   "type": "Group",
+   "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+   "score": 61,
+   "name": "Pink Floyd",
+   "sort-name": "Pink Floyd",
+   "disambiguation": "online collective",
+   "life-span": {
+    "begin": "2023",
+    "ended": null
+   }
+  },
+  {
+   "id": "b32609b0-d91e-4227-a7c5-998facfe8741",
+   "type": "Group",
+   "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+   "score": 58,
+   "name": "Celtic Pink Floyd",
+   "sort-name": "Celtic Pink Floyd",
+   "country": "US",
+   "area": {
+    "id": "489ce91b-6658-3307-9877-795b68554c98",
+    "type": "Country",
+    "type-id": "06dd0ae4-8c74-30bb-b43d-95dcedf961de",
+    "name": "United States",
+    "sort-name": "United States",
+    "life-span": {
+     "ended": null
+    }
+   },
+   "isnis": [
+    "0000000469775728"
+   ],
+   "life-span": {
+    "ended": null
+   },
+   "tags": [
+    {
+     "count": 1,
+     "name": "what"
+    }
+   ]
+  }
+ ]
+}

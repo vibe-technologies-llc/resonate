@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "Q2306": {
+      "type": "item",
+      "id": "Q2306",
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "datavalue": {
+                "value": { "entity-type": "item", "numeric-id": 215380, "id": "Q215380" },
+                "type": "wikibase-entityid"
+              }
+            },
+            "type": "statement",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "datavalue": {
+                "value": "PinkFloyd1973_retouched.jpg",
+                "type": "string"
+              }
+            },
+            "type": "statement",
+            "rank": "normal"
+          }
+        ],
+        "P434": [
+          {
+            "mainsnak": {
+              "snaktype": "somevalue",
+              "property": "P434"
+            },
+            "type": "statement",
+            "rank": "normal"
+          }
+        ]
+      }
+    }
+  }
+}

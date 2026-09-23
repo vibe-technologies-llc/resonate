@@ -1,0 +1,13 @@
+[package]
+name = "resonate-lyrics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+resonate-core.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

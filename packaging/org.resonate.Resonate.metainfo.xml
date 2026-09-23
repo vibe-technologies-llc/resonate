@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.resonate.Resonate</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Resonate</name>
+  <summary>Bit-perfect music playback through PipeWire</summary>
+
+  <description>
+    <p>
+      Resonate is a music player for audio enthusiasts. It is a native PipeWire client rather than a
+      PulseAudio or ALSA compatibility layer: it reads the rates a sink advertises, switches the
+      graph to the source's own rate where the hardware takes it, and resamples with its own
+      polyphase filters where it does not, so a lossless file reaches the device bit-accurate
+      wherever the device allows it.
+    </p>
+    <p>
+      It scans a music collection into a library of its own, with albums, artists, playlists, a
+      search grammar, lyrics read from sidecars and tags, and ReplayGain. It puts an MPRIS interface
+      on the session bus, so media keys and the desktop's own player controls reach the transport.
+    </p>
+    <p>
+      FLAC, ALAC, AAC, MP3, Vorbis, Opus, uncompressed PCM in WAV, AIFF and CAF, Matroska and MP4,
+      and DSD in DSF and DFF are decoded; a cue sheet beside a single-file rip is read as the album
+      it cuts.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">resonate.desktop</launchable>
+  <provides>
+    <binary>resonate</binary>
+    <mediatype>audio/flac</mediatype>
+    <mediatype>audio/x-flac</mediatype>
+    <mediatype>audio/mpeg</mediatype>
+    <mediatype>audio/mp4</mediatype>
+    <mediatype>audio/x-m4b</mediatype>
+    <mediatype>audio/aac</mediatype>
+    <mediatype>audio/ogg</mediatype>
+    <mediatype>audio/x-vorbis+ogg</mediatype>
+    <mediatype>audio/opus</mediatype>
+    <mediatype>audio/x-opus+ogg</mediatype>
+    <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/wav</mediatype>
+    <mediatype>audio/x-matroska</mediatype>
+    <mediatype>audio/x-aiff</mediatype>
+    <mediatype>audio/aiff</mediatype>
+    <mediatype>audio/x-caf</mediatype>
+    <mediatype>audio/x-dsf</mediatype>
+    <mediatype>audio/x-dff</mediatype>
+  </provides>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+    <category>Music</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>audio</keyword>
+    <keyword>player</keyword>
+    <keyword>flac</keyword>
+    <keyword>pipewire</keyword>
+    <keyword>bit-perfect</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-18"/>
+  </releases>
+</component>

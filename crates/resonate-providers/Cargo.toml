@@ -1,0 +1,12 @@
+[package]
+name = "resonate-providers"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+resonate-core.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

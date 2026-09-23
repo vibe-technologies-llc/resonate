@@ -1,0 +1,17 @@
+[package]
+name = "resonate-discord"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+resonate-core.workspace = true
+resonate-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "resonate-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ahash.workspace = true
+crossbeam-channel.workspace = true
+futures-channel.workspace = true
+gpui.workspace = true
+parking_lot.workspace = true
+resonate-core.workspace = true
+resonate-engine.workspace = true
+resonate-eq.workspace = true
+resonate-library.workspace = true
+resonate-listen.workspace = true
+resonate-lyrics.workspace = true
+resonate-providers.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+unicode-segmentation.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

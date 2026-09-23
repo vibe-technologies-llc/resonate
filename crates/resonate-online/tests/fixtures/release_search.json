@@ -1,0 +1,257 @@
+{
+ "created": "2026-09-20T12:12:49.087Z",
+ "count": 66,
+ "offset": 0,
+ "releases": [
+  {
+   "id": "15bc9d0c-31d6-4066-8590-a5485d9e44b6",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "e724a489-a7e8-30a1-a17c-30dfd6831202",
+   "artist-credit-id": "0b81ed37-abef-3a61-95a1-96078197007b",
+   "count": 1,
+   "title": "Meddle",
+   "status": "Official",
+   "packaging": "Gatefold Cover",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Pink Floyd",
+     "artist": {
+      "id": "83d91898-7763-47d7-b03b-b92132375c47",
+      "name": "Pink Floyd",
+      "sort-name": "Pink Floyd"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4e98c9b4-92f6-3049-b9da-a1088b623672",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "Meddle",
+    "primary-type": "Album"
+   },
+   "date": "2016-01-15",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "2016-01-15",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "888751708921",
+   "asin": "B019VQS9R4",
+   "label-info": [
+    {
+     "catalog-number": "88875170892",
+     "label": {
+      "id": "96772f8e-b725-4f74-a053-921a573fa0e8",
+      "name": "Pink Floyd Records"
+     }
+    },
+    {
+     "catalog-number": "PFR6",
+     "label": {
+      "id": "96772f8e-b725-4f74-a053-921a573fa0e8",
+      "name": "Pink Floyd Records"
+     }
+    }
+   ],
+   "track-count": 6,
+   "media": [
+    {
+     "id": "0dad2d29-38b8-3156-b521-d31f34ed270e",
+     "format": "CD",
+     "disc-count": 1,
+     "track-count": 6
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "psychedelic rock"
+    }
+   ]
+  },
+  {
+   "id": "aadf62d6-d475-42e0-b622-e6da7a59fdf7",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+   "artist-credit-id": "0b81ed37-abef-3a61-95a1-96078197007b",
+   "count": 1,
+   "title": "Meddle",
+   "status": "Official",
+   "disambiguation": "made in Japan",
+   "packaging": "Jewel Case",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Pink Floyd",
+     "artist": {
+      "id": "83d91898-7763-47d7-b03b-b92132375c47",
+      "name": "Pink Floyd",
+      "sort-name": "Pink Floyd"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4e98c9b4-92f6-3049-b9da-a1088b623672",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "Meddle",
+    "primary-type": "Album"
+   },
+   "date": "1986",
+   "country": "GB",
+   "release-events": [
+    {
+     "date": "1986",
+     "area": {
+      "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+      "name": "United Kingdom",
+      "sort-name": "United Kingdom",
+      "iso-3166-1-codes": [
+       "GB"
+      ]
+     }
+    }
+   ],
+   "barcode": "",
+   "label-info": [
+    {
+     "catalog-number": "CDP 7 46034 2",
+     "label": {
+      "id": "993af7f6-bb99-456b-83e7-5e728ea80a0e",
+      "name": "Harvest"
+     }
+    }
+   ],
+   "track-count": 6,
+   "media": [
+    {
+     "id": "495b5375-701a-39c2-98bc-bc8b8d6163ee",
+     "format": "CD",
+     "disc-count": 1,
+     "track-count": 6
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "1971"
+    }
+   ]
+  },
+  {
+   "id": "a59a0e76-ae5c-4373-84de-644f55a45150",
+   "score": 100,
+   "status-id": "6a3772de-4605-4132-993d-aa315cd19b4b",
+   "packaging-id": "119eba76-b343-3e02-a292-f0f00644bb9b",
+   "artist-credit-id": "0b81ed37-abef-3a61-95a1-96078197007b",
+   "count": 1,
+   "title": "Meddle",
+   "status": "Withdrawn",
+   "disambiguation": "remastered",
+   "packaging": "None",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Pink Floyd",
+     "artist": {
+      "id": "83d91898-7763-47d7-b03b-b92132375c47",
+      "name": "Pink Floyd",
+      "sort-name": "Pink Floyd"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4e98c9b4-92f6-3049-b9da-a1088b623672",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "Meddle",
+    "primary-type": "Album"
+   },
+   "date": "2011-09-26",
+   "country": "XW",
+   "release-events": [
+    {
+     "date": "2011-09-26",
+     "area": {
+      "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+      "name": "[Worldwide]",
+      "sort-name": "[Worldwide]",
+      "iso-3166-1-codes": [
+       "XW"
+      ]
+     }
+    }
+   ],
+   "barcode": "5099968083755",
+   "label-info": [
+    {
+     "catalog-number": "[none]",
+     "label": {
+      "id": "c029628b-6633-439e-bcee-ed02e8a338f7",
+      "name": "EMI"
+     }
+    }
+   ],
+   "track-count": 6,
+   "media": [
+    {
+     "id": "e351bb35-daa1-3ba3-a972-bd6045dcef96",
+     "format": "Digital Media",
+     "disc-count": 0,
+     "track-count": 6
+    }
+   ],
+   "tags": [
+    {
+     "count": 0,
+     "name": "rock"
+    },
+    {
+     "count": 2,
+     "name": "progressive rock"
+    },
+    {
+     "count": 1,
+     "name": "folk rock"
+    },
+    {
+     "count": 1,
+     "name": "psychedelic rock"
+    },
+    {
+     "count": 0,
+     "name": "psychedelic"
+    },
+    {
+     "count": 0,
+     "name": "classic rock"
+    },
+    {
+     "count": 1,
+     "name": "space rock"
+    }
+   ]
+  }
+ ]
+}

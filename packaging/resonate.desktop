@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Resonate
+GenericName=Music Player
+Comment=Bit-perfect music playback through PipeWire
+Exec=resonate %U
+TryExec=resonate
+Icon=resonate
+Terminal=false
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=music;audio;player;flac;pipewire;bit-perfect;
+MimeType=audio/flac;audio/x-flac;audio/mpeg;audio/mp4;audio/x-m4b;audio/aac;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/x-opus+ogg;audio/x-wav;audio/wav;audio/x-matroska;audio/x-aiff;audio/aiff;audio/x-caf;audio/x-dsf;audio/x-dff;
+StartupNotify=true
+StartupWMClass=resonate
+SingleMainWindow=true

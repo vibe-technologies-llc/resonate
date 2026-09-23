@@ -1,0 +1,20 @@
+[package]
+name = "resonate-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ahash.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+resonate-analysis.workspace = true
+resonate-codec.workspace = true
+resonate-core.workspace = true
+resonate-dsp.workspace = true
+resonate-pipewire.workspace = true
+rtrb.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

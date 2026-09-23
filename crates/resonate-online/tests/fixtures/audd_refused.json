@@ -1,0 +1,12 @@
+{
+  "status": "error",
+  "error": {
+    "error_code": 900,
+    "error_message": "Recognition failed: authorization failed: wrong api_token. Please check if your account is activated and your api_token is correct."
+  },
+  "request_params": {"api_token": "wrong", "return": "apple_music,musicbrainz"},
+  "request_api_method": "recognize",
+  "request_http_method": "POST",
+  "see api documentation": "https://docs.audd.io",
+  "contact us": "api@audd.io"
+}

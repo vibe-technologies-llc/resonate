@@ -1,0 +1,16 @@
+[package]
+name = "resonate-codec"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+image.workspace = true
+lofty.workspace = true
+opus-rs.workspace = true
+resonate-core.workspace = true
+symphonia.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
