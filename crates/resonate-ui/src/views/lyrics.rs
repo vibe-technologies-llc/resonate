@@ -375,7 +375,7 @@ impl RootView {
                 window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| {
                     let at = event.position;
                     moved.update(cx, |this, cx| {
-                        let near = this.lyrics.read(cx).opened_by(at);
+                        let near = this.lyrics.read(cx).opened_by(at, Instant::now());
                         if this.lyrics.update(cx, |model, _| model.open_out(near)) {
                             cx.notify();
                         }

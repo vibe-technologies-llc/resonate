@@ -889,7 +889,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `worth_looking_again` refuses a repeat, and the look already runs on the background executor.
 - **The whole sheet opens out only where the pointer is on the words.** `near_the_words` is the
   decision — inside the centred column band, and within `lyric_reach` of the line being read —
-  and it takes bounds and answers a `bool`, so it is tested without a window. The view reaches it
+  and it takes bounds and answers a `bool`, so it is tested without a window. While a scroll of
+  your own holds the pane, `opened_by` hands it no read line, so the pointer opens the sheet out
+  anywhere down the column: the line being read has been scrolled away from, and weighing the
+  pointer against it left a sheet scrolled back through dark under the pointer. The view reaches it
   through the `pointer_watch` idiom: a zero-size `canvas` registering a `MouseMoveEvent` window
   listener from *paint*, which is the one phase `Window::on_mouse_event` may be called in. An
   `on_hover` on the pane opened the sheet out from the empty gutters and from either far end.
@@ -948,7 +951,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `InPlay` reading that built a fresh three-line column each time would have nothing to scroll, so
   the lines would swap in place instead of sliding. The choice is a chip in the heading and lives
   only as long as the run, like the settings pane's category, and the pointer over the pane opens
-  it out — `LyricsModel::shows_every_line` is the one answer both go through. An unsynced set has no
+  it out, and so does a scroll of your own for as long as it holds the pane —
+  `LyricsModel::shows_every_line` is the one answer all three go through. It weighs `following`,
+  which runs out on a clock, so `follow_the_track` turns `spread` onto it every frame and the sheet
+  closes again over one `TURN` once `HANDS_OFF` is out. An unsynced set has no
   lit line, so every line stands at `ADRIFT` and no chip is offered.
 - **Two voiced lines have separate reading edges.** A set with a second voice places voice one on
   the leading side and voice two on the trailing side, with a small voice label when the singer
@@ -961,11 +967,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   it per frame would be a walk per line per line.
 - **Three `Turn`s on one `TURN`, and a `Glide` on a spring.** Where the pane *reads* and what the
   pane *lights* are not the same line, so each has a clock of its own. `Reads` is what the light
-  turns on: `At` a line while one is in play, `Spent` where none is, `Evenly` for an unsynced set
-  that never lights one. Ten seconds into an instrumental `line_in_play` gives out and the set goes
-  to `Falloff::spent` — nothing at all in an `InPlay` reading, a faint 0.16 in a `Whole set` one,
-  because a reading asked for deliberately should still be readable — while `read_at` keeps the
-  sheet where it is. That is also what takes the last line of a set away once it has had its word,
+  turns on: `At` a line while one is in play, `Spent` where none is — carrying the line `read_at`
+  names — and `Evenly` for an unsynced set that never lights one. Ten seconds into an instrumental
+  `line_in_play` gives out and the set goes to `Falloff::spent` — nothing at all in an `InPlay`
+  reading, and across every line the same step down either way from the read line that a line in
+  play gets, that line standing where its neighbours do rather than lit, because a reading asked
+  for deliberately should still be readable. A flat 0.16 over the lot was what it used to be, and
+  past the last line it left the whole sheet all but unreadable however it was opened out.
+  `read_at` keeps the sheet where it is. That is also what takes the last line of a set away once it has had its word,
   rather than leaving it lit for the whole outro. `standing` blends over `Reads`, `lead` over the
   lines in play, and the size and colour are both read off `lead` — `mixed` lerps `muted` to `text`
   — so a line grows and brightens over one 420 ms rather than snapping at a threshold. The third

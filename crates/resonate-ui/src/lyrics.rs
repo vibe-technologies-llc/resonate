@@ -136,10 +136,10 @@ impl Falloff {
         }
     }
 
-    const fn spent(self) -> f32 {
+    fn spent(self, away: Option<usize>) -> f32 {
         match self {
             Self::Around => 0.0,
-            Self::Across => 0.16,
+            Self::Across => self.ahead(away.map_or(usize::MAX, |away| away.max(1))),
         }
     }
 }
@@ -148,7 +148,7 @@ impl Falloff {
 enum Reads {
     At(usize),
     Evenly,
-    Spent,
+    Spent(Option<usize>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -432,25 +432,29 @@ impl LyricsModel {
 
     pub fn read_as(&mut self, reading: Reading) {
         self.reading = reading;
-        self.spread.onto(self.falloff(), Instant::now());
+        self.spread_out(Instant::now());
     }
 
     pub fn open_out(&mut self, opened: bool) -> bool {
         let was = self.opened_out;
         self.opened_out = opened;
-        self.spread.onto(self.falloff(), Instant::now()) || was != opened
+        self.spread_out(Instant::now()) || was != opened
     }
 
-    pub const fn shows_every_line(&self) -> bool {
-        self.opened_out || matches!(self.reading, Reading::Whole)
+    pub fn shows_every_line(&self, now: Instant) -> bool {
+        self.opened_out || matches!(self.reading, Reading::Whole) || !self.following(now)
     }
 
-    const fn falloff(&self) -> Falloff {
-        if self.shows_every_line() {
+    fn falloff(&self, now: Instant) -> Falloff {
+        if self.shows_every_line(now) {
             Falloff::Across
         } else {
             Falloff::Around
         }
+    }
+
+    fn spread_out(&mut self, now: Instant) -> bool {
+        self.spread.onto(self.falloff(now), now)
     }
 
     pub const fn read_at(&self) -> Option<usize> {
@@ -458,24 +462,25 @@ impl LyricsModel {
     }
 
     pub fn follow_the_track(&mut self, position: Duration, now: Instant) {
+        self.spread_out(now);
         let Some(lyrics) = self.found() else {
             self.turn.onto(Reads::Evenly, now);
             self.light.onto([None; 2], now);
             return;
         };
         let lit = lyrics.voices_in_play(position);
+        let read_at = lyrics
+            .waiting_at(position)
+            .map(|waiting| waiting.next)
+            .or_else(|| lyrics.line_at(position));
         let reads = if lyrics.timing() == Timing::Unsynced {
             Reads::Evenly
         } else {
             lit.into_iter()
                 .flatten()
                 .max()
-                .map_or(Reads::Spent, Reads::At)
+                .map_or(Reads::Spent(read_at), Reads::At)
         };
-        let read_at = lyrics
-            .waiting_at(position)
-            .map(|waiting| waiting.next)
-            .or_else(|| lyrics.line_at(position));
 
         self.read_at = read_at;
         if self.placed {
@@ -494,7 +499,9 @@ impl LyricsModel {
             self.turn.blended(now, |reads| match reads {
                 Reads::At(sung) => falloff.between(self.ordinal(sung), line),
                 Reads::Evenly => ADRIFT,
-                Reads::Spent => falloff.spent(),
+                Reads::Spent(read) => {
+                    falloff.spent(read.map(|read| self.ordinal(read).abs_diff(line)))
+                }
             })
         });
 
@@ -575,12 +582,13 @@ impl LyricsModel {
         self.pane_height() / 2.0
     }
 
-    pub fn opened_by(&self, pointer: Point<Pixels>) -> bool {
+    pub fn opened_by(&self, pointer: Point<Pixels>, now: Instant) -> bool {
         near_the_words(
             pointer,
             self.scroll.bounds(),
             self.column_width(),
             self.read_at
+                .filter(|_| self.following(now))
                 .and_then(|line| self.scroll.bounds_for_item(line)),
         )
     }
@@ -670,6 +678,7 @@ impl LyricsModel {
     pub fn led_by_hand(&mut self, now: Instant) {
         self.hand_at = Some(now);
         self.glide = None;
+        self.spread_out(now);
     }
 
     pub fn following(&self, now: Instant) -> bool {
@@ -684,6 +693,7 @@ impl LyricsModel {
 
     pub fn follow_again(&mut self) {
         self.hand_at = None;
+        self.spread_out(Instant::now());
     }
 
     pub fn follow(&mut self, asked: Option<Asked>, wanted: Option<Wanted>, cx: &mut Context<Self>) {
@@ -767,7 +777,7 @@ impl LyricsModel {
         self.glide = None;
         self.hand_at = None;
         self.opened_out = false;
-        self.spread = Turn::still(self.falloff());
+        self.spread = Turn::still(self.falloff(Instant::now()));
         self.sheet = Sheet::default();
         self.scroll.set_offset(point(px(0.0), px(0.0)));
     }
@@ -899,7 +909,7 @@ mod tests {
     }
 
     fn spread_settled(model: &mut LyricsModel) {
-        model.spread = Turn::still(model.falloff());
+        model.spread = Turn::still(model.falloff(Instant::now()));
     }
 
     #[test]
@@ -976,7 +986,7 @@ mod tests {
 
         model.open_out(true);
         spread_settled(&mut model);
-        assert!(model.shows_every_line());
+        assert!(model.shows_every_line(now));
         assert_eq!(model.reading(), Reading::InPlay);
         assert!(model.standing(7, settled) > 0.0);
     }
@@ -1104,15 +1114,50 @@ mod tests {
     #[test]
     fn a_spent_set_is_still_readable_where_the_whole_of_it_was_asked_for() {
         let now = Instant::now();
-        let mut model = verse(4);
+        let mut model = verse(6);
         model.read_as(Reading::Whole);
         spread_settled(&mut model);
 
         model.follow_the_track(at(60), now);
-        let standing = model.standing(3, now + TURN);
+        let settled = now + TURN;
 
-        assert!(standing > 0.0);
-        assert!(standing < Falloff::Across.ahead(1));
+        assert!((model.standing(5, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
+        assert!((model.standing(4, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
+        assert!((model.standing(2, settled) - Falloff::Across.ahead(3)).abs() < f32::EPSILON);
+        assert!(model.standing(5, settled) < LIT);
+        assert!(model.lead(5, settled).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_scroll_of_your_own_after_the_last_word_brings_the_whole_set_back() {
+        let now = Instant::now();
+        let mut model = verse(6);
+        model.follow_the_track(at(60), now);
+        let over = now + TURN;
+        assert!(model.standing(1, over).abs() < f32::EPSILON);
+
+        model.led_by_hand(over);
+        assert!(model.shows_every_line(over));
+        assert!((model.standing(1, over + TURN) - Falloff::Across.ahead(4)).abs() < f32::EPSILON);
+
+        let let_go = over + HANDS_OFF;
+        model.follow_the_track(at(61), let_go);
+        assert!(!model.shows_every_line(let_go));
+        assert!(model.standing(1, let_go + TURN).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn the_pointer_opens_out_a_spent_set_it_is_held_over() {
+        let now = Instant::now();
+        let mut model = verse(4);
+        model.follow_the_track(at(60), now);
+        let over = now + TURN;
+        assert!(model.standing(3, over).abs() < f32::EPSILON);
+
+        model.open_out(true);
+        spread_settled(&mut model);
+        assert!(model.standing(3, over) >= Falloff::Across.ahead(1));
+        assert!(model.standing(0, over) >= Falloff::Across.ahead(3));
     }
 
     #[test]
