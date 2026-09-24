@@ -10700,6 +10700,46 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
     Ok(())
 }
 
+#[test]
+fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
+    let tagged = || {
+        Wav::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "Orbiterz")
+            .text(ISRC, CODE)
+    };
+    let (tree, library, ..) = scanned_lone(tagged())?;
+
+    let fake = Arc::new(Fake::new(Canned {
+        isrcs: vec![(
+            isrc(CODE),
+            orbits_recording(RECORDING, "Echoes", CODE, on_orbits(1)),
+        )],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    }));
+    assert_eq!(enrich(&library, &fake, false)?.stats.named, 1);
+    let answered = library.search("Echoes", 10)?.tracks;
+    assert_eq!(titles(&answered), vec!["Echoes"]);
+
+    tree.write("1.wav", &tagged().build());
+    assert_eq!(scan(&library, &options(&tree))?.updated, 1);
+
+    let rescanned = library.search("Echoes", 10)?.tracks;
+    assert_eq!(
+        titles(&rescanned),
+        vec!["Echoes"],
+        "a rescan indexed the file's title over the one the row still shows"
+    );
+    assert!(library.search("Echos", 10)?.tracks.is_empty());
+    assert_eq!(rescanned[0].artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(
+        rescanned[0].artist_id, answered[0].artist_id,
+        "a rescan pointed the row back at the artist the file names"
+    );
+    Ok(())
+}
+
 fn wanted_san_tropez(library: &Library) -> Result<WantId> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();

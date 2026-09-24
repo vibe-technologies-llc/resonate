@@ -775,8 +775,8 @@ pub fn apply(
         None => None,
     };
 
-    let id = track(tx, record, performer_id, album_id, generation)?;
-    index(tx, id, record, performer_id)
+    let stored = track(tx, record, performer_id, album_id, generation)?;
+    index(tx, &stored, record)
 }
 
 pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
@@ -1480,7 +1480,7 @@ fn track(
     artist_id: Option<i64>,
     album_id: Option<i64>,
     generation: i64,
-) -> Result<i64> {
+) -> Result<Stored> {
     let ReplayGain {
         track_gain,
         track_peak,
@@ -1516,7 +1516,11 @@ fn track(
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN excluded.artist
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.artist
                  ELSE tracks.artist END,
-             artist_id          = excluded.artist_id,
+             artist_id          = CASE
+                 WHEN tracks.answered IS NULL                            THEN excluded.artist_id
+                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN excluded.artist_id
+                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.artist_id
+                 ELSE tracks.artist_id END,
              album_id           = excluded.album_id,
              track_number       = excluded.track_number,
              disc_number        = excluded.disc_number,
@@ -1564,7 +1568,7 @@ fn track(
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title
                    OR tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
                  ELSE tracks.answered END
-         RETURNING id",
+         RETURNING id, title, artist, artist_id",
         params![
             record.root_id,
             path,
@@ -1602,24 +1606,36 @@ fn track(
             record.tags.genre,
             record.tags.lyrics,
         ],
-        |row| row.get::<_, i64>(0),
+        |row| {
+            Ok(Stored {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                artist_id: row.get(3)?,
+            })
+        },
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))
 }
 
-fn index(
-    tx: &Transaction<'_>,
+struct Stored {
     id: i64,
-    record: &TrackRecord,
+    title: String,
+    artist: Option<String>,
     artist_id: Option<i64>,
-) -> Result<()> {
+}
+
+fn index(tx: &Transaction<'_>, stored: &Stored, record: &TrackRecord) -> Result<()> {
     index_row(
         tx,
-        id,
-        &title(record),
-        &indexed_artist(record),
+        stored.id,
+        &stored.title,
+        &indexed_artist(
+            stored.artist.as_deref(),
+            record.tags.album_artist.as_deref(),
+        ),
         record.tags.album.as_deref().unwrap_or_default(),
-        &indexed_genre_of(tx, record.tags.genre.as_deref(), artist_id)?,
+        &indexed_genre_of(tx, record.tags.genre.as_deref(), stored.artist_id)?,
     )
 }
 
@@ -1780,9 +1796,9 @@ fn indexed_genre(tagged: Option<&str>, given: &[String]) -> String {
     named.join(" ")
 }
 
-fn indexed_artist(record: &TrackRecord) -> String {
-    let artist = record.tags.artist.as_deref().unwrap_or_default();
-    let album_artist = record.tags.album_artist.as_deref().unwrap_or_default();
+fn indexed_artist(artist: Option<&str>, album_artist: Option<&str>) -> String {
+    let artist = artist.unwrap_or_default();
+    let album_artist = album_artist.unwrap_or_default();
 
     match (artist, album_artist) {
         (artist, "") => artist.to_owned(),

@@ -581,8 +581,8 @@ through `Player::media` like any other unscanned row.
   how a rescan tells a retagging from an identification.** An enrichment writes `tracks.title` and
   `tracks.artist`; the scan writes those two columns as well, so without a record of what the file
   said the next rescan would put the tagger's spelling back over the reference's. The upsert
-  therefore keeps an answered row's `title` and `artist` where both `tagged_` columns come back
-  unchanged, takes the file's where either has moved, and sets `answered` to `NULL` in that same
+  therefore keeps an answered row's `title`, `artist` and `artist_id` where both `tagged_`
+  columns come back unchanged, takes the file's where either has moved, and sets `answered` to `NULL` in that same
   `CASE` so the row is asked about again — which
   `a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged` is the claim of.
   A row that has never been answered takes the file's names as it always did. What the two columns
@@ -590,7 +590,10 @@ through `Player::media` like any other unscanned row.
   title in its tags is read through `stem.rs` first, so `tagged_title IS NULL` means neither the
   tags nor the file name said anything, and `title` is then the bare stem `store::title` falls back
   to. `store::index_row` is shared between the scan and `land_recording` for that reason — a
-  corrected title is what `tracks_fts` holds a moment later rather than at the next scan.
+  corrected title is what `tracks_fts` holds a moment later rather than at the next scan — and
+  the upsert answers the title, artist and artist id it *left* on the row, so a rescan indexes
+  those rather than the file's; `a_rescan_indexes_and_bills_the_names_the_lookup_kept` is the
+  claim.
 - **The seam is `Reference`, and `Library::enrich` is the pass that walks it.** It speaks in
   `Mbid`, which is the dashed lowercase text or `resonate_core::Error::NotAnMbid`, and `Isrc`,
   which is the twelve characters shouted and stripped of their dashes or
