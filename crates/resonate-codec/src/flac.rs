@@ -38,9 +38,56 @@ const FIRST_INDEX: u8 = 1;
 const CD_DA_LEAD_OUT: u8 = 170;
 const LEAD_OUT: u8 = 255;
 
+const FRAME_SYNC: u8 = 0xFF;
+const FRAME_SYNC_TAIL: u8 = 0xF8;
+const FRAME_SYNC_TAIL_MASK: u8 = 0xFE;
+const BLOCK_SIZE_SHIFT: u32 = 4;
+const CODED_NUMBER_AT: usize = 4;
+const LONGEST_CODED_NUMBER: u32 = 7;
+const SHORTEST_BLOCK: u64 = 192;
+const SMALL_BLOCK_UNIT: u64 = 576;
+const LARGE_BLOCK_UNIT: u64 = 256;
+pub(crate) const FRAME_HEADER_BYTES_AT_MOST: usize = 16;
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Flac {
     pub(crate) cue: Option<CueFile>,
+}
+
+pub(crate) fn samples_in_a_frame(header: &[u8]) -> Option<u64> {
+    let [sync, tail, sizing, ..] = *header else {
+        return None;
+    };
+    if sync != FRAME_SYNC || tail & FRAME_SYNC_TAIL_MASK != FRAME_SYNC_TAIL {
+        return None;
+    }
+
+    let code = sizing >> BLOCK_SIZE_SHIFT;
+    let spelled_at = || {
+        let lead = *header.get(CODED_NUMBER_AT)?;
+        let width = match lead.leading_ones() {
+            0 => 1,
+            1 => return None,
+            width if width <= LONGEST_CODED_NUMBER => width,
+            _ => return None,
+        };
+        CODED_NUMBER_AT.checked_add(usize::try_from(width).ok()?)
+    };
+    match code {
+        0 => None,
+        1 => Some(SHORTEST_BLOCK),
+        2..=5 => Some(SMALL_BLOCK_UNIT << (code - 2)),
+        6 => {
+            let at = spelled_at()?;
+            Some(u64::from(*header.get(at)?) + 1)
+        }
+        7 => {
+            let at = spelled_at()?;
+            let spelled = header.get(at..at.checked_add(2)?)?;
+            Some(u64::from(u16::from_be_bytes(spelled.try_into().ok()?)) + 1)
+        }
+        _ => Some(LARGE_BLOCK_UNIT << (code - 8)),
+    }
 }
 
 pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Flac {
@@ -171,6 +218,65 @@ mod tests {
 
     const STREAMINFO: u8 = 0;
     const PADDING: u8 = 1;
+
+    fn frame_header(sizing: u8, coded_number: &[u8], spelled: &[u8]) -> Vec<u8> {
+        let mut header = vec![
+            FRAME_SYNC,
+            FRAME_SYNC_TAIL,
+            sizing << BLOCK_SIZE_SHIFT | 0x9,
+            0x18,
+        ];
+        header.extend_from_slice(coded_number);
+        header.extend_from_slice(spelled);
+        header.push(0xAB);
+        header
+    }
+
+    #[test]
+    fn a_frame_says_how_many_samples_it_holds_by_its_block_size_code() {
+        assert_eq!(samples_in_a_frame(&frame_header(1, &[0], &[])), Some(192));
+        assert_eq!(samples_in_a_frame(&frame_header(3, &[7], &[])), Some(1_152));
+        assert_eq!(
+            samples_in_a_frame(&frame_header(12, &[7], &[])),
+            Some(4_096)
+        );
+        assert_eq!(
+            samples_in_a_frame(&frame_header(15, &[7], &[])),
+            Some(32_768)
+        );
+    }
+
+    #[test]
+    fn a_block_size_spelled_after_the_frame_number_is_read_past_it_however_wide_it_is() {
+        let one_byte_number = [0x05];
+        let three_byte_number = [0xE1, 0x80, 0x80];
+
+        assert_eq!(
+            samples_in_a_frame(&frame_header(6, &one_byte_number, &[99])),
+            Some(100)
+        );
+        assert_eq!(
+            samples_in_a_frame(&frame_header(7, &three_byte_number, &[0x0A, 0xBF])),
+            Some(2_752)
+        );
+    }
+
+    #[test]
+    fn a_header_that_is_not_a_frame_or_is_cut_short_says_nothing() {
+        let continuation_lead = [0x80];
+
+        assert_eq!(samples_in_a_frame(&[0xFF, 0xF0, 0x19, 0x18, 0]), None);
+        assert_eq!(samples_in_a_frame(&frame_header(0, &[0], &[])), None);
+        assert_eq!(
+            samples_in_a_frame(&frame_header(7, &[0], &[0x0A])[..6]),
+            None
+        );
+        assert_eq!(
+            samples_in_a_frame(&frame_header(6, &continuation_lead, &[99])),
+            None
+        );
+        assert_eq!(samples_in_a_frame(&[FRAME_SYNC, FRAME_SYNC_TAIL]), None);
+    }
 
     fn block(into: &mut Vec<u8>, kind: u8, payload: &[u8], last: bool) {
         let head = kind | if last { LAST_BLOCK } else { 0 };

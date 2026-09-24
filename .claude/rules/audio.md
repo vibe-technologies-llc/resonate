@@ -125,7 +125,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   declaration wherever the clusters stay within it, because the declaration is exact and the count
   is not, and prefers the count only where blocks exist past the declared end — the one case the
   writer is provably wrong. A declaration that is too *long* is not detectable this way and is
-  left alone, except for Opus, whose packets are counted exactly — see below. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
+  left alone, except for Opus, whose packets are counted exactly — see below — and FLAC, whose
+  every frame header names its block size: the walk counts the first track whose `CodecID` is
+  `A_OPUS` or `A_FLAC`, and `Segment::flac_frames_of` answers the FLAC count as the length —
+  ahead of any declaration, because it is exact — only where that track is the one symphonia
+  decodes, its `Track::id` being the Matroska track number. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
   10^5 blocks it costs 440 ms a probe read four bytes at a time and 15 ms read through the window,
   so the case the writer is provably wrong stays caught for about a millisecond on a track-length
   file rather than being traded away for speed.

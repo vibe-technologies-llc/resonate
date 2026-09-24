@@ -1019,6 +1019,40 @@ fn a_matroska_segment_declares_the_length_its_track_does_not() {
 }
 
 #[test]
+fn a_flac_in_matroska_is_as_long_as_its_frames_whatever_the_segment_declares() {
+    const SEGMENT_DURATION_AS_A_DOUBLE: [u8; 3] = [0x44, 0x89, 0x88];
+
+    let tree = Tree::new();
+    let Some((path, samples)) = fixture(&tree, "lossless.mka", &["-c:a", "flac"]) else {
+        return;
+    };
+    let frames = Frames((samples.len() / usize::from(CD.channels)) as u64);
+
+    let mut bytes = fs::read(&path).expect("the fixture reads back");
+    let at = bytes
+        .windows(SEGMENT_DURATION_AS_A_DOUBLE.len())
+        .position(|window| window == SEGMENT_DURATION_AS_A_DOUBLE)
+        .expect("ffmpeg declares the segment's duration as a double")
+        + SEGMENT_DURATION_AS_A_DOUBLE.len();
+    let declared = f64::from_be_bytes(bytes[at..at + 8].try_into().expect("eight bytes"));
+    bytes[at..at + 8].copy_from_slice(&(declared * 3.0).to_be_bytes());
+    let overlong = tree.at("overlong.mka");
+    fs::write(&overlong, &bytes).expect("the patched fixture writes");
+
+    for path in [path, overlong] {
+        let info = probe(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a well-formed file probes");
+
+        assert_eq!(
+            info.duration,
+            Some(frames),
+            "{} was not counted to the frames that went in",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn a_segment_title_names_a_track_only_where_it_is_the_only_one() {
     let tree = Tree::new();
     let Some((sole, _)) = fixture(&tree, "sole.mka", &["-c:a", "libvorbis"]) else {

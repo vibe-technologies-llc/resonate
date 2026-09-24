@@ -5,7 +5,7 @@ use std::{
 
 use resonate_core::{Frames, SampleRate};
 
-use crate::{opus, prescan::read_exact};
+use crate::{flac, opus, prescan::read_exact};
 
 const EBML_HEADER: u32 = 0x1A45_DFA3;
 const SEGMENT: u32 = 0x1853_8067;
@@ -35,11 +35,12 @@ const MAX_BIT_DEPTH: u64 = 64;
 const MAX_CLUSTERS: usize = 65_536;
 const MAX_BLOCKS: usize = 65_536;
 const OPUS_CODEC_ID: &str = "A_OPUS";
+const FLAC_CODEC_ID: &str = "A_FLAC";
 const LACING: u8 = 0b0110;
 const LACING_SHIFT: u8 = 1;
 const XIPH_LACE_CONTINUES: u8 = 0xFF;
 const LACED_FRAMES_AT_MOST: usize = 256;
-const PACKET_HEAD_BYTES: usize = 2;
+const FRAME_HEAD_BYTES: usize = flac::FRAME_HEADER_BYTES_AT_MOST;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Segment {
@@ -50,6 +51,8 @@ pub(crate) struct Segment {
     pub(crate) bit_depth: Option<u32>,
     pub(crate) discarded: Option<Duration>,
     pub(crate) opus_samples: Option<u64>,
+    pub(crate) flac_samples: Option<u64>,
+    pub(crate) counted_track: Option<u64>,
 }
 
 impl Segment {
@@ -58,6 +61,13 @@ impl Segment {
             .checked_sub(u64::from(pre_skip))?
             .checked_sub(u64::from(padding))
             .filter(|music| *music > 0)
+            .map(Frames)
+    }
+
+    pub(crate) fn flac_frames_of(&self, track: u32) -> Option<Frames> {
+        (self.counted_track == Some(u64::from(track)))
+            .then_some(self.flac_samples)
+            .flatten()
             .map(Frames)
     }
 
@@ -84,48 +94,74 @@ struct Counted {
     tally: Tally,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Counts {
+    Opus,
+    Flac,
+}
+
+impl Counts {
+    fn of(codec: &str) -> Option<Self> {
+        match codec {
+            OPUS_CODEC_ID => Some(Self::Opus),
+            FLAC_CODEC_ID => Some(Self::Flac),
+            _ => None,
+        }
+    }
+
+    fn samples_in(self, head: &[u8]) -> Option<u64> {
+        match self {
+            Self::Opus => opus::samples_in_a_packet(head),
+            Self::Flac => flac::samples_in_a_frame(head),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Counting {
+    track: u64,
+    counts: Counts,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Tally {
     #[default]
     NotCounting,
     Counting {
-        track: u64,
+        of: Counting,
         samples: u64,
     },
     Lost,
 }
 
 impl Tally {
-    fn of(track: Option<u64>) -> Self {
-        track.map_or(Self::NotCounting, |track| Self::Counting {
-            track,
-            samples: 0,
-        })
+    fn of(counting: Option<Counting>) -> Self {
+        counting.map_or(Self::NotCounting, |of| Self::Counting { of, samples: 0 })
     }
 
-    fn track(self) -> Option<u64> {
+    fn counting(self) -> Option<Counting> {
         match self {
-            Self::Counting { track, .. } => Some(track),
+            Self::Counting { of, .. } => Some(of),
             Self::NotCounting | Self::Lost => None,
         }
     }
 
     fn add(&mut self, block: Option<Block>) {
-        let Self::Counting { track, samples } = *self else {
+        let Self::Counting { of, samples } = *self else {
             return;
         };
         let Some(block) = block else {
             *self = Self::Lost;
             return;
         };
-        if block.track != track {
+        if block.track != of.track {
             return;
         }
 
         *self = block
-            .opus_samples
+            .samples
             .and_then(|more| samples.checked_add(more))
-            .map_or(Self::Lost, |samples| Self::Counting { track, samples });
+            .map_or(Self::Lost, |samples| Self::Counting { of, samples });
     }
 
     fn lose(&mut self) {
@@ -134,9 +170,9 @@ impl Tally {
         }
     }
 
-    fn samples(self) -> Option<u64> {
+    fn samples_of(self, counts: Counts) -> Option<u64> {
         match self {
-            Self::Counting { samples, .. } if samples > 0 => Some(samples),
+            Self::Counting { of, samples } if of.counts == counts && samples > 0 => Some(samples),
             Self::Counting { .. } | Self::NotCounting | Self::Lost => None,
         }
     }
@@ -170,16 +206,18 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
     if source.seek(SeekFrom::Start(body)).is_ok() {
         found.bit_depth = read_bit_depth(source, within);
     }
-    let opus_track = source
+    let counted_track = source
         .seek(SeekFrom::Start(body))
         .ok()
-        .and_then(|_| read_opus_track(source, within));
+        .and_then(|_| read_counted_track(source, within));
     if source.seek(SeekFrom::Start(body)).is_ok() {
-        let counted = count_clusters(source, within, Tally::of(opus_track));
+        let counted = count_clusters(source, within, Tally::of(counted_track));
         let scale = found.scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
         found.counted = span(counted.ticks.map(|ticks| ticks as f64), scale);
         found.discarded = counted.discarded;
-        found.opus_samples = counted.tally.samples();
+        found.opus_samples = counted.tally.samples_of(Counts::Opus);
+        found.flac_samples = counted.tally.samples_of(Counts::Flac);
+        found.counted_track = counted_track.map(|counting| counting.track);
     }
 
     Some(found)
@@ -237,13 +275,13 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
         match element.id {
             CLUSTER_TIMESTAMP => at = uint(source, element.length),
             SIMPLE_BLOCK => {
-                let block = read_block(source, element, into.tally.track());
+                let block = read_block(source, element, into.tally.counting());
                 offsets.saw(block.map(|block| block.offset));
                 into.tally.add(block);
                 into.discarded = None;
             }
             BLOCK_GROUP => {
-                let group = read_group(source, element.end(), into.tally.track());
+                let group = read_group(source, element.end(), into.tally.counting());
                 offsets.saw(group.block.map(|block| block.offset));
                 into.tally.add(group.block);
                 into.discarded = group.discarded;
@@ -281,7 +319,7 @@ struct Group {
 fn read_group<S: Read + Seek + ?Sized>(
     source: &mut S,
     limit: Option<u64>,
-    counting: Option<u64>,
+    counting: Option<Counting>,
 ) -> Group {
     let mut group = Group::default();
 
@@ -335,27 +373,27 @@ impl Offsets {
 struct Block {
     track: u64,
     offset: i16,
-    opus_samples: Option<u64>,
+    samples: Option<u64>,
 }
 
 fn read_block<S: Read + Seek + ?Sized>(
     source: &mut S,
     element: Element,
-    counting: Option<u64>,
+    counting: Option<Counting>,
 ) -> Option<Block> {
     let end = element.end()?;
     let Length::Known(track) = length(source)? else {
         return None;
     };
     let [high, low, flags] = read_exact::<3, S>(source)?;
-    let opus_samples = (counting == Some(track))
-        .then(|| opus_samples_in(source, end, Lacing::of(flags)))
-        .flatten();
+    let samples = counting
+        .filter(|counting| counting.track == track)
+        .and_then(|counting| samples_in(source, end, Lacing::of(flags), counting.counts));
 
     Some(Block {
         track,
         offset: i16::from_be_bytes([high, low]),
-        opus_samples,
+        samples,
     })
 }
 
@@ -378,10 +416,11 @@ impl Lacing {
     }
 }
 
-fn opus_samples_in<S: Read + Seek + ?Sized>(
+fn samples_in<S: Read + Seek + ?Sized>(
     source: &mut S,
     end: u64,
     lacing: Lacing,
+    counts: Counts,
 ) -> Option<u64> {
     let mut sizes = [0_u64; LACED_FRAMES_AT_MOST];
     let sizes = lace_sizes(source, end, lacing, &mut sizes)?;
@@ -390,7 +429,7 @@ fn opus_samples_in<S: Read + Seek + ?Sized>(
 
     for size in sizes {
         source.seek(SeekFrom::Start(at)).ok()?;
-        samples = samples.checked_add(opus_samples_of_a_frame(source, *size)?)?;
+        samples = samples.checked_add(samples_of_a_frame(source, *size, counts)?)?;
         at = at.checked_add(*size)?;
     }
     Some(samples)
@@ -465,24 +504,27 @@ fn ebml_lace<S: Read + ?Sized>(source: &mut S, previous: Option<u64>) -> Option<
     previous.checked_add_signed(difference)
 }
 
-fn opus_samples_of_a_frame<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<u64> {
-    let mut head = [0_u8; PACKET_HEAD_BYTES];
+fn samples_of_a_frame<S: Read + ?Sized>(source: &mut S, size: u64, counts: Counts) -> Option<u64> {
+    let mut head = [0_u8; FRAME_HEAD_BYTES];
     let head_bytes = usize::try_from(size)
-        .unwrap_or(PACKET_HEAD_BYTES)
-        .min(PACKET_HEAD_BYTES);
+        .unwrap_or(FRAME_HEAD_BYTES)
+        .min(FRAME_HEAD_BYTES);
     let head = head.get_mut(..head_bytes)?;
     source.read_exact(head).ok()?;
-    opus::samples_in_a_packet(head)
+    counts.samples_in(head)
 }
 
-fn read_opus_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u64> {
+fn read_counted_track<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+) -> Option<Counting> {
     let tracks = find(source, TRACKS, within)?;
     let limit = tracks.end();
 
     for _ in 0..MAX_ELEMENTS {
         let entry = element(source)?;
         if entry.id == TRACK_ENTRY
-            && let Some(track) = opus_track_number(source, entry.end())
+            && let Some(track) = counted_track(source, entry.end())
         {
             return Some(track);
         }
@@ -495,9 +537,9 @@ fn read_opus_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>)
     None
 }
 
-fn opus_track_number<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Option<u64> {
+fn counted_track<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Option<Counting> {
     let mut number = None;
-    let mut opus = false;
+    let mut counts = None;
 
     for _ in 0..MAX_ELEMENTS {
         let Some(element) = element(source) else {
@@ -505,7 +547,7 @@ fn opus_track_number<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>
         };
         match element.id {
             TRACK_NUMBER => number = positive(uint(source, element.length)),
-            CODEC_ID => opus = text(source, element.length).as_deref() == Some(OPUS_CODEC_ID),
+            CODEC_ID => counts = text(source, element.length).as_deref().and_then(Counts::of),
             _ => {}
         }
 
@@ -517,7 +559,10 @@ fn opus_track_number<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>
         }
     }
 
-    number.filter(|_| opus)
+    Some(Counting {
+        track: number?,
+        counts: counts?,
+    })
 }
 
 fn read_bit_depth<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u32> {
@@ -573,6 +618,8 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         bit_depth: None,
         discarded: None,
         opus_samples: None,
+        flac_samples: None,
+        counted_track: None,
     }
 }
 
@@ -1130,6 +1177,45 @@ mod tests {
             read_segment(&mut Cursor::new(bytes)).opus_samples,
             Some(960)
         );
+    }
+
+    fn flac_block(track: u8, sizing: u8) -> Vec<u8> {
+        element(
+            SIMPLE_BLOCK,
+            &[
+                0x80 | track,
+                0,
+                0,
+                0,
+                0xFF,
+                0xF8,
+                sizing << 4 | 0x9,
+                0x18,
+                0,
+                0xAB,
+            ],
+        )
+    }
+
+    #[test]
+    fn a_flac_track_is_counted_frame_by_frame_out_of_its_frame_headers() {
+        let four_thousand_and_ninety_six = 12;
+        let one_hundred_and_ninety_two = 1;
+        let bytes = with_tracks(
+            &[track_entry(1, FLAC_CODEC_ID)],
+            &[
+                flac_block(1, four_thousand_and_ninety_six),
+                flac_block(1, four_thousand_and_ninety_six),
+                flac_block(1, one_hundred_and_ninety_two),
+            ],
+        );
+
+        let found = read_segment(&mut Cursor::new(bytes));
+
+        assert_eq!(found.flac_samples, Some(8_384));
+        assert_eq!(found.opus_samples, None);
+        assert_eq!(found.flac_frames_of(1), Some(Frames(8_384)));
+        assert_eq!(found.flac_frames_of(2), None);
     }
 
     #[test]

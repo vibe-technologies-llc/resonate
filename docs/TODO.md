@@ -524,11 +524,12 @@
   but a person, so a figure the rules quote going away is noticed only when somebody looks. A
   baseline build's cost is `RUSTFLAGS="-C target-cpu=x86-64"` with a target directory of its own,
   and it is worth reading beside the native one, because the two do not rank the stages alike
-- A Matroska `Duration` longer than the file's own clusters is not caught for any codec but Opus:
-  `matroska.rs` counts where the last block starts, which is a lower bound, so blocks past the
-  declared end prove a short declaration wrong while nothing proves a long one wrong. Opus is
-  counted packet by packet out of its TOC bytes; any other codec would need its own frame size
-  read the same way — FLAC's frame header, Vorbis's block sizes out of its setup header
+- A Matroska `Duration` longer than the file's own clusters is not caught for any codec but Opus
+  and FLAC: `matroska.rs` counts where the last block starts, which is a lower bound, so blocks
+  past the declared end prove a short declaration wrong while nothing proves a long one wrong.
+  Opus is counted out of its TOC bytes and FLAC out of its frame headers; Vorbis would need its
+  two block sizes out of its setup header and the mode of every packet, which is a decoder's worth
+  of reading
 - A prescan over a source that cannot seek reaches only the first `MAX_PRESCAN_HEAD` bytes, so a WAV
   whose writer put its `LIST INFO` after the `data` chunk still loses those tags over a pipe where a
   file on disc keeps them

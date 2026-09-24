@@ -237,7 +237,10 @@ pub(crate) fn coded_info(
         spec,
         speakers: Speakers::of(opus::channels_of(params).as_ref()),
         duration: playable.and_then(FrameSpan::frames).or_else(|| {
-            duration(track, spec.rate)
+            prescan
+                .segment
+                .flac_frames_of(track.id)
+                .or_else(|| duration(track, spec.rate))
                 .filter(|declared| *declared != Frames::ZERO)
                 .or_else(|| prescan.boxes.fragmented_length(spec.rate))
                 .or_else(|| prescan.segment_duration(spec.rate))
