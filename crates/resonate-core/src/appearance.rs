@@ -5,6 +5,7 @@ pub enum Theme {
     Resonate,
     Midnight,
     Graphite,
+    Amoled,
     Plum,
     RosePine,
     RosePineMoon,
@@ -14,13 +15,17 @@ pub enum Theme {
     Nord,
     GruvboxDark,
     TokyoNight,
+    Dracula,
+    OneDark,
+    SolarizedDark,
 }
 
 impl Theme {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 16] = [
         Self::Resonate,
         Self::Midnight,
         Self::Graphite,
+        Self::Amoled,
         Self::Plum,
         Self::RosePine,
         Self::RosePineMoon,
@@ -30,6 +35,9 @@ impl Theme {
         Self::Nord,
         Self::GruvboxDark,
         Self::TokyoNight,
+        Self::Dracula,
+        Self::OneDark,
+        Self::SolarizedDark,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -37,6 +45,7 @@ impl Theme {
             Self::Resonate => "resonate",
             Self::Midnight => "midnight",
             Self::Graphite => "graphite",
+            Self::Amoled => "amoled",
             Self::Plum => "plum",
             Self::RosePine => "rose-pine",
             Self::RosePineMoon => "rose-pine-moon",
@@ -46,6 +55,9 @@ impl Theme {
             Self::Nord => "nord",
             Self::GruvboxDark => "gruvbox-dark",
             Self::TokyoNight => "tokyo-night",
+            Self::Dracula => "dracula",
+            Self::OneDark => "one-dark",
+            Self::SolarizedDark => "solarized-dark",
         }
     }
 
@@ -54,6 +66,7 @@ impl Theme {
             Self::Resonate => "Resonate",
             Self::Midnight => "Midnight",
             Self::Graphite => "Graphite",
+            Self::Amoled => "AMOLED",
             Self::Plum => "Plum",
             Self::RosePine => "Rosé Pine",
             Self::RosePineMoon => "Rosé Pine Moon",
@@ -63,6 +76,9 @@ impl Theme {
             Self::Nord => "Nord",
             Self::GruvboxDark => "Gruvbox Dark",
             Self::TokyoNight => "Tokyo Night",
+            Self::Dracula => "Dracula",
+            Self::OneDark => "One Dark",
+            Self::SolarizedDark => "Solarized Dark",
         }
     }
 

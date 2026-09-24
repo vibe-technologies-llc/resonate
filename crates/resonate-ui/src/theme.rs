@@ -184,6 +184,32 @@ static GRAPHITE: LazyLock<Flavour> = LazyLock::new(|| {
     })
 });
 
+static AMOLED: LazyLock<Flavour> = LazyLock::new(|| Flavour {
+    native: Accent::Mauve,
+    background: 0x000000,
+    surface: 0x000000,
+    raised: 0x121212,
+    hover: 0x1d1d1d,
+    border: 0x1a1a1a,
+    outline: 0x2e2e2e,
+    text: 0xf2f2f2,
+    muted: 0xa3a3a3,
+    faint: 0x686868,
+    pitch: 0x000000,
+    paper: 0xf7f7f7,
+    scrim: 0x000000ea,
+    alarm: 0xc2383c,
+    accents: Accents {
+        mauve: 0xb98ef0,
+        blue: 0x7cb6ea,
+        teal: 0x5ecfc0,
+        green: 0x5ccb92,
+        amber: 0xe4a960,
+        peach: 0xe8875f,
+        red: 0xe36f6f,
+    },
+});
+
 static PLUM: LazyLock<Flavour> = LazyLock::new(|| {
     ramp(&Recipe {
         native: Accent::Mauve,
@@ -401,11 +427,90 @@ static TOKYO_NIGHT: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     },
 });
 
+static DRACULA: LazyLock<Flavour> = LazyLock::new(|| Flavour {
+    native: Accent::Blue,
+    background: 0x282a36,
+    surface: 0x21222c,
+    raised: 0x343746,
+    hover: 0x44475a,
+    border: 0x343746,
+    outline: 0x4d5066,
+    text: 0xf8f8f2,
+    muted: 0xa9abc2,
+    faint: 0x6272a4,
+    pitch: 0x191a21,
+    paper: 0xf8f8f2,
+    scrim: 0x191a21ea,
+    alarm: 0xff5555,
+    accents: Accents {
+        mauve: 0xff79c6,
+        blue: 0xbd93f9,
+        teal: 0x8be9fd,
+        green: 0x50fa7b,
+        amber: 0xf1fa8c,
+        peach: 0xffb86c,
+        red: 0xff5555,
+    },
+});
+
+static ONE_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
+    native: Accent::Blue,
+    background: 0x282c34,
+    surface: 0x21252b,
+    raised: 0x2c313a,
+    hover: 0x3e4451,
+    border: 0x2c313a,
+    outline: 0x4b5263,
+    text: 0xd7dae0,
+    muted: 0xabb2bf,
+    faint: 0x5c6370,
+    pitch: 0x181a1f,
+    paper: 0xd7dae0,
+    scrim: 0x181a1fea,
+    alarm: 0xe06c75,
+    accents: Accents {
+        mauve: 0xc678dd,
+        blue: 0x61afef,
+        teal: 0x56b6c2,
+        green: 0x98c379,
+        amber: 0xe5c07b,
+        peach: 0xd19a66,
+        red: 0xe06c75,
+    },
+});
+
+static SOLARIZED_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
+    native: Accent::Blue,
+    background: 0x002b36,
+    surface: 0x00212b,
+    raised: 0x073642,
+    hover: 0x0a4251,
+    border: 0x073642,
+    outline: 0x586e75,
+    text: 0xeee8d5,
+    muted: 0x93a1a1,
+    faint: 0x657b83,
+    pitch: 0x000000,
+    paper: 0xfdf6e3,
+    scrim: 0x001b22ea,
+    alarm: 0xdc322f,
+    accents: Accents {
+        mauve: 0x6c71c4,
+        blue: 0x268bd2,
+        teal: 0x2aa198,
+        green: 0x859900,
+        amber: 0xb58900,
+        peach: 0xcb4b16,
+        red: 0xdc322f,
+    },
+});
+
 fn flavour(theme: Theme) -> &'static Flavour {
     match theme {
         Theme::Resonate => &RESONATE,
         Theme::Midnight => &MIDNIGHT,
         Theme::Graphite => &GRAPHITE,
+        Theme::Amoled => &AMOLED,
         Theme::Plum => &PLUM,
         Theme::RosePine => &ROSE_PINE,
         Theme::RosePineMoon => &ROSE_PINE_MOON,
@@ -415,6 +520,9 @@ fn flavour(theme: Theme) -> &'static Flavour {
         Theme::Nord => &NORD,
         Theme::GruvboxDark => &GRUVBOX_DARK,
         Theme::TokyoNight => &TOKYO_NIGHT,
+        Theme::Dracula => &DRACULA,
+        Theme::OneDark => &ONE_DARK,
+        Theme::SolarizedDark => &SOLARIZED_DARK,
     }
 }
 

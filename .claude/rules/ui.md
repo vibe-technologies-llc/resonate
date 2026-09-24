@@ -255,9 +255,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   palette is worn. `theme::tinted` is how a colour becomes a wash — a selected chip, the playing
   row, a badge's ground — so no second palette of washes has to be kept in step, and
   `theme::selection` is the accent worn thin rather than a colour of its own.
-- **Every theme is dark, and a test says so rather than an eye.** Twelve of them: Resonate's own
-  warm near-black, Midnight, Graphite and Plum, Rosé Pine and Rosé Pine Moon, Catppuccin's Mocha,
-  Macchiato and Frappé, Nord, Gruvbox Dark and Tokyo Night — each carrying the same seven accents,
+- **Every theme is dark, and a test says so rather than an eye.** Sixteen of them: Resonate's own
+  warm near-black, Midnight, Graphite, AMOLED and Plum, Rosé Pine and Rosé Pine Moon, Catppuccin's
+  Mocha, Macchiato and Frappé, Nord, Gruvbox Dark, Tokyo Night, Dracula, One Dark and Solarized
+  Dark — each carrying the same seven accents,
   Mauve, Blue, Teal, Green, Amber, Peach and Red, under its own hex, so an accent is part of a
   palette rather than laid over
   it. **What a fresh install wears is the palette's own accent rather than a colour named once for
@@ -265,9 +266,18 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Catppuccin's and Rosé Pine's mauve — `Appearance::DEFAULT` names none, and the Colour card offers
   it as a ringed swatch ahead of the seven, so switching palette moves the accent with it until one
   is chosen by hand. Choosing none again is `Setting::Accent(None)`, which takes the `accent` key
-  out of the file the way a cleared contact does, rather than writing a colour. Twelve is also what
-  fills the shelf: the theme cards are `theme_swatch()` wide in a `settings_column()` body, which
-  is four to a row, so ten left a ragged last row of two and twelve is three full ones.
+  out of the file the way a cleared contact does, rather than writing a colour. Sixteen is also
+  what fills the shelf: the theme cards are `theme_swatch()` wide in a `settings_column()` body,
+  which is four to a row, so a palette is added four at a time and every row stays full.
+  **AMOLED is the one whose panes are pure black**, `background` and `surface` alike, so the pixels
+  behind the lists are off on an OLED panel; what is raised and hovered still steps up from it,
+  and it wears Resonate's own accents. **Where a published palette names no hue for an accent,
+  its own terminal mapping decides**: Dracula has no blue, and its ANSI blue is its purple and its
+  magenta its pink, so those are its Blue and Mauve and it is built around the purple. One Dark's
+  `abb2bf` reads at 6.6:1 on its ground, so its body text is the palette's highlighted `d7dae0`
+  and `abb2bf` is what is muted; Solarized's `base0` reads at 4.8:1, so its text is `base2` and
+  its muted `base1`, and its violet, orange and red carry their ink at 4.5:1 only on a pitch of
+  pure black, which is what its pitch is rather than a lifted accent.
   `theme.rs`'s tests walk every theme
   crossed with every accent — and with none — and hold the contrast to the recognised bars: 7:1 for text on the panes
   and the cards, 4.5:1 for text on what is raised above them, for muted text and for what is written
