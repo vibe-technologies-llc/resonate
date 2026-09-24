@@ -745,6 +745,15 @@ starts at 11 733 edges where an empty one starts at 343. `boxes` takes the two M
 `lrc` and `playlist` a sheet each. A seed is added by hand when a run finds something worth
 starting from, and nothing runs the targets but a person.
 
+**A cost is measured rather than guessed, and neither measure is a check.**
+`cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,
+over four seconds of audio and prints each as a share of a core; any word narrows it to the runs
+whose names hold it. It plays a hot signal through the true-peak guard as well as the usual one,
+because a guard that never limits never pays for limiting. `cargo build --profile profiling` is
+the release build with its symbols and line tables kept, which `perf record` and
+`cargo flamegraph` need and `strip = "symbols"` takes away. Neither asserts anything, so the CI
+runs neither.
+
 **A debug build is optimised, because an unoptimised resampler cannot keep up with the music.** At
 `opt-level = 0` a 96 kHz 24-bit source pegged a whole core to reach a 48 kHz sink and the ring
 starved: the window wedged, and a `SIGTERM` asking a wedged front end to drain politely left the

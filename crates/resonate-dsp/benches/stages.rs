@@ -21,6 +21,7 @@ const AUDIO_SECONDS: u32 = 4;
 const RUNS: usize = 5;
 const CONSTRUCTIONS: usize = 9;
 const SEED: u64 = 0x5265_736F_6E61_7465;
+const PUSHED_OVER: f64 = 1.6;
 
 const SHAPED_PHASES: [(FilterPhase, &str); 2] = [
     (FilterPhase::Minimum, "minimum"),
@@ -63,7 +64,13 @@ impl Bench {
 
     fn stage(&self, name: &str, spec: StreamSpec, build: impl FnOnce() -> Box<dyn Processor>) {
         if self.runs(name) {
-            report(name, through_stage(build(), spec));
+            report(name, through_stage(build(), spec, &signal(spec)));
+        }
+    }
+
+    fn hot_stage(&self, name: &str, spec: StreamSpec, build: impl FnOnce() -> Box<dyn Processor>) {
+        if self.runs(name) {
+            report(name, through_stage(build(), spec, &hot(signal(spec))));
         }
     }
 
@@ -156,13 +163,19 @@ fn signal(spec: StreamSpec) -> Vec<f64> {
         .collect()
 }
 
-fn through_stage(mut stage: Box<dyn Processor>, spec: StreamSpec) -> Duration {
+fn hot(signal: Vec<f64>) -> Vec<f64> {
+    signal
+        .into_iter()
+        .map(|sample| sample * PUSHED_OVER)
+        .collect()
+}
+
+fn through_stage(mut stage: Box<dyn Processor>, spec: StreamSpec, input: &[f64]) -> Duration {
     let channels = usize::from(spec.channel_count().get());
     let widened = usize::from(stage.output_spec(spec).channel_count().get());
     let most = stage
         .prepare(spec, BLOCK)
         .expect("every benchmarked stage prepares");
-    let input = signal(spec);
     let mut output = vec![0.0; most.max(BLOCK) * widened];
 
     fastest(|| {
@@ -343,17 +356,38 @@ fn main() {
     }
 
     let rate = SampleRate::HZ_48000;
-    for bands in [10, MAX_BANDS] {
-        bench.stage(&format!("equalise {bands} bands"), stereo(rate), || {
-            Box::new(Equaliser::new(profile(bands), rate))
-        });
+    for at in [rate, SampleRate::HZ_192000] {
+        for bands in [10, MAX_BANDS] {
+            let name = format!("equalise {bands} bands at {}", kilohertz(at));
+            bench.stage(&name, stereo(at), || {
+                Box::new(Equaliser::new(profile(bands), at))
+            });
+        }
     }
 
-    bench.stage(
-        "true peak guard",
-        stereo(rate),
-        || Box::new(TruePeak::new()),
-    );
+    for at in [rate, SampleRate::HZ_192000] {
+        let named = kilohertz(at);
+        bench.stage(&format!("true peak guard at {named}"), stereo(at), || {
+            Box::new(TruePeak::new())
+        });
+        bench.hot_stage(
+            &format!("true peak guard limiting at {named}"),
+            stereo(at),
+            || Box::new(TruePeak::new()),
+        );
+        bench.chain(
+            &format!("true peak guard at half volume at {named}"),
+            stereo(at),
+            || {
+                Chain::builder(stereo(at))
+                    .max_frames_in(BLOCK)
+                    .push(Box::new(GainStage::new(half_volume())))
+                    .push(Box::new(TruePeak::new()))
+                    .build()
+                    .expect("a benchmarked chain")
+            },
+        );
+    }
     bench.stage(
         "restore a lossy source",
         stereo(SampleRate::HZ_44100),
@@ -375,6 +409,11 @@ fn main() {
     bench.stage("dither threshold to 16 bits", stereo(rate), || {
         dither(NoiseShaping::Threshold)
     });
+    bench.stage(
+        "dither threshold to 16 bits at 192k",
+        stereo(SampleRate::HZ_192000),
+        || dither(NoiseShaping::Threshold),
+    );
     for designed_at in [SampleRate::HZ_44100, SampleRate::HZ_192000] {
         let name = format!("prepare threshold dither at {}", kilohertz(designed_at));
         bench.construction(&name, || {
@@ -414,6 +453,28 @@ fn main() {
                 ))
                 .push(Box::new(Equaliser::new(profile(10), rate)))
                 .push(Box::new(GainStage::new(half_volume())))
+                .push(dither(NoiseShaping::Threshold))
+                .build()
+                .expect("a benchmarked chain")
+        },
+    );
+
+    bench.chain(
+        "chain stereo 44.1k to 48k, gain, guard, dither",
+        stereo(SampleRate::HZ_44100),
+        || {
+            Chain::builder(stereo(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(Box::new(
+                    Resampler::new(resampler(
+                        SampleRate::HZ_44100,
+                        SampleRate::HZ_48000,
+                        Quality::High,
+                    ))
+                    .expect("a benchmarked configuration"),
+                ))
+                .push(Box::new(GainStage::new(GainConfig::default())))
+                .push(Box::new(TruePeak::new()))
                 .push(dither(NoiseShaping::Threshold))
                 .build()
                 .expect("a benchmarked chain")

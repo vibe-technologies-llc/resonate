@@ -203,3 +203,8 @@ codegen-units = 1
 lto = "thin"
 strip = "symbols"
 panic = "abort"
+
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = "line-tables-only"
