@@ -2,7 +2,7 @@ use std::{iter, time::Duration};
 
 use resonate_core::SourceId;
 
-use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, Wanted};
+use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, Voice, Wanted};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -116,7 +116,7 @@ fn beyond_what_a_sheet_holds(provider: SourceId) -> Error {
 
 struct Reading {
     source: SourceId,
-    timed: Vec<(Duration, String)>,
+    timed: Vec<(Duration, String, Voice)>,
     plain: Vec<String>,
     declared: Declared,
     credits: Credits,
@@ -166,9 +166,10 @@ impl Reading {
 
         let text = rest.trim();
         if !moments.is_empty() {
+            let (voice, text) = voiced_text(text);
             for at in moments {
                 self.hold(text)?;
-                self.timed.push((at, text.to_owned()));
+                self.timed.push((at, text.to_owned(), voice));
             }
             return Ok(());
         }
@@ -225,7 +226,7 @@ impl Reading {
         }
         let lines = timed
             .into_iter()
-            .map(|(at, text)| LyricLine::sung(shifted(at, shift), text))
+            .map(|(at, text, voice)| LyricLine::sung(shifted(at, shift), text).voiced(voice))
             .collect();
 
         Ok(Sheet {
@@ -233,6 +234,19 @@ impl Reading {
             lyrics: worth_drawing(Lyrics::synced(source, lines)?.credited(credits)),
         })
     }
+}
+
+fn voiced_text(text: &str) -> (Voice, &str) {
+    for (marker, voice) in [("[v1:", Voice::One), ("[v2:", Voice::Two)] {
+        if let Some(words) = text
+            .strip_prefix(marker)
+            .and_then(|words| words.strip_suffix(']'))
+        {
+            return (voice, words.trim());
+        }
+    }
+
+    (Voice::One, text)
 }
 
 fn worth_drawing(lyrics: Lyrics) -> Option<Lyrics> {
@@ -412,6 +426,27 @@ mod tests {
                 (Duration::from_millis(5_500), "all that you see"),
                 (Duration::from_secs(10), "and everything under the sun"),
             ]
+        );
+    }
+
+    #[test]
+    fn voice_markers_are_read_without_becoming_lyric_text() {
+        let lyrics = lyrics(
+            "[00:01.00][v1: First singer]\n[00:02.00][v2: Second singer]\n[00:03.00]Together",
+        )
+        .expect("a set");
+
+        assert_eq!(
+            plain(&lyrics),
+            ["First singer", "Second singer", "Together"]
+        );
+        assert_eq!(
+            lyrics
+                .lines()
+                .iter()
+                .map(|line| line.voice)
+                .collect::<Vec<_>>(),
+            [Voice::One, Voice::Two, Voice::One]
         );
     }
 

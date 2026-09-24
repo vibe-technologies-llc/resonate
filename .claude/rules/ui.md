@@ -908,6 +908,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   only as long as the run, like the settings pane's category, and the pointer over the pane opens
   it out — `LyricsModel::shows_every_line` is the one answer both go through. An unsynced set has no
   lit line, so every line stands at `ADRIFT` and no chip is offered.
+- **Two voiced lines have separate reading edges.** A set with a second voice places voice one on
+  the leading side and voice two on the trailing side, with a small voice label when the singer
+  changes. Text and alignment both identify the voice; the second also takes the accent when lit.
+  Each voice's active line brightens and grows on the existing turn, even where both sing together.
+  A set with one voice keeps its centred column and its former width.
 - **The falloff counts written lines, not rows.** `drawn` records each line's ordinal among the
   non-blank ones when the look lands, so a blank line between verses costs its neighbours no
   standing and the reading is the same three lines across a verse break as within one. Reaching for
@@ -920,7 +925,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   because a reading asked for deliberately should still be readable — while `read_at` keeps the
   sheet where it is. That is also what takes the last line of a set away once it has had its word,
   rather than leaving it lit for the whole outro. `standing` blends over `Reads`, `lead` over the
-  line in play, and the size and colour are both read off `lead` — `mixed` lerps `muted` to `text`
+  lines in play, and the size and colour are both read off `lead` — `mixed` lerps `muted` to `text`
   — so a line grows and brightens over one 420 ms rather than snapping at a threshold. The third
   turn is `spread`, over the `Falloff` itself: the pointer opening the pane out and a reading chip
   both go through `Turn::onto`, so the lines a wider reading brings up fade in over the same span

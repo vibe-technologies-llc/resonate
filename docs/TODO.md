@@ -177,9 +177,9 @@
 - A sidecar's `[ti:]`, `[ar:]` and `[length:]` check is only as good as what the file says about
   itself: a title transliterated differently from the tag reads as a disagreement, and a sheet that
   declares none of the three is read as it always was
-- `Lyrics` is a flat list of lines. A karaoke-timed word, a translation beside the original and a
-  second voice have no representation, and `Timing` is the whole of what distinguishes a synced set
-  from an unsynced one
+- `Lyrics` is a flat list of lines. A karaoke-timed word and a translation beside the original
+  have no representation; its two voice slots need a source that identifies which singer owns a
+  line before a fetched song can use them
 - The ten seconds a line may be lit before the set goes dim is a constant rather than anything the
   set declares, and nothing says how far through a line the transport is, because there is no word
   timing to say it with — a karaoke reading wants a richer `Lyrics` first
