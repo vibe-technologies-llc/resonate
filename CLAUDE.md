@@ -21,6 +21,7 @@ Detailed rules live in `.claude/rules/` and load automatically:
 | `analysis.md` | resonate-analysis, `studies.rs`, the analysis pane, `acoustid.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools and the seam they reach the player through |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
+| `packaging.md` | `packaging/**` | the Arch and Fedora package payloads and their build baseline |
 
 ## Project
 
@@ -157,8 +158,8 @@ Invariants the layering exists to protect:
 - **The CLI grammar is written once and read three times.** `crates/resonate/src/cli.rs` is the clap
   derive and nothing else, and `crates/resonate/build.rs` includes it as a module to write the man
   pages and the bash, fish and zsh completions into `OUT_DIR` at build time — so a flag added to the
-  grammar is documented and completed with no second list to keep in step, and `packaging/PKGBUILD`
-  installs what it finds under `target/release/build/resonate-*/out`. What it costs is a rule:
+  grammar is documented and completed with no second list to keep in step, and the Arch and Fedora
+  packages install what they find under `target/release/build/resonate-*/out`. What it costs is a rule:
   `cli.rs` may name `std` and `clap` and no workspace crate, because the build script links neither,
   so `vocabulary.rs` is where a `QualityArg` becomes an `engine::Quality`.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`.**
@@ -723,9 +724,10 @@ build and tests, the whole workspace's build and tests, the `cargo tree` refusal
 `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
 plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
 no session bus there, so the PipeWire and bus tests print their skip — all but the reconnect test,
-which starts a daemon of its own. `RUSTFLAGS` is emptied over
-`target-cpu=native`, because the cache a job restores may have been built on a runner with another
-CPU, and a native build from one faults on another. Formatting is the one check it cannot
+which starts a daemon of its own. `RUSTFLAGS` is emptied over `target-cpu=native`, because the cache
+a job restores may have been built on a runner with another CPU, and a native build from one faults
+on another. The separate Fedora 44 workflow builds the source RPM and attaches the binary and
+source RPMs when a GitHub release is published. Formatting is the one check CI cannot
 make: `rust-formatter` is not something a hosted runner installs, so `rust-formatter --check` stays
 local. A command added to the list above that a runner can run is added to the workflow too, and a
 crate added to the layering refusals is added to the workflow's `refuse` lines.
@@ -791,12 +793,17 @@ pass is an alias and a `PassKind` variant rather than a struct, an error and a m
 
 `.cargo/config.toml` builds for `target-cpu=native`, so the resampler's taper and convolution
 vectorise to whatever the machine has rather than to the `x86-64` baseline's SSE2, which is worth
-1.4x to 1.7x on High, more the further the rates are apart. The package keeps it:
+1.4x to 1.7x on High, more the further the rates are apart. The Arch package keeps it:
 `packaging/PKGBUILD` appends `-C target-cpu=native` to whatever `RUSTFLAGS` makepkg hands it in
 `build` and `check`. Appending is the point — any `RUSTFLAGS` in the environment replaces
 `build.rustflags` outright, and makepkg always sets one — so an AUR build is made for the machine
 that builds it and is for that machine alone. Anything that produces a binary for another machine,
 the CI among them, sets `RUSTFLAGS` back over it.
+
+`packaging/resonate.spec` builds the default-feature binary and generated CLI material on Fedora
+44 from a source archive of the committed tree, tests the headless workspace in `%check`, and
+installs the desktop payload beside it. The packaging rule covers its explicit baseline CPU and why
+the Arch package instead keeps this checkout's `target-cpu=native`.
 
 `--exclude resonate-ui --no-default-features` is what keeps gpui out of a build. Excluding the crate
 is what does the work: `resonate-ui` depends on `gpui` unconditionally, so the binary's `ui` feature

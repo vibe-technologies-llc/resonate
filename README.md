@@ -30,7 +30,7 @@ playback as the guiding constraint.
 - Optional **Discord presence** and a **Model Context Protocol** server that hands the catalog and
   the running player to a language model.
 
-It is early: there has been no release, so it is built from source.
+Until the first release is published, build from source.
 
 ## Building
 
@@ -49,10 +49,27 @@ xkbcommon, Vulkan, fontconfig and freetype. On Arch that is
 xkbcommon even in a Wayland-only build, and the linker drops it from the binary again.
 `packaging/PKGBUILD` is the package, published on the AUR as `resonate-player-git`.
 
-`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler,
-and the `PKGBUILD` keeps it by appending `-C target-cpu=native` to makepkg's own `RUSTFLAGS`, so the
-package is built for the machine that builds it. Anything producing a binary for another machine
-has to export `RUSTFLAGS` over it.
+On Fedora 44, build the RPM from a committed checkout with `packaging/resonate.spec`:
+
+```
+sudo dnf install git rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel \
+  wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel \
+  freetype-devel vulkan-headers vulkan-loader-devel
+mkdir -p "$HOME/rpmbuild/SOURCES"
+git archive --format=tar.gz --prefix=resonate-0.1.0/ HEAD \
+  -o "$HOME/rpmbuild/SOURCES/resonate-0.1.0.tar.gz"
+rpmbuild -ba packaging/resonate.spec
+sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.1.0-1.fc44.$(uname -m).rpm
+```
+
+The spec builds the default feature set and installs the launcher, icon, metainfo, man pages and
+shell completions. The build needs access to crates.io for Cargo's locked dependencies.
+Publishing a GitHub release tagged `v0.1.0` or `0.1.0` builds the Fedora 44 x86_64 RPM and attaches
+it and the source RPM to that release. The tag must match the spec version.
+
+`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler.
+The Arch PKGBUILD keeps it for the machine building the package. The Fedora release RPM selects the
+architecture's baseline CPU so it runs on other machines.
 
 ## Playing
 
