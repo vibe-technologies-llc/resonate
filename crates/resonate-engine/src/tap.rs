@@ -1,7 +1,7 @@
 use std::{
     hint,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence},
     },
     time::{Duration, Instant},
@@ -43,7 +43,7 @@ pub struct Caught {
 pub struct Tap {
     rate: SampleRate,
     mask: usize,
-    slots: Box<[AtomicU32]>,
+    slots: OnceLock<Box<[AtomicU32]>>,
     claimed: AtomicU64,
     written: AtomicU64,
     valid_from: AtomicU64,
@@ -111,9 +111,7 @@ impl Tap {
         Self {
             rate,
             mask: capacity - 1,
-            slots: (0..capacity * TAPPED_CHANNELS)
-                .map(|_| AtomicU32::new(0))
-                .collect(),
+            slots: OnceLock::new(),
             claimed: AtomicU64::new(0),
             written: AtomicU64::new(0),
             valid_from: AtomicU64::new(0),
@@ -156,7 +154,7 @@ impl Tap {
         let overwritten = self
             .claimed
             .load(Ordering::Relaxed)
-            .saturating_sub(self.slots.len() as u64 / TAPPED_CHANNELS as u64);
+            .saturating_sub(self.capacity() as u64);
         let first_sound = overwritten.max(valid_from).clamp(start, end);
         let lost = (first_sound - start) as usize;
         for (on_the_left, on_the_right) in left
@@ -184,16 +182,23 @@ impl Tap {
         Frames::from_duration(since, self.rate).get()
     }
 
-    fn level_at(&self, slot: usize) -> f32 {
-        self.slots
-            .get(slot)
-            .map_or(0.0, |held| f32::from_bits(held.load(Ordering::Relaxed)))
+    const fn capacity(&self) -> usize {
+        self.mask + 1
     }
 
-    fn lay(&self, slot: usize, level: f32) {
-        if let Some(held) = self.slots.get(slot) {
-            held.store(level.to_bits(), Ordering::Relaxed);
-        }
+    fn laid(&self) -> &[AtomicU32] {
+        self.slots.get_or_init(|| {
+            (0..self.capacity() * TAPPED_CHANNELS)
+                .map(|_| AtomicU32::new(0))
+                .collect()
+        })
+    }
+
+    fn level_at(&self, slot: usize) -> f32 {
+        self.slots
+            .get()
+            .and_then(|slots| slots.get(slot))
+            .map_or(0.0, |held| f32::from_bits(held.load(Ordering::Relaxed)))
     }
 }
 
@@ -274,12 +279,14 @@ impl Tapping {
             return;
         };
         let first = self.written as usize;
+        let slots = self.tap.laid();
         for (offset, frame) in run.chunks_exact(channels).enumerate() {
             let left = frame.first().map_or(0.0, |sample| level(*sample));
             let right = frame.get(1).map_or(left, |sample| level(*sample));
             let slot = (first.wrapping_add(offset) & self.tap.mask) * TAPPED_CHANNELS;
-            self.tap.lay(slot, left);
-            self.tap.lay(slot + 1, right);
+            for (held, level) in slots.iter().skip(slot).zip([left, right]) {
+                held.store(level.to_bits(), Ordering::Relaxed);
+            }
         }
     }
 
@@ -409,6 +416,18 @@ mod tests {
         );
         assert!(left.iter().take(40).all(|level| *level == 0.0));
         assert_eq!(left.get(40).copied(), Some(level_of(1_000)));
+    }
+
+    #[test]
+    fn a_tap_nobody_has_listened_to_holds_no_slots() {
+        let ear = listening(false);
+        let mut tapping = Tapping::new(RATE, RING, &ear);
+        tapping.record(&ramp(1_000, 0), 0, 1_000);
+        assert!(tapping.tap.slots.get().is_none());
+
+        ear.store(true, Ordering::Relaxed);
+        tapping.record(&ramp(1_000, 1_000), 0, 1_000);
+        assert!(tapping.tap.slots.get().is_some());
     }
 
     #[test]

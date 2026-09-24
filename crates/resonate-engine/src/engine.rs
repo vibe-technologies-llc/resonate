@@ -33,6 +33,7 @@ const SINK_REFRESH_BUDGET: Duration = Duration::from_millis(50);
 const SHORTEST_TICK: Duration = Duration::from_millis(4);
 const PUBLISH_TICK: Duration = Duration::from_millis(16);
 const IDLE_TICK: Duration = Duration::from_millis(100);
+const AT_REST_TICK: Duration = Duration::from_secs(1);
 const CHAIN_BLOCK: usize = 1024;
 const MIN_RING_FRAMES: u64 = 8_192;
 const BLOCKS_A_RING_HOLDS: u64 = 2;
@@ -46,8 +47,8 @@ struct Track {
     location: MediaLocation,
     span: Option<FrameSpan>,
     decoder: Decoder,
-    info: MediaInfo,
-    layout: Option<BoxLayout>,
+    info: Arc<MediaInfo>,
+    layout: Option<Arc<BoxLayout>>,
     hints: TrackHints,
     replay_gain: AppliedGain,
     decoded: AudioBuffer,
@@ -78,10 +79,10 @@ impl Track {
             span,
             hints,
             decoded: AudioBuffer::empty(info.spec),
-            layout: inspected(sources, location),
+            layout: inspected(sources, location).map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
             decoder,
-            info,
+            info: Arc::new(info),
             replay_gain,
             decoded_at: 0,
             profiled_from: Frames::ZERO,
@@ -90,7 +91,7 @@ impl Track {
         })
     }
 
-    const fn source(&self) -> StreamSpec {
+    fn source(&self) -> StreamSpec {
         self.info.spec
     }
 
@@ -130,7 +131,7 @@ impl Track {
             track: self.id,
             location: self.location.clone(),
             span: self.span,
-            info: self.info.clone(),
+            info: Arc::clone(&self.info),
             layout: self.layout.clone(),
             replay_gain_mode: mode,
             replay_gain: self.replay_gain,
@@ -555,18 +556,34 @@ impl Engine {
     }
 
     fn budget(&self) -> Duration {
-        let budget = match self.output.as_ref() {
-            None => IDLE_TICK,
-            Some(output) => wait_for(
-                Frames(output.buffered() as u64).to_duration(output.plan.stream.rate),
-                self.playing || output.wants_more(),
-            ),
+        let budget = if self.at_rest() {
+            AT_REST_TICK
+        } else {
+            match self.output.as_ref() {
+                None => IDLE_TICK,
+                Some(output) => wait_for(
+                    Frames(output.buffered() as u64).to_duration(output.plan.stream.rate),
+                    self.playing || output.wants_more(),
+                ),
+            }
         };
 
         match self.sleep.and_then(Sleeping::left) {
             Some(left) => budget.min(left),
             None => budget,
         }
+    }
+
+    fn at_rest(&self) -> bool {
+        if self.playing || self.sleep.is_some() || self.graph_lost.is_some() || self.stale_sinks {
+            return false;
+        }
+        self.output.as_ref().is_none_or(|output| {
+            !output.wants_more()
+                && output.discarding_since.is_none()
+                && output.settles_into.is_none()
+                && !output.chain.is_ramping()
+        })
     }
 
     fn take_commands(&mut self) -> bool {

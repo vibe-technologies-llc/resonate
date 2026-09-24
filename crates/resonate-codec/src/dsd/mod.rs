@@ -176,6 +176,7 @@ pub(crate) struct Planes {
     layout: Layout,
     at: u64,
     planes: Vec<Vec<u8>>,
+    interleaved: Vec<u8>,
 }
 
 impl Planes {
@@ -186,6 +187,7 @@ impl Planes {
             layout,
             at: 0,
             planes: vec![Vec::new(); lanes],
+            interleaved: Vec::new(),
         }
     }
 
@@ -252,7 +254,9 @@ impl Planes {
     fn read_per_byte(&mut self, taking: u64) -> Result<()> {
         let lanes = self.layout.lanes();
         let wanted = taking as usize;
-        let mut held = vec![0_u8; wanted.saturating_mul(lanes)];
+        let held = &mut self.interleaved;
+        held.clear();
+        held.resize(wanted.saturating_mul(lanes), 0);
 
         let offset = self
             .layout
@@ -261,7 +265,7 @@ impl Planes {
         if self.bytes.seek(SeekFrom::Start(offset)).is_err() {
             return Ok(());
         }
-        let read = fill(self.bytes.as_mut(), &mut held);
+        let read = fill(self.bytes.as_mut(), held);
         held.truncate(read);
 
         for (lane, plane) in self.planes.iter_mut().enumerate() {
@@ -281,10 +285,10 @@ fn read_at(
     if bytes.seek(SeekFrom::Start(offset)).is_err() {
         return Ok(());
     }
-    let mut held = vec![0_u8; wanted];
-    let read = fill(bytes, &mut held);
-    held.truncate(read);
-    into.extend_from_slice(&held);
+    let from = into.len();
+    into.resize(from.saturating_add(wanted), 0);
+    let read = into.get_mut(from..).map_or(0, |held| fill(bytes, held));
+    into.truncate(from.saturating_add(read));
     Ok(())
 }
 

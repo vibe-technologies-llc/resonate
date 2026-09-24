@@ -1,5 +1,6 @@
 use std::{array, f64::consts::PI, num::NonZeroU32, sync::Arc};
 
+use parking_lot::{Mutex, const_mutex};
 use resonate_core::{ChannelLayout, Ratio, SampleRate, StreamSpec};
 
 use crate::{
@@ -21,6 +22,7 @@ const ACCUMULATORS: usize = 8;
 const _: () =
     assert!(ACCUMULATORS.is_power_of_two() && ACCUMULATORS.is_multiple_of(LANES_PER_VECTOR));
 const TABULATED_WEIGHT_BYTES_AT_MOST: usize = 16 << 20;
+const KEPT_TABLE_BYTES_AT_MOST: usize = 4 << 20;
 const LAGRANGE_NODES: usize = 4;
 
 type Lanes = [f64; ACCUMULATORS];
@@ -274,7 +276,31 @@ struct Tabulated {
     stride: usize,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+struct TableFor {
+    params: SincParams,
+    phase: FilterPhase,
+    input_rate: SampleRate,
+    output_rate: SampleRate,
+}
+
+static LAST_TABULATED: Mutex<Option<(TableFor, Arc<Tabulated>)>> = const_mutex(None);
+
 impl Tabulated {
+    fn kept_for(wanted: TableFor, build: impl FnOnce() -> Self) -> Arc<Self> {
+        let mut last = LAST_TABULATED.lock();
+        if let Some((_, kept)) = last.as_ref().filter(|(held, _)| *held == wanted) {
+            return Arc::clone(kept);
+        }
+        let built = Arc::new(build());
+        *last = (built.bytes() <= KEPT_TABLE_BYTES_AT_MOST).then(|| (wanted, Arc::clone(&built)));
+        built
+    }
+
+    fn bytes(&self) -> usize {
+        self.weights.samples.capacity() * size_of::<f64>()
+    }
+
     fn fits(phases: u32, reach: Reach) -> bool {
         padded_row(reach)
             .checked_mul(phases as usize)
@@ -436,7 +462,7 @@ impl History {
 }
 
 enum Taps {
-    Tabulated(Tabulated),
+    Tabulated(Arc<Tabulated>),
     Interpolated(Kernel),
 }
 
@@ -494,7 +520,15 @@ impl Resampler {
         let phases = cycle.numer.get();
         let tabulated = Tabulated::fits(phases, reach);
         let taps = if tabulated {
-            Taps::Tabulated(Tabulated::new(&shape, scale, reach, phases))
+            Taps::Tabulated(Tabulated::kept_for(
+                TableFor {
+                    params,
+                    phase: config.phase,
+                    input_rate: config.input_rate,
+                    output_rate: config.output_rate,
+                },
+                || Tabulated::new(&shape, scale, reach, phases),
+            ))
         } else {
             Taps::Interpolated(Kernel::new(&shape, params.phases, scale, reach))
         };
@@ -1143,6 +1177,46 @@ mod tests {
         SampleRate::HZ_352800,
         SampleRate::HZ_384000,
     ];
+
+    const TRIES_WHILE_OTHER_TESTS_BUILD: usize = 64;
+
+    fn table_of(resampler: &Resampler) -> Option<&Arc<Tabulated>> {
+        match &resampler.taps {
+            Taps::Tabulated(table) => Some(table),
+            Taps::Interpolated(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_rebind_at_the_same_rates_takes_the_table_already_built() {
+        let wanted = config(SampleRate::HZ_44100, SampleRate::HZ_48000, Quality::High);
+        let built_back_to_back = || {
+            let first = Resampler::new(wanted).expect("a supported conversion");
+            let again = Resampler::new(wanted).expect("a supported conversion");
+            table_of(&first)
+                .zip(table_of(&again))
+                .is_some_and(|(first, again)| Arc::ptr_eq(first, again))
+        };
+        assert!(
+            (0..TRIES_WHILE_OTHER_TESTS_BUILD).any(|_| built_back_to_back()),
+            "the same conversion built its table twice"
+        );
+
+        let first = Resampler::new(wanted).expect("a supported conversion");
+
+        let elsewhere = Resampler::new(config(
+            SampleRate::HZ_48000,
+            SampleRate::HZ_44100,
+            Quality::High,
+        ))
+        .expect("a supported conversion");
+        assert!(
+            table_of(&first)
+                .zip(table_of(&elsewhere))
+                .is_some_and(|(first, elsewhere)| !Arc::ptr_eq(first, elsewhere)),
+            "another conversion was handed a table built for this one"
+        );
+    }
 
     #[test]
     fn every_rate_pair_tabulates_its_phases_at_every_quality() {

@@ -104,6 +104,25 @@ impl Bench {
         );
     }
 
+    fn construction_after(&self, name: &str, mut first: impl FnMut(), mut build: impl FnMut()) {
+        if !self.runs(name) {
+            return;
+        }
+        let fastest = (0..CONSTRUCTIONS)
+            .map(|_| {
+                first();
+                let started = Instant::now();
+                build();
+                started.elapsed()
+            })
+            .min()
+            .unwrap_or_default();
+        println!(
+            "{name:<52} {:>12.1} µs to build",
+            fastest.as_secs_f64() * 1e6
+        );
+    }
+
     fn first_construction(&self, name: &str, build: impl FnOnce()) {
         if !self.runs(name) {
             return;
@@ -345,11 +364,23 @@ fn main() {
         }
     }
 
+    let elsewhere = resampler(SampleRate::HZ_88200, SampleRate::HZ_96000, Quality::Fast);
     for (quality, named) in QUALITIES {
         for (from, to) in RATE_PAIRS {
-            let name = format!("build {named} {} to {}", kilohertz(from), kilohertz(to));
+            let pair = format!("{} to {}", kilohertz(from), kilohertz(to));
             let config = resampler(from, to, quality);
-            bench.construction(&name, || {
+            bench.construction_after(
+                &format!("build {named} {pair}"),
+                || {
+                    black_box(Resampler::new(elsewhere).expect("a benchmarked configuration"));
+                },
+                || {
+                    black_box(
+                        Resampler::new(black_box(config)).expect("a benchmarked configuration"),
+                    );
+                },
+            );
+            bench.construction(&format!("build {named} {pair} again"), || {
                 black_box(Resampler::new(black_box(config)).expect("a benchmarked configuration"));
             });
         }

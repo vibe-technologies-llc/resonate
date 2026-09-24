@@ -570,7 +570,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   is half of what the ring holds, floored at the 4 ms `SHORTEST_TICK` so a primed ring cannot spin
   it and capped at the 16 ms `PUBLISH_TICK` that `Published` is refreshed at, which is what a 60 Hz
   front end draws from — about a third of the wakeups a fixed 4 ms tick cost. Nothing streaming
-  makes it the 100 ms `IDLE_TICK` flat. A receiver that has disconnected reports ready forever, so
+  makes it the 100 ms `IDLE_TICK` flat, and a transport *at rest* — not playing, no sleep timer
+  counting down, the graph not lost, the sink list not stale, and an output, if there is one, that
+  wants no filling, is discarding nothing, has no reshape waiting and no gain ramping — parks the
+  one-second `AT_REST_TICK`, because every change that could move it arrives on a channel the
+  `Select` already wakes for: a paused window woke ten times a second to find nothing to do, and
+  now wakes once. A receiver that has disconnected reports ready forever, so
   `changes` is dropped and `Output::deaf` set the first time one does, rather than spinning. What
   paces the loop while it plays is publishing rather than the ring, because a reader polls
   `Published` instead of being told: a full buffer is still woken over sixty times a second.
@@ -909,8 +914,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   reaches the sink, at the sink's rate, as f32 left and right: a mono stream on both sides, a wider
   one its first two channels. A `Tap` is a ring of `AtomicU32` holding f32 bits, a power of two
   long and sized to the PCM ring, `HEARD_SLACK` of the graph's own delay and `WIDEST_LOOK` of
-  analysis window, under a `LARGEST_TAP` ceiling; it is allocated with the ring on every bind and
-  never again, 1 MiB at 48 kHz under the default 500 ms buffer and 2 MiB at 192 kHz. A write
+  analysis window, under a `LARGEST_TAP` ceiling — 1 MiB at 48 kHz under the default 500 ms
+  buffer and 2 MiB at 192 kHz. It is made with the ring on every bind, but its slots are a
+  `OnceLock` laid down by the first frame recorded while somebody listens, so a run that never
+  opens the visualiser allocates none of it, and a read before then is silence. A write
   *claims* its frames behind a release fence before laying them and publishes the count with
   release after; a read takes the count with acquire, reads, fences, reads the claim again and
   silences any frame the writer may have gone round onto — so nothing locks and the engine never
@@ -1062,7 +1069,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   under an f32 step at High; `every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant`
   holds every frame, block boundaries and flush included, to 10⁻¹² of a direct f64 evaluation, the
   frame leaving in f64 rather than rounded to an f32. A table is 340 KB and 0.84 ms to build at 44.1 to 48 kHz, 4 KB and 0.01 ms where there
-  is one phase, paid on every `rebind`. `TABULATED_WEIGHT_BYTES_AT_MOST` is 16 MB, which every pair
+  is one phase. It is paid once rather than on every `rebind`: the last table built is kept behind
+  an `Arc` keyed by the rates, the `SincParams` and the phase, so a track change, a seek while
+  paused or a settings change at the same rates takes it in 0.3 µs —
+  `a_rebind_at_the_same_rates_takes_the_table_already_built`. Only a table of at most
+  `KEPT_TABLE_BYTES_AT_MOST`, 4 MB, is kept, so a rare wide pair does not stay resident once its
+  chain has gone. `TABULATED_WEIGHT_BYTES_AT_MOST` is 16 MB, which every pair
   of the ten common rates inside the 32:1 range fits at every level — the widest, 22.05 kHz onto
   384 kHz at `VeryHigh`, visits 2 560 phases and holds 13.4 MB — and
   `every_rate_pair_tabulates_its_phases_at_every_quality` pins it. Only a rate no device offers,
