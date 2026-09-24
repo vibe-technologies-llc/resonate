@@ -166,7 +166,7 @@ impl RootView {
                         .min_w(px(0.0))
                         .gap_1()
                         .child(kit::eyebrow("ANALYSIS"))
-                        .child(kit::title(self.opens(
+                        .child(kit::linked_title(self.opens(
                             "analysis-title",
                             playing.title.clone(),
                             OPEN_ALBUM_HINT,

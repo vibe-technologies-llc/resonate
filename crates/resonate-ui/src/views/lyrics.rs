@@ -190,7 +190,7 @@ impl RootView {
                         .min_w(px(0.0))
                         .gap_1()
                         .child(kit::eyebrow("LYRICS"))
-                        .child(kit::title(self.opens(
+                        .child(kit::linked_title(self.opens(
                             "lyrics-title",
                             playing.title.clone(),
                             OPEN_ALBUM_HINT,

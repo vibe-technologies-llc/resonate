@@ -77,13 +77,22 @@ pub(crate) fn eyebrow(text: impl Into<SharedString>) -> Div {
 }
 
 pub(crate) fn title(text: impl IntoElement) -> Div {
+    title_face().truncate().child(text)
+}
+
+pub(crate) fn linked_title(link: Stateful<Div>) -> Div {
+    title_face()
+        .flex()
+        .min_w(px(0.0))
+        .child(link.keeps_its_width())
+}
+
+fn title_face() -> Div {
     div()
         .text_size(px(theme::text_xl()))
         .line_height(px(theme::text_xl() * 1.2))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::text()))
-        .truncate()
-        .child(text)
 }
 
 pub(crate) fn subtitle(text: impl IntoElement) -> Div {

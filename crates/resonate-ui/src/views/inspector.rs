@@ -43,7 +43,7 @@ impl RootView {
             .flex_col()
             .gap_1()
             .child(kit::eyebrow("INSPECTOR"))
-            .child(kit::title(self.opens(
+            .child(kit::linked_title(self.opens(
                 "inspected-title",
                 playing.title.clone(),
                 OPEN_ALBUM_HINT,

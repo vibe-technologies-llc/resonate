@@ -384,6 +384,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   a line and the heading stood some 150 px taller than what it drew. Until the first frame has
   measured, the title is one line ending in an ellipsis. The opened playlist's heading carries
   the same `kit::way_back`, reading *Playlists*, above an eyebrow of *PLAYLIST* or *SAVED SEARCH*.
+  **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics,
+  inspector, visualiser and analysis headings name the playing track through `opens`, and under
+  `kit::title`'s block box the link was laid out at no width at all, so the heading drew its
+  ellipsis and nothing else; `linked_title` is the same face as a flex row holding the link
+  `keeps_its_width`, the shape the by-line's artist already had.
 - **A track row is the same eight cells wherever it is drawn.** `listing::columns` is the column
   header the tracks pane, the queue and an opened playlist all put over their rows, and
   `number_cell`, `title_cell`, `artist_cell`, `format_cell`, `heard` and `length_cell` are the cells
