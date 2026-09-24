@@ -26,7 +26,25 @@ const NOTHING_MATCHES: &str = "Nothing missing matches.";
 const LOOK_IT_UP: &str =
     "Look up the library from Settings › Online to learn what its releases are short of.";
 
-const BAND_INSET: f32 = 6.0;
+const HALF_BETWEEN_CARDS: f32 = 6.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Place {
+    Head,
+    Within,
+    Last,
+}
+
+impl Place {
+    fn of(rows: &[MissingRow], index: usize) -> Self {
+        let heads = |row: &MissingRow| matches!(row, MissingRow::Album(_) | MissingRow::Artist(_));
+        match (rows.get(index), rows.get(index + 1)) {
+            (Some(row), _) if heads(row) => Self::Head,
+            (_, Some(next)) if !heads(next) => Self::Within,
+            _ => Self::Last,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum MissingShows {
@@ -161,7 +179,10 @@ impl RootView {
                                     None => None,
                                 };
                                 if let Some(listed) = listed {
-                                    drawn.push(listed.into_any_element());
+                                    drawn.push(
+                                        in_a_card(listed, Place::of(&rows, index))
+                                            .into_any_element(),
+                                    );
                                 }
                             }
                             drawn
@@ -169,6 +190,7 @@ impl RootView {
                     )
                     .h_full()
                     .w_full()
+                    .pt_1p5()
                     .pb_4(),
                 )
             })
@@ -283,58 +305,80 @@ fn run_band(
     by: Option<SharedString>,
     count: String,
 ) -> Div {
-    row(false).px_4().child(
-        div()
-            .flex()
-            .flex_1()
-            .min_w(px(0.0))
-            .h(px(theme::row_height() - BAND_INSET))
-            .px_2()
-            .items_center()
-            .gap_3()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .w(px(theme::row_number()))
-                    .child(picture),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .items_baseline()
-                    .gap_2()
-                    .overflow_hidden()
-                    .child(
+    row(false)
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .w(px(theme::row_number()))
+                .child(picture),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .min_w(px(0.0))
+                .items_baseline()
+                .gap_2()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .flex()
+                        .min_w(px(0.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(theme::text()))
+                        .child(named),
+                )
+                .when_some(by, |line, by| {
+                    line.child(
                         div()
-                            .flex()
-                            .min_w(px(0.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::text()))
-                            .child(named),
+                            .flex_none()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .whitespace_nowrap()
+                            .child(by),
                     )
-                    .when_some(by, |line, by| {
-                        line.child(
-                            div()
-                                .flex_none()
-                                .text_size(px(theme::text_xs()))
-                                .text_color(rgb(theme::muted()))
-                                .whitespace_nowrap()
-                                .child(by),
-                        )
-                    }),
-            )
-            .child(
-                kit::figure(count)
-                    .flex_none()
-                    .text_color(rgb(theme::faint())),
-            )
-            .child(controls_place()),
-    )
+                }),
+        )
+        .child(
+            kit::figure(count)
+                .flex_none()
+                .text_color(rgb(theme::faint())),
+        )
+        .child(controls_place())
+}
+
+fn in_a_card(listed: Div, place: Place) -> Div {
+    let slice = div()
+        .flex()
+        .flex_1()
+        .min_w(px(0.0))
+        .overflow_hidden()
+        .border_l_1()
+        .border_r_1()
+        .border_b_1()
+        .border_color(rgb(theme::border()))
+        .child(listed.w_full().h_full().px_3());
+    let (slice, row) = match place {
+        Place::Head => (
+            slice
+                .h(px(theme::row_height() - HALF_BETWEEN_CARDS))
+                .border_t_1()
+                .rounded_t_xl()
+                .bg(rgb(theme::raised())),
+            row(false).items_end(),
+        ),
+        Place::Within => (slice.h_full().bg(rgb(theme::surface())), row(false)),
+        Place::Last => (
+            slice
+                .h(px(theme::row_height() - HALF_BETWEEN_CARDS))
+                .rounded_b_xl()
+                .bg(rgb(theme::surface())),
+            row(false).items_start(),
+        ),
+    };
+
+    row.px_3().child(slice)
 }
 
 fn disc_heading(disc: u32) -> Div {
@@ -370,7 +414,36 @@ fn release_row(release: &UnheldRelease) -> Div {
 
 #[cfg(test)]
 mod tests {
-    use super::MissingShows;
+    use super::{MissingShows, Place};
+    use crate::MissingRow;
+
+    #[test]
+    fn a_run_is_one_card_opened_by_its_heading_and_closed_by_its_last_row() {
+        let rows = [
+            MissingRow::Album(0),
+            MissingRow::Disc(0),
+            MissingRow::Track(0),
+            MissingRow::Track(1),
+            MissingRow::Album(2),
+            MissingRow::Track(2),
+        ];
+
+        let places: Vec<Place> = (0..rows.len())
+            .map(|index| Place::of(&rows, index))
+            .collect();
+
+        assert_eq!(
+            places,
+            vec![
+                Place::Head,
+                Place::Within,
+                Place::Within,
+                Place::Last,
+                Place::Head,
+                Place::Last,
+            ]
+        );
+    }
 
     #[test]
     fn the_half_that_holds_nothing_hands_over_to_the_one_that_does() {

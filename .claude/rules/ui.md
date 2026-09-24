@@ -1270,13 +1270,21 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   same rule `headed_by_disc` follows inside an album, and
   `an_album_missing_rows_from_two_discs_is_headed_by_each_of_them` is the claim; it is an
   eyebrow reading *DISC N* under the title column and no more, the pane holding no
-  `HeldMedium` to name a format or a title with. **A run's heading is a band, because every row
-  of a `uniform_list` is one height.** `run_band` fills a rounded `raised` ground inset
-  `BAND_INSET` inside the row, which is what separates one run from the next where a taller
-  heading cannot: the album's cover or the artist's portrait — `kit::avatar` where there is
-  none — in the number column, the name through `opens` in the semibold text colour, the owner
-  beside it in the muted one, and how many the run holds — *7 missing*, *11 releases* — ending
-  where the lengths end. A track row is `unheld_row` under `Beside::ARun`, which drops the
+  `HeldMedium` to name a format or a title with. **A run is a card, drawn a row at a time, because every row of a
+  `uniform_list` is one height.** `Place::of` reads where a row stands in its run — the
+  heading is `Head`, the row before the next heading or the end is `Last`, everything between
+  is `Within` — and `in_a_card` draws that slice of a `kit::section`-like card: the heading on
+  the `raised` ground with the card's top edge and rounded top corners, the rows on `surface`
+  with a hairline under each, and the last one closing the card with its rounded bottom
+  corners. The gap between two cards cannot be a margin, so it is taken out of the rows that
+  border it: the heading and the last row are each `HALF_BETWEEN_CARDS` shorter than the row
+  they stand in, the heading sitting at its row's foot and the last row at its head.
+  `a_run_is_one_card_opened_by_its_heading_and_closed_by_its_last_row` is the claim. Rows
+  laid loose on the pane under a heading band of their own read as text floating with nothing
+  holding it together. `run_band` is what the heading holds: the album's cover or the artist's
+  portrait — `kit::avatar` where there is none — in the number column, the name through
+  `opens` in the semibold text colour, the owner beside it in the muted one, and how many the
+  run holds — *7 missing*, *11 releases* — ending where the lengths end. A track row is `unheld_row` under `Beside::ARun`, which drops the
   format and plays cells, the pane having no column header for them to line up under; a
   release row is `release_row`, its title in the muted colour, its kind a `kit::badge` and its
   first release year in the length column, and no press, because a release the catalog holds
