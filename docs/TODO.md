@@ -534,8 +534,9 @@
 
 ## MCP
 - The server is tools alone: no resource carries the catalog or the queue and no prompt is
-  offered. No tool starts a scan, a lookup or a poll, which run long enough that a session could
-  end in the middle of one
+  offered. A long pass is asked after rather than told of: nothing sends a progress notification
+  while a scan, a lookup or a poll runs, so a client sees how far one has come only by calling
+  `library_passes`
 - An edit a model makes is not on the window's *Undo*: the library keeps its undo stacks in the
   process that made the edit, and `resonate mcp` is another process. The window draws the edit
   within a few seconds, but its own undo stack is not told, so undoing past it acts on rows the

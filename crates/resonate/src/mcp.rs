@@ -1,8 +1,8 @@
 #[cfg(feature = "mcp")]
-use std::io;
+use std::{io, sync::Arc};
 
 #[cfg(feature = "mcp")]
-use resonate_mcp::{OnTheBus, Server};
+use resonate_mcp::{Lookups, OnTheBus, Server};
 #[cfg(feature = "mcp")]
 use resonate_mpris::PlayerName;
 
@@ -15,7 +15,13 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
     let server = Server::new(
         crate::open_library(cli, config)?,
         OnTheBus::named(player.map(PlayerName::new)),
-    );
+    )
+    .looking_up_with(Lookups {
+        reference: crate::online::reference(config),
+        fingerprinters: Arc::new(crate::online::fingerprinters(config)),
+        providers: Arc::new(crate::providers::registered(config)),
+        studies: config.studies(),
+    });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 
     Ok(server.serve(io::stdin().lock(), io::stdout().lock())?)

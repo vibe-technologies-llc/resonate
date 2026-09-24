@@ -1,11 +1,11 @@
-use std::{fmt, io, result};
+use std::{fmt, io, path::PathBuf, result};
 
 use resonate_core::TrackId;
 use resonate_library::PlaylistName;
 use resonate_mpris::PlayerName;
 use thiserror::Error;
 
-use crate::tools::Tool;
+use crate::{passes::Pass, tools::Tool};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StreamOp {
@@ -42,6 +42,17 @@ pub enum Error {
 
     #[error("the queue holds no row numbered {track}")]
     NotInTheQueue { track: TrackId },
+
+    #[error("a {pass} this session started is still running")]
+    AlreadyRunning { pass: Pass },
+
+    #[error(
+        "nothing here can look anything up: this build carries no online lookup, or online is off"
+    )]
+    NoReference,
+
+    #[error("{path} is not a folder that can be scanned", path = path.display())]
+    NoSuchFolder { path: PathBuf },
 
     #[error(transparent)]
     Core(#[from] resonate_core::Error),

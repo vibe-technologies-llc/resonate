@@ -1232,3 +1232,139 @@ fn a_line_that_is_not_text_is_refused_rather_than_ending_the_session() {
     assert!(lines[0].contains("-32700"));
     assert!(lines[1].contains("\"result\":{}"));
 }
+
+fn once_settled(server: &Server, pass: &str) -> Value {
+    for _ in 0..600 {
+        let states = called(server, "library_passes", json!({}));
+        if states[pass]["state"] != "running" {
+            return states[pass].clone();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the {pass} never settled");
+}
+
+#[test]
+fn a_scan_started_over_the_protocol_runs_behind_the_session_and_says_what_it_found() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    tree.wav("02.wav", "Noise", "Hours", "2");
+    let server = nothing_running();
+
+    let idle = called(&server, "library_passes", json!({}));
+    for pass in ["scan", "lookup", "poll"] {
+        assert_eq!(idle[pass]["state"], "idle", "{idle}");
+    }
+
+    let started = called(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()] }),
+    );
+    assert_eq!(started["started"], "scan");
+    assert_eq!(started["roots"], json!([tree.root.display().to_string()]));
+
+    let settled = once_settled(&server, "scan");
+    assert_eq!(settled["state"], "finished", "{settled}");
+    assert_eq!(settled["stats"]["added"], 2, "{settled}");
+    assert_eq!(settled["cancelled"], false);
+
+    let found = called(&server, "search_library", json!({ "query": "noise" }));
+    assert_eq!(found["tracks"].as_array().map(Vec::len), Some(1), "{found}");
+
+    let again = called(&server, "start_scan", json!({}));
+    assert_eq!(again["roots"], json!([tree.root.display().to_string()]));
+    assert_eq!(once_settled(&server, "scan")["stats"]["added"], 0);
+}
+
+#[test]
+fn a_folder_that_is_not_there_is_refused_rather_than_kept_as_a_root() {
+    let server = nothing_running();
+
+    let said = failed(
+        &server,
+        "start_scan",
+        json!({ "roots": ["/nowhere/resonate/music"] }),
+    );
+
+    assert!(said.contains("not a folder"), "{said}");
+    let idle = called(&server, "library_passes", json!({}));
+    assert_eq!(idle["scan"]["state"], "idle");
+}
+
+#[test]
+fn a_lookup_asked_of_a_build_that_reaches_nothing_is_that_tool_failing_alone() {
+    let server = nothing_running();
+
+    let said = failed(&server, "start_lookup", json!({}));
+
+    assert!(said.contains("look anything up"), "{said}");
+    assert_eq!(
+        called(&server, "library_passes", json!({}))["lookup"]["state"],
+        "idle"
+    );
+}
+
+#[test]
+fn a_poll_with_no_want_to_ask_about_finishes_having_asked_nothing() {
+    let server = nothing_running();
+
+    let started = called(&server, "start_poll", json!({ "again": true }));
+    assert_eq!(started["started"], "poll");
+    assert_eq!(started["a_provider_is_registered"], false);
+
+    let settled = once_settled(&server, "poll");
+    assert_eq!(settled["state"], "finished", "{settled}");
+    assert_eq!(settled["stats"]["asked"], 0);
+}
+
+#[test]
+fn stopping_a_pass_that_is_not_running_answers_where_it_stands() {
+    let server = nothing_running();
+
+    assert_eq!(
+        called(&server, "stop_pass", json!({ "pass": "lookup" }))["state"],
+        "idle"
+    );
+    assert_eq!(
+        error_code(
+            &server,
+            &request(
+                "tools/call",
+                json!({ "name": "stop_pass", "arguments": { "pass": "everything" } })
+            )
+        ),
+        -32_602
+    );
+}
+
+#[test]
+fn a_session_that_ends_under_a_running_scan_waits_for_it_to_stop() {
+    let tree = Tree::new();
+    for number in 1..=40 {
+        tree.wav(
+            &format!("{number:02}.wav"),
+            &format!("Take {number}"),
+            "Hours",
+            &number.to_string(),
+        );
+    }
+    let library = Library::open_in_memory().expect("an in-memory catalog");
+    let server = server(library, Fake::default());
+    let started = request(
+        "tools/call",
+        json!({
+            "name": "start_scan",
+            "arguments": { "roots": [tree.root.display().to_string()] },
+        }),
+    );
+    let input = format!("{started}\n");
+    let mut output = Vec::new();
+
+    server
+        .serve(input.as_bytes(), &mut output)
+        .expect("the session to end cleanly");
+
+    let settled = called(&server, "library_passes", json!({}));
+    assert_eq!(settled["scan"]["state"], "finished", "{settled}");
+}

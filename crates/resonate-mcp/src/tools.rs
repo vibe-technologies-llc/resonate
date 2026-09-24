@@ -1,4 +1,4 @@
-use std::{fmt, num::NonZeroU64, time::Duration};
+use std::{fmt, num::NonZeroU64, path::PathBuf, time::Duration};
 
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, Span, TrackId, Volume};
 use resonate_engine::Until;
@@ -12,6 +12,7 @@ use crate::{
     catalog::{self, Wanted},
     controlling::Reach,
     edits::{self, Dropping, Filling, Marking},
+    passes::{Pass, Passes},
     transport::{self, Action, Adding},
 };
 
@@ -56,10 +57,15 @@ pub enum Tool {
     RemoveFromQueue,
     PlayPlaylist,
     SleepTimer,
+    StartScan,
+    StartLookup,
+    StartPoll,
+    LibraryPasses,
+    StopPass,
 }
 
 impl Tool {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 28] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
@@ -83,6 +89,11 @@ impl Tool {
         Self::RemoveFromQueue,
         Self::PlayPlaylist,
         Self::SleepTimer,
+        Self::StartScan,
+        Self::StartLookup,
+        Self::StartPoll,
+        Self::LibraryPasses,
+        Self::StopPass,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -110,6 +121,11 @@ impl Tool {
             Self::RemoveFromQueue => "remove_from_queue",
             Self::PlayPlaylist => "play_playlist",
             Self::SleepTimer => "set_sleep_timer",
+            Self::StartScan => "start_scan",
+            Self::StartLookup => "start_lookup",
+            Self::StartPoll => "start_poll",
+            Self::LibraryPasses => "library_passes",
+            Self::StopPass => "stop_pass",
         }
     }
 
@@ -129,6 +145,7 @@ impl Tool {
                 | Self::Missing
                 | Self::NowPlaying
                 | Self::Queue
+                | Self::LibraryPasses
         )
     }
 
@@ -231,6 +248,31 @@ impl Tool {
                                  of the track playing or at the end of the queue, or take a timer \
                                  away with off. Give minutes or at, not both."
                 .to_owned(),
+            Self::StartScan => "Start reading the library's folders into its catalog, or new \
+                                folders given as roots, which are kept as library roots from \
+                                then on. Answers at once; library_passes says how far it has \
+                                come. Needs no player."
+                .to_owned(),
+            Self::StartLookup => "Start asking MusicBrainz and the other services this build \
+                                  reaches about the albums, tracks and artists not asked about \
+                                  lately, or about every one of them again with refresh. \
+                                  Carries on a lookup an earlier run left unfinished. Answers at \
+                                  once; library_passes says how far it has come. Needs no \
+                                  player."
+                .to_owned(),
+            Self::StartPoll => "Start asking every registered provider for the wanted tracks \
+                                not asked about lately, or every wanted track again with again. \
+                                Answers at once; library_passes says how far it has come. Needs \
+                                no player."
+                .to_owned(),
+            Self::LibraryPasses => "Say, for the scan, the lookup and the poll this session \
+                                    started, whether each is idle, running with how far it has \
+                                    come, or finished with what it found. Needs no player."
+                .to_owned(),
+            Self::StopPass => "Stop a scan, lookup or poll this session started at the next \
+                               file, and say where it stands. What it has done stays done. \
+                               Needs no player."
+                .to_owned(),
         }
     }
 
@@ -329,7 +371,36 @@ impl Tool {
             Self::WantTracks => json!({
                 "release_track_ids": ids("Release track ids, as list_missing gives them."),
             }),
-            Self::Suggestions | Self::NowPlaying => json!({}),
+            Self::Suggestions | Self::NowPlaying | Self::LibraryPasses => json!({}),
+            Self::StartScan => json!({
+                "roots": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Folders to add to the library and scan; none scans every \
+                                    root the library already holds.",
+                },
+            }),
+            Self::StartLookup => json!({
+                "refresh": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Ask again about what was already answered.",
+                },
+            }),
+            Self::StartPoll => json!({
+                "again": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Ask about the wants asked about lately too.",
+                },
+            }),
+            Self::StopPass => json!({
+                "pass": {
+                    "type": "string",
+                    "enum": Pass::ALL.map(Pass::name),
+                    "description": "Which pass to stop.",
+                },
+            }),
             Self::Control => json!({
                 "action": {
                     "type": "string",
@@ -422,6 +493,7 @@ impl Tool {
             Self::Seek => &["seconds"],
             Self::SetVolume => &["percent"],
             Self::RemoveFromQueue => &["queue_id"],
+            Self::StopPass => &["pass"],
             Self::Playlists
             | Self::Favourites
             | Self::Statistics
@@ -431,7 +503,11 @@ impl Tool {
             | Self::NowPlaying
             | Self::Queue
             | Self::AddToQueue
-            | Self::SleepTimer => &[],
+            | Self::SleepTimer
+            | Self::StartScan
+            | Self::StartLookup
+            | Self::StartPoll
+            | Self::LibraryPasses => &[],
         }
     }
 
@@ -452,6 +528,7 @@ impl Tool {
         arguments: Value,
         library: &Library,
         players: &dyn Reach,
+        passes: &Passes,
     ) -> std::result::Result<Result<Value>, Refusal> {
         Ok(match self {
             Self::Search => {
@@ -586,6 +663,26 @@ impl Tool {
                 players
                     .player()
                     .and_then(|player| transport::set_sleep(&*player, until))
+            }
+            Self::StartScan => {
+                let asked: Scanning = self.taken(arguments)?;
+                passes.scan(library, &asked.roots)
+            }
+            Self::StartLookup => {
+                let asked: LookingUp = self.taken(arguments)?;
+                passes.look_up(library, asked.refresh)
+            }
+            Self::StartPoll => {
+                let asked: Polling = self.taken(arguments)?;
+                passes.poll(library, asked.again)
+            }
+            Self::LibraryPasses => {
+                let _: Nothing = self.taken(arguments)?;
+                Ok(passes.states())
+            }
+            Self::StopPass => {
+                let asked: Stopping = self.taken(arguments)?;
+                Ok(passes.stop(asked.pass))
             }
         })
     }
@@ -966,4 +1063,27 @@ impl SleepAt {
 struct Sleeping {
     minutes: Option<NonZeroU64>,
     at: Option<SleepAt>,
+}
+
+#[derive(Deserialize)]
+struct Scanning {
+    #[serde(default)]
+    roots: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct LookingUp {
+    #[serde(default)]
+    refresh: bool,
+}
+
+#[derive(Deserialize)]
+struct Polling {
+    #[serde(default)]
+    again: bool,
+}
+
+#[derive(Deserialize)]
+struct Stopping {
+    pass: Pass,
 }

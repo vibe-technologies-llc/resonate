@@ -5,7 +5,10 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    Error, MethodName, Refusal, Result, StreamOp, ToolName, controlling::Reach, error::said,
+    Error, MethodName, Refusal, Result, StreamOp, ToolName,
+    controlling::Reach,
+    error::said,
+    passes::{Lookups, Passes},
     tools::Tool,
 };
 
@@ -27,11 +30,15 @@ const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read a
                             once a gesture has landed. A track_id names a row of the catalog, a \
                             queue_id a row of the running player's queue and a \
                             release_track_id a row of a release the catalog holds no file for; \
-                            none of them are the same numbers.";
+                            none of them are the same numbers. A scan, a lookup and a poll run \
+                            in the background once started: library_passes says how far each \
+                            has come, and one still running when the session ends is stopped \
+                            at the next file.";
 
 pub struct Server {
     library: Library,
     players: Box<dyn Reach>,
+    passes: Passes,
 }
 
 enum Message {
@@ -61,6 +68,15 @@ impl Server {
         Self {
             library,
             players: Box::new(players),
+            passes: Passes::over(Lookups::none()),
+        }
+    }
+
+    #[must_use]
+    pub fn looking_up_with(self, lookups: Lookups) -> Self {
+        Self {
+            passes: Passes::over(lookups),
+            ..self
         }
     }
 
@@ -75,6 +91,7 @@ impl Server {
                     source,
                 })?;
             if read == 0 {
+                self.passes.drain();
                 return Ok(());
             }
             if line.trim_ascii().is_empty() {
@@ -121,7 +138,7 @@ impl Server {
                     None | Some(Value::Null) => Value::Object(Map::new()),
                     Some(given) => given,
                 };
-                let outcome = tool.run(arguments, &self.library, &*self.players)?;
+                let outcome = tool.run(arguments, &self.library, &*self.players, &self.passes)?;
                 Ok(called(tool, outcome))
             }
             other => Err(Refusal::UnknownMethod(MethodName::new(other))),

@@ -5063,6 +5063,7 @@ dependencies = [
  "resonate-engine",
  "resonate-library",
  "resonate-mpris",
+ "resonate-providers",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

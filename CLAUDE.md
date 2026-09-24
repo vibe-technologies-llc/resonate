@@ -77,7 +77,7 @@ The tree says what each crate is *for*, not the whole edge list: the binary also
 `resonate-codec`, `resonate-pipewire` and `resonate-vault` directly, `resonate-ui` reaches the
 engine, the library, the lyrics and `resonate-listen`, and `resonate-online` reaches the library, the lyrics, the
 codec and core while nothing but the binary reaches it. `resonate-mcp` reaches the library, `resonate-mpris`, the
-engine's vocabulary and core, and nothing but the binary reaches it either; `resonate-discord` reaches core and the engine's
+engine's vocabulary, the provider seam and core, and nothing but the binary reaches it either; `resonate-discord` reaches core and the engine's
 vocabulary alone, and is the binary's in the same way. `resonate-library` reaches
 `resonate-providers` for the seam its poll walks and `resonate-analysis` for the studies its
 enrichment takes, the engine reaches `resonate-analysis` to hand the window `Player::analyse`, and a provider crate reaches that seam and core

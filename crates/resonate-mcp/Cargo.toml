@@ -10,6 +10,7 @@ resonate-core.workspace = true
 resonate-engine.workspace = true
 resonate-library.workspace = true
 resonate-mpris.workspace = true
+resonate-providers.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

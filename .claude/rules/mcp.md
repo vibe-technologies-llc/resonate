@@ -7,9 +7,9 @@ paths:
 # The Model Context Protocol
 
 `resonate mcp` is what a language model reaches the player and the catalog through. The crate
-behind it, `resonate-mcp`, is on core, the engine's vocabulary, the library, `resonate-mpris`,
-`serde`, `serde_json`, `ahash`, `thiserror` and `tracing`, and the binary reaches it behind the
-`mcp` feature, which is on by default the way `online` is. A build without it keeps the
+behind it, `resonate-mcp`, is on core, the engine's vocabulary, the library, `resonate-mpris`, the
+`resonate-providers` seam a poll is handed, `serde`, `serde_json`, `ahash`, `thiserror` and
+`tracing`, and the binary reaches it behind the `mcp` feature, which is on by default the way `online` is. A build without it keeps the
 subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, and answers
 `Error::NoMcp`.
 
@@ -36,7 +36,8 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   a `result` or an `error`, because this server sends no requests of its own to be answered.
 - `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS` and answers
   the latest otherwise. The server offers tools and nothing else: no resources, no prompts, and
-  `listChanged` is false because the list is `Tool::ALL`.
+  `listChanged` is false because the list is `Tool::ALL`. The instructions say that the three long
+  passes run in the background and how to ask after them.
 
 ## The tools
 
@@ -92,8 +93,34 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   `Library::missing_tracks` under the same search narrowing `resonate missing` takes, and
   `want_tracks` is `Library::want` for each, which stands a want the providers fill as any other.
 - **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint`: the two removals,
-  `discard_playlist` and `play_playlist`, which replaces a queue. Nothing starts a scan or a
-  lookup, which are long passes a session could end in the middle of.
+  `discard_playlist` and `play_playlist`, which replaces a queue.
 - A combination that cannot be read is a refusal: `OneOf` where exactly one field must be given,
   `AtLeastOneOf` for a mark naming nothing and `AtMostOneOf` for a playlist started from two
   sources at once.
+
+## The long passes
+
+- **A scan, a lookup and a poll are started and then asked after, because each outlasts a call.**
+  `start_scan`, `start_lookup` and `start_poll` start the library's own pass and answer at once;
+  `library_passes` answers, for each of the three, `idle`, `running` with the progress's snapshot,
+  `finished` with the summary's stats and whether it was cancelled — and, for a lookup the
+  reference ended, what it was asking for — or `failed` with the error's chain. `stop_pass`
+  cancels one at its next file and answers where it stands. `Passes` holds one `Slot` per pass
+  behind a `RefCell`, because the server answers on one thread, and a finished pass is joined
+  the first time it is asked after, so its summary is read once and kept. A second start of a
+  pass the session is still running is `Error::AlreadyRunning`; a scan beside another process's
+  walk is the library's own `AlreadyWalking`.
+- **The passes are started the way the command line starts them.** A scan adds each folder it is
+  given as a root — refusing one that is not a folder, `Error::NoSuchFolder`, before anything is
+  kept — and walks every root where it is given none, incrementally and with covers, on the
+  machine's parallelism; a lookup carries on one a run left unfinished unless asked to refresh,
+  and honours the `study` setting; a poll asks every registered provider. What the passes need
+  from outside the crate arrives as `Lookups` — the reference, the fingerprinters, the providers
+  and the study switch — which the binary fills from the same `online::` and `providers::`
+  functions `resonate enrich` and `resonate poll` read, and `Server::new` alone carries
+  `Lookups::none()`, so a build or a session with no network answers `start_lookup` with
+  `Error::NoReference` as a failure of that tool rather than a refusal.
+- **A session that ends does not leave a pass half-written.** `serve` drains the passes when the
+  input ends — each running one is cancelled and joined, so the file being written is finished
+  and the catalog follows it — and `Drop for Passes` drains them on every other way out.
+  `a_session_that_ends_under_a_running_scan_waits_for_it_to_stop` is the claim.
