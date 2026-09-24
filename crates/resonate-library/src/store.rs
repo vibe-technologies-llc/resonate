@@ -19,7 +19,7 @@ use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn, Relation,
-    Result, RowOrder, Service, SortOrder, Spellings, StoreOp,
+    Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -37,7 +37,8 @@ DELETE FROM albums
                         JOIN release_tracks rt ON rt.id = w.release_track_id));
 DELETE FROM artists
  WHERE id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
-   AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL);
+   AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
+   AND id NOT IN (SELECT artist_id FROM track_credits);
 ";
 
 pub struct TrackRecord {
@@ -212,6 +213,7 @@ fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
         "UPDATE OR IGNORE artist_genres SET artist_id = ?2 WHERE artist_id = ?1",
         "UPDATE OR IGNORE artist_links SET artist_id = ?2 WHERE artist_id = ?1",
         "UPDATE OR IGNORE artist_releases SET artist_id = ?2 WHERE artist_id = ?1",
+        "UPDATE OR IGNORE track_credits SET artist_id = ?2 WHERE artist_id = ?1",
     ] {
         tx.execute(statement, params![gone, keeps])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -909,7 +911,17 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
     Ok(removed as u64)
 }
 
+pub fn settle_the_credits(connection: &mut Connection) -> Result<()> {
+    let tx = connection
+        .transaction()
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    sweep_orphans(&tx)?;
+    tx.commit()
+        .map_err(|source| Error::store(StoreOp::Transaction, source))
+}
+
 pub fn sweep_orphans(tx: &Transaction<'_>) -> Result<()> {
+    credits::credit_the_members(tx)?;
     tx.execute_batch(ORPHANS)
         .map_err(|source| Error::store(StoreOp::Delete, source))
 }

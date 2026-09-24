@@ -19,7 +19,7 @@ use crate::{
     AlbumToAsk, ArtistMatch, ArtistProfile, ArtistRelease, ArtistToAsk, CoverArt, Credit, Error,
     Fingerprinters, GroupAsked, GroupMatch, GroupRelease, Library, Link, LookupOp, Mbid, Recording,
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording,
+    ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording, credits,
     enriched::{folded_title, stripped_title},
     model::CoverFrom,
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
@@ -1159,6 +1159,7 @@ impl Pass<'_> {
             queue.extend(born.into_iter().map(Ask::Artist));
         }
 
+        self.library.settle_the_credits()?;
         self.look_again_for_covers()?;
         self.look_again_for_portraits()
     }
@@ -1692,12 +1693,36 @@ impl Pass<'_> {
         self.progress.artists.fetch_add(1, Ordering::Relaxed);
         let since = self.refusals();
         let Some(profile) = self.profile_of(&artist)? else {
+            self.bill_the_members(&artist)?;
             return self.library.stamp_artist_asked(id, self.fruitlessly(since));
         };
         self.library.land_artist(artist.id, &profile)?;
         self.discography(artist.id, &profile.mbid)?;
         if !artist.has_portrait && profile.may_be_pictured() {
             self.portrait(artist.id, profile.links.clone());
+        }
+        Ok(())
+    }
+
+    fn bill_the_members(&self, artist: &ArtistToAsk) -> Result<()> {
+        let members = credits::members_of(&artist.name);
+        if members.len() < 2 {
+            return Ok(());
+        }
+        for member in members {
+            if self.progress.is_cancelled() {
+                return Ok(());
+            }
+            if self.library.artist_named(member)?.is_some() {
+                continue;
+            }
+            let found = match self.heard(self.reference.find_artist(member))? {
+                Heard::Answered(found) => top_artist(found, member),
+                Heard::Refused => return Ok(()),
+            };
+            if let Some(mbid) = found {
+                self.library.bill_an_artist(member, &mbid)?;
+            }
         }
         Ok(())
     }

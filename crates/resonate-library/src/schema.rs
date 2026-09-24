@@ -7,6 +7,12 @@ pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_after(V1, MIGRATIO
 const MIGRATIONS: &[&str] = &[
     "ALTER TABLE albums ADD COLUMN cover_asked INTEGER;",
     "ALTER TABLE tracks ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;",
+    "CREATE TABLE track_credits (
+         track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+         artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+         PRIMARY KEY (track_id, artist_id)
+     ) STRICT;
+     CREATE INDEX track_credits_by_artist ON track_credits(artist_id, track_id);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

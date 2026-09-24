@@ -843,6 +843,11 @@ pub(crate) fn land_recording(
         )?),
         (Some(_) | None, _) => None,
     };
+    if billed.is_some() {
+        for member in recording.credit.iter().skip(1) {
+            store::artist_named_in(tx, &member.name, member.mbid.as_ref().map(Mbid::as_str))?;
+        }
+    }
 
     let (title, artist) = tx
         .query_row(

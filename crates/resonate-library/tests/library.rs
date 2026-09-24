@@ -14904,3 +14904,122 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
     ));
     Ok(())
 }
+
+fn scanned_credits(files: &[(&str, &str, &str)]) -> Result<(Tree, Library)> {
+    let tree = Tree::new();
+    for (file, title, artist) in files {
+        tree.write(
+            file,
+            &Wav::new().text(TITLE, title).text(ARTIST, artist).build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    Ok((tree, library))
+}
+
+fn titles_by(library: &Library, artist: resonate_core::ArtistId) -> Result<Vec<String>> {
+    let mut titles: Vec<String> = library
+        .tracks(&TrackQuery {
+            artist: Some(artist),
+            ..TrackQuery::default()
+        })?
+        .into_iter()
+        .map(|track| track.title)
+        .collect();
+    titles.sort();
+    Ok(titles)
+}
+
+#[test]
+fn a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own() -> Result<()>
+{
+    let (_tree, library) = scanned_credits(&[
+        ("cold.wav", "Cold", "Ada"),
+        ("heat.wav", "Heat", "The Orbiters"),
+        ("both.wav", "Both", "Ada & The Orbiters"),
+    ])?;
+
+    let names: Vec<String> = library
+        .artists(&ArtistQuery::default())?
+        .into_iter()
+        .map(|artist| artist.name)
+        .collect();
+    assert!(
+        !names.iter().any(|name| name == "Ada & The Orbiters"),
+        "the collaboration was kept as an artist of its own: {names:?}"
+    );
+
+    let ada = artist_named(&library, "Ada")?;
+    let orbiters = artist_named(&library, "The Orbiters")?;
+    assert_eq!(titles_by(&library, ada.id)?, vec!["Both", "Cold"]);
+    assert_eq!(titles_by(&library, orbiters.id)?, vec!["Both", "Heat"]);
+    assert_eq!(ada.track_count, 2);
+    assert_eq!(orbiters.track_count, 2);
+
+    let both = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|track| track.title == "Both")
+        .expect("the collaboration is scanned");
+    assert_eq!(both.artist.as_deref(), Some("Ada & The Orbiters"));
+    Ok(())
+}
+
+#[test]
+fn a_name_whose_halves_name_nobody_held_is_one_artist() -> Result<()> {
+    let (_tree, library) = scanned_credits(&[("song.wav", "Song", "Simon & Garfunkel")])?;
+
+    let duo = artist_named(&library, "Simon & Garfunkel")?;
+    assert_eq!(titles_by(&library, duo.id)?, vec!["Song"]);
+    Ok(())
+}
+
+#[test]
+fn a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time() -> Result<()> {
+    let (_tree, library) = scanned_credits(&[("both.wav", "Both", "Ada & The Orbiters")])?;
+    let fake = Arc::new(Fake::new(Canned {
+        found_artists: vec![
+            ArtistMatch {
+                mbid: mbid(ADA),
+                ..artist_match(100, "Ada")
+            },
+            artist_match(100, "The Orbiters"),
+        ],
+        artists: vec![
+            orbiters(),
+            ArtistProfile {
+                mbid: mbid(ADA),
+                name: "Ada".to_owned(),
+                ..orbiters()
+            },
+        ],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    let searched: Vec<Called> = fake
+        .calls()
+        .into_iter()
+        .filter(|called| called.op() == LookupOp::FindArtist)
+        .collect();
+    assert_eq!(
+        searched,
+        vec![
+            Called::FindArtist("Ada & The Orbiters".to_owned()),
+            Called::FindArtist("Ada".to_owned()),
+            Called::FindArtist("The Orbiters".to_owned()),
+        ]
+    );
+
+    let ada = artist_named(&library, "Ada")?;
+    let orbiters = artist_named(&library, "The Orbiters")?;
+    assert_eq!(ada.mbid, Some(mbid(ADA)));
+    assert_eq!(titles_by(&library, ada.id)?, vec!["Both"]);
+    assert_eq!(titles_by(&library, orbiters.id)?, vec!["Both"]);
+    assert!(
+        fake.calls().contains(&Called::Artist(mbid(ORBITERS))),
+        "a member billed in the pass was not asked about in it"
+    );
+    Ok(())
+}

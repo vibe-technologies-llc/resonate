@@ -139,13 +139,18 @@ macro_rules! album_added {
 macro_rules! artist_albums {
     () => {
         "(SELECT count(DISTINCT t.album_id) FROM tracks t
-           WHERE t.artist_id = r.id AND t.alternative_of IS NULL AND t.hidden = 0)"
+           WHERE (t.artist_id = r.id
+                  OR t.id IN (SELECT c.track_id FROM track_credits c WHERE c.artist_id = r.id))
+             AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
 macro_rules! artist_tracks {
     () => {
-        "(SELECT count(*) FROM tracks t WHERE t.artist_id = r.id AND t.alternative_of IS NULL AND t.hidden = 0)"
+        "(SELECT count(*) FROM tracks t
+           WHERE (t.artist_id = r.id
+                  OR t.id IN (SELECT c.track_id FROM track_credits c WHERE c.artist_id = r.id))
+             AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
@@ -183,7 +188,9 @@ const LINKS_OF_UNPICTURED_ARTISTS: &str = "SELECT l.artist_id, l.relation, l.pro
 
 const WHAT_AN_ARTIST_HOLDS: &str = "SELECT count(DISTINCT album_id), count(*),
             sum(duration * 1.0 / sample_rate), sum(plays), max(played)
-       FROM tracks WHERE artist_id = ?1 AND alternative_of IS NULL AND hidden = 0";
+       FROM tracks
+      WHERE (artist_id = ?1 OR id IN (SELECT track_id FROM track_credits WHERE artist_id = ?1))
+        AND alternative_of IS NULL AND hidden = 0";
 
 const RELEASE_TRACK_COLUMNS: &str = "id, disc, position, number, title, artist, recording_mbid,
      track_mbid, length_ms, isrc, track_id";
@@ -677,6 +684,7 @@ impl Library {
         let mut writer = connect(&source, schema::Role::Writing)?;
         schema::lay_out(&writer)?;
         store::reconcile_artists(&mut writer)?;
+        store::settle_the_credits(&mut writer)?;
 
         let named = Arc::new(AtomicU64::new(0));
         watch_the_names(&writer, &named)?;
@@ -2401,6 +2409,17 @@ impl Library {
         })
     }
 
+    pub fn bill_an_artist(&self, name: &str, mbid: &Mbid) -> Result<ArtistId> {
+        self.inner.write(|transaction| {
+            let id = store::artist_named_in(transaction, name, Some(mbid.as_str()))?;
+            ArtistId::new(id as u64).map_err(Error::from)
+        })
+    }
+
+    pub fn settle_the_credits(&self) -> Result<()> {
+        self.inner.write(store::sweep_orphans)
+    }
+
     pub fn stamp_artist_asked(&self, artist: ArtistId, why: Fruitless) -> Result<()> {
         self.inner.write(|transaction| {
             enriched::stamp_artist_asked(transaction, artist, why, SystemTime::now())
@@ -2799,6 +2818,7 @@ fn scoped_albums(query: &AlbumQuery, only: Option<&str>) -> Option<Scoped> {
         filters.push(BY_OR_HOLDING_THE_ARTIST.to_owned());
         scoped.binds.push(Value::Integer(owned_or_played_on));
         scoped.binds.push(Value::Integer(owned_or_played_on));
+        scoped.binds.push(Value::Integer(owned_or_played_on));
     }
     filters.extend(only.map(str::to_owned));
     scoped.from.push_str(&clause(&filters));
@@ -2807,7 +2827,9 @@ fn scoped_albums(query: &AlbumQuery, only: Option<&str>) -> Option<Scoped> {
 }
 
 const BY_OR_HOLDING_THE_ARTIST: &str = "(a.artist_id = ?
-      OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.artist_id = ?))";
+      OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.artist_id = ?)
+      OR EXISTS (SELECT 1 FROM tracks t JOIN track_credits c ON c.track_id = t.id
+                  WHERE t.album_id = a.id AND c.artist_id = ?))";
 
 fn scoped_artists(query: &ArtistQuery, only: Option<&str>) -> Option<Scoped> {
     let mut scoped = narrowed_onto(query.text.as_deref(), "artist_id", "r.id")?;
@@ -2848,7 +2870,12 @@ fn scoped(query: &TrackQuery, narrowing: Option<&str>) -> Option<Scoped> {
         matching.binds.push(Value::Integer(album.get() as i64));
     }
     if let Some(artist) = query.artist {
-        matching.filters.push("tracks.artist_id = ?".to_owned());
+        matching.filters.push(
+            "(tracks.artist_id = ?
+              OR tracks.id IN (SELECT track_id FROM track_credits WHERE artist_id = ?))"
+                .to_owned(),
+        );
+        matching.binds.push(Value::Integer(artist.get() as i64));
         matching.binds.push(Value::Integer(artist.get() as i64));
     }
 

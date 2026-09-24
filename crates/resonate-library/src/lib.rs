@@ -1,4 +1,5 @@
 mod alternatives;
+mod credits;
 mod db;
 mod elsewhere;
 mod enrich;

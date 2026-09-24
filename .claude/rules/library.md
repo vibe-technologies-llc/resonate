@@ -1000,6 +1000,28 @@ through `Player::media` like any other unscanned row.
   its score alone**: `recognised` takes the top match at `STRICT_SCORE` and asks nothing about the
   title or the artist, because the audio is the evidence and a file worth fingerprinting is
   exactly one whose name is not.
+- **A collaboration is listed under every artist it credits, and never as an artist of its own.**
+  `track_credits` — a migration step — holds each member of a track's credit, and
+  `credits::credit_the_members` rebuilds it from `tracks.artist` every time the orphans are swept:
+  `members_of` splits the text on the joins a credit is written with — `&`, `and`, a comma, a
+  semicolon, `/`, `+`, `x`, `with`, `feat.`, `ft.`, `featuring`, `vs.` — and the split is taken
+  **only where every part names an artist the catalog already holds**, so *Adam Skorupa &
+  Krzysztof Wierzynkiewicz* becomes the two composers while *Simon & Garfunkel*, whose halves
+  name nobody, stays one artist. A split track's `artist_id` is its first member unless it already
+  names one of them, the text stays the credit the file gave, and the row the whole credit was
+  filed under is swept once nothing names it. The artist scope, `artist_albums`, `artist_tracks`,
+  `WHAT_AN_ARTIST_HOLDS` and `BY_OR_HOLDING_THE_ARTIST` read a credit beside `artist_id`, the
+  sweep keeps an artist a credit names, and `take_over_artist` carries its credits across a merge.
+  The members come from two places. A landed recording now makes a row for *every* artist it
+  credits, not only the first, so the split has names to find; and where an artist's own lookup
+  lands nothing and its name splits, `Pass::bill_the_members` searches each member not already
+  held under the same exact-name rule and `Library::bill_an_artist` makes a row for each one
+  found, which the pass then asks about like any artist it brought in. Before, the Witcher 2
+  score's tracks were split between *Adam Skorupa*, where a recording had been identified, and a
+  row for the whole credit, where none had, and neither composer's page held the other half.
+  `a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own`,
+  `a_name_whose_halves_name_nobody_held_is_one_artist` and
+  `a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time` are the claims.
 - **A credit names an artist the catalog may already hold, and it is identified rather than
   asked.** `Pass::credits` walks the `Credit`s of a landed release or, through `take_group`, of a
   landed release group: where one carries an mbid and
