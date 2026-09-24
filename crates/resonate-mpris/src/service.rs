@@ -34,8 +34,8 @@ use crate::{
     notify::{Shown, shown},
     playlists::{PlaylistsInterface, listed, unheard_of},
     track::{
-        Sleep, metadata, micros, no_track, playing_digest, queued_metadata, sleep_status, sounding,
-        track_path,
+        PlaybackStatus, Sleep, metadata, micros, no_track, playing_digest, queued_metadata,
+        sleep_status, sounding, track_path,
     },
     tracklist::{Change, TrackList, after_row, change},
 };
@@ -522,7 +522,7 @@ fn publish(player: &InterfaceRef<PlayerInterface>, before: &Watched, now: &Watch
     let emitter = player.signal_emitter();
     let iface = player.get();
 
-    if before.playback != now.playback {
+    if status_moved(before.playback, now.playback) {
         report(zbus::block_on(iface.playback_status_changed(emitter)));
     }
     if before.repeat != now.repeat {
@@ -552,6 +552,10 @@ fn publish(player: &InterfaceRef<PlayerInterface>, before: &Watched, now: &Watch
     if before.can_seek != now.can_seek {
         report(zbus::block_on(iface.can_seek_changed(emitter)));
     }
+}
+
+fn status_moved(before: PlaybackState, now: PlaybackState) -> bool {
+    PlaybackStatus::from(before) != PlaybackStatus::from(now)
 }
 
 fn publish_sleep(ours: &InterfaceRef<OwnInterface>, before: &Watched, now: &Watched) {
@@ -758,6 +762,20 @@ mod tests {
     }
 
     const UNATTENDED: Telling = Telling::of(false, true);
+
+    #[test]
+    fn only_a_move_the_bus_can_see_announces_the_playback_status() {
+        assert!(!status_moved(
+            PlaybackState::Buffering,
+            PlaybackState::Playing
+        ));
+        assert!(!status_moved(PlaybackState::Idle, PlaybackState::Stopped));
+        assert!(status_moved(PlaybackState::Playing, PlaybackState::Paused));
+        assert!(status_moved(
+            PlaybackState::Buffering,
+            PlaybackState::Stopped
+        ));
+    }
 
     const ATTENDED: Telling = Telling::of(true, true);
 
