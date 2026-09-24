@@ -19,6 +19,8 @@ const UNCOVERED: &str = "albums.cover_art IS NULL AND albums.cover_path IS NULL"
 
 const WAITS_DOUBLE_AT_MOST: u32 = 5;
 
+const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
 const HOLDS_RELEASE_ROWS: &str =
     "EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.album_id = a.id)";
 
@@ -687,17 +689,21 @@ pub(crate) fn ask_again_for_covers(tx: &Transaction<'_>) -> Result<usize> {
     .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
-pub(crate) fn albums_wanting_a_cover(connection: &Connection) -> Result<Vec<CoverWanted>> {
+pub(crate) fn albums_wanting_a_cover(
+    connection: &Connection,
+    now: SystemTime,
+) -> Result<Vec<CoverWanted>> {
+    let asked_before = store::to_nanos(now.checked_sub(COVERS_ASKED_AGAIN_AFTER).unwrap_or(now));
     let mut statement = connection
         .prepare(&format!(
             "SELECT id, mbid, release_group FROM albums
-              WHERE {UNCOVERED} AND cover_asked IS NULL
+              WHERE {UNCOVERED} AND (cover_asked IS NULL OR cover_asked < ?1)
                 AND (mbid IS NOT NULL OR release_group IS NOT NULL)
               ORDER BY id"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let held = statement
-        .query_map([], |row| {
+        .query_map([asked_before], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, Option<String>>(1)?,

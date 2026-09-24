@@ -286,10 +286,6 @@
 - A strict match is written without a pane to confirm it in or a gesture to undo it: the rule is
   `STRICT_SCORE`, the declared count and the owner by id or by folded name, and an album it takes
   wrongly can only be put right by clearing `albums.mbid` and the rows by hand and asking again
-- The pass asks the Cover Art Archive for a cover only in the pass that landed the release or its
-  release group, and only where the album held none, so a cover the archive gained later is
-  fetched only by a `--refresh`, and a file cover taken away by a rescan is not replaced from the
-  archive until then
 - A file whose tags name no title is identified by its file name or not at all. `stem.rs` reads
   `NN - Artist - Title` and fills what the tags left empty, so `tagged_title` and `tagged_artist`
   carry that reading and `Route::Search` has something to ask with; a stem with no separator in it

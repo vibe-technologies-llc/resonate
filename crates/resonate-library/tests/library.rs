@@ -9368,7 +9368,8 @@ fn a_cover_the_archive_did_not_hand_over_is_asked_for_again_by_the_next_pass() -
 }
 
 #[test]
-fn a_cover_the_archive_answered_it_does_not_hold_is_not_asked_for_again() -> Result<()> {
+fn a_cover_the_archive_answered_it_does_not_hold_is_not_asked_for_again_within_the_month()
+-> Result<()> {
     let (_tree, library) = tagged_orbits()?;
     let empty_handed = Arc::new(Fake::new(Canned {
         releases: vec![orbits(orbits_rows(), Vec::new())],
@@ -9391,6 +9392,47 @@ fn a_cover_the_archive_answered_it_does_not_hold_is_not_asked_for_again() -> Res
     assert_eq!(again.called(LookupOp::Cover), 1);
     assert_eq!(asked_again.stats.covers, 1);
     assert_eq!(library.ask_again_for_covers()?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again() -> Result<()> {
+    const A_YEAR_AGO_IN_NANOS: i64 = 365 * 24 * 60 * 60 * 1_000_000_000;
+
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let empty_handed = Arc::new(Fake::new(Canned {
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &empty_handed, false)?;
+    assert_eq!(empty_handed.called(LookupOp::Cover), 1);
+
+    let stamped: i64 = beside(&database)
+        .query_row("SELECT cover_asked FROM albums", [], |row| row.get(0))
+        .expect("the answer was stamped");
+    beside(&database)
+        .execute(
+            "UPDATE albums SET cover_asked = ?1",
+            [stamped - A_YEAR_AGO_IN_NANOS],
+        )
+        .expect("the stamp is put back a year");
+
+    let later = Arc::new(Fake::new(Canned {
+        covers: vec![(mbid(RELEASE), png_art(128))],
+        ..Canned::default()
+    }));
+    let asked_again = enrich(&library, &later, false)?;
+
+    assert_eq!(later.called(LookupOp::Cover), 1);
+    assert_eq!(asked_again.stats.covers, 1);
+    assert_eq!(
+        library.cover_art(only_album(&library)?.id)?,
+        Some(png_art(128))
+    );
     Ok(())
 }
 

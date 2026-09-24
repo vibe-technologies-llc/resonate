@@ -1931,7 +1931,8 @@ impl Library {
     }
 
     pub(crate) fn albums_wanting_a_cover(&self) -> Result<Vec<CoverWanted>> {
-        self.inner.read(enriched::albums_wanting_a_cover)
+        self.inner
+            .read(|connection| enriched::albums_wanting_a_cover(connection, SystemTime::now()))
     }
 
     pub(crate) fn note_cover_asked(&self, album: AlbumId) -> Result<()> {

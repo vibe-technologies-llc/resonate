@@ -1106,9 +1106,14 @@ through `Player::media` like any other unscanned row.
   at the end of every run for each album holding a release or a group, no picture and no stamp,
   passing over those `Pass::covered` says the run already asked about. Before it, one failed fetch
   left an album with its release and no sleeve for good, while Discord drew the same release's
-  cover off its id. A cover the archive answered it does not hold is still not asked for again
-  until the release is refreshed or `Library::ask_again_for_covers` clears the stamps, which is the
-  settings pane's *Look for missing covers*. An album landed as its release group asks `group_cover` under those same two
+  cover off its id. A cover the archive answered it does not hold is not asked for again
+  inside `COVERS_ASKED_AGAIN_AFTER` — thirty days — unless the release is refreshed or
+  `Library::ask_again_for_covers` clears the stamps, which is the settings pane's *Look for missing
+  covers*; past it `albums_wanting_a_cover` reads the stamp as none, because somebody may have
+  uploaded the sleeve since, and the answer stamps it for another month either way. At the
+  archive's pace that is one request a month per uncovered album, which a library of hundreds
+  spends in a few minutes. `a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again`
+  is the claim. An album landed as its release group asks `group_cover` under those same two
   conditions, so what the group route is short of is a release's rows and never a sleeve. A
   portrait is the same shape: `land_portrait` writes under `portrait IS NULL`, and it
   is asked for only where the profile's links name a picture and none is held.
