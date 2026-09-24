@@ -87,9 +87,14 @@
 - There is no convolution stage, so room correction and a measured impulse response have nowhere
   to go where a parametric equaliser now does, and a `Processor` is still the seam one would land
   behind
-- A GraphicEQ import is fitted at 48 kHz and realised at whatever plays, so the fit is exact at
-  the rate it was solved at and drifts a little at the edges of the band elsewhere. It is within
-  0.035 dB at 48 kHz and is not measured at every rate
+- A GraphicEQ import is fitted at 48 kHz and realised at whatever plays, and the fit does not
+  travel: over the fixture curve its worst centre is 0.14 dB off at 48 kHz and 0.34 dB at
+  44.1 kHz, but 2.5 dB at 88.2 kHz, 2.8 at 96, 3.7 at 176.4 and 192 and 4.0 at 384, all of it at
+  16 kHz, where the bilinear warp near a 48 kHz Nyquist is what the fit compensated for. No one
+  rate fits them all — solved at 96 kHz it is 2.5 to 2.8 dB off at 44.1 and 48 — so the answer is
+  a profile that carries the curve it was fitted to and is fitted again at the stream's own rate
+  when the engine binds it, which reaches `resonate-core::eq`, the profile store's format and the
+  plan
 - Nothing measures what an equalised stream actually peaks at, so *Fit the preamp* is a model of
   the curve rather than a reading of the music; the true-peak guard rides down what the curve
   pushes over, which is a gain that moves where a fitted preamp would have held still
