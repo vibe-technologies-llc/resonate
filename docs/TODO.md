@@ -156,9 +156,11 @@
 
 ## Engine
 - A `SinkChange` while a stream is open refreshes the list only once the ring holds more audio than
-  the enumeration is allowed to spend, so a device that appears while a buffer shorter than 100 ms
-  is playing still waits for the next stream open. The refresh it does take is capped at 50 ms
-  rather than the 2 s a startup enumeration may spend
+  the enumeration is allowed to spend, so under a buffer shorter than 100 ms a device that
+  appears, a new default the desktop chose and the playing device going away all wait for the
+  next stream open — and since the stream no longer lets WirePlumber move it, the sound stays on
+  the old device until then, or goes silent where that device has gone. The refresh it does take
+  is capped at 50 ms rather than the 2 s a startup enumeration may spend
 - The place is written only where the row changed or the position moved `KEPT_EVERY`, so a run
   killed rather than closed loses up to five seconds of position. Writing it on the way out would
   mean the teardown path taking the SQLite writer, which is what `signals.rs` deliberately does not

@@ -1391,6 +1391,122 @@ fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
     Ok(())
 }
 
+fn deep_buffered(sink: Option<NodeName>) -> EngineConfig {
+    EngineConfig {
+        sink,
+        buffer: Duration::from_millis(400),
+        ..EngineConfig::default()
+    }
+}
+
+fn change_the_graph(
+    graph: &Arc<Mutex<Graph>>,
+    change: SinkChange,
+    edit: impl FnOnce(&mut Vec<SinkInfo>),
+) {
+    let mut held = graph.lock();
+    edit(&mut held.sinks);
+    let announced = held.announce.as_ref().map(|announce| announce.send(change));
+    assert!(
+        announced.is_some_and(|sent| sent.is_ok()),
+        "the fake daemon could not announce the change"
+    );
+}
+
+fn make_the_default(sinks: &mut [SinkInfo], id: SinkId) {
+    for sink in sinks {
+        sink.is_default = sink.id == id;
+    }
+}
+
+fn bound_to(player: &Player) -> Option<SinkId> {
+    player.state().output.map(|output| output.sink)
+}
+
+fn playing_one_track_over(config: EngineConfig) -> Result<(Player, Arc<Mutex<Graph>>)> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (backend, graph) = FakeSink::new(vec![
+        sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]),
+        arriving(),
+    ]);
+    let player = Player::with_backend(config, move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    assert_eq!(bound_to(&player), Some(SinkId::new(1)));
+    Ok((player, graph))
+}
+
+#[test]
+fn a_stream_following_the_default_moves_when_the_desktop_chooses_another() -> Result<()> {
+    let (player, graph) = playing_one_track_over(deep_buffered(None))?;
+
+    change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
+        make_the_default(sinks, SinkId::new(2));
+    });
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(2)),
+        "the stream to follow the desktop's new default",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(graph.opens, 2);
+    assert_eq!(
+        graph.requests.last().map(|request| request.target),
+        Some(Some(SinkId::new(2))),
+        "the stream was reopened somewhere other than the new default"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_device_chosen_by_name_stays_bound_when_the_desktops_default_moves() -> Result<()> {
+    let (player, graph) =
+        playing_one_track_over(deep_buffered(Some(NodeName::new("alsa_output.fake"))))?;
+    let enumerated = graph.lock().enumerations;
+
+    change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
+        make_the_default(sinks, SinkId::new(2));
+    });
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the changed graph",
+    );
+
+    assert_eq!(bound_to(&player), Some(SinkId::new(1)));
+    assert_eq!(
+        graph.lock().opens,
+        1,
+        "a chosen device was left for the default"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_whose_device_goes_away_moves_to_the_one_the_desktop_falls_back_to() -> Result<()> {
+    let (player, graph) =
+        playing_one_track_over(deep_buffered(Some(NodeName::new("alsa_output.fake"))))?;
+
+    change_the_graph(&graph, SinkChange::Removed(SinkId::new(1)), |sinks| {
+        sinks.retain(|sink| sink.id != SinkId::new(1));
+        make_the_default(sinks, SinkId::new(2));
+    });
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(2)),
+        "the stream to move off the device that went",
+    );
+    Ok(())
+}
+
 #[test]
 fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
     let tree = Tree::new();

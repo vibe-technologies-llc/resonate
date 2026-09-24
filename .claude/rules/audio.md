@@ -642,6 +642,22 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   standing reasons to ask the graph again are a stale flag, an empty list and a change stream that
   has gone — and where the ask fails with a list still published, the bind takes what was published
   rather than failing the track.
+- **The engine decides which device the stream is on, and follows the default itself.** A playback
+  stream carries `node.dont-move`, so WirePlumber never relinks it behind the engine's back — its
+  `linking.follow-default-target`, on by default, used to write `target.node = -1` for a stream
+  sitting on the default and move it whenever the desktop chose another device, so the sound went
+  to the new device while `OutputStatus::sink`, written only by `Output::open`, went on naming the
+  old one, and a device chosen by name that happened to be the default was taken off it. Instead
+  every refresh of the sink list ends in `follow_the_sink_it_would_choose`: where `chosen_sink` —
+  the one reading `select_sink` also binds through, the named device, else the default, else the
+  first — answers a device other than the one the output was opened on, the row is bound again at
+  its position. So a desktop's new default, a named device turning up mid-track and the device
+  being played on going away each reopen the stream on the right device with a plan made for it,
+  and the window names what is heard. What it costs is that a desktop's per-application device
+  picker cannot move the stream, which lasted only until the next track anyway, every track
+  opening a stream of its own under its own `target.object`; the settings pane is where the device
+  is chosen. `a_stream_following_the_default_moves_when_the_desktop_chooses_another` and
+  `a_device_chosen_by_name_stays_bound_when_the_desktops_default_moves` are the claims.
 - **A graph that lets go of the ring is waited for once, and fails the track the second time.**
   `RingProducer::is_abandoned` says the consumer has been dropped, which is the graph thread having
   gone with the `AudioSource` it was handed — what a daemon restart does, the client dropping every

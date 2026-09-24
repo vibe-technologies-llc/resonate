@@ -66,6 +66,7 @@ const DEFAULT_SINK: &str = "default.audio.sink";
 const DEFAULT_SOURCE: &str = "default.audio.source";
 const MICROPHONE_CLASS: &str = "Audio/Source";
 const CARD_PROFILE_DEVICE: &str = "card.profile.device";
+const NODE_DONT_MOVE: &str = "node.dont-move";
 
 struct StreamSlots {
     latency: Arc<std::sync::atomic::AtomicU64>,
@@ -1039,6 +1040,7 @@ fn build_stream(
         *keys::MEDIA_NAME => request.media_name.as_str(),
         *keys::AUDIO_CHANNELS => spec.channel_count().get().to_string(),
         *keys::AUDIO_RATE => spec.rate.hz().to_string(),
+        NODE_DONT_MOVE => "true",
     };
     if let Some(target) = target {
         properties.insert(*keys::TARGET_OBJECT, target.as_str());

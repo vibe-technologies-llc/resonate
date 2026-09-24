@@ -191,6 +191,14 @@ struct Output {
     settles_into: Option<OutputPlan>,
 }
 
+fn chosen_sink<'s>(sinks: &'s [SinkInfo], named: Option<&NodeName>) -> Option<&'s SinkInfo> {
+    sinks
+        .iter()
+        .find(|sink| named == Some(&sink.name))
+        .or_else(|| sinks.iter().find(|sink| sink.is_default))
+        .or_else(|| sinks.first())
+}
+
 impl Output {
     fn open(
         track: &Track,
@@ -1394,8 +1402,31 @@ impl Engine {
 
         self.stale_sinks = false;
         match self.backend.enumerate_sinks(budget) {
-            Ok(found) => *self.published.sinks.write() = found.into(),
+            Ok(found) => {
+                *self.published.sinks.write() = found.into();
+                self.follow_the_sink_it_would_choose();
+            }
             Err(error) => tracing::warn!(%error, "the sink list could not be refreshed"),
+        }
+    }
+
+    fn follow_the_sink_it_would_choose(&mut self) {
+        let Some(bound) = self.output.as_ref().map(|output| output.sink) else {
+            return;
+        };
+        let chosen = chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
+            .map(|sink| sink.id);
+        if chosen.is_none_or(|chosen| chosen == bound) {
+            return;
+        }
+
+        tracing::info!(
+            from = %bound,
+            "the device this build would play on moved; the stream follows it"
+        );
+        let at = self.position();
+        if let Err(error) = self.rebind(Some(at), None) {
+            self.fail(error);
         }
     }
 
@@ -1420,12 +1451,7 @@ impl Engine {
             }
         }
 
-        let sinks = self.published.sinks.read();
-        sinks
-            .iter()
-            .find(|sink| self.config.sink.as_ref() == Some(&sink.name))
-            .or_else(|| sinks.iter().find(|sink| sink.is_default))
-            .or_else(|| sinks.first())
+        chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
             .cloned()
             .ok_or(Error::Sink(resonate_pipewire::Error::NoSink))
     }
