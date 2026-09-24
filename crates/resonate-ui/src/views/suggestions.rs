@@ -89,7 +89,8 @@ impl RootView {
             .gap_6()
             .px_6()
             .py_5()
-            .overflow_y_scroll();
+            .overflow_y_scroll()
+            .track_scroll(&self.suggestions_scroll);
         for kind in SuggestionKind::ALL {
             let cards: Vec<AnyElement> = offered
                 .iter()
@@ -129,7 +130,13 @@ impl RootView {
             .when(nothing, |pane| {
                 pane.child(empty(Icon::Suggestions, NOTHING_OFFERED, Some(SCAN_MORE)))
             })
-            .when(!nothing, |pane| pane.child(shelves))
+            .when(!nothing, |pane| {
+                pane.child(super::scrollbar::around(
+                    "suggestions-scrollbar",
+                    self.suggestions_scroll.clone(),
+                    shelves,
+                ))
+            })
             .into_any_element()
     }
 
@@ -297,33 +304,34 @@ impl RootView {
             .min_w(px(0.0))
             .child(heading)
             .child(listing::columns("#", true, sorting::unsorted(), cx))
-            .child(
-                div().flex().flex_1().min_h(px(0.0)).child(
-                    uniform_list(
-                        "suggestion-tracks",
-                        shown,
-                        cx.processor(move |this, range: Range<usize>, _, cx| {
-                            let mut drawn = Vec::new();
-                            for index in range {
-                                let Some(track) = rows.get(index) else {
-                                    continue;
-                                };
-                                drawn.push(this.track_row(
-                                    &rows,
-                                    index,
-                                    track,
-                                    playing == Some(track.id),
-                                    false,
-                                    cx,
-                                ));
-                            }
-                            drawn
-                        }),
-                    )
-                    .h_full()
-                    .w_full(),
-                ),
-            )
+            .child(super::scrollbar::around(
+                "suggestion-tracks-scrollbar",
+                self.suggestion_rows.clone(),
+                uniform_list(
+                    "suggestion-tracks",
+                    shown,
+                    cx.processor(move |this, range: Range<usize>, _, cx| {
+                        let mut drawn = Vec::new();
+                        for index in range {
+                            let Some(track) = rows.get(index) else {
+                                continue;
+                            };
+                            drawn.push(this.track_row(
+                                &rows,
+                                index,
+                                track,
+                                playing == Some(track.id),
+                                false,
+                                cx,
+                            ));
+                        }
+                        drawn
+                    }),
+                )
+                .track_scroll(self.suggestion_rows.clone())
+                .h_full()
+                .w_full(),
+            ))
             .into_any_element()
     }
 

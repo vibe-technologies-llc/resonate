@@ -213,7 +213,11 @@ impl RootView {
                 })
             })
             .when(!nothing, |pane| {
-                pane.child(self.what_was_heard(counts, &listened, &chart, cx))
+                pane.child(super::scrollbar::around(
+                    "statistics-scrollbar",
+                    self.statistics_scroll.clone(),
+                    self.what_was_heard(counts, &listened, &chart, cx),
+                ))
             })
             .into_any_element()
     }
@@ -278,6 +282,7 @@ impl RootView {
             .px_6()
             .py_5()
             .overflow_y_scroll()
+            .track_scroll(&self.statistics_scroll)
             .child(tiles(counts))
             .child(charted(chart))
             .child(self.most_listened_to(MOST_LISTENED_TRACKS, &listened.tracks, |_| None, cx))

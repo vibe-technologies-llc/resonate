@@ -81,7 +81,29 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(self.settings_heading(&narrowing, category, cx))
-            .child(div().flex().flex_1().min_h(px(0.0)).child(rail).child(body))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .child(
+                        div()
+                            .relative()
+                            .flex_none()
+                            .w(theme::width(theme::settings_rail()))
+                            .min_h(px(0.0))
+                            .child(rail)
+                            .child(super::scrollbar::vertical(
+                                "settings-categories-scrollbar",
+                                self.settings_rail_scroll.clone(),
+                            )),
+                    )
+                    .child(super::scrollbar::around(
+                        "settings-scrollbar",
+                        self.settings_scroll.clone(),
+                        body,
+                    )),
+            )
             .when_some(footer, Div::child)
             .into_any_element();
 
@@ -200,11 +222,14 @@ impl RootView {
             .flex_none()
             .gap_0p5()
             .p_2()
+            .pr_4()
             .w(theme::width(theme::settings_rail()))
             .bg(rgb(theme::surface()))
             .border_r_1()
             .border_color(rgb(theme::border()))
-            .overflow_y_scroll();
+            .overflow_y_scroll()
+            .track_scroll(&self.settings_rail_scroll)
+            .h_full();
 
         for category in Category::ALL {
             let selected = !narrowing.narrows() && category == chosen;

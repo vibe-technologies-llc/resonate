@@ -82,6 +82,7 @@ impl RootView {
             .px_6()
             .py_5()
             .overflow_y_scroll()
+            .track_scroll(&self.inspector_scroll)
             .child(heading)
             .child(signal_path(&digest, output, sink))
             .child(beside(vec![
@@ -109,8 +110,12 @@ impl RootView {
 
         let carried = self.player.update(cx, |model, _| model.carried_lines());
 
-        pane.child(tags(&digest.info.tags, carried))
-            .into_any_element()
+        super::scrollbar::around(
+            "inspector-scrollbar",
+            self.inspector_scroll.clone(),
+            pane.child(tags(&digest.info.tags, carried)),
+        )
+        .into_any_element()
     }
 }
 

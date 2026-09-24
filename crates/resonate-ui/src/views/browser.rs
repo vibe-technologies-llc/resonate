@@ -223,7 +223,11 @@ impl RootView {
                                 .h_full()
                                 .w_full(),
                             )
-                        }),
+                        })
+                        .child(super::scrollbar::vertical(
+                            "album-scrollbar",
+                            self.album_rows.clone(),
+                        )),
                 )
             })
             .into_any_element()
@@ -494,7 +498,9 @@ impl RootView {
             .child(heading)
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when(!nothing, |pane| {
-                pane.child(
+                pane.child(super::scrollbar::around(
+                    "artist-scrollbar",
+                    self.artist_rows.clone(),
                     uniform_list(
                         "artists",
                         held,
@@ -577,7 +583,7 @@ impl RootView {
                     .track_scroll(self.artist_rows.clone())
                     .h_full()
                     .w_full(),
-                )
+                ))
             })
             .into_any_element()
     }
@@ -632,7 +638,13 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(heading.flex_none())
-            .when_some(records, |pane, records| pane.child(records))
+            .when_some(records, |pane, records| {
+                pane.child(super::scrollbar::around(
+                    "artist-records-scrollbar",
+                    self.artist_records_scroll.clone(),
+                    records,
+                ))
+            })
             .when(!nothing && listing_shown, |pane| {
                 pane.child(listing::columns(
                     "#",
@@ -643,88 +655,86 @@ impl RootView {
             })
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when(!nothing && listing_shown, |pane| {
-                pane.child(
-                    div().flex().flex_1().min_h(px(0.0)).child(
-                        uniform_list(
-                            "tracks",
-                            listed,
-                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                                this.reach_further(range.end, held, cx);
-                                let mut drawn = Vec::new();
-                                for index in range {
-                                    let row = if rowed {
-                                        rows.get(index).copied()
-                                    } else {
-                                        Some(ListedRow::Held(index))
-                                    };
-                                    match row {
-                                        Some(ListedRow::Disc(disc)) => {
-                                            drawn.push(
-                                                disc_heading(disc, &media).into_any_element(),
-                                            );
-                                        }
-                                        Some(ListedRow::Held(held)) => {
-                                            let Some(track) = tracks.get(held) else {
-                                                continue;
-                                            };
-                                            let reached =
-                                                this.reaches(Shift::Listing(Listed::Tracks), index);
-                                            drawn.push(
-                                                reorder::marked(
-                                                    this.track_row(
-                                                        &tracks,
-                                                        held,
-                                                        track,
-                                                        playing == Some(track.id),
-                                                        in_an_album,
-                                                        cx,
-                                                    ),
-                                                    reached,
-                                                )
-                                                .into_any_element(),
-                                            );
-                                        }
-                                        Some(ListedRow::Missing(missing)) => {
-                                            let Some(row) = release_tracks.get(missing) else {
-                                                continue;
-                                            };
-                                            drawn.push(
-                                                this.unheld_row(missing, Unheld::from(row), cx)
-                                                    .into_any_element(),
-                                            );
-                                        }
-                                        Some(ListedRow::Beyond(beyond)) => {
-                                            drawn.push(beyond_heading(beyond).into_any_element());
-                                        }
-                                        Some(ListedRow::Unheld(at)) => {
-                                            let Some(row) = unheld.get(at) else {
-                                                continue;
-                                            };
-                                            drawn.push(
-                                                this.unheld_row(at, Unheld::searched_for(row), cx)
-                                                    .into_any_element(),
-                                            );
-                                        }
-                                        Some(ListedRow::Found(at)) => {
-                                            let Some(row) = found.get(at) else {
-                                                continue;
-                                            };
-                                            drawn.push(
-                                                this.unheld_row(at, Unheld::found(row), cx)
-                                                    .into_any_element(),
-                                            );
-                                        }
-                                        None => {}
+                pane.child(super::scrollbar::around(
+                    "track-scrollbar",
+                    self.track_rows.clone(),
+                    uniform_list(
+                        "tracks",
+                        listed,
+                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                            this.reach_further(range.end, held, cx);
+                            let mut drawn = Vec::new();
+                            for index in range {
+                                let row = if rowed {
+                                    rows.get(index).copied()
+                                } else {
+                                    Some(ListedRow::Held(index))
+                                };
+                                match row {
+                                    Some(ListedRow::Disc(disc)) => {
+                                        drawn.push(disc_heading(disc, &media).into_any_element());
                                     }
+                                    Some(ListedRow::Held(held)) => {
+                                        let Some(track) = tracks.get(held) else {
+                                            continue;
+                                        };
+                                        let reached =
+                                            this.reaches(Shift::Listing(Listed::Tracks), index);
+                                        drawn.push(
+                                            reorder::marked(
+                                                this.track_row(
+                                                    &tracks,
+                                                    held,
+                                                    track,
+                                                    playing == Some(track.id),
+                                                    in_an_album,
+                                                    cx,
+                                                ),
+                                                reached,
+                                            )
+                                            .into_any_element(),
+                                        );
+                                    }
+                                    Some(ListedRow::Missing(missing)) => {
+                                        let Some(row) = release_tracks.get(missing) else {
+                                            continue;
+                                        };
+                                        drawn.push(
+                                            this.unheld_row(missing, Unheld::from(row), cx)
+                                                .into_any_element(),
+                                        );
+                                    }
+                                    Some(ListedRow::Beyond(beyond)) => {
+                                        drawn.push(beyond_heading(beyond).into_any_element());
+                                    }
+                                    Some(ListedRow::Unheld(at)) => {
+                                        let Some(row) = unheld.get(at) else {
+                                            continue;
+                                        };
+                                        drawn.push(
+                                            this.unheld_row(at, Unheld::searched_for(row), cx)
+                                                .into_any_element(),
+                                        );
+                                    }
+                                    Some(ListedRow::Found(at)) => {
+                                        let Some(row) = found.get(at) else {
+                                            continue;
+                                        };
+                                        drawn.push(
+                                            this.unheld_row(at, Unheld::found(row), cx)
+                                                .into_any_element(),
+                                        );
+                                    }
+                                    None => {}
                                 }
-                                drawn
-                            }),
-                        )
-                        .track_scroll(self.track_rows.clone())
-                        .h_full()
-                        .w_full(),
-                    ),
-                )
+                            }
+                            drawn
+                        }),
+                    )
+                    .track_scroll(self.track_rows.clone())
+                    .h_full()
+                    .w_full(),
+                ))
             })
             .into_any_element()
     }
@@ -1405,6 +1415,7 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
+            .track_scroll(&self.artist_records_scroll)
             .child(
                 div()
                     .flex()
@@ -1433,7 +1444,13 @@ impl RootView {
             );
         }
 
-        shelf(id, named, albums.len(), cells)
+        let scroll = self
+            .shelf_scrolls
+            .borrow_mut()
+            .entry(id)
+            .or_default()
+            .clone();
+        shelf(id, named, albums.len(), cells, scroll)
     }
 
     pub(crate) fn artist_shelf_of(
@@ -1451,7 +1468,13 @@ impl RootView {
             );
         }
 
-        shelf(id, named, artists.len(), cells)
+        let scroll = self
+            .shelf_scrolls
+            .borrow_mut()
+            .entry(id)
+            .or_default()
+            .clone();
+        shelf(id, named, artists.len(), cells, scroll)
     }
 
     fn artist_cell_at(&self, artist: &Artist, side: f32, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -2069,7 +2092,13 @@ pub(crate) fn trailing_controls() -> Div {
     div().flex().flex_none().items_center().gap_0p5()
 }
 
-fn shelf(id: &'static str, named: String, held: usize, cells: Vec<AnyElement>) -> Div {
+fn shelf(
+    id: &'static str,
+    named: String,
+    held: usize,
+    cells: Vec<AnyElement>,
+    scroll: gpui::ScrollHandle,
+) -> Div {
     let drawn = cells.len();
     let eyebrow = if held > drawn {
         format!("{named} · {drawn} shown")
@@ -2085,6 +2114,7 @@ fn shelf(id: &'static str, named: String, held: usize, cells: Vec<AnyElement>) -
         .px_6()
         .pb_3()
         .overflow_x_scroll()
+        .track_scroll(&scroll)
         .children(cells);
 
     div()
@@ -2094,5 +2124,10 @@ fn shelf(id: &'static str, named: String, held: usize, cells: Vec<AnyElement>) -
         .border_b_1()
         .border_color(rgb(theme::border()))
         .child(div().px_6().pt_3().pb_2().child(kit::eyebrow(eyebrow)))
-        .child(strip)
+        .child(
+            div()
+                .relative()
+                .child(strip)
+                .child(super::scrollbar::horizontal(id, scroll)),
+        )
 }

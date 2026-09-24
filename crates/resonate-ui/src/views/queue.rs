@@ -179,7 +179,12 @@ impl RootView {
             .child(listing::columns("", true, sorting::queue_sorted(self), cx))
             .child(
                 reorder::follows_a_drag(
-                    div().id("queue-rows").flex().flex_1().min_h(px(0.0)),
+                    div()
+                        .id("queue-rows")
+                        .relative()
+                        .flex()
+                        .flex_1()
+                        .min_h(px(0.0)),
                     scroll.clone(),
                     queued,
                     cx,
@@ -364,7 +369,11 @@ impl RootView {
                     .track_scroll(scroll)
                     .h_full()
                     .w_full(),
-                ),
+                )
+                .child(super::scrollbar::vertical(
+                    "queue-scrollbar",
+                    self.queue_rows.clone(),
+                )),
             )
             .into_any_element()
     }

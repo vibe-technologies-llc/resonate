@@ -146,7 +146,9 @@ impl RootView {
                 })
             })
             .when(!nothing, |pane| {
-                pane.child(
+                pane.child(super::scrollbar::around(
+                    "missing-scrollbar",
+                    self.missing_rows.clone(),
                     uniform_list(
                         match shows {
                             MissingShows::Tracks => "missing-tracks",
@@ -188,11 +190,12 @@ impl RootView {
                             drawn
                         }),
                     )
+                    .track_scroll(self.missing_rows.clone())
                     .h_full()
                     .w_full()
                     .pt_1p5()
                     .pb_4(),
-                )
+                ))
             })
             .into_any_element()
     }

@@ -96,7 +96,9 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .child(listing::columns("#", true, sorting::unsorted(), cx))
-            .child(
+            .child(super::scrollbar::around(
+                "favourites-scrollbar",
+                self.favourite_rows.clone(),
                 uniform_list(
                     "favourite-tracks",
                     held,
@@ -118,9 +120,10 @@ impl RootView {
                         drawn
                     }),
                 )
+                .track_scroll(self.favourite_rows.clone())
                 .h_full()
                 .w_full(),
-            )
+            ))
     }
 }
 

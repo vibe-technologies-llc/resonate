@@ -209,7 +209,7 @@ impl RootView {
             (None, Some(heard))
         };
 
-        div()
+        let pane = div()
             .id("analysis")
             .flex()
             .flex_col()
@@ -219,6 +219,7 @@ impl RootView {
             .px_6()
             .py_5()
             .overflow_y_scroll()
+            .track_scroll(&self.analysis_scroll)
             .children(leading)
             .child(verdict_card(analysis))
             .child(
@@ -263,7 +264,9 @@ impl RootView {
                 levels_card(analysis).into_any_element(),
                 source_card(analysis).into_any_element(),
             ]))
-            .children(trailing)
+            .children(trailing);
+
+        super::scrollbar::around("analysis-scrollbar", self.analysis_scroll.clone(), pane)
             .into_any_element()
     }
 }

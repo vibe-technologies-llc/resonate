@@ -319,6 +319,7 @@ impl RootView {
                     rows
                 }),
             )
+            .track_scroll(self.all_playlist_rows.clone())
             .h_full()
             .w_full()
             .into_any_element()
@@ -330,7 +331,11 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(heading)
-            .child(div().flex().flex_1().min_h(px(0.0)).child(listed))
+            .child(super::scrollbar::around(
+                "playlists-scrollbar",
+                self.all_playlist_rows.clone(),
+                listed,
+            ))
             .into_any_element()
     }
 
@@ -569,12 +574,21 @@ impl RootView {
             .w_full();
 
             reorder::follows_a_drag(
-                div().id("playlist-rows").flex().flex_1().min_h(px(0.0)),
+                div()
+                    .id("playlist-rows")
+                    .relative()
+                    .flex()
+                    .flex_1()
+                    .min_h(px(0.0)),
                 scroll,
                 entries.len(),
                 cx,
             )
             .child(listing)
+            .child(super::scrollbar::vertical(
+                "playlist-scrollbar",
+                self.playlist_rows.clone(),
+            ))
             .into_any_element()
         };
 
@@ -1116,6 +1130,7 @@ impl RootView {
                     .collect()
             }),
         )
+        .track_scroll(self.picker_rows.clone())
         .w_full()
         .h(theme::width(theme::row_height() * shown as f32));
 
@@ -1167,7 +1182,17 @@ impl RootView {
                                 .overflow_hidden()
                                 .border_1()
                                 .border_color(rgb(theme::border()))
-                                .child(rows),
+                                .child(
+                                    div()
+                                        .relative()
+                                        .w_full()
+                                        .h(theme::width(theme::row_height() * shown as f32))
+                                        .child(rows)
+                                        .child(super::scrollbar::vertical(
+                                            "playlist-picker-scrollbar",
+                                            self.picker_rows.clone(),
+                                        )),
+                                ),
                         )
                     })
                     .child(
