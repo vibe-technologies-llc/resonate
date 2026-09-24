@@ -206,9 +206,16 @@ impl RootView {
                                                 let first = index * columns;
                                                 let cells = albums
                                                     .iter()
+                                                    .enumerate()
                                                     .skip(first)
                                                     .take(columns)
-                                                    .map(|album| this.album_cell(album, cx));
+                                                    .map(|(at, album)| {
+                                                        let reached = this.reaches(
+                                                            Shift::Listing(Listed::Albums),
+                                                            at,
+                                                        );
+                                                        this.album_cell(album, reached, cx)
+                                                    });
                                                 drawn.push(
                                                     div()
                                                         .flex()
@@ -235,18 +242,18 @@ impl RootView {
             .into_any_element()
     }
 
-    fn grid_columns(&self) -> usize {
+    pub(crate) fn grid_columns(&self) -> usize {
         let width = f32::from(self.grid_width.get()) - 48.0;
         let cell = theme::grid_cover() + theme::grid_gap();
         (((width + theme::grid_gap()) / cell).floor() as usize).max(1)
     }
 
-    fn album_cell(&self, album: &Album, cx: &mut Context<Self>) -> Stateful<Div> {
-        self.album_cell_at(album, theme::grid_cover(), cx)
+    fn album_cell(&self, album: &Album, reached: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        self.album_cell_captioned(album, theme::grid_cover(), Caption::ByArtist, reached, cx)
     }
 
     fn album_cell_at(&self, album: &Album, side: f32, cx: &mut Context<Self>) -> Stateful<Div> {
-        self.album_cell_captioned(album, side, Caption::ByArtist, cx)
+        self.album_cell_captioned(album, side, Caption::ByArtist, false, cx)
     }
 
     fn album_cell_captioned(
@@ -254,6 +261,7 @@ impl RootView {
         album: &Album,
         side: f32,
         caption: Caption,
+        reached: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = album.id;
@@ -343,6 +351,7 @@ impl RootView {
                         }])
                     })
                     .child(cover)
+                    .when(reached, |frame| frame.child(reached_ring()))
                     .child(
                         self.favour_mark_under(
                             ("album-favourite", id.get() as usize),
@@ -1430,8 +1439,14 @@ impl RootView {
         let mut cells = Vec::new();
         for album in albums.iter() {
             cells.push(
-                self.album_cell_captioned(album, theme::grid_cover(), Caption::Beside(artist), cx)
-                    .into_any_element(),
+                self.album_cell_captioned(
+                    album,
+                    theme::grid_cover(),
+                    Caption::Beside(artist),
+                    false,
+                    cx,
+                )
+                .into_any_element(),
             );
         }
 
@@ -2197,3 +2212,16 @@ fn shelf(
                 .child(bars.horizontal(id, scroll)),
         )
 }
+
+fn reached_ring() -> Div {
+    div()
+        .absolute()
+        .inset(px(-REACHED_RING - 1.0))
+        .rounded(px(REACHED_ROUNDING))
+        .border(px(REACHED_RING))
+        .border_color(rgb(theme::accent()))
+}
+
+const REACHED_ROUNDING: f32 = 10.0;
+
+const REACHED_RING: f32 = 2.0;

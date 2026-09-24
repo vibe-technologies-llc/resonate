@@ -26,12 +26,12 @@ use crate::{
     Selection, Setting, Settings,
     analysis::AnalysisModel,
     app::{
-        CycleRepeat, DropReached, FocusFilter, FocusSearch, LeaveControl, LeaveSearch, Listen,
-        LowerRow, Next, NextPane, Pause, PlayReached, Previous, PreviousPane, Quit, RaiseRow,
-        ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove,
-        ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, Stop, TogglePlayPause,
-        ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
-        attend, seek_step,
+        CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
+        LeaveSearch, Listen, LowerRow, Next, NextPane, Pause, PlayReached, Previous, PreviousPane,
+        Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext,
+        ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, Stop,
+        TabOnward, TogglePlayPause, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT,
+        WidenAbove, WidenBelow, attend, seek_step,
     },
     format,
     icons::{self, Icon},
@@ -460,6 +460,11 @@ impl RootView {
 
             let query = search.read(cx).text().to_owned();
             this.set_query(query, cx);
+        })
+        .detach();
+
+        cx.subscribe_in(&search, window, |this, _, _: &Submitted, window, cx| {
+            this.go_to_the_results(window, cx);
         })
         .detach();
 
@@ -1353,6 +1358,7 @@ impl RootView {
             Shift::Queue => &self.queue_rows,
             Shift::Playlist(_) => &self.playlist_rows,
             Shift::Listing(Listed::Tracks) => &self.track_rows,
+            Shift::Listing(Listed::Albums) => &self.album_rows,
             Shift::Listing(Listed::Artists) => &self.artist_rows,
         };
         let shown = listing
@@ -1361,6 +1367,9 @@ impl RootView {
             .last_item_size
             .map_or(0.0, |size| f32::from(size.item.height));
 
+        if shift == Shift::Listing(Listed::Albums) {
+            return ((shown / theme::grid_row()) as usize).max(1) * self.grid_columns();
+        }
         ((shown / theme::row_height()) as usize).max(1)
     }
 
@@ -1428,6 +1437,13 @@ impl RootView {
                 };
                 let listing = library.listing();
                 self.play(&listing, held, cx);
+            }
+            Shift::Listing(Listed::Albums) => {
+                let Some(album) = self.library.read(cx).albums().get(row).map(|held| held.id)
+                else {
+                    return;
+                };
+                self.opened(Selection::Album(album), cx);
             }
             Shift::Listing(Listed::Artists) => {
                 let Some(artist) = self.library.read(cx).artists().get(row).map(|held| held.id)
@@ -1582,8 +1598,12 @@ impl RootView {
 
                 (rows > 0).then_some((Shift::Listing(Listed::Artists), rows))
             }
-            Pane::Albums
-            | Pane::Statistics
+            Pane::Albums => {
+                let rows = self.library.read(cx).albums().len();
+
+                (rows > 0).then_some((Shift::Listing(Listed::Albums), rows))
+            }
+            Pane::Statistics
             | Pane::Favourites
             | Pane::Suggestions
             | Pane::Missing
@@ -1622,6 +1642,10 @@ impl RootView {
                 .scroll_to_item(row, ScrollStrategy::Center),
             Shift::Listing(Listed::Tracks) => {
                 self.track_rows.scroll_to_item(row, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Albums) => {
+                self.album_rows
+                    .scroll_to_item(row / self.grid_columns(), ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Artists) => {
                 self.artist_rows.scroll_to_item(row, ScrollStrategy::Center);
@@ -2123,6 +2147,24 @@ impl RootView {
         cx.notify();
     }
 
+    fn go_to_the_results(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.search.read(cx).is_focused(window) {
+            return;
+        }
+        window.focus(&self.focus);
+        self.reach = None;
+        self.reach_row(Step::Below, cx);
+        cx.notify();
+    }
+
+    fn tab_onward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search.read(cx).is_focused(window) {
+            self.go_to_the_results(window, cx);
+        } else {
+            window.focus_next();
+        }
+    }
+
     fn leave_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.search.read(cx).is_focused(window) {
             return;
@@ -2215,6 +2257,12 @@ impl RootView {
             return;
         }
         self.read_from_the_top(cx);
+        if self
+            .reach
+            .is_some_and(|reach| matches!(reach.shift, Shift::Listing(_)))
+        {
+            self.reach = None;
+        }
         self.library
             .update(cx, |library, cx| library.set_query(query, cx));
         cx.notify();
@@ -2880,6 +2928,12 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &LeaveSearch, window, cx| {
                 this.dismiss_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &GoToTheResults, window, cx| {
+                this.go_to_the_results(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TabOnward, window, cx| {
+                this.tab_onward(window, cx);
             }))
             .on_action(cx.listener(|this, _: &FocusFilter, window, cx| {
                 this.focus_filter(window, cx);

@@ -129,6 +129,19 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   while the reach, the page keys and `enter` are not — `enter` plays a track or opens an artist,
   which is what a click already does. `ctrl-shift-left` and `ctrl-shift-right` join the media
   keys in `answering_anywhere`, so one pair always steps the queue, caret or no caret.
+- **A search is left for its results from the keyboard, and the albums grid is reached too.**
+  With the caret in the search box, `down`, `tab` and `enter` are `GoToTheResults`, `TabOnward`
+  and the field's own `Submitted`, and all three land on `RootView::go_to_the_results`: the caret
+  goes back to the window and the first row of whatever the pane lists is reached, so the next
+  `down` steps through what was found and `enter` plays it or opens it. `tab` is bound under
+  `SEARCH_CONTEXT` so that it outranks the window's own, and from any field but the search box
+  `tab_onward` is the `focus_next` it always was. A query that moves drops a reach left in a
+  listing, because the rows under it are no longer the ones it was put on, so `down` after typing
+  starts at the top. `Listed::Albums` makes the grid a listing the reach keys answer: they step
+  through the albums in reading order, a page is as many whole rows of the grid as the pane
+  shows, `show_row` scrolls the grid row holding the album, `enter` opens it, and the reached
+  cell wears `reached_ring` — an accent border laid over its cover, which costs the grid no room.
+  `down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows` pins the two bindings.
 - **The window binds the media keys too, as a fallback rather than as the feature.** A desktop that
   grabs the transport keys consumes them and calls MPRIS, which is how they are meant to work and
   what makes them work with the window behind everything else; where a session grabs none, the key

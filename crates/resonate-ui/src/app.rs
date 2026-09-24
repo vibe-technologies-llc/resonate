@@ -92,6 +92,8 @@ actions!(
         PreviousPane,
         PressControl,
         LeaveControl,
+        GoToTheResults,
+        TabOnward,
         Listen,
         Quit,
     ]
@@ -605,6 +607,8 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
 fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
     vec![
         KeyBinding::new("escape", LeaveSearch, Some(SEARCH_CONTEXT)),
+        KeyBinding::new("down", GoToTheResults, Some(SEARCH_CONTEXT)),
+        KeyBinding::new("tab", TabOnward, Some(SEARCH_CONTEXT)),
         KeyBinding::new("space", PressControl, on_a_control),
         KeyBinding::new("enter", PressControl, on_a_control),
         KeyBinding::new("escape", LeaveControl, on_a_control),
@@ -907,6 +911,23 @@ mod tests {
             assert!(
                 predicate.depth_of(&at_rest()).is_some(),
                 "{keys} answers nowhere at all"
+            );
+        }
+    }
+
+    #[test]
+    fn down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows() {
+        let keymap = gpui::Keymap::new(bindings());
+        for (key, wanted) in [("down", "GoToTheResults"), ("tab", "TabOnward")] {
+            let typed = [Keystroke::parse(key).expect("a key gpui reads")];
+            let (found, _) = keymap.bindings_for_input(&typed, &in_the_search_field());
+            let first = found
+                .first()
+                .unwrap_or_else(|| panic!("{key} does nothing in a field"));
+            assert!(
+                first.action().name().ends_with(wanted),
+                "{key} in a field is {}",
+                first.action().name()
             );
         }
     }

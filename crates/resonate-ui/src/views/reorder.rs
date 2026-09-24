@@ -32,6 +32,7 @@ pub(crate) enum Shift {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Listed {
     Tracks,
+    Albums,
     Artists,
 }
 
