@@ -1,7 +1,9 @@
 use std::{
     cmp::Ordering as Ranking,
     ffi::OsStr,
-    fmt, fs, io, iter, mem,
+    fmt, fs,
+    io::{self, Read as _},
+    iter, mem,
     num::NonZeroU32,
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
@@ -30,6 +32,7 @@ const MOVES_PER_BATCH: usize = 256;
 const COMPONENT_BYTES: usize = 255;
 const SHEET_EXTENSION: &str = "cue";
 const STAGED: &str = ".resonate-staging";
+const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
 const SEPARATOR_STANDS_IN: char = '-';
 const REFUSED_BY_A_PORTABLE_VOLUME: [char; 8] = ['\\', ':', '*', '?', '"', '<', '>', '|'];
@@ -1100,6 +1103,9 @@ impl<'a> Planner<'a> {
         if standing.dev() == held.dev() && standing.ino() == held.ino() {
             return None;
         }
+        if already_copied(from, to) {
+            return None;
+        }
         if self.sources.contains(to) {
             return Some(InTheWay::MayGo(to.to_path_buf()));
         }
@@ -1580,7 +1586,7 @@ fn standing(planned: &Move) -> Option<Refusal> {
             return Some(Refusal::SourceGone);
         }
 
-        fs::symlink_metadata(to).is_ok().then(|| Refusal::Collided {
+        (fs::symlink_metadata(to).is_ok() && !already_copied(from, to)).then(|| Refusal::Collided {
             with: to.to_path_buf(),
         })
     })
@@ -1625,7 +1631,9 @@ fn landed_onto(from: &Path, to: &Path) -> Result<Renamed> {
     let how = match fs::rename(from, to) {
         Ok(()) => Landing::Renamed,
         Err(source) if source.kind() == io::ErrorKind::CrossesDevices => {
-            copied_onto(from, to)?;
+            if !already_copied(from, to) {
+                copying(from, to)?;
+            }
             Landing::Copied
         }
         Err(source) => {
@@ -1644,17 +1652,57 @@ fn landed_onto(from: &Path, to: &Path) -> Result<Renamed> {
     })
 }
 
-fn copied_onto(from: &Path, to: &Path) -> Result<()> {
-    match copying(from, to) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = fs::remove_file(to);
-            Err(error)
+fn copying(from: &Path, to: &Path) -> Result<()> {
+    let mut staging = to.as_os_str().to_owned();
+    staging.push(STAGED);
+    let staged = PathBuf::from(staging);
+
+    let landed = copied_whole(from, &staged).and_then(|()| {
+        fs::rename(&staged, to).map_err(|source| Error::Move {
+            op: MoveOp::Copy,
+            path: to.to_path_buf(),
+            source,
+        })
+    });
+    if landed.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    landed
+}
+
+fn already_copied(from: &Path, to: &Path) -> bool {
+    let (Ok(source), Ok(copy)) = (fs::symlink_metadata(from), fs::symlink_metadata(to)) else {
+        return false;
+    };
+    let alike = source.is_file()
+        && copy.is_file()
+        && source.dev() != copy.dev()
+        && source.len() == copy.len()
+        && source
+            .modified()
+            .ok()
+            .is_some_and(|stamp| copy.modified().ok() == Some(stamp));
+    alike && same_bytes(from, to).unwrap_or(false)
+}
+
+fn same_bytes(one: &Path, other: &Path) -> io::Result<bool> {
+    let mut one = fs::File::open(one)?;
+    let mut other = fs::File::open(other)?;
+    let mut ours = vec![0_u8; COMPARED_AT_ONCE];
+    let mut theirs = vec![0_u8; COMPARED_AT_ONCE];
+    loop {
+        let read = one.read(&mut ours)?;
+        if read == 0 {
+            return Ok(other.read(&mut theirs)? == 0);
+        }
+        other.read_exact(&mut theirs[..read])?;
+        if ours[..read] != theirs[..read] {
+            return Ok(false);
         }
     }
 }
 
-fn copying(from: &Path, to: &Path) -> Result<()> {
+fn copied_whole(from: &Path, to: &Path) -> Result<()> {
     let held = fs::metadata(from).map_err(|source| Error::Move {
         op: MoveOp::Copy,
         path: from.to_path_buf(),

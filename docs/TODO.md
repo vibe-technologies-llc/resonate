@@ -283,10 +283,9 @@
   breaking one needs a temporary name and a crash between the renames would leave a file under a
   name nothing knows. It converges over runs the way a chain used to, with nothing saying so but
   the count of collisions
-- A copy across a filesystem boundary is not resumable. Every failure `copying` can see takes the
-  half-written file away again, but a run killed outright leaves one standing, and the next run
-  reads it as a destination already held and refuses the move as `Collided` rather than writing
-  over it — which is the safe reading and leaves a file to delete by hand
+- A copy across a filesystem boundary killed mid-write leaves its staging file — the destination's
+  name with `.resonate-staging` after it — beside where the file would have landed, and nothing
+  sweeps one away but a hand
 - A sheet is rewritten only where its own bytes name the audio exactly once, so a `.cue` naming
   the file in a `REM` comment as well as in its `FILE` line, or one a tagger wrote in an encoding
   the new name has no letters in, is left as it was and goes on naming a file that is not there

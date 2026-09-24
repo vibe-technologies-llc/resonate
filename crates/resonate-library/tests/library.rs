@@ -11774,6 +11774,97 @@ fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_a
     Ok(())
 }
 
+#[test]
+fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -> Result<()> {
+    let tree = Tree::new();
+    let stood = tree.write("here.wav", &meddle("Echoes", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let Some(elsewhere) = across_the_boundary() else {
+        eprintln!("skipped: nothing here is on a second filesystem to move onto");
+        return Ok(());
+    };
+    let root = filed_under(&tree);
+    os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
+        .expect("a link into the second filesystem");
+    let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
+    fs::create_dir_all(landed.parent().expect("a folder")).expect("the folder a run made");
+    fs::copy(&stood, &landed).expect("the copy a killed run wrote");
+    let stamp = fs::metadata(&stood)
+        .and_then(|standing| standing.modified())
+        .expect("a filesystem that keeps a modification time");
+    fs::File::options()
+        .write(true)
+        .open(&landed)
+        .and_then(|copy| copy.set_modified(stamp))
+        .expect("the copy carries the source's time");
+
+    let summary = applied(&library)?;
+
+    assert_eq!(summary.stats.moved, 1);
+    assert_eq!(summary.stats.failed, 0);
+    assert!(
+        summary.plan.refused.is_empty(),
+        "{:?}",
+        summary.plan.refused
+    );
+    assert!(
+        !stood.exists(),
+        "the file it was copied from is still there"
+    );
+    assert_eq!(where_the_rows_are(&library)?, vec![landed.clone()]);
+    assert_eq!(
+        fs::read_dir(landed.parent().expect("a folder"))
+            .expect("the folder it landed in")
+            .count(),
+        1,
+        "the copy left something beside the file it landed"
+    );
+
+    let _ = fs::remove_dir_all(&elsewhere);
+    Ok(())
+}
+
+#[test]
+fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Result<()> {
+    let tree = Tree::new();
+    let stood = tree.write("here.wav", &meddle("Echoes", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let Some(elsewhere) = across_the_boundary() else {
+        eprintln!("skipped: nothing here is on a second filesystem to move onto");
+        return Ok(());
+    };
+    let root = filed_under(&tree);
+    os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
+        .expect("a link into the second filesystem");
+    let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
+    fs::create_dir_all(landed.parent().expect("a folder")).expect("a folder");
+    let mut other = fs::read(&stood).expect("the file the scan walked");
+    let last = other.len() - 1;
+    other[last] ^= 0xFF;
+    fs::write(&landed, &other).expect("another file of the same size");
+    let stamp = fs::metadata(&stood)
+        .and_then(|standing| standing.modified())
+        .expect("a modification time");
+    fs::File::options()
+        .write(true)
+        .open(&landed)
+        .and_then(|copy| copy.set_modified(stamp))
+        .expect("the same time");
+
+    let summary = applied(&library)?;
+
+    assert_eq!(summary.stats.moved, 0);
+    assert!(stood.exists());
+    assert_eq!(fs::read(&landed).expect("the file in the way"), other);
+
+    let _ = fs::remove_dir_all(&elsewhere);
+    Ok(())
+}
+
 fn where_the_rows_are(library: &Library) -> Result<Vec<PathBuf>> {
     let mut rows = Vec::new();
     for track in all(library)? {

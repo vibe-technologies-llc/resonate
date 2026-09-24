@@ -1350,9 +1350,20 @@ the pass.
   `copying`, which copies the bytes, carries the source's modification time onto the copy — so the
   next scan reads it as the file it already knows rather than as one to probe again, which would
   re-identify a stem-named row against its new name — and `sync_all`s it before anything else
-  happens. The order is what makes it safe: nothing is deleted inside the batch, so `put_back`
+  happens. It is written under the destination's name with `STAGED` after it and renamed into
+  place only once it is whole and synced, so a run killed mid-copy leaves a staging file beside
+  the destination rather than half a file under its name. The order is what makes it safe:
+  nothing is deleted inside the batch, so `put_back`
   undoes a copy by *removing* the copy while the original is still standing, and `left_behind`
-  takes the sources away only after `Library::files_moved` has committed. That is why `Refusal` has
+  takes the sources away only after `Library::files_moved` has committed. A run killed after the
+  rename and before the commit leaves the whole copy standing on the other filesystem beside its
+  source, and `already_copied` is what the next run reads it as: another device, the same size,
+  the same modification time — the copy carries the source's — and the same bytes, read through
+  in `COMPARED_AT_ONCE` pieces only once the three cheap readings agree. Such a destination is
+  not in the way, is not copied again, and the move lands as `Landing::Copied` so the catalog
+  follows and the source goes as it would have.
+  `a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed` and
+  `a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way` are the claims. That is why `Refusal` has
   no `AcrossDevices` variant any more — nothing constructs one.
 - **A run files the roots it is given, and one the catalog does not hold is refused.**
   `OrganiseOptions::roots` empty is every root, which is what the settings pane and a bare
