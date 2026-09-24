@@ -1,11 +1,12 @@
 use std::{
     collections::BTreeMap,
-    io::Read as _,
+    io::{Read as _, Write as _},
     sync::Arc,
     thread,
     time::{Duration, Instant},
 };
 
+use flate2::{Compression, write::GzEncoder};
 use parking_lot::Mutex;
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
@@ -14,7 +15,7 @@ use ureq::{
     http::{HeaderMap, Response, StatusCode, header::RETRY_AFTER},
 };
 
-use crate::{Error, Host, Result};
+use crate::{Error, Host, Result, query::Params};
 
 pub(crate) const LARGEST_DOCUMENT: usize = 4 * 1024 * 1024;
 pub(crate) const LARGEST_PICTURE: usize = 8 * 1024 * 1024;
@@ -22,11 +23,44 @@ pub(crate) const LARGEST_INDEX: usize = 2 * 1024 * 1024;
 
 const NAME: &str = "resonate";
 const CONTENT_LANGUAGE: &str = "en_US";
+const FORM: &str = "application/x-www-form-urlencoded";
+const GZIP: &str = "gzip";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Encoded {
+    Plain,
+    Gzip,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Posted {
     pub(crate) content_type: String,
+    pub(crate) encoded: Encoded,
     pub(crate) bytes: Vec<u8>,
+}
+
+impl Posted {
+    pub(crate) fn packed_form(fields: Params) -> Self {
+        let plain = fields.finish_as_form().into_bytes();
+        let mut packing = GzEncoder::new(Vec::new(), Compression::best());
+        let packed = packing.write_all(&plain).and_then(|()| packing.finish());
+
+        match packed {
+            Ok(bytes) => Self {
+                content_type: FORM.to_owned(),
+                encoded: Encoded::Gzip,
+                bytes,
+            },
+            Err(error) => {
+                tracing::debug!(%error, "a form could not be packed and is sent as it stands");
+                Self {
+                    content_type: FORM.to_owned(),
+                    encoded: Encoded::Plain,
+                    bytes: plain,
+                }
+            }
+        }
+    }
 }
 const CONNECT_WITHIN: Duration = Duration::from_secs(10);
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
@@ -232,12 +266,18 @@ impl Client {
             self.pace(host);
             let sent = match body {
                 None => self.agent.get(url).call(),
-                Some(posted) => self
-                    .agent
-                    .post(url)
-                    .header("Content-Type", posted.content_type.as_str())
-                    .header("Content-Language", CONTENT_LANGUAGE)
-                    .send(posted.bytes.as_slice()),
+                Some(posted) => {
+                    let request = self
+                        .agent
+                        .post(url)
+                        .header("Content-Type", posted.content_type.as_str())
+                        .header("Content-Language", CONTENT_LANGUAGE);
+                    match posted.encoded {
+                        Encoded::Plain => request,
+                        Encoded::Gzip => request.header("Content-Encoding", GZIP),
+                    }
+                    .send(posted.bytes.as_slice())
+                }
             };
             let response = sent.map_err(|error| Error::from_ureq(host, op, error))?;
 
@@ -392,6 +432,67 @@ mod tests {
             read.expect("a body at the cap").map(|held| held.len()),
             Some(CAP)
         );
+    }
+
+    fn serving_one_post() -> (String, JoinHandle<(String, Vec<u8>)>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let url = format!(
+            "http://{}/",
+            listener.local_addr().expect("a bound address")
+        );
+        let served = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("a connection");
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
+                head.push(byte[0]);
+            }
+            let head = String::from_utf8(head)
+                .expect("a head in ASCII")
+                .to_ascii_lowercase();
+            let length = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .and_then(|length| length.trim().parse::<usize>().ok())
+                .expect("a declared length");
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).expect("the body");
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+            (head, body)
+        });
+        (url, served)
+    }
+
+    #[test]
+    fn a_packed_form_is_posted_gzipped_and_says_so() {
+        let client = Client::on_clock(identity(None), Faked::new(), Carried::Plain);
+        let (url, served) = serving_one_post();
+        let fields = Params::new()
+            .with("client", "a key")
+            .with("fingerprint", "AQAA-_x");
+
+        let answer: Option<serde_json::Value> = client
+            .posted(
+                Host::AcoustId,
+                LookupOp::Recognise,
+                &url,
+                &Posted::packed_form(fields),
+            )
+            .expect("an answer");
+        let (head, body) = served.join().expect("the server");
+
+        assert_eq!(answer, Some(serde_json::json!({})));
+        assert!(head.contains("content-encoding: gzip\r\n"), "{head}");
+        assert!(
+            head.contains(&format!("content-type: {FORM}\r\n")),
+            "{head}"
+        );
+        let mut unpacked = String::new();
+        flate2::read::GzDecoder::new(body.as_slice())
+            .read_to_string(&mut unpacked)
+            .expect("a gzipped body");
+        assert_eq!(unpacked, "client=a%20key&fingerprint=AQAA-_x");
     }
 
     #[test]

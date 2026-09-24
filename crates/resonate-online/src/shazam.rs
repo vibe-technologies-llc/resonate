@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     Client, Host,
-    client::{LARGEST_PICTURE, Posted},
+    client::{Encoded, LARGEST_PICTURE, Posted},
 };
 
 const SHAZAM: &str = "shazam";
@@ -174,6 +174,7 @@ impl Recogniser for Shazam {
                 &url,
                 &Posted {
                     content_type: JSON.to_owned(),
+                    encoded: Encoded::Plain,
                     bytes: body,
                 },
             )

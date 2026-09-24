@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     Client, Host,
-    client::{LARGEST_PICTURE, Posted},
+    client::{Encoded, LARGEST_PICTURE, Posted},
 };
 
 const AUDD: &str = "audd";
@@ -134,6 +134,7 @@ impl Recogniser for Audd {
                 &format!("{}/", Host::Audd.base()),
                 &Posted {
                     content_type: format!("multipart/form-data; boundary={boundary}"),
+                    encoded: Encoded::Plain,
                     bytes: body,
                 },
             )

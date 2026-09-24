@@ -61,6 +61,13 @@ impl Params {
     pub(crate) fn finish(self) -> String {
         self.0
     }
+
+    pub(crate) fn finish_as_form(self) -> String {
+        match self.0.strip_prefix('?') {
+            Some(fields) => fields.to_owned(),
+            None => self.0,
+        }
+    }
 }
 
 #[cfg(test)]

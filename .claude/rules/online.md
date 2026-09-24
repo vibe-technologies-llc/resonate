@@ -292,10 +292,11 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   takes the first that names the song; a silent clip is sent nowhere. A refusal is a `tracing`
   record and a name in `Recognition::refused`, not the end of the walk.
 - **The client POSTs as well as GETs, through one exchange.** `Client::exchange` is the loop that
-  paces, sends, and asks a 503 again, with a `Posted` body — its content type and bytes — or none;
-  `Client::posted` reads the answer under `LARGEST_DOCUMENT` into a document the way `json` does.
-  A POST carries `Content-Language: en_US` beside the `Identity::user_agent` every request
-  carries.
+  paces, sends, and asks a 503 again, with a `Posted` body — its content type, whether it is
+  `Encoded::Gzip` and the bytes — or none; `Client::posted` reads the answer under
+  `LARGEST_DOCUMENT` into a document the way `json` does. A POST carries `Content-Language: en_US`
+  beside the `Identity::user_agent` every request carries, and `Content-Encoding: gzip` where its
+  body is packed, which only `Posted::packed_form` makes.
 - **Shazam is asked with a signature, never with audio.** `Shazam::recognise` takes
   `resonate-analysis`'s `signature_of` over the clip's mono mix and POSTs it to
   `/discovery/v5/en/US/android/-/tag/<uuid>/<uuid>` with the query flags the endpoint expects: the

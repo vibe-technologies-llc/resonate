@@ -90,7 +90,9 @@ paths:
   `gzip` is what lets a service answer compressed. `json` is left off on purpose: `Client::json`
   reads the body through `Body::with_config().limit(…)` first and hands the bounded bytes to
   `serde_json::from_slice`, so the crate parses nothing it has not already capped and needs no
-  parser of ureq's.
+  parser of ureq's. `gzip` only ever *reads*, so `flate2` is `resonate-online`'s own as well —
+  the same crate and version ureq already links, with `rust_backend` alone — for the one request
+  body that is sent packed, AcoustID's lookup.
 - `serde` with `std` and `derive`, and `serde_json` with `std`, are `resonate-online`'s,
   `resonate-mcp`'s and `resonate-discord`'s and nobody else's. Every `#[derive(Deserialize)]` in
   the first is a private `…Doc` mapped by hand to a `resonate-library` type, in the second a

@@ -116,9 +116,9 @@
 - A disagreement is flagged and nothing more: no gesture takes the recognised title and artist as
   the row's, and nothing asks MusicBrainz about what the audio was heard as
 - The recognition is AcoustID's alone, and it has never been reached from here — there is no key in
-  this build and the fixture is written from the service's documentation rather than captured. The
-  lookup is a GET with the print in the query string, where the service prefers a compressed POST
-  for a long print
+  this build and the fixture is written from the service's documentation rather than captured.
+  The gzipped form the lookup is posted as has been read by the real service — which answered a
+  made-up key as an invalid one rather than as a missing one — but no print has been matched
 - Shazam is reached through an endpoint it does not document, so a change on its side stops the
   listener naming anything until this build follows it; AudD is the documented fallback and needs
   a token, and AcoustID rarely matches a clip from the middle of a song

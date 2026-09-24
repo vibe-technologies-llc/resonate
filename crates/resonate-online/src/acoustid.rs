@@ -6,7 +6,7 @@ use resonate_library::{Credit, Fingerprints, LookupOp, Printed, RecordingMatch, 
 use resonate_listen::{Clip, Heard as HeardClip, Recogniser};
 use serde::Deserialize;
 
-use crate::{Client, Host, query::Params};
+use crate::{Client, Host, client::Posted, query::Params};
 
 const ACOUSTID: &str = "acoustid";
 const ANSWERED: &str = "ok";
@@ -78,22 +78,25 @@ impl Fingerprints for AcoustId {
 
 impl AcoustId {
     fn looked_up(&self, print: &Chromaprint, length: Duration) -> crate::Result<Printed> {
-        let query = Params::new()
-            .with("client", &self.key)
-            .with("meta", WHAT_IS_ASKED_FOR)
-            .with(
-                "duration",
-                &length.as_secs().max(SHORTEST_LENGTH).to_string(),
-            )
-            .with("fingerprint", print.encoded())
-            .finish();
-        let answer: Option<Answer> = self.client.json(
+        let answer: Option<Answer> = self.client.posted(
             Host::AcoustId,
             LookupOp::Recognise,
-            &format!("/lookup{query}"),
+            &format!("{}/lookup", Host::AcoustId.base()),
+            &Posted::packed_form(lookup(&self.key, print, length)),
         )?;
         Ok(printed(answer))
     }
+}
+
+fn lookup(key: &str, print: &Chromaprint, length: Duration) -> Params {
+    Params::new()
+        .with("client", key)
+        .with("meta", WHAT_IS_ASKED_FOR)
+        .with(
+            "duration",
+            &length.as_secs().max(SHORTEST_LENGTH).to_string(),
+        )
+        .with("fingerprint", print.encoded())
 }
 
 impl Recogniser for AcoustId {

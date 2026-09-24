@@ -181,8 +181,11 @@ it answers could change, because it is what a stored study is weighed against.
   the pane and the pass share.
 - **`AcoustId` is `resonate-online`'s printer, and it asks with a key the listener registered.**
   `Host::AcoustId` is paced at `ACOUSTID_INTERVAL`, 334 ms, the service's three requests a second.
-  The lookup is a GET with `meta=recordings`, read under the client's usual cap; each result's
-  recordings become `RecordingMatch`es scored by the result's score, a recording answered twice
+  The lookup is a POST to `/lookup` of a form — the key, `meta=recordings`, the length and the
+  print — gzipped under `Content-Encoding: gzip`, which is how the service asks for a print too
+  long to sit in a query string; `Posted::packed_form` builds it and falls back to the plain form
+  where the packing fails, which the service reads just as well. It is read under the client's
+  usual cap, and each result's recordings become `RecordingMatch`es scored by the result's score, a recording answered twice
   kept at its best, and a recording with no title dropped as nothing a listener could read. The
   build ships no key: `acoustid-key` is empty by default and `online::fingerprinters` registers
   nothing but the stub until it is set and `online` is on.
