@@ -42,9 +42,10 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   the rest. The clock is a `Clock` trait — `WallClock`
   in a run, `Faked` under test through `Client::on_clock` — so the pacing is asserted on a fake
   clock's record of what it was asked to sleep rather than by timing a test.
-- **A 503 is asked three more times with the wait doubling, and `Retry-After` is read in seconds
-  and capped.** `Client::fetch` retries `SERVICE_UNAVAILABLE` up to `BUSY_RETRIES`, three, each
-  after `cooling_off`: the header's integer seconds where the service names one, and otherwise a
+- **A 503 or a 429 is asked three more times with the wait doubling, and `Retry-After` is read in
+  seconds and capped.** `Client::fetch` retries `SERVICE_UNAVAILABLE` — MusicBrainz's answer to a
+  client going too fast — and `TOO_MANY_REQUESTS`, HTTP's own word for it, up to `BUSY_RETRIES`,
+  three, each after `cooling_off`: the header's integer seconds where the service names one, and otherwise a
   default that starts at `RETRY_AFTER_BY_DEFAULT` of 2 s and doubles per retry — 2 s, 4 s, 8 s —
   either capped at `RETRY_AFTER_AT_MOST` of 10 s, because a pass over a library must not park
   for the minutes a service may name. The fourth answer is returned whatever it says, so a

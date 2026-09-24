@@ -241,7 +241,7 @@ impl Client {
             };
             let response = sent.map_err(|error| Error::from_ureq(host, op, error))?;
 
-            if response.status() != StatusCode::SERVICE_UNAVAILABLE || retried == BUSY_RETRIES {
+            if !asks_to_wait(response.status()) || retried == BUSY_RETRIES {
                 return Ok(response);
             }
 
@@ -275,6 +275,13 @@ impl Client {
             self.clock.sleep(slot - now);
         }
     }
+}
+
+fn asks_to_wait(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE | StatusCode::TOO_MANY_REQUESTS
+    )
 }
 
 fn cooling_off(headers: &HeaderMap, by_default: Duration) -> Duration {
@@ -519,6 +526,20 @@ mod tests {
                 Duration::from_secs(8)
             ]
         );
+    }
+
+    #[test]
+    fn a_service_asking_for_fewer_requests_is_waited_on_like_a_busy_one() {
+        let clock = Faked::new();
+        let slow_down = Answer {
+            status: 429,
+            retry_after: Some(5),
+        };
+        let (status, served) = fetched(&clock, vec![slow_down, FINE]);
+
+        assert_eq!(status, 200);
+        assert_eq!(served, 2);
+        assert_eq!(clock.slept(), vec![Duration::from_secs(5)]);
     }
 
     #[test]
