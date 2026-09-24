@@ -2090,7 +2090,15 @@ fn location_of_argument(argument: &OsStr, sources: &Sources) -> MediaLocation {
         .to_str()
         .and_then(MediaLocation::from_uri)
         .filter(|named| named.as_path().is_some() || sources.provider(named.source()).is_some())
+        .map(settled_here)
         .unwrap_or_else(|| MediaLocation::local(from_here(Path::new(argument))))
+}
+
+fn settled_here(location: MediaLocation) -> MediaLocation {
+    match location.as_path() {
+        Some(path) => MediaLocation::local(from_here(path)),
+        None => location,
+    }
 }
 
 fn from_here(path: &Path) -> PathBuf {
@@ -2160,6 +2168,8 @@ fn sheet_items(sources: &Sources, path: &Path, minting: &mut Unclaimed) -> Vec<Q
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, os::unix::fs::symlink, process};
+
     use resonate_codec::{Media, MediaProvider};
     use resonate_core::SourceId;
 
@@ -2220,6 +2230,32 @@ mod tests {
             Some(MediaLocation::local(here.join("sheets/../a.flac"))),
             "a path was resolved past a folder that is not there"
         );
+    }
+
+    #[test]
+    fn a_uri_names_the_same_file_a_path_through_the_same_link_does() {
+        let folder = env::temp_dir().join(format!("resonate-uri-{}", process::id()));
+        let real = folder.join("real");
+        fs::create_dir_all(&real).expect("a scratch folder");
+        fs::write(real.join("a.flac"), b"").expect("a file");
+        let linked = folder.join("linked");
+        symlink(&real, &linked).expect("a link to the folder");
+
+        let through_the_link = linked.join("../linked/a.flac");
+        let uri = MediaLocation::local(&through_the_link).to_uri();
+        assert_eq!(
+            located(&uri),
+            located(through_the_link.to_str().expect("a UTF-8 path"))
+        );
+        assert_eq!(
+            located(&uri),
+            Some(MediaLocation::local(
+                real.canonicalize().expect("the folder").join("a.flac")
+            )),
+            "a file:// argument kept the link it was named through"
+        );
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }
 
     #[test]

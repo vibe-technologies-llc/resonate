@@ -124,8 +124,9 @@ Invariants the layering exists to protect:
   built from, so the bus advertises exactly what this build can open rather than a hard-coded list.
   The binary reads every file argument through the same reader, so `Exec=resonate %U` hands
   `file:///music/Pink%20Floyd/Echoes.flac` over as the path it names rather than as a file of that
-  literal name, and an argument that is a path is read as the file it names *from here* — the
-  canonical path where it exists and the absolute one where it does not, so a file that is not
+  literal name, and an argument that is a path — or the path a `file://` URI decodes to — is read
+  as the file it names *from here* — the canonical path where it exists and the absolute one where
+  it does not, so a URI through a symlink is the row the scan stored, so a file that is not
   there is still queued and still named. A queue row is published on the bus, kept for the next run
   and matched to a library row by what it holds, and none of the three can read a relative path:
   `to_uri` writes `file://track.wav`, which names a host rather than a file. A local path is escaped and
