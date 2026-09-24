@@ -32,7 +32,7 @@ pub use crate::{
     },
     settings::{
         Bindings, Ephemeral, Online, Places, Present, Setting, SettingKey, Settings, Sourcing,
-        Stored, WindowButtons,
+        Stored, Tabs, WindowButtons,
     },
     views::{Pane, RootView},
 };

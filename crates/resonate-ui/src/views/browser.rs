@@ -19,7 +19,7 @@ use resonate_library::{
 use smallvec::smallvec;
 
 use crate::{
-    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Selection, format,
+    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, ResonateApp, Selection, format,
     icons::{self, Icon},
     theme,
     views::{
@@ -1433,9 +1433,10 @@ impl RootView {
         let services = detail
             .map(|detail| service_names(&detail.links))
             .unwrap_or_default();
+        let missing_shown = cx.global::<ResonateApp>().tabs.missing;
         let unheld = detail
             .map(|detail| detail.releases_unheld as usize)
-            .filter(|unheld| *unheld > 0);
+            .filter(|unheld| missing_shown && *unheld > 0);
         let favourite = library.favoured_artist(id);
         let records = library.artist_albums().len();
         let tracks = library.listed().rows as usize;

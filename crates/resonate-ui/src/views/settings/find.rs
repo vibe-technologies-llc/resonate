@@ -124,13 +124,14 @@ pub(crate) enum Group {
     WindowButtons,
     VolumeWheel,
     Scrollbars,
+    Tabs,
     Build,
     Places,
     Everything,
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 43] = [
+    pub(crate) const ALL: [Self; 44] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
@@ -171,6 +172,7 @@ impl Group {
         Self::WindowButtons,
         Self::VolumeWheel,
         Self::Scrollbars,
+        Self::Tabs,
         Self::Build,
         Self::Places,
         Self::Everything,
@@ -212,7 +214,8 @@ impl Group {
             | Self::Layout
             | Self::WindowButtons
             | Self::VolumeWheel
-            | Self::Scrollbars => Category::Appearance,
+            | Self::Scrollbars
+            | Self::Tabs => Category::Appearance,
             Self::Build | Self::Places | Self::Everything => Category::About,
         }
     }
@@ -263,6 +266,7 @@ impl Group {
             Self::WindowButtons => "Window buttons",
             Self::VolumeWheel => "The volume wheel",
             Self::Scrollbars => "Scrollbars",
+            Self::Tabs => "Sidebar tabs",
             Self::Build => "This build",
             Self::Places => "Where things are kept",
             Self::Everything => "Start again",
@@ -311,6 +315,7 @@ impl Group {
             Self::WindowButtons => WINDOW_BUTTONS_HINT,
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
             Self::Scrollbars => SCROLLBARS_HINT,
+            Self::Tabs => TABS_HINT,
             Self::Build => BUILD_HINT,
             Self::Places => PLACES_HINT,
             Self::Everything => EVERYTHING_HINT,
@@ -408,6 +413,7 @@ impl Group {
             }
             Self::VolumeWheel => "scroll mouse wheel touchpad volume slider louder quieter",
             Self::Scrollbars => "scroll bar thumb track overlay lists panes drag hide",
+            Self::Tabs => "sidebar panes suggestions missing wanted hide show collection",
             Self::Build => "version typeface font features sinks",
             Self::Places => "config.toml library database path xdg",
             Self::Everything => "reset defaults factory put back",
@@ -463,6 +469,7 @@ impl Group {
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
             Self::Scrollbars => &[SettingKey::Scrollbars],
+            Self::Tabs => &[SettingKey::SuggestionsTab, SettingKey::MissingTab],
             Self::Bands
             | Self::Measured
             | Self::Folders
@@ -791,6 +798,12 @@ pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the v
 pub(crate) const SCROLLBARS_HINT: &str = "Whether the lists and panes that scroll draw a bar \
      down their edge that shows where the view stands and can be dragged. Off, they still scroll \
      with the wheel and the keys.";
+
+pub(crate) const TABS_HINT: &str = "Which of the collection's panes the sidebar lists. \
+     Suggestions offers lists made out of what the catalog holds, and Missing names what the \
+     releases are short of and what the artists have put out that the library does not hold. A \
+     pane that is hidden is left out of the sidebar and of the keys that step through it, and \
+     nothing else leads to it.";
 
 pub(crate) const BUILD_HINT: &str = "What this copy of Resonate is: its version, the faces it \
                                      settled on out of the families this machine has installed, \

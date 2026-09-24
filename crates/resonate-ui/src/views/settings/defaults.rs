@@ -7,7 +7,7 @@ use resonate_core::{Appearance, Presence};
 use resonate_engine::{Command, EngineConfig, OutputSettings, SkipUnderRepeat};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
-use crate::{WindowButtons, views::settings::find::Group};
+use crate::{Tabs, WindowButtons, views::settings::find::Group};
 
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
@@ -17,6 +17,7 @@ pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
 pub(crate) const SCROLLBARS: bool = true;
+pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {
@@ -36,6 +37,7 @@ pub(crate) struct Standing {
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
     pub(crate) scrollbars: bool,
+    pub(crate) tabs: Tabs,
     pub(crate) presence: Presence,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
@@ -60,6 +62,7 @@ impl Standing {
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
             scrollbars: SCROLLBARS,
+            tabs: TABS,
             presence: Presence::OFF,
             template_given: false,
             inbox_given: false,
@@ -125,6 +128,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
+        Group::Tabs => standing.tabs != TABS,
         Group::Bands
         | Group::Measured
         | Group::Folders
@@ -178,6 +182,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::WindowButtons
         | Group::VolumeWheel
         | Group::Scrollbars
+        | Group::Tabs
         | Group::Folders
         | Group::Scanning
         | Group::Refreshing

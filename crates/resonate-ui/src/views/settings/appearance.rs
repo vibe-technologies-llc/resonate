@@ -2,11 +2,11 @@ use gpui::{Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px
 use resonate_core::{Accent, Appearance, TextSize, Theme};
 
 use crate::{
-    ResonateApp, Setting, WindowButtons, theme,
+    ResonateApp, Setting, Tabs, WindowButtons, theme,
     views::{
         hint::Names,
         kit,
-        root::RootView,
+        root::{Pane, RootView},
         settings::{Choice, note, switch_row},
     },
 };
@@ -24,6 +24,10 @@ const MAXIMISE_ID: &str = "show-the-maximise-button";
 
 const VOLUME_WHEEL_ID: &str = "wheel-the-volume";
 const SCROLLBARS_ID: &str = "draw-scrollbars";
+
+const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
+
+const MISSING_TAB_ID: &str = "show-the-missing-tab";
 
 const WINDOW_BUTTONS_NOTE: &str = "A button the compositor does not offer is left out whatever \
                                    this says, and a window the compositor draws a titlebar for \
@@ -253,6 +257,56 @@ impl RootView {
             },
             cx,
         ))
+    }
+
+    pub(super) fn tabs_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let shown = cx.global::<ResonateApp>().tabs;
+        let flip_suggestions = Tabs {
+            suggestions: !shown.suggestions,
+            ..shown
+        };
+        let flip_missing = Tabs {
+            missing: !shown.missing,
+            ..shown
+        };
+
+        kit::section_body()
+            .child(self.in_the_ring(
+                SUGGESTIONS_TAB_ID,
+                switch_row(
+                    "Show Suggestions",
+                    "The lists the catalog offers to make out of what it holds",
+                    shown.suggestions,
+                    SUGGESTIONS_TAB_ID,
+                ),
+                move |this, _, cx| {
+                    this.show_tabs(flip_suggestions, cx);
+                    this.store(&Setting::SuggestionsTab(flip_suggestions.suggestions), cx);
+                },
+                cx,
+            ))
+            .child(self.in_the_ring(
+                MISSING_TAB_ID,
+                switch_row(
+                    "Show Missing",
+                    "What the releases are short of, and what the artists put out elsewhere",
+                    shown.missing,
+                    MISSING_TAB_ID,
+                ),
+                move |this, _, cx| {
+                    this.show_tabs(flip_missing, cx);
+                    this.store(&Setting::MissingTab(flip_missing.missing), cx);
+                },
+                cx,
+            ))
+    }
+
+    pub(crate) fn show_tabs(&mut self, shown: Tabs, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.tabs = shown);
+        if !self.pane.is_shown(shown) {
+            self.set_pane(Pane::default(), cx);
+        }
+        cx.notify();
     }
 
     pub(crate) fn draw_scrollbars(&self, drawn: bool, cx: &mut Context<Self>) {

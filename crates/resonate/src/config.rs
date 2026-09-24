@@ -125,6 +125,8 @@ pub struct Config {
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
     pub scrollbars: Option<bool>,
+    pub suggestions_tab: Option<bool>,
+    pub missing_tab: Option<bool>,
     pub inbox: Option<PathBuf>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
@@ -223,6 +225,16 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn draws_scrollbars(&self) -> bool {
         self.scrollbars.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn tabs(&self) -> resonate_ui::Tabs {
+        let built = resonate_ui::Tabs::AS_BUILT;
+
+        resonate_ui::Tabs {
+            suggestions: self.suggestions_tab.unwrap_or(built.suggestions),
+            missing: self.missing_tab.unwrap_or(built.missing),
+        }
     }
 
     pub fn presence(&self) -> Presence {
@@ -346,6 +358,8 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
             ConfigKey::Scrollbars => config.scrollbars = Some(at.boolean(value)?),
+            ConfigKey::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
+            ConfigKey::MissingTab => config.missing_tab = Some(at.boolean(value)?),
             ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
             ConfigKey::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
@@ -956,6 +970,26 @@ mod tests {
             !read("scrollbars = false")
                 .expect("a boolean is valid")
                 .draws_scrollbars()
+        );
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn suggestions_are_listed_and_missing_is_not_until_the_file_says_otherwise() {
+        let built = resonate_ui::Tabs {
+            suggestions: true,
+            missing: false,
+        };
+
+        assert_eq!(read("").expect("empty is valid").tabs(), built);
+        assert_eq!(
+            read("suggestions-tab = false\nmissing-tab = true")
+                .expect("booleans are valid")
+                .tabs(),
+            resonate_ui::Tabs {
+                suggestions: false,
+                missing: true,
+            }
         );
     }
 

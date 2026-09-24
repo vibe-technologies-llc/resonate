@@ -59,6 +59,8 @@ pub enum SettingKey {
     MaximiseButton,
     ScrollVolume,
     Scrollbars,
+    SuggestionsTab,
+    MissingTab,
     Inbox,
     Discord,
     DiscordApp,
@@ -70,7 +72,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 48] = [
+    pub const ALL: [Self; 50] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -111,6 +113,8 @@ impl SettingKey {
         Self::MaximiseButton,
         Self::ScrollVolume,
         Self::Scrollbars,
+        Self::SuggestionsTab,
+        Self::MissingTab,
         Self::Inbox,
         Self::Discord,
         Self::DiscordApp,
@@ -167,6 +171,8 @@ pub enum Setting {
     MaximiseButton(bool),
     ScrollVolume(bool),
     Scrollbars(bool),
+    SuggestionsTab(bool),
+    MissingTab(bool),
     Inbox(PathBuf),
     Discord(bool),
     DiscordApp(Option<AppId>),
@@ -220,6 +226,8 @@ impl Setting {
             Self::MaximiseButton(_) => SettingKey::MaximiseButton,
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
             Self::Scrollbars(_) => SettingKey::Scrollbars,
+            Self::SuggestionsTab(_) => SettingKey::SuggestionsTab,
+            Self::MissingTab(_) => SettingKey::MissingTab,
             Self::Inbox(_) => SettingKey::Inbox,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
@@ -333,6 +341,19 @@ impl WindowButtons {
     };
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tabs {
+    pub suggestions: bool,
+    pub missing: bool,
+}
+
+impl Tabs {
+    pub const AS_BUILT: Self = Self {
+        suggestions: true,
+        missing: false,
+    };
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Places {
     pub config: PathBuf,
@@ -349,6 +370,7 @@ pub struct Stored {
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub scrollbars: bool,
+    pub tabs: Tabs,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
     pub launcher: Arc<dyn Launcher>,

@@ -23,7 +23,7 @@ use resonate_library::{
 
 use crate::{
     Consulted, Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp,
-    Selection, Setting, Settings,
+    Selection, Setting, Settings, Tabs,
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
@@ -202,6 +202,25 @@ impl Pane {
         Self::Visualiser,
         Self::Analysis,
     ];
+
+    pub const fn is_shown(self, tabs: Tabs) -> bool {
+        match self {
+            Self::Suggestions => tabs.suggestions,
+            Self::Missing => tabs.missing,
+            Self::Albums
+            | Self::Artists
+            | Self::Tracks
+            | Self::Statistics
+            | Self::Queue
+            | Self::Playlists
+            | Self::Favourites
+            | Self::Lyrics
+            | Self::Inspector
+            | Self::Visualiser
+            | Self::Analysis
+            | Self::Settings => true,
+        }
+    }
 
     pub const fn lands_where_it_was_left(self) -> bool {
         matches!(self, Self::Albums | Self::Artists | Self::Tracks)
@@ -1198,6 +1217,11 @@ impl RootView {
     }
 
     pub(crate) fn set_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
+        let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs) {
+            pane
+        } else {
+            Pane::default()
+        };
         pointed::forget();
         self.stop_typing(cx);
         if self.pane != pane {
@@ -1663,7 +1687,8 @@ impl RootView {
     }
 
     fn step_pane(&mut self, step: Step, cx: &mut Context<Self>) {
-        let stepped = stepped_pane(self.in_front(cx), step);
+        let tabs = cx.global::<ResonateApp>().tabs;
+        let stepped = stepped_pane(self.in_front(cx), step, tabs);
         self.choose_pane(stepped, cx);
     }
 
@@ -2553,6 +2578,7 @@ impl RootView {
         let favourites = library.favourited().held();
         let offered = library.suggestions().len();
         let plays = library.statistics().plays as usize;
+        let tabs = cx.global::<ResonateApp>().tabs;
         let enriching = library
             .is_enriching()
             .then(|| library.enrich_stats())
@@ -2567,7 +2593,7 @@ impl RootView {
                 .child(kit::eyebrow(section.label()).px_3().pb_1p5());
             for pane in Pane::BROWSE
                 .into_iter()
-                .filter(|pane| pane.section() == section)
+                .filter(|pane| pane.section() == section && pane.is_shown(tabs))
             {
                 let count = match pane {
                     Pane::Albums => Some(albums),
@@ -3041,8 +3067,11 @@ fn landing(pressed: Pane, in_front: Pane, selection: Selection, opened: bool) ->
     }
 }
 
-fn stepped_pane(from: Pane, step: Step) -> Pane {
-    let listed = Pane::BROWSE;
+fn stepped_pane(from: Pane, step: Step, tabs: Tabs) -> Pane {
+    let listed: Vec<Pane> = Pane::BROWSE
+        .into_iter()
+        .filter(|pane| pane.is_shown(tabs))
+        .collect();
     let at = listed
         .iter()
         .position(|pane| *pane == from)
@@ -3080,7 +3109,12 @@ mod tests {
     use resonate_core::{AlbumId, ArtistId};
 
     use super::{Following, Landing, Pane, Step, in_front_of, landing, stepped_pane};
-    use crate::Selection;
+    use crate::{Selection, Tabs};
+
+    const EVERY_TAB: Tabs = Tabs {
+        suggestions: true,
+        missing: true,
+    };
 
     const NO_PLAYLIST_OPEN: bool = false;
 
@@ -3211,21 +3245,21 @@ mod tests {
         let listed = Pane::BROWSE;
         let (first, last) = (listed[0], listed[listed.len() - 1]);
 
-        assert_eq!(stepped_pane(first, Step::Below), listed[1]);
+        assert_eq!(stepped_pane(first, Step::Below, EVERY_TAB), listed[1]);
         assert_eq!(
-            stepped_pane(last, Step::Below),
+            stepped_pane(last, Step::Below, EVERY_TAB),
             first,
             "the end did not wrap"
         );
         assert_eq!(
-            stepped_pane(first, Step::Above),
+            stepped_pane(first, Step::Above, EVERY_TAB),
             last,
             "the start did not wrap"
         );
 
         let walked = listed
             .iter()
-            .fold(first, |pane, _| stepped_pane(pane, Step::Below));
+            .fold(first, |pane, _| stepped_pane(pane, Step::Below, EVERY_TAB));
         assert_eq!(
             walked, first,
             "walking the whole sidebar did not come back to where it started"
@@ -3234,7 +3268,41 @@ mod tests {
 
     #[test]
     fn a_pane_the_sidebar_does_not_list_steps_onto_the_first_one_it_does() {
-        assert_eq!(stepped_pane(Pane::Queue, Step::Below), Pane::BROWSE[1]);
-        assert_eq!(stepped_pane(Pane::Settings, Step::Below), Pane::BROWSE[1]);
+        assert_eq!(
+            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB),
+            Pane::BROWSE[1]
+        );
+        assert_eq!(
+            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB),
+            Pane::BROWSE[1]
+        );
+    }
+
+    #[test]
+    fn the_pane_keys_step_over_a_tab_that_is_hidden() {
+        let hidden = Tabs {
+            suggestions: false,
+            missing: false,
+        };
+
+        assert_eq!(
+            stepped_pane(Pane::Favourites, Step::Below, hidden),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, hidden),
+            Pane::Favourites
+        );
+        assert_eq!(
+            stepped_pane(Pane::Favourites, Step::Below, EVERY_TAB),
+            Pane::Suggestions
+        );
+    }
+
+    #[test]
+    fn the_missing_tab_is_hidden_until_it_is_asked_for() {
+        assert!(Pane::Suggestions.is_shown(Tabs::AS_BUILT));
+        assert!(!Pane::Missing.is_shown(Tabs::AS_BUILT));
+        assert!(Pane::Missing.is_shown(EVERY_TAB));
     }
 }

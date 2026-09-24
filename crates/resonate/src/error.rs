@@ -48,6 +48,8 @@ pub enum ConfigKey {
     MaximiseButton,
     ScrollVolume,
     Scrollbars,
+    SuggestionsTab,
+    MissingTab,
     Inbox,
     AcoustidKey,
     AuddToken,
@@ -63,7 +65,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 52] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -102,6 +104,8 @@ impl ConfigKey {
         Self::MaximiseButton,
         Self::ScrollVolume,
         Self::Scrollbars,
+        Self::SuggestionsTab,
+        Self::MissingTab,
         Self::Inbox,
         Self::AcoustidKey,
         Self::AuddToken,
@@ -156,6 +160,8 @@ impl ConfigKey {
             Self::MaximiseButton => "maximise-button",
             Self::ScrollVolume => "scroll-volume",
             Self::Scrollbars => "scrollbars",
+            Self::SuggestionsTab => "suggestions-tab",
+            Self::MissingTab => "missing-tab",
             Self::Inbox => "inbox",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
