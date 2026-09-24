@@ -23,15 +23,15 @@ pub(crate) struct Row {
 
 pub(crate) struct Drawn {
     pub(crate) analysis: Analysis,
-    pub(crate) lanes: Vec<Vec<Reach>>,
-    pub(crate) spectrum: Vec<f32>,
+    pub(crate) lanes: Arc<[Vec<Reach>]>,
+    pub(crate) spectrum: Arc<[f32]>,
 }
 
 impl Drawn {
     fn of(analysis: Analysis) -> Self {
         Self {
-            lanes: lanes_of(&analysis.envelope, WAVEFORM_COLUMNS),
-            spectrum: traced(&analysis.study.spectrum, SPECTRUM_COLUMNS),
+            lanes: lanes_of(&analysis.envelope, WAVEFORM_COLUMNS).into(),
+            spectrum: traced(&analysis.study.spectrum, SPECTRUM_COLUMNS).into(),
             analysis,
         }
     }

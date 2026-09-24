@@ -251,7 +251,7 @@ impl RootView {
                                 .right_0()
                                 .h(px(WAVEFORM_HEIGHT))
                                 .child(waveform(
-                                    drawn.lanes.clone(),
+                                    Arc::clone(&drawn.lanes),
                                     played,
                                     self.analysis.read(cx).plotted.clone(),
                                 )),
@@ -408,7 +408,7 @@ fn filled_between(
 }
 
 fn waveform(
-    lanes: Vec<Vec<Reach>>,
+    lanes: Arc<[Vec<Reach>]>,
     played: f32,
     plotted: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
 ) -> Canvas<()> {
@@ -530,7 +530,7 @@ fn spectrum_card(drawn: &Drawn) -> Div {
     let nyquist = analysis.study.spectrum.nyquist_hz();
     let cutoff = cutoff_share(analysis, nyquist);
     let colour = verdict_colour(analysis.study.judgement.verdict);
-    let series = drawn.spectrum.clone();
+    let series = Arc::clone(&drawn.spectrum);
 
     let mut plot = div()
         .relative()
@@ -567,7 +567,7 @@ fn spectrum_card(drawn: &Drawn) -> Div {
     card("Average spectrum").child(plot)
 }
 
-fn spectrum_line(series: Vec<f32>, cutoff: Option<f32>, colour: u32) -> Canvas<()> {
+fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas<()> {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
