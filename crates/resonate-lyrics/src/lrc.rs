@@ -257,7 +257,7 @@ enum Bracket<'a> {
 
 impl<'a> Bracket<'a> {
     fn read(inside: &'a str) -> Self {
-        if let Some(at) = moment(inside) {
+        if let Some(at) = moment(inside).or_else(|| span(inside)) {
             return Self::Moment(at);
         }
         let Some((name, value)) = inside.split_once(':') else {
@@ -442,6 +442,21 @@ mod tests {
                 Duration::from_millis(3_250),
                 Duration::from_millis(4_750),
                 Duration::from_millis(5_125),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_moment_past_the_hour_is_read_with_its_hours_where_its_fraction_says_so() {
+        let lyrics = lyrics("[59:59.50]before\n[1:02:03.45]after\n[1:02:03]hundredths")
+            .expect("a set");
+
+        assert_eq!(
+            timed(&lyrics),
+            [
+                (Duration::from_millis(62_030), "hundredths"),
+                (Duration::from_millis(3_599_500), "before"),
+                (Duration::from_millis(3_723_450), "after"),
             ]
         );
     }

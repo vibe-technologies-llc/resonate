@@ -155,7 +155,9 @@ window.
   sheet name another track. `span` is what reads one: `mm:ss`, `mm:ss.xx` and `h:mm:ss`, told apart
   by counting colons rather than by trying `moment` and hoping, because `moment` reads the second
   colon of `[00:04:75]` as a fraction separator and would take `1:03:20` for a minute and three
-  seconds.
+  seconds. A *moment* is the other way round: a bracket is `moment` first, so `[00:04:75]` keeps
+  its hundredths, and `span` only where that fails, so `[1:02:03.45]` — which `moment` cannot read,
+  its fraction holding a dot — is sung an hour in rather than printed as text.
 - **A line is repeated once per timestamp written on it**, which is what an LRC sheet means by
   giving one line several moments. That repetition is why the reader bounds itself rather than
   trusting its input: `LARGEST_SHEET` is what it will read at all, `LARGEST_SET` and `MOST_LINES`
