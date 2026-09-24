@@ -6,7 +6,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded};
 use parking_lot::RwLock;
-use resonate_core::{AppId, Mbid, MediaLocation, Pictured, Presence, Shown, TrackId};
+use resonate_core::{AppId, FrameSpan, Mbid, MediaLocation, Pictured, Presence, Shown, TrackId};
 use resonate_engine::{PlaybackState, Player, StreamDigest, TagSet};
 
 use crate::{
@@ -19,6 +19,7 @@ const TICK: Duration = Duration::from_secs(1);
 const SENDS_APART: Duration = Duration::from_secs(4);
 const DRIFT_ALLOWED: Duration = Duration::from_secs(2);
 const RETRY_AFTER: Duration = Duration::from_secs(15);
+const COVER_REFRESH_AFTER: Duration = Duration::from_secs(15);
 const FAREWELL: Duration = Duration::from_millis(500);
 
 pub(crate) struct Running {
@@ -78,6 +79,13 @@ struct Sent {
     at: Instant,
 }
 
+struct CachedCover {
+    track: TrackId,
+    location: MediaLocation,
+    cover: Option<Cover>,
+    checked: Instant,
+}
+
 enum Link {
     Closed {
         retry_at: Option<Instant>,
@@ -97,7 +105,7 @@ struct Publisher {
     releases: Arc<dyn Releases>,
     presence: Arc<RwLock<Presence>>,
     link: Link,
-    covered: Option<(TrackId, MediaLocation, Option<Cover>)>,
+    covered: Option<CachedCover>,
 }
 
 impl Publisher {
@@ -181,6 +189,9 @@ impl Publisher {
             Ok(()) => {}
             Err(Error::Refused { code }) => {
                 tracing::warn!(code, "Discord refused what was playing");
+                self.link = Link::Closed {
+                    retry_at: Some(now + RETRY_AFTER),
+                };
             }
             Err(error) => {
                 tracing::debug!(%error, "the connection to Discord was lost");
@@ -237,17 +248,42 @@ impl Publisher {
     }
 
     fn cover(&mut self, track: TrackId, digest: &StreamDigest) -> Option<Cover> {
-        if let Some((held, location, cover)) = &self.covered
-            && *held == track
-            && *location == digest.location
-        {
-            return cover.clone();
-        }
-        let cover = tagged(&digest.info.tags)
-            .or_else(|| self.releases.cover(&digest.location, digest.span));
-        self.covered = Some((track, digest.location.clone(), cover.clone()));
-        cover
+        cover_for(
+            self.releases.as_ref(),
+            &mut self.covered,
+            track,
+            &digest.location,
+            digest.span,
+            &digest.info.tags,
+            Instant::now(),
+        )
     }
+}
+
+fn cover_for(
+    releases: &dyn Releases,
+    cached: &mut Option<CachedCover>,
+    track: TrackId,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+    tags: &TagSet,
+    now: Instant,
+) -> Option<Cover> {
+    if let Some(held) = cached.as_ref()
+        && held.track == track
+        && held.location == *location
+        && now.saturating_duration_since(held.checked) < COVER_REFRESH_AFTER
+    {
+        return held.cover.clone();
+    }
+    let cover = tagged(tags).or_else(|| releases.cover(location, span));
+    *cached = Some(CachedCover {
+        track,
+        location: location.clone(),
+        cover: cover.clone(),
+        checked: now,
+    });
+    cover
 }
 
 fn named(text: Option<&str>) -> Option<String> {
@@ -277,12 +313,62 @@ fn due(sent: Option<&Sent>, wanted: Option<&Activity>, now: Instant) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        path::Path,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
     use resonate_core::AppId;
 
     use super::*;
 
     const RELEASE: &str = "0A7F4B1C-2D3E-4F50-8A6B-7C8D9E0F1A2B";
     const GROUP: &str = "11111111-2222-3333-4444-555555555555";
+
+    struct ChangingReleases {
+        cover: RwLock<Option<Cover>>,
+        reads: AtomicUsize,
+    }
+
+    impl Releases for ChangingReleases {
+        fn cover(&self, _location: &MediaLocation, _span: Option<FrameSpan>) -> Option<Cover> {
+            self.reads.fetch_add(1, Ordering::Relaxed);
+            self.cover.read().clone()
+        }
+    }
+
+    #[test]
+    fn a_cover_discovered_during_playback_replaces_a_cached_miss() {
+        let releases = ChangingReleases {
+            cover: RwLock::new(None),
+            reads: AtomicUsize::new(0),
+        };
+        let mut cached = None;
+        let track = TrackId::new(1).expect("a track id");
+        let location = MediaLocation::local(Path::new("song.wav"));
+        let now = Instant::now();
+        let read = |cached: &mut Option<CachedCover>, at| {
+            cover_for(
+                &releases,
+                cached,
+                track,
+                &location,
+                None,
+                &TagSet::default(),
+                at,
+            )
+        };
+
+        assert_eq!(read(&mut cached, now), None);
+        *releases.cover.write() = Some(Cover::Group(Mbid::new(GROUP).expect("a group id")));
+        assert_eq!(read(&mut cached, now + COVER_REFRESH_AFTER / 2), None);
+        assert_eq!(releases.reads.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            read(&mut cached, now + COVER_REFRESH_AFTER),
+            Some(Cover::Group(Mbid::new(GROUP).expect("a group id")))
+        );
+        assert_eq!(releases.reads.load(Ordering::Relaxed), 2);
+    }
 
     fn activity(title: &str, position: u64) -> Activity {
         let presence = Presence {
