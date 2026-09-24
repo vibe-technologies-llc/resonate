@@ -866,7 +866,9 @@ cargo run -- missing                  # the release tracks the catalog holds no 
 cargo run -- poll                     # asks every registered provider for each want not tried
                                       #   lately and lands what they deliver in the vault as
                                       #   track rows; --again asks about those tried lately too
-cargo run -- forget <roots>           # drops roots and every track scanned from them
+cargo run -- forget <roots>           # drops roots and every track scanned from them; a path or
+                                      #   URI `wants` lists a delivery under forgets that row and
+                                      #   leaves its want due again
 cargo run -- tag                      # the tags that would be written into every scanned file to
                                       #   say what the catalog was told about it, one row per
                                       #   field, with the album's cover where the file carries

@@ -14537,6 +14537,50 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
 }
 
 #[test]
+fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let want = wanted_san_tropez(&library)?;
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    let object = library.vault_objects()?[0].path.clone();
+    let scanned = all(&library)?
+        .into_iter()
+        .find(|track| track.title != "San Tropez")
+        .expect("a scanned row");
+
+    assert!(
+        !library.forget_delivered(scanned.location.as_path().expect("a local row"))?,
+        "a row scanned from a root was forgotten as a delivery"
+    );
+    assert!(library.forget_delivered(&object)?);
+    assert!(!library.forget_delivered(&object)?);
+
+    assert!(
+        all(&library)?
+            .iter()
+            .all(|track| track.title != "San Tropez")
+    );
+    assert!(library.track(scanned.id)?.is_some());
+    let wants = library.wants()?;
+    assert_eq!(wants[0].id, want);
+    assert_eq!(wants[0].held, None);
+    assert!(library.is_a_want_due(PollOptions::ASKING_EVERY_WANT)?);
+    assert_eq!(library.prune_the_vault()?.objects, 1);
+    Ok(())
+}
+
+#[test]
 fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

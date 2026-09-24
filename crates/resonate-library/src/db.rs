@@ -1175,6 +1175,23 @@ impl Library {
         })
     }
 
+    pub fn forget_delivered(&self, path: &Path) -> Result<bool> {
+        self.inner.write(|transaction| {
+            let forgotten = transaction
+                .execute(
+                    "DELETE FROM tracks WHERE root_id IS NULL AND path = ?1",
+                    params![store::path_text(path)?],
+                )
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            if forgotten > 0 {
+                transaction
+                    .execute_batch(store::ORPHANS)
+                    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            }
+            Ok(forgotten > 0)
+        })
+    }
+
     pub fn playlists(
         &self,
         order: PlaylistOrder,

@@ -813,11 +813,21 @@ fn roots(library: &Library) -> Result<()> {
 }
 
 fn forget(library: &Library, roots: &[PathBuf]) -> Result<()> {
+    let sources = Sources::local();
     for root in roots {
         if library.remove_root(root)? {
             println!("forgot {}", root.display());
-        } else {
-            println!("{} was not a library root", root.display());
+            continue;
+        }
+        let named = location_of_argument(root.as_os_str(), &sources);
+        match named.as_path() {
+            Some(delivered) if library.forget_delivered(delivered)? => {
+                println!("forgot the delivered {}", delivered.display());
+            }
+            _ => println!(
+                "{} was neither a library root nor a delivered track",
+                root.display()
+            ),
         }
     }
     Ok(())

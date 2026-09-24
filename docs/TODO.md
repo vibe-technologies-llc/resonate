@@ -51,8 +51,8 @@
 - No provider reaches a network. `resonate-inbox` is the only one registered, so a want is filled
   only by a file someone put in the inbox under its MBID or ISRC, and the service links an
   `Identity` carries are read by nothing yet
-- A delivered row belongs to no root, so nothing takes it away but deleting the catalog: no
-  gesture forgets one, and a scan never prunes it. It carries no genre and no lyrics of its own,
+- A delivered row belongs to no root, so a scan never prunes it and only `resonate forget` handed
+  its path or URI takes it away: the window offers no gesture for it. It carries no genre and no lyrics of its own,
   because the vault strips the tags the delivery came with and the row is written from the release
   track alone; its ReplayGain is what its study measured, so it is levelled only once studied
 - The inbox is watched only while a window is open. A file dropped in it while none is waits for

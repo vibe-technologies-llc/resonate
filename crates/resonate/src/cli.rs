@@ -627,9 +627,12 @@ pub enum Sub {
         again: bool,
     },
 
-    #[command(about = "Drop library roots, and every track scanned from them")]
+    #[command(
+        about = "Drop library roots, and every track scanned from them, or a track a provider \
+                 delivered, named by the path or URI `resonate wants` lists it under"
+    )]
     Forget {
-        #[arg(required = true, value_name = "ROOTS")]
+        #[arg(required = true, value_name = "ROOTS_OR_DELIVERED")]
         roots: Vec<PathBuf>,
     },
 

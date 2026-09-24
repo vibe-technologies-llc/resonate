@@ -85,7 +85,12 @@ A provider does none of this, so none of it is written twice:
 - recording what landed on the want — `offered` the object's URI — and counting `offered`,
   `kept`, `unkept`, `nothing`, `refused` and `late`. A want whose release track holds a row is
   `Want::held` and is never due again, so a filled want is kept as the record of where its
-  delivery went and taking it away changes nothing about the row.
+  delivery went and taking it away changes nothing about the row. **Forgetting the row is the
+  other way round**: `Library::forget_delivered` takes away the rootless row a path names — the
+  vault object's own, which is what `resonate wants` prints as `OFFERED` and what
+  `resonate forget` reads beside a root, URI or path alike — and nothing a scan filed, leaving
+  the object to `--prune` and the want standing, so a wrong file dropped in the inbox is replaced
+  by the next poll rather than kept for ever.
 
 ## Writing one
 
