@@ -62,6 +62,8 @@ trait Choice: Copy + PartialEq + 'static {
     fn detail(self) -> Option<SharedString> {
         None
     }
+
+    fn meaning(self) -> SharedString;
 }
 
 impl RootView {
@@ -658,7 +660,14 @@ impl RootView {
             );
         }
 
-        div().flex().child(row)
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(div().flex().child(row))
+            .when_some(chosen, |column, chosen| {
+                column.child(note(chosen.meaning()))
+            })
     }
 
     fn option_in_the_ring(

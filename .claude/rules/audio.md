@@ -1239,7 +1239,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   a negotiation vocabulary with no wider float, and the stages read only its rate and channels.
 - **Lossy restoration is a spectral stage for MP3, AAC and Vorbis alone, off unless asked.**
   `Restoration` is `Off`, `Repair` or `Extend`, the `restore-lossy` key and the settings pane's
-  *Lossy sources* group, and `Restore` is pushed after the remix and before the resampler, so it
+  *Repairing lossy files* group, and `Restore` is pushed after the remix and before the resampler, so it
   works at the source rate where the encoder cut. `Decoded` carries the source's `Tuning` — the
   engine maps `Codec` onto one in `tuning_of`, naming the lossy codecs rather than trusting
   `is_lossless`, which calls `Unknown` lossy too — and the lowpass wall the study found, off

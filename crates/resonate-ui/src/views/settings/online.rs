@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use gpui::{ClickEvent, Context, Div, Entity, Stateful, Window, div, prelude::*, rgb};
+use gpui::{
+    ClickEvent, Context, Div, Entity, SharedString, Stateful, Window, div, prelude::*, rgb,
+};
 use resonate_library::EnrichStats;
 use resonate_listen::Listening;
 
@@ -56,6 +58,19 @@ impl Choice for HeardFrom {
             Self::Microphone => "A microphone",
         }
     }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Desktop => {
+                "Listen names what this machine is playing — a video, a stream, another player \
+                 — by recording the desktop's own output."
+            }
+            Self::Microphone => {
+                "Listen names what is playing in the room, heard through the microphone chosen \
+                 below."
+            }
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,6 +106,14 @@ impl Choice for ClipLength {
             Self::Usual => "12 s",
             Self::Long => "20 s",
         }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Brief => "Quickest to answer; enough for a clear recording of a well-known song.",
+            Self::Usual => "Enough for most songs, even over a little noise.",
+            Self::Long => "The best chance with a noisy room, a quiet passage or a rarer song.",
+        })
     }
 }
 

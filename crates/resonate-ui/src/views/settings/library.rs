@@ -32,6 +32,14 @@ const FORGET_HINT: &str = "Forget this folder and every track scanned from it. T
 
 const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it.";
 
+const FOLDERS_NOTE: &str = "Everything under these folders is read into the library and followed \
+                            while the window is open. The files are only read: nothing in them \
+                            changes unless Tagging or Organising below is applied.";
+
+const SCANNING_NOTE: &str = "Rescan reads what was added or changed since the last scan. Enrich \
+                             asks MusicBrainz about the albums and artists not asked lately, \
+                             which a scan does on its own when Online allows it.";
+
 const RESUMING_NOTE: &str = "The queue comes back paused on the row it was playing, so nothing \
                              starts on its own. Files named on the command line are queued \
                              instead of what was kept.";
@@ -84,6 +92,7 @@ impl RootView {
             .when(roots.is_empty(), |body| body.child(note(NO_FOLDERS)))
             .when(!roots.is_empty(), |body| body.child(listed))
             .child(hugging(self.add_folder(busy, cx)))
+            .when(!roots.is_empty(), |body| body.child(note(FOLDERS_NOTE)))
             .when_some(notice, |body, notice| body.child(listing::noticed(&notice)))
     }
 
@@ -199,9 +208,10 @@ impl RootView {
             .when(scanning, |body| {
                 body.child(progress(read_so_far(stats.unwrap_or_default())))
             })
-            .when_some(stats, |body, stats| {
-                body.child(note(counted(stats, stopped && !scanning)))
-            })
+            .child(note(match stats {
+                Some(stats) => SharedString::from(counted(stats, stopped && !scanning)),
+                None => SharedString::new_static(SCANNING_NOTE),
+            }))
     }
 
     fn rescan(&self, busy: bool, scanning: bool, cx: &mut Context<Self>) -> Stateful<Div> {

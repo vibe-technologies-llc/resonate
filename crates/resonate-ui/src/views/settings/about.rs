@@ -17,6 +17,17 @@ const ASK_AGAIN: &str = "Press it again to take every key out of the settings fi
 
 const PUT_BACK: &str = "Everything is back to what this build was made with.";
 
+const THIS_BUILD: &str = "The faces are the ones found on this machine when the window opened, \
+                          and the reference is what the lookups reach this run.";
+
+const PLACES: &str = "The settings file is the one --config named, or the usual one where it \
+                      named none; the catalog is the library every pane reads. Neither is \
+                      moved from here.";
+
+const START_AGAIN: &str = "Puts every setting on this page and the others back to what this \
+                           build starts with. The first press arms it and the second resets; \
+                           the music folders, the catalog and the files are left alone.";
+
 impl RootView {
     pub(super) fn build_group(&mut self, cx: &mut Context<Self>) -> Div {
         let faces = fonts::drawn_in();
@@ -38,11 +49,12 @@ impl RootView {
             .child(reading(
                 "Reference",
                 if reference {
-                    "MusicBrainz, the Cover Art Archive, Commons and LRCLIB"
+                    "MusicBrainz, the Cover Art Archive, Commons, Apple Music, Deezer and LRCLIB"
                 } else {
                     "none this run — the feature is out of this build, or it started offline"
                 },
             ))
+            .child(note(THIS_BUILD))
     }
 
     pub(super) fn places_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -51,6 +63,7 @@ impl RootView {
         kit::section_body()
             .child(reading("Settings", places.config.display().to_string()))
             .child(reading("Catalog", places.library.display().to_string()))
+            .child(note(PLACES))
     }
 
     pub(super) fn everything_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -76,10 +89,13 @@ impl RootView {
                 self,
                 cx,
             )))
-            .when(armed, |body| body.child(note(ASK_AGAIN)))
-            .when(self.reset_everything_landed, |body| {
-                body.child(note(PUT_BACK))
-            })
+            .child(note(if armed {
+                ASK_AGAIN
+            } else if self.reset_everything_landed {
+                PUT_BACK
+            } else {
+                START_AGAIN
+            }))
     }
 
     fn arm_the_reset(&mut self, cx: &mut Context<Self>) {

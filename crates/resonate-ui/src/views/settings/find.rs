@@ -224,7 +224,7 @@ impl Group {
             Self::NoiseShaping => "Noise shaping",
             Self::ReplayGain => "ReplayGain",
             Self::TruePeak => "True peak",
-            Self::LossySources => "Lossy sources",
+            Self::LossySources => "Repairing lossy files",
             Self::Equalising => "Equaliser",
             Self::BoundTo => "Bound to each device",
             Self::Bands => "Bands",
@@ -323,7 +323,8 @@ impl Group {
             Self::ReplayGain => "loudness volume normalisation gain album track pre-amp untagged",
             Self::TruePeak => "clipping intersample over limiter dbtp headroom lossy",
             Self::LossySources => {
-                "mp3 aac vorbis restore restoration bandwidth extension sbr dsee holes swirly cider"
+                "lossy sources mp3 aac vorbis restore restoration repair bandwidth extension sbr dsee \
+                 holes swirly cider"
             }
             Self::Equalising => {
                 "eq equalizer parametric filter correction headphone tone \

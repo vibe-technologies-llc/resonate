@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use gpui::{Context, Div, Window, prelude::*};
+use gpui::{Context, Div, SharedString, Window, prelude::*};
 use resonate_core::{AppId, Pictured, Presence, Shown};
 
 use crate::{
@@ -39,6 +39,14 @@ impl Choice for Shown {
     fn label(self) -> &'static str {
         Self::label(self)
     }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Application => "Discord says only that Resonate is running, and nothing of what.",
+            Self::Track => "Discord shows the title and the artist of what is playing.",
+            Self::Album => "Discord shows the title, the artist and the album it is on.",
+        })
+    }
 }
 
 impl Choice for Pictured {
@@ -46,6 +54,18 @@ impl Choice for Pictured {
 
     fn label(self) -> &'static str {
         Self::label(self)
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Cover => {
+                "The album's cover from the Cover Art Archive, which Discord fetches itself; \
+                 nothing on this machine is sent. An album the archive holds none for shows the \
+                 icon below."
+            }
+            Self::Icon => "The icon named below, whatever is playing.",
+            Self::Nothing => "No picture at all.",
+        })
     }
 }
 

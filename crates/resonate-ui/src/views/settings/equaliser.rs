@@ -30,6 +30,10 @@ use crate::{
     },
 };
 
+const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here — nothing, a \
+                             curve of its own drawn under Bands, or a kept profile — and a \
+                             device bound to nothing takes what every other device does.";
+
 const CURVE_HEIGHT: f32 = 168.0;
 const CURVE_MARKED_AT_HZ: [f64; 3] = [100.0, 1_000.0, 10_000.0];
 const LEVEL_MARKED_EVERY_DB: f32 = 5.0;
@@ -94,7 +98,7 @@ impl RootView {
             listed = listed.child(self.binding_row(Some(name), description, &kept, cx));
         }
 
-        kit::section_body().child(listed)
+        kit::section_body().child(listed).child(note(BOUND_TO_NOTE))
     }
 
     fn binding_row(

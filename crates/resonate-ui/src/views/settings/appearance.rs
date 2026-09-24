@@ -12,7 +12,7 @@ use crate::{
 };
 
 const KEEPS_ITS_OWN: &str = "Each palette draws each accent in its own tones, and the ringed \
-                             swatch is whichever one the palette was built around";
+                             swatch is whichever one the palette was built around.";
 
 const ITS_OWN: &str = "Whichever accent this palette was built around";
 
@@ -40,11 +40,12 @@ impl Choice for TextSize {
         }
     }
 
-    fn detail(self) -> Option<SharedString> {
-        Some(SharedString::from(format!(
-            "Everything that holds text is drawn at {:.0}% of the middling size",
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "Everything that holds text — the type, the rows, the sidebar and every control — \
+             is drawn at {:.0}% of the middling size.",
             self.scale() * 100.0
-        )))
+        ))
     }
 }
 
@@ -70,12 +71,12 @@ impl RootView {
             .child(kit::field("Theme", shelf))
             .child(kit::field(
                 "Accent",
-                div().flex().flex_col().gap_2().child(accents).child(
-                    div()
-                        .text_size(px(theme::text_xs()))
-                        .text_color(rgb(theme::faint()))
-                        .child(KEEPS_ITS_OWN),
-                ),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(accents)
+                    .child(note(KEEPS_ITS_OWN)),
             ))
     }
 

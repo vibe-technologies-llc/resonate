@@ -16,6 +16,10 @@ use crate::{
 
 const NO_SINKS: &str = "No sinks are present in the graph.";
 
+const DEVICE_NOTE: &str = "A device chosen here is played through whatever the desktop routes \
+                           other sound to; following the system default moves with the \
+                           desktop's own choice.";
+
 const AWAY: &str = "The device named in the settings file is not in the graph, so the system \
                     default is playing until it appears.";
 
@@ -135,6 +139,19 @@ impl Choice for SourceRate {
             Self::FollowTheGraph => "Follow the graph",
         }
     }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::MatchTheFile => {
+                "The stream opens at the file's own rate wherever the device takes it, so a \
+                 44.1 kHz album reaches a DAC untouched rather than resampled to 48 kHz."
+            }
+            Self::FollowTheGraph => {
+                "The stream opens at the rate PipeWire is already running at, and a file at \
+                 any other rate is resampled here, with the filter chosen under Processing."
+            }
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,6 +182,20 @@ impl Choice for GraphRate {
             Self::AskToSwitch => "Ask the graph to switch",
             Self::LeaveItToTheDaemon => "Leave it to the daemon",
         }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::AskToSwitch => {
+                "The stream asks PipeWire to run the whole graph at its rate while it plays, so \
+                 nothing between here and the device resamples it. Other sounds playing at the \
+                 same time are resampled to match instead."
+            }
+            Self::LeaveItToTheDaemon => {
+                "PipeWire keeps the rate it chose, and anything it cannot take as it stands is \
+                 converted, here or by the daemon."
+            }
+        })
     }
 }
 
@@ -202,6 +233,24 @@ impl Choice for BufferDepth {
             Self::Deep => "1 s",
         }
     }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Tight => {
+                "A pause, a seek or a volume change is heard almost at once, but a busy machine \
+                 has the least room before the sound breaks up."
+            }
+            Self::Short => "Quick to answer, with room for a moment's load on the machine.",
+            Self::Standard => {
+                "Room for a busy machine or a slow disc without a break in the sound; a seek \
+                 is still heard within half a second."
+            }
+            Self::Deep => {
+                "The most room for a busy machine, a network share or a Bluetooth link, at the \
+                 cost of a second before a change is heard."
+            }
+        })
+    }
 }
 
 impl RootView {
@@ -236,6 +285,9 @@ impl RootView {
             .child(listed)
             .when(sinks.is_empty(), |body| body.child(note(NO_SINKS)))
             .when(away, |body| body.child(note(AWAY)))
+            .when(!sinks.is_empty() && !away, |body| {
+                body.child(note(DEVICE_NOTE))
+            })
     }
 
     fn default_device(
