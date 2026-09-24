@@ -391,6 +391,13 @@
   in colour — and a test holds the two to the same paths rather than either being derived from the
   other. Only the five paths are weighed, so the ground, the gradient and the transform around them
   could still drift without anything saying so
+- The application's icon does not follow the accent. Wanted: choosing an accent — or a theme whose
+  own accent differs — writes `packaging/resonate.svg` recoloured in it as a user-level icon under
+  `$XDG_DATA_HOME/icons/hicolor`, which outranks the packaged one, and queues a flush of the
+  desktop's icon caches after the change: the same touch of the theme, `kbuildsycoca6` and
+  KIconLoader `iconChanged` the install scriptlet sends, held back until the choosing settles so a
+  run of presses flushes once. Going back to the palette's own accent takes the user-level icon away
+  and flushes again, so the packaged one shows through
 - The album grid draws one frame at the column count the last width gave before the canvas under
   it reports the new one, so a resize is a cell or two out for a frame; the first open costs a
   frame with no cells at all instead, the list being held back until the width has landed.
