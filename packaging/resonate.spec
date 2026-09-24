@@ -56,7 +56,7 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 
 %files
 %license LICENSE
-%doc README.md
+%doc README.md COPYRIGHT
 %{_bindir}/resonate
 %{_datadir}/applications/resonate.desktop
 %{_datadir}/icons/hicolor/scalable/apps/resonate.svg

@@ -33,3 +33,6 @@ fuzz/coverage/
 /packaging/pkg/
 /packaging/resonate/
 /packaging/*.pkg.tar.*
+
+.flatpak-builder/
+/flatpak-build/

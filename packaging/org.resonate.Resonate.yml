@@ -1,0 +1,74 @@
+id: org.resonate.Resonate
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: resonate
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=network
+  - --filesystem=home
+  - --filesystem=xdg-run/pipewire-0
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/discord-ipc-1
+  - --filesystem=xdg-run/discord-ipc-2
+  - --filesystem=xdg-run/discord-ipc-3
+  - --filesystem=xdg-run/discord-ipc-4
+  - --filesystem=xdg-run/discord-ipc-5
+  - --filesystem=xdg-run/discord-ipc-6
+  - --filesystem=xdg-run/discord-ipc-7
+  - --filesystem=xdg-run/discord-ipc-8
+  - --filesystem=xdg-run/discord-ipc-9
+  - --filesystem=xdg-run/app/com.discordapp.Discord
+  - --filesystem=xdg-run/.flatpak/dev.vencord.Vesktop/xdg-run
+  - --own-name=org.mpris.MediaPlayer2.resonate
+  - "--own-name=org.mpris.MediaPlayer2.resonate.*"
+  - --talk-name=org.mpris.MediaPlayer2.resonate
+  - "--talk-name=org.mpris.MediaPlayer2.resonate.*"
+  - --talk-name=org.freedesktop.Notifications
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  build-args:
+    - --share=network
+  env:
+    RUSTFLAGS: "-C target-cpu=generic"
+  arch:
+    x86_64:
+      env:
+        RUSTFLAGS: "-C target-cpu=x86-64"
+modules:
+  - name: resonate
+    buildsystem: simple
+    build-commands:
+      - cargo fetch --locked
+      - cargo build --locked --release --workspace --bin resonate
+      - |
+        set -eu
+        generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)
+        test -n "$generated"
+        install -Dm755 target/release/resonate /app/bin/resonate
+        install -Dm644 packaging/resonate.desktop /app/share/applications/resonate.desktop
+        install -Dm644 packaging/resonate.svg /app/share/icons/hicolor/scalable/apps/resonate.svg
+        install -Dm644 packaging/resonate.svg /app/share/icons/hicolor/scalable/apps/org.resonate.Resonate.svg
+        install -Dm644 packaging/org.resonate.Resonate.metainfo.xml /app/share/metainfo/org.resonate.Resonate.metainfo.xml
+        install -Dm644 LICENSE /app/share/licenses/resonate/LICENSE
+        install -Dm644 COPYRIGHT /app/share/licenses/resonate/COPYRIGHT
+        install -Dm644 -t /app/share/man/man1 "$generated"/*.1
+        install -Dm644 "$generated/resonate.bash" /app/share/bash-completion/completions/resonate
+        install -Dm644 "$generated/_resonate" /app/share/zsh/site-functions/_resonate
+        install -Dm644 "$generated/resonate.fish" /app/share/fish/vendor_completions.d/resonate.fish
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - .flatpak-builder
+          - target
+          - flatpak-build
+          - fuzz/corpus
+          - fuzz/artifacts
+          - fuzz/target

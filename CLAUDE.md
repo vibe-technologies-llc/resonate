@@ -21,7 +21,7 @@ Detailed rules live in `.claude/rules/` and load automatically:
 | `analysis.md` | resonate-analysis, `studies.rs`, the analysis pane, `acoustid.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools and the seam they reach the player through |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
-| `packaging.md` | `packaging/**` | the Arch and Fedora package payloads and their build baseline |
+| `packaging.md` | `packaging/**` | the Arch, Fedora and Flatpak payloads and their build baseline |
 
 ## Project
 
@@ -158,8 +158,8 @@ Invariants the layering exists to protect:
 - **The CLI grammar is written once and read three times.** `crates/resonate/src/cli.rs` is the clap
   derive and nothing else, and `crates/resonate/build.rs` includes it as a module to write the man
   pages and the bash, fish and zsh completions into `OUT_DIR` at build time — so a flag added to the
-  grammar is documented and completed with no second list to keep in step, and the Arch and Fedora
-  packages install what they find under `target/release/build/resonate-*/out`. What it costs is a rule:
+  grammar is documented and completed with no second list to keep in step, and the Arch, Fedora
+  and Flatpak packages install what they find under `target/release/build/resonate-*/out`. What it costs is a rule:
   `cli.rs` may name `std` and `clap` and no workspace crate, because the build script links neither,
   so `vocabulary.rs` is where a `QualityArg` becomes an `engine::Quality`.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`.**
@@ -802,8 +802,10 @@ the CI among them, sets `RUSTFLAGS` back over it.
 
 `packaging/resonate.spec` builds the default-feature binary and generated CLI material on Fedora
 44 from a source archive of the committed tree, tests the headless workspace in `%check`, and
-installs the desktop payload beside it. The packaging rule covers its explicit baseline CPU and why
-the Arch package instead keeps this checkout's `target-cpu=native`.
+installs the desktop payload beside it. `packaging/org.resonate.Resonate.yml` builds the same
+binary from the checkout with the Freedesktop 25.08 SDK, for the architecture's baseline CPU.
+The packaging rule covers that baseline and why the Arch package instead keeps this checkout's
+`target-cpu=native`.
 
 `--exclude resonate-ui --no-default-features` is what keeps gpui out of a build. Excluding the crate
 is what does the work: `resonate-ui` depends on `gpui` unconditionally, so the binary's `ui` feature

@@ -65,11 +65,22 @@ sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.1.0-1.fc44.$(uname
 The spec builds the default feature set and installs the launcher, icon, metainfo, man pages and
 shell completions. The build needs access to crates.io for Cargo's locked dependencies.
 Publishing a GitHub release tagged `v0.1.0` or `0.1.0` builds the Fedora 44 x86_64 RPM and attaches
-it and the source RPM to that release. The tag must match the spec version.
+it and the source RPM to that release. The tag must match the spec version. No release is
+published yet.
+
+`packaging/org.resonate.Resonate.yml` is the Flatpak. It builds this checkout with the
+Freedesktop 25.08 SDK, and it needs `flatpak`, `flatpak-builder` and these runtimes:
+
+```
+flatpak install --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 \
+  org.freedesktop.Sdk.Extension.rust-stable//25.08
+flatpak-builder --force-clean --user --install flatpak-build packaging/org.resonate.Resonate.yml
+flatpak run org.resonate.Resonate
+```
 
 `.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler.
-The Arch PKGBUILD keeps it for the machine building the package. The Fedora release RPM selects the
-architecture's baseline CPU so it runs on other machines.
+The Arch PKGBUILD keeps it for the machine building the package. The Fedora RPM and the Flatpak
+select the architecture's baseline CPU so a build runs on other machines.
 
 ## Playing
 
@@ -150,13 +161,24 @@ turns that off and discards what was kept.
 
 ## Privacy
 
-A request identifies itself as `resonate/<version>` and nothing else. `online = false` stops every
-lookup; AcoustID and AudD are asked only once you set a key of your own, and Discord is told
-nothing unless `discord` is on and names an application of yours.
+A request identifies itself as `resonate/<version>` and nothing else. A contact is added only
+where `contact` holds one.
+
+`online` is on by default, and so is looking the library up after a scan. While online is on,
+that lookup can reach MusicBrainz, the Cover Art Archive, Wikimedia Commons, Wikidata, LRCLIB,
+AutoEq, Deezer and Apple Music. `online = false` stops every one of those.
+
+Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
+yours. AudD is sent the clip only where `audd-token` is set, and AcoustID is asked only where
+`acoustid-key` is set.
+
+Discord is told nothing unless `discord` is on and names an application of yours. What it is
+told is handed to the Discord client on this machine, and the cover is a public Cover Art
+Archive address.
 
 ## Licence
 
-Resonate is free software under the GNU Affero General Public License, version 3 or later. You
-may use, study, share and change it, but anything you distribute that is built from it, or offer
-to users over a network, must be released under the same licence with its complete source. See
-[LICENSE](LICENSE).
+Copyright (C) 2026 Vibe Technologies LLC. Resonate is free software under the GNU Affero General
+Public License, version 3 or later. You may use, study, share and change it, but anything you
+distribute that is built from it, or offer to users over a network, must be released under the
+same licence with its complete source. See [LICENSE](LICENSE).
