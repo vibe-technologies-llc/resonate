@@ -541,7 +541,8 @@ Invariants the layering exists to protect:
   next scan already reconciles while the reverse is a catalog naming files that are not there.
   A rename across a filesystem is a copy whose source goes only once that write has committed, and
   a `.cue` cutting one row out of a file has its `FILE` line rewritten after the batch, in the
-  encoding the sheet was written in. `Library::scan` and `Library::organise` take the same `Walk`
+  encoding the sheet was written in — or in UTF-8 with a mark, where that was Windows-1252 and the
+  new name has letters it does not. `Library::scan` and `Library::organise` take the same `Walk`
   guard and a second caller gets `Error::AlreadyWalking`: a scan's snapshot of what the catalog
   holds, with a pass rewriting paths underneath it, silently destroyed rows. `library.md` has the
   rest.

@@ -280,8 +280,6 @@
   breaking one needs a temporary name and a crash between the renames would leave a file under a
   name nothing knows. It converges over runs the way a chain used to, with nothing saying so but
   the count of collisions
-- A sheet a tagger wrote in an encoding the new name has no letters in is left as it was and goes
-  on naming a file that is not there
 - `resonate organise` reads every scanned row into memory before it plans anything, and nothing
   undoes a run: the moves are the record, and the way back is another layout and another `--apply`
 - The files a sheet names one each are filed only where every destination is free: a unit is

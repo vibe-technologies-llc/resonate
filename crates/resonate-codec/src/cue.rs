@@ -1,4 +1,4 @@
-use std::{fmt, io::Read};
+use std::{fmt, io::Read, ops::Range};
 
 use resonate_core::{Decibels, FrameSpan, Frames, MediaLocation, SampleRate};
 
@@ -6,7 +6,7 @@ use crate::{
     Error, MediaInfo, Result, TagSet,
     source::Sources,
     tags::Uppercased,
-    text::{TextEncoding, decoded, encoded},
+    text::{TextEncoding, UTF8_BOM, decoded, encoded, legacy},
 };
 
 const SECTORS_PER_SECOND: u64 = 75;
@@ -252,14 +252,33 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     }
 
     let named = encoded(from, held.encoding)?;
-    let naming = encoded(to, held.encoding)?;
     let at = the_run_on_the_file_line(sheet, &named, held.encoding)?;
+    let Some(naming) = encoded(to, held.encoding) else {
+        return Some(carried_into_unicode(sheet, at..at + named.len(), to));
+    };
 
     let mut written = Vec::with_capacity(sheet.len() + naming.len() - named.len());
     written.extend_from_slice(&sheet[..at]);
     written.extend_from_slice(&naming);
     written.extend_from_slice(&sheet[at + named.len()..]);
     Some(written)
+}
+
+fn carried_into_unicode(sheet: &[u8], named: Range<usize>, to: &str) -> Vec<u8> {
+    let body = if sheet.starts_with(&UTF8_BOM) {
+        UTF8_BOM.len()
+    } else {
+        0
+    };
+    let before = legacy(sheet.get(body..named.start).unwrap_or_default());
+    let after = legacy(sheet.get(named.end..).unwrap_or_default());
+
+    let mut written = Vec::with_capacity(UTF8_BOM.len() + before.len() + to.len() + after.len());
+    written.extend_from_slice(&UTF8_BOM);
+    written.extend_from_slice(before.as_bytes());
+    written.extend_from_slice(to.as_bytes());
+    written.extend_from_slice(after.as_bytes());
+    written
 }
 
 fn the_run_on_the_file_line(sheet: &[u8], named: &[u8], encoding: TextEncoding) -> Option<usize> {
@@ -1057,19 +1076,31 @@ FILE "Meddle.flac" WAVE
     }
 
     #[test]
-    fn a_sheet_a_name_cannot_be_written_into_is_left_as_it_was() {
+    fn a_sheet_whose_encoding_has_no_letters_for_the_new_name_is_carried_into_unicode() {
         let legacy = [
-            b"FILE \"Ecout".as_slice(),
+            b"REM COMMENT \"".as_slice(),
+            &[0x93, 0xE9, 0x94],
+            b"\"\r\nFILE \"Ecout".as_slice(),
             &[0xE9],
-            b".flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n",
+            b".flac\" WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n",
         ]
         .concat();
-
         assert_eq!(read(&legacy).encoding, TextEncoding::Windows1252);
+
+        let written = renamed(&legacy, "Ecout\u{e9}.flac", "Przybyłowicz.flac")
+            .expect("the sheet is rewritten");
+
+        let unicode = "\u{feff}REM COMMENT \"\u{201c}\u{e9}\u{201d}\"\r\nFILE \"Przybyłowicz.flac\" \
+                       WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n";
+        assert_eq!(written, unicode.as_bytes());
+        let reread = read(&written);
+        assert_eq!(reread.encoding, TextEncoding::Utf8);
         assert_eq!(
-            renamed(&legacy, "Ecout\u{e9}.flac", "Przybyłowicz.flac"),
-            None
+            reread.claims().collect::<Vec<_>>(),
+            vec!["Przybyłowicz.flac"]
         );
-        assert!(renamed(&legacy, "Ecout\u{e9}.flac", "Ecoute.flac").is_some());
+
+        let kept = renamed(&legacy, "Ecout\u{e9}.flac", "Ecoute.flac").expect("it renames");
+        assert_eq!(read(&kept).encoding, TextEncoding::Windows1252);
     }
 }

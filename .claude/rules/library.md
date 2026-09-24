@@ -1403,8 +1403,14 @@ the pass.
   — `the_run_on_the_file_line`, read a unit of the encoding at a time, so a UTF-16 sheet is walked
   in pairs and a `REM` or a `TITLE` naming the same file is left as it was — so a BOM, a line
   ending and every other byte survive; and `staged_over` renames a staged file over the sheet, so
-  a crash mid-write cannot truncate it. A name the sheet's encoding cannot hold, or a file two
-  `FILE` lines name, leaves the sheet as it was.
+  a crash mid-write cannot truncate it. A file two `FILE` lines name leaves the sheet as it was.
+  A name the sheet's encoding cannot hold can only be Windows-1252's, UTF-8 and UTF-16 holding
+  every name, and that sheet is carried into UTF-8 with a byte-order mark rather than left naming
+  a file that has gone: `carried_into_unicode` reads every byte around the run through the same
+  `legacy` table the reader decodes with — one character a byte, so nothing is lost and every line
+  ending stays — and writes the new name between them. The mark is what tells a player that reads
+  a sheet without one as the system's code page that this one is not.
+  `a_sheet_whose_encoding_has_no_letters_for_the_new_name_is_carried_into_unicode` is the claim.
 - **A sheet that cuts a file travels with it whatever it is called, and one that names several
   files takes them all as one move.** The stem rule above only finds `Meddle.cue` beside
   `Meddle.wav`; a rip whose sheet is `Meddle.cue` and whose audio is `CDImage.wav` left the sheet
