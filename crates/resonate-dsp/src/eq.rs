@@ -5,7 +5,7 @@ use resonate_core::{
     eq::{Biquad, MAX_BANDS, Profile},
 };
 
-use crate::{Error, ProcessCount, Processor, Result};
+use crate::{Error, ProcessCount, Processor, Result, fused::multiply_add};
 
 const DENORMAL_FLOOR: f64 = 1e-30;
 
@@ -65,11 +65,13 @@ impl Group {
 
 fn biquad(filter: Biquad, sample: f64, history: [f64; 4]) -> f64 {
     let [behind_in, further_behind_in, behind_out, further_behind_out] = history;
-    usable(
-        filter.b0 * sample + filter.b1 * behind_in + filter.b2 * further_behind_in
-            - filter.a1 * behind_out
-            - filter.a2 * further_behind_out,
-    )
+    let fed_forward = multiply_add(
+        filter.b2,
+        further_behind_in,
+        multiply_add(filter.b1, behind_in, filter.b0 * sample),
+    );
+    let settled = multiply_add(-filter.a2, further_behind_out, fed_forward);
+    usable(multiply_add(-filter.a1, behind_out, settled))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -861,12 +863,10 @@ mod tests {
                     for (filter, history) in self.coefficients.iter().zip(lane.iter_mut()) {
                         let [behind_in, further_behind_in, behind_out, further_behind_out] =
                             *history;
-                        let out = usable(
-                            filter.b0 * carried
-                                + filter.b1 * behind_in
-                                + filter.b2 * further_behind_in
-                                - filter.a1 * behind_out
-                                - filter.a2 * further_behind_out,
+                        let out = biquad(
+                            *filter,
+                            carried,
+                            [behind_in, further_behind_in, behind_out, further_behind_out],
                         );
                         *history = [carried, behind_in, out, behind_out];
                         carried = out;

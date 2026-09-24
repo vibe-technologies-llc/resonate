@@ -94,7 +94,9 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   a sample went through every section before the next frame could start, each section waiting on
   the one before it, so a frame cost the latency of the whole cascade and at `MAX_BANDS` that chain
   was longer than the out-of-order window could see past. Section-major, what a frame waits on is
-  its own section's feedback — the `a1` multiply, two subtractions and the guard — and
+  its own section's feedback — one fused multiply-add and the guard, because `biquad` sums the
+  feed-forward terms and the `a2` term first and takes the previous output in last, so only the
+  newest term is on the loop-carried path where it once waited on two subtractions — and
   `SECTIONS_STAGGERED` sections, each a frame behind the one before, put four of those recursions
   in flight: one at a time measured 0.51 % at `MAX_BANDS` natively against the frame-major 1.55 %,
   two 0.28 %, four 0.18 %, and six or eight spilled and ran slower. Every sample goes through
@@ -102,6 +104,11 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `the_stage_is_bit_identical_to_a_frame_major_cascade` holds it to a plain frame-major cascade
   across every channel grouping, one section to `MAX_BANDS`, a retune, a shrink and a regrow, a
   burst of NaN and infinities, silence, a reset and blocks longer than the prepared maximum.
+  The multiply-adds are fused only where the build targets FMA — `fused::multiply_add` — because
+  `f64::mul_add` on a baseline `x86-64` build is a call into libm; fused and last, the stage costs
+  0.057 % of a core at ten bands and 0.175 % at `MAX_BANDS`, stereo at 48 kHz. The resampler's
+  accumulation was fused the same way and measured no faster, because what it waits on is the
+  cache, so it is not.
 - **A frame's channels run in groups the kernels are specialised for.** One, two, four, six and
   eight are const generics, so a group's history is registers and its lanes are one vector; mono,
   stereo, quad, 5.1 and 7.1 are one group each, and any other count splits into eights and then
