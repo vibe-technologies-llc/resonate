@@ -212,8 +212,8 @@ impl Finding {
                 kilohertz(*extent_hz)
             ),
             Self::Upsampled { from_hz } => format!(
-                "Nothing stands above where {:.1} kHz audio ends, so it was upsampled from {:.1} kHz",
-                kilohertz(*from_hz),
+                "Nothing stands above {} kHz, where {:.1} kHz audio ends, so it was upsampled from it",
+                kilohertz(*from_hz) / 2.0,
                 kilohertz(*from_hz)
             ),
             Self::Padded {
@@ -654,6 +654,10 @@ mod tests {
             Finding::DcOffset { level: 0.1 },
         ];
         assert!(findings.iter().all(|finding| !finding.told().is_empty()));
+        assert_eq!(
+            Finding::Upsampled { from_hz: 44_100 }.told(),
+            "Nothing stands above 22.05 kHz, where 44.1 kHz audio ends, so it was upsampled from it"
+        );
         assert!(findings[0].told().contains("16.1 kHz"));
         assert!(findings[0].told().contains("128 kbps"));
         assert!(findings[3].told().contains("44.1 kHz"));
