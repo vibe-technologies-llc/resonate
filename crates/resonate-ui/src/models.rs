@@ -437,7 +437,7 @@ pub struct LibraryModel {
     found: Arc<[Found]>,
     found_for: Option<String>,
     asking: Option<String>,
-    wanting: AHashSet<Mbid>,
+    wanting: AHashMap<Mbid, Task<()>>,
     release_tracks: Arc<[HeldReleaseTrack]>,
     release: Option<ReleaseDetail>,
     artist: Option<ArtistDetail>,
@@ -515,7 +515,6 @@ pub struct LibraryModel {
     _shared: Task<()>,
     _kept: Task<()>,
     _finding: Task<()>,
-    _wanting: Task<()>,
     _previewing: Task<()>,
 }
 
@@ -572,7 +571,7 @@ impl LibraryModel {
             found: Arc::default(),
             found_for: None,
             asking: None,
-            wanting: AHashSet::new(),
+            wanting: AHashMap::new(),
             release_tracks: Arc::default(),
             release: None,
             artist: None,
@@ -650,7 +649,6 @@ impl LibraryModel {
             _shared: Task::ready(()),
             _kept: Task::ready(()),
             _finding: Task::ready(()),
-            _wanting: Task::ready(()),
             _previewing: Task::ready(()),
         };
         model.reload(cx);
@@ -794,7 +792,7 @@ impl LibraryModel {
     }
 
     pub fn is_wanting(&self, found: &Found) -> bool {
-        self.wanting.contains(&found.recording)
+        self.wanting.contains_key(&found.recording)
     }
 
     fn ask_elsewhere_after(&mut self, settling: Duration, cx: &mut Context<Self>) {
@@ -846,14 +844,15 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return;
         };
-        if !self.wanting.insert(found.recording.clone()) {
+        if self.wanting.contains_key(&found.recording) {
             return;
         }
         self.notice = None;
         cx.notify();
         let library = Arc::clone(&self.library);
+        let recording = found.recording.clone();
 
-        self._wanting = cx.spawn(async move |this, cx| {
+        let wanting = cx.spawn(async move |this, cx| {
             let asked = found.clone();
             let wanted = cx
                 .background_executor()
@@ -861,7 +860,9 @@ impl LibraryModel {
                 .await;
 
             let landed = this.update(cx, |this, cx| {
-                this.wanting.remove(&found.recording);
+                if let Some(finished) = this.wanting.remove(&found.recording) {
+                    finished.detach();
+                }
                 match wanted {
                     Ok(_) => {
                         this.notice = Some(Notice::Done(format!(
@@ -881,6 +882,7 @@ impl LibraryModel {
             });
             let _ = landed;
         });
+        self.wanting.insert(recording, wanting);
     }
 
     pub const fn opened_suggestion(&self) -> Option<&Previewed> {

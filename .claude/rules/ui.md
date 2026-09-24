@@ -1410,6 +1410,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `ReleaseTrackId` as ever, a found song calls `LibraryModel::want_found`, which lands its release
   and wants the row on the background executor, greys the mark while it does, then asks the
   providers and asks MusicBrainz again, so the song moves up into the catalog's section wanted.
+  `wanting` holds a task per recording rather than one for the lot, so wanting a second song
+  before the first has landed does not drop the first's lookup and leave its mark grey.
   The ask is `ask_elsewhere_after`, `ASKED_ELSEWHERE_AFTER` — 700 ms — behind the keystroke, only
   where the build `can_enrich` and `asks_elsewhere` says the words are worth it, and its answer is
   kept against the text it answered, so a reload does not ask again. A search whose plain words a
