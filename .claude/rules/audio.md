@@ -96,7 +96,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `a_blank_text_tag_is_no_tag_and_a_padded_one_is_stored_trimmed` is the claim of. The four
   ReplayGain values keep the same rule through `parsed`: a gain or peak that is blank or will not
   parse leaves whatever an earlier frame or revision gave, so an empty frame after a real one does
-  not play the track with no gain. A tagger that
+  not play the track with no gain. A date is weighed by its kind — a recording date over a
+  recording year over a release date and so on — and a date of the same kind as the one held
+  replaces it, so the newest revision wins a retagged year the way it wins a retagged title. A tagger that
   writes an empty frame rather than omitting it otherwise files a track under an artist with no
   name and an album with no title, and `stem.rs` never runs for a title that is *there*; read as
   none, the same file is named from its stem and grouped as the tags that are not blank say.

@@ -496,7 +496,7 @@ impl Builder {
             return;
         }
         match &self.date {
-            Some((held, _)) if *held <= rank => {}
+            Some((held, _)) if *held < rank => {}
             _ => self.date = Some((rank, value.to_owned())),
         }
     }
@@ -881,6 +881,29 @@ mod tests {
 
         assert_eq!(dated.date.as_deref(), Some("1971-10-30"));
         assert_eq!(reversed.date.as_deref(), Some("1971-10-30"));
+    }
+
+    #[test]
+    fn a_later_date_of_the_same_kind_replaces_the_earlier_one() {
+        let set = absorb(&[
+            tag(StandardTag::RecordingDate(text("1971"))),
+            tag(StandardTag::RecordingDate(text("2011"))),
+        ]);
+        assert_eq!(set.date.as_deref(), Some("2011"));
+
+        let retagged = logged(vec![
+            revision(vec![mapped(
+                "TDRC",
+                "1971",
+                StandardTag::RecordingDate(text("1971")),
+            )]),
+            revision(vec![mapped(
+                "TDRC",
+                "2011",
+                StandardTag::RecordingDate(text("2011")),
+            )]),
+        ]);
+        assert_eq!(set_of(&retagged).date.as_deref(), Some("2011"));
     }
 
     fn revision(tags: Vec<Tag>) -> MetadataRevision {
