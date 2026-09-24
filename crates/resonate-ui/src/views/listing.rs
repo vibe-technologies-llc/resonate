@@ -1,4 +1,4 @@
-use std::{ops::Range, time::SystemTime};
+use std::time::SystemTime;
 
 use gpui::{
     AnyElement, Context, Div, FontWeight, HighlightStyle, SharedString, StyledText, div,
@@ -6,7 +6,7 @@ use gpui::{
 };
 use resonate_core::{AlbumId, ArtistId, MediaLocation, StreamSpec, TrackId};
 use resonate_engine::MediaInfo;
-use resonate_library::{Codec, Direction, Track};
+use resonate_library::{Codec, Direction, Lit, Track};
 
 use crate::{
     Notice, Tone, format,
@@ -219,7 +219,7 @@ fn artist_room() -> Div {
         .overflow_hidden()
 }
 
-pub(crate) fn title_cell(title: SharedString, lit: Vec<Range<usize>>, playing: bool) -> Div {
+pub(crate) fn title_cell(title: SharedString, lit: Lit, playing: bool) -> Div {
     title_room()
         .truncate()
         .text_color(rgb(if playing {
@@ -231,7 +231,7 @@ pub(crate) fn title_cell(title: SharedString, lit: Vec<Range<usize>>, playing: b
         .child(matched(title, lit))
 }
 
-pub(crate) fn matched(text: SharedString, lit: Vec<Range<usize>>) -> AnyElement {
+pub(crate) fn matched(text: SharedString, lit: Lit) -> AnyElement {
     if lit.is_empty() {
         return text.into_any_element();
     }

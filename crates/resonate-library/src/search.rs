@@ -1,8 +1,19 @@
 use std::{fmt, ops::Range, time::Duration};
 
 use resonate_codec::Codec;
+use smallvec::{SmallVec, smallvec};
 
 use crate::store;
+
+const LIT_RUNS_HELD_INLINE: usize = 4;
+const TOKENS_HELD_INLINE: usize = 8;
+const PIECES_HELD_INLINE: usize = 4;
+
+pub type Lit = SmallVec<[Range<usize>; LIT_RUNS_HELD_INLINE]>;
+type Tokens = SmallVec<[Lettered; TOKENS_HELD_INLINE]>;
+pub(crate) type Pieces = SmallVec<[String; PIECES_HELD_INLINE]>;
+pub type Alternatives = SmallVec<[Asked; 1]>;
+pub type Conditions = SmallVec<[Condition; 2]>;
 
 const MINUTE: u64 = 60;
 const HOUR: u64 = 60 * MINUTE;
@@ -410,7 +421,7 @@ impl fmt::Display for Condition {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Asked {
     pub denied: bool,
-    pub all: Vec<Condition>,
+    pub all: Conditions,
 }
 
 impl fmt::Display for Asked {
@@ -440,7 +451,7 @@ impl fmt::Display for Asked {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Clause {
-    pub any: Vec<Asked>,
+    pub any: Alternatives,
 }
 
 impl Clause {
@@ -496,28 +507,28 @@ impl Search {
         self.clauses.is_empty()
     }
 
-    pub fn lit(&self, text: &str, column: Column) -> Vec<Range<usize>> {
+    pub fn lit(&self, text: &str, column: Column) -> Lit {
         let mut reaching = self.words_reaching(column).peekable();
+        let mut lit = Lit::new();
         if reaching.peek().is_none() {
-            return Vec::new();
+            return lit;
         }
 
         let tokens = tokens_of(text);
-        let mut lit = Vec::new();
-
         for word in reaching {
             let pieces = pieces_of(word);
             if pieces.is_empty() {
                 continue;
             }
             if word.phrase {
-                lit.extend(phrased(&tokens, &pieces));
+                phrased(&tokens, &pieces, &mut lit);
             } else {
-                lit.extend(begun_with(&tokens, &pieces));
+                begun_with(&tokens, &pieces, &mut lit);
             }
         }
 
-        merged(lit)
+        merge(&mut lit);
+        lit
     }
 
     fn words_reaching(&self, column: Column) -> impl Iterator<Item = &Word> {
@@ -548,9 +559,9 @@ impl Search {
 
         Some(Self {
             clauses: vec![Clause {
-                any: vec![Asked {
+                any: smallvec![Asked {
                     denied: false,
-                    all: vec![Condition::Word(Word {
+                    all: smallvec![Condition::Word(Word {
                         column: Some(Column::Lyrics),
                         text: words.join(" "),
                         phrase: true,
@@ -583,7 +594,7 @@ pub(crate) fn runs_in(text: &str) -> impl Iterator<Item = (&str, String)> {
         .filter_map(move |(at, folded)| Some((text.get(at)?, folded)))
 }
 
-pub(crate) fn pieces_of(word: &Word) -> Vec<String> {
+pub(crate) fn pieces_of(word: &Word) -> Pieces {
     word.text
         .split(|letter: char| !letter.is_alphanumeric())
         .map(store::folded_letters)
@@ -596,8 +607,8 @@ struct Lettered {
     folded: String,
 }
 
-fn tokens_of(text: &str) -> Vec<Lettered> {
-    let mut tokens = Vec::new();
+fn tokens_of(text: &str) -> Tokens {
+    let mut tokens = Tokens::new();
     let mut begun: Option<usize> = None;
 
     for (at, letter) in text.char_indices() {
@@ -621,42 +632,50 @@ fn lettered(text: &str, at: Range<usize>) -> Lettered {
     Lettered { at, folded }
 }
 
-fn begun_with(tokens: &[Lettered], pieces: &[String]) -> Vec<Range<usize>> {
-    tokens
-        .iter()
-        .filter(|token| {
-            pieces
-                .iter()
-                .any(|piece| token.folded.starts_with(piece.as_str()))
-        })
-        .map(|token| token.at.clone())
-        .collect()
+fn begun_with(tokens: &[Lettered], pieces: &[String], lit: &mut Lit) {
+    lit.extend(
+        tokens
+            .iter()
+            .filter(|token| {
+                pieces
+                    .iter()
+                    .any(|piece| token.folded.starts_with(piece.as_str()))
+            })
+            .map(|token| token.at.clone()),
+    );
 }
 
-fn phrased(tokens: &[Lettered], pieces: &[String]) -> Vec<Range<usize>> {
-    tokens
-        .windows(pieces.len())
-        .filter(|run| {
-            run.iter()
-                .zip(pieces)
-                .all(|(token, piece)| token.folded == *piece)
-        })
-        .filter_map(|run| Some(run.first()?.at.start..run.last()?.at.end))
-        .collect()
+fn phrased(tokens: &[Lettered], pieces: &[String], lit: &mut Lit) {
+    lit.extend(
+        tokens
+            .windows(pieces.len())
+            .filter(|run| {
+                run.iter()
+                    .zip(pieces)
+                    .all(|(token, piece)| token.folded == *piece)
+            })
+            .filter_map(|run| Some(run.first()?.at.start..run.last()?.at.end)),
+    );
 }
 
-fn merged(mut lit: Vec<Range<usize>>) -> Vec<Range<usize>> {
-    lit.sort_by_key(|run| (run.start, run.end));
-    let mut standing: Vec<Range<usize>> = Vec::with_capacity(lit.len());
-
-    for run in lit {
-        match standing.last_mut() {
+fn merge(lit: &mut Lit) {
+    lit.sort_unstable_by_key(|run| (run.start, run.end));
+    let mut kept: usize = 0;
+    for at in 0..lit.len() {
+        let Some(run) = lit.get(at).cloned() else {
+            break;
+        };
+        match kept.checked_sub(1).and_then(|last| lit.get_mut(last)) {
             Some(held) if run.start <= held.end => held.end = held.end.max(run.end),
-            _ => standing.push(run),
+            _ => {
+                if let Some(slot) = lit.get_mut(kept) {
+                    *slot = run;
+                }
+                kept += 1;
+            }
         }
     }
-
-    standing
+    lit.truncate(kept);
 }
 
 struct Token {
@@ -680,34 +699,34 @@ impl Token {
             && self.value.eq_ignore_ascii_case(JOINER)
     }
 
-    fn asked(&self) -> Vec<Asked> {
+    fn asked(&self) -> Alternatives {
         let all = self.conditions();
         if all.is_empty() {
-            return Vec::new();
+            return Alternatives::new();
         }
         if self.denied {
             return all
                 .into_iter()
                 .map(|condition| Asked {
                     denied: true,
-                    all: vec![condition],
+                    all: smallvec![condition],
                 })
                 .collect();
         }
 
-        vec![Asked { denied: false, all }]
+        smallvec![Asked { denied: false, all }]
     }
 
-    fn conditions(&self) -> Vec<Condition> {
+    fn conditions(&self) -> Conditions {
         match self.reading() {
-            Reading::Scoped(_, text) if text.trim().is_empty() => Vec::new(),
-            Reading::Scoped(column, text) => vec![Condition::Word(Word {
+            Reading::Scoped(_, text) if text.trim().is_empty() => Conditions::new(),
+            Reading::Scoped(column, text) => smallvec![Condition::Word(Word {
                 column: Some(column),
                 text,
                 phrase: self.quoted,
             })],
             Reading::Narrowing(terms) => terms.into_iter().map(Condition::Term).collect(),
-            Reading::Loose(text) => vec![Condition::Word(Word {
+            Reading::Loose(text) => smallvec![Condition::Word(Word {
                 column: None,
                 text,
                 phrase: self.quoted,
@@ -1380,7 +1399,7 @@ mod tests {
     fn two_play_counts_only_fold_into_a_range_where_their_windows_agree() {
         let mismatched = Asked {
             denied: false,
-            all: vec![
+            all: smallvec![
                 Condition::Term(Term::Plays {
                     compare: Compare::AtLeast,
                     plays: 5,
@@ -1413,9 +1432,9 @@ mod tests {
         assert_eq!(
             search.clauses,
             vec![Clause {
-                any: vec![Asked {
+                any: smallvec![Asked {
                     denied: true,
-                    all: vec![Condition::Term(Term::Shape(Shape::Lossy))],
+                    all: smallvec![Condition::Term(Term::Shape(Shape::Lossy))],
                 }],
             }]
         );

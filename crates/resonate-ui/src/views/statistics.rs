@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{AnyElement, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb};
 use resonate_core::{AlbumId, ArtistId};
-use resonate_library::{Day, Listened, MostListened, Statistics, Window};
+use resonate_library::{Day, Listened, Lit, MostListened, Statistics, Window};
 
 use crate::{
     Selection, format,
@@ -334,7 +334,7 @@ impl RootView {
                 .min_w(px(0.0))
                 .child(self.opens((kind.id, rank), name, saying, Some(selection), cx))
                 .into_any_element(),
-            None => listing::title_cell(name, Vec::new(), false).into_any_element(),
+            None => listing::title_cell(name, Lit::new(), false).into_any_element(),
         };
 
         row(false)

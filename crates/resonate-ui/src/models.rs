@@ -190,7 +190,7 @@ impl Favourited {
         .into_iter()
         .filter(|(held, _, _)| *held > 0)
         .map(|(held, one, many)| format::counted(held, one, many))
-        .collect::<Vec<String>>()
+        .collect::<format::Parts<String>>()
         .join(" · ")
     }
 }

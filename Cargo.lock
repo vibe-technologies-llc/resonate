@@ -4946,6 +4946,7 @@ dependencies = [
  "resonate-dsp",
  "rustfft",
  "rusty-chromaprint",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -5009,6 +5010,7 @@ dependencies = [
  "resonate-dsp",
  "resonate-pipewire",
  "rtrb",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -5047,6 +5049,7 @@ dependencies = [
  "resonate-vault",
  "rusqlite",
  "rustfft",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
  "unicode-normalization",
@@ -5132,6 +5135,7 @@ dependencies = [
  "parking_lot",
  "pipewire",
  "resonate-core",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -5162,6 +5166,7 @@ dependencies = [
  "resonate-listen",
  "resonate-lyrics",
  "resonate-providers",
+ "smallvec",
  "thiserror 2.0.21",
  "tracing",
  "unicode-segmentation",

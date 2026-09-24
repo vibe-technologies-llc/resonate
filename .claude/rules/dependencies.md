@@ -119,6 +119,15 @@ paths:
   stack. It is pure Rust and brings no crate of its own, so the lockfile gains one entry, and it is
   the decoder rather than a binding to libopus because `unsafe_code = "forbid"` would rule out
   writing one here and a C dependency is one more thing a package has to link.
+- `smallvec` is shared, with `union` and `const_generics` and nothing of its default set, for a
+  collection built over and over that is nearly always small: a cell's search highlight runs and
+  the folded words they are matched against, a clause's alternatives and conditions, the peaks one
+  frame of a Shazam signature finds, a PipeWire format's offered values, the events one engine pass
+  drains, and the visualiser's bars and traces and the window's heading parts. `union` makes the
+  inline form one word smaller and `const_generics` lets an inline length be any constant rather
+  than one of the sizes the crate lists. symphonia, `parking_lot` and gpui already link it, so the
+  lockfile gains edges and no crate. A collection that is built once, or that has no bound a
+  listener could not exceed in ordinary use — a queue, a playlist, a catalog read — stays a `Vec`.
 - `futures-channel` is `resonate-ui`'s, with `alloc` alone, for the oneshot `Drawer::draw` hands a
   cover back through from a thread gpui does not own. gpui already links it, so the lockfile gains
   an edge and no crate.

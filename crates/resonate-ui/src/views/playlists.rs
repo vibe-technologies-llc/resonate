@@ -7,7 +7,8 @@ use gpui::{
 };
 use resonate_core::{PlaylistId, Span};
 use resonate_engine::{Placement, QueueItem, Unclaimed};
-use resonate_library::{Cut, Edit, Favoured, Playlist, PlaylistEntry, Undoable};
+use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
+use smallvec::smallvec;
 
 use crate::{
     Notice, Selection, format,
@@ -633,7 +634,7 @@ impl RootView {
                 .map_or_else(|| format!("playlist {opened}"), |named| named.name.clone()),
         );
         let under = named.as_ref().map_or_else(String::new, |named| {
-            let mut parts = vec![if narrowed {
+            let mut parts: format::Parts<String> = smallvec![if narrowed {
                 shown_of(shown, named).to_string()
             } else {
                 counted(named).to_string()
@@ -988,7 +989,7 @@ impl RootView {
                 listing::number_cell(SharedString::from((entry.position + 1).to_string()))
             })
             .child(cover)
-            .child(listing::title_cell(drawn.title, Vec::new(), current))
+            .child(listing::title_cell(drawn.title, Lit::new(), current))
             .child(listing::artist_cell(
                 self.opens(
                     ("entry-artist", index),

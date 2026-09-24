@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -2984,7 +2984,7 @@ fn indexed(words: &[&Word]) -> Option<String> {
 
         let scoped = match word.column {
             Some(column) => format!("{} : ", column.name()),
-            None => format!("{{{}}} : ", names_a_bare_word_reaches()),
+            None => format!("{{{}}} : ", *WHAT_A_BARE_WORD_REACHES),
         };
         if word.phrase {
             matched.push(format!("{scoped}\"{}\"", pieces.join(" ")));
@@ -2998,13 +2998,13 @@ fn indexed(words: &[&Word]) -> Option<String> {
     (!matched.is_empty()).then(|| matched.join(" "))
 }
 
-fn names_a_bare_word_reaches() -> String {
+static WHAT_A_BARE_WORD_REACHES: LazyLock<String> = LazyLock::new(|| {
     Column::NAMES
         .iter()
         .map(|column| column.name())
         .collect::<Vec<_>>()
         .join(" ")
-}
+});
 
 fn filtered(term: Term, binds: &mut Vec<Value>) -> String {
     match term {

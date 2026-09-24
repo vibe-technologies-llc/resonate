@@ -22,7 +22,7 @@ const LEVELS: usize = 256;
 
 #[derive(Clone, Debug)]
 struct Slice {
-    power: Vec<f32>,
+    power: [f32; SPECTROGRAM_ROWS],
     transforms: u32,
 }
 
@@ -54,15 +54,13 @@ impl Spectrographing {
 
     pub(crate) fn note(&mut self, powers: &[f32]) {
         let bins = powers.len();
-        let power = (0..SPECTROGRAM_ROWS)
-            .map(|row| {
-                let first = row * bins / SPECTROGRAM_ROWS;
-                let past = ((row + 1) * bins / SPECTROGRAM_ROWS)
-                    .max(first + 1)
-                    .min(bins);
-                powers[first..past].iter().copied().fold(0.0, f32::max)
-            })
-            .collect();
+        let power = std::array::from_fn(|row| {
+            let first = row * bins / SPECTROGRAM_ROWS;
+            let past = ((row + 1) * bins / SPECTROGRAM_ROWS)
+                .max(first + 1)
+                .min(bins);
+            powers[first..past].iter().copied().fold(0.0, f32::max)
+        });
         self.columns.push(Slice {
             power,
             transforms: 1,

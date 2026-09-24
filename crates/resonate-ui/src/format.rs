@@ -2,8 +2,13 @@ use std::time::{Duration, SystemTime};
 
 use resonate_core::{AppliedGain, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec};
 use resonate_engine::OutputMode;
+use smallvec::SmallVec;
 
 use crate::theme;
+
+const PARTS_HELD_INLINE: usize = 6;
+
+pub type Parts<T> = SmallVec<[T; PARTS_HELD_INLINE]>;
 
 pub fn clock(frames: Frames, rate: SampleRate) -> String {
     let seconds = frames.to_duration(rate).as_secs();

@@ -17,6 +17,7 @@ resonate-library.workspace = true
 resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 resonate-providers.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 unicode-segmentation.workspace = true

@@ -17,6 +17,7 @@ use resonate_pipewire::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
     StreamRequest, StreamState,
 };
+use smallvec::SmallVec;
 
 use crate::{
     Backend, Command, CommandKind, EngineConfig, Error, Event, OutputMode, OutputPlan,
@@ -34,6 +35,9 @@ const SHORTEST_TICK: Duration = Duration::from_millis(4);
 const PUBLISH_TICK: Duration = Duration::from_millis(16);
 const IDLE_TICK: Duration = Duration::from_millis(100);
 const AT_REST_TICK: Duration = Duration::from_secs(1);
+const EVENTS_A_PASS_HELD_INLINE: usize = 4;
+
+type Drained = SmallVec<[StreamEvent; EVENTS_A_PASS_HELD_INLINE]>;
 const CHAIN_BLOCK: usize = 1024;
 const MIN_RING_FRAMES: u64 = 8_192;
 const BLOCKS_A_RING_HOLDS: u64 = 2;
@@ -1631,8 +1635,8 @@ impl Engine {
         }
     }
 
-    fn drain_events(output: &mut Output) -> Vec<StreamEvent> {
-        let mut events = Vec::new();
+    fn drain_events(output: &mut Output) -> Drained {
+        let mut events = Drained::new();
         loop {
             let Some(stream) = output.stream.as_ref() else {
                 return events;

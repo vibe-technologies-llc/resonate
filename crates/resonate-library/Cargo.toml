@@ -15,6 +15,7 @@ resonate-core.workspace = true
 resonate-vault.workspace = true
 resonate-providers.workspace = true
 rusqlite.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 unicode-normalization.workspace = true

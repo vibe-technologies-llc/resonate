@@ -3,6 +3,7 @@ use std::{f64::consts::PI, sync::Arc};
 use resonate_core::{ChannelLayout, SampleRate};
 use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
+use smallvec::SmallVec;
 
 use crate::print::standard_base64;
 
@@ -21,6 +22,7 @@ const DATA_URI: &str = "data:audio/vnd.shazam.sig;base64,";
 
 const WINDOW: usize = 2_048;
 const HOP: usize = 128;
+const PEAKS_A_FRAME_HELD_INLINE: usize = 16;
 const BINS: usize = WINDOW / 2 + 1;
 const HELD_FRAMES: usize = 256;
 const POWER_SCALE: f64 = (1 << 17) as f64;
@@ -235,7 +237,7 @@ impl Signing {
             return;
         };
         let frame = (self.frames_done - PEAKS_LOOKED_FOR_AFTER) as u32;
-        let mut found = Vec::new();
+        let mut found = SmallVec::<[Peak; PEAKS_A_FRAME_HELD_INLINE]>::new();
 
         for bin in FIRST_EXAMINED_BIN..=LAST_EXAMINED_BIN {
             let power = powers.get(bin).copied().unwrap_or_default();

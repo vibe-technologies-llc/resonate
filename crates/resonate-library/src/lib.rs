@@ -95,7 +95,7 @@ pub use crate::{
         Written,
     },
     scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary},
-    search::{Asked, Clause, Column, Compare, Condition, Search, Shape, Term, Word},
+    search::{Asked, Clause, Column, Compare, Condition, Lit, Search, Shape, Term, Word},
     share::Shared,
     spelling::Spellings,
     statistics::{Day, Listened, MostListened, Statistics, Window},

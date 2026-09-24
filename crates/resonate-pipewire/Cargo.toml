@@ -10,6 +10,7 @@ libspa.workspace = true
 parking_lot.workspace = true
 pipewire.workspace = true
 resonate-core.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

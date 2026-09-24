@@ -13,8 +13,10 @@ use resonate_core::{AlbumId, ArtistId, ReleaseTrackId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, HeldMedium,
-    HeldReleaseTrack, Link, Measured, MissingTrack, PlaylistEntry, ReleaseDetail, Service, Track,
+    HeldReleaseTrack, Link, Lit, Measured, MissingTrack, PlaylistEntry, ReleaseDetail, Service,
+    Track,
 };
+use smallvec::smallvec;
 
 use crate::{
     Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Selection, format,
@@ -262,7 +264,7 @@ impl RootView {
                 album
                     .artist
                     .as_deref()
-                    .map_or_else(Vec::new, |name| search.lit(name, Column::Artist)),
+                    .map_or_else(Lit::new, |name| search.lit(name, Column::Artist)),
             )
         };
         let cover = self.cover_sized(Pictured::Album(id), Drawn::InAGrid, side, cx);
@@ -771,7 +773,7 @@ impl RootView {
                 track
                     .artist
                     .as_deref()
-                    .map_or_else(Vec::new, |name| search.lit(name, Column::Artist)),
+                    .map_or_else(Lit::new, |name| search.lit(name, Column::Artist)),
             )
         };
         let number = match (in_an_album, track.track_number) {
@@ -926,7 +928,7 @@ impl RootView {
         } = unheld;
         let mark = self.want_mark(index, asks, cx);
         let (title, lit_title, lit_artist) = match &beside {
-            Beside::AnAlbum | Beside::ARun => (title, Vec::new(), Vec::new()),
+            Beside::AnAlbum | Beside::ARun => (title, Lit::new(), Lit::new()),
             Beside::ASearch { .. } => {
                 let search = self.library.read(cx).search();
                 (
@@ -1953,7 +1955,7 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
 
 fn release_line(release: &ReleaseDetail) -> Option<String> {
     let pressed = pressings(&release.media);
-    let parts: Vec<&str> = [
+    let parts: format::Parts<&str> = [
         release.date.as_deref(),
         pressed.as_deref(),
         release.label.as_deref(),
@@ -1987,13 +1989,13 @@ const GENRES_SHOWN: usize = 3;
 const SERVICES_SHOWN: usize = 4;
 
 fn heard_on(services: &[&str]) -> Option<String> {
-    let shown: Vec<&str> = services.iter().copied().take(SERVICES_SHOWN).collect();
+    let shown: format::Parts<&str> = services.iter().copied().take(SERVICES_SHOWN).collect();
 
     (!shown.is_empty()).then(|| format!("On {}", shown.join(" · ")))
 }
 
 fn profile_line(detail: &ArtistDetail) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
+    let mut parts: format::Parts<String> = format::Parts::new();
     if let Some(kind) = detail.kind.as_deref() {
         parts.push(kind.to_owned());
     }
@@ -2045,7 +2047,7 @@ fn artist_named(library: &LibraryModel, id: ArtistId) -> String {
 }
 
 fn held_by_the_artist(totals: ArtistTotals, now: SystemTime) -> String {
-    let mut parts = vec![
+    let mut parts: format::Parts<String> = smallvec![
         format::counted(totals.albums as usize, "album", "albums"),
         format::counted(totals.tracks as usize, "track", "tracks"),
     ];
@@ -2065,7 +2067,7 @@ fn held_by_the_artist(totals: ArtistTotals, now: SystemTime) -> String {
 fn summary(listed: Measured, year: Option<i32>) -> String {
     let rows = listed.rows as usize;
     let lossless = listed.lossless as usize;
-    let mut parts = vec![format::counted(rows, "track", "tracks")];
+    let mut parts: format::Parts<String> = smallvec![format::counted(rows, "track", "tracks")];
 
     if let Some(year) = year {
         parts.insert(0, year.to_string());

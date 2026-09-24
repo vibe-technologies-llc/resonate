@@ -14,6 +14,7 @@ resonate-core.workspace = true
 resonate-dsp.workspace = true
 resonate-pipewire.workspace = true
 rtrb.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

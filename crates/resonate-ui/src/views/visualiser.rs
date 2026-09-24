@@ -7,6 +7,7 @@ use gpui::{
 };
 use resonate_core::{Frames, SampleRate};
 use resonate_engine::{Caught, Tap, Tapped};
+use smallvec::SmallVec;
 
 use crate::{
     PlayerModel, Selection, format,
@@ -51,6 +52,11 @@ const PEAK_THICKNESS: f32 = 2.0;
 const BAR_FOOT_ALPHA: u8 = 0x30;
 const TRACE_LINE: f32 = 1.5;
 const TRACE_POINTS_AT_MOST: usize = 960;
+const BARS_HELD_INLINE: usize = 80;
+
+type Levels = SmallVec<[f32; TRACE_POINTS_AT_MOST]>;
+type Traced = SmallVec<[Point<Pixels>; TRACE_POINTS_AT_MOST]>;
+type Columns = SmallVec<[Column; BARS_HELD_INLINE]>;
 const RIGHT_TRACE_ALPHA: u8 = 0x80;
 const SCOPE_FILLS: f32 = 0.9;
 const HALF: f32 = 0.5;
@@ -172,11 +178,11 @@ impl Visualiser {
         });
     }
 
-    fn trace(&self) -> Option<(Vec<f32>, Vec<f32>)> {
+    fn trace(&self) -> Option<(Levels, Levels)> {
         let from = self.traced?;
         let span = spanned(self.spectrum.rate());
         let step = span.div_ceil(TRACE_POINTS_AT_MOST).max(1);
-        let thinned = |levels: &[f32]| -> Vec<f32> {
+        let thinned = |levels: &[f32]| -> Levels {
             levels
                 .iter()
                 .skip(from)
@@ -234,7 +240,7 @@ impl Render for Visualiser {
     }
 }
 
-fn bars(columns: Vec<Column>) -> Canvas<()> {
+fn bars(columns: Columns) -> Canvas<()> {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
@@ -304,7 +310,7 @@ fn bars(columns: Vec<Column>) -> Canvas<()> {
     .size_full()
 }
 
-fn traced(trace: Option<(Vec<f32>, Vec<f32>)>) -> Canvas<()> {
+fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
@@ -325,7 +331,7 @@ fn traced(trace: Option<(Vec<f32>, Vec<f32>)>) -> Canvas<()> {
                 return;
             };
             let accent = theme::accent();
-            let drawn = |levels: &[f32]| -> Vec<Point<Pixels>> {
+            let drawn = |levels: &[f32]| -> Traced {
                 let steps = levels.len().saturating_sub(1).max(1) as f32;
                 levels
                     .iter()

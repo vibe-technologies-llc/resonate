@@ -3,11 +3,13 @@ use std::time::Duration;
 use ahash::AHashMap;
 use resonate_core::AlbumId;
 use rusqlite::{Connection, Row, params};
+use smallvec::smallvec;
 
 use crate::{
     Asked, Clause, Column, Compare, Condition, Direction, Error, Result, SavedQuery, Search, Shape,
     SortOrder, StoreOp, Term, TrackQuery, Word,
     db::{self, Inner},
+    search::Conditions,
     store,
 };
 
@@ -233,7 +235,7 @@ fn decades(inner: &Inner) -> Result<Vec<Candidate>> {
 }
 
 fn a_decade(decade: i32) -> Candidate {
-    let text = asking(vec![
+    let text = asking(smallvec![
         Condition::Term(Term::Year {
             compare: Compare::AtLeast,
             year: decade,
@@ -310,7 +312,7 @@ fn billed_as(name: &str) -> String {
 }
 
 fn a_genre(name: &str) -> Candidate {
-    let text = asking(vec![Condition::Word(one_word_or_a_phrase(
+    let text = asking(smallvec![Condition::Word(one_word_or_a_phrase(
         Column::Genre,
         name,
     ))]);
@@ -340,7 +342,10 @@ fn artist_mixes(inner: &Inner) -> Result<Vec<Candidate>> {
 }
 
 fn an_artist(name: &str) -> Candidate {
-    let text = asking(vec![Condition::Word(always_a_phrase(Column::Artist, name))]);
+    let text = asking(smallvec![Condition::Word(always_a_phrase(
+        Column::Artist,
+        name
+    ))]);
 
     Candidate {
         name: name.to_owned(),
@@ -427,7 +432,7 @@ fn of_one_term(
     Candidate {
         name: name.to_owned(),
         reason,
-        query: written(asking(vec![Condition::Term(term)]), sort, reading),
+        query: written(asking(smallvec![Condition::Term(term)]), sort, reading),
     }
 }
 
@@ -440,10 +445,10 @@ fn written(text: Search, sort: SortOrder, reading: Direction) -> SavedQuery {
     }
 }
 
-fn asking(all: Vec<Condition>) -> Search {
+fn asking(all: Conditions) -> Search {
     Search {
         clauses: vec![Clause {
-            any: vec![Asked { denied: false, all }],
+            any: smallvec![Asked { denied: false, all }],
         }],
     }
 }

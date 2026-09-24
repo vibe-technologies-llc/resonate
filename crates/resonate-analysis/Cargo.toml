@@ -11,6 +11,7 @@ resonate-core.workspace = true
 resonate-dsp.workspace = true
 rustfft.workspace = true
 rusty-chromaprint.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

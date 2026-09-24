@@ -11,6 +11,7 @@ use libspa::{
     utils::{ChoiceEnum, Direction, Id},
 };
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use smallvec::{SmallVec, smallvec};
 
 use crate::{HardwareVolume, Plugged, SinkPort};
 
@@ -115,34 +116,48 @@ pub(crate) const fn spa_position(layout: ChannelLayout) -> [u32; 8] {
     }
 }
 
-fn ids(value: &Value) -> Vec<u32> {
+fn first_id(value: &Value) -> Option<u32> {
     match value {
-        Value::Id(Id(raw)) => vec![*raw],
+        Value::Id(Id(raw)) => Some(*raw),
         Value::Choice(ChoiceValue::Id(choice)) => match &choice.1 {
-            ChoiceEnum::None(Id(raw)) => vec![*raw],
-            ChoiceEnum::Enum {
-                default: Id(raw),
-                alternatives,
-            } => {
-                let mut all = vec![*raw];
-                all.extend(alternatives.iter().map(|Id(raw)| *raw));
-                all
+            ChoiceEnum::None(Id(raw))
+            | ChoiceEnum::Enum {
+                default: Id(raw), ..
             }
-            ChoiceEnum::Range {
+            | ChoiceEnum::Range {
                 default: Id(raw), ..
             }
             | ChoiceEnum::Step {
                 default: Id(raw), ..
-            } => vec![*raw],
-            ChoiceEnum::Flags {
+            }
+            | ChoiceEnum::Flags {
                 default: Id(raw), ..
-            } => vec![*raw],
+            } => Some(*raw),
         },
-        _ => Vec::new(),
+        _ => None,
     }
 }
 
-const RATES_A_CONTINUUM_IS_READ_AS: [i32; 16] = [
+fn ids(value: &Value) -> Offering<u32> {
+    match value {
+        Value::Choice(ChoiceValue::Id(choice)) => match &choice.1 {
+            ChoiceEnum::Enum {
+                default: Id(raw),
+                alternatives,
+            } => iter::once(*raw)
+                .chain(alternatives.iter().map(|Id(raw)| *raw))
+                .collect(),
+            _ => first_id(value).into_iter().collect(),
+        },
+        _ => first_id(value).into_iter().collect(),
+    }
+}
+
+const OFFERED_HELD_INLINE: usize = 16;
+
+type Offering<T> = SmallVec<[T; OFFERED_HELD_INLINE]>;
+
+const RATES_A_CONTINUUM_IS_READ_AS: [i32; OFFERED_HELD_INLINE] = [
     8_000, 11_025, 16_000, 22_050, 32_000, 44_100, 48_000, 64_000, 88_200, 96_000, 176_400,
     192_000, 352_800, 384_000, 705_600, 768_000,
 ];
@@ -165,16 +180,16 @@ impl Spanned {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Offered {
-    Listed(Vec<i32>),
+    Listed(Offering<i32>),
     Spanned(Spanned),
 }
 
 impl Offered {
-    fn read_as(self, named: impl Iterator<Item = i32>) -> Vec<i32> {
+    fn read_as(self, named: impl Iterator<Item = i32>) -> Offering<i32> {
         match self {
             Self::Listed(values) => values,
             Self::Spanned(span) => {
-                let mut values: Vec<i32> = iter::once(span.default)
+                let mut values: Offering<i32> = iter::once(span.default)
                     .chain(named.filter(|value| span.holds(*value)))
                     .collect();
                 values.sort_unstable();
@@ -187,17 +202,17 @@ impl Offered {
 
 fn offered(value: &Value) -> Option<Offered> {
     match value {
-        Value::Int(raw) => Some(Offered::Listed(vec![*raw])),
+        Value::Int(raw) => Some(Offered::Listed(smallvec![*raw])),
         Value::Choice(ChoiceValue::Int(choice)) => Some(match &choice.1 {
-            ChoiceEnum::None(raw) => Offered::Listed(vec![*raw]),
+            ChoiceEnum::None(raw) => Offered::Listed(smallvec![*raw]),
             ChoiceEnum::Enum {
                 default,
                 alternatives,
-            } => {
-                let mut all = vec![*default];
-                all.extend(alternatives.iter().copied());
-                Offered::Listed(all)
-            }
+            } => Offered::Listed(
+                iter::once(*default)
+                    .chain(alternatives.iter().copied())
+                    .collect(),
+            ),
             ChoiceEnum::Range { default, min, max } => Offered::Spanned(Spanned {
                 default: *default,
                 min: *min,
@@ -215,7 +230,7 @@ fn offered(value: &Value) -> Option<Offered> {
                 max: *max,
                 step: *step,
             }),
-            ChoiceEnum::Flags { default, .. } => Offered::Listed(vec![*default]),
+            ChoiceEnum::Flags { default, .. } => Offered::Listed(smallvec![*default]),
         }),
         _ => None,
     }
@@ -272,8 +287,8 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
 
     for property in &object.properties {
         match property.key {
-            sys::SPA_FORMAT_mediaType => media_type = ids(&property.value).first().copied(),
-            sys::SPA_FORMAT_mediaSubtype => media_subtype = ids(&property.value).first().copied(),
+            sys::SPA_FORMAT_mediaType => media_type = first_id(&property.value),
+            sys::SPA_FORMAT_mediaSubtype => media_subtype = first_id(&property.value),
             sys::SPA_FORMAT_AUDIO_format => {
                 advertised.formats = one_of_each(ids(&property.value).into_iter());
             }
@@ -332,7 +347,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
 
     for property in &object.properties {
         match (property.key, &property.value) {
-            (sys::SPA_PARAM_ROUTE_direction, value) => direction = ids(value).first().copied(),
+            (sys::SPA_PARAM_ROUTE_direction, value) => direction = first_id(value),
             (sys::SPA_PARAM_ROUTE_device, Value::Int(index)) => seat = Some(*index),
             (sys::SPA_PARAM_ROUTE_devices, Value::ValueArray(ValueArray::Int(indexes))) => {
                 seats = indexes.clone();
@@ -342,10 +357,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
                 description = Some(drawn.clone());
             }
             (sys::SPA_PARAM_ROUTE_available, value) => {
-                plugged = ids(value)
-                    .first()
-                    .copied()
-                    .map_or(Plugged::Unsaid, plugged_as);
+                plugged = first_id(value).map_or(Plugged::Unsaid, plugged_as);
             }
             (sys::SPA_PARAM_ROUTE_info, Value::Struct(items)) => {
                 hardware_volume = hardware_volume_of(items);

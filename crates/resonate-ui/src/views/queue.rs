@@ -5,7 +5,8 @@ use gpui::{
 };
 use resonate_core::{Span, TrackId};
 use resonate_engine::{Command, Placement, QueueItem};
-use resonate_library::{Cut, Direction, Favoured, RowOrder};
+use resonate_library::{Cut, Direction, Favoured, Lit, RowOrder};
+use smallvec::smallvec;
 
 use crate::{
     Notice, Selection, format,
@@ -253,7 +254,7 @@ impl RootView {
                                         ))
                                     })
                                     .child(cover)
-                                    .child(listing::title_cell(drawn.title, Vec::new(), current))
+                                    .child(listing::title_cell(drawn.title, Lit::new(), current))
                                     .child(listing::artist_cell(
                                         this.opens(
                                             ("queue-artist", index),
@@ -411,7 +412,8 @@ impl RootView {
     fn queue_heading(&mut self, queue: &[QueueItem], cx: &mut Context<Self>) -> Div {
         let position = self.player.read(cx).state().queue_position;
         let total = self.queue_length(queue, cx);
-        let mut under = vec![format::counted(queue.len(), "track", "tracks")];
+        let mut under: format::Parts<String> =
+            smallvec![format::counted(queue.len(), "track", "tracks")];
         if !total.is_zero() {
             under.push(format::spanned(total));
         }
