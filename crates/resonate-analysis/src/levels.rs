@@ -83,11 +83,9 @@ impl Leveling {
 
     fn note_the_bits(&mut self, native: &SampleData) {
         match native {
-            SampleData::S16(samples) => {
-                self.note_integers(samples.iter().map(|sample| i32::from(*sample)));
-            }
+            SampleData::S16(samples) => self.note_integers(samples, i32::from),
             SampleData::S24(samples) | SampleData::S32(samples) => {
-                self.note_integers(samples.iter().copied());
+                self.note_integers(samples, |sample| sample);
             }
             SampleData::F32(samples) => {
                 for sample in samples {
@@ -108,19 +106,25 @@ impl Leveling {
         }
     }
 
-    fn note_integers(&mut self, samples: impl Iterator<Item = i32> + Clone) {
-        for sample in samples.clone() {
-            self.ored |= sample.cast_unsigned();
-        }
-        if let Some(pairing) = &mut self.pairing {
-            let mut left = None;
+    fn note_integers<T: Copy>(&mut self, samples: &[T], widened: impl Fn(T) -> i32) {
+        let Some(pairing) = &mut self.pairing else {
             for sample in samples {
-                match left.take() {
-                    None => left = Some(sample),
-                    Some(held) => pairing.identical &= held == sample,
-                }
+                self.ored |= widened(*sample).cast_unsigned();
             }
+            return;
+        };
+
+        let (frames, unpaired) = samples.as_chunks::<2>();
+        let mut identical = pairing.identical;
+        for [left, right] in frames {
+            let (left, right) = (widened(*left), widened(*right));
+            self.ored |= (left | right).cast_unsigned();
+            identical &= left == right;
         }
+        for sample in unpaired {
+            self.ored |= widened(*sample).cast_unsigned();
+        }
+        pairing.identical = identical;
     }
 
     fn note_the_levels(&mut self, normalised: &[f32]) {
