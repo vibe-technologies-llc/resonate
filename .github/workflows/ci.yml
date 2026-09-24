@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: ""
+  ARCH_PACKAGES: >-
+    base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon fontconfig
+    freetype2 vulkan-headers vulkan-icd-loader ffmpeg flac
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  headless:
+    name: Tests without the window
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --workspace --exclude resonate-ui --no-default-features
+      - run: cargo test --locked --workspace --exclude resonate-ui --no-default-features
+
+  workspace:
+    name: Tests with everything
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 90
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --workspace
+      - run: cargo test --locked --workspace
+
+  layering:
+    name: Crate layering
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 15
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Refuse the dependencies each crate must stay free of
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          refuse() {
+            local crate=$1
+            shift
+            local held
+            held=$(cargo tree --locked -p "$crate" --prefix none --format '{p}' | awk '{print $1}' | sort -u)
+            for banned in "$@"; do
+              if grep -qx "$banned" <<<"$held"; then
+                echo "::error::$crate depends on $banned"
+                failed=1
+              fi
+            done
+          }
+          refuse resonate-core symphonia pipewire gpui serde
+          refuse resonate-library ureq serde
+          refuse resonate-eq gpui resonate-engine resonate-library ureq
+          refuse resonate-vault gpui resonate-engine resonate-library ureq
+          refuse resonate-dsp resonate-eq
+          refuse resonate-providers resonate-library resonate-codec resonate-vault gpui
+          refuse resonate-analysis gpui resonate-engine resonate-library ureq
+          refuse resonate-discord gpui resonate-library ureq
+          exit "$failed"
+
+  fuzz:
+    name: Fuzz targets build
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install nightly and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Build every target
+        working-directory: fuzz
+        run: cargo +nightly fuzz build

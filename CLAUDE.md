@@ -37,6 +37,11 @@ yet — written as `## Category` headings with `- Item` bullets. Keep it current
 lands, add what the work uncovers. What a landed item turns into is a record of the shipped design,
 and that belongs in `.claude/rules/`, never left in the roadmap as something still to do.
 
+`AGENTS.md` is the same guidance for agents that do not load `.claude/rules/` on their own: which
+files to read, what is not negotiable and how the rules are kept true. It points here rather than
+restating the design, so it changes only when a rules file is added, a check is added, or a
+standing rule of how work is done moves — and then in the same commit.
+
 ## Architecture
 
 Nineteen crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
@@ -685,7 +690,7 @@ cargo test -p resonate-mpris --test bus        # needs a session bus; prints a s
 cargo test -p resonate-codec --test encoded    # needs ffmpeg, and metaflac for the embedded
                                                #   CUESHEET block; prints a skip without either
 cargo test -p resonate-library --test library  # one embedded-sheet test needs ffmpeg and skips
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 cargo tree -p resonate-core                # must stay free of symphonia, pipewire, gpui, serde
 cargo tree -p resonate-library             # must stay free of ureq, serde
 cargo tree -p resonate-eq                  # must stay free of gpui, the engine, the library, ureq
@@ -701,6 +706,17 @@ rust-formatter --check                     # read-only; exits 1 with a diff
 cd fuzz && cargo +nightly fuzz build       # the parsers' fuzz targets; needs cargo-fuzz
 cd fuzz && cargo +nightly fuzz run probe corpus/probe seeds/probe -- -max_total_time=180 -timeout=15
 ```
+
+**The CI runs what the list above runs, and nothing the list does not.** `.github/workflows/ci.yml`
+takes every push to `master` and every pull request through clippy with `-D warnings`, the headless
+build and tests, the whole workspace's build and tests, the `cargo tree` refusals above and
+`cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
+plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
+no session bus there, so the PipeWire and bus tests print their skip. `RUSTFLAGS` is emptied over
+`target-cpu=native` for the reason the PKGBUILD empties it. Formatting is the one check it cannot
+make: `rust-formatter` is not something a hosted runner installs, so `rust-formatter --check` stays
+local. A command added to the list above that a runner can run is added to the workflow too, and a
+crate added to the layering refusals is added to the workflow's `refuse` lines.
 
 **The hand-rolled parsers are fuzzed from outside the workspace.** `fuzz/` is a crate of its own —
 its `[workspace]` table detaches it, so `unsafe_code = "forbid"` and the workspace's lints do not
