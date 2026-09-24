@@ -7,6 +7,7 @@ use std::{
     num::NonZeroU32,
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
+    process,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -16,7 +17,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_core::{AlbumId, MediaLocation, TrackId};
-use rusqlite::{OptionalExtension as _, Statement, Transaction, params};
+use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
 
 use crate::{
     Library, StoreOp,
@@ -32,6 +33,7 @@ const MOVES_PER_BATCH: usize = 256;
 const COMPONENT_BYTES: usize = 255;
 const SHEET_EXTENSION: &str = "cue";
 const STAGED: &str = ".resonate-staging";
+const RUNNING_PROCESSES: &str = "/proc";
 const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
 const SEPARATOR_STANDS_IN: char = '-';
@@ -603,6 +605,10 @@ fn run(
         if !known.contains(root) {
             return Err(Error::NotARoot { path: root.clone() });
         }
+    }
+
+    if options.apply {
+        sweep_what_a_killed_run_staged(library);
     }
 
     let rows = library.tracks_to_file(&options.roots)?;
@@ -1529,7 +1535,7 @@ fn batch_landing(
         }
 
         let mark = done.len();
-        match renamed_onto(planned, &mut done, made) {
+        match renamed_onto(library, planned, &mut done, made) {
             Ok(()) => landed.push(planned.clone()),
             Err(error) => {
                 tracing::warn!(%error, "a track could not be moved and was put back where it stood");
@@ -1564,7 +1570,7 @@ fn batch_landing(
     }
 
     left_behind(&done);
-    sheets_follow_their_audio(&landed);
+    sheets_follow_their_audio(library, &landed);
     let files = landed
         .iter()
         .map(|planned| planned.files().count())
@@ -1606,7 +1612,12 @@ fn refused_now(progress: &OrganiseProgress, planned: &Move, refusal: Refusal) ->
     }
 }
 
-fn renamed_onto(planned: &Move, done: &mut Vec<Renamed>, made: &mut Vec<PathBuf>) -> Result<()> {
+fn renamed_onto(
+    library: &Library,
+    planned: &Move,
+    done: &mut Vec<Renamed>,
+    made: &mut Vec<PathBuf>,
+) -> Result<()> {
     if let Some(folder) = planned.to.parent() {
         let fresh = not_there_yet(folder);
         fs::create_dir_all(folder).map_err(|source| Error::Move {
@@ -1618,21 +1629,21 @@ fn renamed_onto(planned: &Move, done: &mut Vec<Renamed>, made: &mut Vec<PathBuf>
     }
 
     for (from, to) in planned.files() {
-        done.push(landed_onto(from, to)?);
+        done.push(landed_onto(library, from, to)?);
     }
     for sidecar in &planned.sidecars {
-        done.push(landed_onto(&sidecar.from, &sidecar.to)?);
+        done.push(landed_onto(library, &sidecar.from, &sidecar.to)?);
     }
 
     Ok(())
 }
 
-fn landed_onto(from: &Path, to: &Path) -> Result<Renamed> {
+fn landed_onto(library: &Library, from: &Path, to: &Path) -> Result<Renamed> {
     let how = match fs::rename(from, to) {
         Ok(()) => Landing::Renamed,
         Err(source) if source.kind() == io::ErrorKind::CrossesDevices => {
             if !already_copied(from, to) {
-                copying(from, to)?;
+                copying(library, from, to)?;
             }
             Landing::Copied
         }
@@ -1652,11 +1663,8 @@ fn landed_onto(from: &Path, to: &Path) -> Result<Renamed> {
     })
 }
 
-fn copying(from: &Path, to: &Path) -> Result<()> {
-    let mut staging = to.as_os_str().to_owned();
-    staging.push(STAGED);
-    let staged = PathBuf::from(staging);
-
+fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
+    let staged = noted_staging(library, to)?;
     let landed = copied_whole(from, &staged).and_then(|()| {
         fs::rename(&staged, to).map_err(|source| Error::Move {
             op: MoveOp::Copy,
@@ -1664,10 +1672,111 @@ fn copying(from: &Path, to: &Path) -> Result<()> {
             source,
         })
     });
-    if landed.is_err() {
-        let _ = fs::remove_file(&staged);
-    }
+    staged_left(library, &staged);
     landed
+}
+
+fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
+    let mut staging = landing.as_os_str().to_owned();
+    staging.push(STAGED);
+    let staged = PathBuf::from(staging);
+    library.staging(&staged)?;
+    Ok(staged)
+}
+
+fn staged_left(library: &Library, staged: &Path) {
+    match swept(staged) {
+        Ok(()) => {
+            if let Err(error) = library.staged_away(staged) {
+                tracing::warn!(%error, "a staging file taken away is still noted as left behind");
+            }
+        }
+        Err(source) => {
+            let error = Error::Move {
+                op: MoveOp::Sweep,
+                path: staged.to_path_buf(),
+                source,
+            };
+            tracing::warn!(%error, "a staging file is left for the next run to take away");
+        }
+    }
+}
+
+fn swept(staged: &Path) -> io::Result<()> {
+    let names_a_staging_file = staged
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|name| name.ends_with(STAGED));
+    match fs::symlink_metadata(staged) {
+        Ok(held) if held.is_file() && names_a_staging_file => fs::remove_file(staged),
+        Ok(_) => Ok(()),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(source),
+    }
+}
+
+fn sweep_what_a_killed_run_staged(library: &Library) {
+    let left = match library.staged_writes() {
+        Ok(left) => left,
+        Err(error) => {
+            tracing::warn!(%error, "what an earlier run staged went unread");
+            return;
+        }
+    };
+
+    for write in left {
+        let still_writing = write.pid != process::id()
+            && Path::new(RUNNING_PROCESSES)
+                .join(write.pid.to_string())
+                .exists();
+        if still_writing {
+            continue;
+        }
+        tracing::info!(
+            staged = %write.path.display(),
+            "taking away what a run that did not finish staged"
+        );
+        staged_left(library, &write.path);
+    }
+}
+
+pub(crate) struct StagedWrite {
+    pub path: PathBuf,
+    pub pid: u32,
+}
+
+pub(crate) fn staging(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
+    tx.execute(
+        "INSERT INTO staged_writes (path, pid) VALUES (?1, ?2)
+         ON CONFLICT (path) DO UPDATE SET pid = excluded.pid",
+        params![store::path_text(staged)?, process::id()],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    Ok(())
+}
+
+pub(crate) fn staged_away(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
+    tx.execute(
+        "DELETE FROM staged_writes WHERE path = ?1",
+        params![store::path_text(staged)?],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    Ok(())
+}
+
+pub(crate) fn staged_writes(connection: &Connection) -> Result<Vec<StagedWrite>> {
+    let mut statement = connection
+        .prepare("SELECT path, pid FROM staged_writes")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    statement
+        .query_map([], |row| {
+            Ok(StagedWrite {
+                path: PathBuf::from(row.get::<_, String>(0)?),
+                pid: row.get(1)?,
+            })
+        })
+        .and_then(Iterator::collect)
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 fn already_copied(from: &Path, to: &Path) -> bool {
@@ -1756,7 +1865,7 @@ fn left_behind(done: &[Renamed]) {
     }
 }
 
-fn sheets_follow_their_audio(landed: &[Move]) {
+fn sheets_follow_their_audio(library: &Library, landed: &[Move]) {
     for planned in landed {
         for (from, to) in planned.files() {
             let (Some(named), Some(naming)) = (file_name_of(from), file_name_of(to)) else {
@@ -1771,13 +1880,13 @@ fn sheets_follow_their_audio(landed: &[Move]) {
                 .iter()
                 .filter(|sidecar| names_a_sheet(&sidecar.to))
             {
-                sheet_renamed(&sidecar.to, named, naming);
+                sheet_renamed(library, &sidecar.to, named, naming);
             }
         }
     }
 }
 
-fn sheet_renamed(sheet: &Path, named: &str, naming: &str) {
+fn sheet_renamed(library: &Library, sheet: &Path, named: &str, naming: &str) {
     let held = match fs::read(sheet) {
         Ok(held) => held,
         Err(source) => {
@@ -1800,34 +1909,31 @@ fn sheet_renamed(sheet: &Path, named: &str, naming: &str) {
         return;
     };
 
-    if let Err(error) = staged_over(sheet, &written) {
+    if let Err(error) = staged_over(library, sheet, &written) {
         tracing::warn!(%error, "a sheet beside a renamed file still names the name it had");
     }
 }
 
-fn staged_over(sheet: &Path, written: &[u8]) -> Result<()> {
-    let mut staging = sheet.as_os_str().to_owned();
-    staging.push(STAGED);
-    let staged = PathBuf::from(staging);
-
+fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
+    let staged = noted_staging(library, sheet)?;
     let landing = |source| Error::Move {
         op: MoveOp::Rewrite,
         path: staged.clone(),
         source,
     };
-    fs::write(&staged, written).map_err(landing)?;
-    fs::File::open(&staged)
+    let landed = fs::write(&staged, written)
+        .and_then(|()| fs::File::open(&staged))
         .and_then(|opened| opened.sync_all())
-        .map_err(landing)?;
-
-    fs::rename(&staged, sheet).map_err(|source| {
-        let _ = fs::remove_file(&staged);
-        Error::Move {
-            op: MoveOp::Rewrite,
-            path: sheet.to_path_buf(),
-            source,
-        }
-    })
+        .map_err(landing)
+        .and_then(|()| {
+            fs::rename(&staged, sheet).map_err(|source| Error::Move {
+                op: MoveOp::Rewrite,
+                path: sheet.to_path_buf(),
+                source,
+            })
+        });
+    staged_left(library, &staged);
+    landed
 }
 
 fn file_name_of(path: &Path) -> Option<&str> {
@@ -2878,6 +2984,81 @@ mod tests {
 
         assert_eq!(plan.moves.len(), 2);
         assert_eq!(plan.folders, vec![set.join("CD1"), set.join("CD2")]);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies() {
+        let folder = a_folder_of_its_own();
+        let catalog = folder.join("library.db");
+        let library = Library::open(&catalog).expect("a catalog");
+
+        let killed = folder.join(format!("01 Echoes.wav{STAGED}"));
+        let still_writing = folder.join(format!("02 Fearless.wav{STAGED}"));
+        let not_ours = folder.join("03 San Tropez.wav");
+        for (left, bytes) in [
+            (&killed, b"half a file".as_slice()),
+            (&still_writing, b"a copy under way"),
+            (&not_ours, b"a file a row names by mistake"),
+        ] {
+            fs::write(left, bytes).expect("a writable folder");
+            library.staging(left).expect("it is noted");
+        }
+
+        let init = 1_u32;
+        let gone = u32::MAX;
+        let aside = Connection::open(&catalog).expect("the same catalog");
+        for (left, pid) in [(&killed, gone), (&still_writing, init), (&not_ours, gone)] {
+            aside
+                .execute(
+                    "UPDATE staged_writes SET pid = ?2 WHERE path = ?1",
+                    params![store::path_text(left).expect("a path"), pid],
+                )
+                .expect("the pid a run wrote under");
+        }
+
+        sweep_what_a_killed_run_staged(&library);
+
+        assert!(!killed.exists(), "what a killed run staged is still there");
+        assert!(
+            still_writing.exists(),
+            "a run still writing lost its staging file"
+        );
+        assert!(not_ours.exists(), "a file not named as staged was taken");
+        let noted: Vec<PathBuf> = library
+            .staged_writes()
+            .expect("the journal reads")
+            .into_iter()
+            .map(|write| write.path)
+            .collect();
+        assert_eq!(noted, vec![still_writing]);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_staging_file_is_noted_while_it_is_written_and_let_go_once_it_lands() {
+        let folder = a_folder_of_its_own();
+        let library = Library::open(&folder.join("library.db")).expect("a catalog");
+        let sheet = folder.join("Meddle.cue");
+        fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
+
+        staged_over(&library, &sheet, b"FILE \"new.wav\" WAVE\n").expect("it is rewritten");
+
+        assert_eq!(
+            fs::read(&sheet).expect("the sheet"),
+            b"FILE \"new.wav\" WAVE\n"
+        );
+        assert!(library.staged_writes().expect("it reads").is_empty());
+        assert_eq!(
+            fs::read_dir(&folder)
+                .expect("the folder")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with(STAGED))
+                .count(),
+            0
+        );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

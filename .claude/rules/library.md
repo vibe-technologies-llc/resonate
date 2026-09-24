@@ -1365,6 +1365,19 @@ the pass.
   `a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed` and
   `a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way` are the claims. That is why `Refusal` has
   no `AcrossDevices` variant any more — nothing constructs one.
+- **A staging file is written down before it is written, so a killed run's is swept by the next.**
+  A staging file stands beside a destination the next run may never plan again — the layout moved,
+  the file was retagged — so it cannot be found by walking what a plan names. `noted_staging`
+  writes its path and this process's pid into `staged_writes`, the fourth step in `MIGRATIONS`,
+  and commits that before a byte of the copy or the rewritten sheet is written; `staged_left`
+  takes the file away where it is still there and lets the row go once it is gone, landed or
+  not, and a file it could not take away keeps its row. A run that applies begins with
+  `sweep_what_a_killed_run_staged`, which takes each noted file away — but only a regular file
+  whose name ends in `STAGED`, so a row can never cost a file it did not name — and passes over a
+  row whose pid is another process `/proc` still holds, because the `Walk` guard is this
+  process's alone and a window and a `resonate organise --apply` beside it may each be copying.
+  A preview writes nothing and sweeps nothing.
+  `what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies` is the claim.
 - **A run files the roots it is given, and one the catalog does not hold is refused.**
   `OrganiseOptions::roots` empty is every root, which is what the settings pane and a bare
   `resonate organise` ask for; naming one puts a `roots.path IN (…)` on `TRACKS_TO_FILE`, so the

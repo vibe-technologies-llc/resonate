@@ -1398,6 +1398,20 @@ impl Library {
             .write(|transaction| organise::files_moved(transaction, landed))
     }
 
+    pub(crate) fn staging(&self, staged: &Path) -> Result<()> {
+        self.inner
+            .write(|transaction| organise::staging(transaction, staged))
+    }
+
+    pub(crate) fn staged_away(&self, staged: &Path) -> Result<()> {
+        self.inner
+            .write(|transaction| organise::staged_away(transaction, staged))
+    }
+
+    pub(crate) fn staged_writes(&self) -> Result<Vec<organise::StagedWrite>> {
+        self.inner.read(organise::staged_writes)
+    }
+
     pub(crate) fn albums_re_keyed(&self, landed: &[Move]) -> Result<()> {
         self.inner
             .write(|transaction| organise::re_key_the_sleeves(transaction, landed))

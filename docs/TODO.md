@@ -280,9 +280,6 @@
   breaking one needs a temporary name and a crash between the renames would leave a file under a
   name nothing knows. It converges over runs the way a chain used to, with nothing saying so but
   the count of collisions
-- A copy across a filesystem boundary killed mid-write leaves its staging file — the destination's
-  name with `.resonate-staging` after it — beside where the file would have landed, and nothing
-  sweeps one away but a hand
 - A sheet a tagger wrote in an encoding the new name has no letters in is left as it was and goes
   on naming a file that is not there
 - `resonate organise` reads every scanned row into memory before it plans anything, and nothing

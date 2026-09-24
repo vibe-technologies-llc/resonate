@@ -13,6 +13,10 @@ const MIGRATIONS: &[&str] = &[
          PRIMARY KEY (track_id, artist_id)
      ) STRICT;
      CREATE INDEX track_credits_by_artist ON track_credits(artist_id, track_id);",
+    "CREATE TABLE staged_writes (
+         path TEXT PRIMARY KEY,
+         pid  INTEGER NOT NULL
+     ) STRICT;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

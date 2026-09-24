@@ -99,6 +99,7 @@ pub enum MoveOp {
     Rewrite,
     Settle,
     Prune,
+    Sweep,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
