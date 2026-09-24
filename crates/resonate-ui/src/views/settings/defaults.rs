@@ -78,6 +78,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::GraphRate => worn.force_graph_rate != built.force_graph_rate,
         Group::Buffer => worn.buffer != built.buffer,
         Group::Dop => worn.dop != built.dop,
+        Group::Bluetooth => worn.bluetooth != built.bluetooth,
         Group::Resampler => {
             worn.quality != built.quality || worn.filter_phase != built.filter_phase
         }
@@ -147,6 +148,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         Group::GraphRate => vec![Command::SetForceGraphRate(built.force_graph_rate)],
         Group::Buffer => vec![Command::SetBuffer(built.buffer)],
         Group::Dop => vec![Command::SetDop(built.dop)],
+        Group::Bluetooth => vec![Command::SetBluetoothWake(built.bluetooth)],
         Group::Resampler => vec![
             Command::SetQuality(built.quality),
             Command::SetFilterPhase(built.filter_phase),
@@ -243,6 +245,7 @@ mod tests {
                     | Group::GraphRate
                     | Group::Buffer
                     | Group::Dop
+                    | Group::Bluetooth
                     | Group::Resampler
                     | Group::Dither
                     | Group::NoiseShaping

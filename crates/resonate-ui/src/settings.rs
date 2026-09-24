@@ -32,6 +32,9 @@ pub enum SettingKey {
     BitPerfect,
     Dop,
     ForceGraphRate,
+    BluetoothWake,
+    BluetoothLead,
+    BluetoothAwake,
     Buffer,
     Volume,
     Theme,
@@ -67,7 +70,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 45] = [
+    pub const ALL: [Self; 48] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -81,6 +84,9 @@ impl SettingKey {
         Self::BitPerfect,
         Self::Dop,
         Self::ForceGraphRate,
+        Self::BluetoothWake,
+        Self::BluetoothLead,
+        Self::BluetoothAwake,
         Self::Buffer,
         Self::Volume,
         Self::Theme,
@@ -131,6 +137,9 @@ pub enum Setting {
     BitPerfect(bool),
     Dop(bool),
     ForceGraphRate(bool),
+    BluetoothWake(bool),
+    BluetoothLead(Duration),
+    BluetoothAwake(Duration),
     Buffer(Duration),
     Volume(Volume),
     Theme(Theme),
@@ -184,6 +193,9 @@ impl Setting {
             Self::BitPerfect(_) => SettingKey::BitPerfect,
             Self::Dop(_) => SettingKey::Dop,
             Self::ForceGraphRate(_) => SettingKey::ForceGraphRate,
+            Self::BluetoothWake(_) => SettingKey::BluetoothWake,
+            Self::BluetoothLead(_) => SettingKey::BluetoothLead,
+            Self::BluetoothAwake(_) => SettingKey::BluetoothAwake,
             Self::Buffer(_) => SettingKey::Buffer,
             Self::Volume(_) => SettingKey::Volume,
             Self::Theme(_) => SettingKey::Theme,

@@ -31,6 +31,7 @@ pub fn ring(
     let dropped = Arc::new(AtomicU32::new(0));
     let starved = Arc::new(AtomicU64::new(0));
     let discard = Discard::default();
+    let hold = Hold::default();
     let prime = bytes / bytes_per_frame.get() as usize / 2;
 
     (
@@ -38,12 +39,14 @@ pub fn ring(
             inner: producer,
             bytes_per_frame,
             discard: discard.clone(),
+            hold: hold.clone(),
             requested: 0,
         },
         RingConsumer {
             inner: consumer,
             bytes_per_frame,
             discard,
+            hold,
             seen: 0,
             silent: false,
             silence,
@@ -70,14 +73,29 @@ struct Discard {
     finished: Arc<AtomicBool>,
 }
 
+#[derive(Clone, Default)]
+struct Hold {
+    held: Arc<AtomicBool>,
+    lead_in: Arc<AtomicU64>,
+}
+
 pub struct RingProducer {
     inner: rtrb::Producer<u8>,
     bytes_per_frame: NonZeroU32,
     discard: Discard,
+    hold: Hold,
     requested: u64,
 }
 
 impl RingProducer {
+    pub fn hold(&self, held: bool) {
+        self.hold.held.store(held, Ordering::Release);
+    }
+
+    pub fn lead_in(&self, frames: Frames) {
+        self.hold.lead_in.store(frames.0, Ordering::Release);
+    }
+
     pub fn discard_buffered(&mut self) {
         self.requested = self
             .discard
@@ -127,6 +145,7 @@ pub struct RingConsumer {
     inner: rtrb::Consumer<u8>,
     bytes_per_frame: NonZeroU32,
     discard: Discard,
+    hold: Hold,
     seen: u64,
     silent: bool,
     silence: Silence,
@@ -153,6 +172,31 @@ impl RingConsumer {
             stale.commit_all();
         }
         self.discard.applied.store(requested, Ordering::Release);
+    }
+
+    fn held(&self, frames: usize) -> bool {
+        if self.hold.held.load(Ordering::Acquire) {
+            return true;
+        }
+        let lead = self.hold.lead_in.load(Ordering::Acquire);
+        if lead == 0 {
+            return false;
+        }
+        self.hold
+            .lead_in
+            .store(lead.saturating_sub(frames as u64), Ordering::Release);
+        true
+    }
+
+    fn hush(&mut self, dst: &mut [u8]) -> usize {
+        if matches!(self.silence, Silence::Unmarked) {
+            let whole = dst.len() / self.stride() * self.stride();
+            if let Some(frames) = dst.get_mut(..whole) {
+                frames.fill(0);
+            }
+            return whole;
+        }
+        self.pad(dst)
     }
 
     fn refilling(&mut self) -> bool {
@@ -209,6 +253,9 @@ impl RingConsumer {
 impl AudioSource for RingConsumer {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         self.apply_discard();
+        if self.held(dst.len() / self.stride()) {
+            return self.hush(dst);
+        }
         if self.refilling() {
             return self.pad(dst);
         }
@@ -524,6 +571,49 @@ mod tests {
         producer.write(&ramp(SampleFormat::S16, 1));
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(faults.next_fault(), None);
+    }
+
+    #[test]
+    fn a_held_ring_feeds_the_graph_silence_and_keeps_every_frame_it_holds() {
+        let (mut producer, mut consumer, mut faults) =
+            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        producer.write(&ramp(SampleFormat::S16, 64));
+        producer.hold(true);
+
+        let mut sunk = vec![0xff_u8; 32 * 4];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert!(
+            sunk.iter().all(|byte| *byte == 0),
+            "a held ring played sound"
+        );
+        assert_eq!(consumer.available_frames(), 64);
+
+        producer.hold(false);
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(consumer.available_frames(), 32);
+        assert_eq!(faults.next_fault(), None);
+    }
+
+    #[test]
+    fn a_lead_in_is_silence_before_the_first_frame_and_then_the_ring_plays() {
+        let (mut producer, mut consumer, _) =
+            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        producer.write(&ramp(SampleFormat::S16, 64));
+        producer.lead_in(Frames(48));
+
+        let mut sunk = vec![0xff_u8; 32 * 4];
+        consumer.fill(&mut sunk);
+        assert!(sunk.iter().all(|byte| *byte == 0));
+        consumer.fill(&mut sunk);
+        assert!(sunk.iter().all(|byte| *byte == 0));
+        assert_eq!(
+            consumer.available_frames(),
+            64,
+            "the lead-in spent the music"
+        );
+
+        consumer.fill(&mut sunk);
+        assert_eq!(consumer.available_frames(), 32);
     }
 
     #[test]

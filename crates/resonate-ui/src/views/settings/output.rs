@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
 use resonate_core::{SampleFormat, StreamSpec};
-use resonate_engine::{Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo};
+use resonate_engine::{
+    BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
+};
 
 use crate::{
     Setting, format, theme,
@@ -15,6 +17,10 @@ use crate::{
 };
 
 const NO_SINKS: &str = "No sinks are present in the graph.";
+
+const BLUETOOTH_NOTE: &str = "Experimental, and only for a device PipeWire names as Bluetooth. \
+                              It spends the headphones' battery to keep their radio up through \
+                              a pause.";
 
 const DEVICE_NOTE: &str = "A device chosen here is played through whatever the desktop routes \
                            other sound to; following the system default moves with the \
@@ -253,7 +259,146 @@ impl Choice for BufferDepth {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LeadIn(Duration);
+
+impl Choice for LeadIn {
+    const ALL: &'static [Self] = &[
+        Self(Duration::from_millis(250)),
+        Self(Duration::from_millis(500)),
+        Self(Duration::from_millis(750)),
+        Self(Duration::from_millis(1_000)),
+        Self(Duration::from_millis(1_500)),
+    ];
+
+    fn label(self) -> &'static str {
+        match self.0.as_millis() {
+            250 => "250 ms",
+            500 => "500 ms",
+            750 => "750 ms",
+            1_000 => "1 s",
+            _ => "1.5 s",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "A stream that starts after the link has slept opens on {} of silence before the \
+             track. Raise it if the first words are still cut, lower it if the wait is felt.",
+            self.label()
+        ))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct KeptAwake(Duration);
+
+impl Choice for KeptAwake {
+    const ALL: &'static [Self] = &[
+        Self(Duration::from_secs(60)),
+        Self(Duration::from_secs(5 * 60)),
+        Self(Duration::from_secs(15 * 60)),
+        Self(Duration::from_secs(60 * 60)),
+    ];
+
+    fn label(self) -> &'static str {
+        match self.0.as_secs() {
+            60 => "1 min",
+            300 => "5 min",
+            900 => "15 min",
+            _ => "1 hour",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::from(format!(
+            "A pause keeps the headphones fed with silence for {}, so playing again is heard at \
+             once; after that they are let go to sleep and save their battery.",
+            self.label()
+        ))
+    }
+}
+
 impl RootView {
+    pub(super) fn bluetooth_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let wake = self.player.read(cx).output_settings().bluetooth;
+        let chosen = |held: Duration, table: &[Duration]| table.contains(&held);
+
+        kit::section_body()
+            .child(self.in_the_ring(
+                "bluetooth-wake",
+                switch_row(
+                    "Keep Bluetooth headphones from cutting the start",
+                    "Off, a paused Bluetooth device is let go and wakes on the music",
+                    wake.on,
+                    "bluetooth-wake",
+                ),
+                move |this, _, cx| {
+                    this.send(
+                        Command::SetBluetoothWake(BluetoothWake {
+                            on: !wake.on,
+                            ..wake
+                        }),
+                        cx,
+                    );
+                    this.store(&Setting::BluetoothWake(!wake.on), cx);
+                },
+                cx,
+            ))
+            .when(wake.on, |body| {
+                body.child(kit::field(
+                    "Lead-in",
+                    self.choices(
+                        "bluetooth-lead",
+                        chosen(
+                            wake.lead,
+                            &LeadIn::ALL.iter().map(|lead| lead.0).collect::<Vec<_>>(),
+                        )
+                        .then_some(LeadIn(wake.lead)),
+                        cx,
+                        move |this, lead: LeadIn, cx| {
+                            let wake = this.player.read(cx).output_settings().bluetooth;
+                            this.send(
+                                Command::SetBluetoothWake(BluetoothWake {
+                                    lead: lead.0,
+                                    ..wake
+                                }),
+                                cx,
+                            );
+                            this.store(&Setting::BluetoothLead(lead.0), cx);
+                        },
+                    ),
+                ))
+                .child(kit::field(
+                    "Kept awake through a pause",
+                    self.choices(
+                        "bluetooth-awake",
+                        chosen(
+                            wake.awake_for,
+                            &KeptAwake::ALL
+                                .iter()
+                                .map(|awake| awake.0)
+                                .collect::<Vec<_>>(),
+                        )
+                        .then_some(KeptAwake(wake.awake_for)),
+                        cx,
+                        move |this, awake: KeptAwake, cx| {
+                            let wake = this.player.read(cx).output_settings().bluetooth;
+                            this.send(
+                                Command::SetBluetoothWake(BluetoothWake {
+                                    awake_for: awake.0,
+                                    ..wake
+                                }),
+                                cx,
+                            );
+                            this.store(&Setting::BluetoothAwake(awake.0), cx);
+                        },
+                    ),
+                ))
+            })
+            .child(note(BLUETOOTH_NOTE))
+    }
+
     pub(super) fn device_group(&mut self, cx: &mut Context<Self>) -> Div {
         let model = self.player.read(cx);
         let sinks = model.sinks().to_vec();

@@ -11,8 +11,8 @@ use resonate_core::{
 use resonate_pipewire::{NodeName, SinkId, SinkInfo};
 
 use crate::{
-    Asleep, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase, Levelling,
-    NoiseShaping, OutputMode, Quality, Queued, RepeatMode, ReplayGainMode, Restoration,
+    Asleep, BluetoothWake, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase,
+    Levelling, NoiseShaping, OutputMode, Quality, Queued, RepeatMode, ReplayGainMode, Restoration,
     SkipUnderRepeat, Tapped,
 };
 
@@ -115,6 +115,7 @@ pub struct OutputSettings {
     pub prefer_bit_perfect: bool,
     pub dop: bool,
     pub force_graph_rate: bool,
+    pub bluetooth: BluetoothWake,
     pub buffer: Duration,
     pub equaliser: Arc<Equalisation>,
 }
@@ -134,6 +135,7 @@ impl OutputSettings {
             prefer_bit_perfect: config.prefer_bit_perfect,
             dop: config.dop,
             force_graph_rate: config.force_graph_rate,
+            bluetooth: config.bluetooth,
             buffer: config.buffer,
             equaliser: Arc::clone(&config.equaliser),
         }
@@ -152,6 +154,7 @@ impl OutputSettings {
             && self.prefer_bit_perfect == config.prefer_bit_perfect
             && self.dop == config.dop
             && self.force_graph_rate == config.force_graph_rate
+            && self.bluetooth == config.bluetooth
             && self.buffer == config.buffer
             && self.equaliser == config.equaliser
     }
@@ -256,6 +259,10 @@ mod tests {
         note("dop", config);
         *config = EngineConfig::default();
 
+        config.bluetooth.on = !EngineConfig::default().bluetooth.on;
+        note("bluetooth", config);
+        *config = EngineConfig::default();
+
         config.force_graph_rate = !EngineConfig::default().force_graph_rate;
         note("force_graph_rate", config);
         *config = EngineConfig::default();
@@ -297,7 +304,7 @@ mod tests {
         let moved = every_field_moved(&mut config);
         assert_eq!(
             moved.len(),
-            13,
+            14,
             "a field OutputSettings publishes but already_says does not compare would stop the \
              engine publishing it; noticed {moved:?}"
         );

@@ -49,8 +49,8 @@ use resonate_core::{
     AlbumId, FrameSpan, Frames, ListenId, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
 };
 use resonate_engine::{
-    Command, Counting, Decoded, EngineConfig, Event, Keep, Keeping, Levelling, Listening,
-    OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until, plan_output,
+    BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Keep, Keeping, Levelling,
+    Listening, OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until, plan_output,
     resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
@@ -1892,6 +1892,13 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         true_peak: config.true_peak.unwrap_or(defaults.true_peak),
         restoration: config.restoration.unwrap_or(defaults.restoration),
         force_graph_rate: config.force_graph_rate.unwrap_or(defaults.force_graph_rate),
+        bluetooth: BluetoothWake {
+            on: config.bluetooth_wake.unwrap_or(defaults.bluetooth.on),
+            lead: config.bluetooth_lead.unwrap_or(defaults.bluetooth.lead),
+            awake_for: config
+                .bluetooth_awake
+                .unwrap_or(defaults.bluetooth.awake_for),
+        },
         volume: config.volume.unwrap_or(defaults.volume),
         buffer: config.buffer.unwrap_or(defaults.buffer),
         equaliser: Arc::new(equaliser::resolved(config)),

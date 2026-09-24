@@ -84,7 +84,15 @@ pub struct SinkInfo {
     pub current_rate: Option<SampleRate>,
 }
 
+const BLUETOOTH_NODES: [&str; 2] = ["bluez_output.", "bluez_sink."];
+
 impl SinkInfo {
+    pub fn is_bluetooth(&self) -> bool {
+        BLUETOOTH_NODES
+            .iter()
+            .any(|prefix| self.name.as_str().starts_with(prefix))
+    }
+
     pub fn supports(&self, spec: StreamSpec) -> bool {
         self.allowed_rates.contains(&spec.rate)
             && self.formats.iter().any(|entry| {

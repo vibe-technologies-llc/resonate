@@ -512,6 +512,26 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `SinkStream::latency` measured on the wall clock is the fallback for a backend that never answers. A
   stream takes every instruction through one `StreamCommand`, which is what keeps that handshake and
   `set_active` and `close` on the same ordered channel to the loop thread.
+- **Bluetooth headphones can be kept from cutting the start, and it is off unless asked.**
+  Headphones power their radio down when nothing is sent, and the first moment of sound after
+  that is spent waking the link, so a Play after a pause, or a queue started on a sleeping device,
+  lost its opening. `BluetoothWake` is `on`, a `lead` and an `awake_for` — the `bluetooth-wake`,
+  `bluetooth-lead-ms` and `bluetooth-awake-s` keys and the Output category's *Bluetooth* group —
+  and it touches only a sink `SinkInfo::is_bluetooth` names, a `bluez_output.` or `bluez_sink.`
+  node. Two things change there. **A pause holds the ring rather than the stream**:
+  `RingProducer::hold` makes the consumer feed the graph real silence — zeros for PCM, the marked
+  word for DoP — without consuming a frame, the stream stays active and the link stays up, and
+  `Output::awake_since` is when; Play lets go of the hold and is heard at once, and once
+  `awake_for` has passed `let_the_link_rest` stands the stream down the way a pause always did,
+  so the headphones still sleep, `budget` waking the loop for that moment. **A stream that
+  starts on a link that has slept opens on silence**: `RingProducer::lead_in` hands the consumer
+  a count of frames to pad before it reads the ring, which the consumer spends a callback at a
+  time, so the clock stays at the start until the lead is out and nothing of the track is played
+  into a link still waking. Whether the link has slept is `Engine::sounded` — the sink and the
+  last moment a stream on it was active or held, noted every pass — against `LINK_NAPS_AFTER`, so
+  a track change, which reopens the stream within milliseconds, pays no lead and no gap.
+  `a_held_ring_feeds_the_graph_silence_and_keeps_every_frame_it_holds` and
+  `a_lead_in_is_silence_before_the_first_frame_and_then_the_ring_plays` are the ring's claims.
 - **A seek does not reopen the stream.** rtrb gives the producer no way to drop what the consumer
   has not read, so the ring carries a discard epoch instead: the engine bumps it and stops writing,
   the graph thread drains every slot it holds on its next callback and acknowledges, and only then

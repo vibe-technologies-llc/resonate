@@ -51,9 +51,32 @@ pub struct EngineConfig {
     pub prefer_bit_perfect: bool,
     pub dop: bool,
     pub force_graph_rate: bool,
+    pub bluetooth: BluetoothWake,
     pub volume: Volume,
     pub equaliser: Arc<Equalisation>,
     pub skip_under_repeat: SkipUnderRepeat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BluetoothWake {
+    pub on: bool,
+    pub lead: Duration,
+    pub awake_for: Duration,
+}
+
+impl BluetoothWake {
+    pub const LEAD: Duration = Duration::from_millis(750);
+    pub const AWAKE_FOR: Duration = Duration::from_secs(5 * 60);
+}
+
+impl Default for BluetoothWake {
+    fn default() -> Self {
+        Self {
+            on: false,
+            lead: Self::LEAD,
+            awake_for: Self::AWAKE_FOR,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -79,6 +102,7 @@ impl Default for EngineConfig {
             prefer_bit_perfect: true,
             dop: false,
             force_graph_rate: true,
+            bluetooth: BluetoothWake::default(),
             volume: Volume::MAX,
             equaliser: Arc::new(Equalisation::default()),
             skip_under_repeat: SkipUnderRepeat::default(),

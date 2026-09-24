@@ -86,6 +86,17 @@ impl Settings for File {
             Setting::BitPerfect(wanted) => (ConfigKey::BitPerfect, Some((*wanted).into())),
             Setting::Dop(marked) => (ConfigKey::Dop, Some((*marked).into())),
             Setting::ForceGraphRate(forced) => (ConfigKey::ForceGraphRate, Some((*forced).into())),
+            Setting::BluetoothWake(on) => (ConfigKey::BluetoothWake, Some((*on).into())),
+            Setting::BluetoothLead(lead) => {
+                let millis = i64::try_from(lead.as_millis())
+                    .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+                (ConfigKey::BluetoothLeadMs, Some(millis.into()))
+            }
+            Setting::BluetoothAwake(awake) => {
+                let seconds = i64::try_from(awake.as_secs())
+                    .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+                (ConfigKey::BluetoothAwakeS, Some(seconds.into()))
+            }
             Setting::Buffer(held) => {
                 let millis = i64::try_from(held.as_millis())
                     .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
@@ -203,6 +214,9 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::BitPerfect => ConfigKey::BitPerfect,
         SettingKey::Dop => ConfigKey::Dop,
         SettingKey::ForceGraphRate => ConfigKey::ForceGraphRate,
+        SettingKey::BluetoothWake => ConfigKey::BluetoothWake,
+        SettingKey::BluetoothLead => ConfigKey::BluetoothLeadMs,
+        SettingKey::BluetoothAwake => ConfigKey::BluetoothAwakeS,
         SettingKey::Buffer => ConfigKey::BufferMs,
         SettingKey::Volume => ConfigKey::Volume,
         SettingKey::Theme => ConfigKey::Theme,

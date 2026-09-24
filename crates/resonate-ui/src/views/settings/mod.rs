@@ -364,6 +364,7 @@ impl RootView {
             Group::GraphRate => self.graph_rate_group(cx),
             Group::Buffer => self.buffer_group(cx),
             Group::Dop => self.dop_group(cx),
+            Group::Bluetooth => self.bluetooth_group(cx),
             Group::Resampler => self.resampler_group(cx),
             Group::Dither => self.dither_group(cx),
             Group::NoiseShaping => self.noise_shaping_group(cx),

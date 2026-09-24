@@ -49,8 +49,8 @@ pub use crate::{
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
     kept::{KEPT_EVERY, Keep, Keeping},
     pipeline::{
-        Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan, plan_for,
-        plan_output, resolve_replay_gain,
+        BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,
+        plan_for, plan_output, resolve_replay_gain,
     },
     player::Player,
     queue::{Placement, QueueItem, Queued, Unclaimed, stamp_of, unclaimed_id},

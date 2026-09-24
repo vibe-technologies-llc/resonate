@@ -45,6 +45,7 @@ const LARGEST_RING: u64 = 64 * 1024 * 1024;
 const DISCARD_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_RENEGOTIATIONS: u8 = 3;
 const GRAPH_BACK_WITHIN: Duration = Duration::from_secs(10);
+const LINK_NAPS_AFTER: Duration = Duration::from_secs(3);
 
 struct Track {
     id: TrackId,
@@ -167,6 +168,8 @@ fn carried_samples(chain: &Chain, stream: StreamSpec) -> usize {
 struct Output {
     sink: SinkId,
     bound: NodeName,
+    over_bluetooth: bool,
+    awake_since: Option<Instant>,
     plan: OutputPlan,
     chain: Chain,
     widened: Vec<f64>,
@@ -230,6 +233,8 @@ impl Output {
         Ok(Self {
             sink: sink.id,
             bound: sink.name.clone(),
+            over_bluetooth: sink.is_bluetooth(),
+            awake_since: None,
             status: OutputStatus {
                 sink: sink.id,
                 negotiated: plan.stream,
@@ -412,6 +417,7 @@ pub struct Engine {
     sleep: Option<Sleeping>,
     failures: usize,
     renegotiations: u8,
+    sounded: Option<(SinkId, Instant)>,
     answers: Vec<Answer>,
 }
 
@@ -500,6 +506,7 @@ impl Engine {
             sleep: None,
             failures: 0,
             renegotiations: 0,
+            sounded: None,
             answers: Vec::new(),
         }
     }
@@ -526,6 +533,7 @@ impl Engine {
                 self.poll_stream();
                 self.watch_graph();
                 self.settle();
+                self.let_the_link_rest();
                 self.doze();
                 self.publish();
                 self.answer();
@@ -572,10 +580,80 @@ impl Engine {
             }
         };
 
-        match self.sleep.and_then(Sleeping::left) {
+        let budget = match self.sleep.and_then(Sleeping::left) {
+            Some(left) => budget.min(left),
+            None => budget,
+        };
+        match self.kept_awake_for() {
             Some(left) => budget.min(left),
             None => budget,
         }
+    }
+
+    fn kept_awake_for(&self) -> Option<Duration> {
+        let since = self.output.as_ref()?.awake_since?;
+        Some(
+            self.config
+                .bluetooth
+                .awake_for
+                .saturating_sub(since.elapsed()),
+        )
+    }
+
+    fn keeps_the_link_awake(&self) -> bool {
+        self.config.bluetooth.on
+            && self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.over_bluetooth && output.stream.is_some())
+    }
+
+    fn link_is_asleep(&self, sink: SinkId) -> bool {
+        self.sounded
+            .is_none_or(|(held, at)| held != sink || at.elapsed() >= LINK_NAPS_AFTER)
+    }
+
+    fn note_what_is_sounding(&mut self) {
+        let Some(output) = self.output.as_ref() else {
+            return;
+        };
+        let sounding = output.stream.is_some() && (self.playing || output.awake_since.is_some());
+        if sounding {
+            self.sounded = Some((output.sink, Instant::now()));
+        }
+    }
+
+    fn wake_the_link(&self) {
+        let Some(output) = self.output.as_ref() else {
+            return;
+        };
+        if !self.config.bluetooth.on || !output.over_bluetooth || !self.link_is_asleep(output.sink)
+        {
+            return;
+        }
+        let lead = Frames::from_duration(self.config.bluetooth.lead, output.plan.stream.rate);
+        output.producer.lead_in(lead);
+    }
+
+    fn let_the_link_rest(&mut self) {
+        self.note_what_is_sounding();
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        let Some(since) = output.awake_since else {
+            return;
+        };
+        let wake = self.config.bluetooth;
+        if wake.on && since.elapsed() < wake.awake_for {
+            return;
+        }
+        output.awake_since = None;
+        if let Some(stream) = output.stream.as_ref()
+            && let Err(error) = stream.set_active(false)
+        {
+            tracing::warn!(%error, "the stream kept awake would not stand down");
+        }
+        output.producer.hold(false);
     }
 
     fn at_rest(&self) -> bool {
@@ -802,6 +880,11 @@ impl Engine {
                 let at = self.position();
                 self.rebind(Some(at), None)
             }
+            Command::SetBluetoothWake(wake) => {
+                self.config.bluetooth = wake;
+                self.let_the_link_rest();
+                Ok(())
+            }
             Command::SetForceGraphRate(force) => {
                 self.config.force_graph_rate = force;
                 let at = self.position();
@@ -877,6 +960,13 @@ impl Engine {
         if self.transport == TransportState::Paused {
             self.transport = TransportState::Playing;
         }
+        if let Some(output) = self.output.as_mut()
+            && output.awake_since.take().is_some()
+        {
+            output.producer.hold(false);
+            return Ok(());
+        }
+        self.wake_the_link();
         self.set_active(true)
     }
 
@@ -890,6 +980,13 @@ impl Engine {
         self.playing = false;
         if self.transport == TransportState::Playing {
             self.transport = TransportState::Paused;
+        }
+        if self.keeps_the_link_awake()
+            && let Some(output) = self.output.as_mut()
+        {
+            output.producer.hold(true);
+            output.awake_since = Some(Instant::now());
+            return Ok(());
         }
         self.set_active(false)
     }
@@ -1482,6 +1579,9 @@ impl Engine {
         else {
             return;
         };
+        if self.playing {
+            self.wake_the_link();
+        }
 
         match self.backend.open(&request, Box::new(consumer)) {
             Ok(stream) => {

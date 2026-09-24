@@ -99,6 +99,9 @@ pub struct Config {
     pub bit_perfect: Option<bool>,
     pub dop: Option<bool>,
     pub force_graph_rate: Option<bool>,
+    pub bluetooth_wake: Option<bool>,
+    pub bluetooth_lead: Option<Duration>,
+    pub bluetooth_awake: Option<Duration>,
     pub volume: Option<Volume>,
     pub buffer: Option<Duration>,
     pub theme: Option<Theme>,
@@ -297,6 +300,15 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
                 config.restoration = Some(at.one_of(value, Restoration::named)?);
             }
             ConfigKey::ForceGraphRate => config.force_graph_rate = Some(at.boolean(value)?),
+            ConfigKey::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
+            ConfigKey::BluetoothLeadMs => {
+                let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                config.bluetooth_lead = Some(Duration::from_millis(millis));
+            }
+            ConfigKey::BluetoothAwakeS => {
+                let seconds = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                config.bluetooth_awake = Some(Duration::from_secs(seconds));
+            }
             ConfigKey::Volume => {
                 let position = at.float(value)?;
                 let volume = Volume::new(position as f32).map_err(|_| at.rejected())?;

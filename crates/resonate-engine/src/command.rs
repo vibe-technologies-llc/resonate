@@ -5,7 +5,7 @@ use resonate_core::{Frames, Resumption, Span, Volume};
 use resonate_dsp::{DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration};
 use resonate_pipewire::NodeName;
 
-use crate::{Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
+use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum RepeatMode {
@@ -67,6 +67,7 @@ pub enum Command {
     SetBitPerfect(bool),
     SetDop(bool),
     SetForceGraphRate(bool),
+    SetBluetoothWake(BluetoothWake),
     SetBuffer(Duration),
     SleepUntil(Option<Until>),
 }
@@ -105,6 +106,7 @@ pub enum CommandKind {
     SetBitPerfect,
     SetDop,
     SetForceGraphRate,
+    SetBluetoothWake,
     SetBuffer,
     SleepUntil,
 }
@@ -143,6 +145,7 @@ impl CommandKind {
             Self::SetBitPerfect => "the sample rate",
             Self::SetDop => "DSD over PCM",
             Self::SetForceGraphRate => "the graph rate",
+            Self::SetBluetoothWake => "keeping Bluetooth awake",
             Self::SetBuffer => "the buffer",
             Self::SleepUntil => "the sleep timer",
         }
@@ -190,6 +193,7 @@ impl Command {
             Self::SetBitPerfect(_) => CommandKind::SetBitPerfect,
             Self::SetDop(_) => CommandKind::SetDop,
             Self::SetForceGraphRate(_) => CommandKind::SetForceGraphRate,
+            Self::SetBluetoothWake(_) => CommandKind::SetBluetoothWake,
             Self::SetBuffer(_) => CommandKind::SetBuffer,
             Self::SleepUntil(_) => CommandKind::SleepUntil,
         }

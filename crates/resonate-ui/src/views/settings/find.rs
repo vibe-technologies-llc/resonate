@@ -89,6 +89,7 @@ pub(crate) enum Group {
     GraphRate,
     Buffer,
     Dop,
+    Bluetooth,
     Resampler,
     Dither,
     NoiseShaping,
@@ -129,12 +130,13 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 42] = [
+    pub(crate) const ALL: [Self; 43] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
         Self::Buffer,
         Self::Dop,
+        Self::Bluetooth,
         Self::Resampler,
         Self::Dither,
         Self::NoiseShaping,
@@ -176,9 +178,12 @@ impl Group {
 
     pub(crate) const fn category(self) -> Category {
         match self {
-            Self::Device | Self::SampleRate | Self::GraphRate | Self::Buffer | Self::Dop => {
-                Category::Output
-            }
+            Self::Device
+            | Self::SampleRate
+            | Self::GraphRate
+            | Self::Buffer
+            | Self::Dop
+            | Self::Bluetooth => Category::Output,
             Self::Resampler
             | Self::Dither
             | Self::NoiseShaping
@@ -219,6 +224,7 @@ impl Group {
             Self::GraphRate => "Graph rate",
             Self::Buffer => "Buffer",
             Self::Dop => "DSD over PCM",
+            Self::Bluetooth => "Bluetooth",
             Self::Resampler => "Resampler",
             Self::Dither => "Dither",
             Self::NoiseShaping => "Noise shaping",
@@ -266,6 +272,7 @@ impl Group {
             Self::GraphRate => GRAPH_RATE_HINT,
             Self::Buffer => BUFFER_HINT,
             Self::Dop => DOP_HINT,
+            Self::Bluetooth => BLUETOOTH_HINT,
             Self::Resampler => RESAMPLER_HINT,
             Self::Dither => DITHER_HINT,
             Self::NoiseShaping => SHAPING_HINT,
@@ -313,6 +320,10 @@ impl Group {
             Self::GraphRate => "pipewire daemon switch rate",
             Self::Buffer => "latency milliseconds ms depth ring underrun",
             Self::Dop => "dsd dsf dff sacd marker packing",
+            Self::Bluetooth => {
+                "headphones earbuds airpods a2dp wireless cut off clipped start first second \
+                 wake sleep idle power save experimental"
+            }
             Self::Resampler => {
                 "quality sinc kaiser taps filter conversion phase minimum intermediate pre-ringing"
             }
@@ -406,6 +417,11 @@ impl Group {
             Self::GraphRate => &[SettingKey::ForceGraphRate],
             Self::Buffer => &[SettingKey::Buffer],
             Self::Dop => &[SettingKey::Dop],
+            Self::Bluetooth => &[
+                SettingKey::BluetoothWake,
+                SettingKey::BluetoothLead,
+                SettingKey::BluetoothAwake,
+            ],
             Self::Resampler => &[SettingKey::Quality, SettingKey::FilterPhase],
             Self::Dither => &[SettingKey::Dither],
             Self::NoiseShaping => &[SettingKey::NoiseShaping],
@@ -568,6 +584,14 @@ pub(crate) const BUFFER_HINT: &str = "How much decoded audio is held ahead of th
                                       memory and lets a sink change and a track change land \
                                       sooner. It is the size the ring is built at, so changing it \
                                       reopens the stream.";
+
+pub(crate) const BLUETOOTH_HINT: &str = "Wireless headphones power their radio down when nothing \
+     is sent to them, and the first moment of sound after that is lost while the link wakes. \
+     With this on, a Bluetooth device is kept fed with silence through a pause so resuming loses \
+     nothing, and a stream that starts after the link has slept opens on a short lead of silence \
+     before the track, with the clock held at the start until the music is really heard. \
+     Experimental: it keeps the headphones' radio busy through a pause, which costs them \
+     battery.";
 
 pub(crate) const DOP_HINT: &str = "Hands a DSD file to the device as DSD carried inside PCM words rather than decimating it to \
      PCM first. Nothing in ALSA or SPA advertises whether a device decodes DoP — only the DAC's \

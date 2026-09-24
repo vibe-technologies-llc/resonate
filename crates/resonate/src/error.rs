@@ -25,6 +25,9 @@ pub enum ConfigKey {
     BitPerfect,
     Dop,
     ForceGraphRate,
+    BluetoothWake,
+    BluetoothLeadMs,
+    BluetoothAwakeS,
     Volume,
     BufferMs,
     Theme,
@@ -60,7 +63,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 47] = [
+    pub const ALL: [Self; 50] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -76,6 +79,9 @@ impl ConfigKey {
         Self::BitPerfect,
         Self::Dop,
         Self::ForceGraphRate,
+        Self::BluetoothWake,
+        Self::BluetoothLeadMs,
+        Self::BluetoothAwakeS,
         Self::Volume,
         Self::BufferMs,
         Self::Theme,
@@ -127,6 +133,9 @@ impl ConfigKey {
             Self::BitPerfect => "bit-perfect",
             Self::Dop => "dop",
             Self::ForceGraphRate => "force-graph-rate",
+            Self::BluetoothWake => "bluetooth-wake",
+            Self::BluetoothLeadMs => "bluetooth-lead-ms",
+            Self::BluetoothAwakeS => "bluetooth-awake-s",
             Self::Volume => "volume",
             Self::BufferMs => "buffer-ms",
             Self::Theme => "theme",

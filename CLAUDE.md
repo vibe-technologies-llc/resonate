@@ -955,12 +955,12 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-forty-seven have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other thirty-nine have none, so the
+fifty have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-two have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
-`replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `volume` and
-`buffer-ms`; the window's `theme`, `accent`, `text-size`, `minimise-button`,
+`replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `bluetooth-wake`,
+`bluetooth-lead-ms`, `bluetooth-awake-s`, `volume` and `buffer-ms`; the window's `theme`, `accent`, `text-size`, `minimise-button`,
 `maximise-button`, `scroll-volume` and `scrollbars`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `organise-as`, `notify`, `audd-token`,
