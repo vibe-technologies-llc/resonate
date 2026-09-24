@@ -7,7 +7,10 @@ use std::{
     os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _},
     path::{Path, PathBuf},
     process,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use parking_lot::Mutex;
@@ -39,21 +42,36 @@ struct Laid {
 }
 
 struct Drawn {
-    track: Option<TrackId>,
+    playing: Option<Playing>,
     path: PathBuf,
     uri: String,
 }
 
+struct Playing {
+    track: TrackId,
+    art: Weak<CoverArt>,
+}
+
+impl Playing {
+    fn is(&self, other: &Self) -> bool {
+        self.track == other.track && Weak::ptr_eq(&self.art, &other.art)
+    }
+}
+
 impl Pictures {
-    pub(crate) fn uri(&self, track: TrackId, art: &CoverArt) -> Option<String> {
-        self.laid_down(Some(track), art)
+    pub(crate) fn uri(&self, track: TrackId, art: &Arc<CoverArt>) -> Option<String> {
+        let playing = Playing {
+            track,
+            art: Arc::downgrade(art),
+        };
+        self.laid_down(Some(playing), art)
     }
 
     pub(crate) fn uri_of(&self, art: &CoverArt) -> Option<String> {
         self.laid_down(None, art)
     }
 
-    fn laid_down(&self, track: Option<TrackId>, art: &CoverArt) -> Option<String> {
+    fn laid_down(&self, playing: Option<Playing>, art: &CoverArt) -> Option<String> {
         let mut laid = self.drawn.lock();
         if !laid.made {
             if let Err(error) = made_ours(&self.folder.0) {
@@ -67,9 +85,12 @@ impl Pictures {
             laid.made = true;
         }
         let drawn = &mut laid.drawn;
-        if let Some(held) = drawn
-            .iter()
-            .find(|held| track.is_some() && held.track == track)
+        if let Some(playing) = playing.as_ref()
+            && let Some(held) = drawn.iter().find(|held| {
+                held.playing
+                    .as_ref()
+                    .is_some_and(|drawn_for| drawn_for.is(playing))
+            })
         {
             return Some(held.uri.clone());
         }
@@ -91,7 +112,7 @@ impl Pictures {
 
         let uri = MediaLocation::local(&path).to_uri();
         drawn.push_back(Drawn {
-            track,
+            playing,
             path,
             uri: uri.clone(),
         });
@@ -185,11 +206,11 @@ mod tests {
 
     use super::*;
 
-    fn art() -> CoverArt {
-        CoverArt {
+    fn art() -> Arc<CoverArt> {
+        Arc::new(CoverArt {
             format: ImageFormat::Png,
             bytes: b"\x89PNG\r\n\x1a\nthe cover".to_vec(),
-        }
+        })
     }
 
     fn track(id: u64) -> TrackId {
@@ -213,11 +234,11 @@ mod tests {
         assert!(!path.exists(), "a cover outlived the service that laid it");
     }
 
-    fn cover(number: u64) -> CoverArt {
-        CoverArt {
+    fn cover(number: u64) -> Arc<CoverArt> {
+        Arc::new(CoverArt {
             format: ImageFormat::Png,
             bytes: format!("\u{89}PNG cover {number}").into_bytes(),
-        }
+        })
     }
 
     fn laid(uri: &str) -> PathBuf {
@@ -236,6 +257,26 @@ mod tests {
 
         assert_eq!(first, again);
         assert_ne!(first, second);
+        pictures.forget();
+    }
+
+    #[test]
+    fn a_track_id_minted_again_for_another_file_is_drawn_with_that_files_cover() {
+        let pictures = Pictures::default();
+
+        let first = pictures.uri(track(u64::MAX), &cover(1)).expect("a cover");
+        let next = pictures
+            .uri(track(u64::MAX), &cover(2))
+            .expect("another cover");
+
+        assert_ne!(
+            first, next,
+            "a reused id was answered with the last picture"
+        );
+        assert_eq!(
+            fs::read(laid(&next)).expect("the cover reads back"),
+            cover(2).bytes
+        );
         pictures.forget();
     }
 

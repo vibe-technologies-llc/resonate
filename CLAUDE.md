@@ -198,7 +198,11 @@ Invariants the layering exists to protect:
   panicking. `mpris:artUrl` wants a URI where the catalog holds bytes, so `art::Pictures` lays the
   playing track's cover down under `resonate-art-<pid>-<n>/` in `$XDG_RUNTIME_DIR` — the
   temporary folder only where a session has none — named by a digest of its bytes so an album's
-  tracks share one file, and hands back its `file://` URI. The folder is made 0700 with a
+  tracks share one file, and hands back its `file://` URI. A poll is answered from what is laid
+  down without hashing again only where the row *and* the catalog's own `Arc` of the picture are
+  the ones it was drawn for — a `Weak` held beside the row, which also keeps the address from being
+  reused — because an unscanned row's id is minted again from `TrackId::MAX` by the next load, and
+  an id alone published the last file's cover. The folder is made 0700 with a
   `create` that refuses one already standing, so a predictable name in a shared folder cannot be
   taken first by another user to read what is playing or to aim a symlink, and each cover is
   opened `create_new` at 0600. Only the last
