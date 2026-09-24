@@ -5,7 +5,6 @@ These are code-backed optimization candidates from a read-only audit. None has b
 ## Repeated background work
 
 - **MPRIS active playlist lookup.** The 200 ms [snapshot poll](../crates/resonate-mpris/src/service.rs) calls `collect`, which calls `playlists.playing()` even when the playlist revision is unchanged. The binary implementation resolves the active playlist through catalog queries, including aggregation of playlist entries. Cache the answer against the playing queue stamp and playlist revision while preserving active-playlist signals. Measure database calls and poll time with a large playlist and a saved query.
-- **MPRIS playing-track history.** Each snapshot scans the queue and calls `Host::heard`; the desktop host reads and decodes the current track row through `Library::track_at` in [mpris.rs](../crates/resonate/src/mpris.rs). Cache the answer with an invalidation path for changes to play statistics. Measure catalog reads and poll time during playback.
 - **MPRIS unchanged queue comparisons.** [Track-list change detection](../crates/resonate-mpris/src/tracklist.rs) scans the queue's common prefix and suffix, then [signal publication](../crates/resonate-mpris/src/service.rs) compares its IDs again every 200 ms. The engine retains the same queue `Arc` until its revision changes, so pointer equality can skip unchanged scans while keeping the current content diff for changed queues. Measure poll time with long queues.
 
 ## Scanning and importing
