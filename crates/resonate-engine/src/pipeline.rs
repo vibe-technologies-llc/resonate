@@ -791,6 +791,32 @@ mod tests {
     }
 
     #[test]
+    fn a_restored_source_the_sink_cannot_take_at_its_rate_still_builds_a_chain() {
+        let sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S16]);
+        let source = spec(SampleRate::HZ_44100, SampleFormat::F32);
+        let extending = EngineConfig {
+            restoration: Restoration::Extend,
+            ..EngineConfig::default()
+        };
+        let lossy = Decoded {
+            tuning: Some(Tuning::Mp3),
+            lowpass: Frequency::from_hertz(16_000.0).ok(),
+            ..Decoded::samples(source)
+        };
+
+        let restored = plan_output(lossy, &sink, &extending, AppliedGain::default());
+        assert!(restored.restoration.is_some() && restored.resample.is_some());
+        let mut chain = restored
+            .build_chain(source, &extending, BLOCK)
+            .expect("a restoring, resampling chain builds");
+
+        let input = vec![0.25; BLOCK * 2];
+        let mut output = vec![0.0; chain.max_output_frames() * 2];
+        let count = chain.process(&input, &mut output);
+        assert_eq!(count.frames_in, BLOCK);
+    }
+
+    #[test]
     fn a_lossy_source_is_restored_only_where_it_is_asked_for_and_a_lossless_one_never() {
         let sink = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
         let source = spec(SampleRate::HZ_44100, SampleFormat::F32);

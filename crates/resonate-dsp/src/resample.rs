@@ -732,10 +732,9 @@ impl Processor for Resampler {
             });
         }
         if max_frames_in > self.config.max_frames_in {
-            return Err(Error::OutputTooSmall {
-                capacity: self.config.max_frames_in,
-                required: max_frames_in,
-            });
+            self.config.max_frames_in = max_frames_in;
+            self.history = History::new(self.channels, max_frames_in + self.reach.span() + 2);
+            self.reset();
         }
         Ok(self.max_output_frames(max_frames_in))
     }
