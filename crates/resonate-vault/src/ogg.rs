@@ -22,6 +22,15 @@ const VORBIS_COMMENT: &[u8] = b"\x03vorbis";
 const VORBIS_FRAMED: u8 = 0x01;
 const OPUS_HEAD: &[u8] = b"OpusHead";
 const OPUS_TAGS: &[u8] = b"OpusTags";
+const FLAC_IDENTIFICATION: &[u8] = b"\x7fFLAC";
+const FLAC_IDENTIFICATION_BYTES: usize = 51;
+const FLAC_HEADERS_AT: usize = 7;
+const FLAC_STREAM_INFO_AT: usize = 13;
+const FLAC_BLOCK_HEADER_BYTES: usize = 4;
+const FLAC_LAST_BLOCK: u8 = 0x80;
+const FLAC_BLOCK_KIND: u8 = 0x7f;
+const FLAC_VORBIS_COMMENT: u8 = 4;
+const HEADERS_UNCOUNTED: [u8; 2] = [0, 0];
 const LENGTH_BYTES: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +49,7 @@ pub(crate) struct Bared {
 enum Codec {
     Vorbis,
     Opus,
+    Flac,
 }
 
 impl Codec {
@@ -48,37 +58,87 @@ impl Codec {
             Some(Self::Vorbis)
         } else if identification.starts_with(OPUS_HEAD) {
             Some(Self::Opus)
+        } else if identification.starts_with(FLAC_IDENTIFICATION)
+            && identification.len() == FLAC_IDENTIFICATION_BYTES
+            && identification[FLAC_STREAM_INFO_AT] & FLAC_LAST_BLOCK == 0
+        {
+            Some(Self::Flac)
         } else {
             None
         }
     }
 
-    const fn headers_after_the_first(self) -> usize {
+    fn headers_are_whole(self, packets: &[Vec<u8>]) -> bool {
         match self {
-            Self::Vorbis => 2,
-            Self::Opus => 1,
+            Self::Vorbis => packets.len() == 2,
+            Self::Opus => packets.len() == 1,
+            Self::Flac => packets
+                .last()
+                .and_then(|packet| packet.first())
+                .is_some_and(|header| header & FLAC_LAST_BLOCK != 0),
         }
     }
 
-    fn untagged(self, comment: &[u8]) -> Option<Vec<u8>> {
-        let (magic, framed) = match self {
-            Self::Vorbis => (VORBIS_COMMENT, true),
-            Self::Opus => (OPUS_TAGS, false),
-        };
-        let rest = comment.strip_prefix(magic)?;
-        let vendor_bytes = u32::from_le_bytes(rest.get(..LENGTH_BYTES)?.try_into().ok()?);
-        let vendor = rest.get(LENGTH_BYTES..LENGTH_BYTES.checked_add(vendor_bytes as usize)?)?;
-
-        let mut untagged = Vec::with_capacity(magic.len() + 2 * LENGTH_BYTES + vendor.len() + 1);
-        untagged.extend_from_slice(magic);
-        untagged.extend_from_slice(&vendor_bytes.to_le_bytes());
-        untagged.extend_from_slice(vendor);
-        untagged.extend_from_slice(&0_u32.to_le_bytes());
-        if framed {
-            untagged.push(VORBIS_FRAMED);
+    fn untagged(self, headers: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
+        let (comment, rest) = headers.split_first()?;
+        let mut untagged = vec![self.comment_alone(comment)?];
+        if self != Self::Flac {
+            untagged.extend_from_slice(rest);
         }
         Some(untagged)
     }
+
+    fn comment_alone(self, comment: &[u8]) -> Option<Vec<u8>> {
+        match self {
+            Self::Vorbis => {
+                let mut alone = VORBIS_COMMENT.to_vec();
+                alone.extend(vendor_alone(comment.strip_prefix(VORBIS_COMMENT)?)?);
+                alone.push(VORBIS_FRAMED);
+                Some(alone)
+            }
+            Self::Opus => {
+                let mut alone = OPUS_TAGS.to_vec();
+                alone.extend(vendor_alone(comment.strip_prefix(OPUS_TAGS)?)?);
+                Some(alone)
+            }
+            Self::Flac => {
+                let (header, body) = comment.split_at_checked(FLAC_BLOCK_HEADER_BYTES)?;
+                if header[0] & FLAC_BLOCK_KIND != FLAC_VORBIS_COMMENT {
+                    return None;
+                }
+                let body = vendor_alone(body)?;
+                let length = u32::try_from(body.len()).ok()?.to_be_bytes();
+                let mut alone = vec![FLAC_LAST_BLOCK | FLAC_VORBIS_COMMENT];
+                alone.extend_from_slice(&length[1..]);
+                alone.extend(body);
+                Some(alone)
+            }
+        }
+    }
+
+    fn identified_anew(self, page: &mut Page, headers: usize) -> Option<()> {
+        if self != Self::Flac {
+            return Some(());
+        }
+        let at = page.body_at + FLAC_HEADERS_AT;
+        let counted = page.raw.get_mut(at..at + HEADERS_UNCOUNTED.len())?;
+        if *counted != HEADERS_UNCOUNTED {
+            counted.copy_from_slice(&u16::try_from(headers).ok()?.to_be_bytes());
+            stamped(&mut page.raw);
+        }
+        Some(())
+    }
+}
+
+fn vendor_alone(comments: &[u8]) -> Option<Vec<u8>> {
+    let vendor_bytes = u32::from_le_bytes(comments.get(..LENGTH_BYTES)?.try_into().ok()?);
+    let vendor = comments.get(LENGTH_BYTES..LENGTH_BYTES.checked_add(vendor_bytes as usize)?)?;
+
+    let mut alone = Vec::with_capacity(2 * LENGTH_BYTES + vendor.len());
+    alone.extend_from_slice(&vendor_bytes.to_le_bytes());
+    alone.extend_from_slice(vendor);
+    alone.extend_from_slice(&0_u32.to_le_bytes());
+    Some(alone)
 }
 
 struct Page {
@@ -122,7 +182,7 @@ impl Page {
 }
 
 pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
-    let first = Page::read(stream)?;
+    let mut first = Page::read(stream)?;
     let ends_one_packet = first
         .lacing
         .iter()
@@ -137,7 +197,7 @@ pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
     let mut open = Vec::new();
     let mut last_sequence = first.sequence;
     let mut read = first.raw.len();
-    while packets.len() < codec.headers_after_the_first() {
+    while !codec.headers_are_whole(&packets) {
         let page = Page::read(stream)?;
         read += page.raw.len();
         if read > HEADER_BYTES_AT_MOST
@@ -155,23 +215,23 @@ pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
             open.extend_from_slice(page.body().get(at..at + lace)?);
             at += lace;
             if lace < SEGMENT_BYTES {
+                if open.is_empty() {
+                    return None;
+                }
                 packets.push(std::mem::take(&mut open));
-                let headers_done = packets.len() == codec.headers_after_the_first();
-                if headers_done && segment + 1 != page.lacing.len() {
+                if codec.headers_are_whole(&packets) && segment + 1 != page.lacing.len() {
                     return None;
                 }
             }
         }
     }
 
-    let mut kept = packets.into_iter();
-    let comment = kept.next()?;
-    let untagged = codec.untagged(&comment)?;
-    if untagged == comment {
+    let rest = codec.untagged(&packets)?;
+    if rest == packets {
         return None;
     }
 
-    let rest: Vec<Vec<u8>> = std::iter::once(untagged).chain(kept).collect();
+    codec.identified_anew(&mut first, rest.len())?;
     let mut head = first.raw;
     let written = paginated(
         &rest,
@@ -487,7 +547,7 @@ mod tests {
         }
         assert_eq!(
             pages[1].body(),
-            Codec::Opus.untagged(&tags).expect("tags").as_slice()
+            Codec::Opus.untagged(&[tags]).expect("tags")[0].as_slice()
         );
         assert_eq!(pages[2].body(), &[7; 40]);
         assert_eq!(pages[3].body(), &[8; 9]);
@@ -503,14 +563,16 @@ mod tests {
         comment.extend_from_slice(b"ARTIST=Floyd!");
         comment.push(VORBIS_FRAMED);
 
-        let untagged = Codec::Vorbis.untagged(&comment).expect("a comment packet");
+        let untagged = Codec::Vorbis
+            .untagged(&[comment, b"\x05vorbis".to_vec()])
+            .expect("a comment packet");
 
         let mut wanted = VORBIS_COMMENT.to_vec();
         wanted.extend_from_slice(&4_u32.to_le_bytes());
         wanted.extend_from_slice(b"Xiph");
         wanted.extend_from_slice(&0_u32.to_le_bytes());
         wanted.push(VORBIS_FRAMED);
-        assert_eq!(untagged, wanted);
+        assert_eq!(untagged, vec![wanted, b"\x05vorbis".to_vec()]);
     }
 
     #[test]
@@ -536,10 +598,129 @@ mod tests {
         assert_eq!(bare(&mut Cursor::new(whole)), None);
     }
 
-    #[test]
-    fn a_stream_that_is_not_vorbis_or_opus_is_left_as_it_stands() {
-        let flac = page(FIRST, 1, 0, &[9], b"\x7fFLAC\x01\x00\x00\x01");
+    fn flac_identification(headers: u16) -> Vec<u8> {
+        let mut packet = FLAC_IDENTIFICATION.to_vec();
+        packet.extend_from_slice(&[1, 0]);
+        packet.extend_from_slice(&headers.to_be_bytes());
+        packet.extend_from_slice(b"fLaC");
+        packet.extend_from_slice(&[0, 0, 0, 34]);
+        packet.extend_from_slice(&[0x11; 34]);
+        packet
+    }
 
-        assert_eq!(bare(&mut Cursor::new(flac)), None);
+    fn flac_block(kind: u8, last: bool, body: &[u8]) -> Vec<u8> {
+        let length = (body.len() as u32).to_be_bytes();
+        let mut block = vec![if last { FLAC_LAST_BLOCK | kind } else { kind }];
+        block.extend_from_slice(&length[1..]);
+        block.extend_from_slice(body);
+        block
+    }
+
+    fn flac_comment(comments: &[&str]) -> Vec<u8> {
+        let mut body = 9_u32.to_le_bytes().to_vec();
+        body.extend_from_slice(b"reference");
+        body.extend_from_slice(&(comments.len() as u32).to_le_bytes());
+        for comment in comments {
+            body.extend_from_slice(&(comment.len() as u32).to_le_bytes());
+            body.extend_from_slice(comment.as_bytes());
+        }
+        body
+    }
+
+    fn ogg_flac(headers: u16, blocks: &[Vec<u8>]) -> Vec<u8> {
+        let serial = 77;
+        let identification = flac_identification(headers);
+        let mut whole = page(FIRST, serial, 0, &[51], &identification);
+        let mut sequence = 1;
+        for block in blocks {
+            whole.extend(page(0, serial, sequence, &laced(block.len()), block));
+            sequence += 1;
+        }
+        whole.extend(page(0, serial, sequence, &[12], &[0xff; 12]));
+        whole
+    }
+
+    #[test]
+    fn an_ogg_flac_stream_keeps_one_empty_comment_and_counts_its_headers_again() {
+        let picture = vec![0x5a; 40_000];
+        let whole = ogg_flac(
+            3,
+            &[
+                flac_block(FLAC_VORBIS_COMMENT, false, &flac_comment(&["TITLE=Echoes"])),
+                flac_block(1, false, &[0; 512]),
+                flac_block(6, true, &picture),
+            ],
+        );
+
+        let mut stream = Cursor::new(whole);
+        let bared = bare(&mut stream).expect("the metadata is shed");
+        let mut rest = Vec::new();
+        Renumbered::over(&mut stream, bared.renumbering.expect("the pages move"))
+            .read_to_end(&mut rest)
+            .expect("the rest");
+
+        let written = [bared.head, rest].concat();
+        let pages = pages_of(&written);
+        let sequences: Vec<u32> = pages.iter().map(|page| page.sequence).collect();
+        assert_eq!(sequences, vec![0, 1, 2]);
+        for page in &pages {
+            assert_eq!(
+                checksum(&page.raw).to_le_bytes(),
+                page.raw[CHECKSUM_AT..SEGMENTS_AT]
+            );
+        }
+        assert_eq!(pages[0].body(), flac_identification(1).as_slice());
+        assert_eq!(
+            pages[1].body(),
+            flac_block(FLAC_VORBIS_COMMENT, true, &flac_comment(&[])).as_slice()
+        );
+        assert_eq!(pages[2].body(), &[0xff; 12]);
+    }
+
+    #[test]
+    fn an_ogg_flac_stream_that_does_not_count_its_headers_is_left_uncounted() {
+        let whole = ogg_flac(
+            0,
+            &[
+                flac_block(FLAC_VORBIS_COMMENT, false, &flac_comment(&["TITLE=Echoes"])),
+                flac_block(6, true, &[1; 300]),
+            ],
+        );
+
+        let bared = bare(&mut Cursor::new(whole)).expect("the metadata is shed");
+
+        let pages = pages_of(&bared.head);
+        assert_eq!(pages[0].body(), flac_identification(0).as_slice());
+        assert_eq!(pages.len(), 2);
+    }
+
+    #[test]
+    fn an_ogg_flac_stream_whose_one_comment_is_already_empty_is_left_as_it_stands() {
+        let whole = ogg_flac(
+            1,
+            &[flac_block(FLAC_VORBIS_COMMENT, true, &flac_comment(&[]))],
+        );
+
+        assert_eq!(bare(&mut Cursor::new(whole)), None);
+    }
+
+    #[test]
+    fn an_ogg_flac_stream_whose_first_header_is_not_its_comment_is_left_as_it_stands() {
+        let whole = ogg_flac(
+            2,
+            &[
+                flac_block(1, false, &[0; 64]),
+                flac_block(FLAC_VORBIS_COMMENT, true, &flac_comment(&["TITLE=Echoes"])),
+            ],
+        );
+
+        assert_eq!(bare(&mut Cursor::new(whole)), None);
+    }
+
+    #[test]
+    fn a_stream_that_is_not_vorbis_opus_or_flac_is_left_as_it_stands() {
+        let speex = page(FIRST, 1, 0, &[9], b"Speex    ");
+
+        assert_eq!(bare(&mut Cursor::new(speex)), None);
     }
 }

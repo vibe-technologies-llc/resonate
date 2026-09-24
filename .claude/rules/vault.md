@@ -69,8 +69,8 @@ decoded; the size comparison may then overrule it.
   STREAMINFO alone; an MPEG or ADTS stream sheds every ID3v2 tag stacked in front of the frames
   and, from the end inward, ID3v1 with its enhanced `TAG+`, APEv2 with or without its header,
   Lyrics3v2 and an appended ID3v2 read by its footer; and a DSF ends where its metadata pointer
-  pointed, its header rewritten to that length and a pointer of nothing; and an Ogg Vorbis or Opus
-  stream is given an empty comment packet — `ogg::bare`. A tag that claims more
+  pointed, its header rewritten to that length and a pointer of nothing; and an Ogg Vorbis, Opus
+  or FLAC stream is given an empty comment packet — `ogg::bare`. A tag that claims more
   than the file holds, or tags that would leave no frames at all, leave the file whole.
 
 **Where the speakers sit is part of what is kept.** `MediaInfo::speakers` is the source's
@@ -137,8 +137,9 @@ two it cannot improve: a row whose source has gone, since the object is then the
 nothing better can be made of it, and a row `Form::of` would keep as it stands whatever encoder is
 behind it — a lossy codec, DSD, more than eight channels — unless it is MP3, AAC or DSD, whose
 kept copies encoding 2 began stripping, or Vorbis or Opus, whose encoding 3 did; an MP4's AAC, a
-DSDIFF or a Vorbis in Matroska among those is copied again to the same key and stamped. The preview marks such a row as
-*weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
+DSDIFF or a Vorbis in Matroska among those is copied again to the same key and stamped. Encoding 4
+began stripping an Ogg FLAC, which `Form::of` never keeps and so is walked again regardless. The
+preview marks such a row as *weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
 that would otherwise hide the new encode: an object already standing under the same key is not a
 dedup hit but a rival, and the new one replaces it — `Kept::replaced`, a rename over the standing
 file — only where it comes out smaller. A renewal that loses keeps the standing object and stamps
@@ -294,7 +295,19 @@ serial, skip a sequence number, run past `HEADER_BYTES_AT_MOST`, or end the last
 anywhere but at the end of its page, since the first audio packet must begin on a page of its
 own. The comment packet is rewritten with its vendor string and nothing after it — a count of
 nothing, and Vorbis's framing bit — and a stream whose packet is already that is copied as it
-stands. The first page is kept byte for byte; the new comment packet and the setup packet are laid
+stands.
+
+**An Ogg FLAC stream is the same walk over metadata blocks.** Its first packet is the 51 bytes of
+`\x7fFLAC`, the mapping's version, a count of the header packets that follow and the STREAMINFO
+block, and each header packet after it is one native metadata block, the VORBIS_COMMENT first as
+the mapping requires. There is no fixed count to walk to — the count may be zero for *unknown* —
+so the headers are whole at the block marked last, and one whose STREAMINFO is itself marked last
+has none to shed. What is kept is one VORBIS_COMMENT with its vendor alone, marked last, so the
+PICTURE, the PADDING, the SEEKTABLE and the CUESHEET go the way a native FLAC's do, and a stream
+whose first header is not its comment is copied as it stands. The first page then says one header
+follows and is stamped again — unless it counted none, which is left saying so.
+
+The first page is otherwise kept byte for byte; the new comment packet and the setup packet are laid
 out on fresh pages under the next sequence numbers, a granule of nothing on a page a packet ends
 on and of `NO_PACKET_ENDS` on one none does, each stamped with the CRC-32 the format names — the
 polynomial `04c11db7`, unreflected, over the page with its checksum field zeroed, which
@@ -306,9 +319,11 @@ and the checksum of every page of that serial, passing another serial's pages �
 next link — through as they are, and passing whatever does not parse as a page through verbatim
 from there on. Validation is what makes the last two safe: `kept_whole` decodes the copy and
 weighs it against the source, and a copy that does not hold the same audio is copied again whole.
-`a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to` and its Opus twin are
-the claims, each checking the object's sequence numbers and checksums with a CRC written bit by
-bit rather than through the table the vault uses.
+`a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to`, its Opus twin and
+`a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to` — a 24-bit, 192 kHz
+stream whose zstd'd WAVE does not beat it, which is how a FLAC is ever kept — are the claims,
+each checking the object's sequence numbers and checksums with a CRC written bit by bit rather
+than through the table the vault uses.
 
 ## What it does not do
 

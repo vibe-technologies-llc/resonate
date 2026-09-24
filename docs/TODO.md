@@ -34,8 +34,7 @@
 ## The vault
 - A kept object whose container holds its tags inside its own structure — an MP4's `udta`, a
   DSDIFF's `ID3 ` and `DIIN` chunks, Matroska's `Tags` — carries them still, because rewriting an
-  atom tree, a `FRM8` or an EBML segment means a writer per format. An Ogg FLAC stream is not
-  stripped either, since only Vorbis and Opus are named by their first packet
+  atom tree, a `FRM8` or an EBML segment means a writer per format
 - `flacenc` 0.5.1 caps the Rice parameter at 14 where the format's second partition method reaches
   30, which is why a 24-bit rip loses to `flac -8` by some 15 % and is kept rather than re-encoded.
   Closing it means the partitioned-rice-2 method in that crate or an encoder beside it

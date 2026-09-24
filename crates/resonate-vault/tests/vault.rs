@@ -920,3 +920,50 @@ fn a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to() {
 fn a_kept_ogg_opus_sheds_its_tags_and_keeps_every_packet_it_decodes_to() {
     sheds_its_comments_and_decodes_alike("libopus", "tagged.opus");
 }
+
+#[test]
+fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
+    let tree = Tree::new();
+    let path = tree.root.join("tagged.oga");
+    let told = format!("comment={}", "a long note ".repeat(9_000));
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+        .arg("sine=frequency=997:sample_rate=192000:duration=1")
+        .args(["-f", "lavfi", "-i"])
+        .arg("anoisesrc=amplitude=0.0002:sample_rate=192000:duration=1:seed=7")
+        .args(["-filter_complex", "amix=inputs=2:normalize=0"])
+        .args(["-ac", "2", "-c:a", "flac", "-sample_fmt", "s32"])
+        .args(["-metadata", "title=Echoes", "-metadata", &told])
+        .arg(&path)
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: no ffmpeg to write a tagged Ogg FLAC stream");
+        return;
+    }
+    let before = fs::read(&path).expect("the tagged file");
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    let object = fs::read(&held.path).expect("an object");
+    assert_eq!(held.form, Form::Kept);
+    assert!(
+        object.len() + 100_000 < before.len(),
+        "{} bytes kept of {}",
+        object.len(),
+        before.len()
+    );
+    assert!(
+        !object.windows(6).any(|window| window == b"Echoes"),
+        "a comment was kept"
+    );
+    assert!(ogg_sequences_and_checksums_hold(&object));
+    assert_eq!(
+        decoded(&held.path, SampleFormat::S32),
+        decoded(&path, SampleFormat::S32)
+    );
+    assert_eq!(fs::read(&path).expect("the tagged file"), before);
+    let probed =
+        probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+    assert!(probed.tags.title.is_none());
+}
