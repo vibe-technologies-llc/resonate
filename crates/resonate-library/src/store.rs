@@ -213,6 +213,18 @@ fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
         tx.execute(statement, params![gone, keeps])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
+    tx.execute(
+        "UPDATE artists SET
+             favourite       = coalesce(min(artists.favourite, o.favourite),
+                                        artists.favourite, o.favourite),
+             portrait_format = CASE WHEN artists.portrait IS NULL
+                                    THEN o.portrait_format ELSE artists.portrait_format END,
+             portrait        = coalesce(artists.portrait, o.portrait)
+          FROM (SELECT * FROM artists WHERE id = ?1) AS o
+         WHERE artists.id = ?2",
+        params![gone, keeps],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
     tx.execute("DELETE FROM artists WHERE id = ?1", params![gone])
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Delete, source))
@@ -2007,6 +2019,46 @@ mod tests {
             reconcile_artists(&mut connection).expect("a settled catalog reconciles"),
             0
         );
+    }
+
+    #[test]
+    fn an_artist_folded_into_another_hands_on_its_favourite_and_its_portrait() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name, mbid, favourite, portrait, portrait_format)
+                 VALUES
+                     (1, 'marcin przybylowicz', 'Marcin Przybylowicz',
+                      '8d8e1d53-2a0a-4b53-9f0b-d1d4e7c1b3a8', 900, NULL, NULL),
+                     (2, 'marcin przybyłowicz', 'Marcin Przybyłowicz', NULL, 500, x'89', 1),
+                     (3, 'adam skorupa', 'Adam Skorupa', NULL, NULL, x'01', 0),
+                     (4, 'adam skórupa', 'Adam Skórupa', NULL, 700, x'02', 1);",
+            )
+            .expect("a catalog keyed the old way");
+
+        assert_eq!(
+            reconcile_artists(&mut connection).expect("the artists reconcile"),
+            2
+        );
+
+        let held = |id: i64| {
+            connection
+                .query_row(
+                    "SELECT favourite, portrait, portrait_format FROM artists WHERE id = ?1",
+                    params![id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<i64>>(0)?,
+                            row.get::<_, Option<Vec<u8>>>(1)?,
+                            row.get::<_, Option<i64>>(2)?,
+                        ))
+                    },
+                )
+                .expect("the artist that was kept")
+        };
+        assert_eq!(held(1), (Some(500), Some(vec![0x89]), Some(1)));
+        assert_eq!(held(3), (Some(700), Some(vec![0x01]), Some(0)));
     }
 
     #[test]
