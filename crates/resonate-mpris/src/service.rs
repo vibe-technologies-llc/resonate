@@ -653,6 +653,33 @@ fn publish_tracks(
 ) {
     let emitter = tracks.signal_emitter();
 
+    if !Arc::ptr_eq(&before.queue, &now.queue) {
+        publish_queue_moves(tracks, shared, before, now);
+    }
+
+    if described_otherwise(before, now)
+        && let Some(track) = now.track
+        && now.queue.iter().any(|item| item.id == track)
+    {
+        report(zbus::block_on(TrackList::track_metadata_changed(
+            emitter,
+            track_path(track),
+            (*now.metadata).clone(),
+        )));
+    }
+    if before.reads != now.reads {
+        publish_late_reads(tracks, shared, now);
+    }
+}
+
+fn publish_queue_moves(
+    tracks: &InterfaceRef<TrackList>,
+    shared: &Arc<Shared>,
+    before: &Watched,
+    now: &Watched,
+) {
+    let emitter = tracks.signal_emitter();
+
     match change(&before.queue, &now.queue) {
         Change::Unchanged => {}
         Change::Added { at } => {
@@ -701,20 +728,6 @@ fn publish_tracks(
         .eq(now.queue.iter().map(|item| item.id))
     {
         report(zbus::block_on(tracks.get().tracks_invalidate(emitter)));
-    }
-
-    if described_otherwise(before, now)
-        && let Some(track) = now.track
-        && now.queue.iter().any(|item| item.id == track)
-    {
-        report(zbus::block_on(TrackList::track_metadata_changed(
-            emitter,
-            track_path(track),
-            (*now.metadata).clone(),
-        )));
-    }
-    if before.reads != now.reads {
-        publish_late_reads(tracks, shared, now);
     }
 }
 
