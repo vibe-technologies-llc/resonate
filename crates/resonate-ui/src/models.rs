@@ -806,6 +806,8 @@ impl LibraryModel {
             }
         };
         if self.found_for.as_deref() == Some(text.as_str()) {
+            self.asking = None;
+            self._finding = Task::ready(());
             return;
         }
         let library = Arc::clone(&self.library);
@@ -822,9 +824,10 @@ impl LibraryModel {
                 .await;
 
             let landed = this.update(cx, |this, cx| {
-                if this.asking.as_deref() == Some(text.as_str()) {
-                    this.asking = None;
+                if this.asking.as_deref() != Some(text.as_str()) {
+                    return;
                 }
+                this.asking = None;
                 this.found = match found {
                     Ok(found) => found.into(),
                     Err(error) => {

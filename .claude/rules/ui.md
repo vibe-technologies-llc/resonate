@@ -1414,7 +1414,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   before the first has landed does not drop the first's lookup and leave its mark grey.
   The ask is `ask_elsewhere_after`, `ASKED_ELSEWHERE_AFTER` — 700 ms — behind the keystroke, only
   where the build `can_enrich` and `asks_elsewhere` says the words are worth it, and its answer is
-  kept against the text it answered, so a reload does not ask again. A search whose plain words a
+  kept against the text it answered, so a reload does not ask again. Going back to a text already
+  answered cancels whatever ask was in flight, and an answer is stored only while its text is
+  still `asking`, so an ask outrun by the box never writes over the songs found for what it now
+  says. A search whose plain words a
   held track sings is offered as `lyrics:"…"`: `Library::sung` rides in the load, and *Sung in N
   tracks* stands in the heading's actions, and in a pane's empty state where nothing else
   matched, as a `search_instead`.
