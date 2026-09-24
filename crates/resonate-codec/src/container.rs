@@ -235,7 +235,7 @@ pub(crate) fn coded_info(
         container: opened.reader.format_info().format,
         codec: params.codec,
         spec,
-        speakers: Speakers::of(params.channels.as_ref()),
+        speakers: Speakers::of(opus::channels_of(params).as_ref()),
         duration: playable.and_then(FrameSpan::frames).or_else(|| {
             duration(track, spec.rate)
                 .filter(|declared| *declared != Frames::ZERO)
@@ -313,10 +313,12 @@ fn priming(
                 .as_deref()
                 .and_then(opus::Head::read)
                 .map(|head| {
+                    let pre_skip = u32::from(head.pre_skip);
+                    let padding = prescan.segment.discarded_frames(rate);
                     Priming::new(
-                        u32::from(head.pre_skip),
-                        prescan.segment.discarded_frames(rate),
-                        None,
+                        pre_skip,
+                        padding,
+                        prescan.segment.opus_music(pre_skip, padding),
                     )
                 })
         }
@@ -410,14 +412,12 @@ fn channel_layout(
     location: &MediaLocation,
     track: StreamTrackId,
 ) -> Result<ChannelLayout> {
-    let channels = params
-        .channels
-        .as_ref()
-        .ok_or_else(|| Error::TrackPropertyMissing {
-            location: location.clone(),
-            track,
-            property: TrackProperty::ChannelLayout,
-        })?;
+    let placed = opus::channels_of(params);
+    let channels = placed.as_ref().ok_or_else(|| Error::TrackPropertyMissing {
+        location: location.clone(),
+        track,
+        property: TrackProperty::ChannelLayout,
+    })?;
 
     let count = ChannelCount::new(u16::try_from(channels.count()).unwrap_or(u16::MAX))?;
     match channels {

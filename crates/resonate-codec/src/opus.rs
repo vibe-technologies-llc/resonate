@@ -31,11 +31,24 @@ const CHANNELS_AT: usize = 9;
 const PRE_SKIP_AT: usize = 10;
 const GAIN_AT: usize = 16;
 const FAMILY_AT: usize = 18;
+const PLAIN_FAMILY: u8 = 0;
+const VORBIS_FAMILY: u8 = 1;
 const ISO_BMFF_VERSION: u8 = 0;
 const SILENT_CHANNEL: u8 = 255;
 const DB_PER_DECADE: f32 = 20.0;
 const STEREO_FLAG: u8 = 0b100;
 const GAIN_STEPS_PER_DB: f32 = 256.0;
+
+const FIRST_HYBRID_CONFIG: u8 = 12;
+const FIRST_CELT_CONFIG: u8 = 16;
+const SILK_FRAME_SAMPLES: [u64; 4] = [480, 960, 1_920, 2_880];
+const HYBRID_FRAME_SAMPLES: [u64; 2] = [480, 960];
+const CELT_FRAME_SAMPLES: [u64; 4] = [120, 240, 480, 960];
+const CONFIG_SHIFT: u32 = 3;
+const FRAME_CODE_MASK: u8 = 0b11;
+const ONE_FRAME: u8 = 0;
+const ARBITRARY_FRAMES: u8 = 3;
+const FRAME_COUNT_MASK: u8 = 0x3F;
 
 const VORBIS_ORDER: [&[Position]; MOST_CHANNELS] = [
     &[Position::FRONT_LEFT],
@@ -106,9 +119,53 @@ pub(crate) fn pre_roll(codec: AudioCodecId) -> Frames {
     }
 }
 
+pub(crate) fn channels_of(params: &AudioCodecParameters) -> Option<Channels> {
+    let channels = params.channels.clone()?;
+    let Channels::Discrete(count) = channels else {
+        return Some(channels);
+    };
+    let vorbis_ordered = params.codec == CODEC_ID_OPUS
+        && params
+            .extra_data
+            .as_deref()
+            .and_then(Head::read)
+            .is_some_and(|head| head.family == VORBIS_FAMILY);
+    let order = usize::from(count)
+        .checked_sub(1)
+        .and_then(|at| VORBIS_ORDER.get(at))
+        .filter(|_| vorbis_ordered);
+
+    Some(order.map_or(channels, |order| {
+        Channels::Positioned(
+            order
+                .iter()
+                .fold(Position::empty(), |held, position| held | *position),
+        )
+    }))
+}
+
+pub(crate) fn samples_in_a_packet(packet: &[u8]) -> Option<u64> {
+    let (&toc, rest) = packet.split_first()?;
+    let config = toc >> CONFIG_SHIFT;
+    let per_frame = match config {
+        ..FIRST_HYBRID_CONFIG => SILK_FRAME_SAMPLES[usize::from(config & 0b11)],
+        FIRST_HYBRID_CONFIG..FIRST_CELT_CONFIG => HYBRID_FRAME_SAMPLES[usize::from(config & 0b1)],
+        FIRST_CELT_CONFIG.. => CELT_FRAME_SAMPLES[usize::from(config & 0b11)],
+    };
+    let frames = match toc & FRAME_CODE_MASK {
+        ONE_FRAME => 1,
+        ARBITRARY_FRAMES => u64::from(rest.first()? & FRAME_COUNT_MASK),
+        _ => 2,
+    };
+
+    let samples = per_frame * frames;
+    (frames > 0 && samples <= LONGEST_PACKET_FRAMES as u64).then_some(samples)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Head {
     channels: u8,
+    family: u8,
     pub(crate) pre_skip: u16,
     gain: i16,
     table: Option<ChannelMappingTable>,
@@ -134,8 +191,9 @@ impl Head {
             )
         };
         let channels = fixed[CHANNELS_AT];
-        let table = match fixed[FAMILY_AT] {
-            0 => None,
+        let family = fixed[FAMILY_AT];
+        let table = match family {
+            PLAIN_FAMILY => None,
             family => Some(
                 ChannelMappingTable::parse(family, channels, &bytes[HEAD_BYTES..])
                     .filter(routes_only_what_it_decodes)?,
@@ -147,6 +205,7 @@ impl Head {
 
         Some(Self {
             channels,
+            family,
             pre_skip,
             gain,
             table,
@@ -246,7 +305,7 @@ pub(crate) struct Opus {
 
 impl Opus {
     fn try_new(params: &AudioCodecParameters) -> Result<Self> {
-        let Some(channels) = params.channels.clone() else {
+        let Some(channels) = channels_of(params) else {
             return unsupported_error("opus: the channels are not declared");
         };
         let head = match params.extra_data.as_deref() {
@@ -256,6 +315,7 @@ impl Opus {
             },
             None => Head {
                 channels: u8::try_from(channels.count()).unwrap_or(u8::MAX),
+                family: PLAIN_FAMILY,
                 pre_skip: 0,
                 gain: 0,
                 table: None,
@@ -469,6 +529,75 @@ mod tests {
             )[..2],
             [0, 1]
         );
+    }
+
+    fn opus_params(channels: Channels, extra: Vec<u8>) -> AudioCodecParameters {
+        let mut params = AudioCodecParameters::new();
+        params
+            .for_codec(CODEC_ID_OPUS)
+            .with_channels(channels)
+            .with_extra_data(extra.into_boxed_slice());
+        params
+    }
+
+    #[test]
+    fn a_vorbis_ordered_stream_the_container_left_unplaced_is_placed_in_vorbis_order() {
+        let mut surround = head(1, 6, [0, 0], [0, 0], VORBIS_FAMILY);
+        surround.extend_from_slice(&[4, 2, 0, 4, 1, 2, 3, 5]);
+
+        let placed = channels_of(&opus_params(Channels::Discrete(6), surround));
+
+        assert_eq!(
+            placed,
+            Some(Channels::Positioned(
+                Position::FRONT_LEFT
+                    | Position::FRONT_CENTER
+                    | Position::FRONT_RIGHT
+                    | Position::REAR_LEFT
+                    | Position::REAR_RIGHT
+                    | Position::LFE1
+            ))
+        );
+    }
+
+    #[test]
+    fn a_stream_of_undefined_order_or_one_the_container_placed_is_left_as_it_is() {
+        let mut undefined = head(1, 6, [0, 0], [0, 0], 255);
+        undefined.extend_from_slice(&[4, 2, 0, 4, 1, 2, 3, 5]);
+        assert_eq!(
+            channels_of(&opus_params(Channels::Discrete(6), undefined)),
+            Some(Channels::Discrete(6))
+        );
+
+        let placed = Channels::Positioned(Position::FRONT_LEFT | Position::FRONT_RIGHT);
+        assert_eq!(
+            channels_of(&opus_params(placed.clone(), head(1, 2, [0, 0], [0, 0], 0))),
+            Some(placed)
+        );
+    }
+
+    #[test]
+    fn a_packet_is_as_long_as_its_toc_byte_says_in_every_mode() {
+        const SILK_60_MS: u8 = 3 << 3;
+        const HYBRID_10_MS: u8 = 12 << 3;
+        const CELT_20_MS: u8 = 31 << 3;
+        const CELT_2_5_MS: u8 = 16 << 3;
+
+        assert_eq!(samples_in_a_packet(&[SILK_60_MS]), Some(2_880));
+        assert_eq!(samples_in_a_packet(&[HYBRID_10_MS | 1]), Some(960));
+        assert_eq!(samples_in_a_packet(&[CELT_20_MS | 2]), Some(1_920));
+        assert_eq!(samples_in_a_packet(&[CELT_2_5_MS | 3, 48]), Some(5_760));
+        assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3, 6]), Some(5_760));
+    }
+
+    #[test]
+    fn a_packet_that_names_no_frames_or_runs_past_120_ms_is_no_packet() {
+        const CELT_20_MS: u8 = 31 << 3;
+
+        assert_eq!(samples_in_a_packet(&[]), None);
+        assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3]), None);
+        assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3, 0]), None);
+        assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3, 7]), None);
     }
 
     #[test]

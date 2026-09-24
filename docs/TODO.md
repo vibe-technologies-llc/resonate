@@ -17,9 +17,10 @@
   CELT, which libopus's encoder does at the start of a low-bitrate stream. Music bitrates are CELT
   throughout and match libopus to 10⁻⁵; a speech-rate Opus file is the one that hears it. Both are
   the crate's to fix rather than this one's
-- An Opus track in Matroska declares a length read off the segment's millisecond timestamps, up to
-  1.5 ms off the exact count it decodes to. Exact would mean summing every block's Opus frame count
-  out of its TOC byte in the prescan's cluster walk
+- An Opus track in Matroska is counted exactly only where no block is laced and the walk reaches
+  the segment's declared end, so a file of laced blocks, one whose segment is of unknown length and
+  anything piped past `MAX_PRESCAN_HEAD` fall back to the millisecond timestamps, up to 1.5 ms off
+  what they decode to. Reading a laced block means reading its Xiph, EBML or fixed lace sizes
 - Opus mapping families 2, 3 and 255 — ambisonics and undefined layouts — are refused by
   symphonia's own `OpusHead` reader before the decoder is asked, so such a file does not open
 - Nothing applies DSD's +6 dB modulation convention — its 0 dB reference is 50 % modulation — so a
@@ -520,10 +521,11 @@
   but a person, so a figure the rules quote going away is noticed only when somebody looks. The
   packaged build's cost is `RUSTFLAGS="-C target-cpu=x86-64"` with a target directory of its own,
   and it is worth reading beside the native one, because the two do not rank the stages alike
-- A Matroska `Duration` longer than the file's own clusters is not caught: `matroska.rs` counts where
-  the last block starts, which is a lower bound, so blocks past the declared end prove a short
-  declaration wrong while nothing proves a long one wrong. Catching it needs the last block's own
-  length, which means the codec's frame size rather than the container's timestamps
+- A Matroska `Duration` longer than the file's own clusters is not caught for any codec but Opus:
+  `matroska.rs` counts where the last block starts, which is a lower bound, so blocks past the
+  declared end prove a short declaration wrong while nothing proves a long one wrong. Opus is
+  counted packet by packet out of its TOC bytes; any other codec would need its own frame size
+  read the same way — FLAC's frame header, Vorbis's block sizes out of its setup header
 - A prescan over a source that cannot seek reaches only the first `MAX_PRESCAN_HEAD` bytes, so a WAV
   whose writer put its `LIST INFO` after the `data` chunk still loses those tags over a pipe where a
   file on disc keeps them

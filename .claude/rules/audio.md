@@ -120,7 +120,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   declaration wherever the clusters stay within it, because the declaration is exact and the count
   is not, and prefers the count only where blocks exist past the declared end — the one case the
   writer is provably wrong. A declaration that is too *long* is not detectable this way and is
-  left alone. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
+  left alone, except for Opus, whose packets are counted exactly — see below. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
   10^5 blocks it costs 440 ms a probe read four bytes at a time and 15 ms read through the window,
   so the case the writer is provably wrong stays caught for about a millisecond on a track-length
   file rather than being traded away for speed.
@@ -154,9 +154,24 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   end to cut it from — `playable` open-ended, which is all Matroska can say, its timestamps being
   milliseconds — is what `Decoder::build` hands `Coded::trailing`: `fill` reads one packet ahead
   while it is non-zero and takes the padding off the packet that turns out to be the last, so the
-  decode is exactly as long as what went in. The *declared* length is still the segment's
-  millisecond count less the pre-skip it includes — `Carrying::declared_before_the_music` — and
-  within three half-millisecond roundings of what decodes.
+  decode is exactly as long as what went in. **The declared length is counted, not read off the
+  timestamps.** Every Opus packet says how long it is in its TOC byte — the frame size its config
+  names times the frame count its code names, the count byte after it for code 3 — and the cluster
+  walk reads that byte out of each block of the track whose `CodecID` is `A_OPUS`, so
+  `Segment::opus_samples` is the whole stream in 48 kHz samples and `Segment::opus_music` less the
+  pre-skip and the padding is `playable`'s end: the window is closed and the declared length is
+  exactly what decodes. The count is trusted only where nothing escaped it — a laced block, a
+  packet naming no frames or more than 120 ms, a cluster or a segment the walk did not reach the
+  end of, a segment of unknown length — and any of those leaves it `None`, the window open-ended,
+  and the length the segment's millisecond count less the pre-skip it includes,
+  `Carrying::declared_before_the_music`, within three half-millisecond roundings. Reaching the
+  segment's own end is what keeps a source that cannot seek honest: its prescan sees only
+  `MAX_PRESCAN_HEAD` bytes, and a count cut short there would close the window on the music.
+  **A surround stream Matroska leaves unplaced is placed by its head.** Matroska carries a channel
+  count and no mask, so a 5.1 Opus track opened as `Discrete(6)`, which a downmix truncates one
+  channel for one; mapping family 1 *is* the Vorbis order, so `opus::channels_of` answers those
+  positions wherever the container named none and the head says family 1, and the layout, the
+  speakers and the decoder's planes all read it. Family 255 names no order and stays discrete.
   `a_seek_into_opus_hears_what_decoding_from_the_start_hears_there` and
   `opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it` are the claims:
   in CELT, which is every music bitrate, the decode is within 10⁻⁵ RMS of full scale of ffmpeg's

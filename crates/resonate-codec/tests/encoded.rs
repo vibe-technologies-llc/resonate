@@ -1935,23 +1935,17 @@ fn decoded_by_libopus(path: &Path) -> Option<Vec<i32>> {
     })
 }
 
-const THREE_MATROSKA_ROUNDINGS: u64 = 3 * 24;
-
 #[test]
 fn opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it() {
-    let cases: [(&str, Shape, ChannelLayout, u64); 4] = [
-        ("broadcast.opus", BROADCAST, ChannelLayout::Stereo, 0),
-        (
-            "broadcast.mka",
-            BROADCAST,
-            ChannelLayout::Stereo,
-            THREE_MATROSKA_ROUNDINGS,
-        ),
-        ("broadcast.mp4", BROADCAST, ChannelLayout::Stereo, 0),
-        ("surround.opus", SURROUND, ChannelLayout::Surround51, 0),
+    let cases: [(&str, Shape, ChannelLayout); 5] = [
+        ("broadcast.opus", BROADCAST, ChannelLayout::Stereo),
+        ("broadcast.mka", BROADCAST, ChannelLayout::Stereo),
+        ("broadcast.mp4", BROADCAST, ChannelLayout::Stereo),
+        ("surround.opus", SURROUND, ChannelLayout::Surround51),
+        ("surround.mka", SURROUND, ChannelLayout::Surround51),
     ];
 
-    for (name, shape, layout, declared_within) in cases {
+    for (name, shape, layout) in cases {
         let tree = Tree::new();
         let Some((path, samples)) =
             shaped(&tree, shape, name, &["-c:a", "libopus", "-b:a", "320k"])
@@ -1978,10 +1972,10 @@ fn opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it
         let (_, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
             .expect("a well-formed file opens");
         let decoded_frames = (samples.len() / usize::from(shape.channels)) as u64;
-        let declared = info.duration.expect("a length is declared").get();
-        assert!(
-            declared.abs_diff(decoded_frames) <= declared_within,
-            "{name} declares {declared} frames where it decodes to {decoded_frames}"
+        assert_eq!(
+            info.duration,
+            Some(Frames(decoded_frames)),
+            "{name} declares another length than it decodes to"
         );
 
         let kept = samples.len();

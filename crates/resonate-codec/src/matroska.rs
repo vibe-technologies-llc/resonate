@@ -5,7 +5,7 @@ use std::{
 
 use resonate_core::{Frames, SampleRate};
 
-use crate::prescan::read_exact;
+use crate::{opus, prescan::read_exact};
 
 const EBML_HEADER: u32 = 0x1A45_DFA3;
 const SEGMENT: u32 = 0x1853_8067;
@@ -15,6 +15,8 @@ const SEGMENT_DURATION: u32 = 0x4489;
 const TIMESTAMP_SCALE: u32 = 0x002A_D7B1;
 const TRACKS: u32 = 0x1654_AE6B;
 const TRACK_ENTRY: u32 = 0x00AE;
+const TRACK_NUMBER: u32 = 0x00D7;
+const CODEC_ID: u32 = 0x0086;
 const TRACK_AUDIO: u32 = 0x00E1;
 const BIT_DEPTH: u32 = 0x6264;
 const CLUSTER: u32 = 0x1F43_B675;
@@ -32,7 +34,9 @@ const MAX_TITLE_BYTES: u64 = 4_096;
 const MAX_BIT_DEPTH: u64 = 64;
 const MAX_CLUSTERS: usize = 65_536;
 const MAX_BLOCKS: usize = 65_536;
-const BLOCK_HEADER_BYTES: u64 = 4;
+const OPUS_CODEC_ID: &str = "A_OPUS";
+const LACING: u8 = 0b0110;
+const PACKET_HEAD_BYTES: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Segment {
@@ -42,9 +46,18 @@ pub(crate) struct Segment {
     pub(crate) counted: Option<Duration>,
     pub(crate) bit_depth: Option<u32>,
     pub(crate) discarded: Option<Duration>,
+    pub(crate) opus_samples: Option<u64>,
 }
 
 impl Segment {
+    pub(crate) fn opus_music(&self, pre_skip: u32, padding: u32) -> Option<Frames> {
+        self.opus_samples?
+            .checked_sub(u64::from(pre_skip))?
+            .checked_sub(u64::from(padding))
+            .filter(|music| *music > 0)
+            .map(Frames)
+    }
+
     pub(crate) fn discarded_frames(&self, rate: SampleRate) -> u32 {
         self.discarded
             .map(|held| Frames::from_duration(held, rate).get())
@@ -65,6 +78,58 @@ struct Counted {
     ticks: Option<u64>,
     blocks: usize,
     discarded: Option<Duration>,
+    tally: Tally,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Tally {
+    #[default]
+    NotCounting,
+    Counting {
+        track: u64,
+        samples: u64,
+    },
+    Lost,
+}
+
+impl Tally {
+    fn of(track: Option<u64>) -> Self {
+        track.map_or(Self::NotCounting, |track| Self::Counting {
+            track,
+            samples: 0,
+        })
+    }
+
+    fn add(&mut self, block: Option<Block>) {
+        let Self::Counting { track, samples } = *self else {
+            return;
+        };
+        let Some(block) = block else {
+            *self = Self::Lost;
+            return;
+        };
+        if block.track != track {
+            return;
+        }
+
+        *self = block
+            .opus_samples()
+            .and_then(|more| samples.checked_add(more))
+            .map_or(Self::Lost, |samples| Self::Counting { track, samples });
+    }
+
+    fn lose(&mut self) {
+        if let Self::Counting { .. } = self {
+            *self = Self::Lost;
+        }
+    }
+
+    fn samples(self) -> Option<u64> {
+        match self {
+            Self::Counting { samples, .. } if samples > 0 => Some(samples),
+            Self::Counting { .. } | Self::NotCounting | Self::Lost => None,
+        }
+    }
 }
 
 pub(crate) fn read_segment<S: Read + Seek + ?Sized>(source: &mut S) -> Segment {
@@ -95,18 +160,31 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
     if source.seek(SeekFrom::Start(body)).is_ok() {
         found.bit_depth = read_bit_depth(source, within);
     }
+    let opus_track = source
+        .seek(SeekFrom::Start(body))
+        .ok()
+        .and_then(|_| read_opus_track(source, within));
     if source.seek(SeekFrom::Start(body)).is_ok() {
-        let counted = count_clusters(source, within);
+        let counted = count_clusters(source, within, Tally::of(opus_track));
         let scale = found.scale.unwrap_or(DEFAULT_TIMESTAMP_SCALE);
         found.counted = span(counted.ticks.map(|ticks| ticks as f64), scale);
         found.discarded = counted.discarded;
+        found.opus_samples = counted.tally.samples();
     }
 
     Some(found)
 }
 
-fn count_clusters<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Counted {
-    let mut counted = Counted::default();
+fn count_clusters<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+    tally: Tally,
+) -> Counted {
+    let mut counted = Counted {
+        tally,
+        ..Counted::default()
+    };
+    let mut reached_the_end = false;
 
     for _ in 0..MAX_CLUSTERS {
         let Some(element) = element(source) else {
@@ -123,10 +201,14 @@ fn count_clusters<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) 
             break;
         };
         if within.is_some_and(|within| next >= within) {
+            reached_the_end = within == Some(next);
             break;
         }
     }
 
+    if !reached_the_end {
+        counted.tally.lose();
+    }
     counted
 }
 
@@ -136,6 +218,7 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
     };
     let mut at = None;
     let mut offsets = Offsets::default();
+    let mut reached_the_end = false;
 
     for _ in 0..MAX_BLOCKS {
         let Some(element) = element(source) else {
@@ -144,12 +227,15 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
         match element.id {
             CLUSTER_TIMESTAMP => at = uint(source, element.length),
             SIMPLE_BLOCK => {
-                offsets.saw(block_offset(source, element.length));
+                let block = read_block(source, element);
+                offsets.saw(block.map(|block| block.offset));
+                into.tally.add(block);
                 into.discarded = None;
             }
             BLOCK_GROUP => {
                 let group = read_group(source, element.end());
-                offsets.saw(group.offset);
+                offsets.saw(group.block.map(|block| block.offset));
+                into.tally.add(group.block);
                 into.discarded = group.discarded;
             }
             _ => {}
@@ -159,8 +245,13 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
             break;
         };
         if limit.is_some_and(|limit| next >= limit) {
+            reached_the_end = limit == Some(next);
             break;
         }
+    }
+
+    if !reached_the_end {
+        into.tally.lose();
     }
 
     if let Some(at) = at {
@@ -173,7 +264,7 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Group {
-    offset: Option<i16>,
+    block: Option<Block>,
     discarded: Option<Duration>,
 }
 
@@ -185,7 +276,7 @@ fn read_group<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Gr
             break;
         };
         match element.id {
-            BLOCK => group.offset = block_offset(source, element.length),
+            BLOCK => group.block = read_block(source, element),
             DISCARD_PADDING => {
                 group.discarded = signed(source, element.length)
                     .and_then(|nanos| u64::try_from(nanos).ok())
@@ -226,18 +317,92 @@ impl Offsets {
     }
 }
 
-fn block_offset<S: Read + Seek + ?Sized>(source: &mut S, length: Length) -> Option<i16> {
-    let Length::Known(bytes) = length else {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Block {
+    track: u64,
+    offset: i16,
+    laced: bool,
+    packet_head: [u8; PACKET_HEAD_BYTES],
+    packet_head_bytes: usize,
+}
+
+impl Block {
+    fn opus_samples(self) -> Option<u64> {
+        if self.laced {
+            return None;
+        }
+        opus::samples_in_a_packet(self.packet_head.get(..self.packet_head_bytes)?)
+    }
+}
+
+fn read_block<S: Read + Seek + ?Sized>(source: &mut S, element: Element) -> Option<Block> {
+    let end = element.end()?;
+    let Length::Known(track) = length(source)? else {
         return None;
     };
-    let Length::Known(_) = self::length(source)? else {
-        return None;
-    };
-    if bytes < BLOCK_HEADER_BYTES {
-        return None;
+    let [high, low, flags] = read_exact::<3, S>(source)?;
+    let packet_bytes = end.checked_sub(source.stream_position().ok()?)?;
+
+    let mut packet_head = [0_u8; PACKET_HEAD_BYTES];
+    let packet_head_bytes = usize::try_from(packet_bytes)
+        .unwrap_or(PACKET_HEAD_BYTES)
+        .min(PACKET_HEAD_BYTES);
+    source
+        .read_exact(packet_head.get_mut(..packet_head_bytes)?)
+        .ok()?;
+
+    Some(Block {
+        track,
+        offset: i16::from_be_bytes([high, low]),
+        laced: flags & LACING != 0,
+        packet_head,
+        packet_head_bytes,
+    })
+}
+
+fn read_opus_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u64> {
+    let tracks = find(source, TRACKS, within)?;
+    let limit = tracks.end();
+
+    for _ in 0..MAX_ELEMENTS {
+        let entry = element(source)?;
+        if entry.id == TRACK_ENTRY
+            && let Some(track) = opus_track_number(source, entry.end())
+        {
+            return Some(track);
+        }
+
+        let next = skip(source, &entry)?;
+        if limit.is_some_and(|limit| next >= limit) {
+            break;
+        }
+    }
+    None
+}
+
+fn opus_track_number<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Option<u64> {
+    let mut number = None;
+    let mut opus = false;
+
+    for _ in 0..MAX_ELEMENTS {
+        let Some(element) = element(source) else {
+            break;
+        };
+        match element.id {
+            TRACK_NUMBER => number = positive(uint(source, element.length)),
+            CODEC_ID => opus = text(source, element.length).as_deref() == Some(OPUS_CODEC_ID),
+            _ => {}
+        }
+
+        let Some(next) = skip(source, &element) else {
+            break;
+        };
+        if limit.is_none_or(|limit| next >= limit) {
+            break;
+        }
     }
 
-    read_exact::<2, S>(source).map(i16::from_be_bytes)
+    number.filter(|_| opus)
 }
 
 fn read_bit_depth<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u32> {
@@ -292,6 +457,7 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         counted: None,
         bit_depth: None,
         discarded: None,
+        opus_samples: None,
     }
 }
 
@@ -688,6 +854,105 @@ mod tests {
             read_segment(&mut Cursor::new(bytes)).duration(),
             Some(Duration::from_millis(500))
         );
+    }
+
+    const CELT_20_MS: u8 = 31 << 3;
+    const TWO_FRAMES: u8 = 1;
+    const XIPH_LACED: u8 = 0b0010;
+
+    fn track_entry(number: u8, codec: &str) -> Vec<u8> {
+        let mut entry = element(TRACK_NUMBER, &[number]);
+        entry.extend_from_slice(&element(CODEC_ID, codec.as_bytes()));
+        element(TRACK_ENTRY, &entry)
+    }
+
+    fn opus_block(track: u8, flags: u8, toc: u8) -> Vec<u8> {
+        element(SIMPLE_BLOCK, &[0x80 | track, 0, 0, flags, toc, 0xFC])
+    }
+
+    fn with_tracks(entries: &[Vec<u8>], blocks: &[Vec<u8>]) -> Vec<u8> {
+        let mut segment = element(
+            INFO,
+            &element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes()),
+        );
+        segment.extend_from_slice(&element(TRACKS, &entries.concat()));
+        let mut cluster = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+        for block in blocks {
+            cluster.extend_from_slice(block);
+        }
+        segment.extend_from_slice(&element(CLUSTER, &cluster));
+
+        let mut bytes = element(EBML_HEADER, b"an ebml header");
+        bytes.extend_from_slice(&element(SEGMENT, &segment));
+        bytes
+    }
+
+    #[test]
+    fn an_opus_track_is_counted_packet_by_packet_out_of_its_toc_bytes() {
+        let bytes = with_tracks(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &[
+                opus_block(1, 0, CELT_20_MS),
+                opus_block(1, 0, CELT_20_MS | TWO_FRAMES),
+                opus_block(1, 0, CELT_20_MS),
+            ],
+        );
+
+        let found = read_segment(&mut Cursor::new(bytes));
+
+        assert_eq!(found.opus_samples, Some(3_840));
+        assert_eq!(found.opus_music(312, 100), Some(Frames(3_428)));
+    }
+
+    #[test]
+    fn only_the_opus_track_s_blocks_are_counted() {
+        let bytes = with_tracks(
+            &[track_entry(1, "A_VORBIS"), track_entry(2, OPUS_CODEC_ID)],
+            &[
+                opus_block(1, 0, CELT_20_MS | TWO_FRAMES),
+                opus_block(2, 0, CELT_20_MS),
+            ],
+        );
+
+        assert_eq!(
+            read_segment(&mut Cursor::new(bytes)).opus_samples,
+            Some(960)
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_opus_track_counts_nothing() {
+        let bytes = with_tracks(&[track_entry(1, "A_FLAC")], &[opus_block(1, 0, CELT_20_MS)]);
+
+        assert_eq!(read_segment(&mut Cursor::new(bytes)).opus_samples, None);
+    }
+
+    #[test]
+    fn a_laced_block_leaves_the_count_unknown_rather_than_short() {
+        let bytes = with_tracks(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &[
+                opus_block(1, 0, CELT_20_MS),
+                opus_block(1, XIPH_LACED, CELT_20_MS),
+            ],
+        );
+
+        assert_eq!(read_segment(&mut Cursor::new(bytes)).opus_samples, None);
+    }
+
+    #[test]
+    fn a_walk_that_stops_short_of_the_segment_s_end_leaves_the_count_unknown() {
+        let whole = with_tracks(
+            &[track_entry(1, OPUS_CODEC_ID)],
+            &[opus_block(1, 0, CELT_20_MS), opus_block(1, 0, CELT_20_MS)],
+        );
+        let head = whole[..whole.len() - 3].to_vec();
+
+        assert_eq!(
+            read_segment(&mut Cursor::new(whole)).opus_samples,
+            Some(1_920)
+        );
+        assert_eq!(read_segment(&mut Cursor::new(head)).opus_samples, None);
     }
 
     #[test]
