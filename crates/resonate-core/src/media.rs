@@ -134,10 +134,7 @@ impl MediaLocation {
         match &self.locator {
             Locator::Path(path) => path.file_stem().map(|stem| stem.to_string_lossy()),
             Locator::Key(key) => {
-                let leaf = leaf_of(key);
-                let stem = leaf
-                    .rsplit_once(EXTENSION_SEPARATOR)
-                    .map_or(leaf, |(stem, _)| stem);
+                let (stem, _) = stem_and_extension(leaf_of(key));
                 (!stem.is_empty()).then_some(Cow::Borrowed(stem))
             }
         }
@@ -204,9 +201,8 @@ impl MediaLocation {
     pub fn extension(&self) -> Option<&str> {
         match &self.locator {
             Locator::Path(path) => path.extension().and_then(|extension| extension.to_str()),
-            Locator::Key(key) => leaf_of(key)
-                .rsplit_once(EXTENSION_SEPARATOR)
-                .map(|(_, extension)| extension)
+            Locator::Key(key) => stem_and_extension(leaf_of(key))
+                .1
                 .filter(|extension| !extension.is_empty()),
         }
     }
@@ -254,6 +250,13 @@ const fn hex(byte: u8) -> Option<u8> {
 
 fn leaf_of(key: &str) -> &str {
     key.rsplit_once(KEY_SEPARATOR).map_or(key, |(_, leaf)| leaf)
+}
+
+fn stem_and_extension(leaf: &str) -> (&str, Option<&str>) {
+    match leaf.rsplit_once(EXTENSION_SEPARATOR) {
+        Some((stem, extension)) if !stem.is_empty() => (stem, Some(extension)),
+        Some(_) | None => (leaf, None),
+    }
 }
 
 impl fmt::Display for MediaLocation {
@@ -319,6 +322,18 @@ mod tests {
 
         assert_eq!(location.extension(), None);
         assert_eq!(location.stem().as_deref(), Some("bbc-6-music"));
+    }
+
+    #[test]
+    fn a_key_named_by_a_leading_dot_is_split_the_way_a_path_of_that_name_is() {
+        let source = SourceId::new("radio").expect("a lowercase name");
+        for name in [".hidden", "streams/.hidden", ".hidden.flac", "Echoes.flac"] {
+            let key = MediaLocation::new(source.clone(), name);
+            let path = MediaLocation::local(name);
+
+            assert_eq!(key.stem(), path.stem(), "{name} stems apart");
+            assert_eq!(key.extension(), path.extension(), "{name} extends apart");
+        }
     }
 
     #[test]
