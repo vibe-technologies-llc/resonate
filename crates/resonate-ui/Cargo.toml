@@ -2,6 +2,7 @@
 name = "resonate-ui"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 ahash.workspace = true

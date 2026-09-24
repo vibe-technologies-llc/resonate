@@ -137,4 +137,7 @@ nothing unless `discord` is on and names an application of yours.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+Resonate is free software under the GNU Affero General Public License, version 3 or later. You
+may use, study, share and change it, but anything you distribute that is built from it, or offer
+to users over a network, must be released under the same licence with its complete source. See
+[LICENSE](LICENSE).
