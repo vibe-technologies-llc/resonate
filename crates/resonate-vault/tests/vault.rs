@@ -813,3 +813,110 @@ fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
             .is_none()
     );
 }
+
+fn a_tagged_ogg(tree: &Tree, codec: &str, named: &str) -> Option<PathBuf> {
+    let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
+    let path = tree.root.join(named);
+    let told = format!("comment={}", "a long note ".repeat(9_000));
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(["-c:a", codec, "-b:a", "96k"])
+        .args([
+            "-metadata",
+            "title=Echoes",
+            "-metadata",
+            "artist=Pink Floyd",
+        ])
+        .args(["-metadata", &told])
+        .arg(&path)
+        .status();
+    encoded.is_ok_and(|status| status.success()).then_some(path)
+}
+
+fn ogg_checksum(page: &[u8]) -> u32 {
+    let mut held = 0_u32;
+    for (at, byte) in page.iter().enumerate() {
+        let byte = if (22..26).contains(&at) { 0 } else { *byte };
+        held ^= u32::from(byte) << 24;
+        for _ in 0..8 {
+            held = if held & 0x8000_0000 == 0 {
+                held << 1
+            } else {
+                (held << 1) ^ 0x04c1_1db7
+            };
+        }
+    }
+    held
+}
+
+fn ogg_sequences_and_checksums_hold(bytes: &[u8]) -> bool {
+    let mut at = 0;
+    let mut next = 0_u32;
+    while at < bytes.len() {
+        let Some(header) = bytes.get(at..at + 27) else {
+            return false;
+        };
+        if !header.starts_with(b"OggS") {
+            return false;
+        }
+        let segments = usize::from(header[26]);
+        let Some(lacing) = bytes.get(at + 27..at + 27 + segments) else {
+            return false;
+        };
+        let length = 27 + segments + lacing.iter().map(|lace| usize::from(*lace)).sum::<usize>();
+        let sequence = u32::from_le_bytes(header[18..22].try_into().expect("four bytes"));
+        let stamped = u32::from_le_bytes(header[22..26].try_into().expect("four bytes"));
+        if sequence != next || ogg_checksum(&bytes[at..at + length]) != stamped {
+            return false;
+        }
+        next += 1;
+        at += length;
+    }
+    at == bytes.len()
+}
+
+fn sheds_its_comments_and_decodes_alike(codec: &str, named: &str) {
+    let tree = Tree::new();
+    let Some(path) = a_tagged_ogg(&tree, codec, named) else {
+        eprintln!("skipped: no ffmpeg with {codec} to write a tagged Ogg stream");
+        return;
+    };
+    let before = fs::read(&path).expect("the tagged file");
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    let object = fs::read(&held.path).expect("an object");
+    assert_eq!(held.form, Form::Kept);
+    assert!(
+        object.len() + 90_000 < before.len(),
+        "{} bytes kept of {}",
+        object.len(),
+        before.len()
+    );
+    assert!(
+        !object.windows(6).any(|window| window == b"Echoes"),
+        "a comment was kept"
+    );
+    assert!(ogg_sequences_and_checksums_hold(&object));
+    assert_eq!(
+        decoded(&held.path, SampleFormat::F32),
+        decoded(&path, SampleFormat::F32)
+    );
+    assert_eq!(fs::read(&path).expect("the tagged file"), before);
+    let probed =
+        probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+    assert!(probed.tags.title.is_none());
+    assert!(probed.tags.artist.is_none());
+}
+
+#[test]
+fn a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to() {
+    sheds_its_comments_and_decodes_alike("libvorbis", "tagged.ogg");
+}
+
+#[test]
+fn a_kept_ogg_opus_sheds_its_tags_and_keeps_every_packet_it_decodes_to() {
+    sheds_its_comments_and_decodes_alike("libopus", "tagged.opus");
+}

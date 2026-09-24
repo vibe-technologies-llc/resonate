@@ -20,6 +20,7 @@ use crate::{
     flac,
     form::{Form, WIDEST_FLAC_BITS},
     key::VaultKey,
+    ogg,
     pcm::{self, Digest},
     wave,
 };
@@ -662,7 +663,9 @@ impl Vault {
             Stripping::Whole => None,
         };
         let stripped = bared.is_some();
-        let (head, until) = bared.map_or((Vec::new(), None), |bared| (bared.head, bared.until));
+        let (head, until, renumbering) = bared.map_or((Vec::new(), None, None), |bared| {
+            (bared.head, bared.until, bared.renumbering)
+        });
         let start = media
             .stream
             .stream_position()
@@ -678,6 +681,9 @@ impl Vault {
             Some(until) => Box::new((&mut media.stream).take(until.saturating_sub(start))),
             None => Box::new(&mut media.stream),
         };
+        if let Some(renumbering) = renumbering {
+            rest = Box::new(ogg::Renumbered::over(rest, renumbering));
+        }
         let mut buffer = vec![0_u8; COPY_BYTES];
         loop {
             let read = rest

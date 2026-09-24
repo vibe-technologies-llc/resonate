@@ -7,6 +7,7 @@ mod files;
 mod flac;
 mod form;
 mod key;
+mod ogg;
 mod pcm;
 mod unpacking;
 mod vault;

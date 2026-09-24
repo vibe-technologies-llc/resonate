@@ -5,7 +5,10 @@ use std::{
 
 use resonate_codec::{Container, MediaStream};
 
-use crate::error::{Error, Result, VaultOp};
+use crate::{
+    error::{Error, Result, VaultOp},
+    ogg::{self, Renumbering},
+};
 
 pub(crate) const FLAC_MAGIC: [u8; 4] = *b"fLaC";
 const METADATA_HEADER_BYTES: usize = 4;
@@ -44,6 +47,7 @@ const DSF_METADATA_AT: usize = 20;
 pub(crate) struct Bare {
     pub(crate) head: Vec<u8>,
     pub(crate) until: Option<u64>,
+    pub(crate) renumbering: Option<Renumbering>,
 }
 
 pub(crate) fn bare(
@@ -59,10 +63,14 @@ pub(crate) fn bare(
         Container::Flac => bare_flac(stream),
         Container::Mpeg | Container::Adts => untagged_frames(stream),
         Container::Dsf => bare_dsf(stream),
+        Container::Ogg => ogg::bare(stream).map(|bared| Bare {
+            head: bared.head,
+            until: None,
+            renumbering: bared.renumbering,
+        }),
         Container::Wave
         | Container::Aiff
         | Container::Caf
-        | Container::Ogg
         | Container::Dff
         | Container::IsoMp4
         | Container::Matroska
@@ -119,7 +127,11 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     head.push(LAST_BLOCK | STREAM_INFO);
     head.extend_from_slice(&length[1..]);
     head.extend_from_slice(&held);
-    Some(Bare { head, until: None })
+    Some(Bare {
+        head,
+        until: None,
+        renumbering: None,
+    })
 }
 
 fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
@@ -137,6 +149,7 @@ fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     Some(Bare {
         head: Vec::new(),
         until: Some(until),
+        renumbering: None,
     })
 }
 
@@ -255,6 +268,7 @@ fn bare_dsf(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     Some(Bare {
         head: bared,
         until: Some(metadata),
+        renumbering: None,
     })
 }
 

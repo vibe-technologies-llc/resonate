@@ -434,7 +434,10 @@ fn worth_weighing(row: &TrackToVault) -> bool {
 }
 
 fn sheds_tags_kept(row: &TrackToVault) -> bool {
-    matches!(row.codec, Codec::Mp3 | Codec::Aac | Codec::Dsd)
+    matches!(
+        row.codec,
+        Codec::Mp3 | Codec::Aac | Codec::Dsd | Codec::Vorbis | Codec::Opus
+    )
 }
 
 fn form_of(row: &TrackToVault) -> Form {

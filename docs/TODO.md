@@ -32,10 +32,10 @@
   hardware here takes a 176.4 kHz S24 stream
 
 ## The vault
-- A kept object whose container holds its tags inside its own structure — an Ogg's comment packet,
-  an MP4's `udta`, a DSDIFF's `ID3 ` and `DIIN` chunks — carries them still, because `bare` only
-  cuts what sits around the audio and rewriting a page, an atom tree or a `FRM8` means a writer
-  per format. Ogg's is the one worth writing: its pages carry a CRC and a sequence number each
+- A kept object whose container holds its tags inside its own structure — an MP4's `udta`, a
+  DSDIFF's `ID3 ` and `DIIN` chunks, Matroska's `Tags` — carries them still, because rewriting an
+  atom tree, a `FRM8` or an EBML segment means a writer per format. An Ogg FLAC stream is not
+  stripped either, since only Vorbis and Opus are named by their first packet
 - `flacenc` 0.5.1 caps the Rice parameter at 14 where the format's second partition method reaches
   30, which is why a 24-bit rip loses to `flac -8` by some 15 % and is kept rather than re-encoded.
   Closing it means the partitioned-rice-2 method in that crate or an encoder beside it

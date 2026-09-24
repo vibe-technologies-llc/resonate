@@ -69,7 +69,8 @@ decoded; the size comparison may then overrule it.
   STREAMINFO alone; an MPEG or ADTS stream sheds every ID3v2 tag stacked in front of the frames
   and, from the end inward, ID3v1 with its enhanced `TAG+`, APEv2 with or without its header,
   Lyrics3v2 and an appended ID3v2 read by its footer; and a DSF ends where its metadata pointer
-  pointed, its header rewritten to that length and a pointer of nothing. A tag that claims more
+  pointed, its header rewritten to that length and a pointer of nothing; and an Ogg Vorbis or Opus
+  stream is given an empty comment packet — `ogg::bare`. A tag that claims more
   than the file holds, or tags that would leave no frames at all, leave the file whole.
 
 **Where the speakers sit is part of what is kept.** `MediaInfo::speakers` is the source's
@@ -135,8 +136,8 @@ nothing else can tell that an object on disc was made by a worse encoder than th
 two it cannot improve: a row whose source has gone, since the object is then the only copy and
 nothing better can be made of it, and a row `Form::of` would keep as it stands whatever encoder is
 behind it — a lossy codec, DSD, more than eight channels — unless it is MP3, AAC or DSD, whose
-kept copies encoding 2 began stripping; an MP4's AAC or a DSDIFF among those is copied again to
-the same key and stamped. The preview marks such a row as
+kept copies encoding 2 began stripping, or Vorbis or Opus, whose encoding 3 did; an MP4's AAC, a
+DSDIFF or a Vorbis in Matroska among those is copied again to the same key and stamped. The preview marks such a row as
 *weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
 that would otherwise hide the new encode: an object already standing under the same key is not a
 dedup hit but a rival, and the new one replaces it — `Kept::replaced`, a rename over the standing
@@ -281,8 +282,36 @@ row belongs to no root.
 `a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went` and
 `a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims.
 
+## An Ogg stream's comments are rewritten, and every page after them numbered again
+
+A Vorbis or Opus stream keeps its tags in a header packet of its own — the comment packet after
+the identification header, and for Vorbis the setup packet after that — so stripping one is a
+rewrite of the stream's structure rather than a cut around it. `ogg::bare` reads the first page,
+which both specifications give to the identification header alone, and names the codec by that
+packet's magic; walks the pages of the same serial, in sequence, until the header packets are
+whole; and refuses — copying the file as it stands — a stream whose header pages carry another
+serial, skip a sequence number, run past `HEADER_BYTES_AT_MOST`, or end the last header packet
+anywhere but at the end of its page, since the first audio packet must begin on a page of its
+own. The comment packet is rewritten with its vendor string and nothing after it — a count of
+nothing, and Vorbis's framing bit — and a stream whose packet is already that is copied as it
+stands. The first page is kept byte for byte; the new comment packet and the setup packet are laid
+out on fresh pages under the next sequence numbers, a granule of nothing on a page a packet ends
+on and of `NO_PACKET_ENDS` on one none does, each stamped with the CRC-32 the format names — the
+polynomial `04c11db7`, unreflected, over the page with its checksum field zeroed, which
+`a_page_is_stamped_with_the_checksum_libogg_gives_it` holds to a page ffmpeg wrote. A picture in
+the comments usually made them several pages long, so the headers now take fewer pages than they
+did and every audio page after them would skip numbers: `Renumbering` is the difference, and
+`Renumbered` wraps the copy that follows, reading it a page at a time and rewriting the sequence
+and the checksum of every page of that serial, passing another serial's pages — a chained stream's
+next link — through as they are, and passing whatever does not parse as a page through verbatim
+from there on. Validation is what makes the last two safe: `kept_whole` decodes the copy and
+weighs it against the source, and a copy that does not hold the same audio is copied again whole.
+`a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to` and its Opus twin are
+the claims, each checking the object's sequence numbers and checksums with a CRC written bit by
+bit rather than through the table the vault uses.
+
 ## What it does not do
 
-- A `Form::Kept` object in a container whose tags sit *inside* its structure — Ogg's comment
-  packet, MP4's `udta`, DSDIFF's `ID3 ` and `DIIN` chunks — keeps the tags its container was
-  written with, because stripping those means a writer per format.
+- A `Form::Kept` object in a container whose tags sit *inside* its structure — MP4's `udta`,
+  DSDIFF's `ID3 ` and `DIIN` chunks, Matroska's `Tags` — keeps the tags its container was written
+  with, because stripping those means a writer per format.
