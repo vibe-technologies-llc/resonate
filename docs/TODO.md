@@ -527,7 +527,8 @@
 
 ## MPRIS
 - `TrackAdded`, `TrackRemoved` and `TrackListReplaced` are all diffed from a 200 ms poll of the
-  published queue, so two edits inside one sample coalesce into one announcement
+  published queue, so a row added and taken away again inside one sample is never announced at
+  all, and a row moved is announced as the whole list replaced
 - Nothing reconciles an id minted by `unclaimed_id` for a file outside the library with the library
   row for the same file, and a row the queue renamed to keep its ids apart is read back by its path
   rather than its id for as long as it is queued

@@ -40,7 +40,7 @@ use crate::{
         PlaybackStatus, Sleep, metadata, micros, no_track, playing_digest, queued_metadata,
         sleep_status, sounding, track_path,
     },
-    tracklist::{Change, TrackList, after_row, change},
+    tracklist::{Change, Edit, TrackList, after_row, change},
 };
 
 pub(crate) const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
@@ -682,34 +682,43 @@ fn publish_queue_moves(
 
     match change(&before.queue, &now.queue) {
         Change::Unchanged => {}
-        Change::Added { at } => {
-            if let Some(item) = now.queue.get(at) {
-                let media = shared
-                    .player
-                    .media_within(&item.location, item.span, ANNOUNCE_BUDGET);
-                let state = shared.player.state();
-                let digest = shared.player.digest();
-                let metadata = queued_metadata(
-                    item,
-                    &state,
-                    digest.as_ref(),
-                    media.as_deref(),
-                    shared.art(&state, digest.as_ref()),
-                    shared.host.heard(&item.location, item.span),
-                );
-                report(zbus::block_on(TrackList::track_added(
-                    emitter,
-                    metadata,
-                    after_row(&now.queue, at),
-                )));
-            }
-        }
-        Change::Removed { at } => {
-            if let Some(item) = before.queue.get(at) {
-                report(zbus::block_on(TrackList::track_removed(
-                    emitter,
-                    track_path(item.id),
-                )));
+        Change::Edited(edits) => {
+            let until = Instant::now() + ANNOUNCE_BUDGET;
+            for edit in edits {
+                match edit {
+                    Edit::Removed { at } => {
+                        if let Some(item) = before.queue.get(at) {
+                            report(zbus::block_on(TrackList::track_removed(
+                                emitter,
+                                track_path(item.id),
+                            )));
+                        }
+                    }
+                    Edit::Added { at } => {
+                        if let Some(item) = now.queue.get(at) {
+                            let patience = until.saturating_duration_since(Instant::now());
+                            let media =
+                                shared
+                                    .player
+                                    .media_within(&item.location, item.span, patience);
+                            let state = shared.player.state();
+                            let digest = shared.player.digest();
+                            let metadata = queued_metadata(
+                                item,
+                                &state,
+                                digest.as_ref(),
+                                media.as_deref(),
+                                shared.art(&state, digest.as_ref()),
+                                shared.host.heard(&item.location, item.span),
+                            );
+                            report(zbus::block_on(TrackList::track_added(
+                                emitter,
+                                metadata,
+                                after_row(&now.queue, at),
+                            )));
+                        }
+                    }
+                }
             }
         }
         Change::Replaced => {

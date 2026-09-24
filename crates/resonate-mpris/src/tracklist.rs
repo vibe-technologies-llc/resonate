@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
+use resonate_core::TrackId;
 use resonate_engine::{Command, Placement, QueueItem, Span, unclaimed_id};
 use zbus::{
     fdo, interface,
@@ -18,38 +20,72 @@ use crate::{
 
 const READ_BUDGET: Duration = Duration::from_millis(500);
 
+const EDITS_ANNOUNCED_AT_MOST: usize = 64;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Edit {
+    Removed { at: usize },
+    Added { at: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Change {
     Unchanged,
-    Added { at: usize },
-    Removed { at: usize },
+    Edited(Vec<Edit>),
     Replaced,
 }
 
 pub(crate) fn change(before: &[QueueItem], after: &[QueueItem]) -> Change {
-    let shortest = before.len().min(after.len());
-    let head = before
-        .iter()
-        .zip(after)
-        .position(|(before, after)| before != after)
-        .unwrap_or(shortest);
-    let tail = before
-        .iter()
-        .rev()
-        .zip(after.iter().rev())
-        .position(|(before, after)| before != after)
-        .unwrap_or(shortest);
-
-    match (before.len(), after.len()) {
-        (before, after) if before == after && head == before => Change::Unchanged,
-        (before, after) if after == before + 1 && head + tail >= before => {
-            Change::Added { at: head }
-        }
-        (before, after) if before == after + 1 && head + tail >= after => {
-            Change::Removed { at: head }
-        }
-        _ => Change::Replaced,
+    if before == after {
+        return Change::Unchanged;
     }
+
+    let was_at: AHashMap<TrackId, usize> = before
+        .iter()
+        .enumerate()
+        .map(|(at, item)| (item.id, at))
+        .collect();
+    let is_at: AHashMap<TrackId, usize> = after
+        .iter()
+        .enumerate()
+        .map(|(at, item)| (item.id, at))
+        .collect();
+    if was_at.len() != before.len() || is_at.len() != after.len() {
+        return Change::Replaced;
+    }
+
+    let mut kept = 0;
+    let mut last_kept = None;
+    for item in after {
+        let Some(&was) = was_at.get(&item.id) else {
+            continue;
+        };
+        let moved = last_kept.is_some_and(|last| was < last);
+        if moved || before.get(was) != Some(item) {
+            return Change::Replaced;
+        }
+        last_kept = Some(was);
+        kept += 1;
+    }
+    if kept == 0 && !before.is_empty() && !after.is_empty() {
+        return Change::Replaced;
+    }
+
+    let removed = before
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| !is_at.contains_key(&item.id))
+        .map(|(at, _)| Edit::Removed { at });
+    let added = after
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| !was_at.contains_key(&item.id))
+        .map(|(at, _)| Edit::Added { at });
+    let edits: Vec<Edit> = removed.chain(added).collect();
+    if edits.len() > EDITS_ANNOUNCED_AT_MOST {
+        return Change::Replaced;
+    }
+    Change::Edited(edits)
 }
 
 pub(crate) struct TrackList {
@@ -215,6 +251,10 @@ mod tests {
             .collect()
     }
 
+    fn edited(edits: &[Edit]) -> Change {
+        Change::Edited(edits.to_vec())
+    }
+
     #[test]
     fn a_queue_that_did_not_move_is_announced_as_nothing_at_all() {
         assert_eq!(
@@ -233,10 +273,10 @@ mod tests {
         ] {
             assert_eq!(
                 change(&queue(&[1, 2, 3]), &queue(&after)),
-                Change::Added { at }
+                edited(&[Edit::Added { at }])
             );
         }
-        assert_eq!(change(&[], &queue(&[9])), Change::Added { at: 0 });
+        assert_eq!(change(&[], &queue(&[9])), edited(&[Edit::Added { at: 0 }]));
     }
 
     #[test]
@@ -244,23 +284,55 @@ mod tests {
         for (at, after) in [(0, vec![2, 3]), (1, vec![1, 3]), (2, vec![1, 2])] {
             assert_eq!(
                 change(&queue(&[1, 2, 3]), &queue(&after)),
-                Change::Removed { at }
+                edited(&[Edit::Removed { at }])
             );
         }
-        assert_eq!(change(&queue(&[9]), &[]), Change::Removed { at: 0 });
+        assert_eq!(
+            change(&queue(&[9]), &[]),
+            edited(&[Edit::Removed { at: 0 }])
+        );
     }
 
     #[test]
-    fn a_reshuffle_is_announced_as_a_whole_new_list() {
+    fn two_edits_inside_one_sample_are_announced_as_two() {
+        assert_eq!(
+            change(&queue(&[1, 2, 3]), &queue(&[1, 8, 2, 3, 9])),
+            edited(&[Edit::Added { at: 1 }, Edit::Added { at: 4 }])
+        );
+        assert_eq!(
+            change(&queue(&[1, 2, 3]), &queue(&[1, 3, 9])),
+            edited(&[Edit::Removed { at: 1 }, Edit::Added { at: 2 }])
+        );
+        assert_eq!(
+            change(&queue(&[1, 2, 3]), &queue(&[1])),
+            edited(&[Edit::Removed { at: 1 }, Edit::Removed { at: 2 }])
+        );
+    }
+
+    #[test]
+    fn a_reshuffle_or_a_list_with_nothing_kept_is_announced_as_a_whole_new_list() {
         assert_eq!(
             change(&queue(&[1, 2, 3]), &queue(&[3, 1, 2])),
+            Change::Replaced
+        );
+        assert_eq!(
+            change(&queue(&[1, 2, 3]), &queue(&[1, 3, 2, 9])),
             Change::Replaced
         );
         assert_eq!(
             change(&queue(&[1, 2]), &queue(&[3, 4, 5])),
             Change::Replaced
         );
-        assert_eq!(change(&queue(&[1, 2, 3]), &queue(&[1])), Change::Replaced);
+    }
+
+    #[test]
+    fn more_edits_than_a_listener_should_replay_are_a_whole_new_list() {
+        let before: Vec<u64> = (1..=10).collect();
+        let after: Vec<u64> = (1..=10)
+            .chain(100..100 + EDITS_ANNOUNCED_AT_MOST as u64 + 1)
+            .collect();
+
+        assert_eq!(change(&queue(&before), &queue(&after)), Change::Replaced);
     }
 
     #[test]

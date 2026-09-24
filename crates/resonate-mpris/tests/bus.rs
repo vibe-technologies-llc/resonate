@@ -1218,6 +1218,8 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     let signals = harness.tracklist_signals();
     let invalidated = harness.invalidated("Tracks");
     thread::sleep(SETTLE);
+    signals.try_iter().for_each(drop);
+    invalidated.try_iter().for_each(drop);
 
     let added = tree.wav("added.wav");
     let uri = format!("file://{}", added.display());
@@ -2458,4 +2460,35 @@ fn a_transport_call_answers_once_the_engine_has_applied_it() {
             .collect::<Vec<_>>(),
         queued[..1]
     );
+}
+
+#[test]
+fn two_rows_added_between_two_polls_are_announced_as_two_additions() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load_all(&[tree.wav("first.wav")]);
+    harness.wait_for(
+        |harness| harness.tracks().len() == 1,
+        "the track list to publish",
+    );
+    let signals = harness.tracklist_signals();
+    thread::sleep(SETTLE);
+    signals.try_iter().for_each(drop);
+
+    let list = harness.proxy(TRACK_LIST);
+    let head = OwnedObjectPath::try_from(NO_TRACK).expect("a valid path");
+    let uris: Vec<String> = ["one.wav", "two.wav"]
+        .map(|name| format!("file://{}", tree.wav(name).display()))
+        .into();
+    for uri in &uris {
+        list.call::<_, _, ()>("AddTrack", &(uri, &head, false))
+            .expect("AddTrack is served");
+    }
+
+    announced(&signals, "TrackAdded");
+    announced(&signals, "TrackAdded");
+    unannounced(&signals, "TrackListReplaced", SETTLE);
+    assert_eq!(harness.tracks().len(), 3);
 }

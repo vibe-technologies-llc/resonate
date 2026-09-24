@@ -177,7 +177,15 @@ Invariants the layering exists to protect:
   `Player::queue` mapped to object paths — one path per row, because `Queue::load` and
   `Queue::insert` mint over any id a row arrives under that the queue already holds — `AddTrack`
   and `RemoveTrack` are `Command::Insert` and `Command::Remove` on the row that id names, and the four signals are diffed out of the same 200 ms
-  poll that drives the `Player` property changes. `Tracks` is declared `invalidates`, as the spec
+  poll that drives the `Player` property changes. What moved between two samples is announced edit
+  by edit wherever it can be — `tracklist::change` keys the rows by id, and where every row both
+  samples hold is still in the same order, what left is a `TrackRemoved` each and what arrived a
+  `TrackAdded` each, in the order that leaves every `AfterTrack` naming a row already announced —
+  so two rows queued inside one poll reach a client as two additions rather than as a list
+  replaced. A reorder, a list with no row in common with the last and more than
+  `EDITS_ANNOUNCED_AT_MOST` edits are `TrackListReplaced`, and the additions of one sample share
+  one `ANNOUNCE_BUDGET` for their tags rather than a budget each.
+  `two_rows_added_between_two_polls_are_announced_as_two_additions` is the claim. `Tracks` is declared `invalidates`, as the spec
   asks, and the same poll invalidates it wherever the run of ids moved, so a client that caches
   properties reads the list again rather than holding the first one it saw. `GetTracksMetadata` answers *positionally* — one
   entry per id asked, in the order asked — and an id naming no queue row gets an entry carrying
