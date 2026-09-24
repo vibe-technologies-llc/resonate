@@ -337,6 +337,11 @@
   the frames `Grain` lets through lays out the pane as well as the playback bar. The answer is a
   view of its own for the playback bar and the panes gpui can cache, which is a structural change
   to a front end nothing drives under test
+- A picture the caches let go of is taken out of gpui's asset cache but its tile stays in the
+  sprite atlas: `drop_image` wants the decoded `RenderImage`, which gpui answers only through a
+  `Window` and only by decoding again whatever size was never drawn, so the atlas's GPU memory
+  still grows with every distinct cover drawn in a run. Freeing it cleanly means drawing covers
+  from a `RenderImage` the caches own rather than from encoded bytes gpui decodes
 - A reached row in the tracks or artists pane is marked and moved to, but nothing scrolls the
   album grid from the keyboard and the Missing pane answers no reach at all: its rows are
   interleaved with headings, so a reach over it would have to skip them

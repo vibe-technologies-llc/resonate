@@ -7,7 +7,7 @@ use resonate_library::{Agreement, Fingerprinters, HeardAs, Library, Sounded, Stu
 
 use crate::{
     analysis_plot::{SPECTRUM_COLUMNS, WAVEFORM_COLUMNS, lanes_of, ramp_through, traced},
-    models::painted,
+    models::{Forget, painted},
     recent::Recent,
 };
 
@@ -296,7 +296,10 @@ impl AnalysisModel {
             let _ = this.update(cx, |this, cx| {
                 this.painting = None;
                 if let Some(image) = image {
-                    this.painted = Some(Painted { row, stops, image });
+                    this.painted
+                        .replace(Painted { row, stops, image })
+                        .map(|painted| painted.image)
+                        .forget(cx);
                     cx.notify();
                 }
             });

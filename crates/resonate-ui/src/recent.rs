@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, hash::Hash, num::NonZeroUsize};
 
 use ahash::AHashMap;
+use smallvec::SmallVec;
+
+pub(crate) type Leaving<V> = SmallVec<[V; 1]>;
 
 struct Held<V> {
     value: V,
@@ -37,24 +40,30 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
         Some(&held.value)
     }
 
-    pub(crate) fn insert(&mut self, key: K, value: V) {
+    pub(crate) fn insert(&mut self, key: K, value: V) -> Leaving<V> {
         let now = self.tick();
+        let mut leaving = Leaving::new();
         match self.held.get(&key) {
             Some(held) => {
                 self.order.remove(&held.used);
             }
-            None => self.evict_until_one_fits(),
+            None => self.evict_until_one_fits(&mut leaving),
         }
         self.order.insert(now, key.clone());
-        self.held.insert(key, Held { value, used: now });
+        leaving.extend(
+            self.held
+                .insert(key, Held { value, used: now })
+                .map(|replaced| replaced.value),
+        );
+        leaving
     }
 
-    fn evict_until_one_fits(&mut self) {
+    fn evict_until_one_fits(&mut self, leaving: &mut Leaving<V>) {
         while self.held.len() >= self.limit.get() {
             let Some((_, stale)) = self.order.pop_first() else {
                 return;
             };
-            self.held.remove(&stale);
+            leaving.extend(self.held.remove(&stale).map(|held| held.value));
         }
     }
 
@@ -112,6 +121,15 @@ mod tests {
         for key in 56..64 {
             assert_eq!(cache.get(&key), Some(&(key * 10)), "row {key} was dropped");
         }
+    }
+
+    #[test]
+    fn what_an_insert_pushes_out_or_writes_over_is_handed_back() {
+        let mut cache = filled(3, &[1, 2, 3]);
+
+        assert_eq!(cache.insert(2, 99).as_slice(), [20]);
+        assert_eq!(cache.insert(4, 40).as_slice(), [10]);
+        assert_eq!(cache.insert(5, 50).as_slice(), [30]);
     }
 
     #[test]

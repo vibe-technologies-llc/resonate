@@ -8,7 +8,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use gpui::{Context, Image, Task};
+use gpui::{App, Context, Image, Task};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
     Span, TrackId, WantId,
@@ -33,7 +33,7 @@ use crate::{
     clipboard,
     drawing::Drawer,
     format,
-    recent::Recent,
+    recent::{Leaving, Recent},
     settings::{Online, Sourcing},
     theme,
     views::statistics::{BARS_AT_MOST, Chart},
@@ -1822,7 +1822,7 @@ impl LibraryModel {
         {
             return magnified.whole();
         }
-        self.magnified = Some(Magnifying::Reading(id));
+        self.magnified.replace(Magnifying::Reading(id)).forget(cx);
 
         let library = Arc::clone(&self.library);
         cx.spawn(async move |this, cx| {
@@ -1832,7 +1832,9 @@ impl LibraryModel {
                 .await;
             let landed = this.update(cx, |this, cx| {
                 if this.magnified.as_ref().is_some_and(|held| held.names(&id)) {
-                    this.magnified = Some(Magnifying::Read(id, read));
+                    this.magnified
+                        .replace(Magnifying::Read(id, read))
+                        .forget(cx);
                     cx.notify();
                 }
             });
@@ -1858,7 +1860,7 @@ impl LibraryModel {
         cx.spawn(async move |this, cx| {
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
-                this.covers.insert(id, decoded);
+                this.covers.insert(id, decoded).forget(cx);
                 this.decoding.remove(&id);
                 cx.notify();
             });
@@ -1895,7 +1897,7 @@ impl LibraryModel {
         cx.spawn(async move |this, cx| {
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
-                this.portraits.insert(id, decoded);
+                this.portraits.insert(id, decoded).forget(cx);
                 this.decoding_portraits.remove(&id);
                 cx.notify();
             });
@@ -2208,7 +2210,7 @@ impl LibraryModel {
                 let decoded = drawing.await.flatten();
 
                 let landed = this.update(cx, |this, cx| {
-                    this.covers.insert(id, decoded);
+                    this.covers.insert(id, decoded).forget(cx);
                     cx.notify();
                 });
                 if landed.is_err() {
@@ -3631,6 +3633,57 @@ impl<K: PartialEq> Magnifying<K> {
         match self {
             Self::Reading(_) => None,
             Self::Read(_, whole) => whole.clone(),
+        }
+    }
+}
+
+pub(crate) trait Forget {
+    fn forget(self, cx: &mut App);
+}
+
+impl Forget for Arc<Image> {
+    fn forget(self, cx: &mut App) {
+        self.remove_asset(cx);
+    }
+}
+
+impl<T: Forget> Forget for Option<T> {
+    fn forget(self, cx: &mut App) {
+        if let Some(held) = self {
+            held.forget(cx);
+        }
+    }
+}
+
+impl<T: Forget> Forget for Leaving<T> {
+    fn forget(self, cx: &mut App) {
+        for held in self {
+            held.forget(cx);
+        }
+    }
+}
+
+impl Forget for Art {
+    fn forget(self, cx: &mut App) {
+        for drawn in [self.in_a_row, self.now_playing, self.in_a_grid] {
+            drawn.forget(cx);
+        }
+    }
+}
+
+impl Forget for Portrait {
+    fn forget(self, cx: &mut App) {
+        for drawn in [self.in_a_row, self.in_a_grid] {
+            drawn.forget(cx);
+        }
+    }
+}
+
+impl<K> Forget for Magnifying<K> {
+    fn forget(self, cx: &mut App) {
+        match self {
+            Self::Reading(_) => {}
+            Self::Read(_, whole) => whole.forget(cx),
         }
     }
 }

@@ -7,14 +7,17 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::RwLock;
 use resonate_core::{Frames, TrackId, Volume};
-use resonate_engine::{CoverArt, PlaybackState, Player, QueueItem, RepeatMode, Seeks, TagsRead};
+use resonate_engine::{
+    CoverArt, MediaInfo, PlaybackState, Player, PlayerState, QueueItem, RepeatMode, Seeks,
+    TagsRead, TrackState,
+};
 use zbus::{
     blocking::{
         Connection, connection,
@@ -27,7 +30,7 @@ use zbus::{
 };
 
 use crate::{
-    BusOp, Error, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
+    BusOp, Error, Heard, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
     art::Pictures,
     desktop::Errands,
     interfaces::{Owed, OwnInterface, PlayerInterface, Root, Shared},
@@ -43,6 +46,7 @@ use crate::{
 pub(crate) const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 pub(crate) const BUS_NAME: &str = "org.mpris.MediaPlayer2.resonate";
 const POLL: Duration = Duration::from_millis(200);
+const HEARD_READ_EVERY: Duration = Duration::from_secs(1);
 const WAITING_TELLS: usize = 4;
 const ANNOUNCE_BUDGET: Duration = Duration::from_millis(100);
 const INSTANCES: u32 = 16;
@@ -324,7 +328,7 @@ fn owned(connection: &Connection, name: &WellKnownName<'static>) -> Result<bool>
 #[derive(Default)]
 struct Collection {
     revision: Option<u64>,
-    rows: Vec<PlaylistInfo>,
+    rows: Arc<[PlaylistInfo]>,
     playing: Option<PlaylistInfo>,
 }
 
@@ -336,7 +340,9 @@ struct Watched {
     shuffle: bool,
     volume: Volume,
     track: Option<TrackId>,
-    metadata: HashMap<String, OwnedValue>,
+    metadata: Arc<HashMap<String, OwnedValue>>,
+    described: Described,
+    heard: Reading,
     shown: Option<Shown>,
     can_go_next: bool,
     can_go_previous: bool,
@@ -386,12 +392,12 @@ fn announce(
     let heard_from = told;
     let mut told = None;
 
-    let mut watched = snapshot(shared, playlists, &Collection::default());
+    let mut watched = snapshot(shared, playlists, None);
 
     while !stop.load(Ordering::Acquire) {
         thread::sleep(POLL);
 
-        let next = snapshot(shared, playlists, &watched.playlists);
+        let next = snapshot(shared, playlists, Some(&watched));
         publish(&player, &watched, &next);
         publish_sleep(&ours, &watched, &next);
         publish_tracks(&tracks, shared, &watched, &next);
@@ -473,27 +479,99 @@ fn tell(
     }
 }
 
+#[derive(Clone, Default)]
+struct Described {
+    track: Option<TrackState>,
+    info: Option<Arc<MediaInfo>>,
+    art: Option<String>,
+    heard: Option<Heard>,
+}
+
+impl PartialEq for Described {
+    fn eq(&self, other: &Self) -> bool {
+        self.track == other.track
+            && self.art == other.art
+            && self.heard == other.heard
+            && match (&self.info, &other.info) {
+                (Some(ours), Some(theirs)) => Arc::ptr_eq(ours, theirs),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Reading {
+    heard: Option<Heard>,
+    of: Option<TrackId>,
+    at: Instant,
+}
+
+impl Reading {
+    fn again(
+        shared: &Shared,
+        state: &PlayerState,
+        queue: &[QueueItem],
+        before: Option<&Self>,
+    ) -> Self {
+        let of = state.current.map(|current| current.id);
+        let now = Instant::now();
+        match before {
+            Some(held)
+                if held.of == of && now.saturating_duration_since(held.at) < HEARD_READ_EVERY =>
+            {
+                *held
+            }
+            _ => Self {
+                heard: shared.heard(state, queue),
+                of,
+                at: now,
+            },
+        }
+    }
+}
+
+fn described_otherwise(before: &Watched, now: &Watched) -> bool {
+    !Arc::ptr_eq(&before.metadata, &now.metadata) && before.metadata != now.metadata
+}
+
 fn snapshot(
     shared: &Arc<Shared>,
     playlists: Option<&Arc<dyn Playlists>>,
-    held: &Collection,
+    before: Option<&Watched>,
 ) -> Watched {
     let state = shared.player.state();
     let digest = shared.player.digest();
     let current = state.current;
     let art = shared.art(&state, digest.as_ref());
     let queue = shared.player.queue();
-    let heard = shared.heard(&state, &queue);
+    let heard = Reading::again(shared, &state, &queue, before.map(|held| &held.heard));
+    let described = Described {
+        track: current.map(|track| TrackState {
+            position: Frames::ZERO,
+            ..track
+        }),
+        info: playing_digest(&state, digest.as_ref()).map(|playing| Arc::clone(&playing.info)),
+        art: art.clone(),
+        heard: heard.heard,
+    };
+    let metadata = match before {
+        Some(held) if held.described == described => Arc::clone(&held.metadata),
+        _ => Arc::new(metadata(&state, digest.as_ref(), art.clone(), heard.heard)),
+    };
+    let held_playlists = before.map(|held| &held.playlists);
 
     Watched {
         queue,
-        playlists: collect(playlists, held),
+        playlists: collect(playlists, held_playlists),
         playback: state.playback,
         repeat: state.repeat,
         shuffle: state.shuffle,
         volume: state.volume,
         track: current.map(|track| track.id),
-        metadata: metadata(&state, digest.as_ref(), art.clone(), heard),
+        metadata,
+        described,
+        heard,
         shown: playing_digest(&state, digest.as_ref())
             .and_then(|playing| shown(&playing.info.tags, &playing.location, art)),
         can_go_next: current.is_some()
@@ -534,7 +612,7 @@ fn publish(player: &InterfaceRef<PlayerInterface>, before: &Watched, now: &Watch
     if before.volume != now.volume {
         report(zbus::block_on(iface.volume_changed(emitter)));
     }
-    if before.track != now.track || before.metadata != now.metadata {
+    if before.track != now.track || described_otherwise(before, now) {
         report(zbus::block_on(iface.metadata_changed(emitter)));
     }
     if before.can_go_next != now.can_go_next {
@@ -625,14 +703,14 @@ fn publish_tracks(
         report(zbus::block_on(tracks.get().tracks_invalidate(emitter)));
     }
 
-    if before.metadata != now.metadata
+    if described_otherwise(before, now)
         && let Some(track) = now.track
         && now.queue.iter().any(|item| item.id == track)
     {
         report(zbus::block_on(TrackList::track_metadata_changed(
             emitter,
             track_path(track),
-            now.metadata.clone(),
+            (*now.metadata).clone(),
         )));
     }
     if before.reads != now.reads {
@@ -682,7 +760,7 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
     }
 }
 
-fn collect(playlists: Option<&Arc<dyn Playlists>>, held: &Collection) -> Collection {
+fn collect(playlists: Option<&Arc<dyn Playlists>>, held: Option<&Collection>) -> Collection {
     let Some(playlists) = playlists else {
         return Collection::default();
     };
@@ -690,10 +768,11 @@ fn collect(playlists: Option<&Arc<dyn Playlists>>, held: &Collection) -> Collect
 
     Collection {
         revision: Some(revision),
-        rows: if held.revision == Some(revision) {
-            held.rows.clone()
-        } else {
-            playlists.listing(PlaylistOrder::default(), false, 0, None)
+        rows: match held {
+            Some(held) if held.revision == Some(revision) => Arc::clone(&held.rows),
+            _ => playlists
+                .listing(PlaylistOrder::default(), false, 0, None)
+                .into(),
         },
         playing: playlists.playing(),
     }
@@ -714,7 +793,7 @@ fn publish_playlists(
         report(zbus::block_on(iface.active_playlist_changed(emitter)));
     }
 
-    for row in &now.rows {
+    for row in now.rows.iter() {
         if unheard_of(&before.rows, row) {
             report(zbus::block_on(PlaylistsInterface::playlist_changed(
                 emitter,

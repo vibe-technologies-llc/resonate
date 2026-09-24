@@ -253,8 +253,15 @@ Invariants the layering exists to protect:
   written as different metadata. `xesam:lastUsed` is an ISO-8601 UTC stamp written by hand in
   `track.rs`, because no date crate is in the tree and one civil-from-days function is cheaper than
   one; it is total, so a `SystemTime` before the epoch converts rather than saturating. The playing
-  track's reading is taken once per 200 ms poll and only where something is playing, so a client
-  watching `Metadata` sees the count move as the play is counted.
+  track's reading is taken again the moment the row changes and otherwise at most once a second —
+  `HEARD_READ_EVERY` — rather than on every 200 ms poll, which was a catalog read five times a
+  second for a number that moves once a track; a client watching `Metadata` still sees the count
+  move within a second of the play being counted, whichever process counted it —
+  `a_play_counted_while_the_track_plays_is_announced_without_a_track_change`. The map the poll
+  diffs is held behind an `Arc` and built again only where what it is made of moved — the row,
+  its length, the `MediaInfo` the digest shares, the cover's URI and that reading — so an
+  unchanged poll neither rebuilds nor compares it, and the playlists it lists are an
+  `Arc<[PlaylistInfo]>` carried from poll to poll rather than cloned.
 - **A play is still what was heard, and now it says how much.** `Listening` answers a `Counting`:
   `Counts` once a visit has earned its play, exactly where it always answered, and `Settles` once
   when a counted visit ends, carrying the whole time it was listened to. A visit that never

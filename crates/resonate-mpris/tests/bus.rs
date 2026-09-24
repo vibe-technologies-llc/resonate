@@ -482,9 +482,10 @@ impl Harness {
     }
 
     fn remember(&self, path: &Path, span: Option<FrameSpan>, heard: Heard) {
-        self.catalog
-            .lock()
-            .push((MediaLocation::local(path), span, heard));
+        let location = MediaLocation::local(path);
+        let mut catalog = self.catalog.lock();
+        catalog.retain(|(held, cut, _)| *held != location || *cut != span);
+        catalog.push((location, span, heard));
     }
 
     fn load_cut(&self, path: &Path, spans: &[FrameSpan]) {
@@ -1798,6 +1799,52 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
         text(&described[1], "xesam:title").is_some(),
         "a queued row the player does hold carried no tags"
     );
+}
+
+#[test]
+fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let counted = tree.wav("counted.wav");
+    harness.remember(
+        &counted,
+        None,
+        Heard {
+            plays: 3,
+            played: None,
+        },
+    );
+    harness.load_all(std::slice::from_ref(&counted));
+    harness.wait_for(|harness| harness.status() == "Playing", "playback to start");
+    harness.wait_for(
+        |harness| count(&harness.metadata(), "xesam:useCount") == Some(3),
+        "the count the catalog holds to reach the bus",
+    );
+
+    let announced = harness.changed("Metadata");
+    thread::sleep(SETTLE);
+    harness.remember(
+        &counted,
+        None,
+        Heard {
+            plays: 4,
+            played: Some(UNIX_EPOCH + Duration::from_secs(2_000_000_000)),
+        },
+    );
+
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let value = announced
+            .recv_deadline(deadline)
+            .expect("the play counted under the track was never announced");
+        let fields = HashMap::<String, OwnedValue>::try_from(value)
+            .expect("Metadata is announced as a dictionary");
+        if count(&fields, "xesam:useCount") == Some(4) {
+            break;
+        }
+    }
 }
 
 #[test]

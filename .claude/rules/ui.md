@@ -561,6 +561,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   than dropping it. The allocator was weighed as well and lost: mimalloc (v3 and v2) and jemalloc
   each settled higher than glibc on this workload — 575, 470 and 345 MB — because a worker that
   decodes and then idles never gives back what its thread cache holds.
+- **What a cache lets go of, gpui is told to let go of too.** gpui decodes every `Arc<Image>` an
+  `img` is handed into its own asset cache, keyed by the image's bytes, and nothing in it ever
+  evicts: a cover the album cache had long dropped stayed decoded for the rest of the run, at three
+  sizes, beside every magnified picture and every painted spectrogram. `Recent::insert` hands back
+  what it pushed out or wrote over as a `Leaving`, and `Forget` turns that into `Image::remove_asset`
+  — for the album covers, the portraits, the per-file pictures, the magnified picture a new one
+  replaces and the spectrogram a new painting replaces — so what is decoded is bounded by what the
+  caches hold. A picture still on screen that is forgotten is only decoded again. The sprite
+  atlas's tile for it is not freed, because `drop_image` wants the `RenderImage`, which gpui hands
+  out only through a `Window` and only by starting a decode of whatever size was never drawn;
+  `docs/TODO.md` has it.
 - **A cover is drawn at twice the size it is shown, because the GPU's sampler is all that stands
   between the texture and the cell.** gpui's atlas sampler is bilinear with no mipmaps, so it reads
   four texels however far it is reducing: a 1280-pixel cover in a 22-pixel cell was point-sampled

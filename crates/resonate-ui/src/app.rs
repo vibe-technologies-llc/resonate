@@ -26,7 +26,7 @@ use crate::{
     drawing::Drawer,
     icons,
     listening::Listens,
-    models::{Art, Drawn, Magnifying, held, whole_of},
+    models::{Art, Drawn, Forget, Magnifying, held, whole_of},
     recent::Recent,
     settings::{Online, Places, Present, Sourcing, Stored, WindowButtons},
     theme,
@@ -348,7 +348,9 @@ impl PlayerModel {
         {
             return magnified.whole();
         }
-        self.magnified = Some(Magnifying::Reading(location.clone()));
+        self.magnified
+            .replace(Magnifying::Reading(location.clone()))
+            .forget(cx);
 
         let player = Arc::clone(&self.player);
         let wanted = location.clone();
@@ -364,7 +366,9 @@ impl PlayerModel {
                     .as_ref()
                     .is_some_and(|held| held.names(&wanted))
                 {
-                    this.magnified = Some(Magnifying::Read(wanted, read));
+                    this.magnified
+                        .replace(Magnifying::Read(wanted, read))
+                        .forget(cx);
                     cx.notify();
                 }
             });
@@ -404,7 +408,7 @@ impl PlayerModel {
                 match drawn {
                     Some(decoded) => {
                         this.unsettled.remove(&wanted);
-                        this.pictures.insert(wanted, decoded);
+                        this.pictures.insert(wanted, decoded).forget(cx);
                     }
                     None => {
                         this.unsettled.insert(wanted, asked_at);
