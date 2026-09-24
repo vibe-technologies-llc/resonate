@@ -4,6 +4,7 @@ mod autoeq;
 mod client;
 mod commons;
 mod coverart;
+mod deezer;
 mod error;
 mod lrclib;
 mod musicbrainz;

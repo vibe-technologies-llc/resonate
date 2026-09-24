@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_core::SourceId;
 
-use crate::{CoverArt, Isrc, Link, Mbid, Relation, Result};
+use crate::{CoverArt, Isrc, Link, Mbid, Relation, Result, Service};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Credit {
@@ -254,8 +254,17 @@ pub fn wikidata_urls(links: &[Link]) -> impl Iterator<Item = &str> {
     urls_of(links, Relation::Wikidata)
 }
 
+pub fn deezer_urls(links: &[Link]) -> impl Iterator<Item = &str> {
+    links
+        .iter()
+        .filter(|link| link.service == Service::Deezer)
+        .map(|link| link.url.as_str())
+}
+
 pub fn may_be_pictured(links: &[Link]) -> bool {
-    portrait_urls(links).next().is_some() || wikidata_urls(links).next().is_some()
+    portrait_urls(links).next().is_some()
+        || wikidata_urls(links).next().is_some()
+        || deezer_urls(links).next().is_some()
 }
 
 fn urls_of(links: &[Link], relation: Relation) -> impl Iterator<Item = &str> {

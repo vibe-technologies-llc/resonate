@@ -262,6 +262,22 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   Measured over a 435-track scan: 8 artists of 50 had a portrait before the three changes above
   and 25 after, with a second pass asking for nothing more.
 
+## Deezer
+
+- **A portrait nobody on Commons has taken is asked of Deezer, by the link MusicBrainz holds.**
+  Composers and small acts rarely carry an `image` relation or a `P18`, but MusicBrainz links most
+  of them to a Deezer artist page, and Deezer's public API answers that page's picture with no key.
+  `Reference::portrait` walks the Commons links, then Wikidata, then `resonate_library::deezer_urls`
+  — every link whose `Service` is Deezer — and `deezer::artist` reads the artist number out of a
+  `deezer.com/[lang/]artist/<n>` URL and nothing else. `Host::Deezer` asks `/artist/<n>` and
+  `picture_big`, 500 pixels square, is fetched from `Host::DeezerPictures` only where it is served
+  from `*.dzcdn.net`; both are paced at `OTHERS_INTERVAL`. **Deezer's placeholder is no picture**:
+  an artist with none answers a URL whose hash segment is `d41d8cd98f00b204e9800998ecf8427e`, the
+  MD5 of nothing, and an unknown number answers a `DataException` document with no picture at all,
+  so both are a miss and the walk goes on. A Deezer link counts towards `may_be_pictured`, so a
+  catalog enriched before this is asked again by `look_again_for_portraits`. There is no search by
+  name: a link MusicBrainz holds names the artist, and a name alone would be a guess.
+
 ## LRCLIB
 
 - **`Lrclib` reads what the catalog kept before it asks, and keeps what it is told.** It is a

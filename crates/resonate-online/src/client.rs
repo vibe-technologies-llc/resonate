@@ -134,6 +134,8 @@ impl Host {
             Self::Shazam => SHAZAM_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
             Self::AppleArtwork
+            | Self::Deezer
+            | Self::DeezerPictures
             | Self::CoverArtArchive
             | Self::Commons
             | Self::Wikidata

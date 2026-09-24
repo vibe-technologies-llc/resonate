@@ -7,7 +7,7 @@ use resonate_library::{
     RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
 };
 
-use crate::{Client, Identity, commons, coverart, musicbrainz, wikidata};
+use crate::{Client, Identity, commons, coverart, deezer, musicbrainz, wikidata};
 
 const MUSICBRAINZ: &str = "musicbrainz";
 
@@ -109,6 +109,12 @@ impl Reference for Online {
                 continue;
             };
             if let Some(held) = commons::fetch(&self.client, &scaled)? {
+                return Ok(Some(held));
+            }
+        }
+
+        for url in resonate_library::deezer_urls(links) {
+            if let Some(held) = deezer::portrait(&self.client, url)? {
                 return Ok(Some(held));
             }
         }

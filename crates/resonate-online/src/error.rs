@@ -18,6 +18,8 @@ pub enum Host {
     Shazam,
     AppleArtwork,
     Audd,
+    Deezer,
+    DeezerPictures,
 }
 
 impl Host {
@@ -33,6 +35,8 @@ impl Host {
             Self::Shazam => "https://amp.shazam.com",
             Self::AppleArtwork => "https://is1-ssl.mzstatic.com",
             Self::Audd => "https://api.audd.io",
+            Self::Deezer => "https://api.deezer.com",
+            Self::DeezerPictures => "https://cdn-images.dzcdn.net",
         }
     }
 }
