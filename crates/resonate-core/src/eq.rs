@@ -1,4 +1,8 @@
-use std::fmt;
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    sync::{Arc, OnceLock},
+};
 
 use crate::{Error, Result, SampleRate};
 
@@ -553,6 +557,7 @@ fn squared_modulus(zeroth: f64, first: f64, second: f64, angle: f64) -> f64 {
 pub struct Profile {
     preamp: Preamp,
     bands: Vec<Band>,
+    target: Option<Arc<Target>>,
 }
 
 impl Profile {
@@ -560,7 +565,43 @@ impl Profile {
         if bands.len() > MAX_BANDS {
             return Err(Error::TooManyBands(bands.len()));
         }
-        Ok(Self { preamp, bands })
+        Ok(Self {
+            preamp,
+            bands,
+            target: None,
+        })
+    }
+
+    pub fn fitted_to(target: Target) -> Self {
+        let target = Arc::new(target);
+        let fit = target.fit_at(FITTED_AT);
+        Self {
+            preamp: fit.preamp,
+            bands: fit.bands.to_vec(),
+            target: Some(target),
+        }
+    }
+
+    pub fn target(&self) -> Option<&Target> {
+        self.target.as_deref()
+    }
+
+    pub fn at_rate(self: &Arc<Self>, rate: SampleRate) -> Arc<Self> {
+        let Some(target) = self.target.as_ref() else {
+            return Arc::clone(self);
+        };
+        if rate == FITTED_AT {
+            return Arc::clone(self);
+        }
+
+        let beyond_the_fit = self.preamp.millibels() - target.fit_at(FITTED_AT).preamp.millibels();
+        let fit = target.fit_at(rate);
+        Arc::new(Self {
+            preamp: Preamp::from_millibels(fit.preamp.millibels() + beyond_the_fit)
+                .unwrap_or(fit.preamp),
+            bands: fit.bands.to_vec(),
+            target: Some(Arc::clone(target)),
+        })
     }
 
     pub fn flat() -> Self {
@@ -580,7 +621,9 @@ impl Profile {
     }
 
     pub fn band_mut(&mut self, at: usize) -> Option<&mut Band> {
-        self.bands.get_mut(at)
+        let band = self.bands.get_mut(at)?;
+        self.target = None;
+        Some(band)
     }
 
     pub fn push(&mut self, band: Band) -> Result<()> {
@@ -588,6 +631,7 @@ impl Profile {
             return Err(Error::TooManyBands(self.bands.len() + 1));
         }
         self.bands.push(band);
+        self.target = None;
         Ok(())
     }
 
@@ -596,6 +640,7 @@ impl Profile {
             return false;
         }
         self.bands.remove(at);
+        self.target = None;
         true
     }
 
@@ -651,6 +696,176 @@ impl Profile {
 }
 
 pub const RESPONSE_POINTS: usize = 256;
+
+pub const FITTED_AT: SampleRate = SampleRate::HZ_48000;
+pub const TARGET_POINTS_AT_LEAST: usize = 2;
+pub const TARGET_POINTS_AT_MOST: usize = 1_024;
+
+const FITTING_PASSES: usize = 12;
+const WORTH_A_BAND_MILLIBELS: i32 = 200;
+
+pub const THIRD_OCTAVE_CENTRES: [u32; 31] = [
+    2_000, 2_500, 3_150, 4_000, 5_000, 6_300, 8_000, 10_000, 12_500, 16_000, 20_000, 25_000,
+    31_500, 40_000, 50_000, 63_000, 80_000, 100_000, 125_000, 160_000, 200_000, 250_000, 315_000,
+    400_000, 500_000, 630_000, 800_000, 1_000_000, 1_250_000, 1_600_000, 2_000_000,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TargetPoint {
+    pub frequency: Frequency,
+    pub gain: BandGain,
+}
+
+pub const FITS_KEPT_FOR: [SampleRate; 8] = [
+    SampleRate::HZ_44100,
+    SampleRate::HZ_48000,
+    SampleRate::HZ_88200,
+    SampleRate::HZ_96000,
+    SampleRate::HZ_176400,
+    SampleRate::HZ_192000,
+    SampleRate::HZ_352800,
+    SampleRate::HZ_384000,
+];
+
+#[derive(Clone, Debug)]
+struct Fit {
+    preamp: Preamp,
+    bands: Arc<[Band]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Target {
+    points: Box<[TargetPoint]>,
+    fits: [OnceLock<Fit>; FITS_KEPT_FOR.len()],
+}
+
+impl PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        self.points == other.points
+    }
+}
+
+impl Eq for Target {}
+
+impl Hash for Target {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.points.hash(state);
+    }
+}
+
+impl Target {
+    pub fn new(mut points: Vec<TargetPoint>) -> Option<Self> {
+        points.sort();
+        points.dedup_by_key(|point| point.frequency);
+        points.truncate(TARGET_POINTS_AT_MOST);
+        (points.len() >= TARGET_POINTS_AT_LEAST).then(|| Self {
+            points: points.into_boxed_slice(),
+            fits: Default::default(),
+        })
+    }
+
+    fn fit_at(&self, rate: SampleRate) -> Fit {
+        let kept = FITS_KEPT_FOR
+            .iter()
+            .position(|kept| *kept == rate)
+            .and_then(|at| self.fits.get(at));
+        match kept {
+            Some(kept) => kept.get_or_init(|| self.fitted_at(rate)).clone(),
+            None => self.fitted_at(rate),
+        }
+    }
+
+    fn fitted_at(&self, rate: SampleRate) -> Fit {
+        let bank = self.bands_at(rate);
+        Fit {
+            preamp: bank.fitted_preamp(rate),
+            bands: bank.bands.into(),
+        }
+    }
+
+    pub fn points(&self) -> &[TargetPoint] {
+        &self.points
+    }
+
+    pub fn at(&self, hertz: f64) -> f64 {
+        let (Some(first), Some(last)) = (self.points.first(), self.points.last()) else {
+            return 0.0;
+        };
+        if hertz <= first.frequency.hertz() {
+            return first.gain.decibels();
+        }
+        if hertz >= last.frequency.hertz() {
+            return last.gain.decibels();
+        }
+
+        let above = self
+            .points
+            .partition_point(|point| point.frequency.hertz() < hertz);
+        let (Some(below), Some(above)) = (
+            above.checked_sub(1).and_then(|at| self.points.get(at)),
+            self.points.get(above),
+        ) else {
+            return last.gain.decibels();
+        };
+        let (from, to) = (below.frequency.hertz(), above.frequency.hertz());
+        let along = (hertz / from).ln() / (to / from).ln();
+        below.gain.decibels() + along * (above.gain.decibels() - below.gain.decibels())
+    }
+
+    fn bands_at(&self, rate: SampleRate) -> Profile {
+        let mut centres: Vec<Frequency> = THIRD_OCTAVE_CENTRES
+            .into_iter()
+            .filter_map(|centihertz| Frequency::from_centihertz(centihertz).ok())
+            .filter(|centre| centre.is_under_nyquist(rate))
+            .collect();
+        let mut gains = self.fitted(&centres, rate);
+
+        let worth_it: Vec<bool> = gains
+            .iter()
+            .map(|gain| {
+                BandGain::from_decibels(*gain)
+                    .is_ok_and(|held| held.millibels().abs() >= WORTH_A_BAND_MILLIBELS)
+            })
+            .collect();
+        if worth_it.contains(&false) {
+            let mut kept = worth_it.iter();
+            centres.retain(|_| kept.next().copied().unwrap_or_default());
+            gains = self.fitted(&centres, rate);
+        }
+
+        third_octave_bank(&centres, &gains)
+    }
+
+    fn fitted(&self, centres: &[Frequency], rate: SampleRate) -> Vec<f64> {
+        let wanted: Vec<f64> = centres
+            .iter()
+            .map(|centre| self.at(centre.hertz()))
+            .collect();
+        let mut gains = wanted.clone();
+        for _ in 0..FITTING_PASSES {
+            let realised = third_octave_bank(centres, &gains);
+            for ((gain, centre), target) in gains.iter_mut().zip(centres).zip(&wanted) {
+                *gain -= realised.magnitude_db(centre.hertz(), rate) - target;
+            }
+        }
+        gains
+    }
+}
+
+fn third_octave_bank(centres: &[Frequency], gains: &[f64]) -> Profile {
+    let bands = centres
+        .iter()
+        .zip(gains)
+        .map(|(centre, gain)| {
+            Band::peaking(
+                *centre,
+                BandGain::from_decibels(*gain).unwrap_or(BandGain::FLAT),
+                Q::THIRD_OCTAVE,
+            )
+        })
+        .collect();
+    Profile::new(Preamp::NONE, bands).unwrap_or_default()
+}
 
 pub fn sweep(points: usize) -> impl Iterator<Item = f64> {
     let last = points.saturating_sub(1).max(1) as f64;

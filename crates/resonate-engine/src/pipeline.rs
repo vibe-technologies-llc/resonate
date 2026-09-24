@@ -321,7 +321,7 @@ fn dop_survives(
     config.dop
         && sink.supports(source)
         && gain_config(config, replay_gain).is_none()
-        && eq_config(config, &sink.name).is_none()
+        && eq_config(config, &sink.name, source.rate).is_none()
 }
 
 fn untouched(stream: StreamSpec, rate: DsdRate) -> OutputPlan {
@@ -363,7 +363,7 @@ pub fn plan_for(
     let resample = (stream.rate != source.rate).then_some((source.rate, stream.rate));
     let remix = (stream.channel_count() != source.channel_count())
         .then_some((source.channels, stream.channels));
-    let equalisation = eq_config(config, sink);
+    let equalisation = eq_config(config, sink, stream.rate);
     let converts =
         resample.is_some() || remix.is_some() || equalisation.is_some() || restoration.is_some();
     let gain =
@@ -443,12 +443,12 @@ pub fn resolve_replay_gain(
     }
 }
 
-fn eq_config(config: &EngineConfig, sink: &NodeName) -> Option<Arc<Profile>> {
+fn eq_config(config: &EngineConfig, sink: &NodeName, rate: SampleRate) -> Option<Arc<Profile>> {
     config
         .equaliser
         .for_sink(sink)
+        .map(|profile| profile.at_rate(rate))
         .filter(|profile| !profile.is_transparent())
-        .map(Arc::clone)
 }
 
 fn gain_config(config: &EngineConfig, replay_gain: AppliedGain) -> Option<GainConfig> {
@@ -469,7 +469,7 @@ fn gain_of(config: &EngineConfig, replay_gain: AppliedGain) -> GainConfig {
 mod tests {
     use resonate_core::{
         ChannelLayout, Decibels, SampleFormat,
-        eq::{Band, BandGain, BandKind, Frequency, Preamp, Q},
+        eq::{Band, BandGain, BandKind, Frequency, Preamp, Q, Target, TargetPoint},
     };
     use resonate_pipewire::{SinkFormats, SinkId};
 
@@ -1610,6 +1610,60 @@ mod tests {
             )
             .expect("one band"),
         )
+    }
+
+    fn a_graphic_curve() -> Arc<Profile> {
+        let point = |hertz: f64, decibels: f64| TargetPoint {
+            frequency: Frequency::from_hertz(hertz).expect("in range"),
+            gain: BandGain::from_decibels(decibels).expect("in range"),
+        };
+        let target = Target::new(vec![
+            point(20.0, 0.0),
+            point(4_000.0, 0.0),
+            point(16_000.0, 8.0),
+            point(20_000.0, 0.0),
+        ])
+        .expect("a curve");
+        Arc::new(Profile::fitted_to(target))
+    }
+
+    #[test]
+    fn a_graphic_curve_is_fitted_again_at_the_rate_the_stream_plays_at() {
+        let kept = a_graphic_curve();
+        let config = EngineConfig {
+            equaliser: Arc::new(switched_on(Equalisation {
+                fallback: Some(Arc::clone(&kept)),
+                ..Equalisation::default()
+            })),
+            ..EngineConfig::default()
+        };
+        let planned_at = |rate: SampleRate| {
+            plan_output(
+                Decoded::samples(spec(rate, SampleFormat::S24)),
+                &sink(&[rate], &[SampleFormat::S24]),
+                &config,
+                AppliedGain::default(),
+            )
+            .equalisation
+            .expect("an equaliser in force")
+        };
+
+        let at_48 = planned_at(SampleRate::HZ_48000);
+        assert!(Arc::ptr_eq(&at_48, &kept));
+
+        let at_96 = planned_at(SampleRate::HZ_96000);
+        assert_ne!(at_96.bands(), kept.bands());
+        let wanted = kept.target().expect("a curve").at(16_000.0);
+        let heard = |profile: &Profile, rate| {
+            profile.magnitude_db(16_000.0, rate) - profile.preamp().decibels()
+        };
+        let refitted_misses = (heard(&at_96, SampleRate::HZ_96000) - wanted).abs();
+        let kept_misses = (heard(&kept, SampleRate::HZ_96000) - wanted).abs();
+        assert!(refitted_misses < 0.3, "{refitted_misses}");
+        assert!(
+            kept_misses > 3.0 * refitted_misses,
+            "{kept_misses} against {refitted_misses}"
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use resonate_core::eq::{
     Band, BandGain, BandKind, ChannelSet, Frequency, MAX_BANDS, Preamp, Profile, Q,
 };
 
-use crate::{EqOp, Error, Result};
+use crate::{EqOp, Error, Result, graphic};
 
 pub const LARGEST_PROFILE: usize = 64 * 1024;
 
@@ -251,7 +251,8 @@ pub fn read(text: &str) -> Result<Reading> {
         });
     }
 
-    let mut preamp = Preamp::NONE;
+    let mut preamp = None;
+    let mut target = None;
     let mut bands = Vec::new();
     let mut passed_over = 0;
     let mut lines = 0;
@@ -293,12 +294,23 @@ pub fn read(text: &str) -> Result<Reading> {
 
         if folded.starts_with(PREAMP) {
             match preamp_of(line) {
-                Some(read) if reaching.is_every() => preamp = read,
+                Some(read) if reaching.is_every() => preamp = Some(read),
                 Some(_) => {
                     tracing::debug!(line, "a preamp for some channels and not others");
                     passed_over += 1;
                 }
                 None => passed_over += 1,
+            }
+            continue;
+        }
+
+        if folded.starts_with(graphic::LEADER) {
+            match graphic::target_of(line) {
+                Some(read) if reaching.is_every() && target.is_none() => target = Some(read),
+                _ => {
+                    tracing::debug!(line, "a graphic curve this build could not take");
+                    passed_over += 1;
+                }
             }
             continue;
         }
@@ -330,8 +342,19 @@ pub fn read(text: &str) -> Result<Reading> {
         }
     }
 
+    let profile = match target {
+        Some(target) => {
+            passed_over += bands.len();
+            let mut fitted = Profile::fitted_to(target);
+            if let Some(preamp) = preamp {
+                fitted.set_preamp(preamp);
+            }
+            fitted
+        }
+        None => Profile::new(preamp.unwrap_or(Preamp::NONE), bands)?,
+    };
     Ok(Reading {
-        profile: Profile::new(preamp, bands)?,
+        profile,
         passed_over,
     })
 }
@@ -340,7 +363,7 @@ pub fn read_profile(text: &str) -> Result<Profile> {
     Ok(read(text)?.profile)
 }
 
-fn spelled_hertz(frequency: Frequency) -> String {
+pub(crate) fn spelled_hertz(frequency: Frequency) -> String {
     if frequency.centihertz().is_multiple_of(100) {
         format!("{}", frequency.centihertz() / 100)
     } else {
@@ -351,6 +374,10 @@ fn spelled_hertz(frequency: Frequency) -> String {
 pub fn write(profile: &Profile) -> String {
     let mut text = String::new();
     let _ = writeln!(text, "Preamp: {:.3} dB", profile.preamp().decibels());
+    if let Some(target) = profile.target() {
+        let _ = writeln!(text, "{}", graphic::spelled(target));
+        return text;
+    }
 
     let mut scope = ChannelSet::EVERY;
     for (position, band) in profile.bands().iter().enumerate() {

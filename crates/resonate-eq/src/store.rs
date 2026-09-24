@@ -7,7 +7,7 @@ use std::{
 
 use resonate_core::eq::Profile;
 
-use crate::{Error, Result, StoreOp, apo, graphic};
+use crate::{Error, Result, StoreOp, apo};
 
 pub const EXTENSION: &str = "txt";
 pub const NAME_AT_MOST: usize = 96;
@@ -216,23 +216,15 @@ impl Store {
             });
         };
 
-        if let Some(curve) = graphic::read(&text)? {
-            return Ok(Kept {
-                profile: graphic::bands_fitted_to(&curve),
-                converted: true,
-                passed_over: 0,
-            });
-        }
-
         let reading = apo::read(&text)?;
-        if reading.profile.bands().is_empty() && reading.profile.preamp().is_none() {
+        if reading.profile.is_transparent() && reading.profile.target().is_none() {
             return Err(Error::NotAProfile {
                 path: from.to_path_buf(),
             });
         }
         Ok(Kept {
+            converted: reading.profile.target().is_some(),
             profile: reading.profile,
-            converted: false,
             passed_over: reading.passed_over,
         })
     }
@@ -409,6 +401,56 @@ mod tests {
         assert_eq!(name.as_str(), "Bassy");
         assert!(kept.converted);
         assert!(!kept.profile.bands().is_empty());
+    }
+
+    #[test]
+    fn a_graphic_file_is_kept_as_its_curve_and_reads_back_able_to_fit_again() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let from = folder.join("curve.txt");
+        fs::write(&from, "GraphicEQ: 20 -9; 200 -9; 2000 0; 20000 0").expect("a writable file");
+
+        let (name, kept) = scratch.store.import(&from, None).expect("it imports");
+        let read = scratch
+            .store
+            .read(&name)
+            .expect("it reads")
+            .expect("it was kept");
+
+        assert!(read.target().is_some());
+        assert_eq!(read, kept.profile);
+
+        let mut shaped = read;
+        if let Some(band) = shaped.band_mut(0) {
+            band.on = false;
+        }
+        scratch.store.keep(&name, &shaped).expect("it keeps");
+        let reshaped = scratch
+            .store
+            .read(&name)
+            .expect("it reads")
+            .expect("it was kept");
+        assert_eq!(reshaped.target(), None);
+        assert_eq!(reshaped, shaped);
+    }
+
+    #[test]
+    fn a_preamp_written_beside_a_graphic_curve_is_the_one_it_plays_at() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let from = folder.join("curve.txt");
+        fs::write(
+            &from,
+            "Preamp: -4.5 dB\nGraphicEQ: 20 -9; 200 -9; 2000 0; 20000 0\n",
+        )
+        .expect("a writable file");
+
+        let (_, kept) = scratch.store.import(&from, None).expect("it imports");
+
+        assert_eq!(kept.profile.preamp().millibels(), -4_500);
+        assert!(kept.profile.target().is_some());
     }
 
     #[test]

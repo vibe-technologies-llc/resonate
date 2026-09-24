@@ -505,8 +505,8 @@ pub struct EqArgs {
         value_name = "FILE",
         conflicts_with_all = ["on", "off", "export", "find", "fetch", "suggest", "list", "forget"],
         help = "Read a profile in and keep it. An EqualizerAPO ParametricEQ file is read as the \
-                bands it names; an AutoEq GraphicEQ file is converted to third-octave bands and \
-                the conversion says how closely it fitted"
+                bands it names; an AutoEq GraphicEQ file is kept as its curve and fitted onto \
+                third-octave bands at the rate each stream plays at"
     )]
     pub import: Option<PathBuf>,
 

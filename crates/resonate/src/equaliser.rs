@@ -125,7 +125,8 @@ fn import(
 
     if kept.converted {
         println!(
-            "converted a graphic curve to {} bands, kept as {name}",
+            "kept a graphic curve as {name}, {} bands at {DRAWN_AT} and fitted again at the rate \
+             a stream plays at",
             kept.profile.bands().len()
         );
     } else {
@@ -270,6 +271,13 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
 
     println!("\nfor {}: {spoken}", spoken_of(sink));
     println!("preamp: {}", profile.preamp());
+    if let Some(target) = profile.target() {
+        println!(
+            "fitted to a graphic curve of {} points: the bands below are its fit at {DRAWN_AT}, \
+             and a stream at another rate is fitted again at its own",
+            target.points().len()
+        );
+    }
     if profile.bands().is_empty() {
         println!("it holds no bands");
         return Ok(());

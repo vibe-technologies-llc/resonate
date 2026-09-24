@@ -617,7 +617,8 @@ impl EqualiserModel {
                     this.reread(Curve::Kept(name.clone()));
                     this.notice = Some(Notice::Done(if kept.converted {
                         format!(
-                            "converted a graphic curve to {} bands, kept as {name}",
+                            "kept a graphic curve as {name}, fitted to {} bands here and again \
+                             at the rate each stream plays at",
                             kept.profile.bands().len()
                         )
                     } else {

@@ -249,14 +249,38 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   cells must agree with the file reader about what a number is.
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** 127 points carry no bands
   at all, so the curve is fitted onto the 31 ISO third-octave centres at the third-octave Q of
-  4.3185 by iterating `Profile::response` against the target — no linear algebra, `FITTING_PASSES`
+  4.3185 by iterating the bank's response against the target — no linear algebra, `FITTING_PASSES`
   of twelve. Setting each band to the curve's own value at its centre overshoots by about 1.57x,
   because third-octave neighbours sum; the iteration is what corrects that. Measured at 0.035 dB
   over twelve real AutoEq curves and 0.08 dB over four synthetic extremes. Points interpolate
   linearly in log frequency and the endpoints are held rather than extrapolated, because a curve
   ending at 19 kHz must not become a +30 dB band at 20 kHz. A band under `WORTH_A_BAND_MILLIBELS` is dropped
-  and the rest refitted, so a flat curve imports as no bands at all. There is no writer — a writer
-  with no caller is the defect `errors.md` names.
+  and the rest refitted, so a flat curve imports as no bands at all.
+- **A fit does not travel, so a profile keeps the curve it was fitted to and is fitted again at the
+  rate it plays at.** The bilinear warp near a 48 kHz Nyquist is part of what a 48 kHz fit
+  compensates for, so the same bands played elsewhere miss: over the fixture curve the worst
+  centre was 0.14 dB off at 48 kHz and 0.34 at 44.1, but 2.5 dB at 88.2, 2.8 at 96, 3.7 at 176.4
+  and 192 and 4.0 at 384, all of it at 16 kHz — and no one rate fits them all. The fit is
+  arithmetic, so it lives in `resonate-core::eq`: a `Target` is the curve's points as quantised
+  `TargetPoint`s, `Profile::fitted_to` fits one at `FITTED_AT` and holds it, and
+  `Profile::at_rate` answers the fit at another rate — the same `Arc` where there is no curve or
+  the rate is `FITTED_AT`. `eq_config` asks it for the stream's rate before it weighs
+  transparency, so the stage is handed bands designed for what it plays and `resonate explain`
+  prints those. A refit costs about 1.3 ms, and a retune re-plans on every volume step, so a
+  `Target` keeps each of the eight `FITS_KEPT_FOR` rates' fits in a `OnceLock` once one is asked
+  for — outside `PartialEq` and `Hash`, which weigh the points alone — and holds bands rather than
+  a `Profile`, which would be a cycle through its own `Arc`. A preamp moved by hand is carried as
+  its distance from the fitted one, so every rate keeps it. The file keeps the curve: a profile
+  holding a `Target` is written as its `Preamp:` and the `GraphicEQ:` line EqualizerAPO itself
+  reads, and read back into the same `Target`, gains trimmed to the millibel so the round trip is
+  exact. A `Preamp:` written beside a curve is the one it plays at, the way EqualizerAPO applies
+  both; filter lines beside one are passed over. Shaping a band in the pane or pressing one onto
+  it — `band_mut`, `push`, `remove` — lets go of the curve, because the bands are then the
+  listener's own and the curve no longer says what they are. A GraphicEQ file imported before the
+  curve was kept is parametric bands on disc and nothing can recover the curve from them; importing
+  it again is how it gains one.
+  `a_curve_fitted_again_at_the_rate_it_plays_at_holds_its_shape_at_every_rate` and
+  `a_graphic_curve_is_fitted_again_at_the_rate_the_stream_plays_at` are the claims.
 
 ## AutoEq
 
