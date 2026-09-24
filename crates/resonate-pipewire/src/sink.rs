@@ -118,20 +118,37 @@ impl SinkInfo {
 
         let mut specs = Vec::new();
         for entry in &self.formats {
-            for rate in &entry.rates {
-                if !self.allowed_rates.contains(rate) {
-                    continue;
-                }
-                if entry.channels.is_empty() {
-                    specs.push(StreamSpec::new(*rate, source.channels, entry.format));
-                    continue;
-                }
-                for channels in &entry.channels {
-                    specs.push(StreamSpec::new(*rate, *channels, entry.format));
+            for rate in entry
+                .rates
+                .iter()
+                .filter(|rate| self.allowed_rates.contains(rate))
+            {
+                offered_at(&mut specs, entry, *rate, source);
+            }
+        }
+        if specs.is_empty() {
+            for entry in &self.formats {
+                for rate in &self.allowed_rates {
+                    offered_at(&mut specs, entry, *rate, source);
                 }
             }
         }
         specs
+    }
+}
+
+fn offered_at(
+    specs: &mut Vec<StreamSpec>,
+    entry: &SinkFormats,
+    rate: SampleRate,
+    source: StreamSpec,
+) {
+    if entry.channels.is_empty() {
+        specs.push(StreamSpec::new(rate, source.channels, entry.format));
+        return;
+    }
+    for channels in &entry.channels {
+        specs.push(StreamSpec::new(rate, *channels, entry.format));
     }
 }
 
@@ -526,6 +543,32 @@ mod tests {
         assert_eq!(
             sink.best_spec_for(source),
             Some(stereo(SampleRate::HZ_48000, SampleFormat::S24))
+        );
+    }
+
+    #[test]
+    fn a_sink_whose_rates_the_graph_forbids_still_takes_only_the_formats_it_advertised() {
+        let sink = SinkInfo {
+            allowed_rates: vec![SampleRate::HZ_48000],
+            current_rate: Some(SampleRate::HZ_48000),
+            ..of(
+                &[],
+                vec![entry(
+                    SampleFormat::S16,
+                    &[SampleRate::HZ_44100],
+                    &[ChannelLayout::Stereo],
+                )],
+            )
+        };
+        let source = stereo(SampleRate::HZ_44100, SampleFormat::S24);
+
+        assert_eq!(
+            sink.best_spec_for(source),
+            Some(stereo(SampleRate::HZ_48000, SampleFormat::S16))
+        );
+        assert_eq!(
+            sink.best_spec_on(source, SampleRate::HZ_48000),
+            Some(stereo(SampleRate::HZ_48000, SampleFormat::S16))
         );
     }
 
