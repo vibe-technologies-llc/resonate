@@ -383,7 +383,7 @@ fn albums_sharing(tx: &Transaction<'_>, album: i64, release: &str, key: &str) ->
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> {
+pub(crate) fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> {
     tracing::debug!(
         into,
         other,

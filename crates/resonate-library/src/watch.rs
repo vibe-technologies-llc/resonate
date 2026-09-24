@@ -77,6 +77,9 @@ impl RootsWatch {
 
     pub fn taken_away(&self, quiet: Duration) -> Vec<PathBuf> {
         let mut moved = self.moved.lock();
+        if moved.last.is_some() {
+            return Vec::new();
+        }
         let still: Vec<PathBuf> = moved
             .gone
             .iter()
@@ -263,6 +266,28 @@ mod tests {
             watch.settled(Duration::ZERO).is_empty(),
             "a file taken away set off a scan of the whole root"
         );
+    }
+
+    #[test]
+    fn a_file_renamed_under_a_root_is_left_to_the_scan_rather_than_forgotten_first() {
+        let scratch = Scratch::new("renamed");
+        let before = scratch.path.join("album/echoes.flac");
+        let after = scratch.path.join("album/06 Echoes.flac");
+        fs::write(&before, b"fLaC").expect("a file");
+        let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
+        fs::rename(&before, &after).expect("the file renamed");
+
+        thread::sleep(QUIET * 2);
+        assert!(
+            watch.taken_away(Duration::ZERO).is_empty(),
+            "a renamed file was forgotten before the scan could follow it"
+        );
+        assert_eq!(
+            settled_within(&watch, HEARD_WITHIN),
+            vec![scratch.path.clone()]
+        );
+        assert_eq!(watch.taken_away(Duration::ZERO), vec![before]);
     }
 
     #[test]

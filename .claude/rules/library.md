@@ -531,6 +531,23 @@ through `Player::media` like any other unscanned row.
   rescanned into its place. The count is what a pane draws and the history is what `plays:@`
   narrows on; nothing orders on the history, because an order is an index and a correlated
   `count(*)` is not one.
+- **A file that moved is followed, not forgotten and found again.** A rename or a move by hand —
+  anything but `organise`, which rewrites the rows itself — reads to a scan as a row whose file
+  has gone and a file no row names. `moves::follow_the_moved` runs before the prune and pairs the
+  two: a whole-file row, the only row at its path, whose file is not there, with a row this scan
+  added — `added` at or past the generation — that is alike in `file_size`, `duration`, `codec`,
+  `tagged_title` and `tagged_artist`, where exactly one of each side is alike, so two identical
+  rips moved at once are left to be forgotten and found rather than guessed between. A pair is
+  followed through `organise::files_moved`, so the new row is dropped and the old one takes its
+  path, its root and the generation, keeping its id, plays, listens, favourite, enrichment, vault
+  object, playlist rows, kept lyric and queue row. The album is `settle_the_album`'s: where the
+  album the scan made for the new folder holds nothing else and every row that moved into it came
+  out of one album, it is gathered into that album through `enriched::gather`, so the new folder's
+  key names the album the rows always had and a release, a cover and a favourite are not left
+  behind; otherwise the moved row joins the album the scan filed it under. A cue-cut file is not
+  followed, its rows sharing a path. `ScanStats::moved` counts the pairs and `added` leaves them
+  out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist` and
+  `an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was` are the claims.
 - **A track's count is the catalog's and a rescan leaves it where it stands.** `tracks.plays` and
   `tracks.played` are absent from the upsert's `DO UPDATE SET` the way `added` is, so a rescan keeps
   both; forgetting a root drops the rows and the counts with them. It is kept against the path, so a

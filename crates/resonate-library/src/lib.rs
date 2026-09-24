@@ -10,6 +10,7 @@ mod hinted;
 mod import;
 mod m3u;
 mod model;
+mod moves;
 mod organise;
 mod pass;
 mod playlist;

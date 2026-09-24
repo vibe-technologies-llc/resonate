@@ -15162,3 +15162,131 @@ fn a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time
     );
     Ok(())
 }
+
+fn moved(from: &Path, to: &Path) {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent).expect("a writable temporary directory");
+    }
+    fs::rename(from, to).expect("a file moved within the tree");
+}
+
+#[test]
+fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist() -> Result<()> {
+    let tree = Tree::new();
+    let before = tree.write(
+        "loose/echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+    tree.write(
+        "loose/seamus.wav",
+        &Wav::new().text(TITLE, "Seamus").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let echoes = library
+        .track_played(&MediaLocation::local(&before), None)?
+        .expect("a counted play")
+        .track;
+    library.favour(Favoured::Track(echoes.id), true)?;
+    let playlist = library.create_playlist("Meddle")?;
+    library.add_to_playlist(playlist, &[Cut::whole(MediaLocation::local(&before))])?;
+
+    let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
+    moved(&before, &after);
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    let row = library
+        .track_at(&after, None)?
+        .expect("the row followed the file");
+    assert_eq!(row.id, echoes.id);
+    assert_eq!(row.plays, 1);
+    assert!(row.favourite.is_some());
+    assert_eq!(all(&library)?.len(), 2);
+    let entries = library.playlist_entries(playlist, None)?;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].location().as_path(),
+        Some(after.canonicalize().expect("the moved file").as_path())
+    );
+    Ok(())
+}
+
+#[test]
+fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()> {
+    let tree = Tree::new();
+    for (file, title) in [
+        ("01.wav", "One of These Days"),
+        ("02.wav", "A Pillow of Winds"),
+    ] {
+        tree.write(
+            &format!("rips/{file}"),
+            &Wav::new()
+                .text(TITLE, title)
+                .text(ARTIST, "Pink Floyd")
+                .text(ALBUM, "Meddle")
+                .build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let album = only_album(&library)?;
+    library.favour(Favoured::Album(album.id), true)?;
+
+    for file in ["01.wav", "02.wav"] {
+        moved(
+            &tree.path().join("rips").join(file),
+            &tree.path().join("Pink Floyd/Meddle").join(file),
+        );
+    }
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 2);
+    let still = only_album(&library)?;
+    assert_eq!(still.id, album.id);
+    assert!(still.favourite.is_some());
+    scan(&library, &options(&tree))?;
+    assert_eq!(only_album(&library)?.id, album.id);
+    Ok(())
+}
+
+#[test]
+fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Result<()> {
+    let tree = Tree::new();
+    let twin = Wav::new().text(TITLE, "Echoes").build();
+    let first = tree.write("a/echoes.wav", &twin);
+    let second = tree.write("b/echoes.wav", &twin);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    moved(&first, &tree.path().join("c/echoes.wav"));
+    moved(&second, &tree.path().join("d/echoes.wav"));
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 0);
+    assert_eq!(stats.added, 2);
+    assert_eq!(stats.removed, 2);
+    Ok(())
+}
+
+#[test]
+fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
+    let tree = Tree::new();
+    let source = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    fs::create_dir_all(tree.path().join("copy")).expect("a writable temporary directory");
+    fs::copy(&source, tree.path().join("copy/echoes.wav")).expect("a copy");
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 0);
+    assert_eq!(stats.added, 1);
+    assert_eq!(all(&library)?.len(), 2);
+    Ok(())
+}

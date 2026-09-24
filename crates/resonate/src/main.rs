@@ -502,10 +502,11 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
     let summary = until_told(handle)?;
     let stats = summary.stats;
     println!(
-        "discovered {} | added {} | updated {} | removed {} | failed {}{}",
+        "discovered {} | added {} | updated {} | moved {} | removed {} | failed {}{}",
         stats.discovered,
         stats.added,
         stats.updated,
+        stats.moved,
         stats.removed,
         stats.failed.total(),
         broken_down(stats.failed)

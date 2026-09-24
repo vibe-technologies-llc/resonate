@@ -1226,7 +1226,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   recursive inotify watch over the roots, through `notify`, and it sorts what it hears two ways.
   A path *gone* — an audio file or a folder removed, or anything but a sheet renamed away — is
   noted by path and handed out by `taken_away` once `GONE_QUIET_FOR` has passed since it was last
-  heard, so a tagger that deletes and rewrites a file in one breath is seen standing again. A path
+  heard, so a tagger that deletes and rewrites a file in one breath is seen standing again — and
+  never while a change under the roots is still settling, because a rename is a path gone and a
+  path changed at once, and the scan the change sets off is what follows the file to where it
+  went rather than forgetting it and counting it anew. A path
   *changed* — an audio file or a sheet made, written or renamed in, a folder made, a sheet taken
   away — notes its root, and `settled` hands the root out once it has been quiet for
   `ROOTS_QUIET_FOR`. An inotify queue that overflowed notes every root. A catalog or a vault kept

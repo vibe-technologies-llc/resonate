@@ -24,6 +24,7 @@ use crate::{
     Error, Result, StoreOp, alternatives,
     db::Inner,
     enriched::stripped_title,
+    moves,
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
@@ -153,6 +154,7 @@ pub struct ScanStats {
     pub processed: u64,
     pub added: u64,
     pub updated: u64,
+    pub moved: u64,
     pub removed: u64,
     pub failed: Failures,
 }
@@ -192,6 +194,7 @@ pub struct ScanProgress {
     processed: AtomicU64,
     added: AtomicU64,
     updated: AtomicU64,
+    moved: AtomicU64,
     removed: AtomicU64,
     failed: FailureCounts,
     cancelled: AtomicBool,
@@ -204,6 +207,7 @@ impl ScanProgress {
             processed: self.processed.load(Ordering::Relaxed),
             added: self.added.load(Ordering::Relaxed),
             updated: self.updated.load(Ordering::Relaxed),
+            moved: self.moved.load(Ordering::Relaxed),
             removed: self.removed.load(Ordering::Relaxed),
             failed: self.failed.snapshot(),
         }
@@ -438,6 +442,10 @@ fn run(
 
     let cancelled = progress.is_cancelled();
     if !cancelled {
+        let moved =
+            inner.write(|transaction| moves::follow_the_moved(transaction, &ids, generation))?;
+        progress.moved.store(moved, Ordering::Relaxed);
+        progress.added.fetch_sub(moved, Ordering::Relaxed);
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
         let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
         progress.removed.store(removed + tidied, Ordering::Relaxed);

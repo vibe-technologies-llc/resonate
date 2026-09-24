@@ -364,11 +364,12 @@ fn broken_down(failed: Failures) -> String {
 
 fn counted(stats: ScanStats, stopped: bool) -> String {
     let counts = format!(
-        "discovered {} · read {} · added {} · updated {} · removed {} · failed {}{}",
+        "discovered {} · read {} · added {} · updated {} · moved {} · removed {} · failed {}{}",
         stats.discovered,
         stats.processed,
         stats.added,
         stats.updated,
+        stats.moved,
         stats.removed,
         stats.failed.total(),
         broken_down(stats.failed)
