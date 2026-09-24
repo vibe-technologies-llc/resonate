@@ -378,6 +378,12 @@ Invariants the layering exists to protect:
   notification is not a command here. It ends when that connection closes at teardown, which is what
   `ManuallyDrop` beside the iterator is for — the subscription goes with the connection rather than
   being taken back over a socket that has already gone, which is a warning on every quit.
+  `a_press_on_a_notification_button_reaches_the_transport` is the claim, and it cannot run on the
+  desktop's bus, where the notification server's name is already the desktop's: it runs the test
+  binary again under `dbus-run-session` with a configuration that activates nothing, owns
+  `org.freedesktop.Notifications` there with a stand-in that offers `actions` and hands back one
+  id, and sends `ActionInvoked` from it — a press on another id moves nothing, Next moves the row
+  and Play/Pause pauses.
 - **A notification is held back while the window is in front of the listener.** `Host::attended` is
   the reading the service has no other way to take: `resonate-ui` publishes the window's activation
   on a `Sender<bool>` the way it takes the quit `Receiver`, and the binary's `Attention` folds what
@@ -722,7 +728,9 @@ cargo test -p <crate> <test_name> -- --exact --nocapture
 cargo test -p resonate-pipewire --test stream  # needs a live daemon; prints a skip without one
 cargo test -p resonate-pipewire --test reconnect  # hosts a daemon of its own and restarts it;
                                                   #   needs the pipewire binary
-cargo test -p resonate-mpris --test bus        # needs a session bus; prints a skip without one
+cargo test -p resonate-mpris --test bus        # needs a session bus; prints a skip without one,
+                                               #   but for the notification press, which hosts a
+                                               #   bus of its own and needs dbus-run-session
 cargo test -p resonate-codec --test encoded    # needs ffmpeg, and metaflac for the embedded
                                                #   CUESHEET block; prints a skip without either
 cargo test -p resonate-library --test library  # one embedded-sheet test needs ffmpeg and skips
@@ -749,7 +757,8 @@ build and tests, the whole workspace's build and tests, the `cargo tree` refusal
 `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
 plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
 no session bus there, so the PipeWire and bus tests print their skip — all but the reconnect test,
-which starts a daemon of its own. `RUSTFLAGS` is emptied over `target-cpu=native`, because the cache
+which starts a daemon of its own, and the notification press, which starts a bus of its own under
+`dbus-run-session` from the `dbus` package the container is given for it. `RUSTFLAGS` is emptied over `target-cpu=native`, because the cache
 a job restores may have been built on a runner with another CPU, and a native build from one faults
 on another. The separate Fedora 44 workflow builds the source RPM and attaches the binary and
 source RPMs when a GitHub release is published. Formatting is the one check CI cannot

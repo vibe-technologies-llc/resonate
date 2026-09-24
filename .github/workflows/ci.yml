@@ -16,7 +16,7 @@ env:
   RUSTFLAGS: ""
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
-    fontconfig freetype2 vulkan-headers vulkan-icd-loader ffmpeg flac
+    fontconfig freetype2 vulkan-headers vulkan-icd-loader ffmpeg flac dbus
 
 jobs:
   clippy:

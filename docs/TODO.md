@@ -501,11 +501,6 @@
 - A prescan over a source that cannot seek reaches only the first `MAX_PRESCAN_HEAD` bytes, so a WAV
   whose writer put its `LIST INFO` after the `data` chunk still loses those tags over a pipe where a
   file on disc keeps them
-- Nothing proves a press on a notification's button reaches the transport. `ActionInvoked` is
-  matched on the notification server's own bus name, so nothing in the workspace can stand in for
-  the desktop's daemon and send one; `pressed` and what the buttons are named are covered without a
-  session, and the rest — the rule registered against the real server, a press landing on the id it
-  handed back — has been seen by hand under plasmashell and by nobody else
 
 ## MPRIS
 - `TrackAdded`, `TrackRemoved` and `TrackListReplaced` are all diffed from a 200 ms poll of the

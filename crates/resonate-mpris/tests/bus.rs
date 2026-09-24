@@ -3,7 +3,7 @@ use std::{
     env, fs,
     io::Cursor,
     path::{Path, PathBuf},
-    process,
+    process::{self, Command as Process},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -20,16 +20,17 @@ use resonate_core::{
     SourceId, TrackId, Volume,
 };
 use resonate_engine::{
-    AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement, Player,
-    QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId, SinkInfo, SinkResult,
-    SinkStream, Sources, Span, StreamCommand, StreamRequest, Until,
+    AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
+    PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
+    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Until,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
     Queueing, Running, Seeking,
 };
 use zbus::{
-    blocking::{Connection, Proxy},
+    blocking::{Connection, Proxy, connection},
+    interface,
     zvariant::{OwnedObjectPath, OwnedValue},
 };
 
@@ -52,6 +53,23 @@ const UTF8: u8 = 3;
 const FRONT_COVER: u8 = 3;
 const PATIENCE: Duration = Duration::from_secs(15);
 const SETTLE: Duration = Duration::from_millis(500);
+const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_ON_A_BUS_OF_ITS_OWN";
+const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
+const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
+const RAISED: u32 = 41;
+const A_BUS_WITH_NOTHING_TO_ACTIVATE: &str = r#"<!DOCTYPE busconfig PUBLIC
+ "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <policy context="default">
+    <allow send_destination="*"/>
+    <allow receive_sender="*"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"#;
 
 struct Tree {
     root: PathBuf,
@@ -2527,5 +2545,151 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
     assert_eq!(
         harness.tracks(),
         vec![before[2].clone(), before[0].clone(), before[1].clone()]
+    );
+}
+
+struct NotificationServer {
+    raised: Sender<Vec<String>>,
+}
+
+#[interface(name = "org.freedesktop.Notifications")]
+impl NotificationServer {
+    fn get_capabilities(&self) -> Vec<String> {
+        vec!["actions".to_owned(), "body".to_owned()]
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Notify is eight arguments on the wire"
+    )]
+    fn notify(
+        &self,
+        _application: String,
+        _replaces: u32,
+        _icon: String,
+        _summary: String,
+        _body: String,
+        actions: Vec<String>,
+        _hints: HashMap<String, OwnedValue>,
+        _timeout: i32,
+    ) -> u32 {
+        let _ = self.raised.send(actions);
+        RAISED
+    }
+
+    fn close_notification(&self, _id: u32) {}
+
+    fn get_server_information(&self) -> (String, String, String, String) {
+        (
+            "stand-in".to_owned(),
+            "resonate".to_owned(),
+            "1".to_owned(),
+            "1.2".to_owned(),
+        )
+    }
+}
+
+fn on_a_bus_of_its_own(test: &str) -> bool {
+    if env::var_os(ON_A_BUS_OF_ITS_OWN).is_some() {
+        return true;
+    }
+
+    let tree = Tree::new();
+    let config = tree.root.join("session.conf");
+    fs::write(&config, A_BUS_WITH_NOTHING_TO_ACTIVATE).expect("a writable bus configuration");
+    let started = Process::new("dbus-run-session")
+        .arg(format!("--config-file={}", config.display()))
+        .arg("--")
+        .arg(env::current_exe().expect("the test binary names itself"))
+        .args(["--exact", test, "--nocapture"])
+        .env(ON_A_BUS_OF_ITS_OWN, "1")
+        .spawn();
+    let mut running = match started {
+        Ok(running) => running,
+        Err(error) => {
+            eprintln!("skipped: no dbus-run-session to host a bus ({error})");
+            return false;
+        }
+    };
+
+    let deadline = Instant::now() + PATIENCE * 4;
+    loop {
+        if let Some(status) = running
+            .try_wait()
+            .expect("the run on its own bus is watched")
+        {
+            assert!(status.success(), "{test} failed on a bus of its own");
+            break;
+        }
+        if Instant::now() > deadline {
+            let _ = running.kill();
+            panic!("{test} did not finish on a bus of its own");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+#[test]
+fn a_press_on_a_notification_button_reaches_the_transport() {
+    if !on_a_bus_of_its_own("a_press_on_a_notification_button_reaches_the_transport") {
+        return;
+    }
+    let (raised, notifications) = unbounded();
+    let server = connection::Builder::session()
+        .and_then(|builder| builder.name(NOTIFICATIONS))
+        .and_then(|builder| builder.serve_at(NOTIFICATIONS_PATH, NotificationServer { raised }))
+        .and_then(connection::Builder::build)
+        .expect("a stand-in notification server on the private bus");
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load_all(&[
+        tree.wav("one.wav"),
+        tree.wav("two.wav"),
+        tree.wav("three.wav"),
+    ]);
+
+    let offered = notifications
+        .recv_timeout(PATIENCE)
+        .expect("the track playing was told to the desktop");
+    assert_eq!(
+        offered,
+        [
+            "previous",
+            "Previous",
+            "play-pause",
+            "Play/Pause",
+            "next",
+            "Next"
+        ]
+    );
+    thread::sleep(SETTLE);
+
+    let press = |notification: u32, key: &str| {
+        server
+            .emit_signal(
+                None::<()>,
+                NOTIFICATIONS_PATH,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(notification, key),
+            )
+            .expect("a press is sent");
+    };
+    press(RAISED + 1, "next");
+    thread::sleep(SETTLE);
+    assert_eq!(harness.player.state().queue_position, Some(0));
+
+    press(RAISED, "next");
+    harness.wait_for(
+        |harness| harness.player.state().queue_position == Some(1),
+        "a press on Next to move the transport",
+    );
+    press(RAISED, "play-pause");
+    harness.wait_for(
+        |harness| harness.player.state().playback == PlaybackState::Paused,
+        "a press on Play/Pause to pause",
     );
 }
