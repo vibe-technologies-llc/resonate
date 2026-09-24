@@ -699,6 +699,26 @@ fn a_surround_source_is_kept_with_the_speakers_it_names() {
 }
 
 #[test]
+fn a_source_wider_than_flac_holds_is_kept_as_it_stands_and_heard_through_the_copy() {
+    const TEN_CHANNELS: u16 = 10;
+    const TEN_SPEAKERS: u32 = 0x3FF;
+
+    let tree = Tree::new();
+    let file = surround(TEN_CHANNELS, TEN_SPEAKERS, RATE, FRAMES);
+    let path = tree.write("ten.wav", &file);
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    assert_eq!(held.form, Form::Kept);
+    assert_eq!(fs::read(&held.path).expect("an object"), file);
+    assert_eq!(
+        decoded(&held.path, SampleFormat::S16),
+        decoded(&path, SampleFormat::S16)
+    );
+}
+
+#[test]
 fn a_wave_that_would_come_out_no_smaller_is_given_up_on_and_the_source_kept() {
     const HIGH_RATE: u32 = 192_000;
     const RATE_AT: std::ops::Range<usize> = 24..28;

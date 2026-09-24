@@ -299,7 +299,7 @@ impl Vault {
         };
         let kept = match form {
             Form::Kept if !whole => return Ok(Keeping::Refused(Refusal::CutFromAnother)),
-            Form::Kept => self.kept_whole(taking, codec, info.spec, info.duration)?,
+            Form::Kept => self.kept_whole(taking, codec, &info, Some(decoder))?,
             Form::Wave => self.kept_as_wave(weighing, &mut decoder, info.spec, speakers, codec)?,
             Form::Flac => {
                 self.kept_as_flac(weighing, &mut decoder, info.spec, speakers, bits, codec)?
@@ -308,7 +308,7 @@ impl Vault {
 
         let kept = match kept {
             Keeping::Refused(Refusal::NoSmaller) if whole => {
-                self.kept_whole(taking, codec, info.spec, info.duration)?
+                self.kept_whole(taking, codec, &info, None)?
             }
             kept => kept,
         };
@@ -604,8 +604,8 @@ impl Vault {
         &self,
         taking: &Taking<'_>,
         codec: Codec,
-        spec: StreamSpec,
-        duration: Option<Frames>,
+        info: &MediaInfo,
+        unread: Option<Decoder>,
     ) -> Result<Keeping> {
         let extension = named_extension(taking.location);
         let staging = self.staged(&extension)?;
@@ -648,9 +648,12 @@ impl Vault {
             return Ok(Keeping::Refused(Refusal::Empty));
         }
 
-        let went_in = Decoder::open(taking.sources, taking.location)
-            .map_err(|source| Error::codec(VaultOp::Verify, source))
-            .and_then(|(decoder, info)| pcm_of(decoder, &info, None));
+        let went_in = match unread {
+            Some(decoder) => pcm_of(decoder, info, None),
+            None => Decoder::open(taking.sources, taking.location)
+                .map_err(|source| Error::codec(VaultOp::Verify, source))
+                .and_then(|(decoder, info)| pcm_of(decoder, &info, None)),
+        };
         let holds = match (went_in, read_back(&staging, None)) {
             (Ok(went_in), Ok(came_out)) => {
                 went_in.key == came_out.key && went_in.frames == came_out.frames
@@ -672,8 +675,8 @@ impl Vault {
             path: target,
             bytes: 0,
             was: 0,
-            spec,
-            frames: duration.unwrap_or(Frames::ZERO),
+            spec: info.spec,
+            frames: info.duration.unwrap_or(Frames::ZERO),
             codec,
             deduped: false,
             replaced: false,
