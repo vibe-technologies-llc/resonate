@@ -179,6 +179,10 @@ impl ListenModel {
         if let Stage::Recording(hearing) = &self.stage {
             hearing.stop();
         }
+        if self.is_listening() {
+            self.running = Task::ready(());
+            self.stage = Stage::Idle;
+        }
         cx.notify();
     }
 

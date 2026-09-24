@@ -1888,7 +1888,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   need not be in the library, so it belongs to no section: `ctrl-l`, bound in `answering_anywhere`,
   and the ear in the header — which stops its press like every other header control — both open it
   through `RootView::open_the_listener`, which starts a recording at once, and escape or a press
-  outside the card closes it and stops one in flight. `listening.rs` is the model and `views/listen.rs`
+  outside the card closes it and stops one in flight. Stopping is the same in both stages: it
+  drops the task that would ask about the clip and puts the sheet back at `Idle`, so a song named
+  after Stop or after the sheet closed is neither told to the desktop nor drawn. `listening.rs` is the model and `views/listen.rs`
   the drawing. `ListenModel` holds the `Listens` the binary handed in and walks one `Stage` —
   `Recording` with the `Hearing` the bar is drawn from, `Asking`, then `Found`, `Unknown`,
   `Silent`, `Unreached` or `NoService` where no recogniser is registered — and the recording and
