@@ -15,8 +15,8 @@ env:
   CARGO_INCREMENTAL: "0"
   RUSTFLAGS: ""
   ARCH_PACKAGES: >-
-    base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon fontconfig
-    freetype2 vulkan-headers vulkan-icd-loader ffmpeg flac
+    base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
+    fontconfig freetype2 vulkan-headers vulkan-icd-loader ffmpeg flac
 
 jobs:
   clippy:

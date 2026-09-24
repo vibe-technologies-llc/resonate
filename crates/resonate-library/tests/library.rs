@@ -2614,8 +2614,10 @@ fn one_song_in_two_formats_is_listed_once_as_the_better_of_the_two() -> Result<(
 #[test]
 fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Result<()> {
     let tree = Tree::new();
-    let first = tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
-    tree.write("b/06 Echoes.wav", &one_song(16, 44_100));
+    let copies = [
+        tree.write("a/06 Echoes.wav", &one_song(16, 44_100)),
+        tree.write("b/06 Echoes.wav", &one_song(16, 44_100)),
+    ];
 
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
@@ -2623,10 +2625,16 @@ fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Re
     let rows = all(&library)?;
     assert_eq!(rows.len(), 1, "two identical copies were listed twice");
     assert_eq!(rows[0].alternatives, 1);
-    let first_id = library
-        .track_at(&first, None)?
-        .expect("the scan stored the file it walked")
-        .id;
+    let mut stored = Vec::new();
+    for copy in &copies {
+        stored.push(
+            library
+                .track_at(copy, None)?
+                .expect("the scan stored the file it walked")
+                .id,
+        );
+    }
+    let first_id = stored.into_iter().min().expect("two copies were stored");
     assert_eq!(
         rows[0].id, first_id,
         "the copy listed was not the one the catalog held first"

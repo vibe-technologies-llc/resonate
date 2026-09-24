@@ -8,7 +8,7 @@ url='https://github.com/vibe-technologies-llc/resonate'
 license=('AGPL-3.0-or-later')
 depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
          'freetype2' 'vulkan-icd-loader')
-makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'git')
+makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11' 'git')
 provides=("$_pkgname")
 conflicts=("$_pkgname" 'resonate-git')
 options=('!lto')
