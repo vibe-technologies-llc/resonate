@@ -278,9 +278,6 @@
   the count of collisions
 - `resonate organise` reads every scanned row into memory before it plans anything, and nothing
   undoes a run: the moves are the record, and the way back is another layout and another `--apply`
-- The files a sheet names one each are filed only where every destination is free: a unit is
-  never ordered into a chain, so one whose file would land where another source stands is refused
-  rather than waiting for that source to go
 
 ## MusicBrainz
 - An artist with no `image` and no `wikidata` relation has no portrait and no way to one: the

@@ -1438,11 +1438,24 @@ the pass.
   after the plan: a batch never splits it, `renamed_onto` puts every file back where one of them
   fails, `files_moved` has the catalog follow each file, and `sheets_follow_their_audio` renames
   every `FILE` line in the sheet that landed. `Move::files` is the one walk all of them take, and
-  `Plan::files_moving` is what a preview counts. The layout must land every file in one folder,
-  every file must be one this pass files, and every destination must be free rather than held by
-  a file that will go — a unit is never a link in a chain — or each file is
-  `Refusal::SharesASheet`, the one that failed on its own account taking its own refusal instead,
-  and such a sheet is kept out of the loose stem pass for the same reason.
+  `Plan::files_moving` is what a preview counts. The layout must land every file in one folder
+  and every file must be one this pass files, or each file is `Refusal::SharesASheet`, the one
+  that failed on its own account taking its own refusal instead, and such a sheet is kept out of
+  the loose stem pass for the same reason. **A unit is a link in a chain like any move.** A
+  destination held by a file this pass moves on is not a refusal but something to wait for, and a
+  unit may wait on as many as it has members: `Planned::waits_for` is every source standing where
+  the move lands, and `order_the_chains` puts a move behind each move that vacates one of them.
+  `walked` is a depth-first topological order over those waits rather than the walk of one chain
+  it was, iterative so a long chain costs no stack: a move is ordered once everything it waits on
+  is, and a move that meets one still being walked — a cycle — or one already doomed dooms every
+  move on the walk with it, because each of those waits on it in turn. A move left out is refused
+  as `Collided` with the first source it waited on, each member of a unit alike. A unit whose
+  member lands where another member stands waits on itself and is doomed with it, which is the
+  refusal it always met: a rename inside one move cannot be ordered. At the apply, `standing`
+  weighs every file of a move, so a chain the disc has changed under since the plan is still
+  refused rather than renamed over.
+  `the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first` is the
+  claim.
 
 ## The search grammar
 

@@ -741,7 +741,7 @@ enum Step {
 
 struct Planned {
     planned: Move,
-    waits_for: Option<PathBuf>,
+    waits_for: Vec<PathBuf>,
 }
 
 struct Planner<'a> {
@@ -830,8 +830,8 @@ impl<'a> Planner<'a> {
                 self.refuse(first, refusal);
                 return;
             }
-            Some(InTheWay::MayGo(vacating)) => Some(vacating),
-            None => None,
+            Some(InTheWay::MayGo(vacating)) => vec![vacating],
+            None => Vec::new(),
         };
 
         let sheets = match self.sheets_travelling(&first.path, &destination) {
@@ -960,14 +960,15 @@ impl<'a> Planner<'a> {
             return;
         }
 
+        let mut waits_for = Vec::new();
         for (first, _, destination) in &moving {
-            if let Some(standing) = self.in_the_way(&first.path, destination) {
-                let refusal = match standing {
-                    InTheWay::Stands(refusal) => refusal,
-                    InTheWay::MayGo(vacating) => Refusal::Collided { with: vacating },
-                };
-                self.refuse_the_sheets(group, tied, Some((&first.path, refusal)));
-                return;
+            match self.in_the_way(&first.path, destination) {
+                Some(InTheWay::Stands(refusal)) => {
+                    self.refuse_the_sheets(group, tied, Some((&first.path, refusal)));
+                    return;
+                }
+                Some(InTheWay::MayGo(vacating)) => waits_for.push(vacating),
+                None => {}
             }
         }
 
@@ -1026,7 +1027,7 @@ impl<'a> Planner<'a> {
                     .collect(),
                 sidecars,
             },
-            waits_for: None,
+            waits_for,
         });
     }
 
@@ -1308,15 +1309,15 @@ impl<'a> Planner<'a> {
             }
 
             for (at, held) in asked.iter().enumerate() {
-                let vacating = held
+                let movers: Option<Vec<usize>> = held
                     .waits_for
-                    .as_deref()
-                    .map(|standing| by_source.get(standing).copied());
-                match vacating {
-                    None => waits.push(None),
-                    Some(Some(mover)) => waits.push(Some(mover)),
-                    Some(None) => {
-                        waits.push(None);
+                    .iter()
+                    .map(|standing| by_source.get(standing.as_path()).copied())
+                    .collect();
+                match movers {
+                    Some(movers) => waits.push(movers),
+                    None => {
+                        waits.push(Vec::new());
                         state[at] = Step::Doomed;
                     }
                 }
@@ -1342,13 +1343,22 @@ impl<'a> Planner<'a> {
 
             let with = left
                 .waits_for
+                .into_iter()
+                .next()
                 .expect("a move left out of the order is one waiting on a file that stays");
             tracing::debug!(
                 path = %left.planned.from.display(),
                 standing = %with.display(),
                 "a move waiting on a file that never goes was left where it stands"
             );
-            self.stands(left.planned.from, Refusal::Collided { with });
+            let members: Vec<PathBuf> = left
+                .planned
+                .files()
+                .map(|(from, _)| from.to_path_buf())
+                .collect();
+            for member in members {
+                self.stands(member, Refusal::Collided { with: with.clone() });
+            }
         }
     }
 
@@ -1359,34 +1369,36 @@ impl<'a> Planner<'a> {
     }
 }
 
-fn walked(waits: &[Option<usize>], state: &mut [Step]) -> Vec<usize> {
+fn walked(waits: &[Vec<usize>], state: &mut [Step]) -> Vec<usize> {
     let mut order = Vec::with_capacity(waits.len());
     for start in 0..waits.len() {
         if state[start] != Step::Unwalked {
             continue;
         }
 
-        let mut chain = Vec::new();
-        let mut at = start;
-        let outcome = loop {
-            match state[at] {
+        state[start] = Step::Walking;
+        let mut walking: Vec<(usize, usize)> = vec![(start, 0)];
+        while let Some((at, next)) = walking.last_mut() {
+            let at = *at;
+            let Some(&vacating) = waits[at].get(*next) else {
+                walking.pop();
+                state[at] = Step::Ordered;
+                order.push(at);
+                continue;
+            };
+            *next += 1;
+
+            match state[vacating] {
                 Step::Unwalked => {
-                    state[at] = Step::Walking;
-                    chain.push(at);
-                    match waits[at] {
-                        Some(vacating) => at = vacating,
-                        None => break Step::Ordered,
+                    state[vacating] = Step::Walking;
+                    walking.push((vacating, 0));
+                }
+                Step::Ordered => {}
+                Step::Walking | Step::Doomed => {
+                    for (waiting, _) in walking.drain(..) {
+                        state[waiting] = Step::Doomed;
                     }
                 }
-                Step::Ordered => break Step::Ordered,
-                Step::Walking | Step::Doomed => break Step::Doomed,
-            }
-        };
-
-        for step in chain.into_iter().rev() {
-            state[step] = outcome;
-            if outcome == Step::Ordered {
-                order.push(step);
             }
         }
     }
@@ -2883,6 +2895,40 @@ mod tests {
         );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    fn ordered(waits: &[Vec<usize>]) -> (Vec<usize>, Vec<Step>) {
+        let mut state = vec![Step::Unwalked; waits.len()];
+        let order = walked(waits, &mut state);
+        (order, state)
+    }
+
+    #[test]
+    fn a_move_waiting_on_several_is_ordered_behind_every_one_of_them() {
+        let (order, state) = ordered(&[vec![1, 2], vec![], vec![1]]);
+
+        assert_eq!(order, vec![1, 2, 0]);
+        assert!(state.iter().all(|step| *step == Step::Ordered));
+    }
+
+    #[test]
+    fn a_move_waiting_on_a_cycle_is_left_out_with_every_move_in_it() {
+        let (order, state) = ordered(&[vec![1], vec![2], vec![1], vec![]]);
+
+        assert_eq!(order, vec![3]);
+        assert_eq!(
+            state,
+            vec![Step::Doomed, Step::Doomed, Step::Doomed, Step::Ordered]
+        );
+    }
+
+    #[test]
+    fn a_move_waiting_on_one_the_walk_already_doomed_is_doomed_too() {
+        let mut state = vec![Step::Doomed, Step::Unwalked, Step::Unwalked];
+        let order = walked(&[vec![], vec![0], vec![]], &mut state);
+
+        assert_eq!(order, vec![2]);
+        assert_eq!(state[1], Step::Doomed);
     }
 
     #[test]

@@ -11608,6 +11608,90 @@ fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_the
 }
 
 #[test]
+fn the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first() -> Result<()>
+{
+    let tree = Tree::new();
+    tree.write("rip/one.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/two.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
+    tree.write(
+        "Pink Floyd/Meddle/01 One of These Days.wav",
+        &meddle("Fearless", "3"),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let album = root.join("Pink Floyd/Meddle");
+
+    let preview = previewed(&library)?;
+    assert!(
+        preview.plan.refused.is_empty(),
+        "{:?}",
+        preview.plan.refused
+    );
+    assert_eq!(
+        landings(&preview)
+            .into_iter()
+            .map(|(from, _)| from)
+            .collect::<Vec<_>>(),
+        vec![
+            album.join("01 One of These Days.wav"),
+            root.join("rip/one.wav"),
+        ],
+        "the file standing where the sheet's first file lands was not moved on first"
+    );
+    assert_eq!(preview.plan.files_moving(), 3);
+
+    let summary = library
+        .organise(OrganiseOptions {
+            apply: true,
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+    assert_eq!(summary.stats.moved, 3);
+    assert_eq!(summary.stats.failed, 0);
+    assert!(!root.join("rip").exists(), "the emptied folder was left");
+    assert!(album.join("03 Fearless.wav").is_file());
+    assert!(album.join("01 One of These Days.wav").is_file());
+    assert!(album.join("02 Echoes.wav").is_file());
+    assert!(album.join("Meddle.cue").is_file());
+    Ok(())
+}
+
+#[test]
+fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_it_met()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.write("rip/one.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/two.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
+    tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let held = root.join("Pink Floyd/Meddle/02 Echoes.wav");
+
+    let preview = previewed(&library)?;
+
+    assert!(preview.plan.moves.is_empty(), "{:?}", preview.plan.moves);
+    assert_eq!(preview.plan.unchanged, 1);
+    let mut refused: Vec<Refused> = preview.plan.refused.clone();
+    refused.sort_by(|one, other| one.from.cmp(&other.from));
+    assert_eq!(
+        refused,
+        ["rip/one.wav", "rip/two.wav"]
+            .iter()
+            .map(|file| Refused {
+                from: root.join(file),
+                refusal: Refusal::Collided { with: held.clone() },
+            })
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(preview.plan.folders, Vec::<PathBuf>::new());
+    Ok(())
+}
+
+#[test]
 fn a_file_a_sheet_names_beside_one_nothing_scanned_is_left_where_it_stands() -> Result<()> {
     let tree = Tree::new();
     tree.write("one.wav", &Wav::new().frames(44_100).build());
