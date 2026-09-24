@@ -101,7 +101,9 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   `musicbrainz::release` asks `/release/<mbid>` with `RELEASE_INCLUDES` — recordings,
   artist-credits, media, release-groups, isrcs, labels, url-rels and recording-level-rels — and
   `ReleaseDoc::into_release` maps it: media sorted by position and tracks within each by position,
-  the first label-info's label and catalogue number, `has_front_cover` off the
+  the first label-info's label and catalogue number — read through `stated`, because MusicBrainz
+  writes `[no label]` and `[none]` where there is neither, and those are no label and no number
+  rather than a name to print on a heading or write into a file's tags — `has_front_cover` off the
   `cover-art-archive.front` flag, the release group's id and primary type, and links out of the
   url-rels through `Link::new`. A track's credit is its own where the document gives it one and
   the recording's otherwise, and it is kept as `ReleaseTrack::artist` only where the credited

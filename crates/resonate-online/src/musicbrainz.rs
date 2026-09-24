@@ -714,6 +714,12 @@ fn present(text: Option<String>) -> Option<String> {
     text.filter(|text| !text.trim().is_empty())
 }
 
+const STATED_AS_NOTHING: [&str; 2] = ["[none]", "[no label]"];
+
+fn stated(text: Option<String>) -> Option<String> {
+    present(text).filter(|text| !STATED_AS_NOTHING.contains(&text.trim()))
+}
+
 fn credits(documents: Vec<CreditDoc>) -> Vec<Credit> {
     documents
         .into_iter()
@@ -767,8 +773,8 @@ impl ReleaseDoc {
             .next()
             .map(|info| {
                 (
-                    present(info.label.and_then(|label| label.name)),
-                    present(info.catalog_number),
+                    stated(info.label.and_then(|label| label.name)),
+                    stated(info.catalog_number),
                 )
             })
             .unwrap_or_default();
@@ -1128,6 +1134,17 @@ mod tests {
     use resonate_library::{Relation, Service};
 
     use super::*;
+
+    #[test]
+    fn musicbrainzs_placeholders_for_no_label_and_no_catalogue_number_state_nothing() {
+        assert_eq!(stated(Some("[none]".to_owned())), None);
+        assert_eq!(stated(Some("[no label]".to_owned())), None);
+        assert_eq!(stated(Some("  ".to_owned())), None);
+        assert_eq!(
+            stated(Some("CDP 7 46034 2".to_owned())).as_deref(),
+            Some("CDP 7 46034 2")
+        );
+    }
 
     const RELEASE: &str = include_str!("../tests/fixtures/release.json");
     const RELEASE_LINKED: &str = include_str!("../tests/fixtures/release_linked.json");
