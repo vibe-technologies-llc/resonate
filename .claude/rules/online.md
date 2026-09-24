@@ -264,12 +264,32 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   Measured over a 435-track scan: 8 artists of 50 had a portrait before the three changes above
   and 25 after, with a second pass asking for nothing more.
 
+## Apple Music
+
+- **An artist's own picture on Apple Music is read off the page MusicBrainz links.** Most
+  composers and small acts carry no Commons picture and no `P18`, but MusicBrainz links nearly all
+  of them to an Apple Music artist page, and that page shares the picture the artist chose as its
+  `og:image`, served from `mzstatic.com` like the covers Shazam answers. `apple::artist_page` reads
+  a `music.apple.com` or `itunes.apple.com` link of any storefront — `artist/<id>`,
+  `artist/<slug>/<id>` or `artist/id<id>` — into `https://music.apple.com/<store>/artist/<id>`,
+  `Host::AppleMusic` fetches it, `shared_picture` cuts the `og:image` out of the markup, and
+  `squared` asks mzstatic for it as `600x600cc.jpg` — the same picture cropped square at the
+  centre — rather than the 1200×630 card the page shares. **A record sleeve is not a portrait**:
+  where an artist has no picture of its own Apple shows one of its albums, filed under a `Music…`
+  bucket and named by the album's barcode, so `squared` takes only a picture in an
+  `AMCArtistImages…` or `Features…` bucket or one named `pr_source`, which is what an artist's own
+  upload is called. Measured on this library it took 25 portraits of 50 to 35, Adam Skorupa,
+  Mikolai Stroinski and Piotr Musiał among them. **A picture refused with a status under 500 is a
+  miss, not a refusal**: `passed_over_when_refused` turns it into nothing so the walk goes on,
+  because a page taken down or a CDN that will not serve a region is a fact about that link rather
+  than a bad day to be counted against the artist.
+
 ## Deezer
 
 - **A portrait nobody on Commons has taken is asked of Deezer, by the link MusicBrainz holds.**
   Composers and small acts rarely carry an `image` relation or a `P18`, but MusicBrainz links most
   of them to a Deezer artist page, and Deezer's public API answers that page's picture with no key.
-  `Reference::portrait` walks the Commons links, then Wikidata, then `resonate_library::deezer_urls`
+  `Reference::portrait` walks the Commons links, then Wikidata, then Apple Music, then `resonate_library::deezer_urls`
   — every link whose `Service` is Deezer — and `deezer::artist` reads the artist number out of a
   `deezer.com/[lang/]artist/<n>` URL and nothing else. `Host::Deezer` asks `/artist/<n>` and
   `picture_big`, 500 pixels square, is fetched from `Host::DeezerPictures` only where it is served
@@ -278,7 +298,9 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   MD5 of nothing, and an unknown number answers a `DataException` document with no picture at all,
   so both are a miss and the walk goes on. A Deezer link counts towards `may_be_pictured`, so a
   catalog enriched before this is asked again by `look_again_for_portraits`. There is no search by
-  name: a link MusicBrainz holds names the artist, and a name alone would be a guess.
+  name: a link MusicBrainz holds names the artist, and a name alone would be a guess. Deezer
+  is last because its picture CDN answers 403 to every request from some networks — this
+  machine's among them — whatever the request carries, and there it is only ever a miss.
 
 ## LRCLIB
 

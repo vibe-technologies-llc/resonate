@@ -1,4 +1,5 @@
 mod acoustid;
+mod apple;
 mod audd;
 mod autoeq;
 mod client;

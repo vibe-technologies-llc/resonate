@@ -89,7 +89,8 @@ pub use crate::{
         ArtistMatch, ArtistProfile, ArtistRelease, Credit, Genre, GroupAsked, GroupMatch,
         GroupRelease, LifeSpan, LookupOp, Medium, Recording, RecordingAsked, RecordingMatch,
         RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-        ReleaseTrack, Wording, deezer_urls, may_be_pictured, portrait_urls, wikidata_urls,
+        ReleaseTrack, Wording, apple_music_urls, deezer_urls, may_be_pictured, portrait_urls,
+        wikidata_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,

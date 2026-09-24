@@ -2,7 +2,10 @@ use resonate_codec::{CoverArt, ImageFormat};
 use resonate_library::LookupOp;
 use serde::Deserialize;
 
-use crate::{Client, Host, Result, client::LARGEST_PICTURE};
+use crate::{
+    Client, Host, Result,
+    client::{LARGEST_PICTURE, passed_over_when_refused},
+};
 
 const ARTIST: &str = "/artist/";
 const SECURE: &str = "https://";
@@ -15,7 +18,12 @@ pub(crate) fn portrait(client: &Client, url: &str) -> Result<Option<CoverArt>> {
         return Ok(None);
     };
     let asked = format!("{ARTIST}{artist}");
-    let Some(held) = client.json::<ArtistDoc>(Host::Deezer, LookupOp::Portrait, &asked)? else {
+    let Some(held) = passed_over_when_refused(client.json::<ArtistDoc>(
+        Host::Deezer,
+        LookupOp::Portrait,
+        &asked,
+    ))?
+    else {
         return Ok(None);
     };
     let Some(picture) = held.pictured() else {
@@ -23,17 +31,16 @@ pub(crate) fn portrait(client: &Client, url: &str) -> Result<Option<CoverArt>> {
         return Ok(None);
     };
 
-    Ok(client
-        .bytes(
-            Host::DeezerPictures,
-            LookupOp::Portrait,
-            picture,
-            LARGEST_PICTURE,
-        )?
-        .and_then(|bytes| {
-            let format = ImageFormat::sniff(&bytes)?;
-            Some(CoverArt { format, bytes })
-        }))
+    Ok(passed_over_when_refused(client.bytes(
+        Host::DeezerPictures,
+        LookupOp::Portrait,
+        picture,
+        LARGEST_PICTURE,
+    ))?
+    .and_then(|bytes| {
+        let format = ImageFormat::sniff(&bytes)?;
+        Some(CoverArt { format, bytes })
+    }))
 }
 
 pub(crate) fn artist(url: &str) -> Option<u64> {

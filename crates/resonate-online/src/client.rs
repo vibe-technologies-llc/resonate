@@ -19,6 +19,22 @@ use crate::{Error, Host, Result, query::Params};
 
 pub(crate) const LARGEST_DOCUMENT: usize = 4 * 1024 * 1024;
 pub(crate) const LARGEST_PICTURE: usize = 8 * 1024 * 1024;
+
+const REFUSED_FOR_GOOD: u16 = 500;
+
+pub(crate) fn passed_over_when_refused<T>(answered: Result<Option<T>>) -> Result<Option<T>> {
+    match answered {
+        Err(Error::Refused { host, status, .. }) if status < REFUSED_FOR_GOOD => {
+            tracing::debug!(
+                ?host,
+                status,
+                "a picture was refused; the next link is tried"
+            );
+            Ok(None)
+        }
+        answered => answered,
+    }
+}
 pub(crate) const LARGEST_INDEX: usize = 2 * 1024 * 1024;
 
 const NAME: &str = "resonate";
@@ -134,6 +150,7 @@ impl Host {
             Self::Shazam => SHAZAM_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
             Self::AppleArtwork
+            | Self::AppleMusic
             | Self::Deezer
             | Self::DeezerPictures
             | Self::CoverArtArchive

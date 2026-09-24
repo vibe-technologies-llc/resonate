@@ -254,16 +254,25 @@ pub fn wikidata_urls(links: &[Link]) -> impl Iterator<Item = &str> {
     urls_of(links, Relation::Wikidata)
 }
 
+pub fn apple_music_urls(links: &[Link]) -> impl Iterator<Item = &str> {
+    urls_on(links, Service::AppleMusic)
+}
+
 pub fn deezer_urls(links: &[Link]) -> impl Iterator<Item = &str> {
+    urls_on(links, Service::Deezer)
+}
+
+fn urls_on(links: &[Link], service: Service) -> impl Iterator<Item = &str> {
     links
         .iter()
-        .filter(|link| link.service == Service::Deezer)
+        .filter(move |link| link.service == service)
         .map(|link| link.url.as_str())
 }
 
 pub fn may_be_pictured(links: &[Link]) -> bool {
     portrait_urls(links).next().is_some()
         || wikidata_urls(links).next().is_some()
+        || apple_music_urls(links).next().is_some()
         || deezer_urls(links).next().is_some()
 }
 
