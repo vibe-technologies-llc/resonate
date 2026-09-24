@@ -118,6 +118,9 @@ impl GainStage {
     }
 
     fn hold(&mut self, input: &[f64], output: &mut [f64], from: usize, frames: usize) {
+        if from >= frames {
+            return;
+        }
         let channels = self.channels;
         let amplitude = f64::from(self.advance());
         let from = from * channels;
@@ -301,6 +304,30 @@ mod tests {
         assert!(first < 1.0 && first > 0.9, "ramp jumped to {first}");
         assert!(last < first, "ramp did not descend: {first} -> {last}");
         assert!(last > 0.0, "ramp collapsed to {last} in one block");
+    }
+
+    #[test]
+    fn a_ramp_split_across_blocks_is_the_ramp_heard_in_one() {
+        let ramped = || {
+            let mut stage = prepared(GainConfig {
+                ramp: Duration::from_millis(10),
+                ..GainConfig::default()
+            });
+            stage.set_volume(Volume::MUTE);
+            stage
+        };
+        let input = vec![1.0; 2 * 960];
+
+        let mut whole = vec![0.0; input.len()];
+        ramped().process(&input, &mut whole);
+
+        let mut stage = ramped();
+        let mut split = vec![0.0; input.len()];
+        for (taken, made) in input.chunks(2 * 64).zip(split.chunks_mut(2 * 64)) {
+            stage.process(taken, made);
+        }
+
+        assert_eq!(split, whole);
     }
 
     #[test]
