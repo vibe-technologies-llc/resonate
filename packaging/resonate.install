@@ -1,0 +1,35 @@
+_tell_every_session() {
+  touch -c /usr/share/icons/hicolor
+
+  local bus uid user
+  for bus in /run/user/*/bus; do
+    [[ -S $bus ]] || continue
+    uid=${bus#/run/user/}
+    uid=${uid%/bus}
+    user=$(id -nu "$uid" 2>/dev/null) || continue
+
+    if command -v kbuildsycoca6 >/dev/null 2>&1; then
+      runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+        kbuildsycoca6 >/dev/null 2>&1 || true
+    fi
+
+    if command -v dbus-send >/dev/null 2>&1; then
+      runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+        dbus-send --session --type=signal /KIconLoader org.kde.KIconLoader.iconChanged int32:0 \
+        >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+post_install() {
+  _tell_every_session
+}
+
+post_upgrade() {
+  _tell_every_session
+}
+
+post_remove() {
+  _tell_every_session
+}

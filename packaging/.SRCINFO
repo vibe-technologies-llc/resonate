@@ -1,8 +1,9 @@
 pkgbase = resonate-player-git
 	pkgdesc = A high-fidelity music player with native PipeWire output
 	pkgver = 0.1.0.r1.g234eada
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/vibe-technologies-llc/resonate
+	install = resonate.install
 	arch = x86_64
 	arch = aarch64
 	license = MIT
