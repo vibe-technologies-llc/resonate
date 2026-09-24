@@ -217,6 +217,10 @@ impl Group {
         }
     }
 
+    pub(crate) const fn is_experimental(self) -> bool {
+        matches!(self, Self::LossySources)
+    }
+
     pub(crate) const fn title(self) -> &'static str {
         match self {
             Self::Device => "Playback device",
@@ -230,7 +234,7 @@ impl Group {
             Self::NoiseShaping => "Noise shaping",
             Self::ReplayGain => "ReplayGain",
             Self::TruePeak => "True peak",
-            Self::LossySources => "Repairing lossy files",
+            Self::LossySources => "Artificially enhance lossy files",
             Self::Equalising => "Equaliser",
             Self::BoundTo => "Bound to each device",
             Self::Bands => "Bands",
@@ -334,8 +338,8 @@ impl Group {
             Self::ReplayGain => "loudness volume normalisation gain album track pre-amp untagged",
             Self::TruePeak => "clipping intersample over limiter dbtp headroom lossy",
             Self::LossySources => {
-                "lossy sources mp3 aac vorbis restore restoration repair bandwidth extension sbr dsee \
-                 holes swirly cider"
+                "lossy sources mp3 aac vorbis restore restoration repair enhance enhancement \
+                 artificial experimental bandwidth extension sbr dsee holes swirly cider"
             }
             Self::Equalising => {
                 "eq equalizer parametric filter correction headphone tone \

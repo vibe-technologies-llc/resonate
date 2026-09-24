@@ -1582,9 +1582,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   pages had grown half with a closing line and half ending at their controls; a group that is a
   list or a row of buttons — the devices, the music folders, the scan, the bindings, the three
   About readbacks — ends in a `note` of its own, and every note is the one `note` builder at
-  `text_sm`, the accent line included. *Lossy sources* is *Repairing lossy files* now, each of
-  Off, Repair and Repair and extend says in words what it takes or adds, and `LOSSY_ONLY` under
-  them says which files are touched and that a repaired one is no longer bit-perfect.
+  `text_sm`, the accent line included. *Lossy sources* is *Artificially enhance lossy files* now,
+  carrying the `EXPERIMENTAL` badge `Group::is_experimental` puts in a section's header, because
+  what it adds is a guess at what the encoder threw away; each of Off, Repair and Repair and
+  extend says in words what it takes or adds, and `LOSSY_ONLY` under them says which files are
+  touched and that a repaired one is no longer bit-perfect.
 - **A palette is shown rather than named.** `kit::preview` is a strip of four bands — the theme's
   sidebar, its panes, what it raises above them and the accent that would be worn — under the
   palette's name inside a card that takes the accent as its border when it is the one worn. An

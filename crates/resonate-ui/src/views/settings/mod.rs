@@ -47,6 +47,8 @@ pub(crate) const FILTER_PLACEHOLDER: &str = "Find a setting…";
 const REVERT_HINT: &str = "Put this back to what Resonate was built with, and take the key out of \
                            the settings file";
 
+const EXPERIMENTAL: &str = "EXPERIMENTAL";
+
 const RESET_HINT: &str = "Put every setting in this category back to what Resonate was built with";
 
 const NOTHING_FOUND: &str = "No setting answers to that.";
@@ -414,6 +416,9 @@ impl RootView {
             .child(
                 kit::section_header()
                     .child(kit::section_name(group.title()))
+                    .when(group.is_experimental(), |header| {
+                        header.child(kit::badge(EXPERIMENTAL, theme::lossy()))
+                    })
                     .when(moved, |header| header.child(self.revert(group, cx)))
                     .child(hint::explains(group.title(), group.hint())),
             )
