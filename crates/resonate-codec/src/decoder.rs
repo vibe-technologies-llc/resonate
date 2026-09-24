@@ -364,7 +364,7 @@ impl Decoder {
 
         if self.info.is_seekable {
             let landed = self.seek_reader(start)?;
-            self.restart(landed);
+            self.restart(landed)?;
         }
         if self.position < start {
             self.discard_to(start)?;
@@ -583,7 +583,7 @@ impl Decoder {
 
         let wanted = self.origin.saturating_add(to);
         let landed = self.seek_reader(wanted)?;
-        self.restart(landed);
+        self.restart(landed)?;
         self.discard_to(wanted)?;
 
         Ok(self.position())
@@ -602,9 +602,11 @@ impl Decoder {
         self.last_packet = None;
     }
 
-    fn restart(&mut self, landed: Frames) {
+    fn restart(&mut self, landed: Landing) -> Result<()> {
         self.reset();
-        self.position = landed;
+        self.position = landed.at;
+        self.skip(landed.short_of_the_music.get())?;
+        Ok(())
     }
 
     fn track(&self) -> StreamTrackId {
@@ -714,7 +716,7 @@ impl Decoder {
         Ok(frames - left)
     }
 
-    fn seek_reader(&mut self, to: Frames) -> Result<Frames> {
+    fn seek_reader(&mut self, to: Frames) -> Result<Landing> {
         let Self {
             location,
             reading,
@@ -725,7 +727,12 @@ impl Decoder {
         let timeline = *timeline;
 
         let coded = match reading {
-            Held::Dsd(held) => return held.seek(to),
+            Held::Dsd(held) => {
+                return held.seek(to).map(|at| Landing {
+                    at,
+                    short_of_the_music: Frames::ZERO,
+                });
+            }
             Held::Coded(coded) => coded,
         };
         let to = to.saturating_sub(crate::opus::pre_roll(info.codec));
@@ -746,8 +753,17 @@ impl Decoder {
             .seek(SeekMode::Accurate, seek_to)
             .map_err(|source| Error::from_symphonia(source, CodecOp::Seek, location))?;
 
-        Ok(timeline.frames(landed.actual_ts))
+        Ok(Landing {
+            at: timeline.frames(landed.actual_ts),
+            short_of_the_music: timeline.short_of_the_music(landed.actual_ts),
+        })
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Landing {
+    at: Frames,
+    short_of_the_music: Frames,
 }
 
 fn padding_past_an_open_window(info: &MediaInfo) -> usize {

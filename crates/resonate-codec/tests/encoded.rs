@@ -2115,3 +2115,39 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         "writing the tags moved the audio"
     );
 }
+
+#[test]
+fn a_seek_landing_ahead_of_the_music_does_not_hear_the_priming() {
+    let lanes = usize::from(CHANNELS);
+    for (name, codec) in [
+        ("primed.mp3", &["-c:a", "libmp3lame"][..]),
+        ("primed.ogg", &["-c:a", "libvorbis"][..]),
+        ("primed.opus", &["-c:a", "libopus"][..]),
+    ] {
+        let tree = Tree::new();
+        let Some((path, _)) = fixture(&tree, name, codec) else {
+            return;
+        };
+        let whole = decode(&path).samples;
+
+        for at in [Frames::ZERO, Frames(1_000)] {
+            let (mut decoder, info) =
+                Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+                    .expect("a well-formed file opens");
+            assert!(info.priming() > Frames::ZERO, "{name} declared no priming");
+            decoder
+                .seek(Frames(u64::from(RATE)))
+                .expect("a seek into the track");
+            assert_eq!(decoder.seek(at).expect("a seek back"), at);
+            let from_there = drain(&mut decoder, info.spec);
+
+            let skipped = at.get() as usize * lanes;
+            assert_eq!(from_there.len(), whole.len() - skipped);
+            let apart = drift(&from_there, &whole[skipped..]);
+            assert!(
+                apart < 0.01,
+                "a seek to {at} in {name} landed {apart:e} RMS of full scale away from the whole decode"
+            );
+        }
+    }
+}

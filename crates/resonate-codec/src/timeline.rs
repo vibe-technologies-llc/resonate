@@ -43,6 +43,11 @@ impl Timeline {
         self.span(Ticks::new(elapsed))
     }
 
+    pub fn short_of_the_music(&self, ts: Timestamp) -> Frames {
+        let short = u64::try_from(self.music_at.saturating_delta(ts).get()).unwrap_or(0);
+        self.span(Ticks::new(short))
+    }
+
     pub fn span(&self, ticks: Ticks) -> Frames {
         if self.is_sample_accurate() {
             return Frames(ticks.get());
@@ -120,6 +125,15 @@ mod tests {
         assert_eq!(timeline.timestamp(Frames(0)), Some(Timestamp::new(576)));
         assert_eq!(timeline.frames(Timestamp::new(576)), Frames(0));
         assert_eq!(timeline.frames(Timestamp::new(0)), Frames(0));
+        assert_eq!(timeline.short_of_the_music(Timestamp::new(0)), Frames(576));
+        assert_eq!(
+            timeline.short_of_the_music(Timestamp::new(576)),
+            Frames::ZERO
+        );
+        assert_eq!(
+            timeline.short_of_the_music(Timestamp::new(1_000)),
+            Frames::ZERO
+        );
     }
 
     #[test]

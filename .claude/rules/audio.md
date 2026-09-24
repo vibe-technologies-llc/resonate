@@ -209,7 +209,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `music_at` is `Timestamp::ZERO` for it; one that did not gets `Track::start_ts` plus the scanned
   priming. Carrying `start_ts` and the priming as two fields instead had ogg wrong both ways round,
   because ogg is the one reader that *does* set `start_ts` to `-delay`: a seek landed where it was
-  asked and then decoded 896 frames short of the rest of the track.
+  asked and then decoded 896 frames short of the rest of the track. A seek can land *ahead* of
+  `music_at` — back to the start, or anywhere inside Opus's pre-roll — and a frame count cannot
+  say how far, so `seek_reader` answers a `Landing` carrying `short_of_the_music` beside the frame
+  and `restart` drops that much before it counts; saturating it to frame zero played the priming
+  as music and heard the rest of the track that many frames late.
 - **Every revision of a file's metadata is read, not only the newest.** symphonia's
   `Metadata::skip_to_latest` discards the revisions it walks past, and a container publishes more
   than one as a matter of course: Matroska pushes one per `Tags` element, isomp4 one for a top-level
