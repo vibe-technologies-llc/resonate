@@ -1133,27 +1133,50 @@ impl Pass<'_> {
 
         let mut asked = 0;
         let mut spent = AHashSet::new();
-        while asked < queue.len() {
-            if self.progress.is_cancelled() {
-                return Ok(());
-            }
-            self.lift(options, &spent, &mut queue, asked)?;
-            match &queue[asked] {
-                Ask::Album(album) => {
-                    spent.insert(Seek::Album(album.id));
-                    self.album(album)?;
+        loop {
+            while asked < queue.len() {
+                if self.progress.is_cancelled() {
+                    return Ok(());
                 }
-                Ask::Track(track) => self.track(*track)?,
-                Ask::Artist(artist) => {
-                    spent.insert(Seek::Artist(*artist));
-                    self.artist(*artist)?;
+                self.lift(options, &spent, &mut queue, asked)?;
+                match &queue[asked] {
+                    Ask::Album(album) => {
+                        spent.insert(Seek::Album(album.id));
+                        self.album(album)?;
+                    }
+                    Ask::Track(track) => self.track(*track)?,
+                    Ask::Artist(artist) => {
+                        spent.insert(Seek::Artist(*artist));
+                        self.artist(*artist)?;
+                    }
                 }
+                asked += 1;
             }
-            asked += 1;
+            let born = self.artists_born_in_the_pass(options, &spent)?;
+            if born.is_empty() {
+                break;
+            }
+            queue.extend(born.into_iter().map(Ask::Artist));
         }
 
         self.look_again_for_covers()?;
         self.look_again_for_portraits()
+    }
+
+    fn artists_born_in_the_pass(
+        &self,
+        options: &EnrichOptions,
+        spent: &AHashSet<Seek>,
+    ) -> Result<Vec<ArtistId>> {
+        if options.at_most.is_some() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .library
+            .artists_to_ask(WAITS, options.refresh)?
+            .into_iter()
+            .filter(|artist| !spent.contains(&Seek::Artist(*artist)))
+            .collect())
     }
 
     fn lift(

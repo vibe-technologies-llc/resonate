@@ -9891,6 +9891,39 @@ fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search(
 }
 
 #[test]
+fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass() -> Result<()> {
+    let (_tree, library, ..) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "An Orbiters Tribute")
+            .identified(MUSICBRAINZ, RECORDING),
+    )?;
+    let fake = Arc::new(Fake::new(Canned {
+        recordings: vec![orbits_recording(
+            RECORDING,
+            "One of These Days",
+            CODE,
+            on_orbits(1),
+        )],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    assert!(
+        fake.calls().contains(&Called::Artist(mbid(ORBITERS))),
+        "the artist the recording credited was left for the next pass: {:?}",
+        fake.calls()
+    );
+    let artist = artist_named(&library, "The Orbiters")?;
+    let detail = library
+        .artist_detail(artist.id)?
+        .expect("the artist is known");
+    assert!(detail.answered.is_some());
+    Ok(())
+}
+
+#[test]
 fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
     let (_tree, library, database, file) =
         scanned_lone(Wav::new().text(TITLE, "One of These Days"))?;

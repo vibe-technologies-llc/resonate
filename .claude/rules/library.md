@@ -660,7 +660,14 @@ through `Player::media` like any other unscanned row.
   after the album loop had finished; one queue holding both cannot, and reading the row where it is
   used is what makes that ordering irrelevant rather than load-bearing — which
   `an_artist_named_in_a_release_credit_is_looked_up_by_the_credit_id_and_never_searched` is the
-  claim of.
+  claim of. **An artist the pass itself brings into the catalog is asked before the pass ends.** A
+  recording or a release that lands can bill somebody no row named yet — the Witcher 2 score's
+  tracks landed crediting Adam Skorupa, Krzysztof Wierzynkiewicz and Oleksa Lozowchuk by id — and
+  that row was due only on the *next* pass, so it sat with an mbid, no profile and no portrait.
+  `Pass::run` reads `artists_to_ask` again once the queue is walked and walks whatever it names
+  that the pass has not spent, until nothing new is due; a capped run (`--albums`) does not, the
+  cap being a promise about how much is asked.
+  `an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass` is the claim.
 - **`asked` and `answered` are the two clocks, `asks` and `refusals` are the columns they are read
   with, and `Waits` is the three waits in one value.** `due_again` writes the clause for a
   table's alias and `albums`, `tracks` and `artists` are each read through it: never asked, asked
