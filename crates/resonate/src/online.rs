@@ -5,6 +5,8 @@ use std::{fs, path::PathBuf, sync::OnceLock, time::SystemTime};
 #[cfg(feature = "online")]
 use parking_lot::Mutex;
 use resonate_eq::Corrected;
+#[cfg(feature = "online")]
+use resonate_library::Scrobbler;
 use resonate_library::{Fingerprinters, Library, Reference};
 use resonate_listen::Recognisers;
 #[cfg(feature = "ui")]
@@ -12,7 +14,9 @@ use resonate_lyrics::Lyricists;
 #[cfg(all(feature = "online", feature = "ui"))]
 use resonate_online::Lrclib;
 #[cfg(feature = "online")]
-use resonate_online::{AcoustId, Audd, AutoEq, Client, Identity, Introduction, Online, Shazam};
+use resonate_online::{
+    AcoustId, Audd, AutoEq, Client, Identity, Introduction, ListenBrainz, Online, Shazam,
+};
 
 #[cfg(feature = "online")]
 use crate::config;
@@ -109,6 +113,11 @@ pub fn fingerprinters(config: &Config) -> Fingerprinters {
         Some(key) => local.and(Arc::new(AcoustId::new(client(config), key))),
         None => local,
     }
+}
+
+#[cfg(feature = "online")]
+pub fn listenbrainz(config: &Config, token: String) -> Arc<dyn Scrobbler> {
+    Arc::new(ListenBrainz::new(client(config), token))
 }
 
 #[cfg(not(feature = "online"))]

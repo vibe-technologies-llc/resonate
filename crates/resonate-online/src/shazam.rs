@@ -176,6 +176,7 @@ impl Recogniser for Shazam {
                     content_type: JSON.to_owned(),
                     encoded: Encoded::Plain,
                     bytes: body,
+                    authorization: None,
                 },
             )
             .map_err(|error| error.into_listen_error(self.service.clone()))?;

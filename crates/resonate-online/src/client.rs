@@ -15,7 +15,7 @@ use ureq::{
     Agent, Body,
     http::{
         HeaderMap, Response, StatusCode,
-        header::{RETRY_AFTER, USER_AGENT},
+        header::{AUTHORIZATION, RETRY_AFTER, USER_AGENT},
     },
 };
 
@@ -57,6 +57,7 @@ pub(crate) struct Posted {
     pub(crate) content_type: String,
     pub(crate) encoded: Encoded,
     pub(crate) bytes: Vec<u8>,
+    pub(crate) authorization: Option<String>,
 }
 
 impl Posted {
@@ -70,6 +71,7 @@ impl Posted {
                 content_type: FORM.to_owned(),
                 encoded: Encoded::Gzip,
                 bytes,
+                authorization: None,
             },
             Err(error) => {
                 tracing::debug!(%error, "a form could not be packed and is sent as it stands");
@@ -77,6 +79,7 @@ impl Posted {
                     content_type: FORM.to_owned(),
                     encoded: Encoded::Plain,
                     bytes: plain,
+                    authorization: None,
                 }
             }
         }
@@ -89,6 +92,7 @@ const OTHERS_INTERVAL: Duration = Duration::from_millis(250);
 const ACOUSTID_INTERVAL: Duration = Duration::from_millis(334);
 const SHAZAM_INTERVAL: Duration = Duration::from_secs(3);
 const AUDD_INTERVAL: Duration = Duration::from_secs(1);
+const LISTENBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
 const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const RETRY_AFTER_BY_DEFAULT: Duration = Duration::from_secs(2);
 const BUSY_RETRIES: u32 = 3;
@@ -196,6 +200,7 @@ impl Host {
             Self::MusicBrainz => MUSICBRAINZ_INTERVAL,
             Self::AcoustId => ACOUSTID_INTERVAL,
             Self::Shazam => SHAZAM_INTERVAL,
+            Self::ListenBrainz => LISTENBRAINZ_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
             Self::AppleArtwork
             | Self::AppleMusic
@@ -348,6 +353,10 @@ impl Client {
                         .header(USER_AGENT, &introduced)
                         .header("Content-Type", posted.content_type.as_str())
                         .header("Content-Language", CONTENT_LANGUAGE);
+                    let request = match &posted.authorization {
+                        Some(authorization) => request.header(AUTHORIZATION, authorization),
+                        None => request,
+                    };
                     match posted.encoded {
                         Encoded::Plain => request,
                         Encoded::Gzip => request.header("Content-Encoding", GZIP),

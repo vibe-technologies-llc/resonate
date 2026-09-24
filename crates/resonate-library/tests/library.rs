@@ -28,13 +28,14 @@ use resonate_library::{
     CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding, EnrichOptions, EnrichSummary,
     Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
     HeldMedium, ImageFormat, ImportOptions, ImportSummary, Isrc, Kept, Layout, Library, LifeSpan,
-    Link, LookupOp, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
-    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, Pruned, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Search, Service, SheetEncoding,
-    Sidecar, SortOrder, Sought, Sources, Suggestion, TagField, TagSet, TagSource, Track,
-    TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Link, ListeningService, LookupOp, Mbid, Medium, Missing, MissingTrack, OrganiseOptions,
+    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, Pruned,
+    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
+    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
+    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, Suggestion, TagField,
+    TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording,
+    Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -4199,6 +4200,165 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_nothing() -> Result<()> 
             )?
             .is_none()
     );
+    Ok(())
+}
+
+#[derive(Default)]
+struct Told {
+    batches: Mutex<Vec<Vec<Scrobble>>>,
+    malformed: Option<&'static str>,
+    unreachable: std::sync::atomic::AtomicBool,
+}
+
+impl Told {
+    fn refusing(title: &'static str) -> Self {
+        Self {
+            malformed: Some(title),
+            ..Self::default()
+        }
+    }
+
+    fn titles(&self) -> Vec<Vec<String>> {
+        self.batches
+            .lock()
+            .iter()
+            .map(|batch| batch.iter().map(|told| told.title.clone()).collect())
+            .collect()
+    }
+}
+
+impl Scrobbler for Told {
+    fn service(&self) -> ListeningService {
+        ListeningService::ListenBrainz
+    }
+
+    fn submit(&self, listens: &[Scrobble]) -> Result<()> {
+        if self.unreachable.load(Ordering::Relaxed) {
+            return Err(Error::Unreachable {
+                op: LookupOp::Submit,
+                source: io::Error::from(io::ErrorKind::ConnectionRefused),
+            });
+        }
+        self.batches.lock().push(listens.to_vec());
+        match self.malformed {
+            Some(title) if listens.iter().any(|told| told.title == title) => Err(Error::Refused {
+                op: LookupOp::Submit,
+                status: 400,
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {
+    let tree = Tree::new();
+    let cold = tree.write(
+        "cold.wav",
+        &Wav::new()
+            .text(TITLE, "Cold")
+            .text(ARTIST, "Ada")
+            .text(ALBUM, "Winter")
+            .text(TRACK, "3")
+            .build(),
+    );
+    let heat = tree.write(
+        "heat.wav",
+        &Wav::new()
+            .frames(44_100)
+            .text(TITLE, "Heat")
+            .text(ARTIST, "Ben")
+            .build(),
+    );
+    let loose = tree.write("loose.wav", &Wav::new().text(TITLE, "Loose").build());
+
+    let library = Library::open_in_memory().expect("an in-memory library");
+    scan(&library, &options(&tree)).expect("a scan of three files");
+    (tree, library, [cold, heat, loose].map(MediaLocation::local))
+}
+
+#[test]
+fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once() -> Result<()> {
+    let (_tree, library, [cold, heat, loose]) = scanned_listening();
+    library.track_played(&cold, None)?;
+    let told = Told::default();
+
+    let started = library.submit_listens(&told)?;
+    assert!(started.started);
+    assert_eq!(started.submitted, 0);
+    assert!(told.titles().is_empty());
+
+    library.track_played(&heat, None)?;
+    library.track_played(&loose, None)?;
+    library.track_played(&cold, None)?;
+    let submitted = library.submit_listens(&told)?;
+
+    assert_eq!(submitted.submitted, 2);
+    assert_eq!(submitted.unnamed, 1);
+    assert!(!submitted.started);
+    assert_eq!(told.titles(), vec![vec!["Heat", "Cold"]]);
+    let batch = told.batches.lock()[0].clone();
+    assert_eq!(batch[0].artist, "Ben");
+    assert_eq!(batch[0].album, None);
+    assert_eq!(batch[0].length, Some(Duration::from_secs(1)));
+    assert_eq!(batch[1].artist, "Ada");
+    assert_eq!(batch[1].album.as_deref(), Some("Winter"));
+    assert_eq!(batch[1].number, Some(3));
+    assert!(batch[0].listen < batch[1].listen);
+    assert!(batch[0].at <= batch[1].at);
+
+    assert_eq!(library.submit_listens(&told)?.submitted, 0);
+    assert_eq!(told.titles().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told() -> Result<()> {
+    let (_tree, library, [cold, heat, _]) = scanned_listening();
+    let told = Told::refusing("Heat");
+    library.submit_listens(&told)?;
+
+    library.track_played(&cold, None)?;
+    library.track_played(&heat, None)?;
+    library.track_played(&cold, None)?;
+    let submitted = library.submit_listens(&told)?;
+
+    assert_eq!(submitted.submitted, 2);
+    assert_eq!(submitted.refused, 1);
+    assert_eq!(
+        told.titles(),
+        vec![
+            vec!["Cold", "Heat", "Cold"],
+            vec!["Cold"],
+            vec!["Heat"],
+            vec!["Cold"],
+        ]
+    );
+
+    assert_eq!(library.submit_listens(&told)?, Default::default());
+    assert_eq!(told.titles().len(), 4);
+    Ok(())
+}
+
+#[test]
+fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<()> {
+    let (_tree, library, [cold, heat, _]) = scanned_listening();
+    let told = Told::default();
+    library.submit_listens(&told)?;
+    library.track_played(&cold, None)?;
+    library.track_played(&heat, None)?;
+
+    told.unreachable.store(true, Ordering::Relaxed);
+    assert!(matches!(
+        library.submit_listens(&told),
+        Err(Error::Unreachable {
+            op: LookupOp::Submit,
+            ..
+        })
+    ));
+
+    told.unreachable.store(false, Ordering::Relaxed);
+    assert_eq!(library.submit_listens(&told)?.submitted, 2);
+    assert_eq!(told.titles(), vec![vec!["Cold", "Heat"]]);
     Ok(())
 }
 

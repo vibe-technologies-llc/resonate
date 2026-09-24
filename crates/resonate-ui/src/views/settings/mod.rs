@@ -392,6 +392,7 @@ impl RootView {
             Group::Contact => self.contact_group(cx),
             Group::Recognition => self.recognition_group(cx),
             Group::Listening => self.listening_group(cx),
+            Group::Submitting => self.submitting_group(cx),
             Group::LookUpNow => self.look_up_group(cx),
             Group::Notifications => self.notifications_group(cx),
             Group::Discord => self.discord_group(cx),
@@ -504,6 +505,7 @@ impl RootView {
                 self.clear_acoustid_key(cx);
                 self.clear_audd_token(cx);
             }
+            Group::Submitting => self.clear_listenbrainz_token(cx),
             Group::Listening => {
                 self.listen.update(cx, |listen, cx| {
                     listen.choose(Listening::Desktop, cx);
@@ -543,6 +545,7 @@ impl RootView {
         let contact_given = !self.contact.read(cx).text().trim().is_empty();
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
         let token_given = !self.audd.read(cx).text().trim().is_empty();
+        let submitting_given = !self.listenbrainz.read(cx).text().trim().is_empty();
         let listen = self.listen.read(cx);
         let listening_from = listen.from().clone();
         let listening_for = listen.length();
@@ -558,6 +561,7 @@ impl RootView {
             contact_given,
             key_given,
             token_given,
+            submitting_given,
             listening_from,
             listening_for,
             resume,

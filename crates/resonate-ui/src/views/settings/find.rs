@@ -115,6 +115,7 @@ pub(crate) enum Group {
     Contact,
     Recognition,
     Listening,
+    Submitting,
     LookUpNow,
     Notifications,
     Discord,
@@ -131,7 +132,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 44] = [
+    pub(crate) const ALL: [Self; 45] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
@@ -163,6 +164,7 @@ impl Group {
         Self::Contact,
         Self::Recognition,
         Self::Listening,
+        Self::Submitting,
         Self::LookUpNow,
         Self::Notifications,
         Self::Discord,
@@ -208,6 +210,7 @@ impl Group {
             | Self::Contact
             | Self::Recognition
             | Self::Listening
+            | Self::Submitting
             | Self::LookUpNow => Category::Online,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
@@ -257,6 +260,7 @@ impl Group {
             Self::Contact => "Contact",
             Self::Recognition => "Recognition",
             Self::Listening => "Listening",
+            Self::Submitting => "ListenBrainz",
             Self::LookUpNow => "Look up now",
             Self::Notifications => "Notifications",
             Self::Discord => "Discord",
@@ -306,6 +310,7 @@ impl Group {
             Self::Contact => CONTACT_HINT,
             Self::Recognition => RECOGNITION_HINT,
             Self::Listening => LISTENING_HINT,
+            Self::Submitting => SUBMITTING_HINT,
             Self::LookUpNow => LOOKUP_HINT,
             Self::Notifications => NOTIFICATIONS_HINT,
             Self::Discord => DISCORD_HINT,
@@ -396,6 +401,10 @@ impl Group {
                 "listen shazam microphone mic desktop monitor what is playing identify song \
                  name that tune seconds clip"
             }
+            Self::Submitting => {
+                "scrobble scrobbling last.fm lastfm listens history submit plays heard token \
+                 profile statistics"
+            }
             Self::LookUpNow => "enrich refresh musicbrainz covers portraits",
             Self::Notifications => "notify popup toast banner song track change desktop osd",
             Self::Discord => {
@@ -461,6 +470,7 @@ impl Group {
             Self::Contact => &[SettingKey::Contact],
             Self::Recognition => &[SettingKey::AcoustidKey, SettingKey::AuddToken],
             Self::Listening => &[SettingKey::ListenFrom, SettingKey::ListenFor],
+            Self::Submitting => &[SettingKey::ListenbrainzToken],
             Self::Notifications => &[SettingKey::Notify],
             Self::Discord => &[SettingKey::Discord, SettingKey::DiscordApp],
             Self::DiscordShows => &[
@@ -755,6 +765,13 @@ pub(crate) const LISTENING_HINT: &str = "What Listen records — the desktop's o
                                          microphone — and for how long, before it asks Shazam \
                                          and whatever else is keyed what the song is. Ctrl+L or \
                                          the ear in the header opens it.";
+
+pub(crate) const SUBMITTING_HINT: &str = "A ListenBrainz user token, which has every play this \
+                                          library counts told to that service as it is counted — \
+                                          its title, its artist, its album and the MusicBrainz \
+                                          ids the catalog holds for it. Plays counted before a \
+                                          token is given are not sent, and nothing is sent \
+                                          without one or while online is off.";
 
 pub(crate) const CONTACT_HINT: &str = "What the User-Agent carries beside the name and the \
                                        version, so a service can say who to write to when a client \

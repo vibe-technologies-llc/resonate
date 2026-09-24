@@ -21,6 +21,7 @@ pub enum Host {
     Audd,
     Deezer,
     DeezerPictures,
+    ListenBrainz,
 }
 
 impl Host {
@@ -39,6 +40,7 @@ impl Host {
             Self::Audd => "https://api.audd.io",
             Self::Deezer => "https://api.deezer.com",
             Self::DeezerPictures => "https://cdn-images.dzcdn.net",
+            Self::ListenBrainz => "https://api.listenbrainz.org",
         }
     }
 }

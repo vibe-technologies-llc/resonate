@@ -110,6 +110,27 @@ through `Player::media` like any other unscanned row.
   so nothing downstream has to draw around a gap. `most_listened` is free to sort on a
   `count(*)` precisely because it is its own read and not a `SortOrder` — which is why the
   Statistics pane can answer what was heard most this month and the tracks pane still cannot.
+- **What a service has been told is a mark in the history, and the history is what is told.**
+  `submissions` — the sixth step in `MIGRATIONS` — holds one row per `ListeningService`, the id of
+  the last `listens` row that service has been told of, and `scrobble.rs` is the pass:
+  `Library::submit_listens` reads the listens past the mark in id order, `SUBMITTED_AT_ONCE` — a
+  hundred — at a time, joined to the track, its album and its artist for the names and the
+  MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` and moves the mark past the
+  batch in a `max` so it never goes back. A listen of a row naming no title or no artist is a
+  `Submitted::unnamed` and passed over, because a service can file nothing under a blank name. A
+  batch the service refuses as malformed — `Refused` with a 400 — is told again a listen at a
+  time, so one bad row costs itself rather than every play after it, and a listen refused alone is
+  `Submitted::refused` and passed over; any other failure moves the mark only past what was told
+  and answers the error, so the rest is told on the next ask. A service with no row yet is marked
+  at the last listen the history holds and told nothing — `Submitted::started` — which is what
+  keeps a token given today from sending ten years of history. Nothing is written when a play is
+  counted, so it does not matter which process counted it, and a listen whose track leaves the
+  catalog before it is told leaves with it on the cascade. The claims are
+  `a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once`,
+  `a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told` and
+  `a_play_a_service_could_not_be_reached_for_is_told_the_next_time`. Two runs submitting at once
+  may tell the same batch twice; ListenBrainz keeps one listen per moment and name, so nothing
+  guards against it.
 - **A suggestion is a saved query with a name on it.** `suggest.rs` answers
   `Suggestion { name, reason, query, rows, length, pictured_by }`, and the query is written through
   `Display for Search` rather than as a literal, so a suggestion and what the search box would
@@ -649,9 +670,9 @@ through `Player::media` like any other unscanned row.
   and `ReleaseMatch`, the second carrying the hit's `group` and its whole `credit`; `Recording`,
   `RecordingRelease`, `RecordingAsked` and `RecordingMatch`; `ReleaseGroup`, `GroupRelease`,
   `GroupAsked` and `GroupMatch`; `ArtistProfile`, `LifeSpan`, `Genre`, `ArtistRelease` and
-  `ArtistMatch`; `Link`, `Relation` and `Service`, which are core's and re-exported; and `LookupOp`, the fifteen things a service
-  can be asked for, twelve of them a reference's and the other three the lyric provider's and the
-  correction source's — and the `Reference` trait itself, whose thirteen methods answer `Option`s
+  `ArtistMatch`; `Link`, `Relation` and `Service`, which are core's and re-exported; and `LookupOp`, the seventeen things a service
+  can be asked for, twelve of them a reference's and the rest the lyric provider's, the correction
+  source's, a recogniser's and a scrobbler's — and the `Reference` trait itself, whose thirteen methods answer `Option`s
   and `Vec`s in that vocabulary and nothing about how they were reached. `enrich.rs` is the pass:
   a thread named `resonate-enrich` behind an `EnrichHandle`, with `EnrichProgress` counting
   albums, releases, matched rows, covers, tracks, the tracks a lookup renamed, artists,

@@ -21,6 +21,10 @@ const MIGRATIONS: &[&str] = &[
          picture  TEXT PRIMARY KEY,
          likeness BLOB
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE submissions (
+         service TEXT PRIMARY KEY,
+         through INTEGER NOT NULL
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

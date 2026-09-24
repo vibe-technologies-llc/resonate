@@ -136,6 +136,7 @@ impl Recogniser for Audd {
                     content_type: format!("multipart/form-data; boundary={boundary}"),
                     encoded: Encoded::Plain,
                     bytes: body,
+                    authorization: None,
                 },
             )
             .map_err(|error| error.into_listen_error(self.service.clone()))?;

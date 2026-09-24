@@ -54,6 +54,7 @@ pub enum ConfigKey {
     Inbox,
     AcoustidKey,
     AuddToken,
+    ListenbrainzToken,
     ListenFrom,
     ListenFor,
     Discord,
@@ -66,7 +67,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 53] = [
+    pub const ALL: [Self; 54] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -111,6 +112,7 @@ impl ConfigKey {
         Self::Inbox,
         Self::AcoustidKey,
         Self::AuddToken,
+        Self::ListenbrainzToken,
         Self::ListenFrom,
         Self::ListenFor,
         Self::Discord,
@@ -168,6 +170,7 @@ impl ConfigKey {
             Self::Inbox => "inbox",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
+            Self::ListenbrainzToken => "listenbrainz-token",
             Self::ListenFrom => "listen-from",
             Self::ListenFor => "listen-for",
             Self::Discord => "discord",

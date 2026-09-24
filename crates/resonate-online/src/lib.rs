@@ -7,6 +7,7 @@ mod commons;
 mod coverart;
 mod deezer;
 mod error;
+mod listenbrainz;
 mod lrclib;
 mod musicbrainz;
 mod query;
@@ -20,6 +21,7 @@ pub use crate::{
     autoeq::AutoEq,
     client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
+    listenbrainz::ListenBrainz,
     lrclib::Lrclib,
     reference::Online,
     shazam::Shazam,

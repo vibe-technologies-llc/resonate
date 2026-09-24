@@ -294,11 +294,11 @@
 - The pressings of a group are fetched with their titles and countries and not kept: `settle_group`
   lands one and drops the rest, so nothing lists a release's other editions or says which pressing
   the catalog holds against which it could
-- Scrobbling is not written down anywhere yet. `Listening` and `COUNTS_AS_HEARD` are already the
-  hook a ListenBrainz or Last.fm submitter needs — a track heard, named, at a moment — and the
-  paced `Client`, its User-Agent and its per-host interval are the same ones it would want. A
-  submission queue has to survive a restart, so it is a table beside the cache rather than a
-  channel
+- ListenBrainz is told what was heard and nothing more: no `playing_now` is sent as a track
+  starts, a listen's moment is when the play was counted rather than when it began, and the plays
+  counted before a token was first given are never sent — an import of the history would be a
+  gesture of its own. Last.fm is not reached at all; its signed requests and session key are a
+  `Scrobbler` beside the one there is
 
 ## UI
 - The whole window is one `Render`. `RootView::render` is the only `impl Render` outside `Field`,

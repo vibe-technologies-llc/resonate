@@ -18,9 +18,10 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
 
 ## The client
 
-- **One `Client` serves ten hosts, and it says what this build is and nothing else.** `Host` is
+- **One `Client` serves every host, and it says what this build is and nothing else.** `Host` is
   `MusicBrainz`, `CoverArtArchive`, `Commons`, `Wikidata`, `Lrclib`, `AutoEq`, `AcoustId`,
-  `Shazam`, `Audd` and `AppleArtwork`, each with its base URL in `Host::base`. `AcoustId` is paced at `ACOUSTID_INTERVAL`, 334 ms, the
+  `Shazam`, `Audd`, `AppleArtwork`, `AppleMusic`, `Deezer`, `DeezerPictures` and `ListenBrainz`,
+  each with its base URL in `Host::base`. `AcoustId` is paced at `ACOUSTID_INTERVAL`, 334 ms, the
   three requests a second that service asks for, and is asked with the `acoustid-key` the listener
   registered and nothing else; `analysis.md` has how its answer is read. The last of them is `raw.githubusercontent.com/jaakkopasanen/AutoEq/master`, a
   file server rather than an API, which is why `eq.md` says the search that reads it lives in
@@ -323,6 +324,34 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   name: a link MusicBrainz holds names the artist, and a name alone would be a guess. Deezer
   is last because its picture CDN answers 403 to every request from some networks — this
   machine's among them — whatever the request carries, and there it is only ever a miss.
+
+## ListenBrainz
+
+- **What was heard is posted as JSON under the listener's token, and nothing else about them.**
+  `ListenBrainz` is the `Scrobbler` the library's `submit_listens` is handed. It POSTs
+  `/1/submit-listens` on `Host::ListenBrainz`, paced at `LISTENBRAINZ_INTERVAL` of a second, with
+  `Authorization: Token <token>` — `Posted::authorization`, the one header a body carries that the
+  others leave `None` — and a `listen_type` of `single` for one listen and `import` for several,
+  which is what the service asks a batch to be called. A listen is its moment in whole seconds —
+  when the catalog counted it, which is when the play earned its count rather than when it began —
+  the artist, the title and, where the catalog holds them, the album, the recording, release and
+  artist MBIDs, the track number and the length in milliseconds, with `media_player`,
+  `submission_client` and `submission_client_version` naming this build as its User-Agent does.
+  An answer whose `status` is not `ok` is `Unreadable`; a status is `Refused` like every other
+  host's, which is how the library tells a malformed batch — 400 — from a token refused — 401 —
+  and how the binary knows to stop asking under that token.
+  `a_listen_says_what_was_heard_when_and_nothing_the_catalog_does_not_hold` pins the document, and
+  `listenbrainz_refuses_a_token_it_never_issued_and_says_so_by_its_status` is the live test that
+  proves the request reaches the service and is read there.
+- **The binary's half is a thread that follows the file.** `submitting.rs` starts a thread named
+  `resonate-submit` for the window and for every command that plays: five seconds after it starts
+  and every `SUBMITTED_EVERY` of thirty after that it asks `Library::submit_listens`, doubling the
+  wait after each failure up to an hour. `Token` is `Followed` again for this key: the file's
+  modification time is weighed and `config::submitting_in` reads `online` and
+  `listenbrainz-token` out of it only where it moved, so a token typed into the window's
+  *ListenBrainz* group, or written by hand, is carried by the next submission, and `online` turned
+  off stops it. A 401 or a 403 holds that token back until the file names another. A build without
+  the feature starts nothing and warns once where a token is set.
 
 ## LRCLIB
 

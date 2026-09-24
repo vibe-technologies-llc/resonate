@@ -3154,6 +3154,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Devices => "the measured devices",
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
+        LookupOp::Submit => "a submission of what was heard",
     }
 }
 

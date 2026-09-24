@@ -100,6 +100,8 @@ const ACOUSTID_PLACEHOLDER: &str = "An AcoustID client key, then press enter";
 
 const AUDD_PLACEHOLDER: &str = "An AudD API token, then press enter";
 
+const LISTENBRAINZ_PLACEHOLDER: &str = "A ListenBrainz user token, then press enter";
+
 const DISCORD_APP_PLACEHOLDER: &str = "Your Discord application's id, then press enter";
 
 const DISCORD_ICON_PLACEHOLDER: &str = "An asset key or an image address, then press enter";
@@ -343,6 +345,7 @@ pub struct RootView {
     pub(crate) contact: Entity<Field>,
     pub(crate) acoustid: Entity<Field>,
     pub(crate) audd: Entity<Field>,
+    pub(crate) listenbrainz: Entity<Field>,
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
@@ -524,6 +527,20 @@ impl RootView {
         })
         .detach();
 
+        let listenbrainz = cx.new(|cx| {
+            let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx);
+            field.hold(online.listenbrainz_token.clone(), cx);
+            field
+        });
+        cx.subscribe_in(
+            &listenbrainz,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.listenbrainz_token_given(window, cx);
+            },
+        )
+        .detach();
+
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
             field.hold(
@@ -632,6 +649,7 @@ impl RootView {
             contact,
             acoustid,
             audd,
+            listenbrainz,
             discord_app,
             discord_icon,
             organising,
@@ -1138,6 +1156,41 @@ impl RootView {
         }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    fn listenbrainz_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let given = self.listenbrainz.read(cx).text().trim().to_owned();
+        self.listenbrainz
+            .update(cx, |token, cx| token.hold(given.clone(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.listenbrainz_token = given.clone();
+        });
+
+        let said = if given.is_empty() {
+            "Nothing heard is sent to ListenBrainz from now on"
+        } else {
+            "What is heard from now on is sent to ListenBrainz"
+        };
+        self.store(&Setting::ListenbrainzToken(given), cx);
+        self.report(Notice::Done(said.to_owned()), cx);
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    pub(crate) fn leave_listenbrainz_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.listenbrainz.read(cx).is_focused(window) {
+            return;
+        }
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    pub(crate) fn clear_listenbrainz_token(&self, cx: &mut Context<Self>) {
+        self.listenbrainz
+            .update(cx, |token, cx| token.hold(String::new(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.listenbrainz_token = String::new();
+        });
     }
 
     pub(crate) fn clear_audd_token(&self, cx: &mut Context<Self>) {
@@ -2225,6 +2278,10 @@ impl RootView {
         }
         if self.audd.read(cx).is_focused(window) {
             self.leave_audd_token(window, cx);
+            return;
+        }
+        if self.listenbrainz.read(cx).is_focused(window) {
+            self.leave_listenbrainz_token(window, cx);
             return;
         }
         if self.discord_app.read(cx).is_focused(window) {

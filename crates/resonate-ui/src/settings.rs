@@ -46,6 +46,7 @@ pub enum SettingKey {
     Contact,
     AcoustidKey,
     AuddToken,
+    ListenbrainzToken,
     ListenFrom,
     ListenFor,
     Equaliser,
@@ -73,7 +74,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 51] = [
+    pub const ALL: [Self; 52] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -101,6 +102,7 @@ impl SettingKey {
         Self::Contact,
         Self::AcoustidKey,
         Self::AuddToken,
+        Self::ListenbrainzToken,
         Self::ListenFrom,
         Self::ListenFor,
         Self::Equaliser,
@@ -157,6 +159,7 @@ pub enum Setting {
     Contact(String),
     AcoustidKey(String),
     AuddToken(String),
+    ListenbrainzToken(String),
     ListenFrom(Listening),
     ListenFor(Duration),
     Equaliser(bool),
@@ -216,6 +219,7 @@ impl Setting {
             Self::Contact(_) => SettingKey::Contact,
             Self::AcoustidKey(_) => SettingKey::AcoustidKey,
             Self::AuddToken(_) => SettingKey::AuddToken,
+            Self::ListenbrainzToken(_) => SettingKey::ListenbrainzToken,
             Self::ListenFrom(_) => SettingKey::ListenFrom,
             Self::ListenFor(_) => SettingKey::ListenFor,
             Self::Equaliser(_) => SettingKey::Equaliser,
@@ -252,6 +256,7 @@ pub struct Online {
     pub contact: String,
     pub acoustid_key: String,
     pub audd_token: String,
+    pub listenbrainz_token: String,
 }
 
 #[derive(Clone)]

@@ -6,10 +6,12 @@ use std::{
 
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
-use resonate_library::{Mbid, Reference, ReleaseAsked, Wording};
+use resonate_library::{
+    Error, LookupOp, Mbid, Reference, ReleaseAsked, Scrobble, Scrobbler, Wording,
+};
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
-use resonate_online::{AutoEq, Client, Identity, Lrclib, Online, Shazam};
+use resonate_online::{AutoEq, Client, Identity, ListenBrainz, Lrclib, Online, Shazam};
 
 const GATE: &str = "RESONATE_ONLINE_TESTS";
 const MEDDLE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
@@ -228,4 +230,36 @@ fn shazam_answers_a_clip_it_does_not_know_with_nothing_rather_than_a_refusal() {
         .recognise(&clip)
         .expect("the service answers this build's own user agent");
     assert_eq!(heard, None, "a run of synthetic notes was named");
+}
+
+#[test]
+fn listenbrainz_refuses_a_token_it_never_issued_and_says_so_by_its_status() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let listenbrainz = ListenBrainz::new(client, "not-a-token-anyone-was-given".to_owned());
+
+    let refused = listenbrainz.submit(&[Scrobble {
+        listen: resonate_core::ListenId::new(1).expect("a listen id is not zero"),
+        at: std::time::SystemTime::now(),
+        title: "Echoes".to_owned(),
+        artist: "Pink Floyd".to_owned(),
+        album: Some("Meddle".to_owned()),
+        recording: None,
+        release: Some(mbid(MEDDLE)),
+        artist_mbid: Some(mbid(PINK_FLOYD)),
+        number: Some(6),
+        length: Some(ECHOES_LASTS),
+    }]);
+
+    assert!(
+        matches!(
+            refused,
+            Err(Error::Refused {
+                op: LookupOp::Submit,
+                status: 401
+            })
+        ),
+        "{refused:?}"
+    );
 }

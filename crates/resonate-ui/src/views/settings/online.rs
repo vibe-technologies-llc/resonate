@@ -30,6 +30,10 @@ const KEY_NOTE: &str = "Used from the next start by the lookup, which names by e
 const TOKEN_NOTE: &str = "Used from the next start by Listen, which asks AudD beside Shazam. \
                           Leave it empty to ask Shazam alone.";
 
+const SUBMITTING_NOTE: &str = "Followed as soon as it is given: every play counted from then on \
+                               is sent to ListenBrainz within a minute. Leave it empty to send \
+                               nothing.";
+
 const LISTENING_NOTE: &str = "Listen names a song playing on the desktop or into a microphone, \
                               whether or not the library holds it. A microphone named in the \
                               Listen sheet is kept here too.";
@@ -202,6 +206,20 @@ impl RootView {
                 ),
             ))
             .child(note(TOKEN_NOTE))
+    }
+
+    pub(super) fn submitting_group(&mut self, cx: &mut Context<Self>) -> Div {
+        kit::section_body()
+            .child(kit::field(
+                "User token",
+                self.key_field(
+                    "listenbrainz-token",
+                    &self.listenbrainz,
+                    |this, window, cx| this.leave_listenbrainz_token(window, cx),
+                    cx,
+                ),
+            ))
+            .child(note(SUBMITTING_NOTE))
     }
 
     pub(super) fn listening_group(&mut self, cx: &mut Context<Self>) -> Div {

@@ -19,7 +19,7 @@ and `ureq`.
 - **The build carries no application id and presence is off.** `discord` defaults to false and
   `discord-app` to nothing, and `Presence::active` — switched on *and* naming an application — is
   the one gate everything asks. The id is the listener's own, registered in Discord's developer
-  portal, for the same reason `contact`, `acoustid-key` and `audd-token` are: a request says what
+  portal, for the same reason `contact`, `acoustid-key`, `audd-token` and `listenbrainz-token` are: a request says what
   this build is and nothing about who runs it.
 - **Inactive is no thread, no socket and no probe.** `Discord::new` starts nothing;
   `Discord::follow` spawns the `resonate-discord` thread when the presence becomes active and

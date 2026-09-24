@@ -494,6 +494,9 @@ Invariants the layering exists to protect:
   leaves the machine and `online::fingerprinters` registers nothing but the stub. `audd-token` is
   the third, and AudD is sent a clip only where it is set; Shazam asks for no key and is sent only
   a signature — the peaks of what was heard — and only when a listener asks to listen.
+  `listenbrainz-token` is the fourth, and it is the one that sends something about the listener
+  rather than about a file: with it set and `online` on, every play the catalog counts is told to
+  ListenBrainz under that token, and with it empty nothing heard leaves the machine.
 - **A guess is never written; only a strict match is, and the grouping key never follows it.**
   `enrich.rs` takes a release search only where the top hit scores `STRICT_SCORE` or over,
   declares the count the files declared — `TRACKTOTAL`, or the rows held where none did — and,
@@ -608,6 +611,15 @@ Invariants the layering exists to protect:
   missed in `Held`, `held_in` and `rewritten` is lost the first time somebody undoes an edit.
   `store::READ_BACKWARDS` went from 8 to 16 in the same pass, because it was exactly the count of
   sort orders and a ninth would have been read back as the direction bit.
+- **A play is told to ListenBrainz by reading the history, not by being handed over.**
+  `Library::submit_listens` walks `listens` past the mark `submissions` holds for the service and
+  hands the rows to a `Scrobbler` — the seam the library owns, the way it owns `Reference` — which
+  `resonate-online`'s `ListenBrainz` fills. Nothing is queued when a play is counted, so a play
+  counted by any process, offline or before a restart, is told by whichever run submits next, and
+  a service asked for the first time marks where the history stands and tells nothing before it.
+  The binary's `submitting.rs` is the thread that asks: the window and every command that plays
+  start one, it reads `listenbrainz-token` again wherever the settings file moved, and a token the
+  service refuses is left alone until it changes. `library.md` and `online.md` have the rest.
 - **What was listened to is read back rather than kept.** `listens` grew a `heard` — the
   nanoseconds of that visit actually listened to — and `listens_by_time`, and `statistics.rs` is
   three reads over them, each bounded by `listens.at >= ?` so the index serves it. A day is
@@ -1011,8 +1023,8 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-fifty-three have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-five have none, so the
+fifty-four have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-six have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `bluetooth-wake`,
@@ -1020,7 +1032,7 @@ settings pane and the file are the whole of how any of them is set: the output's
 `maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab` and `tab-counts`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `organise-as`, `notify`, `audd-token`,
-`listen-from`, `listen-for` and `inbox`, the last
+`listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
 chosen with the Library category's *The inbox* group, which polls from the window as well — and
 the seven that shape a Discord presence, `discord`, `discord-app`, `discord-shows`, `discord-art`,
 `discord-icon`, `discord-progress` and `discord-paused`, written by the Desktop category's two

@@ -139,6 +139,13 @@ impl Settings for File {
                     (!token.is_empty()).then(|| token.into()),
                 )
             }
+            Setting::ListenbrainzToken(token) => {
+                let token = token.trim();
+                (
+                    ConfigKey::ListenbrainzToken,
+                    (!token.is_empty()).then(|| token.into()),
+                )
+            }
             Setting::ListenFrom(from) => (ConfigKey::ListenFrom, Some(from.written().into())),
             Setting::ListenFor(length) => (
                 ConfigKey::ListenFor,
@@ -240,6 +247,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Contact => ConfigKey::Contact,
         SettingKey::AcoustidKey => ConfigKey::AcoustidKey,
         SettingKey::AuddToken => ConfigKey::AuddToken,
+        SettingKey::ListenbrainzToken => ConfigKey::ListenbrainzToken,
         SettingKey::ListenFrom => ConfigKey::ListenFrom,
         SettingKey::ListenFor => ConfigKey::ListenFor,
         SettingKey::Equaliser => ConfigKey::Equaliser,

@@ -320,6 +320,7 @@ pub enum LookupOp {
     Devices,
     Correction,
     Recognise,
+    Submit,
 }
 
 pub trait Reference: Send + Sync {

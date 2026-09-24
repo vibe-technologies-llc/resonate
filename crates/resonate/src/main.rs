@@ -23,6 +23,7 @@ mod signals;
 mod sleep;
 mod stats;
 mod studies;
+mod submitting;
 mod suggest;
 mod table;
 mod vault;
@@ -622,6 +623,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Devices => "the measured devices",
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
+        LookupOp::Submit => "a submission of what was heard",
     }
 }
 
@@ -1716,6 +1718,9 @@ fn play_queue(
         &Arc::new(AtomicBool::new(config.notifies())),
     );
     let presenter = discord::start(&player, library.as_ref(), config);
+    let submitting = library
+        .as_ref()
+        .map(|library| submitting::start(config, library));
 
     let keyed = input::KeyAtATime::where_a_terminal();
     let help = if keyed.is_some() {
@@ -1783,6 +1788,9 @@ fn play_queue(
         record_a_play(library, listening.leaves(), &mut counted);
     }
     presenter.leave();
+    if let Some(submitting) = submitting {
+        submitting.leave();
+    }
     drop(mpris);
     drop(player);
     Ok(())
@@ -1994,6 +2002,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     );
     let listens = listen::in_the_window(&config, mpris.as_ref().map(resonate_mpris::Mpris::teller));
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
+    let submitting = submitting::start(&config, &library);
     let outcome = resonate_ui::run(
         Arc::clone(&player),
         Arc::clone(&library),
@@ -2010,6 +2019,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 contact: config.contact.clone().unwrap_or_default(),
                 acoustid_key: config.acoustid_key.clone().unwrap_or_default(),
                 audd_token: config.audd_token.clone().unwrap_or_default(),
+                listenbrainz_token: config.listenbrainz_token.clone().unwrap_or_default(),
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),
@@ -2039,6 +2049,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         },
     );
     drop(presenter);
+    submitting.leave();
     drop(mpris);
     outcome?;
     Ok(())

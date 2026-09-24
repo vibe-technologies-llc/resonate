@@ -115,6 +115,7 @@ pub struct Config {
     pub read_from: Option<PathBuf>,
     pub acoustid_key: Option<String>,
     pub audd_token: Option<String>,
+    pub listenbrainz_token: Option<String>,
     pub listen_from: Option<Listening>,
     pub listen_for: Option<Duration>,
     pub equaliser: Option<bool>,
@@ -187,6 +188,13 @@ impl Config {
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn online_enabled(&self) -> bool {
         self.online.unwrap_or(true)
+    }
+
+    #[cfg(feature = "online")]
+    pub fn submits_to(&self) -> Option<&str> {
+        self.online_enabled()
+            .then_some(self.listenbrainz_token.as_deref())
+            .flatten()
     }
 
     pub fn enriches_after_scan(&self) -> bool {
@@ -290,6 +298,29 @@ pub fn load(explicit: Option<&Path>) -> Result<Config> {
 
 #[cfg(feature = "online")]
 pub fn contact_in(path: &Path) -> Result<Option<String>> {
+    let key = ConfigKey::Contact;
+    match item_in(path, key)? {
+        Some(value) => Ok(given(At { path, key }.string(&value)?)),
+        None => Ok(None),
+    }
+}
+
+#[cfg(feature = "online")]
+pub fn submitting_in(path: &Path) -> Result<Option<String>> {
+    let online = ConfigKey::Online;
+    let switched_on = match item_in(path, online)? {
+        Some(value) => At { path, key: online }.boolean(&value)?,
+        None => true,
+    };
+    let key = ConfigKey::ListenbrainzToken;
+    match item_in(path, key)? {
+        Some(value) if switched_on => Ok(given(At { path, key }.string(&value)?)),
+        Some(_) | None => Ok(None),
+    }
+}
+
+#[cfg(feature = "online")]
+fn item_in(path: &Path, key: ConfigKey) -> Result<Option<Item>> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -300,11 +331,7 @@ pub fn contact_in(path: &Path) -> Result<Option<String>> {
             });
         }
     };
-    let key = ConfigKey::Contact;
-    match document(path, &text)?.get(key.as_str()) {
-        Some(value) => Ok(given(At { path, key }.string(value)?)),
-        None => Ok(None),
-    }
+    Ok(document(path, &text)?.get(key.as_str()).cloned())
 }
 
 fn document(path: &Path, text: &str) -> Result<DocumentMut> {
@@ -375,6 +402,7 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::Contact => config.contact = given(at.string(value)?),
             ConfigKey::AcoustidKey => config.acoustid_key = given(at.string(value)?),
             ConfigKey::AuddToken => config.audd_token = given(at.string(value)?),
+            ConfigKey::ListenbrainzToken => config.listenbrainz_token = given(at.string(value)?),
             ConfigKey::ListenFrom => {
                 config.listen_from = Some(Listening::named(at.string(value)?));
             }
@@ -844,6 +872,21 @@ mod tests {
         assert_eq!(config.listen_from, Some(Listening::Microphone(None)));
         assert_eq!(config.listen_for, Some(Duration::from_secs(20)));
         assert!(read("listen-for = 0").is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "online")]
+    fn a_listenbrainz_token_is_submitted_to_only_while_online_is_on() {
+        let config = read("listenbrainz-token = \" a token \"").expect("a well formed document");
+        assert_eq!(config.listenbrainz_token.as_deref(), Some("a token"));
+        assert_eq!(config.submits_to(), Some("a token"));
+
+        let off = read("online = false\nlistenbrainz-token = \"a token\"").expect("well formed");
+        assert_eq!(off.submits_to(), None);
+
+        let blank = read("listenbrainz-token = \"  \"").expect("well formed");
+        assert_eq!(blank.listenbrainz_token, None);
+        assert_eq!(Config::default().submits_to(), None);
     }
 
     #[test]

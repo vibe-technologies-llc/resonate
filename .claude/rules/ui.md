@@ -1932,7 +1932,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   PipeWire offers, listed each time the sheet opens, and a choice is written back as `listen-from`
   through the `Settings` seam; the Online category's *Listening* group writes the same key and
   `listen-for`, and its *Recognition* group carries the AudD token beside the AcoustID key, each a
-  `Field` read at the next start.
+  `Field` read at the next start. Its *ListenBrainz* group is the `listenbrainz-token` field, and
+  that one is not read at the next start: the binary's submitter follows the settings file, so a
+  token given or cleared there is what the next submission, within half a minute, carries.
 - **Play next and Add to queue sit beside every play gesture, and a + wherever rows reach a
   playlist.** The tracks heading and each track row, the playlists pane's index row, an opened
   playlist's heading and each of its rows all carry the pair, and on a playlist row they take the

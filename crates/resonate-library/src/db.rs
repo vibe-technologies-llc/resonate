@@ -33,17 +33,18 @@ use crate::{
     MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist,
     PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording,
     RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
-    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Search,
-    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Suggestion,
-    Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault,
-    VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere, enrich, enriched,
+    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
+    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
+    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
+    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere,
+    enrich, enriched,
     hinted::Hinted,
     import, likeness,
     model::CoverWanted,
     organise::{self, TrackToFile},
     playlist,
     retag::{self, Followed, TrackToTag},
-    scan, schema, search, share, spelling, statistics, store,
+    scan, schema, scrobble, search, share, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, supply,
     undo::{self, Step},
@@ -977,6 +978,10 @@ impl Library {
             })
         })
         .transpose()
+    }
+
+    pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
+        scrobble::submit(&self.inner, scrobbler)
     }
 
     pub fn statistics(&self, window: Window) -> Result<Statistics> {
