@@ -65,8 +65,8 @@ code has its reason stated there, and "simplifying" it away reintroduces the bug
 ## Checks
 
 Run these before committing; the CI in `.github/workflows/ci.yml` runs the same set on every push
-to `master` and every pull request, in an Arch Linux container because that is what the package
-targets.
+to `master` and every pull request, in Arch Linux containers because that is what the Arch package
+targets. `.github/workflows/rpm-release.yml` builds the Fedora RPM when a release is published.
 
 ```
 cargo clippy --workspace --all-targets -- -D warnings
@@ -81,9 +81,8 @@ install. Tests that need a PipeWire daemon, a session bus, ffmpeg or the network
 the thing is missing rather than failing; the CI has no daemon and no bus, so those skip there —
 except `resonate-pipewire`'s reconnect test, which starts a daemon of its own.
 
-`.cargo/config.toml` builds for `target-cpu=native`, and so does the package, which is built on the
-machine it is for. Anything that produces a binary for another machine — the CI — sets `RUSTFLAGS`
-back over it.
+`.cargo/config.toml` builds for `target-cpu=native`, and so does the Arch package, which is built on
+the machine it is for. The Fedora RPM and the CI set `RUSTFLAGS` for their target machines.
 
 ## Keeping the rules true
 

@@ -1,0 +1,42 @@
+name: Fedora RPM release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  fedora-rpm:
+    name: Fedora 44 RPM
+    runs-on: ubuntu-latest
+    container: fedora:44
+    timeout-minutes: 90
+    steps:
+      - name: Install the build dependencies
+        run: >-
+          dnf install -y git gh rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel
+          wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel
+          freetype-devel vulkan-headers vulkan-loader-devel
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Create the source archive
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)
+          test -n "$version"
+          test "$RELEASE_TAG" = "$version" || test "$RELEASE_TAG" = "v$version"
+          mkdir -p "$HOME/rpmbuild/SOURCES"
+          git archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$HOME/rpmbuild/SOURCES/resonate-$version.tar.gz"
+      - name: Build the RPM
+        run: rpmbuild -ba packaging/resonate.spec
+      - name: Attach the RPMs to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)
+          gh release upload "$RELEASE_TAG" "$HOME"/rpmbuild/RPMS/x86_64/resonate-"$version"-*.rpm "$HOME"/rpmbuild/SRPMS/resonate-"$version"-*.src.rpm
