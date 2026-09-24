@@ -47,7 +47,9 @@ and `ureq`.
   `LARGEST_FRAME`. The handshake waits for `READY`; a `Close` carrying 4000 is an application
   Discord does not know, which is warned about once and then waited out until the id changes.
   A `Ping` is answered with a `Pong`, and an `ERROR` reply is a `Refused` warning that keeps the
-  session.
+  session: the `Sent` is marked `refused`, so `due` offers the same activity again once
+  `RETRY_AFTER` has passed, and a change is sent on the usual spacing as ever. Closing the socket
+  over it would reconnect every fifteen seconds to be refused the same payload.
 - **The socket is looked for where every Discord puts it**: `$XDG_RUNTIME_DIR`, `$TMPDIR` and
   `/tmp`, each plain and under the Flatpak, Snap and Vesktop sandboxes, `discord-ipc-0` to `-9`.
   One that does not answer is a debug record and a retry after `RETRY_AFTER`.
@@ -67,7 +69,9 @@ and `ureq`.
   which is what a seek is — and never within `SENDS_APART` of the last send, Discord's own limit
   being five in twenty seconds. A change inside the window is sent when it ends.
 - **The release is resolved once per track**: `MUSICBRAINZ_ALBUMID` from the tags, then the
-  release group, then `Releases`, and only where a cover is going to be drawn.
+  release group, then `Releases`, and only where a cover is going to be drawn. A cover found is
+  held for the track; a miss is asked again after `COVER_REFRESH_AFTER`, because the enrichment
+  may land the release while the track is still playing.
 
 ## What it does not do
 

@@ -77,6 +77,7 @@ impl Running {
 struct Sent {
     activity: Option<Activity>,
     at: Instant,
+    refused: bool,
 }
 
 struct CachedCover {
@@ -91,7 +92,7 @@ enum Link {
         retry_at: Option<Instant>,
     },
     Open {
-        session: Session,
+        session: Box<Session>,
         app: AppId,
         sent: Option<Sent>,
     },
@@ -151,7 +152,7 @@ impl Publisher {
                 Ok(session) => {
                     tracing::info!("showing what is playing on Discord");
                     self.link = Link::Open {
-                        session,
+                        session: Box::new(session),
                         app,
                         sent: None,
                     };
@@ -182,6 +183,7 @@ impl Publisher {
             *sent = Some(Sent {
                 activity: wanted,
                 at: now,
+                refused: false,
             });
             set
         });
@@ -189,9 +191,9 @@ impl Publisher {
             Ok(()) => {}
             Err(Error::Refused { code }) => {
                 tracing::warn!(code, "Discord refused what was playing");
-                self.link = Link::Closed {
-                    retry_at: Some(now + RETRY_AFTER),
-                };
+                if let Some(sent) = sent.as_mut() {
+                    sent.refused = true;
+                }
             }
             Err(error) => {
                 tracing::debug!(%error, "the connection to Discord was lost");
@@ -272,7 +274,8 @@ fn cover_for(
     if let Some(held) = cached.as_ref()
         && held.track == track
         && held.location == *location
-        && now.saturating_duration_since(held.checked) < COVER_REFRESH_AFTER
+        && (held.cover.is_some()
+            || now.saturating_duration_since(held.checked) < COVER_REFRESH_AFTER)
     {
         return held.cover.clone();
     }
@@ -308,7 +311,12 @@ fn due(sent: Option<&Sent>, wanted: Option<&Activity>, now: Instant) -> bool {
         (Some(was), Some(is)) => !was.alike(is) || was.drifted(is, DRIFT_ALLOWED),
         (Some(_), None) | (None, Some(_)) => true,
     };
-    changed && now.duration_since(sent.at) >= SENDS_APART
+    let waited = now.duration_since(sent.at);
+    if changed {
+        waited >= SENDS_APART
+    } else {
+        sent.refused && waited >= RETRY_AFTER
+    }
 }
 
 #[cfg(test)]
@@ -407,6 +415,7 @@ mod tests {
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
+            refused: false,
         };
 
         assert!(!due(
@@ -422,6 +431,7 @@ mod tests {
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
+            refused: false,
         };
         let next = activity("Time", 0);
 
@@ -431,11 +441,31 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_activity_is_offered_again_on_the_same_session_after_a_wait() {
+        let now = Instant::now();
+        let sent = Sent {
+            activity: Some(activity("Echoes", 0)),
+            at: now,
+            refused: true,
+        };
+        let same = activity("Echoes", 1);
+
+        assert!(!due(Some(&sent), Some(&same), now + SENDS_APART));
+        assert!(due(Some(&sent), Some(&same), now + RETRY_AFTER));
+        assert!(due(
+            Some(&sent),
+            Some(&activity("Time", 0)),
+            now + SENDS_APART
+        ));
+    }
+
+    #[test]
     fn a_seek_is_sent_as_a_change() {
         let now = Instant::now();
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
+            refused: false,
         };
 
         assert!(due(
