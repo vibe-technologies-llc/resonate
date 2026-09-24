@@ -227,7 +227,8 @@ impl ChainBuilder {
             frames = stage.max_output_frames(frames);
             let channels = next.channel_count().get() as usize;
             samples = samples.max(frames.max(draining).saturating_mul(channels));
-            latency += stage.latency_frames();
+            latency = latency * f64::from(next.rate.hz()) / f64::from(spec.rate.hz())
+                + stage.latency_frames();
             spec = next;
             stages.push(stage);
             widths.push(channels);
@@ -257,7 +258,7 @@ mod tests {
     use super::*;
     use crate::{
         Dither, DitherKind, FilterPhase, GainConfig, GainStage, NoiseShaping, Quality, Remix,
-        Resampler, ResamplerConfig,
+        Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, Tuning,
     };
 
     const BLOCK: usize = 512;
@@ -370,6 +371,42 @@ mod tests {
 
         assert_eq!(chain.stage_count(), 3);
         assert!(chain.latency_frames() > 0.0);
+    }
+
+    #[test]
+    fn a_delay_ahead_of_the_resampler_is_counted_at_the_rate_the_chain_ends_on() {
+        let restorer = || {
+            Box::new(Restore::new(RestoreConfig {
+                restoration: Restoration::Repair,
+                tuning: Tuning::Mp3,
+                wall: None,
+            })) as Box<dyn Processor>
+        };
+        let alone = |stage: Box<dyn Processor>| {
+            Chain::builder(spec(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(stage)
+                .build()
+                .expect("a valid chain")
+                .latency_frames()
+        };
+        let restoring = alone(restorer());
+        let resampling = alone(resampler(SampleRate::HZ_44100, SampleRate::HZ_192000));
+        assert!(restoring > 0.0 && resampling > 0.0);
+
+        let both = Chain::builder(spec(SampleRate::HZ_44100))
+            .max_frames_in(BLOCK)
+            .push(restorer())
+            .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_192000))
+            .build()
+            .expect("a valid chain")
+            .latency_frames();
+
+        let wanted = restoring * 192_000.0 / 44_100.0 + resampling;
+        assert!(
+            (both - wanted).abs() < 1e-9,
+            "the chain said {both} frames where {wanted} are held"
+        );
     }
 
     #[test]
