@@ -634,6 +634,13 @@ fn walk(
             if kind.is_symlink() && !options.follow_symlinks {
                 continue;
             }
+            if kind.is_dir() {
+                stack.push((path, depth.saturating_add(1)));
+                continue;
+            }
+            if kind.is_file() && !is_a_sheet(&path) && !is_audio(&path) {
+                continue;
+            }
 
             let metadata = match fs::metadata(&path) {
                 Ok(metadata) => metadata,
