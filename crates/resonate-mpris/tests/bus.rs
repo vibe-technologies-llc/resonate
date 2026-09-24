@@ -75,6 +75,12 @@ impl Tree {
         path
     }
 
+    fn untitled(&self, name: &str) -> PathBuf {
+        let path = self.root.join(name);
+        fs::write(&path, wav_naming(&[])).expect("a writable temporary file");
+        path
+    }
+
     fn pictured(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
         fs::write(&path, [id3(&png()), wav()].concat()).expect("a writable temporary file");
@@ -89,6 +95,14 @@ impl Drop for Tree {
 }
 
 fn wav() -> Vec<u8> {
+    wav_naming(&[
+        (b"INAM", "Echoes"),
+        (b"IART", "Pink Floyd"),
+        (b"IPRD", "Meddle"),
+    ])
+}
+
+fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let frames = RATE as usize * SECONDS;
     let mut data = Vec::with_capacity(frames * usize::from(CHANNELS) * 2);
     for n in 0..frames * usize::from(CHANNELS) {
@@ -105,17 +119,15 @@ fn wav() -> Vec<u8> {
     fmt.extend_from_slice(&16_u16.to_le_bytes());
 
     let mut info = b"INFO".to_vec();
-    for (id, value) in [
-        (b"INAM", "Echoes"),
-        (b"IART", "Pink Floyd"),
-        (b"IPRD", "Meddle"),
-    ] {
+    for (id, value) in names {
         chunk(&mut info, id, &[value.as_bytes(), b"\0"].concat());
     }
 
     let mut body = b"WAVE".to_vec();
     chunk(&mut body, b"fmt ", &fmt);
-    chunk(&mut body, b"LIST", &info);
+    if !names.is_empty() {
+        chunk(&mut body, b"LIST", &info);
+    }
     chunk(&mut body, b"data", &data);
 
     let mut file = b"RIFF".to_vec();
@@ -814,6 +826,26 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
 
     let first = harness.position();
     harness.wait_for(|harness| harness.position() > first, "the position to move");
+}
+
+#[test]
+fn a_playing_track_whose_file_names_no_title_is_titled_by_its_file() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load(&tree.untitled("Shine On.wav"));
+
+    harness.wait_for(|harness| harness.status() == "Playing", "playback to start");
+    harness.wait_for(
+        |harness| text(&harness.metadata(), "xesam:url").is_some(),
+        "the stream to reach the bus",
+    );
+
+    assert_eq!(
+        text(&harness.metadata(), "xesam:title").as_deref(),
+        Some("Shine On")
+    );
 }
 
 #[test]

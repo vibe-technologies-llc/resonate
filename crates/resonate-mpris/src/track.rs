@@ -4,7 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use resonate_core::{Frames, PlaylistId, TrackId};
+use resonate_core::{Frames, MediaLocation, PlaylistId, TrackId};
 use resonate_engine::{
     Asleep, MediaInfo, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest, TagSet,
     Until,
@@ -266,8 +266,15 @@ pub(crate) fn metadata(
     if let Some(art) = art {
         insert(&mut fields, "mpris:artUrl", art);
     }
+    title_by_file(&mut fields, &digest.location);
     absorb_tags(&mut fields, &digest.info.tags);
     fields
+}
+
+fn title_by_file(fields: &mut HashMap<String, OwnedValue>, location: &MediaLocation) {
+    if let Some(stem) = location.stem() {
+        insert(fields, "xesam:title", stem.into_owned());
+    }
 }
 
 pub(crate) fn queued_metadata(
@@ -293,9 +300,7 @@ pub(crate) fn queued_metadata(
         "xesam:url",
         item.location.to_uri_within(item.span),
     );
-    if let Some(stem) = item.location.stem() {
-        insert(&mut fields, "xesam:title", stem.into_owned());
-    }
+    title_by_file(&mut fields, &item.location);
     absorb_plays(&mut fields, heard);
 
     let Some(media) = media else {
@@ -445,8 +450,6 @@ fn insert<'a, T: Into<Value<'a>>>(fields: &mut HashMap<String, OwnedValue>, key:
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::MediaLocation;
-
     use super::*;
 
     fn at(seconds: i64) -> SystemTime {
