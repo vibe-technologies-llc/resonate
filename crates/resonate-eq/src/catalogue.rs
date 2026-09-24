@@ -268,8 +268,8 @@ fn telling(word: &str) -> bool {
     !SAID_BY_THE_GRAPH.contains(&word)
 }
 
-fn names_a_model(words: &[&String]) -> bool {
-    let telling: Vec<&&String> = words.iter().filter(|word| telling(word)).collect();
+fn names_a_model(words: &[String]) -> bool {
+    let telling: Vec<&String> = words.iter().filter(|word| telling(word)).collect();
     if telling.len() >= 2 {
         return true;
     }
@@ -298,11 +298,13 @@ pub fn suggest(catalogue: &Catalogue, description: &str) -> Option<Found> {
             best.push((2, words.len(), at));
             continue;
         }
-        let tail: Vec<&String> = words.iter().skip(1).collect();
+        let Some((_, tail)) = words.split_first() else {
+            continue;
+        };
         if tail.is_empty() || !tail.iter().all(|word| said.contains(word)) {
             continue;
         }
-        if names_a_model(&tail) {
+        if names_a_model(tail) {
             best.push((1, words.len(), at));
         }
     }
