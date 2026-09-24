@@ -287,13 +287,13 @@ impl AudioSource for RingConsumer {
             return filled;
         }
 
-        self.faults.raise(RtFault::Underrun);
-
         if self.discard.finished.load(Ordering::Acquire) {
+            self.faults.raise(RtFault::Underrun);
             return filled;
         }
         self.starved
-            .fetch_add(wanted.saturating_sub(taken) as u64, Ordering::Relaxed);
+            .fetch_add(wanted.saturating_sub(taken) as u64, Ordering::Release);
+        self.faults.raise(RtFault::Underrun);
         match dst.get_mut(filled..) {
             Some(gap) => filled.saturating_add(self.pad(gap)),
             None => filled,
@@ -322,7 +322,7 @@ pub struct RingMonitor {
 
 impl RingMonitor {
     pub fn went_without(&self) -> Frames {
-        Frames(self.starved.swap(0, Ordering::Relaxed))
+        Frames(self.starved.swap(0, Ordering::Acquire))
     }
 
     pub fn next_fault(&mut self) -> Option<RtFault> {

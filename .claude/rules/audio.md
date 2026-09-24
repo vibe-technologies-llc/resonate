@@ -435,7 +435,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   short chunk did, and never for the short chunk a track ends on. `RingMonitor::went_without` swaps
   the count out, so what the engine reads is what is new since it last asked, and
   `collect_faults` keeps it on the same terms it keeps the underrun count: while playing and before
-  the track has ended. `OutputStatus::went_without` is the total at the sink's rate for as long as
+  the track has ended. The ring adds the frames *before* it raises the fault, with a release the
+  swap acquires, so a fault is never read ahead of what it cost; and a count that arrives on a poll
+  that drained no fault is still kept — it is the last fault's, and dropping it left the total short
+  of what the graph missed. `OutputStatus::went_without` is the total at the sink's rate for as long as
   the output lives, the inspector's *Output* card draws it in milliseconds beside the underruns
   once there is any, and `Event::Underrun` carries the same figure. It is exact where the fault
   queue is not: a fault the queue had no room for arrives as a bare count in `RtFault::Dropped`,

@@ -1685,11 +1685,14 @@ impl Engine {
         }
         let missing = output.monitor.went_without();
 
-        if !playing || output.ended || seen == 0 {
+        if !playing || output.ended {
+            return;
+        }
+        output.status.went_without = output.status.went_without.saturating_add(missing);
+        if seen == 0 {
             return;
         }
         output.status.underruns = output.status.underruns.saturating_add(seen);
-        output.status.went_without = output.status.went_without.saturating_add(missing);
         self.emit(Event::Underrun { missing });
     }
 
