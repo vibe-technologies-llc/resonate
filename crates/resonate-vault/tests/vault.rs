@@ -607,7 +607,7 @@ fn an_object_is_never_larger_than_the_file_it_came_from() {
     assert_eq!(decoded(&held.path, SampleFormat::S24), noise(FRAMES));
 }
 
-fn surround(channels: u16, mask: u32, frames: usize) -> Vec<u8> {
+fn surround(channels: u16, mask: u32, rate: u32, frames: usize) -> Vec<u8> {
     const EXTENSIBLE: u16 = 0xFFFE;
     const EXTENSION_BYTES: u16 = 22;
     const PCM_SUBFORMAT: [u8; 16] = [
@@ -620,8 +620,8 @@ fn surround(channels: u16, mask: u32, frames: usize) -> Vec<u8> {
     let mut format = Vec::new();
     format.extend_from_slice(&EXTENSIBLE.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
-    format.extend_from_slice(&RATE.to_le_bytes());
-    format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&rate.to_le_bytes());
+    format.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
     format.extend_from_slice(&block_align.to_le_bytes());
     format.extend_from_slice(&BITS.to_le_bytes());
     format.extend_from_slice(&EXTENSION_BYTES.to_le_bytes());
@@ -654,17 +654,27 @@ fn a_surround_source_is_kept_with_the_speakers_it_names() {
     const QUAD: u32 = 0x33;
     const TWO_POINT_ONE: u32 = 0x0B;
     const SIDE_FIVE_POINT_ONE: u32 = 0x60F;
+    const FIVE_POINT_ONE: u32 = 0x3F;
+    const PAST_WHAT_FLAC_HOLDS: u32 = 192_000;
 
     let tree = Tree::new();
     let vault = tree.vault();
     let sources = Sources::local();
 
-    for (name, channels, mask, carried_by_flac) in [
-        ("quad.wav", 4, QUAD, true),
-        ("two-one.wav", 3, TWO_POINT_ONE, false),
-        ("side.wav", 6, SIDE_FIVE_POINT_ONE, false),
+    for (name, channels, mask, rate, frames, carried_by_flac) in [
+        ("quad.wav", 4, QUAD, RATE, FRAMES, true),
+        ("two-one.wav", 3, TWO_POINT_ONE, RATE, FRAMES, false),
+        ("side.wav", 6, SIDE_FIVE_POINT_ONE, RATE, FRAMES, false),
+        (
+            "five-one.wav",
+            6,
+            FIVE_POINT_ONE,
+            PAST_WHAT_FLAC_HOLDS,
+            FRAMES + 1,
+            false,
+        ),
     ] {
-        let path = tree.write(name, &surround(channels, mask, FRAMES));
+        let path = tree.write(name, &surround(channels, mask, rate, frames));
         let location = MediaLocation::local(&path);
         let went_in = probe(&sources, &location).expect("a readable source");
 
