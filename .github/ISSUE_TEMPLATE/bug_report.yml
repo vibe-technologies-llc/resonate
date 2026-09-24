@@ -1,0 +1,79 @@
+name: Bug report
+description: Something plays wrong, crashes, or does not do what it says
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      placeholder: |
+        1. Run `resonate play track.flac`
+        2. Press `n`
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Playback and output
+        - Library, scan and search
+        - Playlists and queue
+        - Window and interface
+        - Media keys, MPRIS and notifications
+        - Online lookups, covers and lyrics
+        - Equaliser
+        - Vault
+        - Analysis and recognition
+        - Command line
+        - Packaging and install
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `resonate --version` prints.
+      placeholder: resonate 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - AUR (resonate-player-git)
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: system
+    attributes:
+      label: System
+      description: Distribution, desktop or compositor, PipeWire version (`pipewire --version`) and GPU.
+      placeholder: |
+        Arch Linux, KDE Plasma 6 on Wayland, PipeWire 1.4.2, AMD RX 7800 XT
+    validations:
+      required: true
+  - type: textarea
+    id: audio
+    attributes:
+      label: Output
+      description: For anything about how a file sounds or which device it reaches, paste `resonate sinks` and `resonate explain <file>` for the file in question.
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Run it again with `RESONATE_LOG=debug` set and paste what it printed around the problem.
+      render: text

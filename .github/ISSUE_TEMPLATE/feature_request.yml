@@ -1,0 +1,40 @@
+name: Feature request
+description: Something Resonate does not do yet
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The listening, library or workflow problem, rather than the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would solve it
+      description: How you picture it working, in the window, on the command line or both.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: Another player that does it, a script, a workaround.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Playback and output
+        - Library, scan and search
+        - Playlists and queue
+        - Window and interface
+        - Media keys, MPRIS and notifications
+        - Online lookups, covers and lyrics
+        - Equaliser
+        - Vault
+        - Analysis and recognition
+        - Command line
+        - Packaging and install
+        - Something else
