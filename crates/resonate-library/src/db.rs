@@ -376,6 +376,7 @@ pub(crate) struct Inner {
     vault: Option<Arc<Vault>>,
     playlists: AtomicU64,
     named: Arc<AtomicU64>,
+    written: Arc<AtomicU64>,
     spellings: Mutex<Option<KeptVocabulary>>,
     suggested: Mutex<Option<KeptSuggestions>>,
     playing: Mutex<Option<Playing>>,
@@ -577,8 +578,16 @@ impl Inner {
     }
 
     fn names_stamp(&self) -> NamesStamp {
+        self.stamped_by(&self.named)
+    }
+
+    fn rows_stamp(&self) -> NamesStamp {
+        self.stamped_by(&self.written)
+    }
+
+    fn stamped_by(&self, counter: &AtomicU64) -> NamesStamp {
         NamesStamp {
-            named: self.named.load(Ordering::Acquire),
+            named: counter.load(Ordering::Acquire),
             written_elsewhere: self.written_elsewhere(),
         }
     }
@@ -612,15 +621,69 @@ impl Inner {
 }
 
 const NAMED_TABLES: [&str; 4] = ["tracks", "albums", "artists", "artist_genres"];
+const NAMES_MOVED: &str = "names_moved";
+const TEMPORARY: &str = "temp";
 
-fn watch_the_names(connection: &Connection, named: &Arc<AtomicU64>) -> Result<()> {
-    let counted = Arc::clone(named);
+const NAMES_MOVED_TRIGGERS: &str = "
+CREATE TEMP TABLE names_moved (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    times INTEGER NOT NULL
+);
+INSERT INTO temp.names_moved (id, times) VALUES (1, 0);
+
+CREATE TEMP TRIGGER track_named AFTER INSERT ON main.tracks
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER track_unnamed AFTER DELETE ON main.tracks
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER track_renamed AFTER UPDATE OF title, artist, genre ON main.tracks
+WHEN OLD.title IS NOT NEW.title OR OLD.artist IS NOT NEW.artist OR OLD.genre IS NOT NEW.genre
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+
+CREATE TEMP TRIGGER album_named AFTER INSERT ON main.albums
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER album_unnamed AFTER DELETE ON main.albums
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER album_renamed AFTER UPDATE OF title ON main.albums
+WHEN OLD.title IS NOT NEW.title
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+
+CREATE TEMP TRIGGER artist_named AFTER INSERT ON main.artists
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER artist_unnamed AFTER DELETE ON main.artists
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER artist_renamed AFTER UPDATE OF name ON main.artists
+WHEN OLD.name IS NOT NEW.name
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+
+CREATE TEMP TRIGGER genre_named AFTER INSERT ON main.artist_genres
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER genre_unnamed AFTER DELETE ON main.artist_genres
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+CREATE TEMP TRIGGER genre_renamed AFTER UPDATE ON main.artist_genres
+BEGIN UPDATE temp.names_moved SET times = times + 1; END;
+";
+
+fn watch_the_names(
+    connection: &Connection,
+    named: &Arc<AtomicU64>,
+    written: &Arc<AtomicU64>,
+) -> Result<()> {
     connection
-        .update_hook(Some(move |_: Action, _: &str, table: &str, _: i64| {
-            if NAMED_TABLES.contains(&table) {
-                counted.fetch_add(1, Ordering::AcqRel);
-            }
-        }))
+        .execute_batch(NAMES_MOVED_TRIGGERS)
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+
+    let named = Arc::clone(named);
+    let written = Arc::clone(written);
+    connection
+        .update_hook(Some(
+            move |_: Action, database: &str, table: &str, _: i64| {
+                if database == TEMPORARY && table == NAMES_MOVED {
+                    named.fetch_add(1, Ordering::AcqRel);
+                } else if NAMED_TABLES.contains(&table) {
+                    written.fetch_add(1, Ordering::AcqRel);
+                }
+            },
+        ))
         .map_err(|source| Error::store(StoreOp::Open, source))
 }
 
@@ -687,7 +750,8 @@ impl Library {
         store::settle_the_credits(&mut writer)?;
 
         let named = Arc::new(AtomicU64::new(0));
-        watch_the_names(&writer, &named)?;
+        let written = Arc::new(AtomicU64::new(0));
+        watch_the_names(&writer, &named, &written)?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -699,6 +763,7 @@ impl Library {
                 vault,
                 playlists: AtomicU64::new(0),
                 named,
+                written,
                 spellings: Mutex::new(None),
                 suggested: Mutex::new(None),
                 playing: Mutex::new(None),
@@ -889,7 +954,7 @@ impl Library {
     }
 
     pub fn suggestions(&self) -> Result<Arc<[Suggestion]>> {
-        let stamp = self.inner.names_stamp();
+        let stamp = self.inner.rows_stamp();
         if let Some(kept) = self
             .inner
             .suggested
@@ -4575,6 +4640,19 @@ mod tests {
             suggested(&library, "ekhoes"),
             Some("Echoes".to_owned()),
             "the vocabulary was read again for a write that could not move a name"
+        );
+
+        let named_before = library.inner.named.load(Ordering::Acquire);
+        library
+            .inner
+            .writer
+            .lock()
+            .execute("UPDATE tracks SET plays = plays + 1, title = title", [])
+            .expect("a play is counted and the title written as it stood");
+        assert_eq!(
+            library.inner.named.load(Ordering::Acquire),
+            named_before,
+            "a counted play dropped a vocabulary no name moved in"
         );
 
         library

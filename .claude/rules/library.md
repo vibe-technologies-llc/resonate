@@ -123,12 +123,13 @@ through `Player::media` like any other unscanned row.
   same thing worse; and `billed_as` capitalises a lower-cased genre after any mark and not only
   after a space, or `contemporary r&b` is billed *Contemporary R&b*.
   `Library::suggestions` answers an `Arc<[Suggestion]>` kept beside the search vocabulary and
-  under the same counter: the `update_hook` steps `named` for a row written in `tracks`,
-  `albums`, `artists` or `artist_genres`, which are every table a suggestion is read from, so a
-  reload that moved none of them — a settled search, a scroll, a playlist edited — is handed the
-  kept answer rather than a pass of `measured` per candidate. What it inherits is the vocabulary's
-  stamp: a counted play is a `tracks` write and drops it, and a catalog written by another
-  process drops it through the data version, whatever table that process wrote. `length` is the same `measured` read's total, and
+  under a counter of its own: the same `update_hook` steps `written` for any row written in
+  `tracks`, `albums`, `artists` or `artist_genres`, which are every table a suggestion is read
+  from, so a reload that moved none of them — a settled search, a scroll, a playlist edited — is
+  handed the kept answer rather than a pass of `measured` per candidate. It is per table rather
+  than per name because a suggestion counts plays and favourites as well as names: a counted play
+  is a `tracks` write and drops it where it leaves the vocabulary standing, and a catalog written
+  by another process drops both through the data version, whatever table that process wrote. `length` is the same `measured` read's total, and
   `pictured_by` is `db::pictured_by`: the albums holding a picture that the search's rows fall on,
   most rows first, up to `PICTURED_BY_AT_MOST`, with an album whose picture — its vault key, or
   its bytes' length and first 256 bytes — another already stood for passed over, so an edition
@@ -1654,13 +1655,20 @@ the pass.
   long enough to be corrected. What that read built is then kept: `Inner::vocabulary` stamps the
   `Spellings` with a counter and hands back an `Arc` of it until the counter moves, so a listener
   typing past the end of what they hold pays one read rather than one per settled keystroke.
-  **What moves the counter is SQLite itself.** `watch_the_names` registers an `update_hook` on the
-  writer and steps the counter for a row written in `tracks`, `albums` or `artists`, so the
-  invalidation is derived from what was actually written rather than from a list of write paths
-  somebody has to keep in step — and a pass written tomorrow is covered by having used the writer
-  at all, which is the whole reason it is not a table the scan maintains. Two things it is not:
-  it is per *table* rather than per column, so counting a play drops a vocabulary no name moved
-  in; and it is this process's writer, which cannot see another's. That half is `PRAGMA
+  **What moves the counter is SQLite itself.** `watch_the_names` lays `NAMES_MOVED_TRIGGERS` on
+  the writer — `TEMP` triggers, so they live on that one connection and never reach the schema, a
+  migration or another program writing the catalog — which step a row of a `TEMP` table wherever
+  a row of `tracks`, `albums`, `artists` or `artist_genres` is inserted or deleted, or one of the
+  columns the vocabulary is read from — a track's title, artist and genre, an album's title, an
+  artist's name — takes a value other than the one it held; an `update_hook` on the writer sees
+  that temporary row move and steps the counter. So the invalidation is derived from what was
+  actually written rather than from a list of write paths somebody has to keep in step — a pass
+  written tomorrow is covered by having used the writer at all — and it is per *column*: a counted
+  play, a favourite, a scan writing a title back as it stood drop nothing. The update hook answers
+  per table and per row and SQLite offers per column only through `sqlite3_preupdate_hook`, a
+  compile-time flag on the bundled library, which is why the triggers do the weighing and the
+  hook only the counting; they cost some 0.35 µs a row of a scan's inserts. What it is not is
+  another process's writer, which this one cannot see. That half is `PRAGMA
   data_version`, read off the writer connection beside the counter into one `NamesStamp`: it moves
   only for a commit some *other* connection made, so a `resonate scan` running beside a window
   drops the window's vocabulary the next time it is asked for, and this process's own writes are

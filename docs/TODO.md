@@ -191,10 +191,6 @@
 - Nothing sorts on a term: `SortOrder` is the nine the saved query's chips offer, and a term
   narrows rather than orders. `is:favourite` is the one reading the catalog has that is both, and
   it is a `Shape` and a `Favourited` order written separately rather than one thing read two ways
-- The kept vocabulary is dropped by a row written in `tracks`, `albums` or `artists`, because
-  `update_hook` answers per table and not per column — so counting a play drops a vocabulary no
-  name moved in, and a listener searching between tracks pays the read again. Narrowing it wants
-  `sqlite3_preupdate_hook`, which is a compile-time flag on the bundled SQLite
 - Nothing bounds what the vocabulary weighs. It holds every distinct word *and* every distinct
   multi-word name across the three columns, held for as long as no name moves, and `holds`,
   `names` and `nearest` each walk the whole of it — bearable for a personal library and untested
