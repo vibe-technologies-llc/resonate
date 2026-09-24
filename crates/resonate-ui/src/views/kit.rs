@@ -851,6 +851,10 @@ fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -
 }
 
 pub(crate) fn avatar(name: &str, lit: bool) -> Div {
+    avatar_at(name, lit, theme::avatar(), theme::text_sm())
+}
+
+pub(crate) fn avatar_at(name: &str, lit: bool, side: f32, letter: f32) -> Div {
     let initial: String = name
         .chars()
         .find(|letter| letter.is_alphanumeric())
@@ -862,13 +866,13 @@ pub(crate) fn avatar(name: &str, lit: bool) -> Div {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(theme::avatar()))
+        .size(px(side))
         .rounded_full()
         .bg(theme::tinted(
             if lit { theme::accent() } else { theme::muted() },
             0x1c,
         ))
-        .text_size(px(theme::text_sm()))
+        .text_size(px(letter))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(if lit { theme::accent() } else { theme::muted() }))
         .child(initial)

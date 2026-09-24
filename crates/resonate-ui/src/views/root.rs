@@ -38,7 +38,7 @@ use crate::{
     listening::ListenModel,
     theme,
     views::{
-        browser::ArtistShows,
+        browser::{ArtistShows, ArtistsDrawn},
         chrome,
         field::{Field, Submitted},
         focus::Controls,
@@ -355,6 +355,7 @@ pub struct RootView {
     pub(crate) shelf_scrolls: RefCell<AHashMap<&'static str, ScrollHandle>>,
     came_from: Vec<Wayback>,
     pub(crate) artist_shows: ArtistShows,
+    pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
     landing_on: Option<usize>,
     pub(crate) menu: Option<Menu>,
@@ -646,6 +647,7 @@ impl RootView {
             shelf_scrolls: RefCell::new(AHashMap::new()),
             came_from: Vec::new(),
             artist_shows: ArtistShows::default(),
+            artists_drawn: ArtistsDrawn::default(),
             missing_shows: MissingShows::default(),
             landing_on: None,
             menu: None,
@@ -1367,7 +1369,10 @@ impl RootView {
             .last_item_size
             .map_or(0.0, |size| f32::from(size.item.height));
 
-        if shift == Shift::Listing(Listed::Albums) {
+        let in_a_grid = shift == Shift::Listing(Listed::Albums)
+            || (shift == Shift::Listing(Listed::Artists)
+                && self.artists_drawn == ArtistsDrawn::Grid);
+        if in_a_grid {
             return ((shown / theme::grid_row()) as usize).max(1) * self.grid_columns();
         }
         ((shown / theme::row_height()) as usize).max(1)
@@ -1648,7 +1653,11 @@ impl RootView {
                     .scroll_to_item(row / self.grid_columns(), ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Artists) => {
-                self.artist_rows.scroll_to_item(row, ScrollStrategy::Center);
+                let at = match self.artists_drawn {
+                    ArtistsDrawn::List => row,
+                    ArtistsDrawn::Grid => row / self.grid_columns(),
+                };
+                self.artist_rows.scroll_to_item(at, ScrollStrategy::Center);
             }
         }
     }

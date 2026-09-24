@@ -465,7 +465,10 @@ impl RootView {
         let nothing = artists.is_empty();
         let counted = self.library.read(cx).artists_counted() as usize;
         let held = artists.len();
-        self.land_where_it_was_left(held);
+        let drawn = self.artists_drawn;
+        if drawn == ArtistsDrawn::List {
+            self.land_where_it_was_left(held);
+        }
 
         let found_nothing = nothing.then(|| {
             self.nothing_matched(
@@ -495,11 +498,17 @@ impl RootView {
                             .child(kit::subtitle(format::counted(counted, "artist", "artists"))),
                     )
                     .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
-                    .child(kit::actions().child(self.orders_a_listing("order-artists", cx))),
+                    .child(
+                        kit::actions()
+                            .child(self.artists_drawn_as(drawn, cx))
+                            .child(self.orders_a_listing("order-artists", cx)),
+                    ),
             )
             .when(self.ordering, |heading| {
                 heading.child(self.artists_in_order(cx))
             });
+        let grid =
+            (!nothing && drawn == ArtistsDrawn::Grid).then(|| self.artist_grid(&artists, cx));
 
         div()
             .flex()
@@ -508,7 +517,8 @@ impl RootView {
             .min_w(px(0.0))
             .child(heading)
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
-            .when(!nothing, |pane| {
+            .when_some(grid, Div::child)
+            .when(!nothing && drawn == ArtistsDrawn::List, |pane| {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "artist-scrollbar",
@@ -1022,6 +1032,195 @@ impl RootView {
                 )
             }
         }
+    }
+
+    fn artists_drawn_as(&self, drawn: ArtistsDrawn, cx: &mut Context<Self>) -> Div {
+        let choice = |as_: ArtistsDrawn, label: &'static str, cx: &mut Context<Self>| {
+            kit::segment(("artists-drawn", as_ as usize), label, drawn == as_)
+                .names(as_.saying())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.artists_drawn = as_;
+                    cx.notify();
+                }))
+        };
+
+        kit::segmented()
+            .child(choice(ArtistsDrawn::List, "List", cx))
+            .child(choice(ArtistsDrawn::Grid, "Grid", cx))
+    }
+
+    fn artist_grid(&mut self, artists: &Arc<[Artist]>, cx: &mut Context<Self>) -> Div {
+        let artists = Arc::clone(artists);
+        let held = artists.len();
+        let columns = self.grid_columns();
+        let rows = held.div_ceil(columns.max(1));
+        let measured = self.grid_width.clone();
+        let laid_out = self.grid_width.get() > px(0.0);
+        if laid_out {
+            self.land_where_it_was_left(rows);
+        }
+        let selected = self.library.read(cx).selection();
+
+        div()
+            .relative()
+            .flex()
+            .flex_1()
+            .min_h(px(0.0))
+            .pt_5()
+            .child(kit::measures_its_width(measured))
+            .when(laid_out, |body| {
+                body.child(
+                    uniform_list(
+                        "artist-grid",
+                        rows,
+                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                            this.reach_further(range.end * columns, held, cx);
+                            range
+                                .map(|index| {
+                                    let cells = artists
+                                        .iter()
+                                        .enumerate()
+                                        .skip(index * columns)
+                                        .take(columns)
+                                        .map(|(at, artist)| {
+                                            let chosen = selected == Selection::Artist(artist.id);
+                                            this.artist_cell(artist, at, chosen, cx)
+                                        });
+                                    div()
+                                        .flex()
+                                        .gap(px(theme::grid_gap()))
+                                        .px_6()
+                                        .h(px(theme::grid_row()))
+                                        .children(cells)
+                                })
+                                .collect()
+                        }),
+                    )
+                    .track_scroll(self.artist_rows.clone())
+                    .h_full()
+                    .w_full(),
+                )
+            })
+            .child(Scrollbars::of(cx).vertical("artist-scrollbar", self.artist_rows.clone()))
+    }
+
+    fn artist_cell(
+        &mut self,
+        artist: &Artist,
+        at: usize,
+        chosen: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = artist.id;
+        let side = theme::grid_cover();
+        let reached = self.reaches(Shift::Listing(Listed::Artists), at);
+        let favourite = self
+            .library
+            .read(cx)
+            .favours(Favoured::Artist(id), artist.favourite.is_some());
+        let lit_name = self
+            .library
+            .read(cx)
+            .search()
+            .lit(&artist.name, Column::Artist);
+        let portrait = artist
+            .has_portrait
+            .then(|| {
+                self.library.update(cx, |library, cx| {
+                    library.portrait(id, Portrayed::InAGrid, cx)
+                })
+            })
+            .flatten();
+        let pictured = match portrait {
+            Some(art) => portrait_frame(art, side).into_any_element(),
+            None => {
+                kit::avatar_at(&artist.name, chosen, side, side * AVATAR_LETTER).into_any_element()
+            }
+        };
+        let cell_id = ElementId::from(("artist-cell", id.get() as usize));
+        let pointed = pointed::is_pointed_at(&cell_id);
+
+        let cell = div()
+            .id(cell_id.clone())
+            .follows_the_pointer(cell_id)
+            .group(CELL_GROUP)
+            .flex()
+            .flex_none()
+            .flex_col()
+            .items_center()
+            .gap_2p5()
+            .w(px(side))
+            .cursor_pointer()
+            .names(OPEN_ARTIST_HINT)
+            .child(
+                div()
+                    .relative()
+                    .rounded(px(side / 2.0))
+                    .child(pictured)
+                    .when(reached, |frame| {
+                        frame.child(reached_ring().rounded(px(side / 2.0 + REACHED_RING + 1.0)))
+                    })
+                    .child(
+                        self.favour_mark_under(
+                            ("artist-cell-favourite", id.get() as usize),
+                            Favoured::Artist(id),
+                            favourite,
+                            CELL_GROUP,
+                            cx,
+                        )
+                        .absolute()
+                        .top_1()
+                        .right_1()
+                        .rounded_md()
+                        .bg(theme::tinted(theme::background(), 0xb0)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_0p5()
+                    .w_full()
+                    .child(
+                        div()
+                            .w_full()
+                            .text_center()
+                            .text_size(px(theme::text_sm()))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(if pointed || chosen {
+                                theme::accent()
+                            } else {
+                                theme::text()
+                            }))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(listing::matched(artist.name.clone().into(), lit_name)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .child(format!(
+                                "{} · {}",
+                                format::counted(artist.album_count as usize, "album", "albums"),
+                                format::counted(artist.track_count as usize, "track", "tracks")
+                            )),
+                    ),
+            )
+            .on_click(cx.listener(move |this, event, _, cx| {
+                if !menu::pressed(event) {
+                    return;
+                }
+                this.opened(Selection::Artist(id), cx);
+            }));
+
+        menu::opens_a_menu(
+            cell,
+            move |_, at, _| artist_menu(at, id).favours(Favoured::Artist(id), favourite),
+            cx,
+        )
+        .into_any_element()
     }
 
     fn artist_mark(&self, artist: &Artist, lit: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -1658,6 +1857,24 @@ impl RootView {
         )
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ArtistsDrawn {
+    #[default]
+    List,
+    Grid,
+}
+
+impl ArtistsDrawn {
+    const fn saying(self) -> &'static str {
+        match self {
+            Self::List => "Draw the artists as a list, a small portrait beside each name",
+            Self::Grid => "Draw the artists as a grid of large portraits, the way albums are",
+        }
+    }
+}
+
+const AVATAR_LETTER: f32 = 0.36;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ArtistShows {

@@ -1316,6 +1316,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   way an `opens` is, naming *Open on …* and handing that exact release's or artist's URL to
   `cx.open_url`, which is the desktop's browser. It stops its press and ignores a right one, like
   every link in a heading.
+- **The artists pane is a list or a grid, and the heading chooses.** `ArtistsDrawn` is `List` —
+  the rows it always was, a small portrait beside each name — or `Grid`, the albums pane's shape
+  with the artist's portrait in place of a sleeve: `artist_grid` measures the same `grid_width`,
+  reads `grid_columns` and lays out rows of `artist_cell`s at `theme::grid_cover()`, each a round
+  `portrait_frame` read at `Portrayed::InAGrid` — or `kit::avatar_at` the same size, the initial
+  scaled with it, where no portrait is held — over the name and its counts, favoured, pressed and
+  menued as a row is. The choice is a `kit::segmented` of *List* and *Grid* beside *Sort* and
+  lives for the run like the other listings' orders. The reach keys serve both: in the grid a
+  page is whole rows of cells, `show_row` scrolls the grid row holding the artist and a reached
+  cell wears the same `reached_ring` a reached album does.
 - **An artist's page is its albums or its tracks, one at a time, chosen from two tabs.** It used
   to stack a horizontally scrolling strip of small covers over the whole track listing, so a
   page was three scrolling regions, an album was a thumbnail and every row repeated the artist's
