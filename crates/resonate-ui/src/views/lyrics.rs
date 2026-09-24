@@ -270,7 +270,7 @@ impl RootView {
         moving: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (scroll, edge, shown, drawn) = {
+        let (scroll, edge, shown, drawn, moved_by_hand) = {
             let model = self.lyrics.read(cx);
             let text = model.text();
             let moments = model.moments();
@@ -304,7 +304,13 @@ impl RootView {
                 0.0
             };
 
-            (model.scroll().clone(), model.edge(), shown, drawn)
+            (
+                model.scroll().clone(),
+                model.edge(),
+                shown,
+                drawn,
+                model.moved_by_hand_lately(now),
+            )
         };
 
         let lines: Vec<AnyElement> = drawn.into_iter().map(|line| self.lyric(line, cx)).collect();
@@ -339,7 +345,7 @@ impl RootView {
             .min_h(px(0.0))
             .opacity(shown)
             .child(column)
-            .child(Scrollbars::of(cx).vertical("lyrics-scrollbar", scroll))
+            .child(Scrollbars::of(cx).vertical_while("lyrics-scrollbar", scroll, moved_by_hand))
             .child(dissolving(true))
             .child(dissolving(false))
             .child(self.follows_the_pointer(cx))

@@ -133,7 +133,22 @@ impl Scrollbars {
     }
 
     pub(crate) fn vertical(self, id: &'static str, handle: impl Into<Target>) -> Stateful<Div> {
-        self.bar(id.into(), id, Axis::Vertical, handle.into())
+        self.bar(id.into(), id, Axis::Vertical, handle.into(), Shown::Always)
+    }
+
+    pub(crate) fn vertical_while(
+        self,
+        id: &'static str,
+        handle: impl Into<Target>,
+        moved: bool,
+    ) -> Stateful<Div> {
+        self.bar(
+            id.into(),
+            id,
+            Axis::Vertical,
+            handle.into(),
+            Shown::WhileMoved(moved),
+        )
     }
 
     pub(crate) fn horizontal(self, id: &'static str, handle: ScrollHandle) -> Stateful<Div> {
@@ -142,6 +157,7 @@ impl Scrollbars {
             id,
             Axis::Horizontal,
             handle.into(),
+            Shown::Always,
         )
     }
 
@@ -168,16 +184,38 @@ impl Scrollbars {
         id: &'static str,
         axis: Axis,
         target: Target,
+        shown: Shown,
     ) -> Stateful<Div> {
         if self.shown {
-            bar(element, id, axis, target)
+            bar(element, id, axis, target, shown)
         } else {
             div().id(element).absolute()
         }
     }
 }
 
-fn bar(element: ElementId, id: &'static str, axis: Axis, target: Target) -> Stateful<Div> {
+#[derive(Clone, Copy)]
+enum Shown {
+    Always,
+    WhileMoved(bool),
+}
+
+impl Shown {
+    const fn now(self, pointed: bool, held: bool) -> bool {
+        match self {
+            Self::Always => true,
+            Self::WhileMoved(moved) => moved || pointed || held,
+        }
+    }
+}
+
+fn bar(
+    element: ElementId,
+    id: &'static str,
+    axis: Axis,
+    target: Target,
+    shown: Shown,
+) -> Stateful<Div> {
     let track: Rc<Cell<Bounds<Pixels>>> = Rc::default();
     let placed = div().id(element).absolute().bottom_0().right_0();
     let placed = match axis {
@@ -239,8 +277,12 @@ fn bar(element: ElementId, id: &'static str, axis: Axis, target: Target) -> Stat
         .child(
             canvas(
                 |_, _, _| (),
-                move |bounds, _, window, _| {
+                move |bounds, _, window, cx| {
                     track.set(bounds);
+                    let lit = bounds.contains(&window.mouse_position());
+                    if !shown.now(lit, cx.has_active_drag()) {
+                        return;
+                    }
                     let Some(thumb) = target.thumb(axis, axis.length(bounds.size)) else {
                         return;
                     };
@@ -255,7 +297,6 @@ fn bar(element: ElementId, id: &'static str, axis: Axis, target: Target) -> Stat
                             size(px(thumb.length), px(THUMB_BREADTH)),
                         ),
                     };
-                    let lit = bounds.contains(&window.mouse_position());
                     let mut quad = fill(
                         Bounds::new(origin, extent),
                         rgb(if lit { theme::text() } else { theme::muted() }),

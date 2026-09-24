@@ -63,6 +63,8 @@ const BREATH: Duration = Duration::from_millis(2400);
 
 const HANDS_OFF: Duration = Duration::from_secs(6);
 
+const BAR_LINGERS: Duration = Duration::from_millis(1_500);
+
 const RESETTLE: Pixels = px(56.0);
 
 const SETTLED: Pixels = px(0.5);
@@ -641,6 +643,7 @@ impl LyricsModel {
             || !self.spread.clock.settled(now)
             || self.is_arriving(now)
             || self.looks_quietly(now)
+            || self.moved_by_hand_lately(now)
     }
 
     fn is_arriving(&self, now: Instant) -> bool {
@@ -657,6 +660,11 @@ impl LyricsModel {
     pub fn following(&self, now: Instant) -> bool {
         self.hand_at
             .is_none_or(|at| now.saturating_duration_since(at) >= HANDS_OFF)
+    }
+
+    pub fn moved_by_hand_lately(&self, now: Instant) -> bool {
+        self.hand_at
+            .is_some_and(|at| now.saturating_duration_since(at) < BAR_LINGERS)
     }
 
     pub fn follow_again(&mut self) {
@@ -1203,6 +1211,19 @@ mod tests {
         model.led_by_hand(now);
         model.follow_again();
         assert!(model.following(now));
+    }
+
+    #[test]
+    fn the_bar_is_shown_only_for_a_moment_after_a_scroll_of_your_own() {
+        let now = Instant::now();
+        let mut model = model();
+        assert!(!model.moved_by_hand_lately(now));
+
+        model.led_by_hand(now);
+        assert!(model.moved_by_hand_lately(now));
+        assert!(model.is_turning(now));
+        assert!(model.moved_by_hand_lately(now + BAR_LINGERS / 2));
+        assert!(!model.moved_by_hand_lately(now + BAR_LINGERS));
     }
     fn pane() -> Bounds<Pixels> {
         Bounds {

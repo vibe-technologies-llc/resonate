@@ -1571,7 +1571,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   in paint, and the paint writes those bounds into a cell the same frame's listeners read, so a
   press on the track and a drag's grip measure the bar the pointer is actually over. Where on the
   thumb it was held is taken when the drag *starts*, in `on_drag`'s constructor, rather than on
-  the press, because a press on the track moves the thumb and redraws before the drag begins.
+  the press, because a press on the track moves the thumb and redraws before the drag begins. **The
+  lyrics pane's bar is drawn only while the sheet is moved.** A sheet that follows the song glides
+  on its own for its whole length, and a thumb standing beside the words the whole time read as a
+  second, busier line to watch; `Scrollbars::vertical_while` paints the thumb only where the pane
+  says it moved — `LyricsModel::moved_by_hand_lately`, `BAR_LINGERS` after a wheel turned it — or
+  where the pointer is on the bar or its thumb is held. The glide is not a movement for this, and
+  `is_turning` keeps the frames coming until the linger is out, so the thumb goes away on its own.
 - **A setting that has moved off its default says so, and the mark is what puts it back.**
   `defaults.rs` is the arithmetic: `Standing` is what is worn — the `OutputSettings`, the
   `Appearance`, the two online flags and whether a contact is given — `differs` weighs it against
