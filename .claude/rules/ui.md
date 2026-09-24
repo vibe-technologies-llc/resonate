@@ -895,8 +895,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   wanted; `Wanted` itself is built only once `LyricsModel::asks_again` says the reading moved, so a
   60 Hz redraw no longer clones the title, the artist, the album and the whole embedded lyric text
   out of the digest in order to find out they are the same. `follow` resets the pane only where
-  the *track* moved, so a digest landing mid-track refines the look without rewinding the scroll,
-  and `worth_looking_again` is what decides whether there is a look to make: the registry is asked
+  the *track* moved, so a digest landing mid-track refines the look without rewinding the scroll —
+  and the lookup that refinement starts rewinds on landing only where the track moved or it
+  answered a sheet other than the one on screen, `already_shows` being that weighing — and `worth_looking_again` is what decides whether there is a look to make: the registry is asked
   again on a track change, and otherwise only where the `Wanted` itself differs from the one last
   searched on. `Asked` moving is not enough, because the `tagged` flag flips exactly once per
   track when the digest lands — so every scanned track, whose row already gave the title and the

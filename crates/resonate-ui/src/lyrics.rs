@@ -720,8 +720,7 @@ impl LyricsModel {
                 .await;
 
             let landed = this.update(cx, |this, cx| {
-                this.rewind();
-                this.look = match found {
+                let look = match found {
                     Ok(Some(lyrics)) => Look::Found(Arc::new(lyrics)),
                     Ok(None) => Look::Missing,
                     Err(error) => {
@@ -729,11 +728,22 @@ impl LyricsModel {
                         Look::Refused(SharedString::from(error.to_string()))
                     }
                 };
+                if moved_on || !this.already_shows(&look) {
+                    this.rewind();
+                }
+                this.look = look;
                 this.hold();
                 cx.notify();
             });
             let _ = landed;
         });
+    }
+
+    fn already_shows(&self, look: &Look) -> bool {
+        match (self.found(), look) {
+            (Some(held), Look::Found(landed)) => held == landed.as_ref(),
+            _ => false,
+        }
     }
 
     fn worth_looking_again(&self, moved_on: bool, wanted: &Wanted) -> bool {
@@ -849,6 +859,21 @@ mod tests {
 
     fn at(seconds: u64) -> Duration {
         Duration::from_secs(seconds)
+    }
+
+    #[test]
+    fn a_lookup_answering_what_is_already_shown_leaves_the_sheet_where_it_is() {
+        let model = holding(&["one", "two"]);
+        let Look::Found(shown) = model.look.clone() else {
+            panic!("the model holds a sheet");
+        };
+
+        assert!(
+            model.already_shows(&Look::Found(Arc::new(shown.as_ref().clone()))),
+            "the same sheet landing again was read as another"
+        );
+        assert!(!model.already_shows(&holding(&["three"]).look));
+        assert!(!model.already_shows(&Look::Missing));
     }
 
     fn holding(lines: &[&str]) -> LyricsModel {
