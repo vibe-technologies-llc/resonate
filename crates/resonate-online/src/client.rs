@@ -7,12 +7,15 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
 use ureq::{
     Agent, Body,
-    http::{HeaderMap, Response, StatusCode, header::RETRY_AFTER},
+    http::{
+        HeaderMap, Response, StatusCode,
+        header::{RETRY_AFTER, USER_AGENT},
+    },
 };
 
 use crate::{Error, Host, Result, query::Params};
@@ -117,6 +120,23 @@ impl Identity {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Introduction(Arc<RwLock<String>>);
+
+impl Introduction {
+    pub fn as_(identity: &Identity) -> Self {
+        Self(Arc::new(RwLock::new(identity.user_agent())))
+    }
+
+    pub fn change_to(&self, identity: &Identity) {
+        *self.0.write() = identity.user_agent();
+    }
+
+    pub fn user_agent(&self) -> String {
+        self.0.read().clone()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Carried {
     Encrypted,
@@ -164,20 +184,27 @@ impl Host {
 
 pub struct Client {
     agent: Agent,
-    user_agent: String,
+    introduction: Introduction,
     paced: Mutex<BTreeMap<Host, Instant>>,
     clock: Arc<dyn Clock>,
 }
 
 impl Client {
     pub fn new(identity: Identity) -> Self {
-        Self::on_clock(identity, Arc::new(WallClock), Carried::Encrypted)
+        Self::introduced(Introduction::as_(&identity))
     }
 
-    pub(crate) fn on_clock(identity: Identity, clock: Arc<dyn Clock>, carried: Carried) -> Self {
-        let user_agent = identity.user_agent();
+    pub fn introduced(introduction: Introduction) -> Self {
+        Self::on_clock(introduction, Arc::new(WallClock), Carried::Encrypted)
+    }
+
+    pub(crate) fn on_clock(
+        introduction: Introduction,
+        clock: Arc<dyn Clock>,
+        carried: Carried,
+    ) -> Self {
         let config = Agent::config_builder()
-            .user_agent(user_agent.as_str())
+            .user_agent(introduction.user_agent().as_str())
             .https_only(carried == Carried::Encrypted)
             .timeout_connect(Some(CONNECT_WITHIN))
             .timeout_global(Some(ANSWER_WITHIN))
@@ -186,14 +213,14 @@ impl Client {
 
         Self {
             agent: config.new_agent(),
-            user_agent,
+            introduction,
             paced: Mutex::new(BTreeMap::new()),
             clock,
         }
     }
 
-    pub fn user_agent(&self) -> &str {
-        &self.user_agent
+    pub fn user_agent(&self) -> String {
+        self.introduction.user_agent()
     }
 
     pub(crate) fn json<T: DeserializeOwned>(
@@ -283,12 +310,14 @@ impl Client {
         let mut by_default = RETRY_AFTER_BY_DEFAULT;
         loop {
             self.pace(host);
+            let introduced = self.introduction.user_agent();
             let sent = match body {
-                None => self.agent.get(url).call(),
+                None => self.agent.get(url).header(USER_AGENT, &introduced).call(),
                 Some(posted) => {
                     let request = self
                         .agent
                         .post(url)
+                        .header(USER_AGENT, &introduced)
                         .header("Content-Type", posted.content_type.as_str())
                         .header("Content-Language", CONTENT_LANGUAGE);
                     match posted.encoded {
@@ -435,7 +464,11 @@ mod tests {
     fn a_cap_bounds_the_body_as_it_is_decoded_rather_than_as_it_arrived() {
         const CAP: usize = 64 * 1024;
 
-        let client = Client::on_clock(identity(None), Faked::new(), Carried::Plain);
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            Faked::new(),
+            Carried::Plain,
+        );
         let (url, served) = serving_gzipped(vec![0; CAP * 16]);
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, CAP);
         served.join().expect("the server");
@@ -484,8 +517,40 @@ mod tests {
     }
 
     #[test]
+    fn a_contact_given_after_the_client_was_built_is_what_the_next_request_says() {
+        let introduction = Introduction::as_(&identity(None));
+        let client = Client::on_clock(introduction.clone(), Faked::new(), Carried::Plain);
+        introduction.change_to(&identity(Some("someone who typed a contact")));
+        let (url, served) = serving_one_post();
+
+        let _: Option<serde_json::Value> = client
+            .posted(
+                Host::AcoustId,
+                LookupOp::Recognise,
+                &url,
+                &Posted::packed_form(Params::new().with("client", "a key")),
+            )
+            .expect("an answer");
+        let (head, _) = served.join().expect("the server");
+
+        assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
+        assert!(
+            head.contains("user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n"),
+            "{head}"
+        );
+        assert_eq!(
+            client.user_agent(),
+            "resonate/9.9.9 ( someone who typed a contact )"
+        );
+    }
+
+    #[test]
     fn a_packed_form_is_posted_gzipped_and_says_so() {
-        let client = Client::on_clock(identity(None), Faked::new(), Carried::Plain);
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            Faked::new(),
+            Carried::Plain,
+        );
         let (url, served) = serving_one_post();
         let fields = Params::new()
             .with("client", "a key")
@@ -541,7 +606,11 @@ mod tests {
     }
 
     fn fetched(clock: &Arc<Faked>, answers: Vec<Answer>) -> (u16, usize) {
-        let client = Client::on_clock(identity(None), clock.clone(), Carried::Plain);
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
         let (url, served) = serving(answers);
         let response = client
             .exchange(Host::MusicBrainz, LookupOp::FindRecording, &url, None)
@@ -609,7 +678,11 @@ mod tests {
     #[test]
     fn two_musicbrainz_requests_are_a_second_apart_and_other_hosts_a_quarter() {
         let clock = Faked::new();
-        let client = Client::on_clock(identity(None), clock.clone(), Carried::Plain);
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
 
         client.pace(Host::MusicBrainz);
         client.pace(Host::MusicBrainz);

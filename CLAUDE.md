@@ -464,8 +464,11 @@ Invariants the layering exists to protect:
   `Identity::user_agent` is `resonate/<version>`, and a contact is appended only where the
   `contact` key in `config.toml` holds one: `Identity::of_this_build` carries none, `Config::contact`
   is `None` for a blank value, and the settings pane's field writes the key through the same seam
-  every other setting takes and clears it rather than writing an empty string. It is read once at
-  start, so a change is sent from the next run. `online` is the switch beside it:
+  every other setting takes and clears it rather than writing an empty string. Every client the
+  process builds shares one `resonate_online::Introduction` — the binary's `online::INTRODUCTION`,
+  made from the key on first use — and each request carries the User-Agent it holds at that
+  moment, so a contact stored or cleared from the window is what the very next request says.
+  `online` is the switch beside it:
   `Config::online_enabled` defaults to true, `online::reference` answers `None` where it is off,
   and `Error::OnlineOff` is what `resonate enrich` says then, where a build without the feature
   says `Error::NoReference`. `acoustid-key` is the second thing a listener types in and the build never

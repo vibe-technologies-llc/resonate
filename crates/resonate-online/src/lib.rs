@@ -18,7 +18,7 @@ pub use crate::{
     acoustid::AcoustId,
     audd::Audd,
     autoeq::AutoEq,
-    client::{Client, Identity},
+    client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
     lrclib::Lrclib,
     reference::Online,

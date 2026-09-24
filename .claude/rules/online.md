@@ -29,7 +29,16 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   `CARGO_PKG_VERSION`, and ` ( <contact> )` after it only where `Identity::contact` holds text that
   is not blank. `Identity::of_this_build` carries no contact; the binary's `online::identity` fills
   it from `Config::contact`, which is the `contact` key of `config.toml` and nothing else, so a
-  bare install identifies itself by name and version alone. `Online`, `Lrclib` and `AutoEq` each
+  bare install identifies itself by name and version alone. **What a client says is read per
+  request.** `Introduction` is the User-Agent behind a shared `RwLock`, `Client::introduced` takes
+  one and `Client::new` makes its own, and `exchange` writes it as the request's own
+  `User-Agent` header — which ureq sends in place of the agent's configured one — so
+  `Introduction::change_to` is heard by every client sharing it from their next request. The
+  binary builds every client over the one `online::INTRODUCTION` and the settings file's
+  `store` and `forget` of `Setting::Contact` call `online::introduce`, which is why a contact
+  typed into the Online card needs no restart;
+  `a_contact_given_after_the_client_was_built_is_what_the_next_request_says` is the claim.
+  `Online`, `Lrclib` and `AutoEq` each
   take an `Arc<Client>` — `Online::with_client`, `Lrclib::new` and `AutoEq::new` — so the three can
   share one, and `Online::new` is the convenience that builds its own.
 - **A host is paced by reserving a slot, not by sleeping after a call.** `Client::pace` holds a

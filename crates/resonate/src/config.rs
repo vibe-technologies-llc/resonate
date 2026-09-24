@@ -176,7 +176,7 @@ impl Config {
         }
     }
 
-    #[cfg(any(feature = "online", test))]
+    #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn online_enabled(&self) -> bool {
         self.online.unwrap_or(true)
     }

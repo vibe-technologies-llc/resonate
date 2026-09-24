@@ -12,7 +12,7 @@ use toml_edit::Value;
 use crate::{
     ConfigKey,
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
-    config,
+    config, online,
 };
 
 const MILLIBELS_PER_DECIBEL: f64 = 100.0;
@@ -182,7 +182,11 @@ impl Settings for File {
         self.written(key, value).map_err(|error| {
             tracing::error!(%error, %key, "the settings file could not be written");
             resonate_ui::Error::SettingNotStored { key: setting.key() }
-        })
+        })?;
+        if let Setting::Contact(contact) = setting {
+            online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
+        }
+        Ok(())
     }
 
     fn forget(&self, key: SettingKey) -> resonate_ui::Result<()> {
@@ -191,7 +195,11 @@ impl Settings for File {
         config::clear(&self.path, named).map_err(|error| {
             tracing::error!(%error, key = %named, "the setting could not be taken out of the file");
             resonate_ui::Error::SettingNotStored { key }
-        })
+        })?;
+        if key == SettingKey::Contact {
+            online::introduce(None);
+        }
+        Ok(())
     }
 }
 

@@ -1,4 +1,6 @@
 use std::sync::Arc;
+#[cfg(feature = "online")]
+use std::sync::OnceLock;
 
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, Reference};
@@ -8,22 +10,37 @@ use resonate_lyrics::Lyricists;
 #[cfg(all(feature = "online", feature = "ui"))]
 use resonate_online::Lrclib;
 #[cfg(feature = "online")]
-use resonate_online::{AcoustId, Audd, AutoEq, Client, Identity, Online, Shazam};
+use resonate_online::{AcoustId, Audd, AutoEq, Client, Identity, Introduction, Online, Shazam};
 
 use crate::{Error, Result, config::Config};
 
 #[cfg(feature = "online")]
-fn identity(config: &Config) -> Identity {
+static INTRODUCTION: OnceLock<Introduction> = OnceLock::new();
+
+#[cfg(feature = "online")]
+fn identity(contact: Option<String>) -> Identity {
     Identity {
-        contact: config.contact.clone(),
+        contact,
         ..Identity::of_this_build()
     }
 }
 
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    Arc::new(Client::new(identity(config)))
+    let introduction =
+        INTRODUCTION.get_or_init(|| Introduction::as_(&identity(config.contact.clone())));
+    Arc::new(Client::introduced(introduction.clone()))
 }
+
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn introduce(contact: Option<&str>) {
+    if let Some(introduction) = INTRODUCTION.get() {
+        introduction.change_to(&identity(contact.map(str::to_owned)));
+    }
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn introduce(_contact: Option<&str>) {}
 
 #[cfg(feature = "online")]
 pub fn reference(config: &Config) -> Option<Arc<dyn Reference>> {
