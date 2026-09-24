@@ -22,7 +22,7 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement, Player,
     QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId, SinkInfo, SinkResult,
-    SinkStream, Sources, StreamCommand, StreamRequest, Until,
+    SinkStream, Sources, Span, StreamCommand, StreamRequest, Until,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
@@ -2491,4 +2491,41 @@ fn two_rows_added_between_two_polls_are_announced_as_two_additions() {
     announced(&signals, "TrackAdded");
     unannounced(&signals, "TrackListReplaced", SETTLE);
     assert_eq!(harness.tracks().len(), 3);
+}
+
+#[test]
+fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load_all(&[
+        tree.wav("one.wav"),
+        tree.wav("two.wav"),
+        tree.wav("three.wav"),
+    ]);
+    harness.wait_for(
+        |harness| harness.tracks().len() == 3,
+        "the track list to publish",
+    );
+    let before = harness.tracks();
+    let signals = harness.tracklist_signals();
+    thread::sleep(SETTLE);
+    signals.try_iter().for_each(drop);
+
+    harness
+        .player
+        .send(Command::Move {
+            rows: Span::one(2),
+            to: 0,
+        })
+        .expect("the engine takes a move");
+
+    announced(&signals, "TrackRemoved");
+    announced(&signals, "TrackAdded");
+    unannounced(&signals, "TrackListReplaced", SETTLE);
+    assert_eq!(
+        harness.tracks(),
+        vec![before[2].clone(), before[0].clone(), before[1].clone()]
+    );
 }

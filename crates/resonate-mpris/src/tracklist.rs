@@ -54,38 +54,65 @@ pub(crate) fn change(before: &[QueueItem], after: &[QueueItem]) -> Change {
         return Change::Replaced;
     }
 
-    let mut kept = 0;
-    let mut last_kept = None;
-    for item in after {
-        let Some(&was) = was_at.get(&item.id) else {
-            continue;
-        };
-        let moved = last_kept.is_some_and(|last| was < last);
-        if moved || before.get(was) != Some(item) {
-            return Change::Replaced;
-        }
-        last_kept = Some(was);
-        kept += 1;
+    let kept: Vec<(usize, usize)> = after
+        .iter()
+        .enumerate()
+        .filter_map(|(at, item)| was_at.get(&item.id).map(|&was| (at, was)))
+        .collect();
+    if kept.iter().any(|&(at, was)| before[was] != after[at]) {
+        return Change::Replaced;
     }
-    if kept == 0 && !before.is_empty() && !after.is_empty() {
+    if kept.is_empty() && !before.is_empty() && !after.is_empty() {
         return Change::Replaced;
     }
 
-    let removed = before
-        .iter()
-        .enumerate()
-        .filter(|(_, item)| !is_at.contains_key(&item.id))
-        .map(|(at, _)| Edit::Removed { at });
-    let added = after
-        .iter()
-        .enumerate()
-        .filter(|(_, item)| !was_at.contains_key(&item.id))
-        .map(|(at, _)| Edit::Added { at });
+    let rows_were: Vec<usize> = kept.iter().map(|&(_, was)| was).collect();
+    let in_order = longest_rising(&rows_were);
+    if kept.len() - in_order.len() > in_order.len() {
+        return Change::Replaced;
+    }
+    let mut stays_before = vec![false; before.len()];
+    let mut stays_after = vec![false; after.len()];
+    for held in in_order {
+        let (at, was) = kept[held];
+        stays_before[was] = true;
+        stays_after[at] = true;
+    }
+
+    let removed = (0..before.len())
+        .filter(|&at| !stays_before[at])
+        .map(|at| Edit::Removed { at });
+    let added = (0..after.len())
+        .filter(|&at| !stays_after[at])
+        .map(|at| Edit::Added { at });
     let edits: Vec<Edit> = removed.chain(added).collect();
     if edits.len() > EDITS_ANNOUNCED_AT_MOST {
         return Change::Replaced;
     }
     Change::Edited(edits)
+}
+
+fn longest_rising(values: &[usize]) -> Vec<usize> {
+    let mut ends: Vec<usize> = Vec::new();
+    let mut beneath: Vec<Option<usize>> = vec![None; values.len()];
+    for (at, value) in values.iter().enumerate() {
+        let place = ends.partition_point(|&end| values[end] < *value);
+        beneath[at] = place.checked_sub(1).map(|below| ends[below]);
+        if place == ends.len() {
+            ends.push(at);
+        } else {
+            ends[place] = at;
+        }
+    }
+
+    let mut rising = Vec::with_capacity(ends.len());
+    let mut next = ends.last().copied();
+    while let Some(at) = next {
+        rising.push(at);
+        next = beneath[at];
+    }
+    rising.reverse();
+    rising
 }
 
 pub(crate) struct TrackList {
@@ -310,19 +337,60 @@ mod tests {
     }
 
     #[test]
-    fn a_reshuffle_or_a_list_with_nothing_kept_is_announced_as_a_whole_new_list() {
+    fn a_row_moved_is_announced_as_that_row_removed_and_added_where_it_landed() {
         assert_eq!(
             change(&queue(&[1, 2, 3]), &queue(&[3, 1, 2])),
-            Change::Replaced
+            edited(&[Edit::Removed { at: 2 }, Edit::Added { at: 0 }])
+        );
+        assert_eq!(
+            change(&queue(&[1, 2, 3, 4, 5]), &queue(&[1, 3, 4, 2, 5])),
+            edited(&[Edit::Removed { at: 1 }, Edit::Added { at: 3 }])
         );
         assert_eq!(
             change(&queue(&[1, 2, 3]), &queue(&[1, 3, 2, 9])),
+            edited(&[
+                Edit::Removed { at: 2 },
+                Edit::Added { at: 1 },
+                Edit::Added { at: 3 },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_span_moved_is_announced_row_by_row() {
+        assert_eq!(
+            change(&queue(&[1, 2, 3, 4, 5, 6]), &queue(&[1, 5, 6, 2, 3, 4])),
+            edited(&[
+                Edit::Removed { at: 4 },
+                Edit::Removed { at: 5 },
+                Edit::Added { at: 1 },
+                Edit::Added { at: 2 },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_reshuffle_or_a_list_with_nothing_kept_is_announced_as_a_whole_new_list() {
+        assert_eq!(
+            change(&queue(&[1, 2, 3, 4, 5, 6]), &queue(&[6, 4, 2, 5, 1, 3])),
+            Change::Replaced
+        );
+        assert_eq!(
+            change(&queue(&[1, 2, 3, 4]), &queue(&[4, 3, 2, 1])),
             Change::Replaced
         );
         assert_eq!(
             change(&queue(&[1, 2]), &queue(&[3, 4, 5])),
             Change::Replaced
         );
+    }
+
+    #[test]
+    fn the_rows_left_standing_are_the_longest_run_still_in_order() {
+        assert_eq!(longest_rising(&[]), Vec::<usize>::new());
+        assert_eq!(longest_rising(&[4, 0, 1, 2, 3]), vec![1, 2, 3, 4]);
+        assert_eq!(longest_rising(&[0, 3, 1, 2, 4]), vec![0, 2, 3, 4]);
+        assert_eq!(longest_rising(&[2, 1, 0]).len(), 1);
     }
 
     #[test]
