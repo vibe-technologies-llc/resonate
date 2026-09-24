@@ -372,6 +372,7 @@ pub struct RootView {
     pointer_inside: bool,
     volume_settled: Task<()>,
     volume_aimed: Option<f32>,
+    pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
     drawn_at: SystemTime,
@@ -653,6 +654,7 @@ impl RootView {
             pointer_inside: true,
             volume_settled: Task::ready(()),
             volume_aimed: None,
+            muted_from: None,
             type_ahead: TypeAhead::default(),
             typing_stops: Task::ready(()),
             drawn_at: SystemTime::now(),
@@ -2248,15 +2250,43 @@ impl RootView {
 
     pub(crate) fn volume_by(&mut self, delta: f32, cx: &mut Context<Self>) {
         let current = self
-            .volume_aimed
-            .unwrap_or_else(|| self.player.read(cx).state().volume.get());
+            .muted_at(cx)
+            .map_or_else(|| self.volume_now(cx), |muted_from| muted_from.get());
         self.set_volume(current + delta, cx);
+    }
+
+    fn volume_now(&self, cx: &App) -> f32 {
+        self.volume_aimed
+            .unwrap_or_else(|| self.player.read(cx).state().volume.get())
+    }
+
+    pub(crate) fn muted_at(&self, cx: &App) -> Option<Volume> {
+        self.muted_from
+            .filter(|_| self.player.read(cx).state().volume == Volume::MUTE)
+    }
+
+    pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+        if let Some(muted_from) = self.muted_at(cx) {
+            self.set_volume(muted_from.get(), cx);
+            return;
+        }
+        let Ok(heard_at) = Volume::new(self.volume_now(cx).clamp(0.0, 1.0)) else {
+            return;
+        };
+        if heard_at == Volume::MUTE {
+            return;
+        }
+        self.volume_aimed = None;
+        self.muted_from = Some(heard_at);
+        self.send(Command::SetVolume(Volume::MUTE), cx);
+        cx.notify();
     }
 
     pub(crate) fn set_volume(&mut self, position: f32, cx: &mut Context<Self>) {
         let Ok(volume) = Volume::new(position.clamp(0.0, 1.0)) else {
             return;
         };
+        self.muted_from = None;
         self.send(Command::SetVolume(volume), cx);
         self.volume_aimed = Some(volume.get());
 

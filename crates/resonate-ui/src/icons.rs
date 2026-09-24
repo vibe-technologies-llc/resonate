@@ -72,6 +72,7 @@ icons! {
     Undo => "undo",
     Redo => "redo",
     Volume => "volume",
+    Muted => "muted",
     Back => "back",
     Close => "close",
     ChevronUp => "chevron-up",

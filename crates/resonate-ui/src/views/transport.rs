@@ -47,9 +47,13 @@ const QUEUE_OPEN_HINT: &str = "Back to the pane the queue covered";
 
 pub(crate) const COVER_HINT: &str = "See the cover full size";
 
-const VOLUME_HINT: &str = "Volume — ctrl-up and ctrl-down";
+const VOLUME_HINT: &str = "Mute — click. Volume — ctrl-up and ctrl-down";
 
-const VOLUME_HINT_WHEELED: &str = "Volume — the wheel, ctrl-up and ctrl-down";
+const VOLUME_HINT_WHEELED: &str = "Mute — click. Volume — the wheel, ctrl-up and ctrl-down";
+
+const VOLUME_ICON_GROUP: &str = "volume-icon";
+
+const UNMUTE_HINT: &str = "Muted — click, the wheel or ctrl-up to hear it again";
 
 const VOLUME_A_NOTCH: f32 = 0.05;
 
@@ -719,6 +723,7 @@ impl RootView {
     fn volume_bar(&self, level: f32, cx: &mut Context<Self>) -> Stateful<Div> {
         let level = self.grabbed_fraction(Handle::Volume).unwrap_or(level);
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
+        let muted = self.muted_at(cx).is_some();
         let hint = if wheeled {
             VOLUME_HINT_WHEELED
         } else {
@@ -743,18 +748,38 @@ impl RootView {
                     .id("volume-icon")
                     .flex()
                     .items_center()
-                    .child(icons::icon(
-                        Icon::Volume,
-                        theme::toggle_icon(),
-                        theme::muted(),
+                    .cursor_pointer()
+                    .group(VOLUME_ICON_GROUP)
+                    .child(icons::lit_on_hover(
+                        icons::icon(
+                            if muted { Icon::Muted } else { Icon::Volume },
+                            theme::toggle_icon(),
+                            if muted {
+                                theme::accent()
+                            } else {
+                                theme::muted()
+                            },
+                        ),
+                        VOLUME_ICON_GROUP,
                     ))
-                    .names(hint),
+                    .names(if muted { UNMUTE_HINT } else { hint })
+                    .on_click(cx.listener(|this, event, _, cx| {
+                        if !menu::pressed(event) {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        this.toggle_mute(cx);
+                    })),
             )
             .child(self.rail(Handle::Volume, level, cx))
             .child(
-                kit::readout(format!("{:.0}%", level * 100.0))
-                    .w(px(theme::volume_reading()))
-                    .text_right(),
+                kit::readout(if muted {
+                    "muted".to_owned()
+                } else {
+                    format!("{:.0}%", level * 100.0)
+                })
+                .w(px(theme::volume_reading()))
+                .text_right(),
             )
     }
 

@@ -209,6 +209,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   in `PIXELS_A_NOTCH` — while `ResonateApp::scroll_volume` says so, and `RootView::volume_aimed`
   is what a run of notches or held keys adds to: the engine publishes the new volume a poll
   later, so reading it back each notch lost every notch but one inside a poll.
+  **A press on the speaker mutes, and mute is not a volume.** `RootView::toggle_mute` sends
+  `Volume::MUTE` and keeps the level it was heard at in `muted_from` without storing anything, so a
+  run quit while muted opens at the level the listener chose rather than at nothing. `muted_at` reads
+  the pair only while the engine still publishes nothing, so a volume set over the bus ends the mute;
+  a second press, a notch of the wheel, `ctrl-up` and `ctrl-down` all start again from the kept
+  level, and a grab of the rail is a volume of its own and forgets it.
   The release is taken from three places — a release inside the window, `on_mouse_up_out` for one
   outside it, and a move that reports no button held — because a pointer that leaves the window
   mid-drag is otherwise never told to let go. The equaliser's handles ride the same surface: a
