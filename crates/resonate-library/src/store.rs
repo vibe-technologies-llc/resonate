@@ -29,7 +29,23 @@ const YEAR_DIGITS: usize = 4;
 const DATE_DIGITS: [usize; 3] = [YEAR_DIGITS, 6, 8];
 const FORGOTTEN_AT_ONCE: usize = 256;
 
-pub const ORPHANS: &str = "
+macro_rules! the_picture_of {
+    ($album:literal) => {
+        concat!(
+            "coalesce(",
+            $album,
+            ".cover_key, length(",
+            $album,
+            ".cover_art) || ':' || hex(substr(",
+            $album,
+            ".cover_art, 1, 256)))"
+        )
+    };
+}
+pub(crate) use the_picture_of;
+
+pub const ORPHANS: &str = concat!(
+    "
 DELETE FROM albums
  WHERE id NOT IN (SELECT album_id FROM tracks WHERE album_id IS NOT NULL)
    AND (found_elsewhere IS NULL
@@ -39,7 +55,13 @@ DELETE FROM artists
  WHERE id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM track_credits);
-";
+DELETE FROM likenesses
+ WHERE picture NOT IN (SELECT ",
+    the_picture_of!("a"),
+    " FROM albums a
+                        WHERE a.cover_key IS NOT NULL OR a.cover_art IS NOT NULL);
+"
+);
 
 pub struct TrackRecord {
     pub root_id: i64,

@@ -132,10 +132,22 @@ through `Player::media` like any other unscanned row.
   by another process drops both through the data version, whatever table that process wrote. `length` is the same `measured` read's total, and
   `pictured_by` is `db::pictured_by`: the albums holding a picture that the search's rows fall on,
   most rows first, up to `PICTURED_BY_AT_MOST`, with an album whose picture — its vault key, or
-  its bytes' length and first 256 bytes — another already stood for passed over, so an edition
-  and its expanded edition are not two tiles of one sleeve. `Reason::kind` sorts a suggestion
-  under a `SuggestionKind`, which is how the pane shelves them.
-  `a_suggestion_says_how_long_it_runs_and_which_covers_picture_it` is the claim.
+  its bytes' length and first 256 bytes — another already stood for passed over, and then one
+  whose picture merely *looks like* one already standing, so one sleeve saved at two resolutions
+  is not two tiles. `store::the_picture_of!` is that identity, written once for the query and for
+  the sweep. What a picture looks like is `resonate_codec::Likeness`: the cover averaged in linear
+  light onto eight by eight cells and kept as their sRGB bytes, and two are alike where they
+  differ by a root mean square of `ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF` — 12 of 255 — where one
+  sleeve at a quarter of its size measures about 1 and 3 re-encoded as JPEG, and a sleeve mirrored
+  or a banner across its top about 80. A likeness costs a decode, so `likeness::of` keeps it in
+  `likenesses`, the fifth step in `MIGRATIONS`, under the picture's identity — a picture that
+  cannot be read is kept as `NULL` so it is not decoded again, and a cover that failed to reach
+  the reader is kept as nothing at all and tried again — and `ORPHANS` takes away every row no
+  album's picture names any more. The table is not one the `update_hook` counts, so weighing a
+  cover never drops the suggestions it is weighed for. `Reason::kind` sorts a suggestion under a
+  `SuggestionKind`, which is how the pane shelves them.
+  `a_suggestion_says_how_long_it_runs_and_which_covers_picture_it` and
+  `one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once` are the claims.
 - **A share is built here because three callers want the same words.** `Library::shareable` reads
   the track, its album and the `release_track_links` and `album_links` rows, and
   `Shared::written` is a pure function over them — the identity, then one link. The link is

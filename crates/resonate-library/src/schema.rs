@@ -17,6 +17,10 @@ const MIGRATIONS: &[&str] = &[
          path TEXT PRIMARY KEY,
          pid  INTEGER NOT NULL
      ) STRICT;",
+    "CREATE TABLE likenesses (
+         picture  TEXT PRIMARY KEY,
+         likeness BLOB
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

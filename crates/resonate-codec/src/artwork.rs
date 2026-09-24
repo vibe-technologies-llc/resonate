@@ -21,6 +21,13 @@ const OPAQUE: f32 = 1.0;
 const RGB: usize = 3;
 const RGBA: usize = 4;
 
+const LIKENESS_SIDE: u32 = 8;
+const LIKENESS_CELLS: usize = (LIKENESS_SIDE * LIKENESS_SIDE) as usize;
+const LIKENESS_BYTES: usize = LIKENESS_CELLS * RGB;
+const ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF: u32 = 12;
+const ALIKE_WITHIN_SQUARED: u32 =
+    ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF * ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF * LIKENESS_BYTES as u32;
+
 static LINEAR_FROM_EIGHT_BIT: LazyLock<[f32; 256]> = LazyLock::new(|| {
     std::array::from_fn(|encoded| linear_from_srgb(encoded as f32 / EIGHT_BIT_FULL_SCALE))
 });
@@ -28,6 +35,29 @@ static LINEAR_FROM_EIGHT_BIT: LazyLock<[f32; 256]> = LazyLock::new(|| {
 type Linear = [f32; RGBA];
 
 pub struct Drawing(Decoded);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Likeness([u8; LIKENESS_BYTES]);
+
+impl Likeness {
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        <[u8; LIKENESS_BYTES]>::try_from(bytes).ok().map(Self)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn resembles(&self, other: &Self) -> bool {
+        let squared: u32 = self
+            .0
+            .iter()
+            .zip(&other.0)
+            .map(|(one, another)| u32::from(one.abs_diff(*another)).pow(2))
+            .sum();
+        squared <= ALIKE_WITHIN_SQUARED
+    }
+}
 
 enum Decoded {
     Rgb(RgbImage),
@@ -67,6 +97,44 @@ impl Drawing {
         };
 
         written_as_png(&drawn)
+    }
+
+    pub fn likeness(&self) -> Option<Likeness> {
+        let plane = self.plane();
+        if plane.width < LIKENESS_SIDE || plane.height < LIKENESS_SIDE {
+            return None;
+        }
+
+        let mut summed = [[0.0_f32; RGB]; LIKENESS_CELLS];
+        let mut counted = [0_u32; LIKENESS_CELLS];
+        let mut row = vec![[0.0; RGBA]; plane.width as usize];
+        for y in 0..plane.height {
+            plane.linear(y, &mut row);
+            let down = (y * LIKENESS_SIDE / plane.height) as usize;
+            for (x, pixel) in (0_u32..).zip(&row) {
+                let cell =
+                    down * LIKENESS_SIDE as usize + (x * LIKENESS_SIDE / plane.width) as usize;
+                let alpha = pixel[RGB];
+                for (sum, channel) in summed[cell].iter_mut().zip(&pixel[..RGB]) {
+                    *sum += channel * alpha;
+                }
+                counted[cell] += 1;
+            }
+        }
+
+        let mut likeness = [0; LIKENESS_BYTES];
+        for ((into, sums), count) in likeness
+            .as_chunks_mut::<RGB>()
+            .0
+            .iter_mut()
+            .zip(&summed)
+            .zip(counted)
+        {
+            for (drawn, sum) in into.iter_mut().zip(sums) {
+                *drawn = eight_bit(srgb_from_linear(sum / count as f32));
+            }
+        }
+        Some(Likeness(likeness))
     }
 
     fn plane(&self) -> Plane<'_> {
@@ -331,8 +399,9 @@ mod tests {
     use image::{RgbImage, Rgba, Rgba32FImage, RgbaImage, imageops::FilterType};
 
     use super::{
-        CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LINEAR_FROM_EIGHT_BIT, RGB,
-        drawn_smaller, eight_bit, linear_from_srgb, sides_within, srgb_from_linear, written_as_png,
+        CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LINEAR_FROM_EIGHT_BIT,
+        Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb, sides_within, srgb_from_linear,
+        written_as_png,
     };
 
     fn speckled(width: u32, height: u32) -> RgbaImage {
@@ -494,5 +563,90 @@ mod tests {
             without.no_larger_than(side)
         );
         assert_eq!(with_alpha.squared(side), without.squared(side));
+    }
+
+    fn sleeve(side: u32, mirrored: bool) -> RgbImage {
+        RgbImage::from_fn(side, side, |x, y| {
+            let across = if mirrored { side - 1 - x } else { x };
+            let (u, v) = (across as f32 / side as f32, y as f32 / side as f32);
+            if (0.15..0.55).contains(&u) && (0.2..0.6).contains(&v) {
+                image::Rgb([220, 40, 30])
+            } else if (0.6..0.9).contains(&u) && (0.65..0.9).contains(&v) {
+                image::Rgb([240, 230, 200])
+            } else {
+                image::Rgb([
+                    (u * 60.0) as u8,
+                    (v * 90.0) as u8,
+                    (40.0 + u * v * 120.0) as u8,
+                ])
+            }
+        })
+    }
+
+    fn drawn(picture: &RgbImage, format: image::ImageFormat) -> Drawing {
+        let mut bytes = Vec::new();
+        picture
+            .write_to(&mut std::io::Cursor::new(&mut bytes), format)
+            .expect("an in-memory encode");
+        let art = CoverArt {
+            format: if format == image::ImageFormat::Jpeg {
+                ImageFormat::Jpeg
+            } else {
+                ImageFormat::Png
+            },
+            bytes,
+        };
+        Drawing::of(&art).expect("the cover reads back")
+    }
+
+    fn likeness_of(picture: &RgbImage, format: image::ImageFormat) -> Likeness {
+        drawn(picture, format)
+            .likeness()
+            .expect("a cover wide enough to be weighed")
+    }
+
+    #[test]
+    fn one_sleeve_saved_at_two_resolutions_is_alike() {
+        let large = sleeve(1200, false);
+        let small = image::imageops::resize(&large, 300, 300, FilterType::Triangle);
+
+        assert!(
+            likeness_of(&large, image::ImageFormat::Jpeg)
+                .resembles(&likeness_of(&small, image::ImageFormat::Png))
+        );
+    }
+
+    #[test]
+    fn two_sleeves_that_differ_are_not_alike_however_alike_their_colours() {
+        let one = likeness_of(&sleeve(600, false), image::ImageFormat::Png);
+        let mirrored = likeness_of(&sleeve(600, true), image::ImageFormat::Png);
+        let blank = likeness_of(
+            &RgbImage::from_pixel(600, 600, image::Rgb([30, 45, 70])),
+            image::ImageFormat::Png,
+        );
+
+        assert!(!one.resembles(&mirrored));
+        assert!(!one.resembles(&blank));
+        assert!(!mirrored.resembles(&blank));
+    }
+
+    #[test]
+    fn a_likeness_reads_back_from_the_bytes_it_is_kept_as() {
+        let likeness = likeness_of(&sleeve(64, false), image::ImageFormat::Png);
+
+        assert_eq!(Likeness::from_bytes(likeness.as_bytes()), Some(likeness));
+        assert_eq!(Likeness::from_bytes(&[0; 7]), None);
+    }
+
+    #[test]
+    fn a_picture_narrower_than_the_likeness_has_none() {
+        assert_eq!(
+            drawn(
+                &RgbImage::from_pixel(7, 600, image::Rgb([0, 0, 0])),
+                image::ImageFormat::Png
+            )
+            .likeness(),
+            None
+        );
     }
 }

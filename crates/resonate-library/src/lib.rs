@@ -8,6 +8,7 @@ mod error;
 mod fingerprint;
 mod hinted;
 mod import;
+mod likeness;
 mod m3u;
 mod model;
 mod moves;

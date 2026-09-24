@@ -203,8 +203,6 @@
   because the art is fetched only for a release the catalog holds
 
 ## Suggestions
-- A suggestion's mosaic weighs two sleeves the same only where their bytes begin alike, so one
-  sleeve saved at two resolutions — an edition and its expanded edition — fills two tiles
 - An opened suggestion lists its first `PREVIEWED_AT_MOST` rows; *Play* and the rest act on the
   whole search, but a list of thousands cannot be scrolled to its end in the pane
 - Nothing drives the Suggestions pane's press on a card: the opened view was seen by seeding

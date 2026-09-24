@@ -19,9 +19,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{
-    ChannelLayout, FrameSpan, Frames, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
-    Reordered, Resumable, Resumption, SampleFormat, SampleRate, SourceId, Span, StreamSpec,
-    TrackId, WantId,
+    AlbumId, ChannelLayout, FrameSpan, Frames, MediaLocation, PlaylistId, QueueStamp,
+    ReleaseTrackId, Reordered, Resumable, Resumption, SampleFormat, SampleRate, SourceId, Span,
+    StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
     Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease, Codec,
@@ -13714,6 +13714,86 @@ fn a_suggestion_says_how_long_it_runs_and_which_covers_picture_it() -> Result<()
             .iter()
             .all(|suggestion| suggestion.pictured_by == vec![album.id]),
         "the one covered album did not picture every suggestion it fills"
+    );
+    Ok(())
+}
+
+fn a_sleeve(side: u32, mirrored: bool) -> CoverArt {
+    let drawn = image::RgbImage::from_fn(side, side, |x, y| {
+        let across = if mirrored { side - 1 - x } else { x };
+        let (u, v) = (across as f32 / side as f32, y as f32 / side as f32);
+        if (0.15..0.55).contains(&u) && (0.2..0.6).contains(&v) {
+            image::Rgb([220, 40, 30])
+        } else {
+            image::Rgb([(u * 60.0) as u8, (v * 90.0) as u8, 70])
+        }
+    });
+    let mut written = std::io::Cursor::new(Vec::new());
+    drawn
+        .write_to(&mut written, image::ImageFormat::Png)
+        .expect("a written picture");
+
+    CoverArt {
+        format: ImageFormat::Png,
+        bytes: written.into_inner(),
+    }
+}
+
+fn orbits_in_three_editions(tree: &Tree) {
+    for (edition, album) in ["Orbits", "Orbits (Expanded)", "Other Orbits"]
+        .into_iter()
+        .enumerate()
+    {
+        for number in 1..=TRACKS_OF_A_DECADE / 2 {
+            tree.write(
+                &format!("orbits-{edition}/{number:02}.wav"),
+                &Wav::new()
+                    .text(TITLE, &format!("Orbit {number:02}"))
+                    .text(ARTIST, "The Orbiters")
+                    .text(ALBUM, album)
+                    .text(GENRE, "Progressive Rock")
+                    .text(YEAR, "1995")
+                    .text(TRACK, &number.to_string())
+                    .build(),
+            );
+        }
+    }
+}
+
+#[test]
+fn one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once() -> Result<()> {
+    let tree = Tree::new();
+    orbits_in_three_editions(&tree);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let album = |title: &str| -> Result<AlbumId> {
+        Ok(library
+            .albums(&AlbumQuery::default())?
+            .into_iter()
+            .find(|album| album.title == title)
+            .unwrap_or_else(|| panic!("no album called {title}"))
+            .id)
+    };
+    let edition = album("Orbits")?;
+    let expanded = album("Orbits (Expanded)")?;
+    let other = album("Other Orbits")?;
+    assert!(library.land_archive_cover(edition, &a_sleeve(600, false))?);
+    assert!(library.land_archive_cover(expanded, &a_sleeve(250, false))?);
+    assert!(library.land_archive_cover(other, &a_sleeve(600, true))?);
+
+    let decade = library
+        .suggestions()?
+        .iter()
+        .find(|suggestion| suggestion.query.text.as_deref() == Some("year:1990-1999"))
+        .cloned()
+        .expect("the catalog suggests its decade");
+    assert_eq!(decade.pictured_by.len(), 2, "{:?}", decade.pictured_by);
+    assert!(decade.pictured_by.contains(&other));
+    assert!(
+        decade.pictured_by.contains(&edition) != decade.pictured_by.contains(&expanded),
+        "one sleeve filled two tiles, or none: {:?}",
+        decade.pictured_by
     );
     Ok(())
 }

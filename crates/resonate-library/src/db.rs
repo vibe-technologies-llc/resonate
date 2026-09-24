@@ -11,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::{Condvar, Mutex};
-use resonate_codec::{Hinting, Sources, StandIn};
+use resonate_codec::{Hinting, Likeness, Sources, StandIn};
 use resonate_core::{
     AlbumId, ArtistId, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, ListenId,
     MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable, Resumption,
@@ -38,7 +38,7 @@ use crate::{
     Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault,
     VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere, enrich, enriched,
     hinted::Hinted,
-    import,
+    import, likeness,
     model::CoverWanted,
     organise::{self, TrackToFile},
     playlist,
@@ -447,6 +447,48 @@ impl Drop for Reader<'_> {
 impl Inner {
     fn opened_vault(&self) -> Result<&Arc<Vault>> {
         self.vault.as_ref().ok_or(Error::NoVault)
+    }
+
+    pub(crate) fn cover_art(&self, id: AlbumId) -> Result<Option<CoverArt>> {
+        let stored = self.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT cover_art, cover_format, cover_path FROM albums WHERE id = ?1",
+                    params![id.get() as i64],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<Vec<u8>>>(0)?,
+                            row.get::<_, Option<i64>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+
+        if let Some((_, _, Some(kept))) = &stored {
+            let Some(vault) = self.vault.as_ref() else {
+                tracing::debug!(
+                    album = id.get(),
+                    "a cover kept in the vault is drawn by no build that has not opened one"
+                );
+                return Ok(None);
+            };
+            let path = self.in_the_vault(kept)?;
+            return vault
+                .picture(&path)
+                .map(Some)
+                .map_err(|source| Error::Vault {
+                    path,
+                    source: Box::new(source),
+                });
+        }
+
+        let Some((Some(bytes), code, _)) = stored else {
+            return Ok(None);
+        };
+        held_cover(id, bytes, code).map(Some)
     }
 
     pub(crate) fn in_the_vault(&self, within: &str) -> Result<PathBuf> {
@@ -1122,45 +1164,7 @@ impl Library {
     }
 
     pub fn cover_art(&self, id: AlbumId) -> Result<Option<CoverArt>> {
-        let stored = self.inner.read(|connection| {
-            connection
-                .query_row(
-                    "SELECT cover_art, cover_format, cover_path FROM albums WHERE id = ?1",
-                    params![id.get() as i64],
-                    |row| {
-                        Ok((
-                            row.get::<_, Option<Vec<u8>>>(0)?,
-                            row.get::<_, Option<i64>>(1)?,
-                            row.get::<_, Option<String>>(2)?,
-                        ))
-                    },
-                )
-                .optional()
-                .map_err(|source| Error::store(StoreOp::Query, source))
-        })?;
-
-        if let Some((_, _, Some(kept))) = &stored {
-            let Some(vault) = self.inner.vault.as_ref() else {
-                tracing::debug!(
-                    album = id.get(),
-                    "a cover kept in the vault is drawn by no build that has not opened one"
-                );
-                return Ok(None);
-            };
-            let path = self.inner.in_the_vault(kept)?;
-            return vault
-                .picture(&path)
-                .map(Some)
-                .map_err(|source| Error::Vault {
-                    path,
-                    source: Box::new(source),
-                });
-        }
-
-        let Some((Some(bytes), code, _)) = stored else {
-            return Ok(None);
-        };
-        held_cover(id, bytes, code).map(Some)
+        self.inner.cover_art(id)
     }
 
     pub(crate) fn cover_the_vault_lacks(&self, id: AlbumId) -> Result<Option<CoverArt>> {
@@ -2840,9 +2844,11 @@ pub(crate) fn measured(inner: &Inner, query: &TrackQuery) -> Result<Measured> {
 const COVERED_ALBUM: &str = "(tracks.album_id IN (SELECT id FROM albums
        WHERE cover_art IS NOT NULL OR cover_path IS NOT NULL))";
 
-const PICTURE_OF_THE_ALBUM: &str = "(SELECT coalesce(a.cover_key,
-            length(a.cover_art) || ':' || hex(substr(a.cover_art, 1, 256)))
-       FROM albums a WHERE a.id = tracks.album_id)";
+const PICTURE_OF_THE_ALBUM: &str = concat!(
+    "(SELECT ",
+    store::the_picture_of!("a"),
+    " FROM albums a WHERE a.id = tracks.album_id)"
+);
 
 const PICTURES_WEIGHED_PER_TILE: usize = 4;
 
@@ -2879,12 +2885,22 @@ pub(crate) fn pictured_by(
         })
     })?;
     let mut seen = AHashSet::new();
+    let mut looked_like: Vec<Likeness> = Vec::with_capacity(at_most);
     let mut pictured = Vec::with_capacity(at_most);
     for (album, picture) in weighed {
-        if picture.is_some_and(|picture| !seen.insert(picture)) {
-            continue;
+        let album = AlbumId::new(album as u64)?;
+        if let Some(picture) = picture {
+            if !seen.insert(picture.clone()) {
+                continue;
+            }
+            if let Some(likeness) = likeness::of(inner, album, &picture)? {
+                if looked_like.iter().any(|held| held.resembles(&likeness)) {
+                    continue;
+                }
+                looked_like.push(likeness);
+            }
         }
-        pictured.push(AlbumId::new(album as u64)?);
+        pictured.push(album);
         if pictured.len() == at_most {
             break;
         }
