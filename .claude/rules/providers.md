@@ -107,7 +107,14 @@ A provider does none of this, so none of it is written twice:
    is different in one more way: *Poll now* and `resonate poll --again` poll under
    `PollOptions::ASKING_EVERY_WANT`, so every want not yet held is asked whenever it was last
    tried, because somebody who has just dropped a file in the inbox means *now*; the timer and a
-   bare `resonate poll` keep to `POLL_AGAIN_AFTER`, which is what spares a network service. A provider is registered in code or not at all; there
+   bare `resonate poll` keep to `POLL_AGAIN_AFTER`, which is what spares a network service.
+   **The window watches the inbox folder too**, through the same `RootsWatch` the library roots
+   are watched by: once a write of an audio file or a sheet under it has been quiet for
+   `INBOX_QUIET_FOR`, it polls as `Prompted::ByTheInbox` — every want not yet held, the way a
+   press does, because a file landing is somebody meaning *now*, but with no notice raised or
+   cleared, the way the timer's own poll is. A poll that could not start because a pass was
+   running stays owed and is asked again on the next look, `INBOX_LOOKED_AT_EVERY` later, and a
+   folder chosen in the settings pane is watched from the next look. A provider is registered in code or not at all; there
    is no loading at run time.
 4. An `Error::Io` names the provider and a `ProviderOp`; an error a provider raises that the seam
    has no variant for is added to the seam when that provider lands, with its op, never as prose.

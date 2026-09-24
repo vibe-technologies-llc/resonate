@@ -2,6 +2,7 @@ use std::{
     cell::OnceCell,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
+    slice,
     sync::Arc,
     thread,
     time::{Duration, SystemTime},
@@ -70,6 +71,8 @@ const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
 const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
+const INBOX_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
+const INBOX_QUIET_FOR: Duration = Duration::from_secs(2);
 const GONE_QUIET_FOR: Duration = Duration::from_millis(250);
 
 const TAKEN_BACK: &str = " · ctrl-z puts it back";
@@ -318,6 +321,7 @@ impl Pass {
 enum Prompted {
     ByHand,
     OnItsOwn,
+    ByTheInbox,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -507,6 +511,7 @@ pub struct LibraryModel {
     _asking: Task<()>,
     _watching: Task<()>,
     _watching_roots: Task<()>,
+    _watching_inbox: Task<()>,
     _retag: Task<()>,
     _enrich: Task<()>,
     _edit: Task<()>,
@@ -641,6 +646,7 @@ impl LibraryModel {
             _asking: Task::ready(()),
             _watching: Task::ready(()),
             _watching_roots: Task::ready(()),
+            _watching_inbox: Task::ready(()),
             _retag: Task::ready(()),
             _enrich: Task::ready(()),
             _edit: Task::ready(()),
@@ -656,7 +662,49 @@ impl LibraryModel {
         model.ask_on_its_own(cx);
         model.watch_for_writes_elsewhere(cx);
         model.watch_the_roots(cx);
+        model.watch_the_inbox(cx);
         model
+    }
+
+    fn watch_the_inbox(&mut self, cx: &mut Context<Self>) {
+        self._watching_inbox = cx.spawn(async move |this, cx| {
+            let mut watched: Option<(PathBuf, Option<RootsWatch>)> = None;
+            let mut owed = false;
+            loop {
+                cx.background_executor().timer(INBOX_LOOKED_AT_EVERY).await;
+                let Ok(inbox) = this.update(cx, |this, _| this.sourcing.inbox.clone()) else {
+                    return;
+                };
+                if watched.as_ref().map(|(folder, _)| folder) != inbox.as_ref() {
+                    owed = false;
+                    watched = match inbox {
+                        Some(folder) => {
+                            let over = folder.clone();
+                            let watch = cx
+                                .background_executor()
+                                .spawn(async move { RootsWatch::over(slice::from_ref(&over)) })
+                                .await;
+                            Some((folder, watch))
+                        }
+                        None => None,
+                    };
+                }
+
+                if let Some(watch) = watched.as_ref().and_then(|(_, watch)| watch.as_ref()) {
+                    let _ = watch.taken_away(Duration::ZERO);
+                    owed |= !watch.settled(INBOX_QUIET_FOR).is_empty();
+                }
+                if !owed {
+                    continue;
+                }
+                let Ok(answered) =
+                    this.update(cx, |this, cx| this.poll_as(Prompted::ByTheInbox, cx))
+                else {
+                    return;
+                };
+                owed = !answered;
+            }
+        });
     }
 
     fn watch_the_roots(&mut self, cx: &mut Context<Self>) {
@@ -1008,7 +1056,9 @@ impl LibraryModel {
         self.edited_then(
             Wanted::ThePlaylists,
             move |library| library.want(release_track).map(|_| None),
-            |this, cx| this.poll_as(Prompted::OnItsOwn, cx),
+            |this, cx| {
+                this.poll_as(Prompted::OnItsOwn, cx);
+            },
             cx,
         );
     }
@@ -2777,29 +2827,29 @@ impl LibraryModel {
         self.poll_as(Prompted::ByHand, cx);
     }
 
-    fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) {
+    fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) -> bool {
         if self.work.is_busy() {
             if prompted == Prompted::ByHand {
                 self.notice = Some(Notice::Trouble(ALREADY_WALKING.to_owned()));
                 cx.notify();
             }
-            return;
+            return false;
         }
         let providers = Arc::new(self.sourcing.providers());
-        if prompted == Prompted::OnItsOwn && !self.worth_asking_on_its_own(&providers) {
-            return;
-        }
         let options = match prompted {
-            Prompted::ByHand => PollOptions::ASKING_EVERY_WANT,
+            Prompted::ByHand | Prompted::ByTheInbox => PollOptions::ASKING_EVERY_WANT,
             Prompted::OnItsOwn => PollOptions::default(),
         };
+        if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
+            return true;
+        }
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the providers could not be asked");
                 self.notice = Some(Notice::Trouble(error.to_string()));
                 cx.notify();
-                return;
+                return true;
             }
         };
 
@@ -2831,13 +2881,14 @@ impl LibraryModel {
             });
             let _ = finished;
         });
+        true
     }
 
-    fn worth_asking_on_its_own(&self, providers: &Providers) -> bool {
+    fn worth_asking_on_its_own(&self, providers: &Providers, options: PollOptions) -> bool {
         if !providers.has_a_source() {
             return false;
         }
-        match self.library.is_a_want_due(PollOptions::default()) {
+        match self.library.is_a_want_due(options) {
             Ok(due) => due,
             Err(error) => {
                 tracing::warn!(%error, "the wants could not be read");

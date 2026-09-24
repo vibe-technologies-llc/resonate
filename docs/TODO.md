@@ -55,9 +55,9 @@
   gesture forgets one, and a scan never prunes it. It carries no genre and no lyrics of its own,
   because the vault strips the tags the delivery came with and the row is written from the release
   track alone; its ReplayGain is what its study measured, so it is levelled only once studied
-- A want the window's timer asked about waits out `POLL_AGAIN_AFTER` before the timer asks
-  again, so a file dropped in the inbox an hour after lands five hours later unless *Poll now* or
-  `resonate poll --again` is pressed. Nothing watches the inbox folder itself
+- The inbox is watched only while a window is open. A file dropped in it while none is waits for
+  the next start's timer, which keeps to `POLL_AGAIN_AFTER`, so a want tried an hour before lands
+  five hours later unless *Poll now* or `resonate poll --again` is pressed
 - A provider or a stream left behind as late keeps its thread for as long as its `obtain` or its
   `read` runs. Nothing can take one back without the provider's help
 - A provider is asked for bytes on the engine thread and on the tag reader, so a slow remote open
