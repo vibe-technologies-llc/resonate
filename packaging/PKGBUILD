@@ -33,14 +33,14 @@ build() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  export RUSTFLAGS="${RUSTFLAGS:-}"
+  export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
   cargo build --frozen --release --workspace --bin resonate
 }
 
 check() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
-  export RUSTFLAGS="${RUSTFLAGS:-}"
+  export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
   cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
 }
 

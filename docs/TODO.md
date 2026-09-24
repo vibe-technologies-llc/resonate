@@ -67,10 +67,6 @@
 ## DSP
 - The volume is the software gain stage alone, so anything under 100 % leaves bit-perfect. Whether
   a device has a hardware volume is read and drawn, and nothing drives it
-- A packaged build ships the `x86-64` baseline and reaches only SSE2, where a local build takes
-  `target-cpu=native` from `.cargo/config.toml` and 1.4x to 1.7x on the resampler's High with it,
-  the gap widening with the ratio. Closing that gap for a shipped binary needs runtime dispatch,
-  and `#[target_feature]` is `unsafe` and forbidden workspace-wide
 - A track the lookup has not studied yet is turned down by nothing but the peak its tags declare,
   so a boost with no peak tag still leans on the per-sample limiter until the study lands, and the
   guard catches only what the chain processes: a bit-perfect or repacked stream of a file that is
@@ -518,8 +514,8 @@
   What `Edit` cannot cover is the half that needs one: the shaped line, the caret's pixel position
   and everything the platform's input method hands to `EntityInputHandler`
 - `cargo bench -p resonate-dsp --bench stages` prints what every stage costs, but nothing runs it
-  but a person, so a figure the rules quote going away is noticed only when somebody looks. The
-  packaged build's cost is `RUSTFLAGS="-C target-cpu=x86-64"` with a target directory of its own,
+  but a person, so a figure the rules quote going away is noticed only when somebody looks. A
+  baseline build's cost is `RUSTFLAGS="-C target-cpu=x86-64"` with a target directory of its own,
   and it is worth reading beside the native one, because the two do not rank the stages alike
 - A Matroska `Duration` longer than the file's own clusters is not caught for any codec but Opus:
   `matroska.rs` counts where the last block starts, which is a lower bound, so blocks past the

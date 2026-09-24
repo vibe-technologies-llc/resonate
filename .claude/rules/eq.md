@@ -82,7 +82,7 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   so guarding it again put a compare-and-select in the middle of a loop-carried dependency for a
   value that could not have been denormal or NaN. Taking it out was bit-identical and measured
   1.39x on the frame-major stage; the stage now costs 0.061 % of a core at ten bands and 0.18 % at
-  `MAX_BANDS` natively, 0.081 % and 0.25 % on the packaged `x86-64` build, stereo at 48 kHz. The
+  `MAX_BANDS` natively, 0.081 % and 0.25 % on an `x86-64` baseline build, stereo at 48 kHz. The
   guard reads the magnitude once rather than twice, `is_finite` being `abs() < INFINITY` and the
   denormal test `abs() > DENORMAL_FLOOR`. Frame-major, the native build was the slower of the two:
   under AVX-512 LLVM turns the infinity test into a mask on the serial path, where SSE2 and AVX2

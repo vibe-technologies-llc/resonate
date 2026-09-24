@@ -1086,7 +1086,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   are summed because, summed in registers, LLVM's SLP vectoriser paired the two channels two-wide off
   their adjacent output stores instead of packing each channel's eight into one vector. High costs
   0.18 % of a core at 44.1 to 48 kHz and 0.27 % at 96 to 48 kHz natively, against 0.20 % and
-  0.39 %, and 0.25 % and 0.41 % on the packaged `x86-64` build, against 0.31 % and 0.53 %. The
+  0.39 %, and 0.25 % and 0.41 % on an `x86-64` baseline build, against 0.31 % and 0.53 %. The
   alias tests skip `latency_frames` at both ends as well as their margin: a tone switched on against
   a silent history rings that long, and at 24:1 the ringing was the whole of a −105 dB once recorded
   there. The 24:1 test plays 21 kHz, because 20 kHz folds onto the 4 kHz output Nyquist, where every
@@ -1104,7 +1104,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `a_24_bit_word_near_full_scale_is_dithered_without_bias` is the claim. A uniform draw takes 53
   bits and triangular is the sum of two. The rounding adds and subtracts 1.5 × 2⁵², so IEEE rounds
   the sum half to even, the same trick `resonate-core`'s conversions use and for the same reason:
-  `round` is a libm call per sample on the packaged `x86-64` baseline. The output is clamped to
+  `round` is a libm call per sample on the `x86-64` baseline. The output is clamped to
   `[-1, 1 - step]`, but the error fed back is taken before the clamp, so a clipped sample cannot run
   the loop away — and an error that is not finite, or lies past what the dither's own peak and half
   a step can make (`DitherKind::largest_error_steps`), is fed back as nothing, because one NaN, one
@@ -1128,10 +1128,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   reach the channel beside it. The match is on the enum rather than on an empty coefficient slice,
   so a curve added to `NoiseShaping` has to say which path it takes. At 48 kHz stereo the flat path
   costs 0.022 % of a core, Lipshitz 0.033 % — 0.045 % while its history shifted in f32 — and
-  Threshold 0.039 % natively, and 0.024 %, 0.038 % and 0.052 % on the packaged `x86-64` build. The
+  Threshold 0.039 % natively, and 0.024 %, 0.038 % and 0.052 % on an `x86-64` baseline build. The
   guard is most of what separates Lipshitz from the 0.028 % it cost without one: under AVX-512 the
   comparison becomes a mask on the loop-carried path. Moving the forgetting out of line into a cold
-  call takes it back off that path natively, but costs Threshold, the default, more on the packaged
+  call takes it back off that path natively, but costs Threshold, the default, more on the baseline
   build than it saves, so the guard stays a plain select.
 - **A 32-bit target is dithered like any other.** Its grid is 2⁻³¹, exact in the f64 the chain now
   carries and far inside what the 1.5 × 2⁵² rounding reaches, so `Dither::new` takes every depth
@@ -1163,7 +1163,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   coefficients by the step-down recursion to show every one is under one in magnitude at every rate
   in that span, and quantise a quiet sine at 96 kHz to watch the error fall 26 dB at 1 kHz and
   33 dB at 4 kHz and rise 9 dB at 40 kHz against flat. A design costs about 38 µs at 44.1 kHz and
-  55 µs at 192 kHz natively, 42 and 64 µs on the packaged build, paid in `prepare` on every rebind
+  55 µs at 192 kHz natively, 42 and 64 µs on the baseline build, paid in `prepare` on every rebind
   and every reshape that builds a dither stage; the transcendentals in the threshold and the
   per-point cosine are most of it. `plan_for` stores what survives in `OutputPlan::shaping`, the
   dither stage applies the plan's curve rather than the configured one, and `resonate explain`
@@ -1355,7 +1355,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   with the dither off — nothing covered it. The scale is `SampleFormat::full_scale` both
   ways, so every S16 and S24 value survives a trip through f32 exactly. The rounding adds a
   constant big enough that IEEE rounds the sum to a whole number, half to even, and reads it back
-  out of the bits, rather than calling `round_ties_even`: the packaged `x86-64` baseline has no
+  out of the bits, rather than calling `round_ties_even`: the `x86-64` baseline has no
   `roundps` and made that a `rintf` call per sample, where the addition vectorises on SSE2, which
   the saturating `as` it replaced never let the loop do.
 

@@ -717,7 +717,8 @@ build and tests, the whole workspace's build and tests, the `cargo tree` refusal
 plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
 no session bus there, so the PipeWire and bus tests print their skip — all but the reconnect test,
 which starts a daemon of its own. `RUSTFLAGS` is emptied over
-`target-cpu=native` for the reason the PKGBUILD empties it. Formatting is the one check it cannot
+`target-cpu=native`, because the cache a job restores may have been built on a runner with another
+CPU, and a native build from one faults on another. Formatting is the one check it cannot
 make: `rust-formatter` is not something a hosted runner installs, so `rust-formatter --check` stays
 local. A command added to the list above that a runner can run is added to the workflow too, and a
 crate added to the layering refusals is added to the workflow's `refuse` lines.
@@ -774,11 +775,12 @@ pass is an alias and a `PassKind` variant rather than a struct, an error and a m
 
 `.cargo/config.toml` builds for `target-cpu=native`, so the resampler's taper and convolution
 vectorise to whatever the machine has rather than to the `x86-64` baseline's SSE2, which is worth
-1.4x to 1.7x on High, more the further the rates are apart. It is a *development* setting:
-`packaging/PKGBUILD` exports `RUSTFLAGS` back over it in `build` and `check`, because
-`arch=('x86_64' 'aarch64')` promises the package runs on any machine of either, and a binary built
-with `native` on one faults on an older one. Anything else that produces a binary for another
-machine has to do the same.
+1.4x to 1.7x on High, more the further the rates are apart. The package keeps it:
+`packaging/PKGBUILD` appends `-C target-cpu=native` to whatever `RUSTFLAGS` makepkg hands it in
+`build` and `check`. Appending is the point — any `RUSTFLAGS` in the environment replaces
+`build.rustflags` outright, and makepkg always sets one — so an AUR build is made for the machine
+that builds it and is for that machine alone. Anything that produces a binary for another machine,
+the CI among them, sets `RUSTFLAGS` back over it.
 
 `--exclude resonate-ui --no-default-features` is what keeps gpui out of a build. Excluding the crate
 is what does the work: `resonate-ui` depends on `gpui` unconditionally, so the binary's `ui` feature

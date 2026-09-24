@@ -81,8 +81,9 @@ install. Tests that need a PipeWire daemon, a session bus, ffmpeg or the network
 the thing is missing rather than failing; the CI has no daemon and no bus, so those skip there —
 except `resonate-pipewire`'s reconnect test, which starts a daemon of its own.
 
-`.cargo/config.toml` builds for `target-cpu=native`. Anything that produces a binary for another
-machine — the package, the CI — sets `RUSTFLAGS` back over it.
+`.cargo/config.toml` builds for `target-cpu=native`, and so does the package, which is built on the
+machine it is for. Anything that produces a binary for another machine — the CI — sets `RUSTFLAGS`
+back over it.
 
 ## Keeping the rules true
 

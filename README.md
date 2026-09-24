@@ -49,9 +49,10 @@ xkbcommon, Vulkan, fontconfig and freetype. On Arch that is
 xkbcommon even in a Wayland-only build, and the linker drops it from the binary again.
 `packaging/PKGBUILD` is the package, published on the AUR as `resonate-player-git`.
 
-`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler and
-is a *development* setting: anything producing a binary for another machine has to export
-`RUSTFLAGS` over it, as the `PKGBUILD` does.
+`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler,
+and the `PKGBUILD` keeps it by appending `-C target-cpu=native` to makepkg's own `RUSTFLAGS`, so the
+package is built for the machine that builds it. Anything producing a binary for another machine
+has to export `RUSTFLAGS` over it.
 
 ## Playing
 
