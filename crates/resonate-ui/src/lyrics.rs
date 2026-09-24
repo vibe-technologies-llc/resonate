@@ -9,7 +9,7 @@ use gpui::{
 };
 use resonate_core::{Frames, TrackId};
 use resonate_engine::{PlayerState, StreamDigest};
-use resonate_lyrics::{Lyricists, Lyrics, Timing, Waiting, Wanted};
+use resonate_lyrics::{Lyricists, Lyrics, Timing, Voice, Waiting, Wanted};
 
 use crate::theme;
 
@@ -286,6 +286,7 @@ impl<T: Copy + PartialEq> Turn<T> {
 struct Sheet {
     text: Arc<[SharedString]>,
     moments: Arc<[Option<Duration>]>,
+    voices: Arc<[Voice]>,
     written: Arc<[usize]>,
 }
 
@@ -294,6 +295,7 @@ impl Default for Sheet {
         Self {
             text: Arc::from([] as [SharedString; 0]),
             moments: Arc::from([] as [Option<Duration>; 0]),
+            voices: Arc::from([] as [Voice; 0]),
             written: Arc::from([] as [usize; 0]),
         }
     }
@@ -339,7 +341,7 @@ pub struct LyricsModel {
     placed: bool,
     arrived: Option<Sprung>,
     turn: Turn<Reads>,
-    light: Turn<Option<usize>>,
+    light: Turn<[Option<usize>; 2]>,
     spread: Turn<Falloff>,
     glide: Option<Glide>,
     hand_at: Option<Instant>,
@@ -363,7 +365,7 @@ impl LyricsModel {
             placed: false,
             arrived: None,
             turn: Turn::still(Reads::Evenly),
-            light: Turn::still(None),
+            light: Turn::still([None; 2]),
             spread: Turn::still(Falloff::Around),
             glide: None,
             hand_at: None,
@@ -389,6 +391,14 @@ impl LyricsModel {
 
     pub fn moments(&self) -> Arc<[Option<Duration>]> {
         Arc::clone(&self.sheet.moments)
+    }
+
+    pub fn voices(&self) -> Arc<[Voice]> {
+        Arc::clone(&self.sheet.voices)
+    }
+
+    pub fn has_two_voices(&self) -> bool {
+        self.sheet.voices.contains(&Voice::Two)
     }
 
     pub fn has_a_source(&self) -> bool {
@@ -450,14 +460,17 @@ impl LyricsModel {
     pub fn follow_the_track(&mut self, position: Duration, now: Instant) {
         let Some(lyrics) = self.found() else {
             self.turn.onto(Reads::Evenly, now);
-            self.light.onto(None, now);
+            self.light.onto([None; 2], now);
             return;
         };
-        let lit = lyrics.line_in_play(position);
+        let lit = lyrics.voices_in_play(position);
         let reads = if lyrics.timing() == Timing::Unsynced {
             Reads::Evenly
         } else {
-            lit.map_or(Reads::Spent, Reads::At)
+            lit.into_iter()
+                .flatten()
+                .max()
+                .map_or(Reads::Spent, Reads::At)
         };
         let read_at = lyrics
             .waiting_at(position)
@@ -477,18 +490,20 @@ impl LyricsModel {
     pub fn standing(&self, index: usize, now: Instant) -> f32 {
         let line = self.ordinal(index);
 
-        self.spread.blended(now, |falloff| {
+        let focus = self.spread.blended(now, |falloff| {
             self.turn.blended(now, |reads| match reads {
                 Reads::At(sung) => falloff.between(self.ordinal(sung), line),
                 Reads::Evenly => ADRIFT,
                 Reads::Spent => falloff.spent(),
             })
-        })
+        });
+
+        focus.max(self.lead(index, now))
     }
 
     pub fn lead(&self, index: usize, now: Instant) -> f32 {
         self.light
-            .blended(now, |lit| f32::from(u8::from(lit == Some(index))))
+            .blended(now, |lit| f32::from(u8::from(lit.contains(&Some(index)))))
     }
 
     pub fn lag(&self, index: usize, now: Instant) -> Pixels {
@@ -738,7 +753,7 @@ impl LyricsModel {
         self.placed = false;
         self.arrived = None;
         self.turn = Turn::still(Reads::Evenly);
-        self.light = Turn::still(None);
+        self.light = Turn::still([None; 2]);
         self.glide = None;
         self.hand_at = None;
         self.opened_out = false;
@@ -766,6 +781,7 @@ impl Sheet {
             })
             .collect();
         let moments = lyrics.lines().iter().map(|line| line.at).collect();
+        let voices = lyrics.lines().iter().map(|line| line.voice).collect();
         let mut standing = 0;
         let written = lyrics
             .lines()
@@ -783,6 +799,7 @@ impl Sheet {
         Self {
             text,
             moments,
+            voices,
             written,
         }
     }

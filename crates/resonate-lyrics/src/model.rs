@@ -18,10 +18,27 @@ pub enum Timing {
     Unsynced,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Voice {
+    #[default]
+    One,
+    Two,
+}
+
+impl Voice {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::One => 0,
+            Self::Two => 1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LyricLine {
     pub at: Option<Duration>,
     pub text: String,
+    pub voice: Voice,
 }
 
 impl LyricLine {
@@ -29,6 +46,7 @@ impl LyricLine {
         Self {
             at: Some(at),
             text: text.into(),
+            voice: Voice::One,
         }
     }
 
@@ -36,7 +54,14 @@ impl LyricLine {
         Self {
             at: None,
             text: text.into(),
+            voice: Voice::One,
         }
+    }
+
+    #[must_use]
+    pub fn voiced(mut self, voice: Voice) -> Self {
+        self.voice = voice;
+        self
     }
 
     pub fn is_blank(&self) -> bool {
@@ -121,7 +146,7 @@ impl Lyrics {
             .filter_map(|line| {
                 let at = line.at?;
                 let inside = at >= start && end.is_none_or(|end| at < end);
-                inside.then(|| LyricLine::sung(at - start, line.text))
+                inside.then(|| LyricLine::sung(at - start, line.text).voiced(line.voice))
             })
             .collect();
         if lines.iter().all(LyricLine::is_blank) {
@@ -143,10 +168,36 @@ impl Lyrics {
     }
 
     pub fn line_in_play(&self, position: Duration) -> Option<usize> {
-        let sung = self.line_at(position)?;
-        let (_, until) = self.span_of(sung)?;
+        self.voices_in_play(position).into_iter().flatten().max()
+    }
 
-        (position < until).then_some(sung)
+    pub fn voices_in_play(&self, position: Duration) -> [Option<usize>; 2] {
+        let mut active = [None; 2];
+        if self.timing == Timing::Unsynced {
+            return active;
+        }
+
+        let passed = self
+            .lines
+            .partition_point(|line| line.at.is_some_and(|at| at <= position));
+        let mut seen = [false; 2];
+        for index in (0..passed).rev() {
+            let line = &self.lines[index];
+            let voice = line.voice.index();
+            if seen[voice] {
+                continue;
+            }
+            seen[voice] = true;
+            let (_, until) = self.span_of(index).expect("a synced line has a span");
+            if position < until {
+                active[voice] = Some(index);
+            }
+            if seen.into_iter().all(|found| found) {
+                break;
+            }
+        }
+
+        active
     }
 
     pub fn waiting_at(&self, position: Duration) -> Option<Waiting> {
@@ -177,7 +228,10 @@ impl Lyrics {
 
     fn span_of(&self, line: usize) -> Option<(Duration, Duration)> {
         let at = self.lines.get(line)?.at?;
-        let next = self.lines.get(line + 1).and_then(|line| line.at);
+        let next = self.lines[line + 1..]
+            .iter()
+            .find(|next| next.voice == self.lines[line].voice)
+            .and_then(|line| line.at);
         let until = next
             .unwrap_or(Duration::MAX)
             .min(at.saturating_add(LIT_AT_MOST));
@@ -272,6 +326,40 @@ mod tests {
         assert_eq!(lyrics.line_in_play(at(4)), Some(0));
         assert_eq!(lyrics.line_in_play(at(5)), Some(1));
         assert_eq!(lyrics.line_in_play(at(9)), Some(1));
+    }
+
+    #[test]
+    fn two_voices_stay_in_play_until_their_own_next_lines() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "first singer"),
+                LyricLine::sung(at(2), "second singer").voiced(Voice::Two),
+                LyricLine::sung(at(5), "first singer again"),
+                LyricLine::sung(at(8), "second singer again").voiced(Voice::Two),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert_eq!(lyrics.voices_in_play(at(3)), [Some(0), Some(1)]);
+        assert_eq!(lyrics.voices_in_play(at(6)), [Some(2), Some(1)]);
+        assert_eq!(lyrics.voices_in_play(at(8)), [Some(2), Some(3)]);
+        assert_eq!(lyrics.line_in_play(at(8)), Some(3));
+        assert_eq!(lyrics.voices_in_play(at(20)), [None, None]);
+    }
+
+    #[test]
+    fn cutting_a_cue_row_preserves_the_voice() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![LyricLine::sung(at(12), "second singer").voiced(Voice::Two)],
+        )
+        .expect("every line is timed")
+        .within(at(10), Some(at(20)))
+        .expect("a line is inside the cue row");
+
+        assert_eq!(lyrics.lines()[0].at, Some(at(2)));
+        assert_eq!(lyrics.lines()[0].voice, Voice::Two);
     }
 
     #[test]

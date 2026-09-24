@@ -5,7 +5,7 @@ use gpui::{
     SharedString, canvas, div, linear_color_stop, linear_gradient, prelude::*, px, rgb,
 };
 use resonate_engine::{PlayerState, StreamDigest};
-use resonate_lyrics::{Credits, Timing, Waiting, Wanted};
+use resonate_lyrics::{Credits, Timing, Voice, Waiting, Wanted};
 
 use crate::{
     Selection, clipboard,
@@ -87,6 +87,9 @@ struct Credit {
 struct Line {
     index: usize,
     text: SharedString,
+    voice: Voice,
+    show_voice: bool,
+    two_voices: bool,
     at: Option<Duration>,
     standing: f32,
     lead: f32,
@@ -274,6 +277,8 @@ impl RootView {
             let model = self.lyrics.read(cx);
             let text = model.text();
             let moments = model.moments();
+            let voices = model.voices();
+            let has_two_voices = model.has_two_voices();
             let waiting = model.waiting_at(position);
             let swell = model.breath(now);
             let width = model.column_width();
@@ -286,6 +291,13 @@ impl RootView {
                     Line {
                         index,
                         text: text[index].clone(),
+                        voice: voices[index],
+                        show_voice: has_two_voices
+                            && !text[index].is_empty()
+                            && (index == 0
+                                || text[index - 1].is_empty()
+                                || voices[index - 1] != voices[index]),
+                        two_voices: has_two_voices,
                         at: synced
                             .then(|| moments.get(index).copied().flatten())
                             .flatten(),
@@ -376,7 +388,15 @@ impl RootView {
     }
 
     fn lyric(&self, line: Line, cx: &mut Context<Self>) -> AnyElement {
-        let row = div().flex().flex_col().w(line.width).flex_none();
+        let second = line.voice == Voice::Two;
+        let row = div()
+            .flex()
+            .flex_col()
+            .w(line.width)
+            .flex_none()
+            .when(second, |row| row.items_end())
+            .when(line.two_voices && !second, |row| row.items_start())
+            .when(!line.two_voices, |row| row.items_center());
         let carried = div().relative().top(line.offset).w_full();
 
         if line.text.is_empty() {
@@ -397,20 +417,43 @@ impl RootView {
         let drawn = carried
             .flex()
             .flex_col()
-            .items_center()
+            .when(second, |line| line.items_end())
+            .when(line.two_voices && !second, |line| line.items_start())
+            .when(!line.two_voices, |line| line.items_center())
             .gap_2()
             .px(theme::width(pad))
             .py_2()
             .rounded_xl()
             .opacity(line.standing)
+            .when(line.show_voice, |line| {
+                line.child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(theme::muted()))
+                        .child(if second { "VOICE 2" } else { "VOICE 1" }),
+                )
+            })
             .child(
                 div()
-                    .w(px(inside * size / lit))
-                    .text_center()
+                    .w(px(
+                        inside * size / lit * if line.two_voices { 0.84 } else { 1.0 }
+                    ))
+                    .when(second, |words| words.text_right())
+                    .when(line.two_voices && !second, |words| words.text_left())
+                    .when(!line.two_voices, |words| words.text_center())
                     .text_size(px(size))
                     .line_height(px(lit * LEADING))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(mixed(theme::muted(), theme::text(), line.lead)))
+                    .text_color(rgb(mixed(
+                        theme::muted(),
+                        if second {
+                            theme::accent()
+                        } else {
+                            theme::text()
+                        },
+                        line.lead,
+                    )))
                     .child(line.text),
             )
             .when_some(line.breath, |line, breath| line.child(breather(breath)));

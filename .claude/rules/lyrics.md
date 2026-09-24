@@ -12,19 +12,19 @@ window.
 
 ## The vocabulary
 
-- **A `Lyrics` is a flat list of `LyricLine`s that is `Synced` or `Unsynced`, and `Timing` is the
-  whole of the difference.** A karaoke-timed word, a translation beside the original and a second
-  voice have no representation, so anything richer than a line with an optional moment is outside
-  what the type can say. `Wanted` is the other half of the vocabulary — the track a provider is
+- **A `Lyrics` is a flat list of `LyricLine`s that is `Synced` or `Unsynced`.** A line carries an
+  optional moment and a `Voice`: one by default, two where a timed LRC line names it. Two voices
+  can overlap, and each line remains lit until the next line of its own voice or ten seconds,
+  whichever comes first. A karaoke-timed word and a translation beside the original still have no
+  representation. `Wanted` is the other half of the vocabulary — the track a provider is
   asked about — carrying the title, artist, album and length a provider would search on and the
   text the file itself holds as `Wanted::carried`.
-- **`Lyrics::line_at` is what the pane reads at and `line_in_play` is what it lights, and they part
-  company.** `line_at` is the last line whose moment has passed, and it is what the pane centres on,
-  so a long instrumental holds its place rather than scrolling off it. `line_in_play` is that line
-  only while it is still being sung, which `LIT_AT_MOST` caps at ten seconds, so the set goes dim
-  where the pane stays put. The window turns on each with a clock of its own for exactly that
-  reason, and it is `line_in_play` running out that takes the last line of a set away once it has
-  had its word.
+- **`Lyrics::line_at` is what the pane reads at and `voices_in_play` is what it lights, and they
+  part company.** `line_at` is the last line whose moment has passed, and it is what the pane
+  centres on, so a long instrumental holds its place rather than scrolling off it. The two active
+  voice slots stay lit until each voice's next line or `LIT_AT_MOST` at ten seconds, so one singer
+  entering does not put out the other. `line_in_play` remains the latest active line, and when
+  neither voice is active the set goes dim where the pane stays put.
 - **A `Credits` is what a sheet claims about its own making, and it rides on the set rather than
   beside it.** `Credits` carries `[al:]`, `[au:]`, `[by:]`, `[re:]`/`[tool:]` and `[ve:]` as
   `album`, `words_by`, `sheet_by`, `editor` and `version`, and `Lyrics::credited` is the one way one
@@ -165,3 +165,8 @@ window.
   `Error::Unreadable { op: Parse }`. The bound lives in the reader because `Embedded` is handed a
   tag out of an untrusted file and `Sidecar` has already cut its read to the same length, so what
   reaches `LARGEST_SHEET` from a sidecar is only ever text a lossy decode expanded.
+- **A timed line may name one of two voices with `[v1: words]` or `[v2: words]` after its
+  timestamp.** The marker is removed from the text and stays with each repeated timestamp and
+  with a cue row's shifted line. A line without one belongs to voice one, and an unrecognised
+  bracket remains text. This extension uses the existing LRC reader for sidecars, embedded tags
+  and fetched sets alike.
