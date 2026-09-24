@@ -965,7 +965,10 @@ mod tests {
         assert!(contact_in(&scratch.path).is_err());
 
         let _ = fs::remove_file(&scratch.path);
-        assert_eq!(contact_in(&scratch.path).expect("no file is no contact"), None);
+        assert_eq!(
+            contact_in(&scratch.path).expect("no file is no contact"),
+            None
+        );
     }
 
     #[test]
