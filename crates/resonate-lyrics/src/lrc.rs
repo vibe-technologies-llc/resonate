@@ -448,8 +448,8 @@ mod tests {
 
     #[test]
     fn a_moment_past_the_hour_is_read_with_its_hours_where_its_fraction_says_so() {
-        let lyrics = lyrics("[59:59.50]before\n[1:02:03.45]after\n[1:02:03]hundredths")
-            .expect("a set");
+        let lyrics =
+            lyrics("[59:59.50]before\n[1:02:03.45]after\n[1:02:03]hundredths").expect("a set");
 
         assert_eq!(
             timed(&lyrics),
