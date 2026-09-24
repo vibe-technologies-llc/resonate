@@ -439,6 +439,7 @@ fn initialising_answers_the_version_asked_for_where_it_is_one_this_server_speaks
     assert_eq!(unknown["protocolVersion"], "2025-06-18");
     assert_eq!(known["serverInfo"]["name"], "resonate");
     assert_eq!(known["capabilities"]["tools"]["listChanged"], false);
+    assert_eq!(known["capabilities"]["resources"]["subscribe"], false);
 }
 
 #[test]
@@ -501,7 +502,7 @@ fn a_broken_envelope_is_a_json_rpc_error_rather_than_a_tool_failure() {
         -32_600
     );
     assert_eq!(
-        error_code(&server, &request("resources/list", json!({}))),
+        error_code(&server, &request("prompts/list", json!({}))),
         -32_601
     );
     assert_eq!(
@@ -1367,4 +1368,159 @@ fn a_session_that_ends_under_a_running_scan_waits_for_it_to_stop() {
 
     let settled = called(&server, "library_passes", json!({}));
     assert_eq!(settled["scan"]["state"], "finished", "{settled}");
+}
+
+fn read_resource(server: &Server, uri: &str) -> Value {
+    let answered = result(server, "resources/read", json!({ "uri": uri }));
+    let contents = &answered["contents"][0];
+    assert_eq!(contents["uri"], uri, "{answered}");
+    assert_eq!(contents["mimeType"], "application/json");
+    serde_json::from_str(
+        contents["text"]
+            .as_str()
+            .expect("a resource carries its text"),
+    )
+    .expect("the text to be JSON")
+}
+
+#[test]
+fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
+    let tree = Tree::new();
+    tree.wav("a.wav", "Night Signal", "Hours", "1");
+    let library = scanned(&tree);
+    let id = library
+        .create_playlist("AC/DC & Friends?")
+        .expect("a playlist to be made");
+    let track = library
+        .tracks(&Default::default())
+        .expect("the catalog to be read")
+        .remove(0);
+    library
+        .add_to_playlist(id, &[resonate_library::Cut::of(&track)])
+        .expect("a row to be added");
+    let server = server(library, Fake::default());
+
+    let listed = result(&server, "resources/list", json!({}));
+    let uris: Vec<&str> = listed["resources"]
+        .as_array()
+        .expect("a list of resources")
+        .iter()
+        .map(|resource| resource["uri"].as_str().expect("a resource has a uri"))
+        .collect();
+    assert_eq!(
+        uris,
+        [
+            "resonate://player/now-playing",
+            "resonate://player/queue",
+            "resonate://library/passes",
+            "resonate://library/playlists",
+            "resonate://library/favourites",
+            "resonate://library/statistics",
+            "resonate://library/suggestions",
+            "resonate://library/missing",
+            "resonate://library/playlist/AC/DC%20%26%20Friends%3F",
+        ]
+    );
+    assert_eq!(listed["resources"][8]["name"], "AC/DC & Friends?");
+
+    let rows = read_resource(&server, uris[8]);
+    assert_eq!(rows["playlist"]["name"], "AC/DC & Friends?");
+    assert_eq!(rows["tracks"][0]["title"], "Night Signal");
+    assert_eq!(
+        read_resource(
+            &server,
+            "resonate://library/playlist/ac%2Fdc%20%26%20friends%3F"
+        ),
+        rows
+    );
+
+    let templates = result(&server, "resources/templates/list", json!({}));
+    assert_eq!(
+        templates["resourceTemplates"][0]["uriTemplate"],
+        "resonate://library/playlist/{name}"
+    );
+}
+
+#[test]
+fn a_resource_reads_what_the_tool_of_the_same_reading_answers() {
+    let (players, _) = Fake::with(Standing {
+        rows: vec![row(9, "Echoes"), row(8, "Time")],
+        playing: Some(0),
+        status: Some(PlaybackStatus::Paused),
+        ..Standing::default()
+    });
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    for (uri, tool) in [
+        ("resonate://player/now-playing", "now_playing"),
+        ("resonate://player/queue", "show_queue"),
+        ("resonate://library/passes", "library_passes"),
+        ("resonate://library/playlists", "list_playlists"),
+        ("resonate://library/favourites", "favourites"),
+        ("resonate://library/statistics", "listening_statistics"),
+        ("resonate://library/suggestions", "suggested_playlists"),
+        ("resonate://library/missing", "list_missing"),
+    ] {
+        assert_eq!(
+            read_resource(&server, uri),
+            called(&server, tool, json!({})),
+            "{uri}"
+        );
+    }
+}
+
+#[test]
+fn a_resource_nobody_offers_is_refused_and_one_that_cannot_be_read_fails() {
+    let server = nothing_running();
+
+    for uri in [
+        "resonate://player/elsewhere",
+        "resonate://library/playlist/",
+        "resonate://library/playlist/%zz",
+        "file:///music/Time.flac",
+    ] {
+        assert_eq!(
+            error_code(&server, &request("resources/read", json!({ "uri": uri }))),
+            -32_002,
+            "{uri}"
+        );
+    }
+    assert_eq!(
+        error_code(&server, &request("resources/read", json!({}))),
+        -32_602
+    );
+
+    let answer = asked(
+        &server,
+        &request(
+            "resources/read",
+            json!({ "uri": "resonate://player/now-playing" }),
+        ),
+    )
+    .expect("a failed read to be answered");
+    assert_eq!(answer["error"]["code"], -32_603, "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|said| said.contains("no player")),
+        "{answer}"
+    );
+
+    let absent = asked(
+        &server,
+        &request(
+            "resources/read",
+            json!({ "uri": "resonate://library/playlist/Morning" }),
+        ),
+    )
+    .expect("a read of a playlist nobody made to be answered");
+    assert!(
+        absent["error"]["message"]
+            .as_str()
+            .is_some_and(|said| said.contains("no playlist named Morning")),
+        "{absent}"
+    );
 }

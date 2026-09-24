@@ -19,7 +19,7 @@ Detailed rules live in `.claude/rules/` and load automatically:
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
 | `providers.md` | resonate-providers, providers/*, `Library::poll` | the seam, the registry, the inbox, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, the analysis pane, `acoustid.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
-| `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools and the seam they reach the player through |
+| `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and the seam they reach the player through |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `packaging.md` | `packaging/**` | the Arch, Fedora and Flatpak payloads and their build baseline |
 

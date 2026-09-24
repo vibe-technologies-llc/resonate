@@ -508,10 +508,10 @@
   rather than its id for as long as it is queued
 
 ## MCP
-- The server is tools alone: no resource carries the catalog or the queue and no prompt is
-  offered. A long pass is asked after rather than told of: nothing sends a progress notification
-  while a scan, a lookup or a poll runs, so a client sees how far one has come only by calling
-  `library_passes`
+- No prompt is offered, and nothing is told as it moves: a resource is read and never subscribed
+  to, and nothing sends a notification while a scan, a lookup or a poll runs, because the server
+  answers on the one thread that reads stdin and has nothing to write from between requests. A
+  client sees how far a pass has come only by reading `library_passes` again
 - An edit a model makes is not on the window's *Undo*: the library keeps its undo stacks in the
   process that made the edit, and `resonate mcp` is another process. The window draws the edit
   within a few seconds, but its own undo stack is not told, so undoing past it acts on rows the

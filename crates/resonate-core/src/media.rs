@@ -144,13 +144,13 @@ impl MediaLocation {
     pub fn to_uri(&self) -> String {
         match &self.locator {
             Locator::Path(path) => {
-                format!("{FILE_SCHEME}{}", escaped(path.as_os_str().as_bytes()))
+                format!("{FILE_SCHEME}{}", uri_escaped(path.as_os_str().as_bytes()))
             }
             Locator::Key(key) => {
                 format!(
                     "{}{SOURCE_SEPARATOR}{}",
                     self.source,
-                    escaped(key.as_bytes())
+                    uri_escaped(key.as_bytes())
                 )
             }
         }
@@ -198,11 +198,11 @@ impl MediaLocation {
             if !encoded.starts_with(KEY_SEPARATOR) {
                 return None;
             }
-            return Some(Self::local(OsString::from_vec(unescaped(encoded)?)));
+            return Some(Self::local(OsString::from_vec(uri_unescaped(encoded)?)));
         }
 
         let (scheme, key) = uri.split_once(SOURCE_SEPARATOR)?;
-        let key = String::from_utf8(unescaped(key)?).ok()?;
+        let key = String::from_utf8(uri_unescaped(key)?).ok()?;
         Some(Self::new(SourceId::new(scheme).ok()?, key))
     }
 
@@ -216,7 +216,7 @@ impl MediaLocation {
     }
 }
 
-fn escaped(text: &[u8]) -> String {
+pub fn uri_escaped(text: &[u8]) -> String {
     let mut escaped = String::with_capacity(text.len());
     for &byte in text {
         match byte {
@@ -232,7 +232,7 @@ fn escaped(text: &[u8]) -> String {
     escaped
 }
 
-fn unescaped(encoded: &str) -> Option<Vec<u8>> {
+pub fn uri_unescaped(encoded: &str) -> Option<Vec<u8>> {
     let mut decoded = Vec::with_capacity(encoded.len());
     let mut bytes = encoded.bytes();
     while let Some(byte) = bytes.next() {

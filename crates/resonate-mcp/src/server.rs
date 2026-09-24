@@ -5,10 +5,11 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    Error, MethodName, Refusal, Result, StreamOp, ToolName,
+    Code, Error, MethodName, Refusal, ResourceUri, Result, StreamOp, ToolName,
     controlling::Reach,
     error::said,
     passes::{Lookups, Passes},
+    resources::{self, Resource},
     tools::Tool,
 };
 
@@ -21,6 +22,9 @@ const INITIALIZE: &str = "initialize";
 const PING: &str = "ping";
 const TOOLS_LIST: &str = "tools/list";
 const TOOLS_CALL: &str = "tools/call";
+const RESOURCES_LIST: &str = "resources/list";
+const RESOURCE_TEMPLATES_LIST: &str = "resources/templates/list";
+const RESOURCES_READ: &str = "resources/read";
 
 const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read and edit its \
                             library directly — its favourites, its playlists and the missing \
@@ -33,7 +37,10 @@ const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read a
                             none of them are the same numbers. A scan, a lookup and a poll run \
                             in the background once started: library_passes says how far each \
                             has come, and one still running when the session ends is stopped \
-                            at the next file.";
+                            at the next file. The same readings are offered as resources: what \
+                            is playing, the queue, the passes, the playlists and each playlist's \
+                            rows, the favourites, the month's listening, the suggestions and \
+                            the missing tracks.";
 
 pub struct Server {
     library: Library,
@@ -55,6 +62,44 @@ enum Message {
 struct Initialising {
     #[serde(rename = "protocolVersion")]
     protocol_version: String,
+}
+
+#[derive(Deserialize)]
+struct Reading {
+    uri: String,
+}
+
+enum Unanswered {
+    Refused(Refusal),
+    Failed(Error),
+}
+
+impl From<Refusal> for Unanswered {
+    fn from(refusal: Refusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl From<Error> for Unanswered {
+    fn from(error: Error) -> Self {
+        Self::Failed(error)
+    }
+}
+
+impl Unanswered {
+    fn code(&self) -> Code {
+        match self {
+            Self::Refused(refusal) => refusal.code(),
+            Self::Failed(_) => Code::InternalError,
+        }
+    }
+
+    fn said(&self) -> String {
+        match self {
+            Self::Refused(refusal) => said(refusal),
+            Self::Failed(error) => said(error),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -113,16 +158,16 @@ impl Server {
         let (id, method, params) = match read(line) {
             Ok(Message::Request { id, method, params }) => (id, method, params),
             Ok(Message::Notification | Message::Answer) => return None,
-            Err((id, refusal)) => return Some(refused(id, &refusal)),
+            Err((id, refusal)) => return Some(refused(id, &Unanswered::Refused(refusal))),
         };
 
         Some(match self.respond(&method, params) {
             Ok(result) => json!({ "jsonrpc": JSON_RPC, "id": id, "result": result }),
-            Err(refusal) => refused(id, &refusal),
+            Err(unanswered) => refused(id, &unanswered),
         })
     }
 
-    fn respond(&self, method: &str, params: Value) -> std::result::Result<Value, Refusal> {
+    fn respond(&self, method: &str, params: Value) -> std::result::Result<Value, Unanswered> {
         match method {
             INITIALIZE => {
                 let asked: Initialising = parameters(method, params)?;
@@ -141,7 +186,20 @@ impl Server {
                 let outcome = tool.run(arguments, &self.library, &*self.players, &self.passes)?;
                 Ok(called(tool, outcome))
             }
-            other => Err(Refusal::UnknownMethod(MethodName::new(other))),
+            RESOURCES_LIST => {
+                let offered = resources::every(&self.library)?;
+                Ok(json!({ "resources": offered.iter().map(Resource::listed).collect::<Vec<_>>() }))
+            }
+            RESOURCE_TEMPLATES_LIST => Ok(json!({ "resourceTemplates": Resource::templates() })),
+            RESOURCES_READ => {
+                let asked: Reading = parameters(method, params)?;
+                let resource = Resource::at(&asked.uri).ok_or_else(|| {
+                    Refusal::UnknownResource(ResourceUri::new(asked.uri.as_str()))
+                })?;
+                let read = resource.read(&self.library, &*self.players, &self.passes)?;
+                Ok(Resource::contents(&asked.uri, &read))
+            }
+            other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
         }
     }
 }
@@ -192,11 +250,11 @@ fn parameters<Asked: serde::de::DeserializeOwned>(
     })
 }
 
-fn refused(id: Value, refusal: &Refusal) -> Value {
+fn refused(id: Value, unanswered: &Unanswered) -> Value {
     json!({
         "jsonrpc": JSON_RPC,
         "id": id,
-        "error": { "code": refusal.code().number(), "message": said(refusal) },
+        "error": { "code": unanswered.code().number(), "message": unanswered.said() },
     })
 }
 
@@ -208,7 +266,10 @@ fn initialised(asked: &str) -> Value {
 
     json!({
         "protocolVersion": protocol,
-        "capabilities": { "tools": { "listChanged": false } },
+        "capabilities": {
+            "tools": { "listChanged": false },
+            "resources": { "subscribe": false, "listChanged": false },
+        },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
         "instructions": INSTRUCTIONS,
     })

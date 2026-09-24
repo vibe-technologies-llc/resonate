@@ -96,6 +96,21 @@ impl fmt::Display for ToolName {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ResourceUri(Box<str>);
+
+impl ResourceUri {
+    pub fn new(uri: impl Into<Box<str>>) -> Self {
+        Self(uri.into())
+    }
+}
+
+impl fmt::Display for ResourceUri {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Refusal {
     #[error("the message is not JSON")]
@@ -116,6 +131,9 @@ pub enum Refusal {
 
     #[error("{0} is not a tool this server offers")]
     UnknownTool(ToolName),
+
+    #[error("{0} is not a resource this server offers")]
+    UnknownResource(ResourceUri),
 
     #[error("the arguments of {tool} are not what it takes")]
     BadArguments {
@@ -155,6 +173,8 @@ pub enum Code {
     InvalidRequest,
     MethodNotFound,
     InvalidParams,
+    InternalError,
+    ResourceNotFound,
 }
 
 impl Code {
@@ -164,6 +184,8 @@ impl Code {
             Self::InvalidRequest => -32_600,
             Self::MethodNotFound => -32_601,
             Self::InvalidParams => -32_602,
+            Self::InternalError => -32_603,
+            Self::ResourceNotFound => -32_002,
         }
     }
 }
@@ -174,6 +196,7 @@ impl Refusal {
             Self::Unparsed(_) => Code::ParseError,
             Self::NotARequest => Code::InvalidRequest,
             Self::UnknownMethod(_) => Code::MethodNotFound,
+            Self::UnknownResource(_) => Code::ResourceNotFound,
             Self::BadParameters { .. }
             | Self::UnknownTool(_)
             | Self::BadArguments { .. }
@@ -211,7 +234,7 @@ mod tests {
     fn a_refusal_carries_the_code_json_rpc_gives_its_kind() {
         assert_eq!(Refusal::NotARequest.code().number(), -32_600);
         assert_eq!(
-            Refusal::UnknownMethod(MethodName::new("resources/list"))
+            Refusal::UnknownMethod(MethodName::new("prompts/list"))
                 .code()
                 .number(),
             -32_601

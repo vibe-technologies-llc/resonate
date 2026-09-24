@@ -29,7 +29,7 @@ pub use crate::{
     id::{AlbumId, ArtistId, ListenId, PlaylistId, ReleaseTrackId, TrackId, WantId},
     identity::{Isrc, Mbid},
     link::{Link, Relation, Service},
-    media::{Locator, MediaLocation, SourceId},
+    media::{Locator, MediaLocation, SourceId, uri_escaped, uri_unescaped},
     presence::{AppId, Icon, Pictured, Presence, Shown},
     print::Chromaprint,
     resume::{Reordered, Resumable, Resumption, plays_in},

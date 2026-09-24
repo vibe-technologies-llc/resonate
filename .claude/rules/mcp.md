@@ -31,13 +31,38 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   names. A tool that ran and failed — no player on the bus, a playlist or a track that is not
   there, the catalog or the bus erroring — is a *successful* result with `isError` set and the
   error's whole `source` chain as its text. Deciding which is which is the point of the two
-  types: `Tool::run` answers `Result<Result<Value>, Refusal>`.
+  types: `Tool::run` answers `Result<Result<Value>, Refusal>`. A resource has no `isError`, so a
+  read that ran and failed is a JSON-RPC error too, but under `Code::InternalError` with the same
+  chain as its message — `Unanswered` is the two kinds of error answer — and a URI naming no
+  resource is `Refusal::UnknownResource` under `ResourceNotFound`, the `-32002` the spec gives it.
 - **A notification is never answered**, whatever its method, and neither is a message carrying
   a `result` or an `error`, because this server sends no requests of its own to be answered.
 - `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS` and answers
-  the latest otherwise. The server offers tools and nothing else: no resources, no prompts, and
-  `listChanged` is false because the list is `Tool::ALL`. The instructions say that the three long
-  passes run in the background and how to ask after them.
+  the latest otherwise. The server offers tools and resources and no prompts; `listChanged` is
+  false for both, because the tools are `Tool::ALL` and a client lists the resources again
+  whenever it wants the playlists as they stand, and `subscribe` is false because the one thread
+  that reads stdin has nothing to write an update from. The instructions say that the three long
+  passes run in the background, how to ask after them and that the readings are resources too.
+
+## The resources
+
+- **A resource is a tool's reading under a URI, and it is the same reading.** `Resource::read`
+  calls the very functions the read-only tools do — `transport::now_playing` and `queue`,
+  `Passes::states`, and `catalog::playlists`, `playlist_tracks`, `favourites`, `statistics`,
+  `suggestions` and `missing` — at the tools' own defaults, which are shared rather than copied,
+  so `a_resource_reads_what_the_tool_of_the_same_reading_answers` holds each one to the tool
+  called with no arguments. What a model gains is the client's choice: a resource can be put in
+  front of it before it asks anything.
+- **Two kinds of URI.** `resonate://player/…` reaches the running player and fails as the
+  transport tools do where there is none; `resonate://library/…` reads the catalog with no player.
+  `resources/list` is the eight fixed ones and then one per playlist the catalog holds, named as
+  the playlist is, and `resonate://library/playlist/{name}` is also offered as a template, so a
+  client that does not list can still name one. The name is written through core's
+  `uri_escaped` — the same escaping a `file://` URI takes — and read back through
+  `uri_unescaped`, and it is found the way `playlist_tracks` finds it, ignoring case. A name that
+  is blank or does not unescape to text is no resource at all rather than a playlist nobody made.
+- **A read answers under the URI it was asked for**, not the one the playlist would be listed
+  under, because the URI inside `contents` is what a client keys the reading to.
 
 ## The tools
 

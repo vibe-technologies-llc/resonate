@@ -18,10 +18,10 @@ use crate::{
 
 const MOST_ROWS: usize = 1_000;
 const SEARCHED_BY_DEFAULT: usize = 25;
-const LISTED_BY_DEFAULT: usize = 200;
-const QUEUED_BY_DEFAULT: usize = 100;
-const TOP_BY_DEFAULT: usize = 10;
-const MISSING_BY_DEFAULT: usize = 100;
+pub(crate) const LISTED_BY_DEFAULT: usize = 200;
+pub(crate) const QUEUED_BY_DEFAULT: usize = 100;
+pub(crate) const TOP_BY_DEFAULT: usize = 10;
+pub(crate) const MISSING_BY_DEFAULT: usize = 100;
 const SECONDS_A_MINUTE: u64 = 60;
 const WHOLE: f64 = 100.0;
 
