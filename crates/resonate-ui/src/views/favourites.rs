@@ -8,6 +8,7 @@ use crate::{
     Favourited, format,
     icons::Icon,
     views::{
+        browser::Plays,
         kit, listing,
         root::{RootView, empty},
         scrollbar::Scrollbars,
@@ -115,7 +116,7 @@ impl RootView {
                                     index,
                                     track,
                                     playing == Some(track.id),
-                                    false,
+                                    Plays::TheseRows,
                                     cx,
                                 ));
                             }

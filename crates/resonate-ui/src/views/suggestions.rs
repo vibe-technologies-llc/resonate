@@ -19,6 +19,7 @@ use crate::{
     icons::{self, Icon},
     theme,
     views::{
+        browser::Plays,
         hint::Names,
         kit::{self, EndsInAnEllipsis, Press, Tone},
         listing,
@@ -321,7 +322,7 @@ impl RootView {
                                     index,
                                     track,
                                     playing == Some(track.id),
-                                    false,
+                                    Plays::TheseRows,
                                     cx,
                                 ));
                             }

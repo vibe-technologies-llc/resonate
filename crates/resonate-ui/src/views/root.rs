@@ -1460,12 +1460,10 @@ impl RootView {
                 self.play_playlist(playlist, &entries, row, true, cx);
             }
             Shift::Listing(Listed::Tracks) => {
-                let library = self.library.read(cx);
-                let Some(held) = library.listed_track_at(row) else {
+                let Some((played, start)) = self.library.read(cx).played_from(row) else {
                     return;
                 };
-                let listing = library.listing();
-                self.play(&listing, held, cx);
+                self.play(&played, start, cx);
             }
             Shift::Listing(Listed::Albums) => {
                 let Some(album) = self.library.read(cx).albums().get(row).map(|held| held.id)
@@ -1508,6 +1506,7 @@ impl RootView {
         then: impl FnOnce(&mut Self, Arc<[Track]>, &mut Window, &mut Context<Self>) + 'static,
     ) {
         let (library, asked) = self.library.read(cx).listing_whole();
+        let drawn = self.library.read(cx).as_drawn();
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -1516,7 +1515,7 @@ impl RootView {
                 .await;
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
-                Ok(listing) => then(this, listing.into(), window, cx),
+                Ok(listing) => then(this, drawn.ordered(listing.into()), window, cx),
                 Err(error) => tracing::error!(%error, "the whole listing could not be read"),
             });
             let _ = outcome;

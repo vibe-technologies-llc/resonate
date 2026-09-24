@@ -90,6 +90,12 @@ const CELL_GROUP: &str = "album-cell";
 
 const SHELF_AT_MOST: usize = 48;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Plays {
+    TheseRows,
+    AsTheListingIsDrawn { in_an_album: bool },
+}
+
 impl RootView {
     pub(crate) fn favour_mark(
         &self,
@@ -715,7 +721,7 @@ impl RootView {
                                                         held,
                                                         track,
                                                         playing == Some(track.id),
-                                                        in_an_album,
+                                                        Plays::AsTheListingIsDrawn { in_an_album },
                                                         cx,
                                                     ),
                                                     reached,
@@ -774,9 +780,10 @@ impl RootView {
         index: usize,
         track: &Track,
         playing: bool,
-        in_an_album: bool,
+        plays: Plays,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
         let holding = Arc::clone(tracks);
         let menued = Arc::clone(tracks);
@@ -888,7 +895,16 @@ impl RootView {
                 if !menu::pressed(event) {
                     return;
                 }
-                this.play(&played, index, cx);
+                match plays {
+                    Plays::TheseRows => this.play(&played, index, cx),
+                    Plays::AsTheListingIsDrawn { .. } => {
+                        let Some((drawn, start)) = this.library.read(cx).played_from_held(index)
+                        else {
+                            return;
+                        };
+                        this.play(&drawn, start, cx);
+                    }
+                }
             }));
 
         menu::opens_a_menu(

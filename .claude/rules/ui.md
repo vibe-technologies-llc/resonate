@@ -1296,7 +1296,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   whose `track` is `None`, and the two are sorted together by `(disc, position)` — a held track at
   the place its paired release row gives it, or at its own disc and number where nothing paired
   it, a number of none sorting last — so the tracks pane's `uniform_list` counts `rows` inside an
-  album and `tracks` everywhere else. `unheld_row` draws faint in the same eight cells, the
+  album and `tracks` everywhere else. That seat order is drawn while the pane's sort is the
+  album's own, `Relevance` or `AlbumThenTrack`, turned round where it reads backwards; any other
+  sort the heading's *Sort* picks draws the held rows in that sort and what the album lacks after
+  them, and `arranged` is that choice. **What plays is what is drawn**: a row's click and Enter go
+  through `LibraryModel::played_from`, which queues the `Held` rows in the order `rows` holds
+  them, and *Play*, *Play next*, *Add to queue* and *Add to playlist* put the whole listing they
+  read through `AsDrawn::ordered`, the same arrangement over the same release rows — so the row
+  under the pointer starts and what follows it is the rows under it on screen. `unheld_row` draws faint in the same eight cells, the
   number, title, artist and length off an `Unheld` — built `From` a `HeldReleaseTrack` here and
   `From` a `MissingTrack` in the Missing pane, so one row serves both — and in `controls_place`,
   the width a held row's controls take, one mark: `Icon::Want` sending `LibraryModel::want` or
@@ -1403,7 +1410,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   rows MusicBrainz answered, or `Beyond::Asking` while it has not. `beyond_the_listing` builds it
   and answers nothing until the listing is whole, so a paged listing never draws its later pages
   under the sections, and an empty `rows` still means the listing drawn one row per track, which is
-  what `listed_track_at` and `listed_rows` read. Both kinds of row are `unheld_row` with a
+  what `played_from` and `listed_rows` read. Both kinds of row are `unheld_row` with a
   `Beside::ASearch` — a cover column, the album cover faded to `UNHELD_COVER` or a dashed
   `Icon::Missing` frame where there is none, the matched runs lit, the release in the format
   column — and the want mark is `want_mark` over an `Asks`: a catalog row wants its
@@ -1728,8 +1735,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   playlist narrowed by a search is not reached, so its row menu's *Take out of the playlist* drops
   `Span::one(entry.position)`, the row's place in the list, the way its ✕ already did — `index` is
   its place in the narrowed view. Enter on a reached row inside an album goes through
-  `LibraryModel::listed_track_at`, which turns a display row into the track it draws and answers
-  nothing for a disc heading or a missing row, the way a click reads `AlbumRow::Held`.
+  `LibraryModel::played_from`, which turns a display row into the track it draws and answers
+  nothing for a disc heading or a missing row, the way a click reads `AlbumRow::Held` through
+  `played_from_held` — the tracks pane's rows are drawn `Plays::AsTheListingIsDrawn`, where the
+  favourites and a suggestion's rows are `Plays::TheseRows`.
 - **Every control in this pane is reachable from the keyboard, and it is gpui's own ring.**
   `views/focus.rs` holds one `FocusHandle` per control id and forgets the ones a frame stopped
   drawing, so a control redrawn keeps the caret; the ring itself is `Window::focus_next` and

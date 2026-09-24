@@ -755,7 +755,9 @@ impl LibraryModel {
     fn restate_the_listing(&mut self) {
         let listing = self.listing();
         self.rows = match self.selection {
-            Selection::Album(_) => album_rows(&listing, &self.release_tracks).into(),
+            Selection::Album(_) => {
+                album_rows(&listing, &self.release_tracks, self.arranging()).into()
+            }
             Selection::Artist(_) => Arc::default(),
             Selection::Everything => beyond_the_listing(Reaching {
                 held: listing.len(),
@@ -1194,10 +1196,42 @@ impl LibraryModel {
         self.read(Wanted::Everything, cx);
     }
 
-    pub fn listed_track_at(&self, row: usize) -> Option<usize> {
-        match self.rows.is_empty() {
-            true => Some(row),
-            false => held_at(&self.rows, row),
+    pub fn played_from(&self, row: usize) -> Option<(Arc<[Track]>, usize)> {
+        if self.rows.is_empty() {
+            return Some((self.listing(), row));
+        }
+        self.played_from_held(held_at(&self.rows, row)?)
+    }
+
+    pub fn played_from_held(&self, held: usize) -> Option<(Arc<[Track]>, usize)> {
+        let listing = self.listing();
+        if self.rows.is_empty() {
+            return Some((listing, held));
+        }
+        let order = held_in(&self.rows);
+        let start = order.iter().position(|at| *at == held)?;
+        let played = order
+            .iter()
+            .filter_map(|at| listing.get(*at).cloned())
+            .collect();
+
+        Some((played, start))
+    }
+
+    pub(crate) fn as_drawn(&self) -> AsDrawn {
+        match self.selection {
+            Selection::Album(_) => AsDrawn::Album {
+                release_tracks: Arc::clone(&self.release_tracks),
+                arranging: self.arranging(),
+            },
+            Selection::Everything | Selection::Artist(_) => AsDrawn::Listed,
+        }
+    }
+
+    const fn arranging(&self) -> Arranging {
+        Arranging {
+            sort: self.sorting.tracks,
+            reading: self.sorting.tracks_read,
         }
     }
 
@@ -3144,13 +3178,69 @@ fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
     listed
 }
 
-fn album_rows(tracks: &[Track], release_tracks: &[HeldReleaseTrack]) -> Vec<ListedRow> {
-    let placed: AHashMap<TrackId, (u32, u32)> = release_tracks
+pub(crate) enum AsDrawn {
+    Listed,
+    Album {
+        release_tracks: Arc<[HeldReleaseTrack]>,
+        arranging: Arranging,
+    },
+}
+
+impl AsDrawn {
+    pub(crate) fn ordered(&self, listing: Arc<[Track]>) -> Arc<[Track]> {
+        let Self::Album {
+            release_tracks,
+            arranging,
+        } = self
+        else {
+            return listing;
+        };
+
+        held_in(&album_rows(&listing, release_tracks, *arranging))
+            .into_iter()
+            .filter_map(|at| listing.get(at).cloned())
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Arranging {
+    sort: SortOrder,
+    reading: Direction,
+}
+
+impl Arranging {
+    const fn by_seat(self) -> bool {
+        matches!(self.sort, SortOrder::Relevance | SortOrder::AlbumThenTrack)
+    }
+}
+
+fn held_in(rows: &[ListedRow]) -> Vec<usize> {
+    rows.iter()
+        .filter_map(|row| match row {
+            ListedRow::Held(held) => Some(*held),
+            ListedRow::Disc(_)
+            | ListedRow::Missing(_)
+            | ListedRow::Beyond(_)
+            | ListedRow::Unheld(_)
+            | ListedRow::Found(_) => None,
+        })
+        .collect()
+}
+
+type Seat = (u32, u32);
+
+fn album_rows(
+    tracks: &[Track],
+    release_tracks: &[HeldReleaseTrack],
+    arranging: Arranging,
+) -> Vec<ListedRow> {
+    let placed: AHashMap<TrackId, Seat> = release_tracks
         .iter()
         .filter_map(|row| row.track.map(|track| (track, (row.disc, row.position))))
         .collect();
 
-    let mut rows: Vec<((u32, u32), ListedRow)> = tracks
+    let held = tracks
         .iter()
         .enumerate()
         .map(|(index, track)| {
@@ -3160,15 +3250,37 @@ fn album_rows(tracks: &[Track], release_tracks: &[HeldReleaseTrack]) -> Vec<List
             ));
             (place, ListedRow::Held(index))
         })
-        .chain(
-            release_tracks
-                .iter()
-                .enumerate()
-                .filter(|(_, row)| row.track.is_none())
-                .map(|(index, row)| ((row.disc, row.position), ListedRow::Missing(index))),
-        )
         .collect();
+    let missing = release_tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.track.is_none())
+        .map(|(index, row)| ((row.disc, row.position), ListedRow::Missing(index)))
+        .collect();
+
+    arranged(held, missing, arranging)
+}
+
+fn arranged(
+    held: Vec<(Seat, ListedRow)>,
+    mut missing: Vec<(Seat, ListedRow)>,
+    arranging: Arranging,
+) -> Vec<ListedRow> {
+    if !arranging.by_seat() {
+        missing.sort_by_key(|(place, _)| *place);
+        return held
+            .into_iter()
+            .chain(missing)
+            .map(|(_, row)| row)
+            .collect();
+    }
+
+    let mut rows = held;
+    rows.append(&mut missing);
     rows.sort_by_key(|(place, _)| *place);
+    if arranging.reading == Direction::Descending {
+        rows.reverse();
+    }
     headed_by_disc(rows)
 }
 
@@ -3783,10 +3895,12 @@ pub(crate) const fn painted(format: ImageFormat) -> gpui::ImageFormat {
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
+    use resonate_library::{Direction, SortOrder};
 
     use super::{
-        Beyond, Favourited, ListedRow, MissingRow, Reaching, Shared, beyond_the_listing,
-        headed_by_disc, held_at, missing_track_rows, on_the_clipboard, unheld_release_rows,
+        Arranging, Beyond, Favourited, ListedRow, MissingRow, Reaching, Shared, arranged,
+        beyond_the_listing, headed_by_disc, held_at, held_in, missing_track_rows, on_the_clipboard,
+        unheld_release_rows,
     };
 
     const SEARCHED: Reaching = Reaching {
@@ -3898,6 +4012,74 @@ mod tests {
         rows.iter()
             .map(|(disc, position, held)| ((*disc, *position), ListedRow::Held(*held)))
             .collect()
+    }
+
+    const BY_SEAT: Arranging = Arranging {
+        sort: SortOrder::AlbumThenTrack,
+        reading: Direction::Ascending,
+    };
+
+    #[test]
+    fn an_album_in_its_own_order_is_drawn_and_played_by_its_seats() {
+        let held = placed(&[(1, 3, 0), (1, 1, 1)]);
+        let missing = vec![((1, 2), ListedRow::Missing(0))];
+
+        let rows = arranged(held, missing, BY_SEAT);
+        assert_eq!(
+            rows,
+            vec![
+                ListedRow::Held(1),
+                ListedRow::Missing(0),
+                ListedRow::Held(0),
+            ]
+        );
+        assert_eq!(
+            held_in(&rows),
+            vec![1, 0],
+            "an album was played in an order other than the one drawn"
+        );
+    }
+
+    #[test]
+    fn an_album_turned_round_is_drawn_from_its_last_seat() {
+        let held = placed(&[(1, 1, 0), (2, 1, 1)]);
+        let reversed = Arranging {
+            reading: Direction::Descending,
+            ..BY_SEAT
+        };
+
+        assert_eq!(
+            arranged(held, Vec::new(), reversed),
+            vec![
+                ListedRow::Disc(2),
+                ListedRow::Held(1),
+                ListedRow::Disc(1),
+                ListedRow::Held(0),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_album_sorted_another_way_is_drawn_in_that_sort_with_what_it_lacks_after() {
+        let held = placed(&[(1, 3, 0), (1, 1, 1)]);
+        let missing = vec![
+            ((1, 4), ListedRow::Missing(1)),
+            ((1, 2), ListedRow::Missing(0)),
+        ];
+        let by_title = Arranging {
+            sort: SortOrder::Title,
+            reading: Direction::Ascending,
+        };
+
+        assert_eq!(
+            arranged(held, missing, by_title),
+            vec![
+                ListedRow::Held(0),
+                ListedRow::Held(1),
+                ListedRow::Missing(0),
+                ListedRow::Missing(1),
+            ]
+        );
     }
 
     #[test]
