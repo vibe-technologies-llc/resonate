@@ -14537,6 +14537,61 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
 }
 
 #[test]
+fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+
+    let scanned = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&scanned))?;
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    for missing in library.release_tracks(album.id)? {
+        if missing.title == "San Tropez" || missing.title == "Seamus" {
+            library.want(missing.id)?;
+        }
+    }
+
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+
+    let landed: Vec<TrackId> = library
+        .wants()?
+        .into_iter()
+        .filter_map(|want| want.held)
+        .collect();
+    assert_eq!(landed.len(), 2);
+    assert_eq!(landed[0], landed[1], "one object became two track rows");
+
+    let track = library
+        .track(landed[0])?
+        .expect("the delivery is a track row");
+    let other = if track.title == "Seamus" {
+        "San Tropez"
+    } else {
+        "Seamus"
+    };
+    assert_eq!(
+        titles(&library.search(&track.title, 10)?.tracks),
+        vec![track.title.clone()]
+    );
+    assert!(
+        library.search(other, 10)?.tracks.is_empty(),
+        "the row was indexed under the later want's names"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging() -> Result<()> {
     let held = Tree::new();
     let orbits = orbits_tree();

@@ -1655,7 +1655,7 @@ impl Library {
                 .filter(|name| !name.trim().is_empty())
                 .map(|name| store::artist_named_in(transaction, name, None))
                 .transpose()?;
-            let id: i64 = transaction
+            let landed: Option<i64> = transaction
                 .query_row(
                     "INSERT INTO tracks (
                          root_id, path, title, artist, artist_id, album_id, track_number,
@@ -1666,7 +1666,7 @@ impl Library {
                          NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          ?15, 0, ?16, ?17, ?18, ?19, ?20
                      )
-                     ON CONFLICT(path, span_start) DO UPDATE SET seen = tracks.seen
+                     ON CONFLICT(path, span_start) DO NOTHING
                      RETURNING id",
                     params![
                         path,
@@ -1692,16 +1692,29 @@ impl Library {
                     ],
                     |row| row.get(0),
                 )
+                .optional()
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
-            store::index_row(
-                transaction,
-                id,
-                &want.title,
-                want.artist.as_deref().unwrap_or_default(),
-                &want.album_title,
-                &store::indexed_genre_of(transaction, None, artist)?,
-            )?;
+            let id = match landed {
+                Some(id) => {
+                    store::index_row(
+                        transaction,
+                        id,
+                        &want.title,
+                        want.artist.as_deref().unwrap_or_default(),
+                        &want.album_title,
+                        &store::indexed_genre_of(transaction, None, artist)?,
+                    )?;
+                    id
+                }
+                None => transaction
+                    .query_row(
+                        "SELECT id FROM tracks WHERE path = ?1 AND span_start = 0",
+                        params![path],
+                        |row| row.get(0),
+                    )
+                    .map_err(|source| Error::store(StoreOp::Query, source))?,
+            };
             transaction
                 .execute(
                     "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2",

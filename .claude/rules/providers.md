@@ -80,7 +80,8 @@ A provider does none of this, so none of it is written twice:
   forget, `organise`, `tag`, `vault --import` and `vault --release` never reach it, each of them
   joining `roots`: an object in the vault is not the user's library to move, write into or hand
   back. Where one object is delivered for two wants the second is paired with the row the first
-  made;
+  made, and that row keeps the first want's names in the search index as well as on the row —
+  `one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed`;
 - recording what landed on the want — `offered` the object's URI — and counting `offered`,
   `kept`, `unkept`, `nothing`, `refused` and `late`. A want whose release track holds a row is
   `Want::held` and is never due again, so a filled want is kept as the record of where its
