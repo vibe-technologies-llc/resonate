@@ -34,7 +34,7 @@ impl SourceId {
     }
 
     pub fn new(name: &str) -> Result<Self> {
-        if !nameable(name) {
+        if !nameable(name) || name == LOCAL {
             return Err(Error::SourceNameNotUsable);
         }
         Ok(Self(Arc::from(name)))
@@ -290,6 +290,7 @@ mod tests {
         assert!(SourceId::new("sub sonic").is_err());
         assert!(SourceId::new("sub:sonic").is_err());
         assert!(SourceId::new(&"s".repeat(SOURCE_NAME_LIMIT + 1)).is_err());
+        assert!(SourceId::new(LOCAL).is_err());
     }
 
     #[test]
@@ -422,6 +423,7 @@ mod tests {
         assert_eq!(MediaLocation::from_uri("file:///music/a%2.mp3"), None);
         assert_eq!(MediaLocation::from_uri("Subsonic:track/1"), None);
         assert_eq!(MediaLocation::from_uri("nothing"), None);
+        assert_eq!(MediaLocation::from_uri("local:music/a.mp3"), None);
         assert_eq!(MediaLocation::from_uri("/music/Pink Floyd/a:b.flac"), None);
         assert_eq!(
             MediaLocation::from_uri("file://localhost/music/a.mp3"),
