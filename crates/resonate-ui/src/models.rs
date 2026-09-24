@@ -2,6 +2,7 @@ use std::{
     cell::OnceCell,
     fs,
     num::{NonZeroU32, NonZeroUsize},
+    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     slice,
     sync::Arc,
@@ -3963,8 +3964,14 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
             .metadata()
             .ok()
             .filter(fs::Metadata::is_file)
-            .and_then(|held| held.modified().ok())
-            .is_some_and(|modified| modified > tried)
+            .and_then(|held| {
+                let changed = u64::try_from(held.ctime()).ok().map(|seconds| {
+                    SystemTime::UNIX_EPOCH
+                        + Duration::new(seconds, u32::try_from(held.ctime_nsec()).unwrap_or(0))
+                });
+                held.modified().ok().max(changed)
+            })
+            .is_some_and(|touched| touched > tried)
     })
 }
 
@@ -4400,6 +4407,19 @@ mod tests {
 
         assert!(landed_since(&folder, before));
         assert!(!landed_since(&folder, after));
+
+        let kept_its_time = folder.join("an-isrc.flac");
+        std::fs::write(&kept_its_time, b"audio").expect("a file copied in");
+        std::fs::File::options()
+            .write(true)
+            .open(&kept_its_time)
+            .and_then(|file| file.set_modified(before - std::time::Duration::from_secs(3_600)))
+            .expect("the copy keeps the time it had elsewhere");
+        std::fs::remove_file(folder.join("an-mbid.flac")).expect("the first file goes");
+        assert!(
+            landed_since(&folder, before),
+            "a file copied in with an old modification time was not seen landing"
+        );
         assert!(!landed_since(&folder.join("gone"), before));
         std::fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

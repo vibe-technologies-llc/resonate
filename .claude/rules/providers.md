@@ -121,7 +121,8 @@ A provider does none of this, so none of it is written twice:
    running stays owed and is asked again on the next look, `INBOX_LOOKED_AT_EVERY` later, and a
    folder chosen in the settings pane is watched from the next look. **What landed while no window
    was open is asked about when one opens**: the first look at a folder weighs the newest file
-   directly in it against `Library::last_tried` — the latest try of any want not yet held — and a
+   directly in it — the later of its modification and change times, because a copy that kept the
+   time it had elsewhere still changed status on landing — against `Library::last_tried` — the latest try of any want not yet held — and a
    file newer than that is owed a poll as `ByTheInbox` at once, rather than waiting on the
    timer's `POLL_AGAIN_AFTER` for wants tried an hour before.
    `a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about` is the
