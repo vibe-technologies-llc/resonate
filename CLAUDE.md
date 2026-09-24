@@ -955,6 +955,9 @@ cargo run -- eq                       # the equaliser: whether it is on, what is
                                       #   --off switch it, --for <sink> says which binding the
                                       #   rest reads or writes and with none it is the fallback,
                                       #   --profile <name> binds one and --unbind takes it away,
+                                      #   --own binds the device's own curve — shaped from a file
+                                      #   or a measurement beside --import or --fetch — and
+                                      #   --forget-own discards that curve,
                                       #   --list names what is kept, --import <file> reads an
                                       #   EqualizerAPO or AutoEq GraphicEQ file in and --export
                                       #   <file> writes one out, --forget <name> discards one,

@@ -252,6 +252,19 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `every-other-device` off the fallback's file and `.` or `..` from naming a folder; one too long
   to be a file name is `Error::DeviceNotNameable`.
   `no_device_name_reaches_the_file_another_device_or_the_rest_are_kept_in` is the claim.
+- **The command line binds, shapes and forgets an own curve as well as the pane does.**
+  `resonate eq --own` binds the device `--for` names — or every other device — to its own curve
+  and switches the equaliser on the way `--profile` does; beside `--import` or `--fetch` what is
+  read is kept as that curve through `Store::keep_own` rather than as a named profile, and beside
+  `--export` it is that curve which is written out, bound or not. `--forget-own` is
+  `Store::forget_own` and takes the owner's binding with it only where that binding was the own
+  curve, so a device bound to a kept profile keeps it; a device holding neither is
+  `Error::NoOwnCurve`. An own curve still outlives its binding on purpose, which is why the
+  forgetting is a gesture of its own. `Store::owners` reads the folder back into the owners it was
+  written for — a stem is taken only where escaping the name it unescapes to writes the same stem,
+  so no hand-made file is read as a device's — and `--list` draws them beside the kept profiles,
+  which is how a device gone for good is found to be forgotten.
+  `an_own_curve_forgotten_takes_its_file_and_its_binding_and_nothing_else` is the claim.
 - **A profile is read as far as it parses and never fails on a line**, the `lrc.rs` and `cue.rs`
   rule. Parameters are read by name rather than by position, `BW Oct` and `S` convert to the Q they
   stand for, a comma decimal reads, and a value past what a band holds is clamped rather than

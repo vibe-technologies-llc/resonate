@@ -425,9 +425,8 @@
   chosen band has no key that nudges its frequency or gain the way the pointer does, and the
   handles themselves are not in the focus ring
 - A device's own equaliser curve can be exported but not kept as a named profile from the pane,
-  and `resonate eq` prints, exports and unbinds one but cannot bind a device to its own curve or
-  shape it. An own curve outlives its binding on purpose, so switching back finds it, but nothing
-  ever removes the file of a device that is gone for good
+  and the pane has no gesture that discards one either: the curve of a device gone for good is
+  found and discarded by `resonate eq --list` and `--forget-own` alone
 - A drag on the equaliser's curve tells the engine once per pointer move that lands the band
   somewhere new, and nothing coalesces those to the rate the engine publishes at; each is a
   retune rather than a rebuild, but a high-rate pointer sends more of them than can be heard

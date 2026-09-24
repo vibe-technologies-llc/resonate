@@ -198,12 +198,53 @@ impl Store {
         Ok(path)
     }
 
+    pub fn owners(&self) -> Result<Vec<Option<String>>> {
+        let folder = self.folder.join(OWN_FOLDER);
+        let walked = match fs::read_dir(&folder) {
+            Ok(walked) => walked,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(source) => return Err(Self::failed(&folder, StoreOp::Walk)(source)),
+        };
+
+        let mut owners = Vec::new();
+        for entry in walked.flatten() {
+            if owners.len() >= PROFILES_AT_MOST {
+                tracing::debug!(
+                    folder = %folder.display(),
+                    "more own curves than this build lists"
+                );
+                break;
+            }
+            let path = entry.path();
+            if path.extension().is_none_or(|held| held != EXTENSION) {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            if stem == EVERY_OTHER_DEVICE {
+                owners.push(None);
+            } else if let Some(device) = device_of_a_stem(stem) {
+                owners.push(Some(device));
+            }
+        }
+        owners.sort();
+        Ok(owners)
+    }
+
     pub fn forget(&self, name: &ProfileName) -> Result<bool> {
-        let path = self.path_of(name);
-        match fs::remove_file(&path) {
+        Self::removed(&self.path_of(name))
+    }
+
+    pub fn forget_own(&self, device: Option<&str>) -> Result<bool> {
+        Self::removed(&self.own_path(device)?)
+    }
+
+    fn removed(path: &Path) -> Result<bool> {
+        match fs::remove_file(path) {
             Ok(()) => Ok(true),
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(source) => Err(Self::failed(&path, StoreOp::Remove)(source)),
+            Err(source) => Err(Self::failed(path, StoreOp::Remove)(source)),
         }
     }
 
@@ -263,6 +304,25 @@ fn stem_for_a_device(device: &str) -> Result<String> {
         return Err(Error::DeviceNotNameable);
     }
     Ok(stem)
+}
+
+fn device_of_a_stem(stem: &str) -> Option<String> {
+    let mut rest = stem.strip_prefix(A_DEVICE)?.as_bytes();
+    let mut bytes = Vec::with_capacity(rest.len());
+    while let Some((&byte, after)) = rest.split_first() {
+        if byte == b'%' {
+            let digits = std::str::from_utf8(after.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(digits, 16).ok()?);
+            rest = after.get(2..)?;
+        } else {
+            bytes.push(byte);
+            rest = after;
+        }
+    }
+
+    let device = String::from_utf8(bytes).ok()?;
+    let written_the_same_way = stem_for_a_device(&device).is_ok_and(|again| again == stem);
+    written_the_same_way.then_some(device)
 }
 
 #[cfg(test)]
@@ -565,6 +625,86 @@ mod tests {
             scratch.store.own_path(Some(&"/".repeat(FILE_NAME_AT_MOST))),
             Err(Error::DeviceNotNameable)
         ));
+    }
+
+    #[test]
+    fn every_own_curve_kept_is_listed_under_the_device_it_was_kept_for() {
+        let scratch = Scratch::new();
+        let devices = [
+            "alsa_output.usb-Sennheiser_HD_650.analog-stereo",
+            "a/b",
+            "a%2Fb",
+            "every-other-device",
+            "..",
+            "Kopfhörer",
+        ];
+        for device in devices {
+            scratch
+                .store
+                .keep_own(Some(device), &profile())
+                .expect("a writable folder");
+        }
+        scratch
+            .store
+            .keep_own(None, &profile())
+            .expect("a writable folder");
+
+        let mut expected: Vec<Option<String>> = devices
+            .into_iter()
+            .map(|device| Some(device.to_owned()))
+            .chain([None])
+            .collect();
+        expected.sort();
+        assert_eq!(scratch.store.owners().expect("it walks"), expected);
+    }
+
+    #[test]
+    fn a_file_no_device_is_written_as_is_not_listed_as_an_own_curve() {
+        let scratch = Scratch::new();
+        let own = scratch.store.folder().join(OWN_FOLDER);
+        fs::create_dir_all(&own).expect("a writable folder");
+        for stray in [
+            "device-a%2fb.txt",
+            "device-a%+1.txt",
+            "device-a%2.txt",
+            "device-a b.txt",
+            "device-.txt",
+            "someone-else.txt",
+            "device-held.txt.new",
+        ] {
+            fs::write(own.join(stray), "Preamp: -1 dB").expect("a writable folder");
+        }
+
+        assert!(
+            scratch.store.owners().expect("it walks").is_empty(),
+            "a file this build would never write was read as a device's curve"
+        );
+    }
+
+    #[test]
+    fn an_own_curve_forgotten_leaves_its_device_flat_and_every_other_curve_standing() {
+        let scratch = Scratch::new();
+        let device = "alsa_output.usb";
+        scratch
+            .store
+            .keep_own(Some(device), &profile())
+            .expect("a writable folder");
+        scratch
+            .store
+            .keep_own(None, &profile())
+            .expect("a writable folder");
+
+        assert!(scratch.store.forget_own(Some(device)).expect("it removes"));
+        assert!(
+            !scratch.store.forget_own(Some(device)).expect("it removes"),
+            "a curve already gone was forgotten again"
+        );
+        assert_eq!(
+            scratch.store.own(Some(device)).expect("it reads"),
+            Profile::flat()
+        );
+        assert_eq!(scratch.store.own(None).expect("it reads"), profile());
+        assert_eq!(scratch.store.owners().expect("it walks"), vec![None]);
     }
 
     #[test]

@@ -468,7 +468,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["off", "import", "export", "find", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["off", "import", "export", "find", "fetch", "suggest", "list", "forget", "forget_own"],
         help = "Turn the equaliser on. It is a filter, so the stream stops being bit-perfect \
                 and `resonate explain` says so"
     )]
@@ -476,7 +476,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["on", "import", "export", "find", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["on", "import", "export", "find", "fetch", "suggest", "list", "forget", "own", "forget_own"],
         help = "Turn the equaliser off and leave the samples untouched. Every binding stays, so \
                 --on puts them back"
     )]
@@ -485,7 +485,7 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "NAME",
-        conflicts_with_all = ["find", "suggest", "list", "forget"],
+        conflicts_with_all = ["find", "suggest", "list", "forget", "own", "forget_own"],
         help = "Bind this kept profile to the device --for names and turn the equaliser on. \
                 With --import or --fetch it names what the new profile is kept as, and with \
                 --export it names which one is written out"
@@ -494,7 +494,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["on", "profile", "import", "export", "find", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["on", "profile", "import", "export", "find", "fetch", "suggest", "list", "forget", "own", "forget_own"],
         help = "Take the binding away from the device --for names, or from the fallback where \
                 it names none"
     )]
@@ -503,7 +503,7 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "FILE",
-        conflicts_with_all = ["on", "off", "export", "find", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["on", "off", "export", "find", "fetch", "suggest", "list", "forget", "forget_own"],
         help = "Read a profile in and keep it. An EqualizerAPO ParametricEQ file is read as the \
                 bands it names; an AutoEq GraphicEQ file is kept as its curve and fitted onto \
                 third-octave bands at the rate each stream plays at"
@@ -513,7 +513,7 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "FILE",
-        conflicts_with_all = ["on", "off", "import", "find", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["on", "off", "import", "find", "fetch", "suggest", "list", "forget", "forget_own"],
         help = "Write a profile out as an EqualizerAPO ParametricEQ file — the one --profile \
                 names, or the one bound to the device --for names"
     )]
@@ -523,7 +523,7 @@ pub struct EqArgs {
         long,
         value_name = "TEXT",
         allow_hyphen_values = true,
-        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "fetch", "suggest", "list", "forget"],
+        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "fetch", "suggest", "list", "forget", "own", "forget_own"],
         help = "List the measured devices whose name holds every one of these words, with who \
                 measured each and on what rig. Nothing is fetched and nothing is kept"
     )]
@@ -532,7 +532,7 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "DEVICE",
-        conflicts_with_all = ["on", "off", "import", "export", "find", "suggest", "list", "forget"],
+        conflicts_with_all = ["on", "off", "import", "export", "find", "suggest", "list", "forget", "forget_own"],
         help = "Fetch the correction measured for this device and keep it, named by --profile \
                 or by the device. It is the path --find prints"
     )]
@@ -540,7 +540,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["on", "off", "profile", "import", "export", "find", "fetch", "list", "forget"],
+        conflicts_with_all = ["on", "off", "profile", "import", "export", "find", "fetch", "list", "forget", "own", "forget_own"],
         help = "Name the measured device the chosen sink looks like, or say that nothing \
                 answers to it clearly enough to be worth guessing at"
     )]
@@ -548,7 +548,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "find", "fetch", "suggest", "forget"],
+        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "find", "fetch", "suggest", "forget", "own", "forget_own"],
         help = "List the profiles kept here, with how many bands each holds and which devices \
                 each is bound to"
     )]
@@ -557,11 +557,29 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "NAME",
-        conflicts_with_all = ["on", "off", "profile", "import", "export", "find", "fetch", "suggest", "list"],
+        conflicts_with_all = ["on", "off", "profile", "import", "export", "find", "fetch", "suggest", "list", "own", "forget_own"],
         help = "Discard a kept profile and unbind every device bound to it. The file is taken \
                 away, and the command line has no undo to put it back with"
     )]
     pub forget: Option<String>,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["off", "profile", "unbind", "find", "suggest", "list", "forget", "forget_own"],
+        help = "Bind the device --for names to a curve of its own and turn the equaliser on. \
+                With --import or --fetch what is read becomes that curve rather than a kept \
+                profile, and with --export that curve is what is written out, bound or not"
+    )]
+    pub own: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["on", "off", "profile", "unbind", "import", "export", "find", "fetch", "suggest", "list", "forget", "own"],
+        help = "Discard the curve of its own the device --for names holds, or every other \
+                device's where it names none, and take the binding away where it was bound to \
+                that curve. It is how a device gone for good stops leaving its curve behind"
+    )]
+    pub forget_own: bool,
 }
 
 #[derive(Debug, Args)]

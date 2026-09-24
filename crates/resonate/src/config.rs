@@ -154,6 +154,13 @@ impl Bindings {
         self.by_sink.iter()
     }
 
+    pub fn of(&self, owner: Option<&NodeName>) -> Option<&Binding> {
+        match owner {
+            Some(sink) => self.by_sink.get(sink),
+            None => self.fallback(),
+        }
+    }
+
     pub fn for_sink(&self, sink: Option<&NodeName>) -> Option<(Option<&NodeName>, &Binding)> {
         sink.and_then(|sink| self.by_sink.get_key_value(sink))
             .map(|(owner, bound)| (Some(owner), bound))

@@ -50,6 +50,9 @@ pub enum Error {
     #[error("a profile is named in printable characters, without a path separator")]
     NameNotUsable,
 
+    #[error("that device neither holds nor is bound to a curve of its own")]
+    NoOwnCurve,
+
     #[error("no file can be named after that device, so its own curve cannot be kept")]
     DeviceNotNameable,
 
