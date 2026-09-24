@@ -130,6 +130,33 @@ impl Service {
         }
     }
 
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Spotify => "Spotify",
+            Self::Tidal => "Tidal",
+            Self::AppleMusic => "Apple Music",
+            Self::Deezer => "Deezer",
+            Self::Qobuz => "Qobuz",
+            Self::AmazonMusic => "Amazon Music",
+            Self::Youtube => "YouTube",
+            Self::YoutubeMusic => "YouTube Music",
+            Self::Bandcamp => "Bandcamp",
+            Self::Soundcloud => "SoundCloud",
+            Self::Beatport => "Beatport",
+            Self::SevenDigital => "7digital",
+            Self::Discogs => "Discogs",
+            Self::Wikipedia => "Wikipedia",
+            Self::Wikidata => "Wikidata",
+            Self::AllMusic => "AllMusic",
+            Self::LastFm => "Last.fm",
+            Self::WikimediaCommons => "Wikimedia Commons",
+            Self::Facebook => "Facebook",
+            Self::Instagram => "Instagram",
+            Self::Twitter => "X",
+            Self::Other => "elsewhere",
+        }
+    }
+
     const AMAZON: &'static str = "amazon";
 
     const TWITTER: [&'static str; 2] = ["twitter.com", "x.com"];
@@ -284,6 +311,31 @@ mod tests {
         assert_eq!(Service::WikimediaCommons.name(), "wikimedia commons");
 
         let mut distinct = named.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), 22);
+    }
+
+    #[test]
+    fn a_service_is_titled_as_it_spells_itself_and_every_title_is_its_own() {
+        let titled: Vec<&str> = Service::HOSTS
+            .iter()
+            .map(|(_, service)| service.title())
+            .chain([
+                Service::Twitter.title(),
+                Service::AmazonMusic.title(),
+                Service::Other.title(),
+            ])
+            .collect();
+
+        for title in &titled {
+            assert_eq!(title.to_lowercase(), title.to_lowercase().trim());
+            assert!(!title.trim().is_empty());
+        }
+        assert_eq!(Service::AppleMusic.title(), "Apple Music");
+        assert_eq!(Service::Soundcloud.title(), "SoundCloud");
+
+        let mut distinct = titled.clone();
         distinct.sort_unstable();
         distinct.dedup();
         assert_eq!(distinct.len(), 22);

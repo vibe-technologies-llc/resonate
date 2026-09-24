@@ -1291,7 +1291,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Pane::Missing`. **The services are capped at `SERVICES_SHOWN`, because an artist has a
   directory of them.** A release names a handful of shops; an artist named nineteen — every
   streaming service, both encyclopaedias and four social networks. Four is what is drawn, the way
-  three genres are, and as one line of words rather than a cloud of mono figures.
+  three genres are, and as one line of words rather than a cloud of mono figures. **Each service
+  on the line is the link it was named from.** `service_names` keeps the first URL a service is
+  linked by beside its `Service::title` — *Apple Music*, *SoundCloud*, not the lowercase key the
+  catalog stores — and `heard_on` draws one pressable name per service, lit under the pointer the
+  way an `opens` is, naming *Open on …* and handing that exact release's or artist's URL to
+  `cx.open_url`, which is the desktop's browser. It stops its press and ignores a right one, like
+  every link in a heading.
 - **An artist's page is its albums or its tracks, one at a time, chosen from two tabs.** It used
   to stack a horizontally scrolling strip of small covers over the whole track listing, so a
   page was three scrolling regions, an album was a thumbnail and every row repeated the artist's

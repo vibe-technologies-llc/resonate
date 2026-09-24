@@ -1202,9 +1202,10 @@ impl RootView {
             .when_some(disambiguation, |column, disambiguation| {
                 column.child(kit::subtitle(disambiguation).text_color(rgb(theme::faint())))
             })
-            .when_some(heard_on(&services), |column, services| {
-                column.child(kit::subtitle(services).text_color(rgb(theme::faint())))
-            })
+            .when_some(
+                heard_on("album-heard-on", services, self.hero_width.get()),
+                Div::child,
+            )
             .child(self.hero_actions(Favoured::Album(id), favourite, true, cx));
 
         kit::heading()
@@ -1267,9 +1268,10 @@ impl RootView {
                         .children(genres.into_iter().map(kit::tag)),
                 )
             })
-            .when_some(heard_on(&services), |column, services| {
-                column.child(kit::subtitle(services).text_color(rgb(theme::faint())))
-            })
+            .when_some(
+                heard_on("artist-heard-on", services, self.hero_width.get()),
+                Div::child,
+            )
             .child(
                 self.hero_actions(
                     Favoured::Artist(id),
@@ -1970,15 +1972,23 @@ fn release_line(release: &ReleaseDetail) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-fn service_names(links: &[Link]) -> Vec<&'static str> {
-    let mut named = Vec::new();
+struct HeardOn {
+    name: &'static str,
+    url: SharedString,
+}
+
+fn service_names(links: &[Link]) -> Vec<HeardOn> {
+    let mut named: Vec<HeardOn> = Vec::new();
     for link in links {
         if link.service == Service::Other {
             continue;
         }
-        let name = link.service.name();
-        if !named.contains(&name) {
-            named.push(name);
+        let name = link.service.title();
+        if !named.iter().any(|held| held.name == name) {
+            named.push(HeardOn {
+                name,
+                url: SharedString::from(link.url.clone()),
+            });
         }
     }
     named
@@ -1988,10 +1998,42 @@ const GENRES_SHOWN: usize = 3;
 
 const SERVICES_SHOWN: usize = 4;
 
-fn heard_on(services: &[&str]) -> Option<String> {
-    let shown: format::Parts<&str> = services.iter().copied().take(SERVICES_SHOWN).collect();
-
-    (!shown.is_empty()).then(|| format!("On {}", shown.join(" · ")))
+fn heard_on(id: &'static str, services: Vec<HeardOn>, room: Pixels) -> Option<Div> {
+    if services.is_empty() {
+        return None;
+    }
+    let mut line = kit::wraps_within(room)
+        .items_center()
+        .text_size(px(theme::text_sm()))
+        .text_color(rgb(theme::faint()))
+        .child("On\u{a0}");
+    for (at, heard) in services.into_iter().take(SERVICES_SHOWN).enumerate() {
+        if at > 0 {
+            line = line.child(div().px_1().child("·"));
+        }
+        let element = ElementId::NamedInteger(id.into(), at as u64);
+        let url = heard.url;
+        line = line.child(
+            div()
+                .id(element.clone())
+                .cursor_pointer()
+                .lit_under_the_pointer(element, |link| {
+                    link.text_color(rgb(theme::accent()))
+                        .text_decoration_1()
+                        .text_decoration_color(rgb(theme::accent()))
+                })
+                .names(format!("Open on {}", heard.name))
+                .on_click(move |event, _, cx| {
+                    if !menu::pressed(event) {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    cx.open_url(&url);
+                })
+                .child(heard.name),
+        );
+    }
+    Some(line)
 }
 
 fn profile_line(detail: &ArtistDetail) -> Option<String> {
