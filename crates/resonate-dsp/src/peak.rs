@@ -324,7 +324,10 @@ impl Processor for TruePeak {
         let owed = self.taken.min(self.delay as u64) as usize;
         let silence = std::mem::take(&mut self.silence);
         let mut produced = 0;
-        for _ in 0..owed {
+        for _ in 0..self.delay {
+            if produced == owed {
+                break;
+            }
             let Some(slot) = output.get_mut(produced * channels..(produced + 1) * channels) else {
                 break;
             };
@@ -438,6 +441,15 @@ mod tests {
         );
         assert_eq!(output, quiet, "a stream under the ceiling was touched");
         assert!(stage.latency_frames() > 0.0);
+    }
+
+    #[test]
+    fn a_stream_shorter_than_the_lookahead_is_flushed_whole() {
+        for frames in [1, 40, 50, 87, 88, 89] {
+            let short = sine(997.0, 0.5, 0.3, frames);
+            let (output, _) = guarded(&short);
+            assert_eq!(output, short, "{frames} frames came back otherwise");
+        }
     }
 
     #[test]
