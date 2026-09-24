@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, Write},
     ops::Deref,
     path::{Component, Path, PathBuf},
     process,
@@ -9,12 +9,12 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::{
-    Codec, CoverArt, DecodeStatus, Decoder, MediaInfo, MediaStream, Sources, Speakers, probe,
+    Codec, Container, CoverArt, DecodeStatus, Decoder, MediaInfo, Sources, Speakers, probe,
 };
 use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
 
 use crate::{
-    cover,
+    bare, cover,
     drawn::Drawings,
     error::{Error, Result, VaultOp},
     flac,
@@ -35,12 +35,6 @@ const UNNAMED_EXTENSION: &str = "bin";
 const LONGEST_EXTENSION: usize = 8;
 const COPY_BYTES: usize = 1 << 20;
 const SIXTEEN_BIT_CEILING: u8 = 16;
-const FLAC_MAGIC: [u8; 4] = *b"fLaC";
-const METADATA_HEADER_BYTES: usize = 4;
-const LAST_BLOCK: u8 = 0x80;
-const BLOCK_KIND: u8 = 0x7f;
-const STREAM_INFO: u8 = 0;
-const MOST_METADATA_BYTES: u64 = 64 << 20;
 const LARGEST_DELIVERY: u64 = wave::LARGEST_PCM;
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
@@ -607,8 +601,52 @@ impl Vault {
         info: &MediaInfo,
         unread: Option<Decoder>,
     ) -> Result<Keeping> {
+        let went_in = match unread {
+            Some(decoder) => pcm_of(decoder, info, None),
+            None => Decoder::open(taking.sources, taking.location)
+                .map_err(|source| Error::codec(VaultOp::Verify, source))
+                .and_then(|(decoder, info)| pcm_of(decoder, &info, None)),
+        };
+        let Ok(went_in) = went_in else {
+            return Ok(Keeping::Refused(Refusal::NotValidated));
+        };
+
+        let container = Container::from_id(info.container);
+        let mut copied = self.copied(taking, Stripping::Bare(container))?;
+        if copied
+            .as_ref()
+            .is_some_and(|copied| copied.stripped && !copied.holds_what(went_in))
+        {
+            copied = self.copied(taking, Stripping::Whole)?;
+        }
+        let Some(copied) = copied else {
+            return Ok(Keeping::Refused(Refusal::Empty));
+        };
+        if !copied.holds_what(went_in) {
+            return Ok(Keeping::Refused(Refusal::NotValidated));
+        }
+
         let extension = named_extension(taking.location);
-        let staging = self.staged(&extension)?;
+        let key = copied.key;
+        let target = self.object_path(key, &extension);
+        let landing = self.landed_or_standing(&copied.staging, &target, Weighing::AS_IT_STANDS)?;
+
+        Ok(landing.kept(Kept {
+            key,
+            form: Form::Kept,
+            path: target,
+            bytes: 0,
+            was: 0,
+            spec: info.spec,
+            frames: info.duration.unwrap_or(Frames::ZERO),
+            codec,
+            deduped: false,
+            replaced: false,
+        }))
+    }
+
+    fn copied(&self, taking: &Taking<'_>, stripping: Stripping) -> Result<Option<Copied>> {
+        let staging = self.staged(&named_extension(taking.location))?;
         let mut media = taking
             .sources
             .open(taking.location)
@@ -616,20 +654,33 @@ impl Vault {
 
         let mut file =
             File::create(&staging).map_err(|source| Error::io(VaultOp::Stage, &staging, source))?;
-        let mut buffer = vec![0_u8; COPY_BYTES];
         let mut digest = Digest::default();
         let mut held = 0_u64;
 
-        if let Some(head) = bare_flac_head(&mut media.stream, &staging)? {
+        let bared = match stripping {
+            Stripping::Bare(container) => bare::bare(&mut media.stream, container, &staging)?,
+            Stripping::Whole => None,
+        };
+        let stripped = bared.is_some();
+        let (head, until) = bared.map_or((Vec::new(), None), |bared| (bared.head, bared.until));
+        let start = media
+            .stream
+            .stream_position()
+            .map_err(|source| Error::io(VaultOp::Read, &staging, source))?;
+        if !head.is_empty() {
             digest.note(&head);
             file.write_all(&head)
                 .map_err(|source| Error::io(VaultOp::Write, &staging, source))?;
             held += head.len() as u64;
         }
 
+        let mut rest: Box<dyn Read> = match until {
+            Some(until) => Box::new((&mut media.stream).take(until.saturating_sub(start))),
+            None => Box::new(&mut media.stream),
+        };
+        let mut buffer = vec![0_u8; COPY_BYTES];
         loop {
-            let read = media
-                .stream
+            let read = rest
                 .read(&mut buffer)
                 .map_err(|source| Error::io(VaultOp::Read, &staging, source))?;
             if read == 0 {
@@ -644,42 +695,14 @@ impl Vault {
             .map_err(|source| Error::io(VaultOp::Settle, &staging, source))?;
 
         if held == 0 {
-            self.discard(&staging)?;
-            return Ok(Keeping::Refused(Refusal::Empty));
+            return Ok(None);
         }
-
-        let went_in = match unread {
-            Some(decoder) => pcm_of(decoder, info, None),
-            None => Decoder::open(taking.sources, taking.location)
-                .map_err(|source| Error::codec(VaultOp::Verify, source))
-                .and_then(|(decoder, info)| pcm_of(decoder, &info, None)),
-        };
-        let holds = match (went_in, read_back(&staging, None)) {
-            (Ok(went_in), Ok(came_out)) => {
-                went_in.key == came_out.key && went_in.frames == came_out.frames
-            }
-            _ => false,
-        };
-        if !holds {
-            self.discard(&staging)?;
-            return Ok(Keeping::Refused(Refusal::NotValidated));
-        }
-
-        let key = digest.settled();
-        let target = self.object_path(key, &extension);
-        let landing = self.landed_or_standing(&staging, &target, Weighing::AS_IT_STANDS)?;
-
-        Ok(landing.kept(Kept {
-            key,
-            form: Form::Kept,
-            path: target,
-            bytes: 0,
-            was: 0,
-            spec: info.spec,
-            frames: info.duration.unwrap_or(Frames::ZERO),
-            codec,
-            deduped: false,
-            replaced: false,
+        let came_out = read_back(&staging, None).ok();
+        Ok(Some(Copied {
+            staging,
+            key: digest.settled(),
+            came_out,
+            stripped,
         }))
     }
 
@@ -841,6 +864,27 @@ impl Vault {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stripping {
+    Bare(Container),
+    Whole,
+}
+
+struct Copied {
+    staging: Staged,
+    key: VaultKey,
+    came_out: Option<Heard>,
+    stripped: bool,
+}
+
+impl Copied {
+    fn holds_what(&self, went_in: Heard) -> bool {
+        self.came_out.is_some_and(|came_out| {
+            went_in.key == came_out.key && went_in.frames == came_out.frames
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Heard {
     key: VaultKey,
     frames: Frames,
@@ -946,74 +990,6 @@ fn weighed(kept: Keeping, was: Option<u64>) -> Keeping {
     }
 }
 
-fn bare_flac_head(stream: &mut Box<dyn MediaStream>, named: &Path) -> Result<Option<Vec<u8>>> {
-    if !stream.is_seekable() {
-        return Ok(None);
-    }
-
-    let mut magic = [0_u8; FLAC_MAGIC.len()];
-    let read = stream
-        .read(&mut magic)
-        .map_err(|source| Error::io(VaultOp::Read, named, source))?;
-    if read != magic.len() || magic != FLAC_MAGIC {
-        stream
-            .seek(SeekFrom::Start(0))
-            .map_err(|source| Error::io(VaultOp::Read, named, source))?;
-        return Ok(None);
-    }
-
-    let mut stream_info = None;
-    let mut walked = 0_u64;
-    let mut reached_the_audio = false;
-
-    loop {
-        let mut header = [0_u8; METADATA_HEADER_BYTES];
-        if stream.read_exact(&mut header).is_err() {
-            break;
-        }
-        let last = header[0] & LAST_BLOCK != 0;
-        let kind = header[0] & BLOCK_KIND;
-        let length = u32::from(header[1]) << 16 | u32::from(header[2]) << 8 | u32::from(header[3]);
-
-        walked += u64::from(length);
-        if walked > MOST_METADATA_BYTES {
-            break;
-        }
-
-        if kind == STREAM_INFO {
-            let mut held = vec![0_u8; length as usize];
-            if stream.read_exact(&mut held).is_err() {
-                break;
-            }
-            stream_info = Some(held);
-        } else if stream.seek(SeekFrom::Current(i64::from(length))).is_err() {
-            break;
-        }
-
-        if last {
-            reached_the_audio = true;
-            break;
-        }
-    }
-
-    let Some(held) = stream_info.filter(|_| reached_the_audio) else {
-        stream
-            .seek(SeekFrom::Start(0))
-            .map_err(|source| Error::io(VaultOp::Read, named, source))?;
-        return Ok(None);
-    };
-
-    let length = held.len() as u32;
-    let mut head = Vec::with_capacity(FLAC_MAGIC.len() + METADATA_HEADER_BYTES + held.len());
-    head.extend_from_slice(&FLAC_MAGIC);
-    head.push(LAST_BLOCK | STREAM_INFO);
-    head.push((length >> 16) as u8);
-    head.push((length >> 8) as u8);
-    head.push(length as u8);
-    head.extend_from_slice(&held);
-    Ok(Some(head))
-}
-
 fn names_a_place_inside(within: &Path) -> bool {
     within.components().next().is_some()
         && within
@@ -1055,72 +1031,7 @@ fn compressed_name(extension: &str) -> String {
 mod tests {
     use std::io::Cursor;
 
-    use resonate_codec::Reading;
-
     use super::*;
-
-    fn block(kind: u8, last: bool, payload: &[u8]) -> Vec<u8> {
-        let length = payload.len() as u32;
-        let mut held = vec![
-            kind | if last { LAST_BLOCK } else { 0 },
-            (length >> 16) as u8,
-            (length >> 8) as u8,
-            length as u8,
-        ];
-        held.extend_from_slice(payload);
-        held
-    }
-
-    fn streamed(bytes: Vec<u8>) -> Box<dyn MediaStream> {
-        Box::new(Reading::new(Cursor::new(bytes)))
-    }
-
-    #[test]
-    fn a_head_that_never_reaches_its_last_block_is_copied_whole_rather_than_cut_short() {
-        const PADDING: u8 = 1;
-
-        let mut whole = FLAC_MAGIC.to_vec();
-        whole.extend(block(STREAM_INFO, false, &[7_u8; 34]));
-        whole.extend(block(PADDING, false, &[0_u8; 16]));
-
-        let mut stream = streamed(whole.clone());
-        let head =
-            bare_flac_head(&mut stream, Path::new("truncated.flac")).expect("a readable head");
-        assert_eq!(
-            head, None,
-            "a STREAMINFO was marked last ahead of blocks it did not walk"
-        );
-
-        let mut rest = Vec::new();
-        stream.read_to_end(&mut rest).expect("the whole file");
-        assert_eq!(rest, whole, "the file was not handed back from its start");
-    }
-
-    #[test]
-    fn a_flac_head_is_rewritten_as_its_stream_info_alone() {
-        const VORBIS_COMMENT: u8 = 4;
-        const PICTURE: u8 = 6;
-
-        let stream_info = vec![7_u8; 34];
-        let mut whole = FLAC_MAGIC.to_vec();
-        whole.extend(block(STREAM_INFO, false, &stream_info));
-        whole.extend(block(VORBIS_COMMENT, false, b"a title nobody asked for"));
-        whole.extend(block(PICTURE, true, &vec![9_u8; 4096]));
-        whole.extend_from_slice(b"the frames that follow");
-
-        let mut stream = streamed(whole);
-        let head = bare_flac_head(&mut stream, Path::new("noisy.flac"))
-            .expect("a readable head")
-            .expect("a FLAC head");
-
-        let mut wanted = FLAC_MAGIC.to_vec();
-        wanted.extend(block(STREAM_INFO, true, &stream_info));
-        assert_eq!(head, wanted);
-
-        let mut rest = Vec::new();
-        stream.read_to_end(&mut rest).expect("the frames");
-        assert_eq!(rest, b"the frames that follow");
-    }
 
     #[test]
     fn a_delivery_past_the_cap_is_refused_and_leaves_nothing_in_staging() {
@@ -1191,19 +1102,5 @@ mod tests {
         assert_eq!(sanitised_extension(Some("../FLAC")), "flac");
         assert_eq!(sanitised_extension(Some("/")), UNNAMED_EXTENSION);
         assert_eq!(sanitised_extension(None), UNNAMED_EXTENSION);
-    }
-
-    #[test]
-    fn a_stream_that_is_not_a_flac_is_left_where_it_was_found() {
-        let mut stream = streamed(b"RIFF....WAVEfmt ".to_vec());
-        assert!(
-            bare_flac_head(&mut stream, Path::new("not.wav"))
-                .expect("a readable head")
-                .is_none()
-        );
-
-        let mut rest = Vec::new();
-        stream.read_to_end(&mut rest).expect("the whole file");
-        assert_eq!(rest, b"RIFF....WAVEfmt ");
     }
 }

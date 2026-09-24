@@ -31,10 +31,12 @@ gpui, the engine, the library and `ureq`.
   the same key at once without one deleting what the other's row now names.
 - **A kept object is weighed like an encoded one.** `kept_whole` decodes the source and the
   staged copy through the same `pcm_of` and refuses the copy where the two digests differ, so a
-  stripped FLAC is proved to hold the source's audio rather than merely to decode.
-  `bare_flac_head` rewrites the metadata only where its walk reached the last block; one that
-  stops at the bound or on a short read hands the file back from its start and it is copied as it
-  stands, rather than a STREAMINFO marked last ahead of blocks still in the copy.
+  stripped copy is proved to hold the source's audio rather than merely to decode. A stripped
+  copy that does not is copied again whole and weighed again, so a source whose decoder read a
+  tag as a frame is still kept, tags and all, rather than refused. `bare` rewrites a FLAC's
+  metadata only where its walk reached the last block; one that stops at the bound or on a short
+  read hands the file back from its start and it is copied as it stands, rather than a STREAMINFO
+  marked last ahead of blocks still in the copy.
 - **One copy of one thing.** The key is the MD5 of the decoded PCM, so the same audio arriving in
   two containers is one object; a cover is keyed by its own bytes, so an album's twelve tracks
   embedding one picture cost one JXL and eleven dedup hits.
@@ -61,9 +63,14 @@ decoded; the size comparison may then overrule it.
   it hands one whose finished object came out too large.
 - **`Form::Kept`** — the source's own bytes, because re-encoding would lose something or cost more
   than it saves: a lossy codec, DSD, more than 8 channels, or a re-encode that came out no smaller.
-  A FLAC source kept this way still has its metadata blocks rewritten to STREAMINFO alone
-  (`bare_flac_head`), so the promise about tags and pictures holds without touching a single audio
-  frame — which is the one case where stripping is free.
+  What a container keeps its tags in *around* the audio is left behind, so the promise about tags
+  and pictures holds without touching a single audio frame. `bare::bare` is the whole of it and
+  it decides by the container symphonia opened: a FLAC has its metadata blocks rewritten to
+  STREAMINFO alone; an MPEG or ADTS stream sheds every ID3v2 tag stacked in front of the frames
+  and, from the end inward, ID3v1 with its enhanced `TAG+`, APEv2 with or without its header,
+  Lyrics3v2 and an appended ID3v2 read by its footer; and a DSF ends where its metadata pointer
+  pointed, its header rewritten to that length and a pointer of nothing. A tag that claims more
+  than the file holds, or tags that would leave no frames at all, leave the file whole.
 
 **Where the speakers sit is part of what is kept.** `MediaInfo::speakers` is the source's
 positions as symphonia reads them — its `Position` bits, which are the WAVE channel mask — and
@@ -127,7 +134,9 @@ nothing else can tell that an object on disc was made by a worse encoder than th
 `--import` walks a vaulted row again wherever its object's stamp is behind, and leaves out the
 two it cannot improve: a row whose source has gone, since the object is then the only copy and
 nothing better can be made of it, and a row `Form::of` would keep as it stands whatever encoder is
-behind it — a lossy codec, DSD, more than eight channels. The preview marks such a row as
+behind it — a lossy codec, DSD, more than eight channels — unless it is MP3, AAC or DSD, whose
+kept copies encoding 2 began stripping; an MP4's AAC or a DSDIFF among those is copied again to
+the same key and stamped. The preview marks such a row as
 *weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
 that would otherwise hide the new encode: an object already standing under the same key is not a
 dedup hit but a rival, and the new one replaces it — `Kept::replaced`, a rename over the standing
@@ -274,5 +283,6 @@ row belongs to no root.
 
 ## What it does not do
 
-- A `Form::Kept` object that is not FLAC — an MP3, a DSF — keeps the tags its container was
+- A `Form::Kept` object in a container whose tags sit *inside* its structure — Ogg's comment
+  packet, MP4's `udta`, DSDIFF's `ID3 ` and `DIIN` chunks — keeps the tags its container was
   written with, because stripping those means a writer per format.

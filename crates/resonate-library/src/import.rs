@@ -430,7 +430,11 @@ fn cost_of(row: &TrackToVault) -> (Effort, u64) {
 }
 
 fn worth_weighing(row: &TrackToVault) -> bool {
-    !row.renewing || (form_of(row) != Form::Kept && row.path.is_file())
+    !row.renewing || (row.path.is_file() && (form_of(row) != Form::Kept || sheds_tags_kept(row)))
+}
+
+fn sheds_tags_kept(row: &TrackToVault) -> bool {
+    matches!(row.codec, Codec::Mp3 | Codec::Aac | Codec::Dsd)
 }
 
 fn form_of(row: &TrackToVault) -> Form {

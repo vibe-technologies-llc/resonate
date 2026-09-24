@@ -1,3 +1,4 @@
+mod bare;
 mod cover;
 mod drawn;
 mod encoding;

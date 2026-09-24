@@ -32,9 +32,10 @@
   hardware here takes a 176.4 kHz S24 stream
 
 ## The vault
-- A kept object that is not FLAC — an MP3, a DSF — carries the tags its container was written
-  with, because `bare_flac_head` only knows FLAC's metadata blocks and stripping the rest means a
-  writer per format
+- A kept object whose container holds its tags inside its own structure — an Ogg's comment packet,
+  an MP4's `udta`, a DSDIFF's `ID3 ` and `DIIN` chunks — carries them still, because `bare` only
+  cuts what sits around the audio and rewriting a page, an atom tree or a `FRM8` means a writer
+  per format. Ogg's is the one worth writing: its pages carry a CRC and a sequence number each
 - `flacenc` 0.5.1 caps the Rice parameter at 14 where the format's second partition method reaches
   30, which is why a 24-bit rip loses to `flac -8` by some 15 % and is kept rather than re-encoded.
   Closing it means the partitioned-rice-2 method in that crate or an encoder beside it

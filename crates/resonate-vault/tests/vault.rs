@@ -761,3 +761,55 @@ fn a_wave_that_would_come_out_no_smaller_is_given_up_on_and_the_source_kept() {
         "a wave object was landed beside the kept source"
     );
 }
+
+#[test]
+fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
+    const ID3V1_BYTES: usize = 128;
+
+    let tree = Tree::new();
+    let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
+    let path = tree.root.join("tagged.mp3");
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(["-c:a", "libmp3lame", "-b:a", "128k", "-write_id3v1", "1"])
+        .args([
+            "-metadata",
+            "title=Echoes",
+            "-metadata",
+            "artist=Pink Floyd",
+        ])
+        .arg(&path)
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: no ffmpeg with libmp3lame to write a tagged MP3");
+        return;
+    }
+    let before = fs::read(&path).expect("the tagged file");
+    assert!(before.starts_with(b"ID3"));
+    assert!(before[before.len() - ID3V1_BYTES..].starts_with(b"TAG"));
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    let object = fs::read(&held.path).expect("an object");
+    assert_eq!(held.form, Form::Kept);
+    assert!(!object.starts_with(b"ID3"), "the leading tag was kept");
+    assert!(
+        !object[object.len() - ID3V1_BYTES..].starts_with(b"TAG"),
+        "the trailing tag was kept"
+    );
+    assert!(object.len() < before.len());
+    assert_eq!(
+        decoded(&held.path, SampleFormat::S16),
+        decoded(&path, SampleFormat::S16)
+    );
+    assert_eq!(fs::read(&path).expect("the tagged file"), before);
+    assert!(
+        probe(&Sources::local(), &MediaLocation::local(&held.path))
+            .expect("a probe of the object")
+            .tags
+            .title
+            .is_none()
+    );
+}
