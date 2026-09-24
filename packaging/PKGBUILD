@@ -1,31 +1,35 @@
-pkgname=resonate
-pkgver=0.1.0
+pkgname=resonate-player-git
+_pkgname=resonate
+pkgver=0.1.0.r1.g234eada
 pkgrel=1
 pkgdesc='A high-fidelity music player with native PipeWire output'
 arch=('x86_64' 'aarch64')
+url='https://github.com/vibe-technologies-llc/resonate'
 license=('MIT')
 depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
          'freetype2' 'vulkan-icd-loader')
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'git')
+provides=("$_pkgname")
+conflicts=("$_pkgname" 'resonate-git')
 options=('!lto')
-source=("$pkgname::git+file://${startdir%/packaging}")
+source=("$_pkgname::git+$url.git")
 sha256sums=('SKIP')
 
 pkgver() {
-  cd "$pkgname"
+  cd "$_pkgname"
   local declared
   declared="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
   printf '%s.r%s.g%s' "$declared" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 prepare() {
-  cd "$pkgname"
+  cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
-  cd "$pkgname"
+  cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   export RUSTFLAGS="${RUSTFLAGS:-}"
@@ -33,31 +37,31 @@ build() {
 }
 
 check() {
-  cd "$pkgname"
+  cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export RUSTFLAGS="${RUSTFLAGS:-}"
   cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
 }
 
 package() {
-  cd "$pkgname"
+  cd "$_pkgname"
   local generated
-  generated="$(find target/release/build -name "$pkgname.1" -printf '%h\n' -quit)"
+  generated="$(find target/release/build -name "$_pkgname.1" -printf '%h\n' -quit)"
 
-  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm755 "target/release/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
 
-  install -Dm644 "packaging/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
-  install -Dm644 "packaging/$pkgname.svg" \
-    "$pkgdir/usr/share/icons/hicolor/scalable/apps/$pkgname.svg"
+  install -Dm644 "packaging/$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
+  install -Dm644 "packaging/$_pkgname.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_pkgname.svg"
   install -Dm644 packaging/org.resonate.Resonate.metainfo.xml \
     "$pkgdir/usr/share/metainfo/org.resonate.Resonate.metainfo.xml"
 
   install -Dm644 -t "$pkgdir/usr/share/man/man1" "$generated"/*.1
-  install -Dm644 "$generated/$pkgname.bash" \
-    "$pkgdir/usr/share/bash-completion/completions/$pkgname"
-  install -Dm644 "$generated/_$pkgname" "$pkgdir/usr/share/zsh/site-functions/_$pkgname"
-  install -Dm644 "$generated/$pkgname.fish" \
-    "$pkgdir/usr/share/fish/vendor_completions.d/$pkgname.fish"
+  install -Dm644 "$generated/$_pkgname.bash" \
+    "$pkgdir/usr/share/bash-completion/completions/$_pkgname"
+  install -Dm644 "$generated/_$_pkgname" "$pkgdir/usr/share/zsh/site-functions/_$_pkgname"
+  install -Dm644 "$generated/$_pkgname.fish" \
+    "$pkgdir/usr/share/fish/vendor_completions.d/$_pkgname.fish"
 }

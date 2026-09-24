@@ -1,0 +1,29 @@
+pkgbase = resonate-player-git
+	pkgdesc = A high-fidelity music player with native PipeWire output
+	pkgver = 0.1.0.r1.g234eada
+	pkgrel = 1
+	url = https://github.com/vibe-technologies-llc/resonate
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = clang
+	makedepends = pkgconf
+	makedepends = vulkan-headers
+	makedepends = git
+	depends = pipewire>=0.3.50
+	depends = libpipewire>=0.3.50
+	depends = libxkbcommon
+	depends = wayland
+	depends = fontconfig
+	depends = freetype2
+	depends = vulkan-icd-loader
+	provides = resonate
+	conflicts = resonate
+	conflicts = resonate-git
+	options = !lto
+	source = resonate::git+https://github.com/vibe-technologies-llc/resonate.git
+	sha256sums = SKIP
+
+pkgname = resonate-player-git

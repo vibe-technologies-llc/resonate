@@ -45,7 +45,8 @@ off builds with no HTTP client in the tree.
 The audio stack needs PipeWire and a C toolchain for its bindings; the window adds Wayland,
 xkbcommon, Vulkan, fontconfig and freetype. On Arch that is
 `pipewire libpipewire libxkbcommon wayland fontconfig freetype2 vulkan-icd-loader` to run, and
-`rust cargo clang pkgconf vulkan-headers` to build. `packaging/PKGBUILD` is the package.
+`rust cargo clang pkgconf vulkan-headers` to build. `packaging/PKGBUILD` is the package, published on the AUR as
+`resonate-player-git`.
 
 `.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler and
 is a *development* setting: anything producing a binary for another machine has to export

@@ -27,6 +27,10 @@
     </p>
   </description>
 
+  <url type="homepage">https://github.com/vibe-technologies-llc/resonate</url>
+  <url type="bugtracker">https://github.com/vibe-technologies-llc/resonate/issues</url>
+  <url type="vcs-browser">https://github.com/vibe-technologies-llc/resonate</url>
+
   <launchable type="desktop-id">resonate.desktop</launchable>
   <provides>
     <binary>resonate</binary>
