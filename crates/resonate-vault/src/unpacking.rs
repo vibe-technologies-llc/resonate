@@ -12,6 +12,7 @@ type Unpacked = zstd::stream::read::Decoder<'static, BufReader<File>>;
 pub(crate) struct Unpacking {
     path: PathBuf,
     unpacked: Unpacked,
+    unpacked_to: u64,
     at: u64,
     len: u64,
 }
@@ -32,14 +33,20 @@ impl Unpacking {
         Ok(Self {
             path: path.to_path_buf(),
             unpacked: self::unpacked(path)?,
+            unpacked_to: 0,
             at: 0,
             len: u64::from(u32::from_le_bytes(declared)) + RIFF_HEADER,
         })
     }
 
-    fn skip(&mut self, bytes: u64) -> io::Result<()> {
-        let skipped = io::copy(&mut (&mut self.unpacked).take(bytes), &mut io::sink())?;
-        self.at += skipped;
+    fn catch_up(&mut self) -> io::Result<()> {
+        if self.at < self.unpacked_to {
+            self.unpacked = unpacked(&self.path)?;
+            self.unpacked_to = 0;
+        }
+        let behind = self.at - self.unpacked_to;
+        self.unpacked_to += io::copy(&mut (&mut self.unpacked).take(behind), &mut io::sink())?;
+        self.at = self.unpacked_to;
         Ok(())
     }
 }
@@ -50,8 +57,13 @@ fn unpacked(path: &Path) -> io::Result<Unpacked> {
 
 impl Read for Unpacking {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        if self.at >= self.len {
+            return Ok(0);
+        }
+        self.catch_up()?;
         let read = self.unpacked.read(into)?;
-        self.at += read as u64;
+        self.unpacked_to += read as u64;
+        self.at = self.unpacked_to;
         Ok(read)
     }
 }
@@ -64,13 +76,8 @@ impl Seek for Unpacking {
             SeekFrom::Current(by) => self.at.checked_add_signed(by),
         }
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
-
-        if target < self.at {
-            self.unpacked = unpacked(&self.path)?;
-            self.at = 0;
-        }
-        self.skip(target - self.at)?;
-        Ok(self.at)
+        self.at = target;
+        Ok(target)
     }
 }
 
@@ -108,6 +115,40 @@ mod tests {
             reading.read_exact(&mut read).expect("a read");
             assert_eq!(&read[..], &whole[at as usize..at as usize + 64]);
         }
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn measuring_a_packed_wave_unpacks_none_of_it() {
+        let folder = env::temp_dir().join(format!("resonate-measuring-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let path = folder.join("held.wav.zst");
+
+        let body = vec![7_u8; 1 << 20];
+        let mut whole = RIFF.to_vec();
+        whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        whole.extend_from_slice(&body);
+        fs::write(
+            &path,
+            zstd::encode_all(whole.as_slice(), 3).expect("packed"),
+        )
+        .expect("written");
+
+        let mut reading = Unpacking::open(&path).expect("an unpacking");
+        assert_eq!(
+            reading.seek(SeekFrom::End(0)).expect("the end"),
+            whole.len() as u64
+        );
+        assert_eq!(reading.read(&mut [0_u8; 16]).expect("a read at the end"), 0);
+        assert_eq!(reading.seek(SeekFrom::Start(0)).expect("the start"), 0);
+        assert_eq!(
+            reading.unpacked_to, 0,
+            "a seek there and back unpacked the object"
+        );
+
+        let mut head = [0_u8; 4];
+        reading.read_exact(&mut head).expect("a read");
+        assert_eq!(&head, RIFF);
         let _ = fs::remove_dir_all(&folder);
     }
 }
