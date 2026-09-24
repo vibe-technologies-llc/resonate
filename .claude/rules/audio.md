@@ -93,7 +93,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   and it trims the value and leaves the slot as it was where nothing is left, so `"   "` names
   nothing, `"  Echoes \n"` is stored as *Echoes*, a blank frame written after a name does not
   unname it and a later name still wins, which
-  `a_blank_text_tag_is_no_tag_and_a_padded_one_is_stored_trimmed` is the claim of. A tagger that
+  `a_blank_text_tag_is_no_tag_and_a_padded_one_is_stored_trimmed` is the claim of. The four
+  ReplayGain values keep the same rule through `parsed`: a gain or peak that is blank or will not
+  parse leaves whatever an earlier frame or revision gave, so an empty frame after a real one does
+  not play the track with no gain. A tagger that
   writes an empty frame rather than omitting it otherwise files a track under an artist with no
   name and an album with no title, and `stem.rs` never runs for a title that is *there*; read as
   none, the same file is named from its stem and grouped as the tags that are not blank say.

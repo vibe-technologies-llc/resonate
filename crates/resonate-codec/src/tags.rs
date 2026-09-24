@@ -474,16 +474,16 @@ impl Builder {
             T::OriginalReleaseDate(value) => self.date(DateRank::OriginalReleaseDate, value),
 
             T::ReplayGainTrackGain(value) => {
-                self.tags.replay_gain.track_gain = decibels(value);
+                parsed(&mut self.tags.replay_gain.track_gain, decibels(value));
             }
             T::ReplayGainAlbumGain(value) => {
-                self.tags.replay_gain.album_gain = decibels(value);
+                parsed(&mut self.tags.replay_gain.album_gain, decibels(value));
             }
             T::ReplayGainTrackPeak(value) => {
-                self.tags.replay_gain.track_peak = peak(value);
+                parsed(&mut self.tags.replay_gain.track_peak, peak(value));
             }
             T::ReplayGainAlbumPeak(value) => {
-                self.tags.replay_gain.album_peak = peak(value);
+                parsed(&mut self.tags.replay_gain.album_peak, peak(value));
             }
 
             _ => {}
@@ -758,6 +758,12 @@ fn given(slot: &mut Option<String>, value: &str) {
     let value = value.trim();
     if !value.is_empty() {
         *slot = Some(value.to_owned());
+    }
+}
+
+fn parsed<T>(slot: &mut Option<T>, value: Option<T>) {
+    if value.is_some() {
+        *slot = value;
     }
 }
 
@@ -1192,6 +1198,22 @@ mod tests {
 
         assert_eq!(set.replay_gain.track_gain, None);
         assert_eq!(set.replay_gain.track_peak, None);
+    }
+
+    #[test]
+    fn a_blank_replay_gain_after_a_real_one_leaves_the_real_one_standing() {
+        let set = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7.06 dB"))),
+            tag(StandardTag::ReplayGainTrackPeak(text("0.987654"))),
+            tag(StandardTag::ReplayGainTrackGain(text(""))),
+            tag(StandardTag::ReplayGainTrackPeak(text("  "))),
+        ]);
+
+        assert_eq!(
+            set.replay_gain.track_gain,
+            Some(Decibels::new(-7.06).expect("finite"))
+        );
+        assert_eq!(set.replay_gain.track_peak, Some(0.987_654));
     }
 
     #[test]
