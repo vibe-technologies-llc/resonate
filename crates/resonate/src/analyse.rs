@@ -6,9 +6,9 @@ use resonate_engine::{Analysis, Envelope, Spectrum, Watch, analyse};
 use resonate_library::{Fingerprinters, HeardAs, Sounded};
 
 use crate::{
-    Error, Result, from_here,
+    Error, Result, cut_of_argument, from_here,
     info::{BLOCKS, clock, heading, pairs},
-    location_of_argument, names_a_sheet,
+    names_a_sheet,
     table::Table,
 };
 
@@ -29,22 +29,14 @@ pub struct Analysed {
 
 impl Analysed {
     pub fn named(argument: &OsStr, track: Option<u32>, sources: &Sources) -> Result<Self> {
-        let cut = argument
-            .to_str()
-            .and_then(MediaLocation::from_uri_within)
-            .filter(|(location, span)| {
-                span.is_some()
-                    && (location.as_path().is_some()
-                        || sources.provider(location.source()).is_some())
-            });
-        if let Some((location, span)) = cut {
+        let (location, span) = cut_of_argument(argument, sources)?;
+        if span.is_some() {
             return match track {
                 Some(_) => Err(Error::TrackOutsideASheet { location }),
                 None => Ok(Self { location, span }),
             };
         }
 
-        let location = location_of_argument(argument, sources);
         let sheet = names_a_sheet(&location)
             .then(|| location.as_path().map(Path::to_path_buf))
             .flatten();
@@ -494,6 +486,18 @@ mod tests {
         );
         let cut = Analysed::named(&uri, None, &sources).expect("a cut");
         assert_eq!(cut.span, Some(FrameSpan::between(Frames(10), Frames(20))));
+
+        let backwards = OsString::from(format!(
+            "{}#frames=100-50",
+            MediaLocation::local(&whole).to_uri()
+        ));
+        assert!(
+            matches!(
+                Analysed::named(&backwards, None, &sources),
+                Err(Error::UnreadableSpan { .. })
+            ),
+            "a cut that is no span was analysed as the whole file"
+        );
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }

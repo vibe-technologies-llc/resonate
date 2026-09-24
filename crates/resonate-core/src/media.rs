@@ -167,6 +167,10 @@ impl MediaLocation {
         format!("{uri}{SPAN_FRAGMENT}{}{SPAN_TO}{end}", span.start().get())
     }
 
+    pub fn claims_a_span(uri: &str) -> bool {
+        uri.contains(SPAN_FRAGMENT)
+    }
+
     pub fn from_uri_within(uri: &str) -> Option<(Self, Option<FrameSpan>)> {
         let Some((whole, fragment)) = uri.split_once(SPAN_FRAGMENT) else {
             return Some((Self::from_uri(uri)?, None));

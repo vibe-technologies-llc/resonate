@@ -2089,9 +2089,36 @@ fn location_of_argument(argument: &OsStr, sources: &Sources) -> MediaLocation {
     argument
         .to_str()
         .and_then(MediaLocation::from_uri)
-        .filter(|named| named.as_path().is_some() || sources.provider(named.source()).is_some())
+        .filter(|named| held_by(named, sources))
         .map(settled_here)
         .unwrap_or_else(|| MediaLocation::local(from_here(Path::new(argument))))
+}
+
+fn cut_of_argument(
+    argument: &OsStr,
+    sources: &Sources,
+) -> Result<(MediaLocation, Option<FrameSpan>)> {
+    if let Some(uri) = argument
+        .to_str()
+        .filter(|uri| MediaLocation::claims_a_span(uri))
+    {
+        if let Some((location, span)) =
+            MediaLocation::from_uri_within(uri).filter(|(named, _)| held_by(named, sources))
+        {
+            return Ok((settled_here(location), span));
+        }
+        if let Some(location) = MediaLocation::from_uri(uri).filter(|named| held_by(named, sources))
+        {
+            return Err(Error::UnreadableSpan {
+                location: settled_here(location),
+            });
+        }
+    }
+    Ok((location_of_argument(argument, sources), None))
+}
+
+fn held_by(named: &MediaLocation, sources: &Sources) -> bool {
+    named.as_path().is_some() || sources.provider(named.source()).is_some()
 }
 
 fn settled_here(location: MediaLocation) -> MediaLocation {
@@ -2113,7 +2140,21 @@ fn queue_items(arguments: &[OsString]) -> Vec<QueueItem> {
     let mut items = Vec::with_capacity(arguments.len());
 
     for argument in arguments {
-        let location = location_of_argument(argument, &sources);
+        let (location, span) = match cut_of_argument(argument, &sources) {
+            Ok(cut) => cut,
+            Err(error) => {
+                tracing::warn!(%error, "an argument naming a cut was not queued");
+                continue;
+            }
+        };
+        if span.is_some() {
+            items.push(QueueItem {
+                id: minting.mint(),
+                location,
+                span,
+            });
+            continue;
+        }
         let sheet = names_a_sheet(&location)
             .then(|| location.as_path().map(Path::to_path_buf))
             .flatten();
@@ -2256,6 +2297,26 @@ mod tests {
         );
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn a_uri_naming_frames_queues_that_cut_and_one_naming_no_span_queues_nothing() {
+        let queued = queue_items(&[OsString::from("file:///music/Meddle.flac#frames=588-44100")]);
+        assert_eq!(queued.len(), 1);
+        assert_eq!(
+            queued[0].location,
+            MediaLocation::local("/music/Meddle.flac")
+        );
+        assert_eq!(
+            queued[0].span,
+            Some(FrameSpan::between(Frames(588), Frames(44_100))),
+            "the cut a URI names was queued as the whole file"
+        );
+
+        assert!(
+            queue_items(&[OsString::from("file:///music/Meddle.flac#frames=100-50")]).is_empty(),
+            "a cut that is no span was queued as the whole file"
+        );
     }
 
     #[test]

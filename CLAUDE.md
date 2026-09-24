@@ -141,7 +141,11 @@ Invariants the layering exists to protect:
   for a cue row, what `AddTrack` and `OpenUri` read, what `resonate queue` sends for a playlist's
   cue rows and for the rows a `.cue` it is handed cuts, and what `resonate share` looks the playing
   row up by — so a single-file rip reaches the bus as twelve tracks rather than one file twelve
-  times. A `.cue` handed to `OpenUri` is read as its rows through the same `sheet_items` a
+  times. A file argument is read through it too, so `resonate play`, `resonate queue` and the
+  window handed a cue row's URI queue that row, and a `#frames=` that is no span —
+  `MediaLocation::claims_a_span` with nothing `from_uri_within` can read — is
+  `Error::UnreadableSpan` for `resonate analyse` and a warning and no row for the queue, never
+  the whole file. A `.cue` handed to `OpenUri` is read as its rows through the same `sheet_items` a
   `.cue` on the command line goes through.
 - **The desktop entry, the bus and the scan advertise what this build can decode, and nothing
   else.** `MIME_TYPES` in the binary is what `SupportedMimeTypes` answers, what

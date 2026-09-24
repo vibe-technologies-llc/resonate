@@ -312,6 +312,9 @@ pub enum Error {
     #[error("--track names a track of a .cue sheet, and {uri} is not one", uri = location.to_uri())]
     TrackOutsideASheet { location: MediaLocation },
 
+    #[error("the frames named after {uri} are not a span of it", uri = location.to_uri())]
+    UnreadableSpan { location: MediaLocation },
+
     #[error("nothing is suggested under the name {0}; resonate suggest lists what is")]
     NoSuchSuggestion(SuggestionName),
 
