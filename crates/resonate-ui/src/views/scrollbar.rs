@@ -1,16 +1,23 @@
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::Cell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     App, Bounds, Context, Div, DragMoveEvent, ElementId, IntoElement, MouseButton, Pixels, Point,
     Render, ScrollHandle, SharedString, Size, Stateful, UniformListScrollHandle, Window, canvas,
     div, fill, point, prelude::*, px, rgb, size,
 };
+use resonate_core::ScrollbarMode;
 
 use crate::{app::ResonateApp, theme};
 
 const TRACK_BREADTH: f32 = 12.0;
 const THUMB_BREADTH: f32 = 6.0;
 const SHORTEST_THUMB: f32 = 48.0;
+const SCROLLED_LINGERS: Duration = Duration::from_millis(1_200);
+const LAST_SCROLLED: &str = "last-scrolled";
 
 #[derive(Clone)]
 pub(crate) enum Target {
@@ -122,18 +129,26 @@ impl Render for EmptyDrag {
 
 #[derive(Clone, Copy)]
 pub(crate) struct Scrollbars {
-    shown: bool,
+    mode: ScrollbarMode,
 }
 
 impl Scrollbars {
     pub(crate) fn of(cx: &App) -> Self {
         Self {
-            shown: cx.global::<ResonateApp>().scrollbars,
+            mode: cx.global::<ResonateApp>().scrollbars,
+        }
+    }
+
+    const fn when_drawn(self) -> Shown {
+        match self.mode {
+            ScrollbarMode::AutoHidden => Shown::WhileScrolled,
+            ScrollbarMode::Shown | ScrollbarMode::Hidden => Shown::Always,
         }
     }
 
     pub(crate) fn vertical(self, id: &'static str, handle: impl Into<Target>) -> Stateful<Div> {
-        self.bar(id.into(), id, Axis::Vertical, handle.into(), Shown::Always)
+        let shown = self.when_drawn();
+        self.bar(id.into(), id, Axis::Vertical, handle.into(), shown)
     }
 
     pub(crate) fn vertical_while(
@@ -157,7 +172,7 @@ impl Scrollbars {
             id,
             Axis::Horizontal,
             handle.into(),
-            Shown::Always,
+            self.when_drawn(),
         )
     }
 
@@ -186,10 +201,11 @@ impl Scrollbars {
         target: Target,
         shown: Shown,
     ) -> Stateful<Div> {
-        if self.shown {
-            bar(element, id, axis, target, shown)
-        } else {
-            div().id(element).absolute()
+        match self.mode {
+            ScrollbarMode::Shown | ScrollbarMode::AutoHidden => {
+                bar(element, id, axis, target, shown)
+            }
+            ScrollbarMode::Hidden => div().id(element).absolute(),
         }
     }
 }
@@ -198,15 +214,74 @@ impl Scrollbars {
 enum Shown {
     Always,
     WhileMoved(bool),
+    WhileScrolled,
 }
 
 impl Shown {
-    const fn now(self, pointed: bool, held: bool) -> bool {
+    const fn now(self, pointed: bool, held: bool, scrolled: bool) -> bool {
         match self {
             Self::Always => true,
             Self::WhileMoved(moved) => moved || pointed || held,
+            Self::WhileScrolled => scrolled || pointed || held,
         }
     }
+
+    const fn follows_the_offset(self) -> bool {
+        matches!(self, Self::WhileScrolled)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Scrolled {
+    offset: Point<Pixels>,
+    at: Option<Instant>,
+}
+
+impl Scrolled {
+    fn seen(held: Option<Self>, offset: Point<Pixels>, now: Instant) -> Self {
+        match held {
+            Some(held) if held.offset == offset => held,
+            Some(_) => Self {
+                offset,
+                at: Some(now),
+            },
+            None => Self { offset, at: None },
+        }
+    }
+
+    fn lately(self, now: Instant) -> bool {
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) < SCROLLED_LINGERS)
+    }
+}
+
+fn scrolled_lately(target: &Target, window: &mut Window, cx: &App) -> bool {
+    let offset = target.handle().offset();
+    let now = Instant::now();
+
+    let (lately, fresh) = window.with_global_id(LAST_SCROLLED.into(), |global, window| {
+        window.with_element_state(global, |held: Option<Scrolled>, _| {
+            let scrolled = Scrolled::seen(held, offset, now);
+            let fresh = scrolled.at == Some(now);
+            ((scrolled.lately(now), fresh), scrolled)
+        })
+    });
+    if fresh {
+        hide_once_it_settles(window, cx);
+    }
+
+    lately
+}
+
+fn hide_once_it_settles(window: &Window, cx: &App) {
+    window
+        .spawn(cx, async move |cx| {
+            cx.background_executor().timer(SCROLLED_LINGERS).await;
+            if cx.update(|window, _| window.refresh()).is_err() {
+                tracing::debug!("the window a scrollbar was waiting to hide has gone");
+            }
+        })
+        .detach();
 }
 
 fn bar(
@@ -280,7 +355,9 @@ fn bar(
                 move |bounds, _, window, cx| {
                     track.set(bounds);
                     let lit = bounds.contains(&window.mouse_position());
-                    if !shown.now(lit, cx.has_active_drag()) {
+                    let scrolled =
+                        shown.follows_the_offset() && scrolled_lately(&target, window, cx);
+                    if !shown.now(lit, cx.has_active_drag(), scrolled) {
                         return;
                     }
                     let Some(thumb) = target.thumb(axis, axis.length(bounds.size)) else {

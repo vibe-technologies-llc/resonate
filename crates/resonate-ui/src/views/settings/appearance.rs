@@ -1,5 +1,5 @@
 use gpui::{Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb};
-use resonate_core::{Accent, Appearance, TextSize, Theme};
+use resonate_core::{Accent, Appearance, ScrollbarMode, TextSize, Theme};
 
 use crate::{
     ResonateApp, Setting, Tabs, WindowButtons, theme,
@@ -23,8 +23,6 @@ const MINIMISE_ID: &str = "show-the-minimise-button";
 const MAXIMISE_ID: &str = "show-the-maximise-button";
 
 const VOLUME_WHEEL_ID: &str = "wheel-the-volume";
-const SCROLLBARS_ID: &str = "draw-scrollbars";
-
 const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
 
 const MISSING_TAB_ID: &str = "show-the-missing-tab";
@@ -52,6 +50,32 @@ impl Choice for TextSize {
              is drawn at {:.0}% of the middling size.",
             self.scale() * 100.0
         ))
+    }
+}
+
+impl Choice for ScrollbarMode {
+    const ALL: &'static [Self] = &[Self::Shown, Self::AutoHidden, Self::Hidden];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Shown => "Always",
+            Self::AutoHidden => "While scrolling",
+            Self::Hidden => "Never",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Shown => {
+                "Every list and pane that scrolls draws a bar down its edge that shows where the \
+                 view stands and can be dragged."
+            }
+            Self::AutoHidden => {
+                "A bar is drawn while its list is scrolling and for a moment after, and whenever \
+                 the pointer is over the edge it sits on, so it can still be taken hold of."
+            }
+            Self::Hidden => "No bar is drawn; a list still scrolls with the wheel and the keys.",
+        })
     }
 }
 
@@ -243,21 +267,19 @@ impl RootView {
     }
 
     pub(super) fn scrollbars_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let drawn = cx.global::<ResonateApp>().scrollbars;
+        let mode = cx.global::<ResonateApp>().scrollbars;
 
-        kit::section_body().child(self.in_the_ring(
-            SCROLLBARS_ID,
-            switch_row(
-                "Draw scrollbars",
-                "Off, a list still scrolls with the wheel and the keys",
-                drawn,
-                SCROLLBARS_ID,
+        kit::section_body().child(kit::field(
+            "Draw scrollbars",
+            self.choices(
+                "scrollbars",
+                Some(mode),
+                cx,
+                |this, mode: ScrollbarMode, cx| {
+                    this.draw_scrollbars(mode, cx);
+                    this.store(&Setting::Scrollbars(mode), cx);
+                },
             ),
-            move |this, _, cx| {
-                this.draw_scrollbars(!drawn, cx);
-                this.store(&Setting::Scrollbars(!drawn), cx);
-            },
-            cx,
         ))
     }
 
@@ -329,8 +351,8 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn draw_scrollbars(&self, drawn: bool, cx: &mut Context<Self>) {
-        cx.update_global::<ResonateApp, _>(|global, _| global.scrollbars = drawn);
+    pub(crate) fn draw_scrollbars(&self, mode: ScrollbarMode, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.scrollbars = mode);
         cx.notify();
     }
 

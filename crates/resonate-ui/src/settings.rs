@@ -5,7 +5,7 @@ use std::{
 };
 
 use resonate_core::{
-    Accent, AppId, Icon, Pictured, Presence, Shown, TextSize, Theme, Trim, Volume,
+    Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, Quality, ReplayGainMode, Restoration,
@@ -172,7 +172,7 @@ pub enum Setting {
     MinimiseButton(bool),
     MaximiseButton(bool),
     ScrollVolume(bool),
-    Scrollbars(bool),
+    Scrollbars(ScrollbarMode),
     SuggestionsTab(bool),
     MissingTab(bool),
     TabCounts(bool),
@@ -375,7 +375,7 @@ pub struct Stored {
     pub notify: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
-    pub scrollbars: bool,
+    pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
     pub presence: Presence,
     pub present: Arc<dyn Present>,

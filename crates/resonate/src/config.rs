@@ -13,7 +13,7 @@ use clap::ValueEnum as _;
 #[cfg(any(feature = "ui", test))]
 use resonate_core::Appearance;
 use resonate_core::{
-    Accent, AppId, Icon, Pictured, Presence, Shown, TextSize, Theme, Trim, Volume,
+    Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration, SkipUnderRepeat,
@@ -124,7 +124,7 @@ pub struct Config {
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
-    pub scrollbars: Option<bool>,
+    pub scrollbars: Option<ScrollbarMode>,
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
     pub tab_counts: Option<bool>,
@@ -224,8 +224,8 @@ impl Config {
     }
 
     #[cfg(feature = "ui")]
-    pub fn draws_scrollbars(&self) -> bool {
-        self.scrollbars.unwrap_or(true)
+    pub fn scrollbars(&self) -> ScrollbarMode {
+        self.scrollbars.unwrap_or_default()
     }
 
     #[cfg(feature = "ui")]
@@ -359,7 +359,12 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
-            ConfigKey::Scrollbars => config.scrollbars = Some(at.boolean(value)?),
+            ConfigKey::Scrollbars => {
+                config.scrollbars = Some(match value.as_bool() {
+                    Some(drawn) => ScrollbarMode::of_a_switch(drawn),
+                    None => at.one_of(value, ScrollbarMode::parse)?,
+                });
+            }
             ConfigKey::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
             ConfigKey::MissingTab => config.missing_tab = Some(at.boolean(value)?),
             ConfigKey::TabCounts => config.tab_counts = Some(at.boolean(value)?),
@@ -967,13 +972,25 @@ mod tests {
 
     #[cfg(feature = "ui")]
     #[test]
-    fn scrollbars_are_drawn_until_the_file_says_they_are_not() {
-        assert!(read("").expect("empty is valid").draws_scrollbars());
-        assert!(
-            !read("scrollbars = false")
-                .expect("a boolean is valid")
-                .draws_scrollbars()
+    fn scrollbars_are_drawn_until_the_file_names_another_mode() {
+        let mode = |text: &str| read(text).expect("a mode is valid").scrollbars();
+
+        assert_eq!(mode(""), ScrollbarMode::Shown);
+        assert_eq!(
+            mode("scrollbars = \"auto-hide\""),
+            ScrollbarMode::AutoHidden
         );
+        assert_eq!(mode("scrollbars = \"hidden\""), ScrollbarMode::Hidden);
+        assert!(read("scrollbars = \"sometimes\"").is_err());
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_scrollbars_switch_written_before_the_modes_still_reads() {
+        let mode = |text: &str| read(text).expect("a boolean is valid").scrollbars();
+
+        assert_eq!(mode("scrollbars = true"), ScrollbarMode::Shown);
+        assert_eq!(mode("scrollbars = false"), ScrollbarMode::Hidden);
     }
 
     #[cfg(feature = "ui")]

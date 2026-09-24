@@ -201,6 +201,40 @@ impl fmt::Display for TextSize {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ScrollbarMode {
+    #[default]
+    Shown,
+    AutoHidden,
+    Hidden,
+}
+
+impl ScrollbarMode {
+    pub const ALL: [Self; 3] = [Self::Shown, Self::AutoHidden, Self::Hidden];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Shown => "shown",
+            Self::AutoHidden => "auto-hide",
+            Self::Hidden => "hidden",
+        }
+    }
+
+    pub const fn of_a_switch(drawn: bool) -> Self {
+        if drawn { Self::Shown } else { Self::Hidden }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.as_str() == text)
+    }
+}
+
+impl fmt::Display for ScrollbarMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Appearance {
     pub theme: Theme,
@@ -245,6 +279,14 @@ mod tests {
         for size in TextSize::ALL {
             assert_eq!(TextSize::parse(size.as_str()), Some(size));
         }
+    }
+
+    #[test]
+    fn every_scrollbar_mode_reads_back_from_the_name_it_is_written_under() {
+        for mode in ScrollbarMode::ALL {
+            assert_eq!(ScrollbarMode::parse(mode.as_str()), Some(mode));
+        }
+        assert_eq!(ScrollbarMode::parse("sometimes"), None);
     }
 
     #[test]

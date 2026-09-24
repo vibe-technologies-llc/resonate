@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Appearance, Presence};
+use resonate_core::{Appearance, Presence, ScrollbarMode};
 use resonate_engine::{Command, EngineConfig, OutputSettings, SkipUnderRepeat};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
@@ -16,7 +16,7 @@ pub(crate) const RESUME: bool = true;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
-pub(crate) const SCROLLBARS: bool = true;
+pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::Shown;
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,7 +36,7 @@ pub(crate) struct Standing {
     pub(crate) notify: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
-    pub(crate) scrollbars: bool,
+    pub(crate) scrollbars: ScrollbarMode,
     pub(crate) tabs: Tabs,
     pub(crate) presence: Presence,
     pub(crate) template_given: bool,

@@ -1599,15 +1599,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   is what the player tells the rest of the session — worn through `RootView::show_window_buttons`
   onto the global rather than through `theme`, because a button is not a colour or a measure.
   *The volume wheel* is the fourth, one switch worn onto `ResonateApp::scroll_volume` the same way
-  and written as `scroll-volume`, *Scrollbars* the fifth, worn onto `ResonateApp::scrollbars`
-  and written as `scrollbars`, and *Sidebar tabs* the sixth, three switches worn onto
+  and written as `scroll-volume`, *Scrollbars* the fifth, a choice of Always, While scrolling
+  and Never worn onto `ResonateApp::scrollbars` and written as `scrollbars`, and *Sidebar tabs* the sixth, three switches worn onto
   `ResonateApp::tabs` through `RootView::show_tabs` and written as `suggestions-tab`,
   `missing-tab` and `tab-counts`, the last taking the figure off every tab the sidebar draws. `Pane::is_shown` is what a tab being off means: the sidebar and `stepped_pane`
   pass the pane over and `set_pane` lands on the tracks instead, so a way back or a button cannot
   reach a pane the listener hid, and hiding the pane in front moves off it at once.
 - **gpui scrolls a region and draws no bar for it, so `views/scrollbar.rs` does.** `Scrollbars::of`
   reads the setting once where a pane is built, and `vertical`, `horizontal` and `around` answer
-  a bar over the region's edge — or an empty absolute div where the setting is off, so a pane is
+  a bar over the region's edge — or an empty absolute div where the mode is `Hidden`, so a pane is
   built one way either way. A bar reads the region's own `ScrollHandle` — a `uniform_list`'s base
   handle — and paints the thumb in a `canvas`, because the offset moves between renders and only
   paint sees where it is now. **Nothing a bar knows survives a render**: a `Cell` made in the
@@ -1623,6 +1623,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   says it moved — `LyricsModel::moved_by_hand_lately`, `BAR_LINGERS` after a wheel turned it — or
   where the pointer is on the bar or its thumb is held. The glide is not a movement for this, and
   `is_turning` keeps the frames coming until the linger is out, so the thumb goes away on its own.
+  **`ScrollbarMode::AutoHidden` does the same for every bar, from the offset alone.** A bar that
+  would always be drawn is drawn `Shown::WhileScrolled` instead: its paint keeps the last offset
+  it saw in element state under `LAST_SCROLLED` — the one thing a bar carries from frame to frame,
+  because a `Cell` would not survive, and read on every paint whether or not the pointer already
+  lights the bar, because gpui drops a state no frame reads — and paints the thumb while that offset moved within
+  `SCROLLED_LINGERS`, or while the pointer is on the bar or its thumb is held. The paint that
+  sees the offset move spawns one timer that refreshes the window once the linger is out, so a
+  thumb goes away without frames being asked for in between. The lyrics bar keeps its own rule
+  under every mode but `Hidden`, because the glide moves its offset and is not a scroll.
 - **A setting that has moved off its default says so, and the mark is what puts it back.**
   `defaults.rs` is the arithmetic: `Standing` is what is worn — the `OutputSettings`, the
   `Appearance`, the two online flags and whether a contact is given — `differs` weighs it against

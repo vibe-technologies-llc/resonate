@@ -20,7 +20,7 @@ mod time;
 mod volume;
 
 pub use crate::{
-    appearance::{Accent, Appearance, TextSize, Theme},
+    appearance::{Accent, Appearance, ScrollbarMode, TextSize, Theme},
     buffer::{AudioBuffer, SampleData},
     channel::{ChannelCount, ChannelLayout, ChannelPosition},
     error::{Error, Result},

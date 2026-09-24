@@ -412,7 +412,10 @@ impl Group {
                                      controls hide"
             }
             Self::VolumeWheel => "scroll mouse wheel touchpad volume slider louder quieter",
-            Self::Scrollbars => "scroll bar thumb track overlay lists panes drag hide",
+            Self::Scrollbars => {
+                "scroll bar thumb track overlay lists panes drag hide auto-hide automatic hidden \
+                 always never while scrolling fade mode"
+            }
             Self::Tabs => {
                 "sidebar panes suggestions missing wanted hide show collection counts numbers \
                  totals badges"
@@ -802,9 +805,10 @@ pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the v
      moves the volume, a notch at a time. Off, the slider answers only to a press or a drag and \
      the keys.";
 
-pub(crate) const SCROLLBARS_HINT: &str = "Whether the lists and panes that scroll draw a bar \
-     down their edge that shows where the view stands and can be dragged. Off, they still scroll \
-     with the wheel and the keys.";
+pub(crate) const SCROLLBARS_HINT: &str = "When the lists and panes that scroll draw a bar \
+     down their edge that shows where the view stands and can be dragged: always, only while \
+     they are scrolling and for a moment after, or never. Without a bar they still scroll with \
+     the wheel and the keys.";
 
 pub(crate) const TABS_HINT: &str = "Which of the collection's panes the sidebar lists. \
      Suggestions offers lists made out of what the catalog holds, and Missing names what the \

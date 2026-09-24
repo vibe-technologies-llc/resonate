@@ -12,7 +12,7 @@ use gpui::{
     App, AppContext as _, Application, Bounds, Context, Global, Image, KeyBinding, Task,
     TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
-use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence};
+use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode};
 use resonate_engine::{
     ArtRead, BitRate, Command, Event, MediaInfo, OutputSettings, Player, PlayerState, QueueItem,
     Queued, SinkInfo, StreamDigest, Tapped, TrackState,
@@ -127,7 +127,7 @@ pub struct ResonateApp {
     pub notify: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
-    pub scrollbars: bool,
+    pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
     pub presence: Presence,
     pub present: Arc<dyn Present>,

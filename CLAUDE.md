@@ -986,9 +986,11 @@ route needs its print.
 the next frame and close is never one of them. `scroll-volume` defaults to true and is the
 window's too: it rides on `Stored` onto `ResonateApp::scroll_volume`, the Appearance category's
 *The volume wheel* switch writes it, and while it is on a wheel over the volume slider moves the
-volume a notch — five per cent — at a time. `scrollbars` defaults to true and rides the same
-way onto `ResonateApp::scrollbars`, written by the Appearance category's *Scrollbars* switch; off,
-no pane draws a bar and every region still scrolls. `suggestions-tab` defaults to true and
+volume a notch — five per cent — at a time. `scrollbars` is a `resonate_core::ScrollbarMode` —
+`shown`, the default, `auto-hide` or `hidden` — and rides the same way onto
+`ResonateApp::scrollbars`, written by the Appearance category's *Scrollbars* choice; hidden, no
+pane draws a bar and every region still scrolls. A file written when the key was a switch still
+reads, `true` as `shown` and `false` as `hidden`. `suggestions-tab` defaults to true and
 `missing-tab` to false, `tab-counts` to true, and `Config::tabs` folds the three into a `resonate_ui::Tabs` that rides the
 same way onto `ResonateApp::tabs`, written by the Appearance category's *Sidebar tabs* switches:
 a tab that is off is left out of the sidebar and of the pane keys, `RootView::set_pane` lands on

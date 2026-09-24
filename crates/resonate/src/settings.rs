@@ -164,7 +164,7 @@ impl Settings for File {
             Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
             Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
             Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
-            Setting::Scrollbars(drawn) => (ConfigKey::Scrollbars, Some((*drawn).into())),
+            Setting::Scrollbars(mode) => (ConfigKey::Scrollbars, Some(mode.as_str().into())),
             Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
             Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
             Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
