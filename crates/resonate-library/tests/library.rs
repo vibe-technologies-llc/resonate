@@ -5632,6 +5632,40 @@ fn reading_every_file_again_keeps_each_rows_id_plays_and_favourite() -> Result<(
 }
 
 #[test]
+fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> Result<()> {
+    let (tree, library) = scanned_sheet();
+    let rows = library.tracks(&TrackQuery::default())?;
+    let removed = &rows[1];
+    library.favour(Favoured::Track(removed.id), true)?;
+
+    assert!(library.hide_track(removed.id)?);
+    assert!(
+        !library.hide_track(removed.id)?,
+        "hiding twice should be harmless"
+    );
+    assert!(tree.path().join("Meddle.wav").exists());
+    assert!(
+        library.track(removed.id)?.is_some(),
+        "the stored row was deleted"
+    );
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 2);
+    assert!(library.favourite_tracks(&TrackQuery::default())?.is_empty());
+    assert_eq!(library.measured(&TrackQuery::default())?.rows, 2);
+
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+    assert!(tree.path().join("Meddle.wav").exists());
+    assert!(library.track(removed.id)?.is_some());
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 2);
+    Ok(())
+}
+
+#[test]
 fn a_cue_rows_neighbours_are_told_apart_by_the_span_rather_than_the_path() -> Result<()> {
     let (_, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;

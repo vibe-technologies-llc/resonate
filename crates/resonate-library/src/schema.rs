@@ -4,7 +4,10 @@ use crate::{Error, Result, SchemaFingerprint, StoreOp};
 
 pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_after(V1, MIGRATIONS);
 
-const MIGRATIONS: &[&str] = &["ALTER TABLE albums ADD COLUMN cover_asked INTEGER;"];
+const MIGRATIONS: &[&str] = &[
+    "ALTER TABLE albums ADD COLUMN cover_asked INTEGER;",
+    "ALTER TABLE tracks ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;",
+];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
 
@@ -651,6 +654,32 @@ mod tests {
         lay_out_through(&connection, FIRST, &[NAMED, COUNTED]).expect("the second applies");
 
         assert_eq!(columns_of_held(&connection), ["id", "name", "plays"]);
+    }
+
+    #[test]
+    fn an_existing_catalog_gains_visible_tracks_without_losing_rows() {
+        let connection = opened();
+        lay_out_through(&connection, V1, &MIGRATIONS[..1]).expect("the previous schema applies");
+        connection
+            .execute(
+                "INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES ('song.wav', 'Song', 44100, 2, 1, 1, 10, 1, 1, 1)",
+                [],
+            )
+            .expect("a track is stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT hidden FROM tracks WHERE path = 'song.wav'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .expect("the track remains visible"),
+            0
+        );
+        lay_out(&connection).expect("opening again is idempotent");
     }
 
     #[test]

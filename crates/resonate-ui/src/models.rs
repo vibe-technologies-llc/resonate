@@ -974,6 +974,17 @@ impl LibraryModel {
         );
     }
 
+    pub fn hide_track(&mut self, id: TrackId, cx: &mut Context<Self>) {
+        self.edited(
+            Wanted::Everything,
+            move |library| {
+                library.hide_track(id)?;
+                Ok(None)
+            },
+            cx,
+        );
+    }
+
     pub fn favourite_albums(&self) -> Arc<[Album]> {
         Arc::clone(&self.favourite_albums)
     }

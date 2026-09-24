@@ -868,6 +868,7 @@ impl RootView {
                 let Some(track) = menued.get(index) else {
                     return Menu::at(at);
                 };
+                let track_id = track.id;
                 let favourite = this
                     .library
                     .read(cx)
@@ -889,6 +890,12 @@ impl RootView {
                     .favours(Favoured::Track(track.id), favourite)
                     .offers_the_file(track.location.clone())
                     .shares(track.id)
+                    .apart()
+                    .does(Icon::Discard, "Remove from library", move |this, _, cx| {
+                        this.library.update(cx, |library, cx| {
+                            library.hide_track(track_id, cx);
+                        });
+                    })
             },
             cx,
         )

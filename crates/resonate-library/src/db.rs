@@ -75,10 +75,10 @@ const A_FAVOURITE_ARTIST: &str = "r.favourite IS NOT NULL";
 
 const THE_FAVOURITES_SEARCH: &str = "is:favourite";
 
-const THE_BEST_COPY: &str = "+tracks.alternative_of IS NULL";
+const THE_BEST_COPY: &str = "+tracks.alternative_of IS NULL AND tracks.hidden = 0";
 
 const HOLDS_A_BEST_COPY: &str = "EXISTS (SELECT 1 FROM tracks t
-      WHERE t.album_id = a.id AND t.alternative_of IS NULL)";
+      WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)";
 
 const CD_SAMPLE_RATE: u32 = 44_100;
 
@@ -122,7 +122,7 @@ macro_rules! album_owner {
 
 macro_rules! album_tracks {
     () => {
-        "(SELECT count(*) FROM tracks t WHERE t.album_id = a.id AND t.alternative_of IS NULL)"
+        "(SELECT count(*) FROM tracks t WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
@@ -135,13 +135,13 @@ macro_rules! album_added {
 macro_rules! artist_albums {
     () => {
         "(SELECT count(DISTINCT t.album_id) FROM tracks t
-           WHERE t.artist_id = r.id AND t.alternative_of IS NULL)"
+           WHERE t.artist_id = r.id AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
 macro_rules! artist_tracks {
     () => {
-        "(SELECT count(*) FROM tracks t WHERE t.artist_id = r.id AND t.alternative_of IS NULL)"
+        "(SELECT count(*) FROM tracks t WHERE t.artist_id = r.id AND t.alternative_of IS NULL AND t.hidden = 0)"
     };
 }
 
@@ -179,7 +179,7 @@ const LINKS_OF_UNPICTURED_ARTISTS: &str = "SELECT l.artist_id, l.relation, l.pro
 
 const WHAT_AN_ARTIST_HOLDS: &str = "SELECT count(DISTINCT album_id), count(*),
             sum(duration * 1.0 / sample_rate), sum(plays), max(played)
-       FROM tracks WHERE artist_id = ?1 AND alternative_of IS NULL";
+       FROM tracks WHERE artist_id = ?1 AND alternative_of IS NULL AND hidden = 0";
 
 const RELEASE_TRACK_COLUMNS: &str = "id, disc, position, number, title, artist, recording_mbid,
      track_mbid, length_ms, isrc, track_id";
@@ -758,6 +758,19 @@ impl Library {
 
     pub fn favourite_tracks(&self, query: &TrackQuery) -> Result<Vec<Track>> {
         tracks(&self.inner, query, Some(THE_FAVOURITES_SEARCH))
+    }
+
+    /// Hides a track from library listings without removing its row or audio file.
+    pub fn hide_track(&self, id: TrackId) -> Result<bool> {
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "UPDATE tracks SET hidden = 1 WHERE id = ?1 AND hidden = 0",
+                    [id.get() as i64],
+                )
+                .map(|changed| changed > 0)
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
     }
 
     pub fn favour(&self, what: Favoured, favourite: bool) -> Result<bool> {
