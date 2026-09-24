@@ -363,6 +363,15 @@ impl Library {
             .iter()
             .any(|want| due(want, options.again_after, now)))
     }
+
+    pub fn last_tried(&self) -> Result<Option<SystemTime>> {
+        Ok(self
+            .wants()?
+            .iter()
+            .filter(|want| want.held.is_none())
+            .filter_map(|want| want.tried)
+            .max())
+    }
 }
 
 fn due(want: &Want, again_after: Duration, now: SystemTime) -> bool {

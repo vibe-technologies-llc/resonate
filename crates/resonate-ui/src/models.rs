@@ -1,5 +1,6 @@
 use std::{
     cell::OnceCell,
+    fs,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     slice,
@@ -667,6 +668,7 @@ impl LibraryModel {
     }
 
     fn watch_the_inbox(&mut self, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
         self._watching_inbox = cx.spawn(async move |this, cx| {
             let mut watched: Option<(PathBuf, Option<RootsWatch>)> = None;
             let mut owed = false;
@@ -680,10 +682,19 @@ impl LibraryModel {
                     watched = match inbox {
                         Some(folder) => {
                             let over = folder.clone();
-                            let watch = cx
+                            let asked = Arc::clone(&library);
+                            let (watch, landed) = cx
                                 .background_executor()
-                                .spawn(async move { RootsWatch::over(slice::from_ref(&over)) })
+                                .spawn(async move {
+                                    let landed = asked
+                                        .last_tried()
+                                        .ok()
+                                        .flatten()
+                                        .is_some_and(|tried| landed_since(&over, tried));
+                                    (RootsWatch::over(slice::from_ref(&over)), landed)
+                                })
                                 .await;
+                            owed = landed;
                             Some((folder, watch))
                         }
                         None => None,
@@ -3943,6 +3954,20 @@ pub(crate) const fn painted(format: ImageFormat) -> gpui::ImageFormat {
     }
 }
 
+fn landed_since(folder: &Path, tried: SystemTime) -> bool {
+    let Ok(listed) = fs::read_dir(folder) else {
+        return false;
+    };
+    listed.flatten().any(|entry| {
+        entry
+            .metadata()
+            .ok()
+            .filter(fs::Metadata::is_file)
+            .and_then(|held| held.modified().ok())
+            .is_some_and(|modified| modified > tried)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
@@ -3950,8 +3975,8 @@ mod tests {
 
     use super::{
         Arranging, Beyond, Favourited, ListedRow, MissingRow, Reaching, Shared, arranged,
-        beyond_the_listing, headed_by_disc, held_at, held_in, missing_track_rows, on_the_clipboard,
-        unheld_release_rows,
+        beyond_the_listing, headed_by_disc, held_at, held_in, landed_since, missing_track_rows,
+        on_the_clipboard, unheld_release_rows,
     };
 
     const SEARCHED: Reaching = Reaching {
@@ -4358,5 +4383,24 @@ mod tests {
         };
 
         assert_eq!(on_the_clipboard(&shared), "Track 07 is on the clipboard");
+    }
+
+    #[test]
+    fn a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about() {
+        let folder = std::env::temp_dir().join(format!("resonate-inbox-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("nested")).expect("a writable temporary folder");
+        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        let after = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+
+        assert!(
+            !landed_since(&folder, before),
+            "a folder holding only a folder"
+        );
+        std::fs::write(folder.join("an-mbid.flac"), b"audio").expect("a file dropped in");
+
+        assert!(landed_since(&folder, before));
+        assert!(!landed_since(&folder, after));
+        assert!(!landed_since(&folder.join("gone"), before));
+        std::fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 }

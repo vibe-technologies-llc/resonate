@@ -119,7 +119,13 @@ A provider does none of this, so none of it is written twice:
    press does, because a file landing is somebody meaning *now*, but with no notice raised or
    cleared, the way the timer's own poll is. A poll that could not start because a pass was
    running stays owed and is asked again on the next look, `INBOX_LOOKED_AT_EVERY` later, and a
-   folder chosen in the settings pane is watched from the next look. A provider is registered in code or not at all; there
+   folder chosen in the settings pane is watched from the next look. **What landed while no window
+   was open is asked about when one opens**: the first look at a folder weighs the newest file
+   directly in it against `Library::last_tried` — the latest try of any want not yet held — and a
+   file newer than that is owed a poll as `ByTheInbox` at once, rather than waiting on the
+   timer's `POLL_AGAIN_AFTER` for wants tried an hour before.
+   `a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about` is the
+   claim on `landed_since`. A provider is registered in code or not at all; there
    is no loading at run time.
 4. An `Error::Io` names the provider and a `ProviderOp`; an error a provider raises that the seam
    has no variant for is added to the seam when that provider lands, with its op, never as prose.

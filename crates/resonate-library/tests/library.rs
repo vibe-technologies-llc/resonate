@@ -10806,6 +10806,7 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
         providers.names(),
         vec![SourceId::new("unprovided").expect("a nameable source")]
     );
+    assert_eq!(library.last_tried()?, None);
 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
@@ -10821,6 +10822,7 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
     assert_eq!(wants[0].id, want);
     assert!(wants[0].tried.is_some());
     assert_eq!(wants[0].offered, None);
+    assert_eq!(library.last_tried()?, wants[0].tried);
     Ok(())
 }
 

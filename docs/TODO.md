@@ -55,9 +55,9 @@
   its path or URI takes it away: the window offers no gesture for it. It carries no genre and no lyrics of its own,
   because the vault strips the tags the delivery came with and the row is written from the release
   track alone; its ReplayGain is what its study measured, so it is levelled only once studied
-- The inbox is watched only while a window is open. A file dropped in it while none is waits for
-  the next start's timer, which keeps to `POLL_AGAIN_AFTER`, so a want tried an hour before lands
-  five hours later unless *Poll now* or `resonate poll --again` is pressed
+- The inbox is watched only while a window is open, and a window opening asks about what landed
+  while none was only by weighing file times against the last try, so a file whose time was
+  carried from elsewhere — copied with its modification time kept — waits for the timer
 - A provider or a stream left behind as late keeps its thread for as long as its `obtain` or its
   `read` runs. Nothing can take one back without the provider's help
 - A provider is asked for bytes on the engine thread and on the tag reader, so a slow remote open
