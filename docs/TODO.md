@@ -226,9 +226,9 @@
   below it, so an album of several singers filed that way still splits per track artist. The guard
   that keeps two albums loose in a root apart is what costs it
 - A disc numbered in words is composed only in English — `Disc Twenty One` and `Twenty-First
-  Disc` — where every other language reads a flat `ELSEWHERE` table capped at twelve and only
-  after the noun, so `Disque Vingt Et Un` and `Zweite CD` name no disc. A folder is a string with
-  no language on it, so telling the tables apart would mean guessing one
+  Disc` — where every other language reads flat tables capped at twelve, so `Disque Vingt Et Un`
+  names no disc. A folder is a string with no language on it, so composing in each language
+  would mean guessing which one a folder is in
 - A file moved by hand is followed only where exactly one vanished row and one new row are alike
   in size, length, codec and tagged names, so a file retagged in the same breath as it moved, a
   cue-cut file and two identical rips moved at once each start again at nothing. A file no scan

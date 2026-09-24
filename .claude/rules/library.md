@@ -473,10 +473,19 @@ through `Player::media` like any other unscanned row.
 - **A number word in another language is a flat table and goes no further than twelve.**
   `ELSEWHERE` is `numbered_after_the_word`'s last resort — sixty-eight spellings of one to twelve
   in French, Spanish, Italian, German, Dutch and Portuguese, each marked and unmarked where the
-  two differ, so `Disc Un`, `CD Dos` and `Disco Zwölf` read as the discs they name. It is flat
-  rather than composed and it is read only *after* the word, because composition and the
-  ordinal-before-the-word form — `Twenty-First Disc` — are English idioms with tables of their
-  own, and a set past twelve is filed in digits, which every language already reads. What it
+  two differ, so `Disc Un`, `CD Dos` and `Disco Zwölf` read as the discs they name — and
+  `ORDINALS_ELSEWHERE` is its twin before the word, the same six languages' ordinals of one to
+  twelve in each gender a folder is likely to be named in, so `Zweite CD`, `Deuxième disque`,
+  `Primera-CD` and `Tweede Schijf` do too. Both are flat rather than composed, because
+  composition — `Disc Twenty One`, `Twenty-First Disc` — is an English idiom with tables of its
+  own, and a set past twelve is filed in digits, which every language already reads.
+  `named_before_the_word` weighs the English reading and the flat one side by side and takes
+  whichever leaves a separator and a disc word behind it, because an English ordinal is a prefix
+  of some of theirs: `second` begins `Secondo Disco` and leaves `o disco`, which names nothing,
+  where `secondo` leaves the disc. The flat table is read at its longest match for the same
+  reason — `primer` begins `primera`. A set already scanned under `Zweite CD` is keyed by that
+  folder, the way one under `Second Disc` was, so it stays one album a disc until it is scanned
+  again from nothing. What it
   cannot do is tell one language from another: a folder is a string, so a word that numbers in one
   language numbers here whatever the rest of the name is in.
 - **The key format is what `album_keys.key` holds**, so changing it means an existing library reads

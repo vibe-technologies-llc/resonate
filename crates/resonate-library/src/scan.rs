@@ -962,6 +962,121 @@ const ELSEWHERE: [(&str, u32); 68] = [
     ("zwolf", 12),
     ("twaalf", 12),
 ];
+const ORDINALS_ELSEWHERE: [(&str, u32); 113] = [
+    ("premier", 1),
+    ("première", 1),
+    ("premiere", 1),
+    ("deuxième", 2),
+    ("deuxieme", 2),
+    ("second", 2),
+    ("seconde", 2),
+    ("troisième", 3),
+    ("troisieme", 3),
+    ("quatrième", 4),
+    ("quatrieme", 4),
+    ("cinquième", 5),
+    ("cinquieme", 5),
+    ("sixième", 6),
+    ("sixieme", 6),
+    ("septième", 7),
+    ("septieme", 7),
+    ("huitième", 8),
+    ("huitieme", 8),
+    ("neuvième", 9),
+    ("neuvieme", 9),
+    ("dixième", 10),
+    ("dixieme", 10),
+    ("onzième", 11),
+    ("onzieme", 11),
+    ("douzième", 12),
+    ("douzieme", 12),
+    ("primer", 1),
+    ("primero", 1),
+    ("primera", 1),
+    ("segundo", 2),
+    ("segunda", 2),
+    ("tercer", 3),
+    ("tercero", 3),
+    ("tercera", 3),
+    ("cuarto", 4),
+    ("cuarta", 4),
+    ("quinto", 5),
+    ("quinta", 5),
+    ("sexto", 6),
+    ("sexta", 6),
+    ("séptimo", 7),
+    ("septimo", 7),
+    ("séptima", 7),
+    ("septima", 7),
+    ("octavo", 8),
+    ("octava", 8),
+    ("noveno", 9),
+    ("novena", 9),
+    ("décimo", 10),
+    ("decimo", 10),
+    ("décima", 10),
+    ("decima", 10),
+    ("undécimo", 11),
+    ("undecimo", 11),
+    ("duodécimo", 12),
+    ("duodecimo", 12),
+    ("primo", 1),
+    ("prima", 1),
+    ("secondo", 2),
+    ("seconda", 2),
+    ("terzo", 3),
+    ("terza", 3),
+    ("quarto", 4),
+    ("quarta", 4),
+    ("sesto", 6),
+    ("sesta", 6),
+    ("settimo", 7),
+    ("settima", 7),
+    ("ottavo", 8),
+    ("ottava", 8),
+    ("nono", 9),
+    ("nona", 9),
+    ("undicesimo", 11),
+    ("undicesima", 11),
+    ("dodicesimo", 12),
+    ("dodicesima", 12),
+    ("erste", 1),
+    ("zweite", 2),
+    ("dritte", 3),
+    ("vierte", 4),
+    ("fünfte", 5),
+    ("funfte", 5),
+    ("sechste", 6),
+    ("siebte", 7),
+    ("achte", 8),
+    ("neunte", 9),
+    ("zehnte", 10),
+    ("elfte", 11),
+    ("zwölfte", 12),
+    ("zwolfte", 12),
+    ("eerste", 1),
+    ("tweede", 2),
+    ("derde", 3),
+    ("vierde", 4),
+    ("vijfde", 5),
+    ("zesde", 6),
+    ("zevende", 7),
+    ("achtste", 8),
+    ("negende", 9),
+    ("tiende", 10),
+    ("elfde", 11),
+    ("twaalfde", 12),
+    ("primeiro", 1),
+    ("primeira", 1),
+    ("terceiro", 3),
+    ("terceira", 3),
+    ("sétimo", 7),
+    ("setimo", 7),
+    ("sétima", 7),
+    ("setima", 7),
+    ("oitavo", 8),
+    ("oitava", 8),
+];
 const SEPARATORS: [char; 4] = [' ', '-', '_', '.'];
 const ONES: [(&str, &str); 9] = [
     ("one", "first"),
@@ -1029,14 +1144,17 @@ fn numbered_elsewhere(word: &str) -> Option<NonZeroU32> {
 }
 
 fn named_before_the_word(folded: &str) -> Option<NonZeroU32> {
-    let (number, beyond) = ordinal_at_the_front(folded)?;
-    let spelling = beyond.trim_start_matches(SEPARATORS);
-
-    if spelling.len() == beyond.len() {
-        return None;
-    }
-
-    SPELLINGS.contains(&spelling).then_some(number)
+    [
+        ordinal_at_the_front(folded),
+        ordinal_elsewhere_at_the_front(folded),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|(number, beyond)| {
+        let spelling = beyond.trim_start_matches(SEPARATORS);
+        let separated = spelling.len() != beyond.len();
+        (separated && SPELLINGS.contains(&spelling)).then_some(number)
+    })
 }
 
 fn counted(word: &str) -> Option<NonZeroU32> {
@@ -1062,6 +1180,13 @@ fn ordinal_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
         .or_else(|| ordinal_at(&TENS, folded, tens_number))
         .or_else(|| ordinal_at(&TEENS, folded, teens_number))
         .or_else(|| ordinal_at(&ONES, folded, ones_number))
+}
+
+fn ordinal_elsewhere_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
+    ORDINALS_ELSEWHERE
+        .iter()
+        .filter_map(|(spelling, count)| Some((numbering(*count), folded.strip_prefix(spelling)?)))
+        .min_by_key(|(_, beyond)| beyond.len())
 }
 
 fn tens_and_ones_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
@@ -1512,6 +1637,25 @@ mod tests {
         assert_eq!(spelt("Platte Fünf"), Some(5));
         assert_eq!(spelt("Schijf Twaalf"), Some(12));
         assert_eq!(spelt("Disco Zwölf"), Some(12));
+    }
+
+    #[test]
+    fn a_disc_named_by_an_ordinal_in_another_language_is_the_same_disc() {
+        let spelt = |name: &str| disc_in_folder(name).map(NonZeroU32::get);
+
+        assert_eq!(spelt("Zweite CD"), Some(2));
+        assert_eq!(spelt("Erste Platte"), Some(1));
+        assert_eq!(spelt("Deuxième disque"), Some(2));
+        assert_eq!(spelt("Premier Disque"), Some(1));
+        assert_eq!(spelt("Primer Disco"), Some(1));
+        assert_eq!(spelt("Primera-CD"), Some(1));
+        assert_eq!(spelt("Secondo Disco"), Some(2));
+        assert_eq!(spelt("Tweede Schijf"), Some(2));
+        assert_eq!(spelt("Terceiro Disco"), Some(3));
+        assert_eq!(spelt("Zwölfte CD"), Some(12));
+        assert_eq!(spelt("Zweitedisc"), None);
+        assert_eq!(spelt("Zweite CD Bonus"), None);
+        assert_eq!(spelt("Prima Donna"), None);
     }
 
     #[test]
