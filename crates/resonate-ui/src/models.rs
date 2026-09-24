@@ -8,6 +8,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use crossbeam_channel::{Receiver, bounded};
 use gpui::{App, Context, Image, Task};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
@@ -30,7 +31,7 @@ use resonate_library::{
 use resonate_providers::Providers;
 
 use crate::{
-    clipboard,
+    ResonateApp, clipboard,
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
@@ -40,6 +41,7 @@ use crate::{
 };
 
 const PAGE: usize = 2_000;
+const FIRST_READ_THREAD: &str = "resonate-first-read";
 
 const ARTIST_ALBUMS: usize = 500;
 const LOOK_AHEAD: usize = 200;
@@ -201,6 +203,7 @@ enum Wanted {
     ThePlaylists,
 }
 
+#[derive(Clone, PartialEq, Eq)]
 struct Asked {
     text: Option<String>,
     album: Option<AlbumId>,
@@ -211,6 +214,44 @@ struct Asked {
     sorting: Sorting,
     reach: usize,
     window: Window,
+}
+
+impl Asked {
+    fn at_first() -> Self {
+        Self {
+            text: None,
+            album: None,
+            artist: None,
+            opened: None,
+            order: PlaylistOrder::default(),
+            reading: PlaylistOrder::default().reads(),
+            sorting: Sorting::default(),
+            reach: PAGE,
+            window: Window::default(),
+        }
+    }
+}
+
+pub(crate) struct FirstRead {
+    asked: Asked,
+    read: Receiver<resonate_library::Result<Loaded>>,
+}
+
+impl FirstRead {
+    pub(crate) fn start(library: &Arc<Library>) -> Option<Self> {
+        let (sent, read) = bounded(1);
+        let reading = Arc::clone(library);
+        let asked = Asked::at_first();
+        let handed = asked.clone();
+        thread::Builder::new()
+            .name(FIRST_READ_THREAD.to_owned())
+            .spawn(move || {
+                let _ = sent.send(load(&reading, handed, Wanted::Everything));
+            })
+            .inspect_err(|error| tracing::debug!(%error, "the catalog could not be read ahead"))
+            .ok()?;
+        Some(Self { asked, read })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -369,6 +410,7 @@ pub struct Consulted {
 }
 
 pub struct LibraryModel {
+    first_read: Option<FirstRead>,
     library: Arc<Library>,
     reference: Option<Arc<dyn Reference>>,
     fingerprinters: Arc<Fingerprinters>,
@@ -490,7 +532,20 @@ impl LibraryModel {
             reference,
             fingerprinters,
         } = consulted;
+        let first_read = cx
+            .has_global::<ResonateApp>()
+            .then(|| cx.global_mut::<ResonateApp>().first_read.take())
+            .flatten();
+        let Asked {
+            order,
+            reading,
+            sorting,
+            reach,
+            window,
+            ..
+        } = Asked::at_first();
         let mut model = Self {
+            first_read,
             library,
             reference,
             fingerprinters,
@@ -509,7 +564,7 @@ impl LibraryModel {
             by_day: Arc::default(),
             suggestions: Arc::default(),
             opened_suggestion: None,
-            window: Window::default(),
+            window,
             scoped: Arc::default(),
             rows: Arc::default(),
             unheld: Arc::default(),
@@ -536,9 +591,9 @@ impl LibraryModel {
             held: None,
             entries: Arc::default(),
             opened: None,
-            order: PlaylistOrder::default(),
-            reading: PlaylistOrder::default().reads(),
-            sorting: Sorting::default(),
+            order,
+            reading,
+            sorting,
             selection: Selection::Everything,
             query: String::new(),
             search: Search::default(),
@@ -557,7 +612,7 @@ impl LibraryModel {
             enriched: None,
             sought: Arc::default(),
             notice: None,
-            reach: PAGE,
+            reach,
             albums_counted: 0,
             artists_counted: 0,
             tracks_measured: Measured::default(),
@@ -2034,20 +2089,13 @@ impl LibraryModel {
         self.read_after(Duration::ZERO, wanted, cx);
     }
 
-    fn read_after(&mut self, settling: Duration, wanted: Wanted, cx: &mut Context<Self>) {
-        let wanted = if self.reading_everything {
-            Wanted::Everything
-        } else {
-            wanted
-        };
-        self.reading_everything = wanted == Wanted::Everything;
-        let library = Arc::clone(&self.library);
+    fn asked(&self) -> Asked {
         let (album, artist) = match self.selection {
             Selection::Everything => (None, None),
             Selection::Album(album) => (Some(album), None),
             Selection::Artist(artist) => (None, Some(artist)),
         };
-        let asked = Asked {
+        Asked {
             text: (!self.query.is_empty()).then(|| self.query.clone()),
             album,
             artist,
@@ -2057,7 +2105,28 @@ impl LibraryModel {
             sorting: self.sorting,
             reach: self.reach,
             window: self.window,
+        }
+    }
+
+    fn read_after(&mut self, settling: Duration, wanted: Wanted, cx: &mut Context<Self>) {
+        let wanted = if self.reading_everything {
+            Wanted::Everything
+        } else {
+            wanted
         };
+        self.reading_everything = wanted == Wanted::Everything;
+        let library = Arc::clone(&self.library);
+        let asked = self.asked();
+        let read_ahead = self.first_read.take().filter(|first| {
+            wanted == Wanted::Everything && settling.is_zero() && first.asked == asked
+        });
+        if let Some(first) = read_ahead.as_ref()
+            && let Ok(read) = first.read.try_recv()
+        {
+            self.reading_everything = false;
+            self.landed(read, cx);
+            return;
+        }
 
         self._load = cx.spawn(async move |this, cx| {
             if !settling.is_zero() {
@@ -2065,22 +2134,30 @@ impl LibraryModel {
             }
             let loaded = cx
                 .background_executor()
-                .spawn(async move { load(&library, asked, wanted) })
+                .spawn(async move {
+                    read_ahead
+                        .and_then(|first| first.read.recv().ok())
+                        .unwrap_or_else(|| load(&library, asked, wanted))
+                })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {
                 this.reading_everything = false;
-                match loaded {
-                    Ok(loaded) => {
-                        this.take(loaded);
-                        this.warm_the_covers(cx);
-                    }
-                    Err(error) => tracing::error!(%error, "the library could not be read"),
-                }
-                cx.notify();
+                this.landed(loaded, cx);
             });
             let _ = outcome;
         });
+    }
+
+    fn landed(&mut self, loaded: resonate_library::Result<Loaded>, cx: &mut Context<Self>) {
+        match loaded {
+            Ok(loaded) => {
+                self.take(loaded);
+                self.warm_the_covers(cx);
+            }
+            Err(error) => tracing::error!(%error, "the library could not be read"),
+        }
+        cx.notify();
     }
 
     fn take(&mut self, loaded: Loaded) {

@@ -26,7 +26,7 @@ use crate::{
     drawing::Drawer,
     icons,
     listening::Listens,
-    models::{Art, Drawn, Forget, Magnifying, held, whole_of},
+    models::{Art, Drawn, FirstRead, Forget, Magnifying, held, whole_of},
     recent::Recent,
     settings::{Online, Places, Present, Sourcing, Stored, WindowButtons},
     theme,
@@ -131,6 +131,7 @@ pub struct ResonateApp {
     pub launcher: Arc<dyn Launcher>,
     pub sourcing: Sourcing,
     pub listens: Listens,
+    pub(crate) first_read: Option<FirstRead>,
 }
 
 impl Global for ResonateApp {}
@@ -696,6 +697,7 @@ pub fn run(
     appearance: Appearance,
     bus: Bus,
 ) -> Result<()> {
+    let first_read = FirstRead::start(&library);
     theme::wear(appearance);
     stored.launcher.show(AppIcon::of(appearance));
 
@@ -730,6 +732,7 @@ pub fn run(
             launcher: Arc::clone(&stored.launcher),
             sourcing: lookups.sourcing.clone(),
             listens: lookups.listens.clone(),
+            first_read,
         });
         cx.bind_keys(bindings());
         cx.activate(true);

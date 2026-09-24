@@ -519,6 +519,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   shows writes and flushes nothing. **The gradient is in `userSpaceOnUse`**, spanning the mark's own
   24-box: under the default `objectBoundingBox` each stroke is a zero-width box, which the SVG
   specification says paints nothing, and librsvg drew the packaged icon as an empty tile.
+- **The catalog is read while gpui starts, so the first frame already holds it.** `run` starts
+  `FirstRead` before `Application::new`: a thread of its own reads what a model with nothing
+  chosen asks for — `Asked::at_first`, which `LibraryModel::new` is also built from, so the two
+  cannot drift apart — while gpui spends forty-odd milliseconds of the main thread loading every
+  system font and bringing Vulkan up. `LibraryModel::new` takes it out of `ResonateApp`, and the
+  first read takes it synchronously where it has landed, awaits it where it has not, and loads
+  afresh where what the model now asks is not what was read ahead. Measured on a 616-track
+  catalog, the first frame with the albums in it finished 105 ms after `main` where it had
+  finished at 112 to 122, and no frame is drawn empty first; the rest of that start is gpui's own
+  font scan and device creation, which nothing here reaches.
 - **gpui draws cover art and `resonate-codec` is what scales one, so `resonate-ui` still carries no
   image crate.** `gpui::Image::from_bytes` takes the format and the bytes the library already
   stored, which is why `resonate-library` records the format on scan rather than leaving a decoder
