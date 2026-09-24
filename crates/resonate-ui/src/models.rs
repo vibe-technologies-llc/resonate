@@ -406,7 +406,8 @@ pub struct LibraryModel {
     missing_tracks: Arc<[MissingTrack]>,
     unheld_releases: Arc<[UnheldRelease]>,
     missing: Missing,
-    missing_rows: Arc<[MissingRow]>,
+    missing_track_rows: Arc<[MissingRow]>,
+    unheld_release_rows: Arc<[MissingRow]>,
     roots: Vec<PathBuf>,
     playlists: Arc<[Playlist]>,
     lists: Arc<[Playlist]>,
@@ -527,7 +528,8 @@ impl LibraryModel {
             missing_tracks: Arc::default(),
             unheld_releases: Arc::default(),
             missing: Missing::default(),
-            missing_rows: Arc::default(),
+            missing_track_rows: Arc::default(),
+            unheld_release_rows: Arc::default(),
             roots: Vec::new(),
             playlists: Arc::default(),
             lists: Arc::default(),
@@ -920,8 +922,12 @@ impl LibraryModel {
         self.wanted.get(&release_track).copied()
     }
 
-    pub fn missing_rows(&self) -> Arc<[MissingRow]> {
-        Arc::clone(&self.missing_rows)
+    pub fn missing_track_rows(&self) -> Arc<[MissingRow]> {
+        Arc::clone(&self.missing_track_rows)
+    }
+
+    pub fn unheld_release_rows(&self) -> Arc<[MissingRow]> {
+        Arc::clone(&self.unheld_release_rows)
     }
 
     pub fn missing_tracks(&self) -> Arc<[MissingTrack]> {
@@ -2070,14 +2076,15 @@ impl LibraryModel {
     fn take(&mut self, loaded: Loaded) {
         self.revision = self.revision.wrapping_add(1);
         self.wanted = loaded.wanted;
-        self.missing_rows = missing_rows(
+        self.missing_track_rows = missing_track_rows(
             loaded
                 .missing_tracks
                 .iter()
                 .map(|track| (track.album, track.disc)),
-            loaded.unheld_releases.iter().map(|release| release.artist),
         )
         .into();
+        self.unheld_release_rows =
+            unheld_release_rows(loaded.unheld_releases.iter().map(|release| release.artist)).into();
         self.missing_tracks = loaded.missing_tracks.into();
         self.unheld_releases = loaded.unheld_releases.into();
         self.missing = loaded.missing;
@@ -3092,12 +3099,14 @@ fn headed_by_disc(rows: Vec<((u32, u32), ListedRow)>) -> Vec<ListedRow> {
     listed
 }
 
-fn missing_rows(
-    albums: impl Iterator<Item = (AlbumId, u32)>,
-    artists: impl Iterator<Item = ArtistId>,
-) -> Vec<MissingRow> {
+fn missing_track_rows(albums: impl Iterator<Item = (AlbumId, u32)>) -> Vec<MissingRow> {
     let mut listed = Vec::new();
     headed_by_album_and_disc(albums, &mut listed);
+    listed
+}
+
+fn unheld_release_rows(artists: impl Iterator<Item = ArtistId>) -> Vec<MissingRow> {
+    let mut listed = Vec::new();
     headed_by_run(
         artists,
         MissingRow::Artist,
@@ -3634,7 +3643,7 @@ mod tests {
 
     use super::{
         Beyond, Favourited, ListedRow, MissingRow, Reaching, Shared, beyond_the_listing,
-        headed_by_disc, held_at, missing_rows, on_the_clipboard,
+        headed_by_disc, held_at, missing_track_rows, on_the_clipboard, unheld_release_rows,
     };
 
     const SEARCHED: Reaching = Reaching {
@@ -3818,7 +3827,7 @@ mod tests {
 
     #[test]
     fn each_run_of_an_albums_missing_tracks_is_headed_by_the_album_once() {
-        let rows = missing_rows(
+        let rows = missing_track_rows(
             [
                 (album(1), 1),
                 (album(1), 1),
@@ -3827,7 +3836,6 @@ mod tests {
                 (album(2), 1),
             ]
             .into_iter(),
-            std::iter::empty(),
         );
 
         assert_eq!(
@@ -3845,17 +3853,12 @@ mod tests {
     }
 
     #[test]
-    fn the_unheld_releases_follow_the_missing_tracks_headed_by_their_artist() {
-        let rows = missing_rows(
-            [(album(7), 1)].into_iter(),
-            [artist(3), artist(3), artist(5)].into_iter(),
-        );
+    fn each_run_of_an_artists_unheld_releases_is_headed_by_the_artist_once() {
+        let rows = unheld_release_rows([artist(3), artist(3), artist(5)].into_iter());
 
         assert_eq!(
             rows,
             vec![
-                MissingRow::Album(0),
-                MissingRow::Track(0),
                 MissingRow::Artist(0),
                 MissingRow::Release(0),
                 MissingRow::Release(1),
@@ -3867,9 +3870,8 @@ mod tests {
 
     #[test]
     fn an_album_missing_rows_from_two_discs_is_headed_by_each_of_them() {
-        let rows = missing_rows(
+        let rows = missing_track_rows(
             [(album(1), 1), (album(1), 2), (album(1), 2), (album(2), 3)].into_iter(),
-            std::iter::empty(),
         );
 
         assert_eq!(
@@ -3889,17 +3891,13 @@ mod tests {
 
     #[test]
     fn a_catalog_short_of_nothing_lists_no_row_and_no_heading() {
-        let rows = missing_rows(std::iter::empty(), std::iter::empty());
-
-        assert!(rows.is_empty());
+        assert!(missing_track_rows(std::iter::empty()).is_empty());
+        assert!(unheld_release_rows(std::iter::empty()).is_empty());
     }
 
     #[test]
     fn an_album_listed_twice_apart_is_headed_twice_because_the_rows_arrive_grouped() {
-        let rows = missing_rows(
-            [(album(1), 1), (album(2), 1), (album(1), 1)].into_iter(),
-            std::iter::empty(),
-        );
+        let rows = missing_track_rows([(album(1), 1), (album(2), 1), (album(1), 1)].into_iter());
 
         assert_eq!(
             rows,

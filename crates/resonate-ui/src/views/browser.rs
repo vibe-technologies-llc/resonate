@@ -25,6 +25,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
         menu::{self, Menu},
+        missing::MissingShows,
         playlists::{ADD_ALL_HINT, ADD_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
@@ -894,7 +895,7 @@ impl RootView {
         } = unheld;
         let mark = self.want_mark(index, asks, cx);
         let (title, lit_title, lit_artist) = match &beside {
-            Beside::AnAlbum => (title, Vec::new(), Vec::new()),
+            Beside::AnAlbum | Beside::ARun => (title, Vec::new(), Vec::new()),
             Beside::ASearch { .. } => {
                 let search = self.library.read(cx).search();
                 (
@@ -930,12 +931,17 @@ impl RootView {
                 )
                 .text_color(rgb(theme::faint())),
             )
-            .child(match beside {
-                Beside::AnAlbum => listing::format_cell(None),
-                Beside::ASearch { on, .. } => listing::format_cell(None)
-                    .child(kit::figure(on).text_color(rgb(theme::faint())).truncate()),
-            })
-            .child(listing::unheard())
+            .when_some(
+                match beside {
+                    Beside::AnAlbum => Some(listing::format_cell(None)),
+                    Beside::ARun => None,
+                    Beside::ASearch { on, .. } => Some(
+                        listing::format_cell(None)
+                            .child(kit::figure(on).text_color(rgb(theme::faint())).truncate()),
+                    ),
+                },
+                |row, format| row.child(format).child(listing::unheard()),
+            )
             .child(listing::length_cell(length).text_color(rgb(theme::faint())))
             .child(controls_place().child(mark))
     }
@@ -1251,6 +1257,7 @@ impl RootView {
                             Tone::Ghost,
                         )
                         .on_click(cx.listener(|this, _, _, cx| {
+                            this.show_what_is_missing(MissingShows::Releases, cx);
                             this.set_pane(Pane::Missing, cx);
                         })),
                     )
@@ -1683,6 +1690,7 @@ pub(crate) enum Asks {
 
 pub(crate) enum Beside {
     AnAlbum,
+    ARun,
     ASearch {
         pictured: Option<AlbumId>,
         on: SharedString,
@@ -1692,7 +1700,7 @@ pub(crate) enum Beside {
 impl Beside {
     const fn pictured(&self) -> Option<Option<AlbumId>> {
         match self {
-            Self::AnAlbum => None,
+            Self::AnAlbum | Self::ARun => None,
             Self::ASearch { pictured, .. } => Some(*pictured),
         }
     }
@@ -1725,6 +1733,13 @@ impl Unheld {
             artist: SharedString::from(artist.unwrap_or_default().to_owned()),
             length: SharedString::from(length.map(format::spanned).unwrap_or_default()),
             beside: Beside::AnAlbum,
+        }
+    }
+
+    pub(crate) fn short_of(row: &MissingTrack) -> Self {
+        Self {
+            beside: Beside::ARun,
+            ..Self::from(row)
         }
     }
 
@@ -1833,7 +1848,7 @@ pub(crate) fn controls_place() -> Div {
         .w(px(controls_width()))
 }
 
-fn portrait_frame(art: Arc<Image>, side: f32) -> Div {
+pub(crate) fn portrait_frame(art: Arc<Image>, side: f32) -> Div {
     div()
         .flex()
         .flex_none()

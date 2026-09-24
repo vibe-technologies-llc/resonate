@@ -1247,30 +1247,44 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `ArtistShows::within` answers *Tracks* for an artist who holds no album at all, and then no
   tabs are drawn. *Play*, *Add to queue*, *Play next* and *Add to playlist* read the whole
   listing either way, because they act on the artist rather than on the tab.
-- **The Missing pane is what the catalog knows it is short of, headed by run.** `Pane::Missing`
-  sits under `Section::Collection` beside the playlists and its sidebar count is
-  `Missing::tracks`, hidden at zero, so a library the reference has never described carries no
-  figure for nothing. `views/missing.rs` draws one `uniform_list` over `LibraryModel::missing_rows`,
-  an `Arc<[MissingRow]>` of `Album`, `Disc`, `Track`, `Artist` and `Release` indices that
-  `models::missing_rows` builds: a heading wherever the key changes and a
-  row for every entry, so the release rows an album is short of come under that album once and
-  the releases an artist is short of come under that artist once, tracks first and releases
-  after, which `each_run_of_an_albums_missing_tracks_is_headed_by_the_album_once` and
-  `the_unheld_releases_follow_the_missing_tracks_headed_by_their_artist` are the claims of.
+- **The Missing pane is what the catalog knows it is short of, headed by run, one half at a
+  time.** `Pane::Missing` sits under `Section::Collection` beside the playlists and its sidebar
+  count is `Missing::tracks`, hidden at zero, so a library the reference has never described
+  carries no figure for nothing. The two halves are two lists chosen from two tabs, the way an
+  artist's page chooses between its albums and its tracks: `missing_tabs` is a `kit::segmented`
+  of *Tracks* and *Releases*, each with its count, and `RootView::missing_shows` is the
+  `MissingShows` it chose, kept for the run. `MissingShows::within` hands over to the half that
+  holds something where the chosen one holds nothing, and the tabs are drawn only where both
+  do; the artist heading's *N releases not held* opens the pane on *Releases*. They used to run
+  on in one list, where an artist's heading after the last album's rows was indistinguishable
+  from another album's. Each tab is one `uniform_list` over `LibraryModel::missing_track_rows`
+  or `unheld_release_rows`, `Arc<[MissingRow]>`s of `Album`, `Disc` and `Track`, or `Artist` and
+  `Release`, indices that `models::missing_track_rows` and `unheld_release_rows` build: a
+  heading wherever the key changes and a row for every entry, which
+  `each_run_of_an_albums_missing_tracks_is_headed_by_the_album_once` and
+  `each_run_of_an_artists_unheld_releases_is_headed_by_the_artist_once` are the claims of.
   The artists' half is `headed_by_run` over one key; the albums' half is
   `headed_by_album_and_disc` over the album *and* the disc, because a set's missing rows number
   from one again under each disc and a single heading over the lot reads as one album with two
   track ones. A disc heading is drawn only where the album's own run spans more than one, the
   same rule `headed_by_disc` follows inside an album, and
-  `an_album_missing_rows_from_two_discs_is_headed_by_each_of_them` is the claim; it says *Disc N*
-  and no more, the pane holding no `HeldMedium` to name a format or a title with. A
-  heading is `run_heading` — the disc heading's own row — around an `opens` onto the album or
-  the artist, a track row is `unheld_row` with its want mark, and a release row is `release_row`,
-  faint, with the kind where the artist cell would be and the first release year where the
-  format would, and no press, because a release the catalog holds nothing of names nothing it
-  can show. `Loaded` reads `missing_tracks` and `unheld_releases` under `MISSING_AT_MOST`, 5 000,
-  and `missing_counted` on every load, so the heading's *N tracks · N releases* is the catalog's
-  count rather than the window's.
+  `an_album_missing_rows_from_two_discs_is_headed_by_each_of_them` is the claim; it is an
+  eyebrow reading *DISC N* under the title column and no more, the pane holding no
+  `HeldMedium` to name a format or a title with. **A run's heading is a band, because every row
+  of a `uniform_list` is one height.** `run_band` fills a rounded `raised` ground inset
+  `BAND_INSET` inside the row, which is what separates one run from the next where a taller
+  heading cannot: the album's cover or the artist's portrait — `kit::avatar` where there is
+  none — in the number column, the name through `opens` in the semibold text colour, the owner
+  beside it in the muted one, and how many the run holds — *7 missing*, *11 releases* — ending
+  where the lengths end. A track row is `unheld_row` under `Beside::ARun`, which drops the
+  format and plays cells, the pane having no column header for them to line up under; a
+  release row is `release_row`, its title in the muted colour, its kind a `kit::badge` and its
+  first release year in the length column, and no press, because a release the catalog holds
+  nothing of names nothing it can show. The subtitle speaks for the tab in front — *8 tracks
+  missing from 2 albums*, *46 releases by 8 artists not held*. `Loaded` reads `missing_tracks`
+  and `unheld_releases` under `MISSING_AT_MOST`, 5 000, and `missing_counted` on every load,
+  so the tracks and releases the subtitle and the tabs count are the catalog's rather than the
+  window's; the albums and artists beside them are the headings the list drew.
   Empty, it is `kit::empty` under `Icon::Missing` saying nothing is missing, and where the build
   `can_enrich` a second sentence says where the answer would come from.
 - **A search lists what the library is short of after what it holds, greyed the way an album's
