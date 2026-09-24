@@ -18,6 +18,7 @@ const SONGS_FOUND_AT_MOST: u32 = 25;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
 const BROWSE_PAGE: u32 = 100;
 const GROUPS_AT_MOST: u32 = 1000;
+const DISCOGRAPHY_KINDS: &str = "album|ep";
 const RELEASE_INCLUDES: &str =
     "recordings+artist-credits+media+release-groups+isrcs+labels+url-rels+recording-level-rels";
 const ARTIST_INCLUDES: &str = "url-rels+tags+aliases";
@@ -468,20 +469,20 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Vec<Ar
     let mut releases: Vec<ArtistRelease> = Vec::new();
     let mut offset: u32 = 0;
     loop {
-        let path = format!(
-            "/release-group{}",
-            Params::new()
-                .with("artist", artist.as_str())
-                .with("limit", &BROWSE_PAGE.to_string())
-                .with("offset", &offset.to_string())
-                .with("fmt", "json")
-                .finish()
-        );
+        let path = release_groups_path(artist, offset);
         let Some(page) = client.json::<BrowseDoc>(Host::MusicBrainz, op, &path)? else {
             break;
         };
         let read = u32::try_from(page.release_groups.len()).unwrap_or(u32::MAX);
         let next = page.release_group_offset.saturating_add(read);
+        if offset == 0 && page.release_group_count > GROUPS_AT_MOST {
+            tracing::warn!(
+                %artist,
+                credited = page.release_group_count,
+                read = GROUPS_AT_MOST,
+                "an artist is credited on more albums and EPs than a discography reads"
+            );
+        }
         let held = page.release_group_count.min(GROUPS_AT_MOST);
         releases.extend(
             page.release_groups
@@ -495,6 +496,19 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Vec<Ar
     }
 
     Ok(releases)
+}
+
+fn release_groups_path(artist: &Mbid, offset: u32) -> String {
+    format!(
+        "/release-group{}",
+        Params::new()
+            .with("artist", artist.as_str())
+            .with("type", DISCOGRAPHY_KINDS)
+            .with("limit", &BROWSE_PAGE.to_string())
+            .with("offset", &offset.to_string())
+            .with("fmt", "json")
+            .finish()
+    )
 }
 
 pub(crate) fn recording(client: &Client, id: &Mbid) -> Result<Option<Recording>> {
@@ -1783,6 +1797,17 @@ mod tests {
         assert_eq!(
             release_group_search(&asked),
             "/release-group/?query=From%20Zero%20%28Deluxe%20Edition%29&dismax=true&fmt=json&limit=5"
+        );
+    }
+
+    #[test]
+    fn a_release_group_browse_asks_only_for_the_kinds_a_discography_keeps() {
+        let artist = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
+
+        assert_eq!(
+            release_groups_path(&artist, 200),
+            "/release-group?artist=83d91898-7763-47d7-b03b-b92132375c47&type=album%7Cep\
+             &limit=100&offset=200&fmt=json"
         );
     }
 

@@ -114,7 +114,7 @@ fn the_reference_answers_pink_floyd_with_a_profile_and_a_portrait() {
 }
 
 #[test]
-fn the_reference_answers_pink_floyd_with_every_release_group_it_is_credited_on() {
+fn the_reference_answers_pink_floyd_with_every_album_and_ep_it_is_credited_on() {
     let Some(client) = reached() else {
         return;
     };

@@ -191,14 +191,18 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   field a service does not know matches nothing rather than failing, so getting one wrong is a
   search that silently answers empty for ever.
 - **An artist's release groups are browsed, not searched, and the browse is paged and capped.**
-  `musicbrainz::release_groups_of` asks `/release-group?artist=<mbid>` — the browse endpoint,
-  which answers everything the artist is credited on rather than the five best matches for a
-  query — in pages of `BROWSE_PAGE`, 100, following `release-group-offset` and
+  `musicbrainz::release_groups_of` asks `/release-group?artist=<mbid>&type=album|ep` — the
+  browse endpoint, which answers everything the artist is credited on rather than the five best
+  matches for a query, narrowed to `DISCOGRAPHY_KINDS`, the two primary types the library's
+  `worth_keeping` keeps, so a single or a broadcast neither costs a page nor counts against the
+  cap — in pages of `BROWSE_PAGE`, 100, following `release-group-offset` and
   `release-group-count` until the count is reached or `GROUPS_AT_MOST`, 1 000, is, so a
-  prolific artist costs ten requests and never more. `BrowsedGroupDoc::into_artist_release`
+  prolific artist costs ten requests and never more, and one credited on more is a warning
+  naming the artist and the count. `BrowsedGroupDoc::into_artist_release`
   maps each to an `ArtistRelease` with its title, primary type, secondary types and first
   release date, and a group naming no mbid is a debug record rather than a row; the library's
-  `worth_keeping` is what reads the types, so the online crate keeps every group it is handed.
+  `worth_keeping` still reads the types — the secondary ones, a compilation or a live album, are
+  its alone — so the online crate keeps every group it is handed.
   `release_group_browse.json` is the first page of Pink Floyd's 651, and
   `a_release_group_browse_answers_one_page_of_an_artists_groups_with_their_types` reads all
   hundred of it.

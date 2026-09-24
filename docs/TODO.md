@@ -318,9 +318,9 @@
   renamed moves `tagged_title` and `tagged_artist`, nulls `answered` and asks again from the new
   name — overwriting what the last lookup wrote. `resonate organise` alone does not trip it, the
   size and the mtime being unchanged, so it takes a rename and an edit together
-- The discography is capped at `GROUPS_AT_MOST` of 1 000 groups and `worth_keeping` keeps albums
-  and EPs alone, so a single an artist released is never listed as not held, and an artist
-  credited on more than a thousand groups has the rest passed over without anything saying so
+- The discography is asked for albums and EPs alone, so a single an artist released is never
+  listed as not held, and one credited on more than `GROUPS_AT_MOST` of them — 1 000 — has the
+  rest passed over with a warning in the log and nothing in the window
 - The pressings of a group are fetched with their titles and countries and not kept: `settle_group`
   lands one and drops the rest, so nothing lists a release's other editions or says which pressing
   the catalog holds against which it could
