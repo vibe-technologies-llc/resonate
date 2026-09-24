@@ -403,7 +403,7 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{ffi::OsString, fs, path::PathBuf};
 
     use super::*;
@@ -413,7 +413,7 @@ mod tests {
     const CD_FRAMES_A_SECOND: u32 = 75;
     const SECOND_TRACK_AT_CD_FRAMES: u32 = 30;
 
-    fn silent_wave() -> Vec<u8> {
+    pub(crate) fn silent_wave() -> Vec<u8> {
         let data = FRAMES * 2;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");

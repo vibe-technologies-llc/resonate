@@ -1407,15 +1407,26 @@ fn understood(text: Option<&str>) -> Option<String> {
 }
 
 fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
+    let sources = Sources::local();
     let mut wanted = Vec::with_capacity(paths.len());
     for path in paths {
-        wanted.push(Cut::whole(MediaLocation::local(
-            path.canonicalize()
-                .map_err(|source| Error::UnresolvedFile {
-                    path: path.clone(),
-                    source,
-                })?,
-        )));
+        let location =
+            MediaLocation::local(
+                path.canonicalize()
+                    .map_err(|source| Error::UnresolvedFile {
+                        path: path.clone(),
+                        source,
+                    })?,
+            );
+        match location.as_path().filter(|_| names_a_sheet(&location)) {
+            Some(sheet) => wanted.extend(sheet_cuts(&sources, sheet).into_iter().map(
+                |(location, span)| Cut {
+                    location,
+                    span: Some(span),
+                },
+            )),
+            None => wanted.push(Cut::whole(location)),
+        }
     }
 
     let (id, added) = match library.playlist_named(name)? {
@@ -2174,6 +2185,17 @@ fn names_a_sheet(location: &MediaLocation) -> bool {
 }
 
 fn sheet_items(sources: &Sources, path: &Path, minting: &mut Unclaimed) -> Vec<QueueItem> {
+    sheet_cuts(sources, path)
+        .into_iter()
+        .map(|(location, span)| QueueItem {
+            id: minting.mint(),
+            location,
+            span: Some(span),
+        })
+        .collect()
+}
+
+fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, FrameSpan)> {
     let sheet = match read_cue_media(sources, &MediaLocation::local(path)) {
         Ok(sheet) => sheet,
         Err(error) => {
@@ -2182,7 +2204,7 @@ fn sheet_items(sources: &Sources, path: &Path, minting: &mut Unclaimed) -> Vec<Q
         }
     };
 
-    let mut items = Vec::new();
+    let mut cuts = Vec::new();
     for cut in &sheet.files {
         let Some(file) = path.parent().map(|folder| folder.join(&cut.named)) else {
             continue;
@@ -2197,14 +2219,10 @@ fn sheet_items(sources: &Sources, path: &Path, minting: &mut Unclaimed) -> Vec<Q
             let Some(span) = cut.span_of(index, info.spec.rate, info.duration) else {
                 continue;
             };
-            items.push(QueueItem {
-                id: minting.mint(),
-                location: location.clone(),
-                span: Some(span),
-            });
+            cuts.push((location.clone(), span));
         }
     }
-    items
+    cuts
 }
 
 #[cfg(test)]
@@ -2317,6 +2335,34 @@ mod tests {
             queue_items(&[OsString::from("file:///music/Meddle.flac#frames=100-50")]).is_empty(),
             "a cut that is no span was queued as the whole file"
         );
+    }
+
+    #[test]
+    fn a_sheet_added_to_a_playlist_is_added_as_the_rows_it_cuts() {
+        let folder = env::temp_dir().join(format!("resonate-extend-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        fs::write(folder.join("whole.wav"), analyse::tests::silent_wave()).expect("a wave file");
+        let sheet = folder.join("sheet.cue");
+        fs::write(
+            &sheet,
+            "FILE \"whole.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 \
+             AUDIO\n    INDEX 01 00:00:30\n",
+        )
+        .expect("a sheet");
+        let library = Library::open(&folder.join("library.db")).expect("a catalog");
+
+        extend(&library, "Mixtape", &[sheet]).expect("the sheet is added");
+
+        let playlist = library
+            .playlist_named("Mixtape")
+            .expect("a read")
+            .expect("the playlist was started");
+        let cuts = library.playlist_cuts(playlist.id).expect("a read");
+        assert_eq!(cuts.len(), 2, "a sheet was stored as one row");
+        assert!(cuts.iter().all(|cut| cut.span.is_some()
+            && cut.location.as_path() == Some(from_here(&folder.join("whole.wav")).as_path())));
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }
 
     #[test]

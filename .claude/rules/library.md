@@ -1912,7 +1912,9 @@ the pass.
   row the playlist already holds is counted as already there, so the same sheet read twice is a
   no-op, while a file the *sheet itself* names twice is two rows, because `add_to_playlist` lets the
   same file be put in twice deliberately. A name already taken is appended to rather than refused,
-  which is what makes `import` and `resonate playlist <NAME> --add` the same gesture. A row is
+  which is what makes `import` and `resonate playlist <NAME> --add` the same gesture. A `.cue`
+  handed to `--add` is added as the rows it cuts, through the same `sheet_cuts` `resonate play`
+  and `resonate queue` read one through, rather than as a row naming the sheet. A row is
   written as a path only where `sheet::as_a_row` finds that path reads back as itself, and as an
   escaped `file://` URI where it does not, which is what carries a `#`, a line break or a scheme of
   its own through M3U and PLS. `sheet::canonical` settles a path the filesystem cannot answer for
