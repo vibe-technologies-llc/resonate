@@ -2562,7 +2562,7 @@ impl RootView {
                 });
             }))
             .child(icons::lit_on_hover(
-                icons::icon(Icon::Close, 12.0, theme::muted()),
+                icons::icon(Icon::Close, theme::clear_mark(), theme::muted()),
                 "clear",
             ))
     }

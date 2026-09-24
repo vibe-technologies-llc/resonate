@@ -201,7 +201,7 @@ impl RootView {
             .flex_none()
             .items_center()
             .justify_center()
-            .size(theme::width(theme::clear_control()))
+            .size(theme::width(theme::filter_clear_control()))
             .rounded_full()
             .cursor_pointer()
             .hover(|mark| mark.bg(rgb(theme::hover())))
@@ -213,7 +213,7 @@ impl RootView {
                 cx.notify();
             }))
             .child(icons::lit_on_hover(
-                icons::icon(Icon::Close, theme::hint_icon(), theme::muted()),
+                icons::icon(Icon::Close, theme::filter_clear_mark(), theme::muted()),
                 "clear-filter",
             ))
     }

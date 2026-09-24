@@ -403,9 +403,6 @@
   never learns it is short. `ends_in_an_ellipsis` — a wrapping measure clamped to one line — is
   what the album cell uses instead, and it costs the collapse a nowrap link must not have, so it
   cannot simply be put on every link
-- A control's hit area and the icon inside it are still two `theme` constants that have to be kept
-  in step. The icon is drawn to a box now, so the pair no longer has a glyph's baseline between
-  them, but nothing stops one being changed without the other
 - The playback bar keeps its controls centred by clipping its side columns, so a narrow window
   loses the end of the signal path or the notice rather than moving the buttons. Nothing drops an
   item from the bar before it is clipped. The width it starts clipping at was about 1 200 px idle

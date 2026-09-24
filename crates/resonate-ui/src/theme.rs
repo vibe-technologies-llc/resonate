@@ -737,12 +737,9 @@ const SIDEBAR_WIDTH: f32 = 216.0;
 const SEARCH_WIDTH: f32 = 560.0;
 const TRANSPORT_HEIGHT: f32 = 104.0;
 const TRANSPORT_CENTRE: f32 = 460.0;
-const TRANSPORT_STEP: f32 = 36.0;
-const TRANSPORT_STEP_ICON: f32 = 18.0;
-const TRANSPORT_PLAY: f32 = 44.0;
-const TRANSPORT_PLAY_ICON: f32 = 20.0;
-const TOGGLE_CONTROL: f32 = 32.0;
-const TOGGLE_ICON: f32 = 16.0;
+const TRANSPORT_STEP: Control = Control::of(36.0, 18.0);
+const TRANSPORT_PLAY: Control = Control::of(44.0, 20.0);
+const TOGGLE: Control = Control::of(32.0, 16.0);
 const VOLUME_READING: f32 = 34.0;
 const SLEEP_READING: f32 = 34.0;
 const TYPE_AHEAD_LIFT: f32 = 22.0;
@@ -750,8 +747,7 @@ const PANE_ICON: f32 = 16.0;
 const SEARCH_ICON: f32 = 15.0;
 const ROW_MARKER_ICON: f32 = 11.0;
 const COLUMN_MARK: f32 = 10.0;
-const ROW_CONTROL: f32 = 26.0;
-const ROW_CONTROL_ICON: f32 = 14.0;
+const ROW_CONTROL: Control = Control::of(26.0, 14.0);
 const PICKER_WIDTH: f32 = 400.0;
 const LISTEN_WIDTH: f32 = 460.0;
 const LISTEN_COVER: f32 = 112.0;
@@ -774,9 +770,10 @@ const SEARCH_HEIGHT: f32 = 32.0;
 const FIELD_LABEL: f32 = 96.0;
 const HEADING_NAME: f32 = 220.0;
 const CARET_HEIGHT: f32 = 16.0;
-const CLEAR_CONTROL: f32 = 20.0;
-const HINT_CONTROL: f32 = 20.0;
-const HINT_ICON: f32 = 14.0;
+const CLEAR: Control = Control::of(20.0, 12.0);
+const FILTER_CLEAR: Control = Control::of(20.0, 14.0);
+const HINT: Control = Control::of(20.0, 14.0);
+const CHECK_MARK: f32 = 14.0;
 const HINT_WIDTH: f32 = 300.0;
 const MENU_WIDTH: f32 = 236.0;
 const MENU_ROW: f32 = 28.0;
@@ -832,8 +829,26 @@ fn scaled(base: f32) -> f32 {
     base * WORN.read().scale
 }
 
+const MARK_MARGIN_AT_LEAST: f32 = 3.0;
+
+#[derive(Clone, Copy)]
+struct Control {
+    hit: f32,
+    mark: f32,
+}
+
+impl Control {
+    const fn of(hit: f32, mark: f32) -> Self {
+        assert!(
+            mark > 0.0 && mark + 2.0 * MARK_MARGIN_AT_LEAST <= hit,
+            "a control's mark does not sit inside its box"
+        );
+        Self { hit, mark }
+    }
+}
+
 macro_rules! measures {
-    ($($measure:ident => $base:ident),+ $(,)?) => {
+    ($($measure:ident => $base:expr),+ $(,)?) => {
         $(
             pub fn $measure() -> f32 {
                 scaled($base)
@@ -856,12 +871,12 @@ measures! {
     search_width => SEARCH_WIDTH,
     transport_height => TRANSPORT_HEIGHT,
     transport_centre => TRANSPORT_CENTRE,
-    transport_step => TRANSPORT_STEP,
-    transport_step_icon => TRANSPORT_STEP_ICON,
-    transport_play => TRANSPORT_PLAY,
-    transport_play_icon => TRANSPORT_PLAY_ICON,
-    toggle_control => TOGGLE_CONTROL,
-    toggle_icon => TOGGLE_ICON,
+    transport_step => TRANSPORT_STEP.hit,
+    transport_step_icon => TRANSPORT_STEP.mark,
+    transport_play => TRANSPORT_PLAY.hit,
+    transport_play_icon => TRANSPORT_PLAY.mark,
+    toggle_control => TOGGLE.hit,
+    toggle_icon => TOGGLE.mark,
     volume_reading => VOLUME_READING,
     sleep_reading => SLEEP_READING,
     type_ahead_lift => TYPE_AHEAD_LIFT,
@@ -869,8 +884,8 @@ measures! {
     search_icon => SEARCH_ICON,
     row_marker_icon => ROW_MARKER_ICON,
     column_mark => COLUMN_MARK,
-    row_control => ROW_CONTROL,
-    row_control_icon => ROW_CONTROL_ICON,
+    row_control => ROW_CONTROL.hit,
+    row_control_icon => ROW_CONTROL.mark,
     picker_width => PICKER_WIDTH,
     listen_width => LISTEN_WIDTH,
     listen_cover => LISTEN_COVER,
@@ -893,9 +908,13 @@ measures! {
     field_label => FIELD_LABEL,
     heading_name => HEADING_NAME,
     caret_height => CARET_HEIGHT,
-    clear_control => CLEAR_CONTROL,
-    hint_control => HINT_CONTROL,
-    hint_icon => HINT_ICON,
+    clear_control => CLEAR.hit,
+    clear_mark => CLEAR.mark,
+    filter_clear_control => FILTER_CLEAR.hit,
+    filter_clear_mark => FILTER_CLEAR.mark,
+    hint_control => HINT.hit,
+    hint_icon => HINT.mark,
+    check_mark => CHECK_MARK,
     hint_width => HINT_WIDTH,
     menu_width => MENU_WIDTH,
     menu_row => MENU_ROW,

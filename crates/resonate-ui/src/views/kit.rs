@@ -562,7 +562,7 @@ pub(crate) fn dot_swatch(id: impl Into<ElementId>, colour: u32, chosen: bool) ->
             |swatch| {
                 swatch.child(icons::icon(
                     Icon::Check,
-                    theme::hint_icon(),
+                    theme::check_mark(),
                     theme::ink_over(colour),
                 ))
             },

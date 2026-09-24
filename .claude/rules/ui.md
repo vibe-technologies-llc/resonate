@@ -524,7 +524,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   would have to be two overlaid `svg` elements. Text glyphs survive only in the window controls; the
   search field's clear mark, a row's ✕ and the queue row's arrows are `Icon::Close`, `ChevronUp` and
   `ChevronDown` now, and a control drawn to a box is what keeps its mark centred where a glyph's
-  baseline did not.
+  baseline did not. **A control's box and its mark are one declaration.** `theme::Control::of`
+  takes the hit area and the mark drawn inside it together and asserts, in a `const`, that the
+  mark leaves `MARK_MARGIN_AT_LEAST` on every side — so a box shrunk under its mark or a mark grown
+  past its box fails to build rather than drawing a glyph clipped at the edge of the button. The
+  measures stay the functions they were, `row_control` and `row_control_icon` reading one
+  `Control`'s two halves, and a control that borrowed another's mark has one of its own: the
+  search field's clear, which drew an unscaled literal, is `CLEAR`; the settings filter's is
+  `FILTER_CLEAR`; the accent swatch's tick is `CHECK_MARK` rather than the hint's size.
 - **The launcher's icon wears the accent, and the binary is what puts it there.**
   `AppIcon::of` is the whole decision and lives beside the palettes: an appearance whose worn accent
   is the colour `Appearance::DEFAULT` wears answers `Packaged`, and any other answers `Recoloured`
