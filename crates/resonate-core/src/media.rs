@@ -17,6 +17,7 @@ const EXTENSION_SEPARATOR: char = '.';
 const FILE_SCHEME: &str = "file://";
 const FILE_LOCALHOST: &str = "localhost";
 const PERCENT: u8 = b'%';
+const PATH_ENDS: [char; 2] = ['?', '#'];
 const SPAN_FRAGMENT: &str = "#frames=";
 const SPAN_TO: char = '-';
 
@@ -186,6 +187,9 @@ impl MediaLocation {
 
     pub fn from_uri(uri: &str) -> Option<Self> {
         if let Some(encoded) = uri.strip_prefix(FILE_SCHEME) {
+            let encoded = encoded
+                .split_once(PATH_ENDS)
+                .map_or(encoded, |(path, _)| path);
             let encoded = encoded.strip_prefix(FILE_LOCALHOST).unwrap_or(encoded);
             if !encoded.starts_with(KEY_SEPARATOR) {
                 return None;
@@ -422,6 +426,26 @@ mod tests {
         assert_eq!(
             MediaLocation::from_uri("file://localhost/music/a.mp3"),
             Some(MediaLocation::local("/music/a.mp3"))
+        );
+    }
+
+    #[test]
+    fn a_file_uri_names_the_path_before_its_query_or_fragment() {
+        let echoes = Some(MediaLocation::local("/music/Echoes.flac"));
+        for uri in [
+            "file:///music/Echoes.flac#t=10",
+            "file:///music/Echoes.flac?at=10",
+            "file:///music/Echoes.flac?at=10#t=10",
+        ] {
+            assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
+        }
+        assert_eq!(
+            MediaLocation::from_uri("file:///music/100%23%3F.flac"),
+            Some(MediaLocation::local("/music/100#?.flac"))
+        );
+        assert_eq!(
+            MediaLocation::local("/music/100#?.flac").to_uri(),
+            "file:///music/100%23%3F.flac"
         );
     }
 
