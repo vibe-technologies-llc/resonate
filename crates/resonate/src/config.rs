@@ -112,6 +112,7 @@ pub struct Config {
     pub study: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
     pub contact: Option<String>,
+    pub read_from: Option<PathBuf>,
     pub acoustid_key: Option<String>,
     pub audd_token: Option<String>,
     pub listen_from: Option<Listening>,
@@ -267,11 +268,36 @@ pub fn load(explicit: Option<&Path>) -> Result<Config> {
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(source) if source.kind() == io::ErrorKind::NotFound && !demanded => {
-            return Ok(Config::default());
+            return Ok(Config {
+                read_from: Some(path),
+                ..Config::default()
+            });
         }
         Err(source) => return Err(Error::ReadConfig { path, source }),
     };
-    parse(&path, &text)
+    Ok(Config {
+        read_from: Some(path.clone()),
+        ..parse(&path, &text)?
+    })
+}
+
+#[cfg(feature = "online")]
+pub fn contact_in(path: &Path) -> Result<Option<String>> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(Error::ReadConfig {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let key = ConfigKey::Contact;
+    match document(path, &text)?.get(key.as_str()) {
+        Some(value) => Ok(given(At { path, key }.string(value)?)),
+        None => Ok(None),
+    }
 }
 
 fn document(path: &Path, text: &str) -> Result<DocumentMut> {
@@ -921,6 +947,35 @@ mod tests {
             config.skip_under_repeat(),
             SkipUnderRepeat::KeepsRepeatingTheTrack
         );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn the_contact_alone_is_read_back_out_of_a_file_edited_by_hand() {
+        let scratch = Scratch::new().seed("volume = \"loud\"\ncontact = \"  a contact  \"\n");
+        assert_eq!(
+            contact_in(&scratch.path).expect("the contact reads whatever else is wrong"),
+            Some("a contact".to_owned())
+        );
+
+        let scratch = scratch.seed("contact = \" \"\n");
+        assert_eq!(contact_in(&scratch.path).expect("it reads"), None);
+
+        let scratch = scratch.seed("contact = 7\n");
+        assert!(contact_in(&scratch.path).is_err());
+
+        let _ = fs::remove_file(&scratch.path);
+        assert_eq!(contact_in(&scratch.path).expect("no file is no contact"), None);
+    }
+
+    #[test]
+    fn a_loaded_file_says_where_it_was_read_from() {
+        let scratch = Scratch::new().seed("contact = \"a contact\"\n");
+
+        let loaded = load(Some(&scratch.path)).expect("it loads");
+
+        assert_eq!(loaded.read_from.as_deref(), Some(scratch.path.as_path()));
+        assert_eq!(loaded.contact.as_deref(), Some("a contact"));
     }
 
     #[test]

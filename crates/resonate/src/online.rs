@@ -1,7 +1,9 @@
 use std::sync::Arc;
 #[cfg(feature = "online")]
-use std::sync::OnceLock;
+use std::{fs, path::PathBuf, sync::OnceLock, time::SystemTime};
 
+#[cfg(feature = "online")]
+use parking_lot::Mutex;
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, Reference};
 use resonate_listen::Recognisers;
@@ -12,6 +14,8 @@ use resonate_online::Lrclib;
 #[cfg(feature = "online")]
 use resonate_online::{AcoustId, Audd, AutoEq, Client, Identity, Introduction, Online, Shazam};
 
+#[cfg(feature = "online")]
+use crate::config;
 use crate::{Error, Result, config::Config};
 
 #[cfg(feature = "online")]
@@ -27,9 +31,50 @@ fn identity(contact: Option<String>) -> Identity {
 
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    let introduction =
-        INTRODUCTION.get_or_init(|| Introduction::as_(&identity(config.contact.clone())));
+    let introduction = INTRODUCTION.get_or_init(|| {
+        let said = identity(config.contact.clone());
+        match config.read_from.clone() {
+            Some(path) => {
+                let followed = Followed {
+                    path,
+                    seen: Mutex::new(None),
+                };
+                Introduction::following(&said, Arc::new(move || followed.moved()))
+            }
+            None => Introduction::as_(&said),
+        }
+    });
     Arc::new(Client::introduced(introduction.clone()))
+}
+
+#[cfg(feature = "online")]
+struct Followed {
+    path: PathBuf,
+    seen: Mutex<Option<SystemTime>>,
+}
+
+#[cfg(feature = "online")]
+impl Followed {
+    fn moved(&self) -> Option<Identity> {
+        let stamp = fs::metadata(&self.path)
+            .and_then(|held| held.modified())
+            .ok();
+        {
+            let mut seen = self.seen.lock();
+            if *seen == stamp {
+                return None;
+            }
+            *seen = stamp;
+        }
+
+        match config::contact_in(&self.path) {
+            Ok(contact) => Some(identity(contact)),
+            Err(error) => {
+                tracing::warn!(%error, "the contact in the settings went unread, so what was said goes on being said");
+                None
+            }
+        }
+    }
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]

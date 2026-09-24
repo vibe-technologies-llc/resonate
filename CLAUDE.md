@@ -467,7 +467,8 @@ Invariants the layering exists to protect:
   every other setting takes and clears it rather than writing an empty string. Every client the
   process builds shares one `resonate_online::Introduction` — the binary's `online::INTRODUCTION`,
   made from the key on first use — and each request carries the User-Agent it holds at that
-  moment, so a contact stored or cleared from the window is what the very next request says.
+  moment, so a contact stored or cleared from the window, or written into the file by hand, is
+  what the very next request says.
   `online` is the switch beside it:
   `Config::online_enabled` defaults to true, `online::reference` answers `None` where it is off,
   and `Error::OnlineOff` is what `resonate enrich` says then, where a build without the feature

@@ -297,8 +297,6 @@
   release group, and only where the album held none, so a cover the archive gained later is
   fetched only by a `--refresh`, and a file cover taken away by a rescan is not replaced from the
   archive until then
-- A contact written into `config.toml` by hand while a window runs is read at the next start;
-  only the Online card's field reaches the clients already built
 - A file whose tags name no title is identified by its file name or not at all. `stem.rs` reads
   `NN - Artist - Title` and fills what the tags left empty, so `tagged_title` and `tagged_artist`
   carry that reading and `Route::Search` has something to ask with; a stem with no separator in it

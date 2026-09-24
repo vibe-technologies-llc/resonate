@@ -37,7 +37,16 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   binary builds every client over the one `online::INTRODUCTION` and the settings file's
   `store` and `forget` of `Setting::Contact` call `online::introduce`, which is why a contact
   typed into the Online card needs no restart;
-  `a_contact_given_after_the_client_was_built_is_what_the_next_request_says` is the claim.
+  `a_contact_given_after_the_client_was_built_is_what_the_next_request_says` is the claim. A
+  contact written into the file by hand, or by another process, is heard the same way:
+  `Introduction::following` carries a `Reintroduction` it asks before each request is written, and
+  the binary's is `Followed`, which weighs the modification time of the file `Config::read_from`
+  names against the one it last saw and, only where it moved, reads the `contact` key alone through
+  `config::contact_in` — so a stat is the whole cost of a request whose file stood still, a key
+  mistyped elsewhere in the file costs the contact nothing, and a contact that will not read keeps
+  what was being said rather than falling back to saying less. The first request of a run reads it
+  once, because nothing has been seen yet.
+  `an_introduction_that_follows_a_file_says_what_the_file_says_by_the_next_request` is the claim.
   `Online`, `Lrclib` and `AutoEq` each
   take an `Arc<Client>` — `Online::with_client`, `Lrclib::new` and `AutoEq::new` — so the three can
   share one, and `Online::new` is the convenience that builds its own.

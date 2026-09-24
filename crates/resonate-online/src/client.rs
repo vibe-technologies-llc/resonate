@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt,
     io::{Read as _, Write as _},
     sync::Arc,
     thread,
@@ -120,20 +121,47 @@ impl Identity {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Introduction(Arc<RwLock<String>>);
+pub type Reintroduction = Arc<dyn Fn() -> Option<Identity> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct Introduction {
+    said: Arc<RwLock<String>>,
+    follows: Option<Reintroduction>,
+}
+
+impl fmt::Debug for Introduction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Introduction")
+            .field("said", &*self.said.read())
+            .field("follows", &self.follows.is_some())
+            .finish()
+    }
+}
 
 impl Introduction {
     pub fn as_(identity: &Identity) -> Self {
-        Self(Arc::new(RwLock::new(identity.user_agent())))
+        Self {
+            said: Arc::new(RwLock::new(identity.user_agent())),
+            follows: None,
+        }
+    }
+
+    pub fn following(identity: &Identity, follows: Reintroduction) -> Self {
+        Self {
+            follows: Some(follows),
+            ..Self::as_(identity)
+        }
     }
 
     pub fn change_to(&self, identity: &Identity) {
-        *self.0.write() = identity.user_agent();
+        *self.said.write() = identity.user_agent();
     }
 
     pub fn user_agent(&self) -> String {
-        self.0.read().clone()
+        if let Some(identity) = self.follows.as_ref().and_then(|follows| follows()) {
+            self.change_to(&identity);
+        }
+        self.said.read().clone()
     }
 }
 
@@ -542,6 +570,48 @@ mod tests {
             client.user_agent(),
             "resonate/9.9.9 ( someone who typed a contact )"
         );
+    }
+
+    #[test]
+    fn an_introduction_that_follows_a_file_says_what_the_file_says_by_the_next_request() {
+        let written: Arc<Mutex<Option<Option<String>>>> = Arc::new(Mutex::new(None));
+        let read = Arc::clone(&written);
+        let introduction = Introduction::following(
+            &identity(None),
+            Arc::new(move || {
+                read.lock()
+                    .take()
+                    .map(|contact| identity(contact.as_deref()))
+            }),
+        );
+        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
+
+        assert_eq!(client.user_agent(), "resonate/9.9.9");
+
+        *written.lock() = Some(Some("someone who edited the file".to_owned()));
+        let (url, served) = serving_one_post();
+        let _: Option<serde_json::Value> = client
+            .posted(
+                Host::AcoustId,
+                LookupOp::Recognise,
+                &url,
+                &Posted::packed_form(Params::new().with("client", "a key")),
+            )
+            .expect("an answer");
+        let (head, _) = served.join().expect("the server");
+        assert!(
+            head.contains("user-agent: resonate/9.9.9 ( someone who edited the file )\r\n"),
+            "{head}"
+        );
+
+        assert_eq!(
+            client.user_agent(),
+            "resonate/9.9.9 ( someone who edited the file )",
+            "a file that has not moved since changed what is said"
+        );
+
+        *written.lock() = Some(None);
+        assert_eq!(client.user_agent(), "resonate/9.9.9");
     }
 
     #[test]
