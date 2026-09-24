@@ -52,7 +52,8 @@ resonate            bin — CLI, tracing, wiring
   ├── resonate-ui         GPUI views, Wayland          [gated behind the `ui` feature]
   ├── resonate-mcp        the catalog and the running player, served to a language model
   │                       over the Model Context Protocol  [gated behind `mcp`]
-  ├── resonate-mpris      the session bus: MPRIS, notifications, the idle inhibit, playlists
+  ├── resonate-mpris      the session bus: MPRIS, notifications, the idle inhibit, playlists,
+  │                       the icon loader told the launcher icon moved
   ├── resonate-discord    what is playing, told to a running Discord  [gated behind `discord`]
   ├── resonate-engine     transport, ring, pipeline policy
   │     ├── resonate-codec    decode → PCM  (symphonia)

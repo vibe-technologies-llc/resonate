@@ -66,7 +66,10 @@ kbuildsycoca6 --noincremental
 ```
 
 They are installed on this machine already. Reinstall after either file changes — the entry is
-copied, not linked, so an edit in `packaging/` does not reach the launcher on its own.
+copied, not linked, so an edit in `packaging/` does not reach the launcher on its own. A copy of
+the packaged icon standing there is one the window did not draw, so the accent is never written
+over it; to see the icon follow the accent, run with `XDG_DATA_HOME` pointed at a scratch folder
+and read `icons/hicolor/scalable/apps/resonate.svg` under it.
 
 ## Screenshot
 

@@ -26,7 +26,7 @@ pub(crate) use crate::views::settings::{
     find::{Category, Group},
 };
 use crate::{
-    ResonateApp, Setting, SettingKey,
+    AppIcon, ResonateApp, Setting, SettingKey,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     theme,
@@ -697,6 +697,9 @@ impl RootView {
 
     pub(crate) fn dress(&self, dressed: Appearance, cx: &mut Context<Self>) {
         theme::wear(dressed);
+        cx.global::<ResonateApp>()
+            .launcher
+            .show(AppIcon::of(dressed));
         cx.refresh_windows();
     }
 

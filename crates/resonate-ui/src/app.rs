@@ -22,7 +22,7 @@ use resonate_library::{Fingerprinters, Library, Reference};
 use resonate_lyrics::Lyricists;
 
 use crate::{
-    Bindings, Error, Result, RootView, Settings, WindowKind,
+    AppIcon, Bindings, Error, Launcher, Result, RootView, Settings, WindowKind,
     drawing::Drawer,
     icons,
     listening::Listens,
@@ -128,6 +128,7 @@ pub struct ResonateApp {
     pub scrollbars: bool,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
+    pub launcher: Arc<dyn Launcher>,
     pub sourcing: Sourcing,
     pub listens: Listens,
 }
@@ -692,6 +693,7 @@ pub fn run(
     bus: Bus,
 ) -> Result<()> {
     theme::wear(appearance);
+    stored.launcher.show(AppIcon::of(appearance));
 
     let failure = Rc::new(RefCell::new(None));
     let recorded = Rc::clone(&failure);
@@ -721,6 +723,7 @@ pub fn run(
             scrollbars: stored.scrollbars,
             presence: stored.presence.clone(),
             present: Arc::clone(&stored.present),
+            launcher: Arc::clone(&stored.launcher),
             sourcing: lookups.sourcing.clone(),
             listens: lookups.listens.clone(),
         });

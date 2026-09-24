@@ -9,6 +9,7 @@ mod error;
 mod fonts;
 mod format;
 mod icons;
+mod launcher;
 mod listening;
 mod lyrics;
 mod models;
@@ -22,6 +23,7 @@ pub use crate::{
     app::{Bus, Lookups, PlayerModel, ResonateApp, run},
     equaliser::{Curve, EqualiserModel},
     error::{Error, Result, WindowKind},
+    launcher::{AppIcon, Launcher},
     listening::Listens,
     lyrics::{Look, LyricsModel},
     models::{

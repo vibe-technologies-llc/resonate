@@ -196,6 +196,15 @@ impl fmt::Display for ValueKind {
     }
 }
 
+#[cfg(feature = "ui")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IconOp {
+    Read,
+    Stage,
+    Place,
+    Remove,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("this user has no XDG data directory")]
@@ -237,6 +246,15 @@ pub enum Error {
 
     #[error("cannot create {path}", path = path.display())]
     CreateDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "ui")]
+    #[error("{op:?} failed on the application's icon at {path}", path = path.display())]
+    Icon {
+        op: IconOp,
         path: PathBuf,
         #[source]
         source: io::Error,

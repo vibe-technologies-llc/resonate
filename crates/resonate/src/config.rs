@@ -52,6 +52,13 @@ pub fn data_dir() -> Result<PathBuf> {
         .ok_or(Error::NoDataDir)
 }
 
+#[cfg(feature = "ui")]
+pub fn icon_theme_dir() -> Result<PathBuf> {
+    xdg_dir("XDG_DATA_HOME", ".local/share")
+        .map(|dir| dir.join("icons").join("hicolor"))
+        .ok_or(Error::NoDataDir)
+}
+
 pub fn library_path() -> Result<PathBuf> {
     let dir = data_dir()?;
     fs::create_dir_all(&dir).map_err(|source| Error::CreateDir {

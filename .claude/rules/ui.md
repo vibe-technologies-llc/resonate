@@ -501,6 +501,24 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   search field's clear mark, a row's ✕ and the queue row's arrows are `Icon::Close`, `ChevronUp` and
   `ChevronDown` now, and a control drawn to a box is what keeps its mark centred where a glyph's
   baseline did not.
+- **The launcher's icon wears the accent, and the binary is what puts it there.**
+  `AppIcon::of` is the whole decision and lives beside the palettes: an appearance whose worn accent
+  is the colour `Appearance::DEFAULT` wears answers `Packaged`, and any other answers `Recoloured`
+  with `packaging/resonate.svg`'s two gradient stops replaced by the accent lifted towards white and
+  the accent itself, and its root given `id="resonate-in-the-accent"` — so switching palette moves
+  the icon with the accent until one is chosen by hand, and going back to Resonate's own takes it
+  away. `AppIcon::drawn_here` reads that id, and it is what makes the file ours to replace or take
+  away: an icon under the same name nobody here drew is left exactly as it was. `run` shows the
+  appearance it opens in and `RootView::dress` every one it wears after, through `Launcher`, a seam
+  on `Stored` the way `Present` is, so `resonate-ui` does no I/O for it. The binary's
+  `launcher::Icons` is behind it: a thread that waits `SETTLES_AFTER` of quiet so a run of presses
+  is placed once, writes a staged copy over `$XDG_DATA_HOME/icons/hicolor/scalable/apps/resonate.svg`
+  or removes it, and only where that moved anything flushes what the install scriptlet flushes —
+  the theme folder's mtime, `kbuildsycoca6` and KIconLoader's `iconChanged`, which
+  `resonate_mpris::tell_the_icons_changed` emits. A run opening in the appearance the file already
+  shows writes and flushes nothing. **The gradient is in `userSpaceOnUse`**, spanning the mark's own
+  24-box: under the default `objectBoundingBox` each stroke is a zero-width box, which the SVG
+  specification says paints nothing, and librsvg drew the packaged icon as an empty tile.
 - **gpui draws cover art and `resonate-codec` is what scales one, so `resonate-ui` still carries no
   image crate.** `gpui::Image::from_bytes` takes the format and the bytes the library already
   stored, which is why `resonate-library` records the format on scan rather than leaving a decoder

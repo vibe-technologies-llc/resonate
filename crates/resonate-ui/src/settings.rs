@@ -15,7 +15,7 @@ use resonate_eq::Binding;
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 
-use crate::{Result, equaliser::Curve};
+use crate::{Launcher, Result, equaliser::Curve};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -339,6 +339,7 @@ pub struct Stored {
     pub scrollbars: bool,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
+    pub launcher: Arc<dyn Launcher>,
 }
 
 pub trait Present: Send + Sync {

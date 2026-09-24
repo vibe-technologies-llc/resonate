@@ -696,6 +696,15 @@ pub(crate) fn luminance(colour: u32) -> f32 {
     )
 }
 
+pub(crate) fn lifted(colour: u32, toward_white: f32) -> u32 {
+    let channel = |shift: u32| {
+        let value = ((colour >> shift) & 0xff) as f32;
+        (255.0 - value).mul_add(toward_white, value).round() as u32
+    };
+
+    (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
 pub(crate) fn contrast(over: u32, under: u32) -> f32 {
     let (over, under) = (luminance(over), luminance(under));
     let (lit, dim) = if over > under {

@@ -7,6 +7,8 @@ mod error;
 mod favourites;
 mod info;
 mod input;
+#[cfg(feature = "ui")]
+mod launcher;
 mod listen;
 mod mcp;
 mod mpris;
@@ -1970,6 +1972,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             scrollbars: config.draws_scrollbars(),
             presence: config.presence(),
             present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
+            launcher: Arc::new(launcher::Icons::start()),
         },
         config.appearance(),
         resonate_ui::Bus {
