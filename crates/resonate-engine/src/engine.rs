@@ -12,7 +12,7 @@ use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault, Span,
     StreamSpec, TrackHints, TrackId,
 };
-use resonate_dsp::Chain;
+use resonate_dsp::{Chain, Easing};
 use resonate_pipewire::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
     StreamRequest, StreamState,
@@ -1290,6 +1290,7 @@ impl Engine {
             output.chain.set_gain(self.config.volume, replay_gain);
             if let Some(profile) = wanted.equalisation.as_ref() {
                 output.chain.set_equalisation(profile);
+                output.chain.ease_equalisation(Easing::Returning);
             }
             output.plan = wanted;
             return Ok(());
@@ -1308,10 +1309,15 @@ impl Engine {
         let drops_a_gain_stage = wanted.gain.is_none() && output.chain.gain_amplitude().is_some();
         if drops_a_gain_stage {
             output.chain.set_gain(self.config.volume, track.replay_gain);
-            if output.chain.is_ramping() {
-                output.settles_into = Some(wanted);
-                return Ok(());
-            }
+        }
+        let drops_the_equaliser =
+            wanted.equalisation.is_none() && output.plan.equalisation.is_some();
+        if drops_the_equaliser && self.playing {
+            output.chain.ease_equalisation(Easing::Leaving);
+        }
+        if (drops_a_gain_stage || drops_the_equaliser) && output.chain.is_ramping() {
+            output.settles_into = Some(wanted);
+            return Ok(());
         }
         self.swap_chain(wanted)
     }
@@ -1348,6 +1354,11 @@ impl Engine {
                 source: error,
             })?;
         chain.ramp_gain_from(output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get()));
+        let brings_the_equaliser =
+            wanted.equalisation.is_some() && output.plan.equalisation.is_none();
+        if brings_the_equaliser && self.playing {
+            chain.ease_equalisation(Easing::Entering);
+        }
 
         let delivery = wanted.delivery();
         track.decoder.deliver(delivery);

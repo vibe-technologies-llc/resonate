@@ -583,7 +583,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   a rebind does. Going back to a plan with no gain stage — the volume back at exactly 100 % with
   nothing else in the chain, or the equaliser switched off with nothing left — first retunes the
   running chain's gain to unity, holds the wanted plan in `Output::settles_into`, and swaps only once
-  `Chain::is_ramping` says the ramp is over, which `finish_reshaping` reads after every `pump`. A
+  `Chain::is_ramping` says the ramp is over, which `finish_reshaping` reads after every `pump`. The
+  equaliser switched off while playing waits the same way for its own stage to ease out to the dry
+  signal, and one switched on eases in on the new chain — `eq.md` has the easing. A
   stage already at unity has nothing to ramp, because `GainStage` does not ramp to where it already
   stands, so the equaliser switched off at full volume swaps at once. A newer command drops what was
   waiting and is judged against the chain still running, and a rebind replaces the `Output` and the

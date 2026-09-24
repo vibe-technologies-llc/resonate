@@ -159,9 +159,20 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `retune` swaps a chain built from the new plan in under the stream it already holds wherever
   `OutputPlan::becomes_on_the_same_stream` says it may — `audio.md` has how. Under a resampler it
   still rebinds, because the resampler's history cannot be carried into a new chain without a click.
-  An equalised plan always carries a gain stage, so neither swap steps the level; what neither does
-  is crossfade the two responses, so the correction arrives and leaves between one block and the
-  next, its biquads starting from a silent history.
+  An equalised plan always carries a gain stage, so neither swap steps the level, and the stage
+  crossfades itself in and out: `Easing` is what the engine tells it. A stage *entering* a stream
+  that is playing starts wholly dry and blends toward its own output over `EASED_OVER`, 40 ms,
+  its biquads running on the real signal from the first frame, so their silent history and a
+  preamp's sudden cut are faded in under the dry signal rather than heard as a step; one
+  *leaving* blends back to the dry signal the same way, the wanted plan held in
+  `Output::settles_into` until it is there, and the chain without it is swapped in only then. A
+  profile asked for again while it is leaving is *returning*, which turns the blend round from
+  wherever it stands. A settled stage never blends — the weight is exactly one or exactly zero
+  away from a fade, so the output is the wet or the dry signal bit for bit — and a paused
+  transport swaps at once, having nothing running to click against.
+  `switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps` is the claim: a steady
+  level halved by a −6 dB preamp and given back steps by nothing a sample, where the swap alone
+  stepped by half the level.
 - **A DoP-packed stream refuses it outright.** `untouched` writes `equalisation: None` as a
   literal and `dop_survives` gates on `eq_config`, so there is no reachable path from a marked
   source to a plan with a stage in it. The cross product that proves this now counts the marked

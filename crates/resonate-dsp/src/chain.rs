@@ -2,7 +2,7 @@ use std::{mem, sync::Arc};
 
 use resonate_core::{AppliedGain, StreamSpec, Volume, eq::Profile};
 
-use crate::{Error, ProcessCount, Processor, Result};
+use crate::{Easing, Error, ProcessCount, Processor, Result};
 
 pub struct Chain {
     stages: Vec<Box<dyn Processor>>,
@@ -70,6 +70,12 @@ impl Chain {
     pub fn ramp_gain_from(&mut self, amplitude: f32) {
         for stage in &mut self.stages {
             stage.ramp_gain_from(amplitude);
+        }
+    }
+
+    pub fn ease_equalisation(&mut self, easing: Easing) {
+        for stage in &mut self.stages {
+            stage.ease_equalisation(easing);
         }
     }
 

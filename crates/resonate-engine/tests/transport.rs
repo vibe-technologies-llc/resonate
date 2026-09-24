@@ -3238,6 +3238,92 @@ fn the_first_band_reshapes_the_chain_in_place_and_switching_off_puts_it_back() -
 }
 
 #[test]
+fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Result<()> {
+    let tree = Tree::new();
+    let level = 16_000_i16;
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * 2));
+    let halved = Arc::new(Equalisation {
+        enabled: true,
+        bound: BTreeMap::new(),
+        fallback: Some(Arc::new(
+            Profile::new(
+                Preamp::from_decibels(-6.0).expect("in range"),
+                vec![Band::new(
+                    BandKind::Peaking,
+                    Frequency::from_hertz(1_000.0).expect("in range"),
+                    BandGain::from_decibels(3.0).expect("in range"),
+                    Q::from_units(1.0).expect("in range"),
+                )],
+            )
+            .expect("one band"),
+        )),
+    });
+    let frame = frame_bytes(SampleFormat::S16);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(2_048),
+        "the steady level to play",
+    );
+
+    player
+        .request(Command::SetEqualisation(halved))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(24_000),
+        "the equaliser to take hold",
+    );
+    player
+        .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(64_000),
+        "the equaliser to let go",
+    );
+
+    let played = graph.lock().played.clone();
+    let left: Vec<i32> = played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|frame| i32::from(i16::from_le_bytes([frame[0], frame[1]])))
+        .collect();
+    let largest_step = left
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .max()
+        .unwrap_or_default();
+    let halfway = i32::from(level) / 2;
+    assert!(
+        left.iter().any(|sample| (sample - halfway).abs() < 64),
+        "the equaliser never took the level down to half"
+    );
+    assert_eq!(left.first().copied(), Some(i32::from(level)));
+    assert_eq!(left.last().copied(), Some(i32::from(level)));
+    assert!(
+        largest_step < 64,
+        "the level stepped by {largest_step} where the equaliser came and went"
+    );
+    Ok(())
+}
+
+#[test]
 fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

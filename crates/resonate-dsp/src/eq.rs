@@ -1,4 +1,4 @@
-use std::{iter, num::NonZeroUsize, sync::Arc};
+use std::{iter, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use resonate_core::{
     SampleRate, StreamSpec,
@@ -8,6 +8,92 @@ use resonate_core::{
 use crate::{Error, ProcessCount, Processor, Result, fused::multiply_add};
 
 const DENORMAL_FLOOR: f64 = 1e-30;
+const EASED_OVER: Duration = Duration::from_millis(40);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Easing {
+    Entering,
+    Returning,
+    Leaving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Blend {
+    wet_for: usize,
+    over: NonZeroUsize,
+    toward_wet: bool,
+}
+
+impl Blend {
+    const fn settled_wet() -> Self {
+        Self {
+            wet_for: 1,
+            over: NonZeroUsize::MIN,
+            toward_wet: true,
+        }
+    }
+
+    fn over(&mut self, over: NonZeroUsize) {
+        let was_wet = self.wet_for == self.over.get();
+        self.over = over;
+        self.wet_for = if was_wet {
+            over.get()
+        } else {
+            self.wet_for.min(over.get())
+        };
+    }
+
+    fn ease(&mut self, easing: Easing) {
+        match easing {
+            Easing::Entering => {
+                self.wet_for = 0;
+                self.toward_wet = true;
+            }
+            Easing::Returning => self.toward_wet = true,
+            Easing::Leaving => self.toward_wet = false,
+        }
+    }
+
+    const fn is_settled_wet(&self) -> bool {
+        self.toward_wet && self.wet_for == self.over.get()
+    }
+
+    const fn is_moving(&self) -> bool {
+        if self.toward_wet {
+            self.wet_for < self.over.get()
+        } else {
+            self.wet_for > 0
+        }
+    }
+
+    fn settle(&mut self) {
+        self.wet_for = if self.toward_wet { self.over.get() } else { 0 };
+    }
+
+    fn mixed(&mut self, dry: &[f64], wet: &mut [f64], channels: usize) {
+        let over = self.over.get();
+        for (dry, wet) in dry
+            .chunks_exact(channels)
+            .zip(wet.chunks_exact_mut(channels))
+        {
+            match self.wet_for {
+                0 => wet.copy_from_slice(dry),
+                all if all == over => {}
+                some => {
+                    let weight = some as f64 / over as f64;
+                    for (dry, wet) in dry.iter().zip(wet.iter_mut()) {
+                        *wet = dry + (*wet - dry) * weight;
+                    }
+                }
+            }
+            self.wet_for = if self.toward_wet {
+                (self.wet_for + 1).min(over)
+            } else {
+                self.wet_for.saturating_sub(1)
+            };
+        }
+    }
+}
 
 fn usable(value: f64) -> f64 {
     let magnitude = value.abs();
@@ -265,6 +351,11 @@ impl Piece<'_> {
     }
 }
 
+fn eased_over(rate: SampleRate) -> NonZeroUsize {
+    let frames = (EASED_OVER.as_secs_f64() * f64::from(rate.hz())).round() as usize;
+    NonZeroUsize::new(frames).unwrap_or(NonZeroUsize::MIN)
+}
+
 pub struct Equaliser {
     profile: Arc<Profile>,
     rate: SampleRate,
@@ -275,6 +366,7 @@ pub struct Equaliser {
     state: Vec<Section>,
     frames_a_piece: NonZeroUsize,
     widened: Widened,
+    blend: Blend,
 }
 
 impl Equaliser {
@@ -289,7 +381,9 @@ impl Equaliser {
             state: Vec::new(),
             frames_a_piece: NonZeroUsize::MIN,
             widened: Widened::holding(0),
+            blend: Blend::settled_wet(),
         };
+        stage.blend.over(eased_over(rate));
         stage.take_the_profile();
         stage
     }
@@ -370,6 +464,7 @@ impl Processor for Equaliser {
 
     fn reset(&mut self) {
         self.state.fill(Section::default());
+        self.blend.settle();
     }
 
     fn latency_frames(&self) -> f64 {
@@ -378,6 +473,14 @@ impl Processor for Equaliser {
 
     fn is_transparent(&self) -> bool {
         self.profile.is_transparent()
+    }
+
+    fn is_ramping(&self) -> bool {
+        self.blend.is_moving()
+    }
+
+    fn ease_equalisation(&mut self, easing: Easing) {
+        self.blend.ease(easing);
     }
 
     fn set_equalisation(&mut self, profile: &Arc<Profile>) {
@@ -439,6 +542,14 @@ impl Processor for Equaliser {
                 state = more_kept;
                 widened = more_room;
                 coefficients = theirs;
+            }
+            if !self.blend.is_settled_wet() {
+                let reached = whole * channels;
+                self.blend.mixed(
+                    taken.get(..reached).unwrap_or_default(),
+                    piece.made.get_mut(..reached).unwrap_or_default(),
+                    channels,
+                );
             }
         }
 
@@ -518,6 +629,128 @@ mod tests {
             }
         }
         20.0 * highest.log10()
+    }
+
+    fn loud_and_attenuated() -> Arc<Profile> {
+        Arc::new(
+            Profile::new(
+                Preamp::from_decibels(-6.0).expect("in range"),
+                vec![band(BandKind::Peaking, 1_000.0, 6.0, 1.0)],
+            )
+            .expect("a profile in range"),
+        )
+    }
+
+    fn played(stage: &mut Equaliser, rate: SampleRate, blocks: usize) -> (Vec<f64>, Vec<f64>) {
+        played_from(stage, rate, 0, blocks)
+    }
+
+    fn played_from(
+        stage: &mut Equaliser,
+        rate: SampleRate,
+        from: usize,
+        blocks: usize,
+    ) -> (Vec<f64>, Vec<f64>) {
+        let mut dry = Vec::new();
+        let mut wet = Vec::new();
+        let mut output = vec![0.0; BLOCK * 2];
+        for block in 0..blocks {
+            let input = tone(997.0, rate, from + block * BLOCK, BLOCK);
+            stage.process(&input, &mut output);
+            dry.extend_from_slice(&input);
+            wet.extend_from_slice(&output);
+        }
+        (dry, wet)
+    }
+
+    fn largest_step(samples: &[f64]) -> f64 {
+        let frames = samples.as_chunks::<2>().0;
+        frames
+            .windows(2)
+            .map(|pair| (pair[1][0] - pair[0][0]).abs())
+            .fold(0.0_f64, f64::max)
+    }
+
+    #[test]
+    fn a_stage_entering_a_running_stream_starts_dry_and_is_wholly_wet_once_eased_in() {
+        let rate = SampleRate::HZ_48000;
+        let wanted = loud_and_attenuated();
+        let over = eased_over(rate).get();
+        let blocks = over / BLOCK + 2;
+        let at_the_crest = 12;
+        let before = tone(997.0, rate, at_the_crest - 1, 1);
+        let mut plain = prepared(&wanted, rate);
+        let mut entering = prepared(&wanted, rate);
+        entering.ease_equalisation(Easing::Entering);
+
+        assert!(entering.is_ramping());
+        let (dry, eased) = played_from(&mut entering, rate, at_the_crest, blocks);
+        let (_, wet) = played_from(&mut plain, rate, at_the_crest, blocks);
+
+        assert!(!entering.is_ramping(), "the easing outlived its length");
+        assert_eq!(eased[..2], dry[..2], "the first frame was not the dry one");
+        assert_eq!(eased[over * 2..], wet[over * 2..]);
+        let heard = largest_step(&[before.as_slice(), &dry].concat());
+        let eased_in = largest_step(&[before.as_slice(), &eased].concat());
+        let switched = largest_step(&[before.as_slice(), &wet].concat());
+        assert!(
+            eased_in <= heard * 1.05,
+            "an eased entrance stepped {eased_in} where the tone steps {heard}"
+        );
+        assert!(
+            switched > heard * 2.0,
+            "a stage switched in at once stepped only {switched} where the tone steps {heard}"
+        );
+    }
+
+    #[test]
+    fn a_stage_leaving_eases_out_to_the_dry_signal_and_stays_there() {
+        let rate = SampleRate::HZ_44100;
+        let over = eased_over(rate).get();
+        let mut stage = prepared(&loud_and_attenuated(), rate);
+        played(&mut stage, rate, 4);
+
+        stage.ease_equalisation(Easing::Leaving);
+        assert!(stage.is_ramping());
+        let (dry, eased) = played(&mut stage, rate, over / BLOCK + 2);
+
+        assert!(!stage.is_ramping(), "the easing outlived its length");
+        assert_ne!(eased[..2], dry[..2]);
+        assert_eq!(eased[over * 2..], dry[over * 2..]);
+    }
+
+    #[test]
+    fn a_stage_asked_back_while_leaving_returns_to_the_wet_signal() {
+        let rate = SampleRate::HZ_44100;
+        let over = eased_over(rate).get();
+        let wanted = loud_and_attenuated();
+        let mut plain = prepared(&wanted, rate);
+        let mut stage = prepared(&wanted, rate);
+        played(&mut plain, rate, 1);
+        played(&mut stage, rate, 1);
+
+        stage.ease_equalisation(Easing::Leaving);
+        played(&mut plain, rate, 1);
+        played(&mut stage, rate, 1);
+        stage.ease_equalisation(Easing::Returning);
+        let blocks = over / BLOCK + 2;
+        let (_, wet) = played(&mut plain, rate, blocks);
+        let (_, returned) = played(&mut stage, rate, blocks);
+
+        assert!(!stage.is_ramping());
+        assert_eq!(returned[over * 2..], wet[over * 2..]);
+    }
+
+    #[test]
+    fn a_settled_stage_asked_to_return_is_left_alone() {
+        let rate = SampleRate::HZ_44100;
+        let wanted = loud_and_attenuated();
+        let mut plain = prepared(&wanted, rate);
+        let mut stage = prepared(&wanted, rate);
+        stage.ease_equalisation(Easing::Returning);
+
+        assert!(!stage.is_ramping());
+        assert_eq!(played(&mut stage, rate, 2), played(&mut plain, rate, 2));
     }
 
     #[test]

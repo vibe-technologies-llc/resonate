@@ -13,7 +13,7 @@ mod restore;
 pub use crate::{
     chain::{Chain, ChainBuilder},
     dither::{Dither, DitherKind, NoiseShaping},
-    eq::Equaliser,
+    eq::{Easing, Equaliser},
     error::{Error, RatioLimits, Result},
     gain::{GainConfig, GainStage, ReplayGainMode},
     peak::{TruePeak, TruePeakMeter},
@@ -68,6 +68,8 @@ pub trait Processor: Send {
     fn is_ramping(&self) -> bool {
         false
     }
+
+    fn ease_equalisation(&mut self, _easing: Easing) {}
 
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount;
 

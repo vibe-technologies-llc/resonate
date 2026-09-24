@@ -91,10 +91,6 @@
 - A downmix folds by position and never by measurement: `Remix` reads `ChannelLayout::positions`, so
   a `Discrete(n)` source is truncated one channel for one rather than folded, and nothing reads the
   `DIALNORM` or downmix coefficients a broadcast stream declares for itself
-- The equaliser switched on or off in place changes the response between one block and the next:
-  the new chain's biquads start from a silent history and nothing crossfades the two responses, so
-  a correction switched on under a loud passage opens with the transient of a filter meeting a
-  signal already running. Nothing has measured how much of that is heard
 
 ## Analysis
 - The verdict's thresholds were measured on one library — a few dozen FLACs and a handful of LAME
