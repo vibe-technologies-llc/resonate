@@ -974,13 +974,10 @@ impl LibraryModel {
         );
     }
 
-    pub fn hide_track(&mut self, id: TrackId, cx: &mut Context<Self>) {
+    pub fn hide_track(&mut self, id: TrackId, hidden: bool, cx: &mut Context<Self>) {
         self.edited(
             Wanted::Everything,
-            move |library| {
-                library.hide_track(id)?;
-                Ok(None)
-            },
+            move |library| library.hide_track(id, hidden).map(|_| None),
             cx,
         );
     }

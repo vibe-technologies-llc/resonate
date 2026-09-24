@@ -35,6 +35,7 @@ pub struct Track {
     pub span: Option<FrameSpan>,
     pub favourite: Option<SystemTime>,
     pub genre: Option<String>,
+    pub hidden: bool,
     pub alternatives: u32,
 }
 

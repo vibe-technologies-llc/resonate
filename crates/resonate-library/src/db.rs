@@ -75,7 +75,11 @@ const A_FAVOURITE_ARTIST: &str = "r.favourite IS NOT NULL";
 
 const THE_FAVOURITES_SEARCH: &str = "is:favourite";
 
-const THE_BEST_COPY: &str = "+tracks.alternative_of IS NULL AND tracks.hidden = 0";
+const THE_BEST_COPY: &str = "+tracks.alternative_of IS NULL";
+
+const A_SHOWN_TRACK: &str = "tracks.hidden = 0";
+
+const A_HIDDEN_TRACK: &str = "tracks.hidden = 1";
 
 const HOLDS_A_BEST_COPY: &str = "EXISTS (SELECT 1 FROM tracks t
       WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)";
@@ -90,7 +94,7 @@ pub(crate) const TRACK_COLUMNS: &str =
      tracks.sample_format, tracks.codec, tracks.rg_track_gain, tracks.rg_track_peak,
      tracks.rg_album_gain, tracks.rg_album_peak, tracks.file_size, tracks.modified, tracks.added,
      tracks.plays, tracks.played, tracks.span_start, tracks.span_frames, tracks.artist_id,
-     tracks.favourite, tracks.genre,
+     tracks.favourite, tracks.genre, tracks.hidden,
      (SELECT count(*) FROM tracks x WHERE x.alternative_of = tracks.id)";
 
 pub(crate) const BESIDE_A_TRACK: usize = listed(TRACK_COLUMNS);
@@ -760,13 +764,12 @@ impl Library {
         tracks(&self.inner, query, Some(THE_FAVOURITES_SEARCH))
     }
 
-    /// Hides a track from library listings without removing its row or audio file.
-    pub fn hide_track(&self, id: TrackId) -> Result<bool> {
+    pub fn hide_track(&self, id: TrackId, hidden: bool) -> Result<bool> {
         self.inner.write(|transaction| {
             transaction
                 .execute(
-                    "UPDATE tracks SET hidden = 1 WHERE id = ?1 AND hidden = 0",
-                    [id.get() as i64],
+                    "UPDATE tracks SET hidden = ?2 WHERE id = ?1 AND hidden != ?2",
+                    (id.get() as i64, hidden),
                 )
                 .map(|changed| changed > 0)
                 .map_err(|source| Error::store(StoreOp::Update, source))
@@ -2626,6 +2629,7 @@ pub(crate) struct Narrowing {
 #[derive(Default)]
 struct Matching {
     ranked: bool,
+    insists_on_hidden: bool,
     join: &'static str,
     filters: Vec<String>,
     binds: Vec<Value>,
@@ -2835,6 +2839,9 @@ fn narrowed_onto(text: Option<&str>, column: &str, onto: &str) -> Option<Scoped>
 fn scoped(query: &TrackQuery, narrowing: Option<&str>) -> Option<Scoped> {
     let mut matching = matching(&[query.text.as_deref(), narrowing])?;
     matching.filters.push(THE_BEST_COPY.to_owned());
+    if !matching.insists_on_hidden {
+        matching.filters.push(A_SHOWN_TRACK.to_owned());
+    }
 
     if let Some(album) = query.album {
         matching.filters.push("tracks.album_id = ?".to_owned());
@@ -2876,7 +2883,13 @@ fn matching(texts: &[Option<&str>]) -> Option<Matching> {
         return None;
     }
 
-    let mut matching = Matching::default();
+    let mut matching = Matching {
+        insists_on_hidden: asking
+            .iter()
+            .flat_map(|search| &search.clauses)
+            .any(|clause| clause.insists_on(Shape::Hidden)),
+        ..Matching::default()
+    };
     if let Some(query) = indexed {
         matching.ranked = true;
         matching.join = INDEX_JOIN;
@@ -3069,6 +3082,7 @@ fn shaped(shape: Shape) -> String {
             depths(Compare::Above, CD_SAMPLE_DEPTH)
         ),
         Shape::Favourite => A_FAVOURITE_TRACK.to_owned(),
+        Shape::Hidden => A_HIDDEN_TRACK.to_owned(),
         Shape::Fake => studied_as("verdict", Verdict::Fake.as_str()),
         Shape::Suspect => studied_as("verdict", Verdict::Suspect.as_str()),
         Shape::Misnamed => studied_as("agreement", Agreement::Disagrees.as_str()),
@@ -3635,6 +3649,7 @@ pub(crate) struct RawTrack {
     artist_id: Option<i64>,
     favourite: Option<i64>,
     genre: Option<String>,
+    hidden: bool,
     alternatives: u32,
 }
 
@@ -3674,7 +3689,8 @@ impl RawTrack {
             artist_id: row.get(23)?,
             favourite: row.get(24)?,
             genre: row.get(25)?,
-            alternatives: row.get(26)?,
+            hidden: row.get(26)?,
+            alternatives: row.get(27)?,
         })
     }
 
@@ -3718,6 +3734,7 @@ impl RawTrack {
             span: store::span(self.span_start, self.span_frames),
             favourite: self.favourite.map(store::from_nanos),
             genre: self.genre,
+            hidden: self.hidden,
             alternatives: self.alternatives,
         })
     }

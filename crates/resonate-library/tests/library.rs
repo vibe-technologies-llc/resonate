@@ -5638,9 +5638,9 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
     let removed = &rows[1];
     library.favour(Favoured::Track(removed.id), true)?;
 
-    assert!(library.hide_track(removed.id)?);
+    assert!(library.hide_track(removed.id, true)?);
     assert!(
-        !library.hide_track(removed.id)?,
+        !library.hide_track(removed.id, true)?,
         "hiding twice should be harmless"
     );
     assert!(tree.path().join("Meddle.wav").exists());
@@ -5662,6 +5662,47 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
     assert!(tree.path().join("Meddle.wav").exists());
     assert!(library.track(removed.id)?.is_some());
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_hidden_track_is_found_by_asking_for_it_and_shown_again() -> Result<()> {
+    let (_, library) = scanned_sheet();
+    let rows = library.tracks(&TrackQuery::default())?;
+    let hidden = &rows[1];
+    library.hide_track(hidden.id, true)?;
+
+    let asked = library.tracks(&TrackQuery {
+        text: Some("is:hidden".to_owned()),
+        ..TrackQuery::default()
+    })?;
+    assert_eq!(
+        asked
+            .iter()
+            .map(|track| (track.id, track.hidden))
+            .collect::<Vec<_>>(),
+        [(hidden.id, true)]
+    );
+    assert_eq!(
+        library
+            .tracks(&TrackQuery {
+                text: Some("-is:hidden".to_owned()),
+                ..TrackQuery::default()
+            })?
+            .len(),
+        2
+    );
+
+    assert!(library.hide_track(hidden.id, false)?);
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 3);
+    assert!(
+        library
+            .tracks(&TrackQuery {
+                text: Some("is:hidden".to_owned()),
+                ..TrackQuery::default()
+            })?
+            .is_empty()
+    );
     Ok(())
 }
 

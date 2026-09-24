@@ -477,6 +477,7 @@ mod tests {
             span: None,
             favourite: None,
             genre: None,
+            hidden: false,
             alternatives: 0,
         }
     }

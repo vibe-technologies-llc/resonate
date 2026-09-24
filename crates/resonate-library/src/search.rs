@@ -207,13 +207,14 @@ pub enum Shape {
     Multichannel,
     HiRes,
     Favourite,
+    Hidden,
     Fake,
     Suspect,
     Misnamed,
 }
 
 impl Shape {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Lossless,
         Self::Lossy,
         Self::Mono,
@@ -221,6 +222,7 @@ impl Shape {
         Self::Multichannel,
         Self::HiRes,
         Self::Favourite,
+        Self::Hidden,
         Self::Fake,
         Self::Suspect,
         Self::Misnamed,
@@ -235,6 +237,7 @@ impl Shape {
             Self::Multichannel => "multichannel",
             Self::HiRes => "hires",
             Self::Favourite => "favourite",
+            Self::Hidden => "hidden",
             Self::Fake => "fake",
             Self::Suspect => "suspect",
             Self::Misnamed => "misnamed",
@@ -450,6 +453,14 @@ impl Clause {
         };
 
         (!asked.denied).then_some(word)
+    }
+
+    pub fn insists_on(&self, shape: Shape) -> bool {
+        let [asked] = self.any.as_slice() else {
+            return false;
+        };
+
+        !asked.denied && asked.all.contains(&Condition::Term(Term::Shape(shape)))
     }
 }
 
@@ -1254,6 +1265,7 @@ mod tests {
             "is:lossless",
             "is:multichannel",
             "is:favourite",
+            "is:hidden",
         ] {
             let read = terms(text);
             assert_eq!(read.len(), 1, "{text} read as {read:?}");

@@ -413,6 +413,17 @@ through `Player::media` like any other unscanned row.
   `+N` beside the title, and `Library::alternatives_of` is what the row's menu offers to play
   instead. A best copy that goes puts `ON DELETE SET NULL` on the rows under it and the pass at the
   end of the scan crowns the next.
+- **A hidden track is kept and only stepped past.** `tracks.hidden` is the second step in
+  `MIGRATIONS`, and `Library::hide_track` sets it either way and answers whether it moved. The row,
+  its file, its plays, its playlists and its favourite are all kept, and a scan never touches the
+  column, so a hidden track stays hidden however often its root is read again. `scoped` adds
+  `tracks.hidden = 0` beside the best-copy term, and the album and artist counts and
+  `HOLDS_A_BEST_COPY` weigh it the same way, so a hidden row leaves the listings, the counts and an
+  album holding nothing else. `is:hidden` is a `Shape`, and a search that *insists* on it — a
+  clause of that one alternative, not denied — lifts the visibility term, which is the one way a
+  hidden row is listed again; `Clause::insists_on` is that reading, and `-is:hidden` or an
+  alternative beside it lifts nothing. `Track::hidden` is what the row's menu reads to offer *Hide
+  from library* or *Show in library*.
 - **A track names its album every way it can, and joins the album the first of those names finds.**
   `grouping_keys` answers a *run* of keys in precedence order rather than one. A MusicBrainz
   release id is on its own and nothing else is written beside it, so two releases sharing a title

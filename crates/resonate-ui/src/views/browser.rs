@@ -869,6 +869,12 @@ impl RootView {
                     return Menu::at(at);
                 };
                 let track_id = track.id;
+                let hidden = track.hidden;
+                let (icon, hiding) = if hidden {
+                    (Icon::Undo, "Show in library")
+                } else {
+                    (Icon::Discard, "Hide from library")
+                };
                 let favourite = this
                     .library
                     .read(cx)
@@ -891,9 +897,9 @@ impl RootView {
                     .offers_the_file(track.location.clone())
                     .shares(track.id)
                     .apart()
-                    .does(Icon::Discard, "Remove from library", move |this, _, cx| {
+                    .does(icon, hiding, move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
-                            library.hide_track(track_id, cx);
+                            library.hide_track(track_id, !hidden, cx);
                         });
                     })
             },
