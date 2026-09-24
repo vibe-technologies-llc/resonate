@@ -71,9 +71,10 @@
   so a boost with no peak tag still leans on the per-sample limiter until the study lands, and the
   guard catches only what the chain processes: a bit-perfect or repacked stream of a file that is
   itself over full scale reaches the device as the file has it
-- The true peak is read at eight times the rate through a 32-tap interpolator, which under-reads a
-  tone at three quarters of Nyquist by up to 0.04 dB; nothing oversamples further, so an over that
-  small can still pass the guard's ceiling
+- The true peak is read at eight times the rate through a 48-tap interpolator that is flat to
+  85 % of Nyquist but under-reads a tone at 90 % by 0.06 dB, at 92 % by 0.33 dB and at 95 % by
+  2 dB, so an over carried by the top tenth of the band — above 21.6 kHz at 48 kHz — can still
+  pass the guard's ceiling by that much
 - Lossy restoration's constants — the droop shelves, the hole depths, the extension's slope — were
   tuned on a handful of MP3s and synthetic walls; no AAC or Vorbis file was weighed, and nothing
   listens for whether the rebuilt band is heard as air or as hiss. A wall found as a track plays

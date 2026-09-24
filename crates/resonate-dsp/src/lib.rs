@@ -2,6 +2,7 @@ mod chain;
 mod dither;
 mod eq;
 mod error;
+mod fused;
 mod gain;
 mod peak;
 mod phase;

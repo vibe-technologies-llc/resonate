@@ -1,18 +1,19 @@
-use std::num::NonZeroUsize;
+use std::{collections::VecDeque, num::NonZeroUsize};
 
 use resonate_core::StreamSpec;
 
 use crate::{
     ProcessCount, Processor, Result,
+    fused::{larger, multiply_add},
     resample::{SincParams, WindowedSinc},
 };
 
 const OVERSAMPLED: usize = 8;
 const INTERPOLATOR: SincParams = SincParams {
-    half_taps: 16,
+    half_taps: 24,
     phases: OVERSAMPLED as u32,
-    cutoff: 0.95,
-    kaiser_beta: 9.0,
+    cutoff: 0.985,
+    kaiser_beta: 8.0,
 };
 const REACH: usize = INTERPOLATOR.half_taps as usize;
 const TAPS: usize = 2 * REACH;
@@ -22,11 +23,14 @@ const RELEASE_SECONDS: f64 = 0.08;
 const CEILING_DECIBELS: f64 = -0.1;
 const DECIBELS_PER_DECADE: f64 = 20.0;
 const BACK_AT_UNITY_WITHIN: f64 = 1.0 / 4_294_967_296.0;
+const ROUNDING_MARGIN: f64 = 1.0 - 1e-9;
 
 struct Oversampler {
     weights: [[f64; OVERSAMPLED]; TAPS],
+    gain_at_most: f64,
     held: Vec<f64>,
     newest: usize,
+    loud_for: usize,
     channels: usize,
 }
 
@@ -53,20 +57,57 @@ impl Oversampler {
                 }
             }
         }
+        let gain_at_most = (0..OVERSAMPLED)
+            .map(|phase| {
+                weights
+                    .iter()
+                    .filter_map(|lanes| lanes.get(phase))
+                    .map(|weight| weight.abs())
+                    .sum::<f64>()
+            })
+            .fold(0.0, f64::max);
         Self {
             weights,
+            gain_at_most,
             held: vec![0.0; channels * HELD_TWICE],
             newest: 0,
+            loud_for: 0,
             channels,
         }
+    }
+
+    fn quiet_below(&self, ceiling: f64) -> f64 {
+        ceiling / self.gain_at_most * ROUNDING_MARGIN
     }
 
     fn clear(&mut self) {
         self.held.fill(0.0);
         self.newest = 0;
+        self.loud_for = 0;
     }
 
     fn loudest_after(&mut self, frame: &[f64]) -> f64 {
+        self.hold(frame);
+        let loudest = self.read();
+        self.advance();
+        loudest
+    }
+
+    fn loudest_that_could_pass(&mut self, frame: &[f64], quiet_below: f64) -> f64 {
+        if self.hold(frame) > quiet_below {
+            self.loud_for = TAPS;
+        }
+        let loudest = if self.loud_for == 0 {
+            0.0
+        } else {
+            self.loud_for -= 1;
+            self.read()
+        };
+        self.advance();
+        loudest
+    }
+
+    fn hold(&mut self, frame: &[f64]) -> f64 {
         let slot = self.newest;
         let mut loudest: f64 = 0.0;
         for (channel, sample) in frame.iter().enumerate().take(self.channels) {
@@ -76,22 +117,63 @@ impl Oversampler {
                     *held = *sample;
                 }
             }
-            let window = self
-                .held
-                .get(plane + slot + 1..plane + slot + 1 + TAPS)
-                .unwrap_or_default();
-            let mut phases = [0.0; OVERSAMPLED];
-            for (lanes, sample) in self.weights.iter().zip(window) {
-                for (phase, weight) in phases.iter_mut().zip(lanes) {
-                    *phase += weight * sample;
-                }
+            loudest = loudest.max(sample.abs());
+        }
+        loudest
+    }
+
+    fn read(&self) -> f64 {
+        let mut loudest = [0.0; OVERSAMPLED];
+        let mut channel = 0;
+        while channel + 2 <= self.channels {
+            let (left, right) = self.phases_of_a_pair(channel);
+            for ((loudest, left), right) in loudest.iter_mut().zip(left).zip(right) {
+                *loudest = larger(*loudest, larger(left.abs(), right.abs()));
             }
-            for phase in phases {
-                loudest = loudest.max(phase.abs());
+            channel += 2;
+        }
+        if channel < self.channels {
+            for (loudest, phase) in loudest.iter_mut().zip(self.phases_of(channel)) {
+                *loudest = larger(*loudest, phase.abs());
             }
         }
-        self.newest = if slot + 1 == TAPS { 0 } else { slot + 1 };
-        loudest
+        loudest.into_iter().fold(0.0, larger)
+    }
+
+    fn window_of(&self, channel: usize) -> &[f64] {
+        let from = channel * HELD_TWICE + self.newest + 1;
+        self.held.get(from..from + TAPS).unwrap_or_default()
+    }
+
+    fn phases_of(&self, channel: usize) -> [f64; OVERSAMPLED] {
+        let mut phases = [0.0; OVERSAMPLED];
+        for (lanes, sample) in self.weights.iter().zip(self.window_of(channel)) {
+            for (phase, weight) in phases.iter_mut().zip(lanes) {
+                *phase = multiply_add(*weight, *sample, *phase);
+            }
+        }
+        phases
+    }
+
+    fn phases_of_a_pair(&self, first: usize) -> ([f64; OVERSAMPLED], [f64; OVERSAMPLED]) {
+        let mut left = [0.0; OVERSAMPLED];
+        let mut right = [0.0; OVERSAMPLED];
+        let pairs = self.window_of(first).iter().zip(self.window_of(first + 1));
+        for (lanes, (sample, beside)) in self.weights.iter().zip(pairs) {
+            for ((left, right), weight) in left.iter_mut().zip(right.iter_mut()).zip(lanes) {
+                *left = multiply_add(*weight, *sample, *left);
+                *right = multiply_add(*weight, *beside, *right);
+            }
+        }
+        (left, right)
+    }
+
+    fn advance(&mut self) {
+        self.newest = if self.newest + 1 == TAPS {
+            0
+        } else {
+            self.newest + 1
+        };
     }
 }
 
@@ -133,39 +215,50 @@ impl TruePeakMeter {
 
 pub struct TruePeak {
     ceiling: f64,
+    quiet_below: f64,
     channels: usize,
     oversampler: Option<Oversampler>,
     lookahead: usize,
     delay: usize,
     release: f64,
     delayed: Vec<f64>,
-    written: usize,
+    write_at: usize,
     taken: u64,
-    required: Vec<f64>,
+    lows: VecDeque<Low>,
     smallest: Vec<f64>,
-    required_under: usize,
     smallest_under: usize,
+    smallest_sum: f64,
+    per_window: f64,
     ring_at: usize,
     applied: f64,
     silence: Vec<f64>,
 }
 
+#[derive(Clone, Copy)]
+struct Low {
+    at: u64,
+    wanted: f64,
+}
+
 impl TruePeak {
     pub fn new() -> Self {
+        let ceiling = 10_f64.powf(CEILING_DECIBELS / DECIBELS_PER_DECADE);
         Self {
-            ceiling: 10_f64.powf(CEILING_DECIBELS / DECIBELS_PER_DECADE),
+            ceiling,
+            quiet_below: 0.0,
             channels: 1,
             oversampler: None,
             lookahead: 0,
             delay: 0,
             release: 1.0,
             delayed: Vec::new(),
-            written: 0,
+            write_at: 0,
             taken: 0,
-            required: Vec::new(),
+            lows: VecDeque::new(),
             smallest: Vec::new(),
-            required_under: 0,
             smallest_under: 0,
+            smallest_sum: 0.0,
+            per_window: 1.0,
             ring_at: 0,
             applied: 1.0,
             silence: Vec::new(),
@@ -176,28 +269,15 @@ impl TruePeak {
         let Some(oversampler) = self.oversampler.as_mut() else {
             return false;
         };
-        let loudest = oversampler.loudest_after(frame);
+        let loudest = oversampler.loudest_that_could_pass(frame, self.quiet_below);
         let wanted = if loudest > self.ceiling {
             self.ceiling / loudest
         } else {
             1.0
         };
 
-        let window = self.lookahead + 1;
-        let at = self.ring_at;
-        replace_counting(&mut self.required, at, wanted, &mut self.required_under);
-        let quietest = if self.required_under == 0 {
-            1.0
-        } else {
-            self.required.iter().copied().fold(1.0, f64::min)
-        };
-        replace_counting(&mut self.smallest, at, quietest, &mut self.smallest_under);
-        self.ring_at = if at + 1 == window { 0 } else { at + 1 };
-        let smoothed = if self.smallest_under == 0 {
-            1.0
-        } else {
-            self.smallest.iter().sum::<f64>() / window as f64
-        };
+        let quietest = self.quietest_with(wanted);
+        let smoothed = self.smoothed_with(quietest);
         let recovered = self.applied + (1.0 - self.applied) * self.release;
         let recovered = if 1.0 - recovered < BACK_AT_UNITY_WITHIN {
             1.0
@@ -207,15 +287,14 @@ impl TruePeak {
         self.applied = smoothed.min(recovered);
 
         let channels = self.channels;
-        let length = self.delay + 1;
-        let into = self.written % length;
-        let out = (self.written + 1) % length;
+        let into = self.write_at;
+        let out = if into == self.delay { 0 } else { into + 1 };
         if let Some(slot) = self.delayed.get_mut(into * channels..(into + 1) * channels) {
             for (held, sample) in slot.iter_mut().zip(frame) {
                 *held = *sample;
             }
         }
-        self.written += 1;
+        self.write_at = out;
         self.taken += 1;
         if self.taken <= self.delay as u64 {
             return false;
@@ -229,19 +308,44 @@ impl TruePeak {
         }
         true
     }
-}
 
-fn replace_counting(ring: &mut [f64], at: usize, value: f64, under_unity: &mut usize) {
-    let Some(slot) = ring.get_mut(at) else {
-        return;
-    };
-    if *slot < 1.0 {
-        *under_unity -= 1;
+    fn quietest_with(&mut self, wanted: f64) -> f64 {
+        let at = self.taken;
+        while self.lows.back().is_some_and(|low| low.wanted >= wanted) {
+            self.lows.pop_back();
+        }
+        self.lows.push_back(Low { at, wanted });
+        let window = self.lookahead as u64 + 1;
+        while self.lows.front().is_some_and(|low| low.at + window <= at) {
+            self.lows.pop_front();
+        }
+        self.lows.front().map_or(1.0, |low| low.wanted)
     }
-    if value < 1.0 {
-        *under_unity += 1;
+
+    fn smoothed_with(&mut self, quietest: f64) -> f64 {
+        let at = self.ring_at;
+        if let Some(slot) = self.smallest.get_mut(at) {
+            if *slot < 1.0 {
+                self.smallest_under -= 1;
+            }
+            if quietest < 1.0 {
+                self.smallest_under += 1;
+            }
+            self.smallest_sum += quietest - *slot;
+            *slot = quietest;
+        }
+        self.ring_at = if at == self.lookahead {
+            self.smallest_sum = self.smallest.iter().sum();
+            0
+        } else {
+            at + 1
+        };
+        if self.smallest_under == 0 {
+            1.0
+        } else {
+            self.smallest_sum * self.per_window
+        }
     }
-    *slot = value;
 }
 
 impl Default for TruePeak {
@@ -255,13 +359,16 @@ impl Processor for TruePeak {
         let channels = usize::from(spec.channel_count().get());
         let rate = f64::from(spec.rate.hz());
         self.channels = channels;
-        self.oversampler = Some(Oversampler::new(channels));
+        let oversampler = Oversampler::new(channels);
+        self.quiet_below = oversampler.quiet_below(self.ceiling);
+        self.oversampler = Some(oversampler);
         self.lookahead = (LOOKAHEAD_SECONDS * rate).ceil() as usize;
         self.delay = self.lookahead + REACH;
         self.release = 1.0 - (-1.0 / (RELEASE_SECONDS * rate)).exp();
         self.delayed = vec![0.0; (self.delay + 1) * channels];
-        self.required = vec![1.0; self.lookahead + 1];
+        self.lows = VecDeque::with_capacity(self.lookahead + 2);
         self.smallest = vec![1.0; self.lookahead + 1];
+        self.per_window = 1.0 / (self.lookahead + 1) as f64;
         self.silence = vec![0.0; channels];
         self.reset();
         Ok(max_frames_in)
@@ -276,11 +383,11 @@ impl Processor for TruePeak {
             oversampler.clear();
         }
         self.delayed.fill(0.0);
-        self.required.fill(1.0);
+        self.lows.clear();
         self.smallest.fill(1.0);
-        self.required_under = 0;
         self.smallest_under = 0;
-        self.written = 0;
+        self.smallest_sum = self.smallest.len() as f64;
+        self.write_at = 0;
         self.taken = 0;
         self.ring_at = 0;
         self.applied = 1.0;
@@ -350,6 +457,7 @@ mod tests {
 
     const BLOCK: usize = 512;
     const READS_WITHIN_DB: f64 = 0.05;
+    const NEAR_NYQUIST_READS_WITHIN_DB: f64 = 0.1;
     const FADE_FRAMES: usize = 1_200;
 
     fn decibels(ratio: f64) -> f64 {
@@ -431,6 +539,41 @@ mod tests {
     }
 
     #[test]
+    fn a_tone_at_nine_tenths_of_nyquist_is_read_at_its_peak() {
+        let high = faded(sine(21_600.0, 1.0, 0.0, 48_000));
+        let read = decibels(metered(&high));
+        assert!(
+            read.abs() < NEAR_NYQUIST_READS_WITHIN_DB,
+            "the meter read {read:.3} dBTP"
+        );
+    }
+
+    #[test]
+    fn the_detector_skips_only_frames_no_phase_could_carry_over_the_ceiling() {
+        let ceiling = 10_f64.powf(CEILING_DECIBELS / DECIBELS_PER_DECADE);
+        let mut exact = Oversampler::new(2);
+        let mut skipping = Oversampler::new(2);
+        let quiet_below = skipping.quiet_below(ceiling);
+        let quiet = sine(18_000.0, quiet_below, 0.4, 3_000);
+        let loud = sine(18_000.0, 1.3, 0.4, 3_000);
+        let mut skipped = 0;
+        let frames = [&quiet, &loud, &quiet]
+            .into_iter()
+            .flat_map(|run| run.as_chunks::<2>().0);
+        for frame in frames {
+            let read = exact.loudest_after(frame);
+            let guarded = skipping.loudest_that_could_pass(frame, quiet_below);
+            if guarded == 0.0 {
+                skipped += 1;
+                assert!(read <= ceiling, "a skipped frame read {read}");
+            } else {
+                assert_eq!(guarded, read);
+            }
+        }
+        assert!(skipped > 5_000, "only {skipped} frames were skipped");
+    }
+
+    #[test]
     fn a_stream_that_never_nears_full_scale_passes_through_exactly_and_whole() {
         let quiet = sine(997.0, 0.5, 0.3, 9_000);
         let (output, stage) = guarded(&quiet);
@@ -445,7 +588,7 @@ mod tests {
 
     #[test]
     fn a_stream_shorter_than_the_lookahead_is_flushed_whole() {
-        for frames in [1, 40, 50, 87, 88, 89] {
+        for frames in [1, 40, 50, 95, 96, 97] {
             let short = sine(997.0, 0.5, 0.3, frames);
             let (output, _) = guarded(&short);
             assert_eq!(output, short, "{frames} frames came back otherwise");

@@ -67,7 +67,7 @@ enrichment's studies.
   the tenth, on a stereo master and on a 5.1 mix whose LFE carries a whole channel. DR is the second-loudest 3 s block's peak over
   the RMS of the loudest fifth, averaged over the channels and rounded. The true peak is
   `resonate-dsp`'s `TruePeakMeter` over the same blocks: every channel read at eight times its rate
-  through a 32-tap windowed-sinc interpolator, all eight phases accumulated in one pass, and the
+  through a 48-tap windowed-sinc interpolator, all eight phases accumulated in one pass, and the
   loudest of them kept — the reading the engine's guard is built on, so the study and the playback
   cannot disagree about what an over is. It is `Loudness::true_peak` and
   `track_studies.true_peak`, and it is what `Library::hinting` hands the player — beside the
