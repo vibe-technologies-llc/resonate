@@ -36,6 +36,7 @@ resonate-pipewire.workspace = true
 resonate-providers.workspace = true
 resonate-ui = { workspace = true, optional = true }
 resonate-vault.workspace = true
+rustix.workspace = true
 signal-hook.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true

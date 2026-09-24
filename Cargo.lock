@@ -4907,6 +4907,7 @@ dependencies = [
  "resonate-providers",
  "resonate-ui",
  "resonate-vault",
+ "rustix 1.1.5",
  "signal-hook",
  "thiserror 2.0.21",
  "toml_edit 0.25.15+spec-1.1.0",

@@ -492,9 +492,6 @@
   rustc. Nothing here can fix it but a `[patch]` or a gpui that has moved on, so it is worth knowing
   about before a toolchain bump stops the build
 
-## Tooling
-- `resonate play` reads whole lines, so a key only lands on Enter and there is no live position
-  readout. Raw mode would need a terminal dependency the workspace does not carry
 
 ## Testing
 - Nothing covers `resonate-ui`'s panes; see the note under UI about driving them. What is tested is

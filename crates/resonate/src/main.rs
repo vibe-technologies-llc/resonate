@@ -15,6 +15,7 @@ mod mpris;
 mod online;
 mod playlists;
 mod providers;
+mod readout;
 #[cfg(feature = "ui")]
 mod settings;
 mod share;
@@ -31,7 +32,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     ffi::{OsStr, OsString},
-    io, mem,
+    io::{self, IsTerminal as _},
+    mem,
     num::NonZeroUsize,
     path::{self, Path, PathBuf},
     process::ExitCode,
@@ -76,7 +78,8 @@ use crate::{
     config::Config,
     error::{ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
-    input::Action,
+    input::{Action, Pressed},
+    readout::Readout,
     table::Table,
 };
 
@@ -1714,9 +1717,20 @@ fn play_queue(
     );
     let presenter = discord::start(&player, library.as_ref(), config);
 
-    println!("{}", input::HELP);
+    let keyed = input::KeyAtATime::where_a_terminal();
+    let help = if keyed.is_some() {
+        input::KEYS
+    } else {
+        input::HELP
+    };
+    let mut readout = Readout::over(keyed.is_some() && io::stdout().is_terminal());
+    println!("{help}");
     let events = player.events().clone();
-    let mut keys = input::lines();
+    let mut keys = if keyed.is_some() {
+        input::keys()
+    } else {
+        input::lines()
+    };
     let sampled = tick(HEARD_SAMPLE);
     let mut listening = Listening::default();
     let mut counted: Option<ListenId> = None;
@@ -1726,30 +1740,43 @@ fn play_queue(
         select! {
             recv(events) -> event => {
                 let Ok(event) = event else { break };
+                readout.clear();
                 if announce(event) {
                     break;
                 }
+                readout.draw(&player.state());
             }
             recv(sampled) -> _ => {
                 count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
                 if keeps {
                     keep_the_queue(&player, library.as_deref(), &mut keeping);
                 }
+                readout.draw(&player.state());
             }
-            recv(keys) -> line => {
-                let Ok(line) = line else {
+            recv(keys) -> pressed => {
+                let Ok(pressed) = pressed else {
                     keys = never();
                     continue;
                 };
-                match input::parse(&line) {
-                    Some(Action::Quit) => break,
-                    Some(action) => act(&player, action)?,
-                    None => eprintln!("unknown key {line:?}; ? for help"),
+                match pressed {
+                    Pressed::Acted(Action::Quit) => break,
+                    Pressed::Acted(action) => {
+                        readout.clear();
+                        act(&player, action, help)?;
+                    }
+                    Pressed::Typing(typed) => readout.typing(typed),
+                    Pressed::Unknown(line) => {
+                        readout.clear();
+                        eprintln!("unknown key {line:?}; ? for help");
+                    }
                 }
+                readout.draw(&player.state());
             }
             recv(quitting) -> _ => break,
         }
     }
+    readout.clear();
+    drop(keyed);
 
     count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
     if let Some(library) = library.as_deref() {
@@ -1833,7 +1860,7 @@ fn announce(event: Event) -> bool {
     false
 }
 
-fn act(player: &Player, action: Action) -> Result<()> {
+fn act(player: &Player, action: Action, help: &str) -> Result<()> {
     let state = player.state();
     let rate = state.current.map(|track| track.source.rate);
 
@@ -1865,7 +1892,7 @@ fn act(player: &Player, action: Action) -> Result<()> {
         }),
         Action::Sleep(wanted) => Command::SleepUntil(wanted.until()),
         Action::Help => {
-            println!("{}", input::HELP);
+            println!("{help}");
             return Ok(());
         }
         Action::Quit => return Ok(()),

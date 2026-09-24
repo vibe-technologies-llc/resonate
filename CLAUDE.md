@@ -803,6 +803,20 @@ a second after the signal rather than five. The `Player` reaches the thread as a
 call sites, and `Player::send` only pushes onto a channel, so it is safe from a signal handler's
 thread and answers `EngineStopped` where the engine has already gone.
 
+**`resonate play` takes a key at a time where it is typed at.** Where stdin is a terminal,
+`input::KeyAtATime` switches it out of canonical mode and echo through `rustix`'s safe `termios` —
+`rustix` was already in the tree under zbus and libspa, so the feature is the whole of the cost —
+keeps `ISIG` so an interrupt is still a signal, and puts the terminal back when it drops; the
+signal fallback's `process::exit` goes through `signals::leave`, which restores it first, because
+a wedged front end's exit runs no destructor. `input::keys` reads bytes: a letter acts the moment
+it is pressed, the arrows seek and turn the volume, and a digit or a `:` starts a line that is
+drawn in the readout and read through the same `parse` a piped line is, so `90` then enter seeks
+and `:z track` sets the timer. Where stdout is a terminal too, `readout::Readout` redraws one line
+— the transport's glyph, where the track is out of how long it runs, the volume, shuffle, repeat,
+the sleep timer and what is being typed — on every 500 ms sample and after every key, and clears
+it before anything else prints, so an event or a refusal is a line of its own above it. Piped
+input is read a line at a time as it always was, with no readout, which is what a script sends.
+
 **A headless pass stops at a file boundary on the first signal.** `resonate scan`, `enrich`,
 `poll`, `tag`, `organise` and `vault --import` each run through `until_told`, which puts
 `signals::cancel_when_told` over the pass for as long as it runs: the first `SIGINT` or `SIGTERM`
@@ -855,7 +869,8 @@ cargo run -- listen                   # records twelve seconds of what the deskt
                                       #   through Shazam, AudD or AcoustID; --seconds <n> listens
                                       #   longer or shorter and --microphones lists what there is
 cargo run -- play <files>             # plays a queue; each file is a path or a file:// URI, and
-                                      #   it reads transport keys on stdin (? for help)
+                                      #   it reads transport keys on stdin (? for help), a key at a
+                                      #   time under a live position line where stdin is a terminal
 cargo run -- queue <files>            # adds them to the player already on the session bus, at the
                                       #   end or, with --next, after the row being played; --play
                                       #   hears the first of them as it lands, --playlist <name>

@@ -62,6 +62,9 @@ paths:
 - `unicode-normalization` is `resonate-library`'s, and only `playlist::folded` reaches it: a
   playlist name is lowercased and then composed, so one letter has one spelling in the `folded`
   column whatever was typed. Its `std` feature is not in the default set.
+- `rustix` is the binary's, for `termios` alone — the feature that puts `resonate play`'s terminal
+  a key at a time with no `unsafe` — beside `std`. The crate was in the lockfile already, under
+  zbus and libspa, so what the dependency adds is the feature and not a crate.
 - `unicode-width` is what `Table` measures a column with, rather than `chars().count()`: a CJK name
   takes two terminal columns a character and a combining mark takes none, and neither is one `char`
   worth of room. It is not `unicode-segmentation`, which counts graphemes and would still put a

@@ -1,9 +1,11 @@
 use std::{
-    io::{self, BufRead as _},
+    io::{self, BufRead as _, Read as _},
     thread,
 };
 
-use crossbeam_channel::{Receiver, bounded};
+use crossbeam_channel::{Receiver, Sender, bounded};
+use parking_lot::Mutex;
+use rustix::termios::{self, LocalModes, OptionalActions, SpecialCodeIndex, Termios};
 
 use crate::sleep::{Sleep, WITHOUT_A_SPEC};
 
@@ -29,6 +31,67 @@ pub const HELP: &str = "\
   + [step]   louder 5%        - [step]  quieter    s  shuffle
   l          cycle repeat     x  stop         q  quit        ?  this help
   z [spec]   sleep in 30m, or z <mins> / z track / z queue / z off";
+
+pub const KEYS: &str = "\
+  space / p  play or pause    n  next track     b  previous track
+  f / →      forward 10s      r / ←  back 10s      <secs> enter  seek to
+  + / ↑      louder 5%        - / ↓  quieter       s  shuffle
+  l          cycle repeat     x  stop         q  quit        ?  these keys
+  z          sleep in 30m     :  type any line the piped form takes — :f 45, :z track";
+
+const ESCAPE: u8 = 0x1b;
+const INTRODUCER: u8 = b'[';
+const UP: u8 = b'A';
+const DOWN: u8 = b'B';
+const RIGHT: u8 = b'C';
+const LEFT: u8 = b'D';
+const RUBOUT: u8 = 0x7f;
+const BACKSPACE: u8 = 0x08;
+const TYPED: u8 = b':';
+
+static SAVED: Mutex<Option<Termios>> = Mutex::new(None);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pressed {
+    Acted(Action),
+    Typing(String),
+    Unknown(String),
+}
+
+pub struct KeyAtATime;
+
+impl KeyAtATime {
+    pub fn where_a_terminal() -> Option<Self> {
+        let stdin = io::stdin();
+        if !termios::isatty(&stdin) {
+            return None;
+        }
+        let saved = termios::tcgetattr(&stdin).ok()?;
+        let mut keyed = saved.clone();
+        keyed
+            .local_modes
+            .remove(LocalModes::ICANON | LocalModes::ECHO);
+        keyed.special_codes[SpecialCodeIndex::VMIN] = 1;
+        keyed.special_codes[SpecialCodeIndex::VTIME] = 0;
+        termios::tcsetattr(&stdin, OptionalActions::Now, &keyed).ok()?;
+        *SAVED.lock() = Some(saved);
+        Some(Self)
+    }
+}
+
+impl Drop for KeyAtATime {
+    fn drop(&mut self) {
+        restore_the_terminal();
+    }
+}
+
+pub fn restore_the_terminal() {
+    if let Some(saved) = SAVED.lock().take()
+        && let Err(error) = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved)
+    {
+        tracing::warn!(%error, "the terminal was left reading a key at a time");
+    }
+}
 
 const SEEK_STEP: i64 = 10;
 const VOLUME_STEP: i32 = 5;
@@ -76,23 +139,122 @@ fn asked_of_the_timer(rest: &str) -> Option<Sleep> {
     Sleep::read(rest).ok()
 }
 
-pub fn lines() -> Receiver<String> {
+fn read_as_typed(line: &str) -> Pressed {
+    match parse(line) {
+        Some(action) => Pressed::Acted(action),
+        None => Pressed::Unknown(line.to_owned()),
+    }
+}
+
+pub fn lines() -> Receiver<Pressed> {
+    listening(|send| {
+        for line in io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if send.send(read_as_typed(&line)).is_err() {
+                break;
+            }
+        }
+    })
+}
+
+pub fn keys() -> Receiver<Pressed> {
+    listening(|send| {
+        let mut bytes = io::stdin().lock().bytes().map_while(Result::ok);
+        let mut keyed = Keyed::default();
+        while let Some(byte) = bytes.next() {
+            for pressed in keyed.pressed(byte, &mut bytes) {
+                if send.send(pressed).is_err() {
+                    return;
+                }
+            }
+        }
+    })
+}
+
+fn listening(read: impl FnOnce(Sender<Pressed>) + Send + 'static) -> Receiver<Pressed> {
     let (send, receive) = bounded(16);
     let spawned = thread::Builder::new()
         .name("resonate-input".to_owned())
-        .spawn(move || {
-            for line in io::stdin().lock().lines() {
-                let Ok(line) = line else { break };
-                if send.send(line).is_err() {
-                    break;
-                }
-            }
-        });
+        .spawn(move || read(send));
 
     if let Err(error) = spawned {
         tracing::warn!(%error, "no input thread; the transport can only be watched");
     }
     receive
+}
+
+#[derive(Default)]
+struct Keyed {
+    typing: Option<String>,
+}
+
+impl Keyed {
+    fn pressed(&mut self, byte: u8, rest: &mut impl Iterator<Item = u8>) -> Vec<Pressed> {
+        if byte == ESCAPE {
+            let cancelled = self.typing.take().map(|_| Pressed::Typing(String::new()));
+            let after = rest.next();
+            if after == Some(INTRODUCER) {
+                let arrow = rest.next().and_then(arrowed).map(Pressed::Acted);
+                return cancelled.into_iter().chain(arrow).collect();
+            }
+            let mut pressed: Vec<Pressed> = cancelled.into_iter().collect();
+            if let Some(after) = after {
+                pressed.extend(self.pressed(after, rest));
+            }
+            return pressed;
+        }
+
+        if let Some(typed) = self.typing.as_mut() {
+            return match byte {
+                b'\r' | b'\n' => {
+                    let line = self.typing.take().unwrap_or_default();
+                    vec![
+                        Pressed::Typing(String::new()),
+                        read_as_typed(line.trim_start_matches(char::from(TYPED))),
+                    ]
+                }
+                RUBOUT | BACKSPACE => {
+                    typed.pop();
+                    if typed.is_empty() {
+                        self.typing = None;
+                        vec![Pressed::Typing(String::new())]
+                    } else {
+                        vec![Pressed::Typing(typed.clone())]
+                    }
+                }
+                printable if printable.is_ascii_graphic() || printable == b' ' => {
+                    typed.push(char::from(printable));
+                    vec![Pressed::Typing(typed.clone())]
+                }
+                _ => Vec::new(),
+            };
+        }
+
+        if byte == TYPED || byte.is_ascii_digit() {
+            let typed = char::from(byte).to_string();
+            self.typing = Some(typed.clone());
+            return vec![Pressed::Typing(typed)];
+        }
+
+        match byte {
+            b' ' | b'\r' | b'\n' => vec![Pressed::Acted(Action::Toggle)],
+            b'=' => vec![Pressed::Acted(Action::VolumeBy(VOLUME_STEP))],
+            printable if printable.is_ascii_graphic() => {
+                vec![read_as_typed(&char::from(printable).to_string())]
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
+const fn arrowed(key: u8) -> Option<Action> {
+    match key {
+        UP => Some(Action::VolumeBy(VOLUME_STEP)),
+        DOWN => Some(Action::VolumeBy(-VOLUME_STEP)),
+        RIGHT => Some(Action::SeekBy(SEEK_STEP)),
+        LEFT => Some(Action::SeekBy(-SEEK_STEP)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +331,72 @@ mod tests {
     fn a_sleep_spec_that_cannot_be_read_is_refused_rather_than_taking_the_default() {
         assert_eq!(parse("z soon"), None);
         assert_eq!(parse("z 0"), None);
+    }
+
+    fn keyed(bytes: &[u8]) -> Vec<Pressed> {
+        let mut keyed = Keyed::default();
+        let mut rest = bytes.iter().copied();
+        let mut pressed = Vec::new();
+        while let Some(byte) = rest.next() {
+            pressed.extend(keyed.pressed(byte, &mut rest));
+        }
+        pressed
+    }
+
+    #[test]
+    fn a_key_acts_the_moment_it_is_pressed() {
+        assert_eq!(keyed(b" "), vec![Pressed::Acted(Action::Toggle)]);
+        assert_eq!(keyed(b"n"), vec![Pressed::Acted(Action::Next)]);
+        assert_eq!(
+            keyed(b"f+-"),
+            vec![
+                Pressed::Acted(Action::SeekBy(SEEK_STEP)),
+                Pressed::Acted(Action::VolumeBy(VOLUME_STEP)),
+                Pressed::Acted(Action::VolumeBy(-VOLUME_STEP)),
+            ]
+        );
+        assert_eq!(keyed(b"w"), vec![Pressed::Unknown("w".to_owned())]);
+    }
+
+    #[test]
+    fn the_arrows_seek_and_turn_the_volume() {
+        assert_eq!(
+            keyed(b"\x1b[C\x1b[D\x1b[A\x1b[B"),
+            vec![
+                Pressed::Acted(Action::SeekBy(SEEK_STEP)),
+                Pressed::Acted(Action::SeekBy(-SEEK_STEP)),
+                Pressed::Acted(Action::VolumeBy(VOLUME_STEP)),
+                Pressed::Acted(Action::VolumeBy(-VOLUME_STEP)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_number_or_a_colon_is_typed_out_and_read_as_the_piped_form_is() {
+        assert_eq!(
+            keyed(b"90\r"),
+            vec![
+                Pressed::Typing("9".to_owned()),
+                Pressed::Typing("90".to_owned()),
+                Pressed::Typing(String::new()),
+                Pressed::Acted(Action::SeekTo(90)),
+            ]
+        );
+        assert_eq!(
+            keyed(b":z tracj\x7fk\r").last(),
+            Some(&Pressed::Acted(Action::Sleep(Sleep::EndOfTrack)))
+        );
+        assert_eq!(
+            keyed(b":f 4\x1bn"),
+            vec![
+                Pressed::Typing(":".to_owned()),
+                Pressed::Typing(":f".to_owned()),
+                Pressed::Typing(":f ".to_owned()),
+                Pressed::Typing(":f 4".to_owned()),
+                Pressed::Typing(String::new()),
+                Pressed::Acted(Action::Next),
+            ]
+        );
     }
 
     #[test]

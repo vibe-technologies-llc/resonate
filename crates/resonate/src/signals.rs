@@ -44,7 +44,7 @@ fn relay(mut watched: Signals, asked_to_quit: &Sender<()>, player: &Arc<Player>)
                 signal,
                 "a second signal; leaving without closing the stream"
             );
-            process::exit(TERMINATED_BY.saturating_add(signal));
+            leave(signal);
         }
         told = true;
 
@@ -54,7 +54,7 @@ fn relay(mut watched: Signals, asked_to_quit: &Sender<()>, player: &Arc<Player>)
                 leave_anyway(signal, Arc::clone(player));
             }
             Err(TrySendError::Disconnected(())) => {
-                process::exit(TERMINATED_BY.saturating_add(signal));
+                leave(signal);
             }
         }
     }
@@ -72,7 +72,7 @@ fn leave_anyway(signal: i32, player: Arc<Player>) {
 
             thread::sleep(DRAINS_WITHIN.saturating_sub(SILENCED_AFTER));
             tracing::warn!(signal, "the drain did not finish; leaving without it");
-            process::exit(TERMINATED_BY.saturating_add(signal));
+            leave(signal);
         });
 
     if spawned.is_err() {
@@ -129,10 +129,15 @@ fn stop_the_pass(mut watched: Signals, cancel: &impl Fn()) {
                 signal,
                 "a second signal; leaving without finishing the file in hand"
             );
-            process::exit(TERMINATED_BY.saturating_add(signal));
+            leave(signal);
         }
         told = true;
         eprintln!("stopping once the file in hand is finished; a second interrupt leaves at once");
         cancel();
     }
+}
+
+fn leave(signal: i32) -> ! {
+    crate::input::restore_the_terminal();
+    process::exit(TERMINATED_BY.saturating_add(signal))
 }
