@@ -1159,8 +1159,8 @@ fn a_pause_caught_between_a_seek_and_the_graph_rebuilds_the_ring_rather_than_par
 }
 
 #[test]
-fn a_graph_that_lets_go_of_the_ring_fails_the_track_rather_than_reporting_it_playing() -> Result<()>
-{
+fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_where_it_was_heard()
+-> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
     let path = tree.write("track.wav", &source.file);
@@ -1185,8 +1185,31 @@ fn a_graph_that_lets_go_of_the_ring_fails_the_track_rather_than_reporting_it_pla
 
     wait_for(
         &player,
-        |player| player.state().playback == PlaybackState::Stopped,
-        "the transport to give up on a graph that let go of the ring",
+        |_| graph.lock().opens == 2,
+        "the row to be bound to the graph again",
+    );
+    wait_for(&player, playing, "the row to play again");
+    let heard = graph.lock().played.len();
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= heard + block,
+        "the row to play on",
+    );
+
+    assert_eq!(player.state().current.map(|track| track.id.get()), Some(1));
+    let played = graph.lock().played.clone();
+    assert!(
+        source.stream.starts_with(&played),
+        "the row did not play on from the frame the graph had last been handed"
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "a graph that came back was reported as a failed track"
     );
     Ok(())
 }
@@ -1683,8 +1706,8 @@ fn a_graph_that_lets_go_of_every_stream_stops_a_repeating_queue_rather_than_loop
         "a queue of two rows failed {failures} times before it stopped"
     );
     assert!(
-        graph.lock().opens <= 3,
-        "the graph was asked for {} streams",
+        graph.lock().opens <= 4,
+        "the graph was asked for {} streams, one to wait out the first loss and one a failure",
         graph.lock().opens
     );
     Ok(())

@@ -39,6 +39,7 @@ const BLOCKS_A_RING_HOLDS: u64 = 2;
 const LARGEST_RING: u64 = 64 * 1024 * 1024;
 const DISCARD_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_RENEGOTIATIONS: u8 = 3;
+const GRAPH_BACK_WITHIN: Duration = Duration::from_secs(10);
 
 struct Track {
     id: TrackId,
@@ -398,6 +399,8 @@ pub struct Engine {
     track: Option<Track>,
     output: Option<Output>,
     unbound: Option<Frames>,
+    graph_lost: Option<Instant>,
+    graph_last_lost: Option<Instant>,
     heard_at_least: Option<Frames>,
     playing: bool,
     seeks: Seeks,
@@ -484,6 +487,8 @@ impl Engine {
             track: None,
             output: None,
             unbound: None,
+            graph_lost: None,
+            graph_last_lost: None,
             heard_at_least: None,
             playing: false,
             seeks: Seeks::default(),
@@ -1479,13 +1484,69 @@ impl Engine {
     }
 
     fn watch_graph(&mut self) {
+        if let Some(since) = self.graph_lost {
+            self.wait_for_the_graph(since);
+            return;
+        }
         let Some(output) = self.output.as_ref() else {
             return;
         };
         if output.stream.is_none() || !output.producer.is_abandoned() {
             return;
         }
-        self.fail(Error::Sink(resonate_pipewire::Error::LoopStopped));
+        let again = self
+            .graph_last_lost
+            .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
+        self.graph_last_lost = Some(Instant::now());
+        if again {
+            self.fail(Error::Sink(resonate_pipewire::Error::LoopStopped));
+            return;
+        }
+
+        tracing::warn!("the graph let go of the stream; the row waits for it to come back");
+        let at = self.heard_position();
+        if let Some(output) = self.output.as_mut() {
+            output.close();
+        }
+        self.output = None;
+        self.unbound = Some(at);
+        self.transport = TransportState::Loading;
+        self.graph_lost = Some(Instant::now());
+    }
+
+    fn wait_for_the_graph(&mut self, since: Instant) {
+        let at = self
+            .unbound
+            .filter(|_| self.playing && self.track.is_some() && self.output.is_none());
+        let Some(at) = at else {
+            self.graph_lost = None;
+            return;
+        };
+
+        let back = self
+            .backend
+            .enumerate_sinks(SINK_TIMEOUT)
+            .map_err(Error::Sink)
+            .and_then(|found| {
+                *self.published.sinks.write() = found.into();
+                self.stale_sinks = false;
+                self.rebind(Some(at), None)
+            });
+        match back {
+            Ok(()) => {
+                tracing::info!("the graph is back; the row plays on from where it was heard");
+                self.unbound = None;
+                self.graph_lost = None;
+            }
+            Err(error) if since.elapsed() < GRAPH_BACK_WITHIN => {
+                tracing::debug!(%error, "the graph is not back yet");
+                self.transport = TransportState::Loading;
+            }
+            Err(error) => {
+                self.graph_lost = None;
+                self.fail(error);
+            }
+        }
     }
 
     fn collect_faults(&mut self) {

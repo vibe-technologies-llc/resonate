@@ -1,7 +1,7 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
-    iter,
+    io, iter, mem,
     rc::Rc,
     sync::{
         Arc,
@@ -25,12 +25,13 @@ use parking_lot::Mutex;
 use pipewire::{
     channel::Sender as LoopSender,
     context::ContextRc,
+    core::CoreRc,
     device::{Device, DeviceListener},
     keys,
     main_loop::MainLoopRc,
     metadata::{Metadata, MetadataListener},
     node::{Node, NodeListener},
-    registry::GlobalObject,
+    registry::{GlobalObject, RegistryRc},
     stream::{StreamFlags, StreamListener, StreamRc},
     types::ObjectType,
 };
@@ -56,6 +57,7 @@ type ActiveStream = (StreamRc, StreamListener<Box<dyn AudioSource>>);
 type HeardStream = (StreamRc, StreamListener<Box<dyn AudioSink>>);
 
 const CORE_ID: u32 = 0;
+const RECONNECT_EVERY: Duration = Duration::from_secs(1);
 const METADATA_NAME: &str = "metadata.name";
 const ALLOWED_RATES: &str = "clock.allowed-rates";
 const CLOCK_RATE: &str = "clock.rate";
@@ -93,6 +95,8 @@ enum Request {
     SetActive(bool),
     Drain,
     Close,
+    Lost,
+    Reconnect,
     Shutdown,
 }
 
@@ -240,6 +244,7 @@ pub struct PipeWire {
     commands: LoopSender<Request>,
     thread: Option<JoinHandle<()>>,
     shared: Arc<Mutex<Discovered>>,
+    connected: Arc<AtomicBool>,
     changes: Receiver<SinkChange>,
 }
 
@@ -249,13 +254,20 @@ impl PipeWire {
         let (ready, started) = bounded(1);
         let (announce, changes) = bounded(64);
         let shared = Arc::new(Mutex::new(Discovered::default()));
+        let connected = Arc::new(AtomicBool::new(false));
 
         let thread = {
             let app_name = app_name.to_owned();
             let shared = Arc::clone(&shared);
+            let connected = Arc::clone(&connected);
+            let commands = commands.clone();
             thread::Builder::new()
                 .name("resonate-pipewire".to_owned())
-                .spawn(move || run(&app_name, &shared, requests, &ready, &announce))
+                .spawn(move || {
+                    run(
+                        &app_name, &shared, &connected, requests, &commands, &ready, &announce,
+                    );
+                })
                 .map_err(|_| Error::LoopStopped)?
         };
 
@@ -264,6 +276,7 @@ impl PipeWire {
                 commands,
                 thread: Some(thread),
                 shared,
+                connected,
                 changes,
             }),
             Ok(Err(error)) => Err(error),
@@ -276,7 +289,15 @@ impl PipeWire {
         self.commands
             .send(Request::Sync(reply))
             .map_err(|_| Error::LoopStopped)?;
-        done.recv_timeout(timeout).map_err(|_| Error::LoopStopped)
+        done.recv_timeout(timeout).map_err(|_| self.unanswered())
+    }
+
+    fn unanswered(&self) -> Error {
+        if self.connected.load(Ordering::Acquire) {
+            Error::LoopStopped
+        } else {
+            Error::Disconnected
+        }
     }
 
     pub fn enumerate_sinks(&self, timeout: Duration) -> Result<Vec<SinkInfo>> {
@@ -426,7 +447,9 @@ fn node_property(
 fn run(
     app_name: &str,
     shared: &Arc<Mutex<Discovered>>,
+    connected: &Arc<AtomicBool>,
     requests: pipewire::channel::Receiver<Request>,
+    commands: &LoopSender<Request>,
     ready: &Sender<Result<()>>,
     announce: &Sender<SinkChange>,
 ) {
@@ -446,45 +469,287 @@ fn run(
 
     let mainloop = stage!(MainLoopRc::new(None), PwOp::MainLoopCreate);
     let context = stage!(ContextRc::new(&mainloop, None), PwOp::ContextCreate);
-    let properties = pipewire::properties::properties! {
-        *keys::APP_NAME => app_name,
-        *keys::MEDIA_CATEGORY => "Playback",
-    };
-    let core = stage!(context.connect_rc(Some(properties)), PwOp::CoreConnect);
-    let registry = stage!(core.get_registry_rc(), PwOp::RegistryBind);
-
     let pending: Pending = Rc::new(RefCell::new(Vec::new()));
-    let nodes: Nodes = Rc::new(RefCell::new(BTreeMap::new()));
-    let devices: Devices = Rc::new(RefCell::new(BTreeMap::new()));
-    let metadatas: Metadatas = Rc::new(RefCell::new(BTreeMap::new()));
+    let reaching = Reaching {
+        app_name: app_name.to_owned(),
+        context,
+        shared: Arc::clone(shared),
+        pending: Rc::clone(&pending),
+        commands: commands.clone(),
+        announce: announce.clone(),
+    };
+    let graph: Rc<RefCell<Option<Graph>>> = match reaching.connect() {
+        Ok(graph) => Rc::new(RefCell::new(Some(graph))),
+        Err(error) => {
+            let _ = ready.send(Err(error));
+            return;
+        }
+    };
+    connected.store(true, Ordering::Release);
 
-    let core_listener = core
-        .add_listener_local()
-        .done({
-            let pending = Rc::clone(&pending);
-            move |id, seq| {
-                if id != CORE_ID {
+    let active: Rc<RefCell<Option<ActiveStream>>> = Rc::new(RefCell::new(None));
+    let heard: Rc<RefCell<Option<HeardStream>>> = Rc::new(RefCell::new(None));
+    let sequence = Rc::new(RefCell::new(0_i32));
+    let receiver = requests.attach(mainloop.loop_(), {
+        let mainloop = mainloop.downgrade();
+        let graph = Rc::clone(&graph);
+        let pending = Rc::clone(&pending);
+        let sequence = Rc::clone(&sequence);
+        let active = Rc::clone(&active);
+        let heard = Rc::clone(&heard);
+        let connected = Arc::clone(connected);
+        move |request| match request {
+            Request::Sync(reply) => {
+                let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
+                    return;
+                };
+                let mut sequence = sequence.borrow_mut();
+                *sequence = sequence.wrapping_add(1);
+                match core.sync(*sequence) {
+                    Ok(seq) => pending.borrow_mut().push((seq.seq(), reply)),
+                    Err(_) => drop(reply),
+                }
+            }
+            Request::Open(open) => {
+                let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
+                    let _ = open.reply.send(Err(Error::Disconnected));
+                    return;
+                };
+                let outcome = open_stream(&core, *open, &active);
+                if outcome.is_err() {
+                    active.borrow_mut().take();
+                }
+            }
+            Request::Capture(open) => {
+                let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
+                    let _ = open.reply.send(Err(Error::Disconnected));
+                    return;
+                };
+                let CaptureOpen {
+                    request,
+                    sink,
+                    events,
+                    reply,
+                } = *open;
+                match build_capture_stream(&core, &request, sink, &events) {
+                    Ok(stream) => {
+                        heard.borrow_mut().replace(stream);
+                        let _ = reply.send(Ok(()));
+                    }
+                    Err(error) => {
+                        heard.borrow_mut().take();
+                        let _ = reply.send(Err(error));
+                    }
+                }
+            }
+            Request::StopCapture => {
+                if let Some((stream, _)) = heard.borrow().as_ref() {
+                    let _ = stream.disconnect();
+                }
+                heard.borrow_mut().take();
+            }
+            Request::SetActive(wanted) => {
+                if let Some((stream, _)) = active.borrow().as_ref() {
+                    let _ = stream.set_active(wanted);
+                }
+            }
+            Request::Drain => {
+                if let Some((stream, _)) = active.borrow().as_ref() {
+                    let _ = stream.flush(true);
+                }
+            }
+            Request::Close => {
+                if let Some((stream, _)) = active.borrow().as_ref() {
+                    let _ = stream.disconnect();
+                }
+                active.borrow_mut().take();
+            }
+            Request::Lost => {
+                let Some(gone) = graph.borrow_mut().take() else {
+                    return;
+                };
+                tracing::warn!("the PipeWire daemon went away; reconnecting when it is back");
+                connected.store(false, Ordering::Release);
+                active.borrow_mut().take();
+                heard.borrow_mut().take();
+                pending.borrow_mut().clear();
+                drop(gone);
+                reaching.forget_the_graph();
+                reaching.ask_again_later();
+            }
+            Request::Reconnect => {
+                if graph.borrow().is_some() {
                     return;
                 }
-                pending.borrow_mut().retain(|(wanted, reply)| {
-                    if *wanted == seq.seq() {
-                        let _ = reply.send(());
-                        false
-                    } else {
-                        true
+                match reaching.connect() {
+                    Ok(reached) => {
+                        graph.borrow_mut().replace(reached);
+                        connected.store(true, Ordering::Release);
+                        tracing::info!("reconnected to the PipeWire daemon");
                     }
-                });
+                    Err(error) => {
+                        tracing::debug!(%error, "the PipeWire daemon is not back yet");
+                        reaching.ask_again_later();
+                    }
+                }
             }
-        })
-        .register();
+            Request::Shutdown => {
+                active.borrow_mut().take();
+                heard.borrow_mut().take();
+                if let Some(mainloop) = mainloop.upgrade() {
+                    mainloop.quit();
+                }
+            }
+        }
+    });
 
-    let registry_listener = registry
+    let _ = ready.send(Ok(()));
+    mainloop.run();
+
+    drop(receiver);
+    active.borrow_mut().take();
+    heard.borrow_mut().take();
+    graph.borrow_mut().take();
+    connected.store(false, Ordering::Release);
+}
+
+struct Graph {
+    _core_listener: pipewire::core::Listener,
+    _registry_listener: pipewire::registry::Listener,
+    nodes: Nodes,
+    devices: Devices,
+    metadatas: Metadatas,
+    _registry: RegistryRc,
+    core: CoreRc,
+}
+
+impl Drop for Graph {
+    fn drop(&mut self) {
+        self.nodes.borrow_mut().clear();
+        self.devices.borrow_mut().clear();
+        self.metadatas.borrow_mut().clear();
+    }
+}
+
+struct Reaching {
+    app_name: String,
+    context: ContextRc,
+    shared: Arc<Mutex<Discovered>>,
+    pending: Pending,
+    commands: LoopSender<Request>,
+    announce: Sender<SinkChange>,
+}
+
+impl Reaching {
+    fn connect(&self) -> Result<Graph> {
+        let properties = pipewire::properties::properties! {
+            *keys::APP_NAME => self.app_name.as_str(),
+            *keys::MEDIA_CATEGORY => "Playback",
+        };
+        let core = self
+            .context
+            .connect_rc(Some(properties))
+            .map_err(|source| Error::daemon(PwOp::CoreConnect, source))?;
+        let registry = core
+            .get_registry_rc()
+            .map_err(|source| Error::daemon(PwOp::RegistryBind, source))?;
+
+        let nodes: Nodes = Rc::new(RefCell::new(BTreeMap::new()));
+        let devices: Devices = Rc::new(RefCell::new(BTreeMap::new()));
+        let metadatas: Metadatas = Rc::new(RefCell::new(BTreeMap::new()));
+
+        let core_listener = core
+            .add_listener_local()
+            .done({
+                let pending = Rc::clone(&self.pending);
+                move |id, seq| {
+                    if id != CORE_ID {
+                        return;
+                    }
+                    pending.borrow_mut().retain(|(wanted, reply)| {
+                        if *wanted == seq.seq() {
+                            let _ = reply.send(());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+            })
+            .error({
+                let commands = self.commands.clone();
+                move |id, _seq, res, message| {
+                    tracing::debug!(id, res, message, "the PipeWire core reported an error");
+                    if id == CORE_ID && is_a_broken_connection(res) {
+                        let _ = commands.send(Request::Lost);
+                    }
+                }
+            })
+            .register();
+        let registry_listener = watch_the_registry(
+            &registry,
+            &self.shared,
+            &nodes,
+            &devices,
+            &metadatas,
+            &self.announce,
+        );
+
+        Ok(Graph {
+            _core_listener: core_listener,
+            _registry_listener: registry_listener,
+            nodes,
+            devices,
+            metadatas,
+            _registry: registry,
+            core,
+        })
+    }
+
+    fn forget_the_graph(&self) {
+        let forgotten = mem::take(&mut *self.shared.lock());
+        for id in forgotten.sinks.keys() {
+            let _ = self
+                .announce
+                .try_send(SinkChange::Removed(SinkId::new(*id)));
+        }
+    }
+
+    fn ask_again_later(&self) {
+        let commands = self.commands.clone();
+        let spawned = thread::Builder::new()
+            .name("resonate-pipewire-reconnect".to_owned())
+            .spawn(move || {
+                thread::sleep(RECONNECT_EVERY);
+                let _ = commands.send(Request::Reconnect);
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "no thread could be started to reconnect to PipeWire from");
+        }
+    }
+}
+
+fn is_a_broken_connection(res: i32) -> bool {
+    res.checked_neg().is_some_and(|errno| {
+        io::Error::from_raw_os_error(errno).kind() == io::ErrorKind::BrokenPipe
+    })
+}
+
+fn watch_the_registry(
+    registry: &RegistryRc,
+    shared: &Arc<Mutex<Discovered>>,
+    nodes: &Nodes,
+    devices: &Devices,
+    metadatas: &Metadatas,
+    announce: &Sender<SinkChange>,
+) -> pipewire::registry::Listener {
+    registry
         .add_listener_local()
         .global({
             let shared = Arc::clone(shared);
-            let nodes = Rc::clone(&nodes);
-            let devices = Rc::clone(&devices);
-            let metadatas = Rc::clone(&metadatas);
+            let nodes = Rc::clone(nodes);
+            let devices = Rc::clone(devices);
+            let metadatas = Rc::clone(metadatas);
             let registry = registry.clone();
             let announce = announce.clone();
             move |global| match global.type_ {
@@ -678,8 +943,8 @@ fn run(
         })
         .global_remove({
             let shared = Arc::clone(shared);
-            let nodes = Rc::clone(&nodes);
-            let devices = Rc::clone(&devices);
+            let nodes = Rc::clone(nodes);
+            let devices = Rc::clone(devices);
             let announce = announce.clone();
             move |id| {
                 let mut state = shared.lock();
@@ -695,105 +960,7 @@ fn run(
                 }
             }
         })
-        .register();
-
-    let active: Rc<RefCell<Option<ActiveStream>>> = Rc::new(RefCell::new(None));
-    let heard: Rc<RefCell<Option<HeardStream>>> = Rc::new(RefCell::new(None));
-    let sequence = Rc::new(RefCell::new(0_i32));
-    let receiver = requests.attach(mainloop.loop_(), {
-        let mainloop = mainloop.downgrade();
-        let core = core.downgrade();
-        let pending = Rc::clone(&pending);
-        let sequence = Rc::clone(&sequence);
-        let active = Rc::clone(&active);
-        let heard = Rc::clone(&heard);
-        move |request| match request {
-            Request::Sync(reply) => {
-                let Some(core) = core.upgrade() else {
-                    return;
-                };
-                let mut sequence = sequence.borrow_mut();
-                *sequence = sequence.wrapping_add(1);
-                match core.sync(*sequence) {
-                    Ok(seq) => pending.borrow_mut().push((seq.seq(), reply)),
-                    Err(_) => drop(reply),
-                }
-            }
-            Request::Open(open) => {
-                let Some(core) = core.upgrade() else {
-                    let _ = open.reply.send(Err(Error::LoopStopped));
-                    return;
-                };
-                let outcome = open_stream(&core, *open, &active);
-                if outcome.is_err() {
-                    active.borrow_mut().take();
-                }
-            }
-            Request::Capture(open) => {
-                let Some(core) = core.upgrade() else {
-                    let _ = open.reply.send(Err(Error::LoopStopped));
-                    return;
-                };
-                let CaptureOpen {
-                    request,
-                    sink,
-                    events,
-                    reply,
-                } = *open;
-                match build_capture_stream(&core, &request, sink, &events) {
-                    Ok(stream) => {
-                        heard.borrow_mut().replace(stream);
-                        let _ = reply.send(Ok(()));
-                    }
-                    Err(error) => {
-                        heard.borrow_mut().take();
-                        let _ = reply.send(Err(error));
-                    }
-                }
-            }
-            Request::StopCapture => {
-                if let Some((stream, _)) = heard.borrow().as_ref() {
-                    let _ = stream.disconnect();
-                }
-                heard.borrow_mut().take();
-            }
-            Request::SetActive(wanted) => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
-                    let _ = stream.set_active(wanted);
-                }
-            }
-            Request::Drain => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
-                    let _ = stream.flush(true);
-                }
-            }
-            Request::Close => {
-                if let Some((stream, _)) = active.borrow().as_ref() {
-                    let _ = stream.disconnect();
-                }
-                active.borrow_mut().take();
-            }
-            Request::Shutdown => {
-                active.borrow_mut().take();
-                heard.borrow_mut().take();
-                if let Some(mainloop) = mainloop.upgrade() {
-                    mainloop.quit();
-                }
-            }
-        }
-    });
-
-    let _ = ready.send(Ok(()));
-    mainloop.run();
-
-    drop(receiver);
-    drop(registry_listener);
-    drop(core_listener);
-    active.borrow_mut().take();
-    heard.borrow_mut().take();
-    nodes.borrow_mut().clear();
-    devices.borrow_mut().clear();
-    metadatas.borrow_mut().clear();
+        .register()
 }
 
 fn format_pod(spec: StreamSpec, word: WireWord, id: u32) -> Result<Vec<u8>> {

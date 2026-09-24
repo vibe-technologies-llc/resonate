@@ -131,10 +131,10 @@
   nothing, and nothing keeps listening to name each song as a stream changes track
 
 ## PipeWire
-- Nothing survives the daemon going away. The core listener registers `done` alone, with no
-  `error` handler and no reconnect, so after a restart every `Sync` goes unanswered, every
-  enumeration fails with `LoopStopped` and the engine binds to the stale list until the process is
-  restarted
+- A daemon restart is proved against a daemon the test hosts, with a null sink and no session
+  manager, and by hand under `resonate play`; the session's own daemon has not been restarted under
+  the window. A capture running when the daemon goes is dropped and not started again, and what a
+  Listen recording does then has not been watched
 - What a stream reports is the delay to the device plus the frames its resampler still holds, and
   not the ones sitting in the buffers it has already queued: `pw_time.queued` is the sum of
   `pw_buffer.size` over those, pipewire-rs 0.10 exposes no setter for that field, and writing it

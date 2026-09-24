@@ -32,6 +32,9 @@ pub enum Error {
     #[error("the pipewire loop thread stopped")]
     LoopStopped,
 
+    #[error("the pipewire daemon is not connected")]
+    Disconnected,
+
     #[error("no audio sink is present in the graph")]
     NoSink,
 

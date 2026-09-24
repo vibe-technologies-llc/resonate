@@ -600,11 +600,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   standing reasons to ask the graph again are a stale flag, an empty list and a change stream that
   has gone — and where the ask fails with a list still published, the bind takes what was published
   rather than failing the track.
-- **A graph that lets go of the ring fails the track.** `RingProducer::is_abandoned` says the
-  consumer has been dropped, which is the graph thread having gone with the `AudioSource` it was
-  handed; `watch_graph` reads it once the stream is open and raises `Error::LoopStopped`, so the
-  transport skips and eventually stops rather than filling a ring nobody reads and reporting
-  Playing for ever. A disconnected *event* channel is not the same reading and stays what it was —
+- **A graph that lets go of the ring is waited for once, and fails the track the second time.**
+  `RingProducer::is_abandoned` says the consumer has been dropped, which is the graph thread having
+  gone with the `AudioSource` it was handed — what a daemon restart does, the client dropping every
+  stream of the connection it lost. `watch_graph` reads it once the stream is open, closes the
+  output, keeps the row with the heard position in `unbound` and publishes `Loading`; each pass
+  after that asks the backend for its sinks and, once it answers, binds the row again at that
+  frame, so a restarted daemon costs a gap and not the track. It waits `GRAPH_BACK_WITHIN`, ten
+  seconds, before failing the row with what the last try said, and a pause, a stop or another row
+  ends the wait. A graph that lets go again within those ten seconds of the last time is not waited
+  for: it raises `Error::LoopStopped`, so the transport skips and eventually stops rather than
+  opening and losing streams for ever — `graph_last_lost` is that memory. Asking the sinks first
+  is not a courtesy: a bind succeeds against the stale list and fails only when the stream opens,
+  so trying the bind alone read a daemon still down as one already back. A disconnected *event* channel is not the same reading and stays what it was —
   `Output::deaf`, dropped from the select — because a graph can stop reporting and go on pulling.
   A `backend.open` that fails takes the whole `Output` with it for the same reason: the consumer
   has gone into the call and cannot come back, so an output that outlived it would hold a ring with
@@ -1353,6 +1361,22 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 ## The sink
 
+- **The client outlives its daemon.** Everything a connection holds — the core, the registry, their
+  listeners and the proxies bound through them — is one `Graph`, and `Reaching` is what makes one:
+  the loop keeps its main loop and its context for the life of the process and connects a core
+  through them as often as it has to. The core's `error` event with a broken pipe on the core
+  itself is the daemon gone; it sends `Request::Lost` through the loop's own channel, because the
+  connection cannot be torn down inside one of its own callbacks. `Lost` drops the streams and the
+  graph, answers every pending `Sync` by dropping it, empties `Discovered` and announces each sink
+  it knew as removed, and a thread of its own sends `Request::Reconnect` a second later, again
+  until a core connects. While there is none, a `Sync`, an open and a capture answer
+  `Error::Disconnected` at once rather than timing out as `LoopStopped`, and `PipeWire::unanswered`
+  tells the two apart by the `connected` flag the loop keeps. What comes back is announced the
+  way it was the first time, as the registry hands the globals over again.
+  `crates/resonate-pipewire/tests/reconnect.rs` is the claim, and it needs no daemon of the
+  session's: it runs its own binary again under `PIPEWIRE_RUNTIME_DIR`, starts a `pipewire` of its
+  own with a null sink and nothing else, kills it under an open stream, asserts `Disconnected`,
+  starts it again and opens a stream on the sink it finds.
 - **The chosen sink is named, not numbered.** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, which `select_sink` matches on every stream open, because a PipeWire id is assigned
   per object and a device that is unplugged and put back carries a new one. `OutputStatus::sink`

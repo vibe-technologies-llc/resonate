@@ -687,6 +687,8 @@ cargo build --workspace                    # everything, including gpui
 cargo test  --workspace                    # everything
 cargo test -p <crate> <test_name> -- --exact --nocapture
 cargo test -p resonate-pipewire --test stream  # needs a live daemon; prints a skip without one
+cargo test -p resonate-pipewire --test reconnect  # hosts a daemon of its own and restarts it;
+                                                  #   needs the pipewire binary
 cargo test -p resonate-mpris --test bus        # needs a session bus; prints a skip without one
 cargo test -p resonate-codec --test encoded    # needs ffmpeg, and metaflac for the embedded
                                                #   CUESHEET block; prints a skip without either
@@ -713,7 +715,8 @@ takes every push to `master` and every pull request through clippy with `-D warn
 build and tests, the whole workspace's build and tests, the `cargo tree` refusals above and
 `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
 plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
-no session bus there, so the PipeWire and bus tests print their skip. `RUSTFLAGS` is emptied over
+no session bus there, so the PipeWire and bus tests print their skip — all but the reconnect test,
+which starts a daemon of its own. `RUSTFLAGS` is emptied over
 `target-cpu=native` for the reason the PKGBUILD empties it. Formatting is the one check it cannot
 make: `rust-formatter` is not something a hosted runner installs, so `rust-formatter --check` stays
 local. A command added to the list above that a runner can run is added to the workflow too, and a

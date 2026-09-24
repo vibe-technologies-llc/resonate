@@ -78,7 +78,8 @@ cd fuzz && cargo +nightly fuzz build                                  # the pars
 
 Formatting is checked locally only, because `rust-formatter` is not something a hosted runner can
 install. Tests that need a PipeWire daemon, a session bus, ffmpeg or the network print a skip where
-the thing is missing rather than failing; the CI has no daemon and no bus, so those skip there.
+the thing is missing rather than failing; the CI has no daemon and no bus, so those skip there —
+except `resonate-pipewire`'s reconnect test, which starts a daemon of its own.
 
 `.cargo/config.toml` builds for `target-cpu=native`. Anything that produces a binary for another
 machine — the package, the CI — sets `RUSTFLAGS` back over it.
