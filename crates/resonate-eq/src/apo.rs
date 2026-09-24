@@ -178,9 +178,9 @@ impl Written {
                 }
                 "GAIN" => self.decibels = value,
                 "Q" => self.q = value,
+                "BW" if value.is_some() => self.bandwidth = value,
                 "BW" => {
-                    let octaves = words.get(at + 2).copied().and_then(read_number);
-                    self.bandwidth = octaves.or(value);
+                    self.bandwidth = words.get(at + 2).copied().and_then(read_number);
                     taken = 3;
                 }
                 "S" => self.slope = value,
@@ -555,6 +555,22 @@ mod tests {
         assert!(
             (band.q.units() - std::f64::consts::FRAC_1_SQRT_2).abs() < 0.01,
             "a slope of one read as Q {}",
+            band.q
+        );
+    }
+
+    #[test]
+    fn a_bandwidth_named_without_its_unit_leaves_the_gain_after_it_read() {
+        let bare = read("Filter 1: ON PK Fc 1000 Hz BW 1.0 Gain 3 dB").expect("it reads");
+        let band = bare.profile.bands().first().copied().expect("one band");
+        assert!(
+            (band.gain.decibels() - 3.0).abs() < 1e-9,
+            "the gain read as {}",
+            band.gain.decibels()
+        );
+        assert!(
+            (band.q.units() - std::f64::consts::SQRT_2).abs() < 0.01,
+            "one octave read as Q {}",
             band.q
         );
     }
