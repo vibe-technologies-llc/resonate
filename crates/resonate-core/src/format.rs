@@ -76,14 +76,22 @@ impl SampleRate {
     }
 }
 
+const HZ_A_KILOHERTZ: u32 = 1_000;
+const DIGITS_OF_A_KILOHERTZ: usize = 3;
+
 impl fmt::Display for SampleRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let hz = self.hz();
-        if hz.is_multiple_of(1_000) {
-            write!(f, "{} kHz", hz / 1_000)
-        } else {
-            write!(f, "{}.{} kHz", hz / 1_000, (hz % 1_000) / 100)
+        let mut fraction = hz % HZ_A_KILOHERTZ;
+        if fraction == 0 {
+            return write!(f, "{} kHz", hz / HZ_A_KILOHERTZ);
         }
+        let mut digits = DIGITS_OF_A_KILOHERTZ;
+        while fraction.is_multiple_of(10) {
+            fraction /= 10;
+            digits -= 1;
+        }
+        write!(f, "{}.{fraction:0digits$} kHz", hz / HZ_A_KILOHERTZ)
     }
 }
 
@@ -290,6 +298,22 @@ impl fmt::Display for StreamSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rate_is_written_in_kilohertz_to_every_digit_it_holds() {
+        for (hz, written) in [
+            (8_000, "8 kHz"),
+            (11_025, "11.025 kHz"),
+            (22_050, "22.05 kHz"),
+            (44_100, "44.1 kHz"),
+            (48_000, "48 kHz"),
+            (352_800, "352.8 kHz"),
+            (705_600, "705.6 kHz"),
+        ] {
+            let rate = SampleRate::new(hz).expect("a supported rate");
+            assert_eq!(rate.to_string(), written);
+        }
+    }
 
     #[test]
     fn f32_cannot_losslessly_hold_s32() {
