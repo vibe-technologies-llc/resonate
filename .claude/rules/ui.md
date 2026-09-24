@@ -829,7 +829,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   be because `keeps_its_width` holds the artist at `flex_none` under a `max_w_full`: three
   truncating children shrink in proportion to their own length by default, so an album title four
   times the artist's took a quarter of the loss out of the artist's name — the album is the one
-  that gives way, and the artist ellipsises only where it alone overruns the panel. A notice the engine raised is not in either half: it is a strip of its own above
+  that gives way, and the artist ellipsises only where it alone overruns the panel. **What gives
+  way ends in an ellipsis rather than a square cut, and each is given a width it can be cut at.**
+  gpui's text element truncates only inside its measure, and it keeps the first measure of a
+  no-wrap text whatever width it is later handed, so a `truncate`d name inside a content-sized
+  flex item is laid out whole and sliced by its parent's clip; a `line_clamp` on the same item is
+  measured at its min-content width and drew *The Tr…*, or nothing. The album is `flex_1` under
+  `ends_in_an_ellipsis`, so it is measured at the room the row leaves it. The title cannot be
+  `flex_1`, because the star rides right after it, so `kit::cut_to_fit` cuts the text itself —
+  gpui's own `LineWrapper::truncate_line` at the width `RootView::playing_room` measured a frame
+  behind, less the star — and the element draws the shortened string at its own width. The
+  inspector's stage cards are `flex_1` already and take the clamp. A notice the engine raised is not in either half: it is a strip of its own above
   the bar, the full width of it over a wash of the failure colour, truncated with the whole of it on
   hover and taken away by a click anywhere on it or by escape away from the search field, because a
   load that was refused starts no track and `TrackStarted` is what otherwise clears one. What it

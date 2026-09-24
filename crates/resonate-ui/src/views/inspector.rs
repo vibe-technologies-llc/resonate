@@ -17,7 +17,7 @@ use crate::{
     theme,
     views::{
         browser::OPEN_ALBUM_HINT,
-        kit::{self, Tone},
+        kit::{self, EndsInAnEllipsis, Tone},
         root::RootView,
         scrollbar::Scrollbars,
         transport::Heard,
@@ -194,6 +194,7 @@ fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -
                 .line_height(px(theme::text_xl() * 1.2))
                 .text_color(rgb(colour))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .child(SharedString::from(figure)),
         );
     for line in lines {
@@ -202,6 +203,7 @@ fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::muted()))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .child(SharedString::from(line)),
         );
     }

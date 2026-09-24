@@ -24,7 +24,7 @@ use crate::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::Names,
-        kit::{self, KeepsItsWidth},
+        kit::{self, EndsInAnEllipsis, KeepsItsWidth},
         listing::Pictured,
         menu::{self, Menu},
         slider::Handle,
@@ -52,6 +52,8 @@ const VOLUME_HINT: &str = "Mute — click. Volume — ctrl-up and ctrl-down";
 const VOLUME_HINT_WHEELED: &str = "Mute — click. Volume — the wheel, ctrl-up and ctrl-down";
 
 const VOLUME_ICON_GROUP: &str = "volume-icon";
+
+const TITLE_GAP: f32 = 4.0;
 
 const UNMUTE_HINT: &str = "Muted — click, the wheel or ctrl-up to hear it again";
 
@@ -423,8 +425,11 @@ impl RootView {
                 div()
                     .flex()
                     .flex_col()
+                    .relative()
+                    .flex_1()
                     .min_w(px(0.0))
                     .gap_0p5()
+                    .child(kit::measures_its_width(self.playing_room.clone()))
                     .child(self.played_title(&playing, idle, cx))
                     .child(self.by_line("playing-artist", "playing-album", &playing, cx))
                     .when(!idle, |panel| {
@@ -439,7 +444,7 @@ impl RootView {
         div()
             .flex()
             .items_center()
-            .gap_1()
+            .gap(px(TITLE_GAP))
             .min_w(px(0.0))
             .text_size(px(theme::text_base()))
             .font_weight(FontWeight::MEDIUM)
@@ -447,7 +452,13 @@ impl RootView {
             .child(
                 self.opens(
                     "playing-title",
-                    playing.title.clone(),
+                    kit::cut_to_fit(
+                        playing.title.clone(),
+                        self.playing_room.get() - px(theme::row_control() + TITLE_GAP),
+                        theme::ui(FontWeight::MEDIUM),
+                        px(theme::text_base()),
+                        cx,
+                    ),
                     OPEN_ALBUM_HINT,
                     playing.cover.album.map(Selection::Album),
                     cx,
@@ -487,14 +498,17 @@ impl RootView {
             return line;
         };
 
-        line.child(div().flex_none().px_1p5().child("·"))
-            .child(self.opens(
+        line.child(div().flex_none().px_1p5().child("·")).child(
+            self.opens(
                 of_the_album,
                 album,
                 OPEN_ALBUM_HINT,
                 playing.cover.album.map(Selection::Album),
                 cx,
-            ))
+            )
+            .flex_1()
+            .ends_in_an_ellipsis(),
+        )
     }
 
     fn signal_path(

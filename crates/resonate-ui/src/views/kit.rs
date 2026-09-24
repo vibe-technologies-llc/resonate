@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, Div, ElementId, FontWeight, Pixels, SharedString, Stateful, Svg, canvas, div,
-    prelude::*, px, relative, rgb,
+    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, SharedString, Stateful, Svg, canvas,
+    div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -118,6 +118,23 @@ pub(crate) trait EndsInAnEllipsis: Styled + Sized {
 }
 
 impl<T: Styled> EndsInAnEllipsis for T {}
+
+const ELLIPSIS: &str = "…";
+
+pub(crate) fn cut_to_fit(
+    text: SharedString,
+    room: Pixels,
+    font: Font,
+    size: Pixels,
+    cx: &App,
+) -> SharedString {
+    if room <= px(0.0) {
+        return text;
+    }
+    cx.text_system()
+        .line_wrapper(font, size)
+        .truncate_line(text, room, ELLIPSIS, &mut Vec::new())
+}
 
 pub(crate) fn button(
     id: impl Into<ElementId>,
