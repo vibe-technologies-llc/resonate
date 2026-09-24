@@ -36,6 +36,9 @@ const MAX_CLUSTERS: usize = 65_536;
 const MAX_BLOCKS: usize = 65_536;
 const OPUS_CODEC_ID: &str = "A_OPUS";
 const LACING: u8 = 0b0110;
+const LACING_SHIFT: u8 = 1;
+const XIPH_LACE_CONTINUES: u8 = 0xFF;
+const LACED_FRAMES_AT_MOST: usize = 256;
 const PACKET_HEAD_BYTES: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -100,6 +103,13 @@ impl Tally {
         })
     }
 
+    fn track(self) -> Option<u64> {
+        match self {
+            Self::Counting { track, .. } => Some(track),
+            Self::NotCounting | Self::Lost => None,
+        }
+    }
+
     fn add(&mut self, block: Option<Block>) {
         let Self::Counting { track, samples } = *self else {
             return;
@@ -113,7 +123,7 @@ impl Tally {
         }
 
         *self = block
-            .opus_samples()
+            .opus_samples
             .and_then(|more| samples.checked_add(more))
             .map_or(Self::Lost, |samples| Self::Counting { track, samples });
     }
@@ -227,13 +237,13 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
         match element.id {
             CLUSTER_TIMESTAMP => at = uint(source, element.length),
             SIMPLE_BLOCK => {
-                let block = read_block(source, element);
+                let block = read_block(source, element, into.tally.track());
                 offsets.saw(block.map(|block| block.offset));
                 into.tally.add(block);
                 into.discarded = None;
             }
             BLOCK_GROUP => {
-                let group = read_group(source, element.end());
+                let group = read_group(source, element.end(), into.tally.track());
                 offsets.saw(group.block.map(|block| block.offset));
                 into.tally.add(group.block);
                 into.discarded = group.discarded;
@@ -268,7 +278,11 @@ struct Group {
     discarded: Option<Duration>,
 }
 
-fn read_group<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Group {
+fn read_group<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    limit: Option<u64>,
+    counting: Option<u64>,
+) -> Group {
     let mut group = Group::default();
 
     for _ in 0..MAX_ELEMENTS {
@@ -276,7 +290,7 @@ fn read_group<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Gr
             break;
         };
         match element.id {
-            BLOCK => group.block = read_block(source, element),
+            BLOCK => group.block = read_block(source, element, counting),
             DISCARD_PADDING => {
                 group.discarded = signed(source, element.length)
                     .and_then(|nanos| u64::try_from(nanos).ok())
@@ -321,43 +335,144 @@ impl Offsets {
 struct Block {
     track: u64,
     offset: i16,
-    laced: bool,
-    packet_head: [u8; PACKET_HEAD_BYTES],
-    packet_head_bytes: usize,
+    opus_samples: Option<u64>,
 }
 
-impl Block {
-    fn opus_samples(self) -> Option<u64> {
-        if self.laced {
-            return None;
-        }
-        opus::samples_in_a_packet(self.packet_head.get(..self.packet_head_bytes)?)
-    }
-}
-
-fn read_block<S: Read + Seek + ?Sized>(source: &mut S, element: Element) -> Option<Block> {
+fn read_block<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    element: Element,
+    counting: Option<u64>,
+) -> Option<Block> {
     let end = element.end()?;
     let Length::Known(track) = length(source)? else {
         return None;
     };
     let [high, low, flags] = read_exact::<3, S>(source)?;
-    let packet_bytes = end.checked_sub(source.stream_position().ok()?)?;
-
-    let mut packet_head = [0_u8; PACKET_HEAD_BYTES];
-    let packet_head_bytes = usize::try_from(packet_bytes)
-        .unwrap_or(PACKET_HEAD_BYTES)
-        .min(PACKET_HEAD_BYTES);
-    source
-        .read_exact(packet_head.get_mut(..packet_head_bytes)?)
-        .ok()?;
+    let opus_samples = (counting == Some(track))
+        .then(|| opus_samples_in(source, end, Lacing::of(flags)))
+        .flatten();
 
     Some(Block {
         track,
         offset: i16::from_be_bytes([high, low]),
-        laced: flags & LACING != 0,
-        packet_head,
-        packet_head_bytes,
+        opus_samples,
     })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lacing {
+    Unlaced,
+    Xiph,
+    Fixed,
+    Ebml,
+}
+
+impl Lacing {
+    fn of(flags: u8) -> Self {
+        match (flags & LACING) >> LACING_SHIFT {
+            0 => Self::Unlaced,
+            1 => Self::Xiph,
+            2 => Self::Fixed,
+            _ => Self::Ebml,
+        }
+    }
+}
+
+fn opus_samples_in<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    end: u64,
+    lacing: Lacing,
+) -> Option<u64> {
+    let mut sizes = [0_u64; LACED_FRAMES_AT_MOST];
+    let sizes = lace_sizes(source, end, lacing, &mut sizes)?;
+    let mut at = source.stream_position().ok()?;
+    let mut samples = 0_u64;
+
+    for size in sizes {
+        source.seek(SeekFrom::Start(at)).ok()?;
+        samples = samples.checked_add(opus_samples_of_a_frame(source, *size)?)?;
+        at = at.checked_add(*size)?;
+    }
+    Some(samples)
+}
+
+fn lace_sizes<'a, S: Read + Seek + ?Sized>(
+    source: &mut S,
+    end: u64,
+    lacing: Lacing,
+    sizes: &'a mut [u64; LACED_FRAMES_AT_MOST],
+) -> Option<&'a [u64]> {
+    let frames = match lacing {
+        Lacing::Unlaced => 1,
+        Lacing::Xiph | Lacing::Fixed | Lacing::Ebml => {
+            let [more] = read_exact::<1, S>(source)?;
+            usize::from(more) + 1
+        }
+    };
+    let sizes = sizes.get_mut(..frames)?;
+    let (last, declared) = sizes.split_last_mut()?;
+
+    match lacing {
+        Lacing::Unlaced | Lacing::Fixed => {}
+        Lacing::Xiph => {
+            for size in declared.iter_mut() {
+                *size = xiph_lace(source)?;
+            }
+        }
+        Lacing::Ebml => {
+            let mut previous = None;
+            for size in declared.iter_mut() {
+                *size = ebml_lace(source, previous)?;
+                previous = Some(*size);
+            }
+        }
+    }
+
+    let data = end.checked_sub(source.stream_position().ok()?)?;
+    if lacing == Lacing::Fixed {
+        let frames = u64::try_from(frames).ok()?;
+        let each = data / frames;
+        (each * frames == data).then_some(())?;
+        declared.fill(each);
+    }
+    let held = declared
+        .iter()
+        .try_fold(0_u64, |held, size| held.checked_add(*size))?;
+    *last = data.checked_sub(held)?;
+
+    Some(sizes)
+}
+
+fn xiph_lace<S: Read + ?Sized>(source: &mut S) -> Option<u64> {
+    let mut size = 0_u64;
+    for _ in 0..MAX_ELEMENTS {
+        let [byte] = read_exact::<1, S>(source)?;
+        size = size.checked_add(u64::from(byte))?;
+        if byte != XIPH_LACE_CONTINUES {
+            return Some(size);
+        }
+    }
+    None
+}
+
+fn ebml_lace<S: Read + ?Sized>(source: &mut S, previous: Option<u64>) -> Option<u64> {
+    let (value, width) = vint(source)?;
+    let Some(previous) = previous else {
+        return Some(value);
+    };
+    let bias = (1_i64 << (7 * width - 1)) - 1;
+    let difference = i64::try_from(value).ok()? - bias;
+    previous.checked_add_signed(difference)
+}
+
+fn opus_samples_of_a_frame<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<u64> {
+    let mut head = [0_u8; PACKET_HEAD_BYTES];
+    let head_bytes = usize::try_from(size)
+        .unwrap_or(PACKET_HEAD_BYTES)
+        .min(PACKET_HEAD_BYTES);
+    let head = head.get_mut(..head_bytes)?;
+    source.read_exact(head).ok()?;
+    opus::samples_in_a_packet(head)
 }
 
 fn read_opus_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u64> {
@@ -567,22 +682,26 @@ fn id<S: Read + ?Sized>(source: &mut S) -> Option<u32> {
 }
 
 fn length<S: Read + ?Sized>(source: &mut S) -> Option<Length> {
-    let [lead] = read_exact::<1, S>(source)?;
-    let width = width(lead, MAX_LENGTH_BYTES)?;
-    let marker = 0x80_u8 >> (width - 1);
-
-    let mut length = u64::from(lead & (marker - 1));
-    for _ in 1..width {
-        let [byte] = read_exact::<1, S>(source)?;
-        length = (length << 8) | u64::from(byte);
-    }
-
+    let (length, width) = vint(source)?;
     let unbounded = (1_u64 << (7 * u64::from(width))) - 1;
     Some(if length == unbounded {
         Length::Unknown
     } else {
         Length::Known(length)
     })
+}
+
+fn vint<S: Read + ?Sized>(source: &mut S) -> Option<(u64, u32)> {
+    let [lead] = read_exact::<1, S>(source)?;
+    let width = width(lead, MAX_LENGTH_BYTES)?;
+    let marker = 0x80_u8 >> (width - 1);
+
+    let mut value = u64::from(lead & (marker - 1));
+    for _ in 1..width {
+        let [byte] = read_exact::<1, S>(source)?;
+        value = (value << 8) | u64::from(byte);
+    }
+    Some((value, width))
 }
 
 fn width(lead: u8, max: u32) -> Option<u32> {
@@ -927,17 +1046,90 @@ mod tests {
         assert_eq!(read_segment(&mut Cursor::new(bytes)).opus_samples, None);
     }
 
-    #[test]
-    fn a_laced_block_leaves_the_count_unknown_rather_than_short() {
-        let bytes = with_tracks(
+    const FIXED_LACED: u8 = 0b0100;
+    const EBML_LACED: u8 = 0b0110;
+
+    fn frame(toc: u8, bytes: usize) -> Vec<u8> {
+        let mut frame = vec![0xFC; bytes];
+        frame[0] = toc;
+        frame
+    }
+
+    fn laced_block(flags: u8, sizes: &[u8], frames: &[Vec<u8>]) -> Vec<u8> {
+        let mut block = vec![0x81, 0, 0, flags, (frames.len() - 1) as u8];
+        block.extend_from_slice(sizes);
+        block.extend_from_slice(&frames.concat());
+        element(SIMPLE_BLOCK, &block)
+    }
+
+    fn counted(blocks: &[Vec<u8>]) -> Option<u64> {
+        read_segment(&mut Cursor::new(with_tracks(
             &[track_entry(1, OPUS_CODEC_ID)],
+            blocks,
+        )))
+        .opus_samples
+    }
+
+    fn three_frames() -> Vec<Vec<u8>> {
+        vec![
+            frame(CELT_20_MS | TWO_FRAMES, 300),
+            frame(CELT_20_MS, 3),
+            frame(CELT_20_MS, 2),
+        ]
+    }
+
+    #[test]
+    fn a_xiph_laced_block_is_counted_frame_by_frame() {
+        let block = laced_block(XIPH_LACED, &[255, 45, 3], &three_frames());
+
+        assert_eq!(counted(&[opus_block(1, 0, CELT_20_MS), block]), Some(4_800));
+    }
+
+    #[test]
+    fn an_ebml_laced_block_reads_its_sizes_as_a_first_and_signed_differences() {
+        let first = [0x41, 0x2C];
+        let three_less_than_three_hundred = [0x5E, 0xD6];
+        let sizes = [first, three_less_than_three_hundred].concat();
+
+        assert_eq!(
+            counted(&[laced_block(EBML_LACED, &sizes, &three_frames())]),
+            Some(3_840)
+        );
+    }
+
+    #[test]
+    fn a_fixed_laced_block_shares_what_it_holds_equally() {
+        let frames = vec![frame(CELT_20_MS, 4); 3];
+
+        assert_eq!(
+            counted(&[laced_block(FIXED_LACED, &[], &frames)]),
+            Some(2_880)
+        );
+    }
+
+    #[test]
+    fn a_lace_that_does_not_add_up_leaves_the_count_unknown_rather_than_wrong() {
+        let uneven = vec![frame(CELT_20_MS, 4), frame(CELT_20_MS, 5)];
+        let overlong = laced_block(XIPH_LACED, &[255, 255, 3, 3], &three_frames());
+
+        assert_eq!(counted(&[laced_block(FIXED_LACED, &[], &uneven)]), None);
+        assert_eq!(counted(&[overlong]), None);
+    }
+
+    #[test]
+    fn a_laced_block_of_another_track_is_passed_over_uncounted() {
+        let bytes = with_tracks(
+            &[track_entry(1, "A_VORBIS"), track_entry(2, OPUS_CODEC_ID)],
             &[
-                opus_block(1, 0, CELT_20_MS),
-                opus_block(1, XIPH_LACED, CELT_20_MS),
+                laced_block(XIPH_LACED, &[9], &[vec![0; 9], vec![0; 4]]),
+                opus_block(2, 0, CELT_20_MS),
             ],
         );
 
-        assert_eq!(read_segment(&mut Cursor::new(bytes)).opus_samples, None);
+        assert_eq!(
+            read_segment(&mut Cursor::new(bytes)).opus_samples,
+            Some(960)
+        );
     }
 
     #[test]

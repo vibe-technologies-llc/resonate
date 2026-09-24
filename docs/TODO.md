@@ -17,10 +17,11 @@
   CELT, which libopus's encoder does at the start of a low-bitrate stream. Music bitrates are CELT
   throughout and match libopus to 10⁻⁵; a speech-rate Opus file is the one that hears it. Both are
   the crate's to fix rather than this one's
-- An Opus track in Matroska is counted exactly only where no block is laced and the walk reaches
-  the segment's declared end, so a file of laced blocks, one whose segment is of unknown length and
-  anything piped past `MAX_PRESCAN_HEAD` fall back to the millisecond timestamps, up to 1.5 ms off
-  what they decode to. Reading a laced block means reading its Xiph, EBML or fixed lace sizes
+- An Opus track in Matroska is counted exactly only where the walk reaches the segment's declared
+  end, so one whose segment is of unknown length and anything piped past `MAX_PRESCAN_HEAD` fall
+  back to the millisecond timestamps, up to 1.5 ms off what they decode to. No laced Opus file
+  written by a real muxer has been counted here — `mkvmerge` is not installed and ffmpeg does not
+  lace — so the three lacings are proved against blocks the tests lay down by hand
 - Opus mapping families 2, 3 and 255 — ambisonics and undefined layouts — are refused by
   symphonia's own `OpusHead` reader before the decoder is asked, so such a file does not open
 - Nothing applies DSD's +6 dB modulation convention — its 0 dB reference is 50 % modulation — so a

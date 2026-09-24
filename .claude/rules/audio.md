@@ -165,8 +165,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   walk reads that byte out of each block of the track whose `CodecID` is `A_OPUS`, so
   `Segment::opus_samples` is the whole stream in 48 kHz samples and `Segment::opus_music` less the
   pre-skip and the padding is `playable`'s end: the window is closed and the declared length is
-  exactly what decodes. The count is trusted only where nothing escaped it — a laced block, a
-  packet naming no frames or more than 120 ms, a cluster or a segment the walk did not reach the
+  exactly what decodes. A laced block is read through its lace — Xiph's runs of 255, EBML's first
+  size and signed differences, or fixed lacing's equal shares — and each frame's TOC byte is
+  counted the way an unlaced block's is, only for the Opus track's blocks, so another track's lace
+  costs nothing. The count is trusted only where nothing escaped it — a lace whose sizes do not
+  add up to the block, a packet naming no frames or more than 120 ms, a cluster or a segment the walk did not reach the
   end of, a segment of unknown length — and any of those leaves it `None`, the window open-ended,
   and the length the segment's millisecond count less the pre-skip it includes,
   `Carrying::declared_before_the_music`, within three half-millisecond roundings. Reaching the
