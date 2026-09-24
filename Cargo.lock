@@ -4912,6 +4912,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "crossbeam-channel",
+ "parking_lot",
  "resonate-codec",
  "resonate-core",
  "resonate-discord",

@@ -19,6 +19,7 @@ ui = ["dep:resonate-ui"]
 [dependencies]
 clap.workspace = true
 crossbeam-channel.workspace = true
+parking_lot.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-discord = { workspace = true, optional = true }

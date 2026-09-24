@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use resonate_core::PlaylistId;
 use resonate_engine::{Command, Player, QueueItem, Unclaimed, stamp_of};
 use resonate_library::{Direction, Library, Playing, PlaylistEntry};
@@ -8,6 +9,14 @@ use resonate_mpris::{Opened, PlaylistInfo, PlaylistOrder, Playlists};
 pub(crate) struct Collection {
     library: Arc<Library>,
     player: Arc<Player>,
+    named_playing: Mutex<Option<NamedAt>>,
+}
+
+#[derive(Clone)]
+struct NamedAt {
+    playlist: PlaylistId,
+    revision: u64,
+    info: Option<PlaylistInfo>,
 }
 
 impl Collection {
@@ -15,6 +24,7 @@ impl Collection {
         Self {
             library: Arc::clone(library),
             player: Arc::clone(player),
+            named_playing: Mutex::new(None),
         }
     }
 
@@ -76,7 +86,22 @@ impl Playlists for Collection {
 
     fn playing(&self) -> Option<PlaylistInfo> {
         let queue = self.player.state().queue_stamp;
-        self.named(self.library.playing_playlist(queue)?)
+        let playlist = self.library.playing_playlist(queue)?;
+        let revision = self.library.playlists_revision();
+        if let Some(held) = self.named_playing.lock().as_ref()
+            && held.playlist == playlist
+            && held.revision == revision
+        {
+            return held.info.clone();
+        }
+
+        let info = self.named(playlist);
+        *self.named_playing.lock() = Some(NamedAt {
+            playlist,
+            revision,
+            info: info.clone(),
+        });
+        info
     }
 
     fn activate(&self, playlist: PlaylistId) -> Opened {
