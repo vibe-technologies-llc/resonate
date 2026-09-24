@@ -413,7 +413,10 @@ impl Group {
             }
             Self::VolumeWheel => "scroll mouse wheel touchpad volume slider louder quieter",
             Self::Scrollbars => "scroll bar thumb track overlay lists panes drag hide",
-            Self::Tabs => "sidebar panes suggestions missing wanted hide show collection",
+            Self::Tabs => {
+                "sidebar panes suggestions missing wanted hide show collection counts numbers \
+                 totals badges"
+            }
             Self::Build => "version typeface font features sinks",
             Self::Places => "config.toml library database path xdg",
             Self::Everything => "reset defaults factory put back",
@@ -469,7 +472,11 @@ impl Group {
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
             Self::Scrollbars => &[SettingKey::Scrollbars],
-            Self::Tabs => &[SettingKey::SuggestionsTab, SettingKey::MissingTab],
+            Self::Tabs => &[
+                SettingKey::SuggestionsTab,
+                SettingKey::MissingTab,
+                SettingKey::TabCounts,
+            ],
             Self::Bands
             | Self::Measured
             | Self::Folders
@@ -803,7 +810,8 @@ pub(crate) const TABS_HINT: &str = "Which of the collection's panes the sidebar 
      Suggestions offers lists made out of what the catalog holds, and Missing names what the \
      releases are short of and what the artists have put out that the library does not hold. A \
      pane that is hidden is left out of the sidebar and of the keys that step through it, and \
-     nothing else leads to it.";
+     nothing else leads to it. The counts are the figures drawn beside a tab — how many albums, \
+     artists, tracks and plays — and off, the tabs carry their names alone.";
 
 pub(crate) const BUILD_HINT: &str = "What this copy of Resonate is: its version, the faces it \
                                      settled on out of the families this machine has installed, \

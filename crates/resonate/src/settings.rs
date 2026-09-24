@@ -167,6 +167,7 @@ impl Settings for File {
             Setting::Scrollbars(drawn) => (ConfigKey::Scrollbars, Some((*drawn).into())),
             Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
             Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
+            Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
             Setting::OrganiseAs(template) => {
                 (ConfigKey::OrganiseAs, Some(template.as_str().into()))
             }
@@ -245,6 +246,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Scrollbars => ConfigKey::Scrollbars,
         SettingKey::SuggestionsTab => ConfigKey::SuggestionsTab,
         SettingKey::MissingTab => ConfigKey::MissingTab,
+        SettingKey::TabCounts => ConfigKey::TabCounts,
         SettingKey::Inbox => ConfigKey::Inbox,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,

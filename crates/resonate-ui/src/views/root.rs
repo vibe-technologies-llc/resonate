@@ -2611,7 +2611,7 @@ impl RootView {
                     | Pane::Analysis
                     | Pane::Settings => None,
                 };
-                listed = listed.child(self.pane_row(pane, count, cx));
+                listed = listed.child(self.pane_row(pane, count.filter(|_| tabs.counts), cx));
             }
             browse = browse.child(listed);
         }
@@ -3114,6 +3114,7 @@ mod tests {
     const EVERY_TAB: Tabs = Tabs {
         suggestions: true,
         missing: true,
+        counts: true,
     };
 
     const NO_PLAYLIST_OPEN: bool = false;
@@ -3283,6 +3284,7 @@ mod tests {
         let hidden = Tabs {
             suggestions: false,
             missing: false,
+            counts: true,
         };
 
         assert_eq!(

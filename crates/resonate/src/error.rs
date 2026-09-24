@@ -50,6 +50,7 @@ pub enum ConfigKey {
     Scrollbars,
     SuggestionsTab,
     MissingTab,
+    TabCounts,
     Inbox,
     AcoustidKey,
     AuddToken,
@@ -65,7 +66,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 52] = [
+    pub const ALL: [Self; 53] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -106,6 +107,7 @@ impl ConfigKey {
         Self::Scrollbars,
         Self::SuggestionsTab,
         Self::MissingTab,
+        Self::TabCounts,
         Self::Inbox,
         Self::AcoustidKey,
         Self::AuddToken,
@@ -162,6 +164,7 @@ impl ConfigKey {
             Self::Scrollbars => "scrollbars",
             Self::SuggestionsTab => "suggestions-tab",
             Self::MissingTab => "missing-tab",
+            Self::TabCounts => "tab-counts",
             Self::Inbox => "inbox",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",

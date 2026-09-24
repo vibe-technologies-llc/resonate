@@ -127,6 +127,7 @@ pub struct Config {
     pub scrollbars: Option<bool>,
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
+    pub tab_counts: Option<bool>,
     pub inbox: Option<PathBuf>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
@@ -234,6 +235,7 @@ impl Config {
         resonate_ui::Tabs {
             suggestions: self.suggestions_tab.unwrap_or(built.suggestions),
             missing: self.missing_tab.unwrap_or(built.missing),
+            counts: self.tab_counts.unwrap_or(built.counts),
         }
     }
 
@@ -360,6 +362,7 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::Scrollbars => config.scrollbars = Some(at.boolean(value)?),
             ConfigKey::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
             ConfigKey::MissingTab => config.missing_tab = Some(at.boolean(value)?),
+            ConfigKey::TabCounts => config.tab_counts = Some(at.boolean(value)?),
             ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
             ConfigKey::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
@@ -979,6 +982,7 @@ mod tests {
         let built = resonate_ui::Tabs {
             suggestions: true,
             missing: false,
+            counts: true,
         };
 
         assert_eq!(read("").expect("empty is valid").tabs(), built);
@@ -989,6 +993,16 @@ mod tests {
             resonate_ui::Tabs {
                 suggestions: false,
                 missing: true,
+                ..built
+            }
+        );
+        assert_eq!(
+            read("tab-counts = false")
+                .expect("a boolean is valid")
+                .tabs(),
+            resonate_ui::Tabs {
+                counts: false,
+                ..built
             }
         );
     }

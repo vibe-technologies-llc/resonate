@@ -61,6 +61,7 @@ pub enum SettingKey {
     Scrollbars,
     SuggestionsTab,
     MissingTab,
+    TabCounts,
     Inbox,
     Discord,
     DiscordApp,
@@ -72,7 +73,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 51] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -115,6 +116,7 @@ impl SettingKey {
         Self::Scrollbars,
         Self::SuggestionsTab,
         Self::MissingTab,
+        Self::TabCounts,
         Self::Inbox,
         Self::Discord,
         Self::DiscordApp,
@@ -173,6 +175,7 @@ pub enum Setting {
     Scrollbars(bool),
     SuggestionsTab(bool),
     MissingTab(bool),
+    TabCounts(bool),
     Inbox(PathBuf),
     Discord(bool),
     DiscordApp(Option<AppId>),
@@ -228,6 +231,7 @@ impl Setting {
             Self::Scrollbars(_) => SettingKey::Scrollbars,
             Self::SuggestionsTab(_) => SettingKey::SuggestionsTab,
             Self::MissingTab(_) => SettingKey::MissingTab,
+            Self::TabCounts(_) => SettingKey::TabCounts,
             Self::Inbox(_) => SettingKey::Inbox,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
@@ -345,12 +349,14 @@ impl WindowButtons {
 pub struct Tabs {
     pub suggestions: bool,
     pub missing: bool,
+    pub counts: bool,
 }
 
 impl Tabs {
     pub const AS_BUILT: Self = Self {
         suggestions: true,
         missing: false,
+        counts: true,
     };
 }
 

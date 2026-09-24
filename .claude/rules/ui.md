@@ -1600,9 +1600,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   onto the global rather than through `theme`, because a button is not a colour or a measure.
   *The volume wheel* is the fourth, one switch worn onto `ResonateApp::scroll_volume` the same way
   and written as `scroll-volume`, *Scrollbars* the fifth, worn onto `ResonateApp::scrollbars`
-  and written as `scrollbars`, and *Sidebar tabs* the sixth, two switches worn onto
-  `ResonateApp::tabs` through `RootView::show_tabs` and written as `suggestions-tab` and
-  `missing-tab`. `Pane::is_shown` is what a tab being off means: the sidebar and `stepped_pane`
+  and written as `scrollbars`, and *Sidebar tabs* the sixth, three switches worn onto
+  `ResonateApp::tabs` through `RootView::show_tabs` and written as `suggestions-tab`,
+  `missing-tab` and `tab-counts`, the last taking the figure off every tab the sidebar draws. `Pane::is_shown` is what a tab being off means: the sidebar and `stepped_pane`
   pass the pane over and `set_pane` lands on the tracks instead, so a way back or a button cannot
   reach a pane the listener hid, and hiding the pane in front moves off it at once.
 - **gpui scrolls a region and draws no bar for it, so `views/scrollbar.rs` does.** `Scrollbars::of`

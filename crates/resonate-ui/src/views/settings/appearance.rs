@@ -29,6 +29,8 @@ const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
 
 const MISSING_TAB_ID: &str = "show-the-missing-tab";
 
+const TAB_COUNTS_ID: &str = "show-the-tab-counts";
+
 const WINDOW_BUTTONS_NOTE: &str = "A button the compositor does not offer is left out whatever \
                                    this says, and a window the compositor draws a titlebar for \
                                    carries that titlebar's buttons rather than these.";
@@ -269,6 +271,10 @@ impl RootView {
             missing: !shown.missing,
             ..shown
         };
+        let flip_counts = Tabs {
+            counts: !shown.counts,
+            ..shown
+        };
 
         kit::section_body()
             .child(self.in_the_ring(
@@ -296,6 +302,20 @@ impl RootView {
                 move |this, _, cx| {
                     this.show_tabs(flip_missing, cx);
                     this.store(&Setting::MissingTab(flip_missing.missing), cx);
+                },
+                cx,
+            ))
+            .child(self.in_the_ring(
+                TAB_COUNTS_ID,
+                switch_row(
+                    "Show the counts",
+                    "The figure beside each tab: how many albums, tracks, plays and the rest",
+                    shown.counts,
+                    TAB_COUNTS_ID,
+                ),
+                move |this, _, cx| {
+                    this.show_tabs(flip_counts, cx);
+                    this.store(&Setting::TabCounts(flip_counts.counts), cx);
                 },
                 cx,
             ))
