@@ -1132,7 +1132,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   colours every run and two names differ. With no cover at all the ground carries the reason's
   icon and the name in bold, in `theme::ink_over` the first accent. A cover is asked for through
   `LibraryModel::cover` at the grid's size like any album cell, so the cards fill in as the
-  decodes land rather than holding the pane.
+  decodes land rather than holding the pane. **The gradient is painted only where no cover is.**
+  It used to lie under the whole frame, and gpui clips a child to its parent's rectangle rather
+  than its rounding, so the square covers stood over the rounded ground and a hairline of it showed
+  along the frame's edge and wherever two half-pixel tiles met. The side is a whole pixel, a tile
+  is the floor of half of it, each tile and its cover are rounded on the one corner they stand in —
+  `Corner::of_tile` — and a single cover is rounded itself; an empty tile is its accent, solid.
 - **The playlists index row grew its first context menu, and that cost its controls a guard.**
   gpui fires `on_click` for a right press, so once the row answers a menu every one of its five
   pre-existing controls — play, next, last, copy, discard — needs `menu::pressed(event)`, or the

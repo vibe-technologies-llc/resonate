@@ -5,7 +5,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, ObjectFit, SharedString, Stateful, div, img,
+    AnyElement, Background, Context, Div, FontWeight, ObjectFit, SharedString, Stateful, div, img,
     linear_color_stop, linear_gradient, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{Accent, AlbumId};
@@ -61,8 +61,6 @@ const MARK_ON_THE_ART: f32 = 0.22;
 const ART_ROUNDING: f32 = 8.0;
 
 const MARK_ALPHA: u8 = 0x9c;
-
-const TILE_ALPHA: u8 = 0xd8;
 
 const CARD_PADDING: f32 = 12.0;
 
@@ -351,24 +349,23 @@ impl RootView {
             .filter_map(|album| self.drawn_album(*album, cx))
             .collect();
         let (from, to) = ground_of(suggestion);
+        let side = side.round();
 
         let frame = div()
             .relative()
             .flex_none()
             .size(px(side))
             .rounded(px(ART_ROUNDING))
-            .overflow_hidden()
-            .bg(linear_gradient(
-                135.0,
-                linear_color_stop(rgb(from), 0.0),
-                linear_color_stop(rgb(to), 1.0),
-            ));
+            .overflow_hidden();
 
         match drawn.as_slice() {
-            [] => frame.child(lettered(suggestion, side, from)),
+            [] => frame
+                .bg(ground(from, to))
+                .child(lettered(suggestion, side, from)),
             [only] => frame.child(
                 img(Arc::clone(only))
                     .size(px(side))
+                    .rounded(px(ART_ROUNDING))
                     .object_fit(ObjectFit::Cover),
             ),
             several => frame.child(tiled(several, side, suggestion)),
@@ -593,28 +590,70 @@ fn lettered(suggestion: &Suggestion, side: f32, ground: u32) -> Div {
         )
 }
 
+fn ground(from: u32, to: u32) -> Background {
+    linear_gradient(
+        135.0,
+        linear_color_stop(rgb(from), 0.0),
+        linear_color_stop(rgb(to), 1.0),
+    )
+}
+
 fn tiled(drawn: &[Arc<gpui::Image>], side: f32, suggestion: &Suggestion) -> Div {
-    let tile = side / TILES_A_SIDE as f32;
+    let tile = (side / TILES_A_SIDE as f32).floor();
     let tiles = TILES_A_SIDE * TILES_A_SIDE;
     let (from, to) = ground_of(suggestion);
 
-    let mut grid = div().flex().flex_wrap().size(px(side));
+    let mut grid = div()
+        .flex()
+        .flex_wrap()
+        .size(px(tile * TILES_A_SIDE as f32));
     for at in 0..tiles {
-        let cell = div().size(px(tile)).overflow_hidden();
+        let corner = Corner::of_tile(at);
+        let cell = corner.round(div().size(px(tile)).overflow_hidden());
         grid = grid.child(match drawn.get(at) {
             Some(art) => cell.child(
-                img(Arc::clone(art))
-                    .size(px(tile))
-                    .object_fit(ObjectFit::Cover),
+                corner.round(
+                    img(Arc::clone(art))
+                        .size(px(tile))
+                        .object_fit(ObjectFit::Cover),
+                ),
             ),
-            None => cell.bg(theme::tinted(
-                if at % 2 == 0 { from } else { to },
-                TILE_ALPHA,
-            )),
+            None => cell.bg(rgb(if at % 2 == 0 { from } else { to })),
         });
     }
 
     grid
+}
+
+#[derive(Clone, Copy)]
+enum Corner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Corner {
+    const fn of_tile(at: usize) -> Self {
+        let right = at % TILES_A_SIDE == TILES_A_SIDE - 1;
+        let bottom = at / TILES_A_SIDE == TILES_A_SIDE - 1;
+        match (bottom, right) {
+            (false, false) => Self::TopLeft,
+            (false, true) => Self::TopRight,
+            (true, false) => Self::BottomLeft,
+            (true, true) => Self::BottomRight,
+        }
+    }
+
+    fn round<E: Styled>(self, element: E) -> E {
+        let rounding = px(ART_ROUNDING);
+        match self {
+            Self::TopLeft => element.rounded_tl(rounding),
+            Self::TopRight => element.rounded_tr(rounding),
+            Self::BottomLeft => element.rounded_bl(rounding),
+            Self::BottomRight => element.rounded_br(rounding),
+        }
+    }
 }
 
 fn suggestions_heading(offered: usize, notice: Option<Notice>) -> Div {
