@@ -221,9 +221,10 @@
   Disc` — where every other language reads flat tables capped at twelve, so `Disque Vingt Et Un`
   names no disc. A folder is a string with no language on it, so composing in each language
   would mean guessing which one a folder is in
-- A file moved by hand is followed only where exactly one vanished row and one new row are alike
-  in size, length, codec and tagged names, so a file retagged in the same breath as it moved, a
-  cue-cut file and two identical rips moved at once each start again at nothing. A file no scan
+- A file moved by hand is followed only where a vanished row and a new row are alike in size,
+  length, codec and tagged names, so a file retagged in the same breath as it moved and a cue-cut
+  file each start again at nothing, and so do two identical rips moved at once unless the folders
+  they moved with tell them apart. A file no scan
   has seen counts nothing at all — a queue of unscanned files plays and is forgotten
 - No *listing* orders on a count inside a window, only narrows on one. The Statistics pane answers
   what was heard most in one, because `most_listened` is its own read and free to sort on a

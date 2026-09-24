@@ -15494,6 +15494,43 @@ fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Resu
 }
 
 #[test]
+fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() -> Result<()> {
+    let tree = Tree::new();
+    let twin = Wav::new().text(TITLE, "Echoes").build();
+    let first = tree.write("vinyl/echoes.wav", &twin);
+    let second = tree.write("tape/echoes.wav", &twin);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let heard = library
+        .track_played(&MediaLocation::local(&first), None)?
+        .expect("a counted play")
+        .track;
+
+    let filed_first = tree.path().join("filed/vinyl/echoes.wav");
+    let filed_second = tree.path().join("filed/tape/echoes.wav");
+    moved(&first, &filed_first);
+    moved(&second, &filed_second);
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 2);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    let row = library
+        .track_at(&filed_first, None)?
+        .expect("the row followed the file");
+    assert_eq!(row.id, heard.id);
+    assert_eq!(row.plays, 1);
+    assert_eq!(
+        library
+            .track_at(&filed_second, None)?
+            .expect("the twin followed its file")
+            .plays,
+        0
+    );
+    Ok(())
+}
+
+#[test]
 fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
     let tree = Tree::new();
     let source = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());

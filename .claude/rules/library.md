@@ -546,8 +546,13 @@ through `Player::media` like any other unscanned row.
   has gone and a file no row names. `moves::follow_the_moved` runs before the prune and pairs the
   two: a whole-file row, the only row at its path, whose file is not there, with a row this scan
   added — `added` at or past the generation — that is alike in `file_size`, `duration`, `codec`,
-  `tagged_title` and `tagged_artist`, where exactly one of each side is alike, so two identical
-  rips moved at once are left to be forgotten and found rather than guessed between. A pair is
+  `tagged_title` and `tagged_artist`. Where more than one on either side is alike — two identical
+  rips moved at once — `moves::told_apart` weighs each gone path against each new one by how many
+  names they share from the end, the file's own and then its folders', and pairs two only where
+  each is the other's one best and that best shares at least the file name: `vinyl/echoes.wav`
+  and `tape/echoes.wav` filed under `filed/` are each followed to their own folder, while the
+  same two moved to `c/` and `d/` share the file name alone with both and are left to be
+  forgotten and found rather than guessed between. A pair is
   followed through `organise::files_moved`, so the new row is dropped and the old one takes its
   path, its root and the generation, keeping its id, plays, listens, favourite, enrichment, vault
   object, playlist rows, kept lyric and queue row. The album is `settle_the_album`'s: where the
@@ -556,8 +561,9 @@ through `Player::media` like any other unscanned row.
   key names the album the rows always had and a release, a cover and a favourite are not left
   behind; otherwise the moved row joins the album the scan filed it under. A cue-cut file is not
   followed, its rows sharing a path. `ScanStats::moved` counts the pairs and `added` leaves them
-  out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist` and
-  `an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was` are the claims.
+  out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist`,
+  `an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was` and
+  `two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with` are the claims.
 - **A track's count is the catalog's and a rescan leaves it where it stands.** `tracks.plays` and
   `tracks.played` are absent from the upsert's `DO UPDATE SET` the way `added` is, so a rescan keeps
   both; forgetting a root drops the rows and the counts with them. It is kept against the path, so a

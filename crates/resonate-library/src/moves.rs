@@ -113,18 +113,79 @@ fn pairs(gone: Vec<Row>, arrived: Vec<Row>) -> Vec<Paired> {
     }
 
     let mut paired = Vec::new();
-    for (likeness, mut from) in left {
-        let Some(to) = came.get_mut(&likeness) else {
+    for (likeness, from) in left {
+        let Some(to) = came.remove(&likeness) else {
             continue;
         };
-        if from.len() != 1 || to.len() != 1 {
-            continue;
-        }
-        if let (Some(from), Some(to)) = (from.pop(), to.pop()) {
-            paired.push(Paired { from, to });
-        }
+        paired.extend(told_apart(from, to));
     }
     paired
+}
+
+fn told_apart(from: Vec<Row>, to: Vec<Row>) -> Vec<Paired> {
+    if let ([_], [_]) = (from.as_slice(), to.as_slice()) {
+        return from
+            .into_iter()
+            .zip(to)
+            .map(|(from, to)| Paired { from, to })
+            .collect();
+    }
+
+    let shared: Vec<Vec<usize>> = from
+        .iter()
+        .map(|gone| {
+            to.iter()
+                .map(|came| trailing_names_shared(&gone.path, &came.path))
+                .collect()
+        })
+        .collect();
+    let mut taken: Vec<(usize, usize)> = Vec::new();
+    for (was, scores) in shared.iter().enumerate() {
+        let Some(is) = the_one_best(scores.iter().copied()) else {
+            continue;
+        };
+        if the_one_best(shared.iter().map(|scores| scores[is])) == Some(was) {
+            taken.push((was, is));
+        }
+    }
+
+    let mut from: Vec<Option<Row>> = from.into_iter().map(Some).collect();
+    let mut to: Vec<Option<Row>> = to.into_iter().map(Some).collect();
+    taken
+        .into_iter()
+        .filter_map(|(was, is)| {
+            Some(Paired {
+                from: from[was].take()?,
+                to: to[is].take()?,
+            })
+        })
+        .collect()
+}
+
+fn the_one_best(scores: impl Iterator<Item = usize>) -> Option<usize> {
+    let mut best: Option<(usize, usize)> = None;
+    let mut tied = false;
+    for (at, score) in scores.enumerate() {
+        match best {
+            Some((_, held)) if score < held => {}
+            Some((_, held)) if score == held => tied = true,
+            _ => {
+                best = Some((at, score));
+                tied = false;
+            }
+        }
+    }
+    best.filter(|(_, score)| *score > 0 && !tied)
+        .map(|(at, _)| at)
+}
+
+fn trailing_names_shared(one: &str, other: &str) -> usize {
+    Path::new(one)
+        .components()
+        .rev()
+        .zip(Path::new(other).components().rev())
+        .take_while(|(mine, theirs)| mine == theirs)
+        .count()
 }
 
 fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()> {
