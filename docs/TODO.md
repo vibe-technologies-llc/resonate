@@ -286,9 +286,8 @@
 - A copy across a filesystem boundary killed mid-write leaves its staging file — the destination's
   name with `.resonate-staging` after it — beside where the file would have landed, and nothing
   sweeps one away but a hand
-- A sheet is rewritten only where its own bytes name the audio exactly once, so a `.cue` naming
-  the file in a `REM` comment as well as in its `FILE` line, or one a tagger wrote in an encoding
-  the new name has no letters in, is left as it was and goes on naming a file that is not there
+- A sheet a tagger wrote in an encoding the new name has no letters in is left as it was and goes
+  on naming a file that is not there
 - `resonate organise` reads every scanned row into memory before it plans anything, and nothing
   undoes a run: the moves are the record, and the way back is another layout and another `--apply`
 - The files a sheet names one each are filed only where every destination is free: a unit is

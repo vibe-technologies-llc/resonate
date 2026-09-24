@@ -13,6 +13,8 @@ const SECTORS_PER_SECOND: u64 = 75;
 const MOST_TRACKS: usize = 999;
 const LARGEST_CUE_SHEET: u64 = 1 << 20;
 const SHEET_EXTENSIONS: [&str; 2] = ["cue", "CUE"];
+const FILE_COMMAND: &str = "FILE";
+const BYTE_ORDER_MARK: char = '\u{feff}';
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CueStamp {
@@ -251,7 +253,7 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
 
     let named = encoded(from, held.encoding)?;
     let naming = encoded(to, held.encoding)?;
-    let at = the_one_run_of(sheet, &named)?;
+    let at = the_run_on_the_file_line(sheet, &named, held.encoding)?;
 
     let mut written = Vec::with_capacity(sheet.len() + naming.len() - named.len());
     written.extend_from_slice(&sheet[..at]);
@@ -260,11 +262,12 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     Some(written)
 }
 
-fn the_one_run_of(sheet: &[u8], named: &[u8]) -> Option<usize> {
+fn the_run_on_the_file_line(sheet: &[u8], named: &[u8], encoding: TextEncoding) -> Option<usize> {
+    let unit = unit_bytes(encoding);
     let last = sheet.len().checked_sub(named.len())?;
     let mut found = None;
-    for at in 0..=last {
-        if &sheet[at..at + named.len()] != named {
+    for at in (0..=last).step_by(unit) {
+        if &sheet[at..at + named.len()] != named || !follows_a_file_command(sheet, at, encoding) {
             continue;
         }
         if found.is_some() {
@@ -274,6 +277,56 @@ fn the_one_run_of(sheet: &[u8], named: &[u8]) -> Option<usize> {
     }
 
     found
+}
+
+fn follows_a_file_command(sheet: &[u8], at: usize, encoding: TextEncoding) -> bool {
+    let unit = unit_bytes(encoding);
+    let mut start = at;
+    while let Some(before) = start.checked_sub(unit) {
+        if matches!(
+            character(&sheet[before..start], encoding),
+            Some('\n' | '\r')
+        ) {
+            break;
+        }
+        start = before;
+    }
+
+    let mut lead = String::new();
+    for piece in sheet[start..at].chunks(unit) {
+        match character(piece, encoding) {
+            Some(BYTE_ORDER_MARK) if lead.is_empty() => {}
+            Some(held) if held.is_ascii() => lead.push(held),
+            _ => return false,
+        }
+    }
+
+    let lead =
+        lead.trim_start_matches(|held: char| held.is_whitespace() || held == BYTE_ORDER_MARK);
+    let Some((command, rest)) = lead.split_once(char::is_whitespace) else {
+        return false;
+    };
+    command.eq_ignore_ascii_case(FILE_COMMAND) && matches!(rest.trim_start(), "" | "\"")
+}
+
+const fn unit_bytes(encoding: TextEncoding) -> usize {
+    match encoding {
+        TextEncoding::Utf8 | TextEncoding::Windows1252 => 1,
+        TextEncoding::Utf16Le | TextEncoding::Utf16Be => 2,
+    }
+}
+
+fn character(piece: &[u8], encoding: TextEncoding) -> Option<char> {
+    match (encoding, piece) {
+        (TextEncoding::Utf8 | TextEncoding::Windows1252, [byte]) => Some(char::from(*byte)),
+        (TextEncoding::Utf16Le, [low, high]) => {
+            char::from_u32(u32::from(u16::from_le_bytes([*low, *high])))
+        }
+        (TextEncoding::Utf16Be, [high, low]) => {
+            char::from_u32(u32::from(u16::from_be_bytes([*high, *low])))
+        }
+        _ => None,
+    }
 }
 
 #[derive(Default)]
@@ -969,10 +1022,38 @@ FILE "Meddle.flac" WAVE
 
         let twice = b"FILE \"one.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\nFILE \"one.flac\" WAVE\n TRACK 02 AUDIO\n  INDEX 01 00:00:00\n";
         assert_eq!(renamed(twice, "one.flac", "two.flac"), None);
+    }
 
-        let remarked =
-            b"REM COMMENT \"one.flac\"\nFILE \"one.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n";
-        assert_eq!(renamed(remarked, "one.flac", "two.flac"), None);
+    #[test]
+    fn a_sheet_naming_its_audio_in_a_remark_as_well_has_the_file_line_alone_rewritten() {
+        let remarked = "REM COMMENT \"one.flac\"\r\nFILE \"one.flac\" WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n";
+
+        let written = renamed(remarked.as_bytes(), "one.flac", "two.flac")
+            .expect("the FILE line is rewritten");
+
+        assert_eq!(
+            String::from_utf8(written).expect("a UTF-8 sheet"),
+            remarked.replace("FILE \"one.flac\"", "FILE \"two.flac\"")
+        );
+    }
+
+    #[test]
+    fn a_wide_sheet_naming_its_audio_in_a_title_as_well_has_the_file_line_alone_rewritten() {
+        let text = "TITLE \"one.flac\"\r\nfile one.flac WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n";
+        let wide = |text: &str| {
+            let mut wide = vec![0xFE, 0xFF];
+            for unit in text.encode_utf16() {
+                wide.extend_from_slice(&unit.to_be_bytes());
+            }
+            wide
+        };
+
+        let written = renamed(&wide(text), "one.flac", "two.flac").expect("the FILE line");
+
+        assert_eq!(
+            written,
+            wide(&text.replace("file one.flac", "file two.flac"))
+        );
     }
 
     #[test]

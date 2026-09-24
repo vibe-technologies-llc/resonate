@@ -1385,11 +1385,13 @@ the pass.
   sheet that cuts *one* row out of a file is the case that does not hold: the file is rendered by
   the layout like any other, so `sheets_follow_their_audio` rewrites the landed sheet after the
   batch's catalog write. `cue::renamed` is the whole of how — it reads the sheet to learn its
-  encoding and to check the sheet names that file exactly once, encodes the old and the new name in
-  that encoding and splices that one byte run, so a BOM, a line ending and every other byte survive
-  — and `staged_over` renames a staged file over the sheet, so a crash mid-write cannot truncate
-  it. A name the sheet's encoding cannot hold, or one the sheet's bytes name more than once, leaves
-  the sheet as it was.
+  encoding and to check that exactly one `FILE` line names that file, encodes the old and the new
+  name in that encoding and splices the one byte run that follows a `FILE` command on its own line
+  — `the_run_on_the_file_line`, read a unit of the encoding at a time, so a UTF-16 sheet is walked
+  in pairs and a `REM` or a `TITLE` naming the same file is left as it was — so a BOM, a line
+  ending and every other byte survive; and `staged_over` renames a staged file over the sheet, so
+  a crash mid-write cannot truncate it. A name the sheet's encoding cannot hold, or a file two
+  `FILE` lines name, leaves the sheet as it was.
 - **A sheet that cuts a file travels with it whatever it is called, and one that names several
   files takes them all as one move.** The stem rule above only finds `Meddle.cue` beside
   `Meddle.wav`; a rip whose sheet is `Meddle.cue` and whose audio is `CDImage.wav` left the sheet
