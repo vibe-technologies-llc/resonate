@@ -69,7 +69,11 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   inputs and past outputs, which mean the same thing after a coefficient change, so a band can be
   retuned under a running stream without a transient; TDF2's two are accumulator residues whose
   meaning is defined by the coefficients that produced them, and substituting new ones is a click.
-  f64 because a 20 Hz shelf at 192 kHz sits its poles within 3e-4 of the unit circle, where f32's
+  That is why a retune swaps the coefficients between two blocks and nothing crossfades the old
+  response into the new one: simulated against DF1's carried history, a 10 ms crossfade left a
+  ±9 dB swing of a 60 Hz band under music exactly as smooth as it already was, and only halved the
+  seam of a ±12 dB swing at the very frequency a tone was playing, which is not worth a second
+  cascade run beside the first on every retune. f64 because a 20 Hz shelf at 192 kHz sits its poles within 3e-4 of the unit circle, where f32's
   mantissa leaves a drift floor around -60 dBFS. The sample is widened once on the way in and
   narrowed once on the way out, so a cascade of ten shelves rounds once rather than ten times.
 - **`usable` guards the recursive path, and it does two jobs.** An IIR tail decays to the denormal

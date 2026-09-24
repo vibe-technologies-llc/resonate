@@ -42,6 +42,8 @@ const LIPSHITZ_1992_E_WEIGHTED: [f64; 5] = [2.033, -2.165, 1.959, -1.590, 0.6149
 const LIPSHITZ_1992_TAPS: usize = LIPSHITZ_1992_E_WEIGHTED.len();
 const LIPSHITZ_1992_DESIGN_RATES: [SampleRate; 2] = [SampleRate::HZ_44100, SampleRate::HZ_48000];
 
+const SILENT_FOR_BEFORE_MUTING_SECONDS: f64 = 0.05;
+
 const THRESHOLD_ORDER: usize = 12;
 const THRESHOLD_LAGS: usize = THRESHOLD_ORDER + 1;
 const THRESHOLD_RANGE_DB: f64 = 42.0;
@@ -267,6 +269,14 @@ pub struct Dither {
     coefficients: Vec<f64>,
     history: Vec<f64>,
     newest_at: usize,
+    silent_for: usize,
+    mutes_after: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Heard {
+    Sound,
+    DigitalSilence,
 }
 
 impl Dither {
@@ -281,6 +291,53 @@ impl Dither {
             coefficients: Vec::new(),
             history: Vec::new(),
             newest_at: 0,
+            silent_for: 0,
+            mutes_after: 0,
+        }
+    }
+
+    fn hearing(&self, frame: &[f64]) -> (Heard, usize) {
+        let silent_for = if frame.iter().all(|sample| *sample == 0.0) {
+            self.silent_for.saturating_add(1)
+        } else {
+            0
+        };
+        let heard = if silent_for > self.mutes_after {
+            Heard::DigitalSilence
+        } else {
+            Heard::Sound
+        };
+        (heard, silent_for)
+    }
+
+    fn alike_from(&mut self, frames: &[f64]) -> (Heard, usize) {
+        let mut run = frames.chunks_exact(self.channels.get());
+        let Some(first) = run.next() else {
+            return (Heard::Sound, 0);
+        };
+        let (heard, silent_for) = self.hearing(first);
+        self.silent_for = silent_for;
+        let mut alike = 1;
+        for frame in run {
+            let (next, silent_for) = self.hearing(frame);
+            if next != heard {
+                break;
+            }
+            self.silent_for = silent_for;
+            alike += 1;
+        }
+        (heard, alike)
+    }
+
+    fn requantise_run(&mut self, input: &[f64], output: &mut [f64], frames: usize) {
+        match self.applied {
+            NoiseShaping::None => self.requantise(input, output, frames * self.channels.get()),
+            NoiseShaping::Lipshitz => {
+                self.requantise_shaped::<LIPSHITZ_1992_TAPS>(input, output, frames);
+            }
+            NoiseShaping::Threshold => {
+                self.requantise_shaped::<THRESHOLD_ORDER>(input, output, frames);
+            }
         }
     }
 
@@ -359,11 +416,15 @@ impl Processor for Dither {
         self.history =
             vec![0.0; self.channels.get() * HISTORY_HELD_TWICE * self.coefficients.len()];
         self.newest_at = 0;
+        self.silent_for = 0;
+        self.mutes_after =
+            (SILENT_FOR_BEFORE_MUTING_SECONDS * f64::from(spec.rate.hz())).ceil() as usize;
         Ok(max_frames_in)
     }
 
     fn reset(&mut self) {
         self.history.fill(0.0);
+        self.silent_for = 0;
     }
 
     fn latency_frames(&self) -> f64 {
@@ -378,14 +439,25 @@ impl Processor for Dither {
         let channels = self.channels.get();
         let frames = (input.len() / channels).min(output.len() / channels);
 
-        match self.applied {
-            NoiseShaping::None => self.requantise(input, output, frames * channels),
-            NoiseShaping::Lipshitz => {
-                self.requantise_shaped::<LIPSHITZ_1992_TAPS>(input, output, frames);
+        let mut done = 0;
+        while done < frames {
+            let from = done * channels;
+            let (heard, run) =
+                self.alike_from(input.get(from..frames * channels).unwrap_or_default());
+            if run == 0 {
+                break;
             }
-            NoiseShaping::Threshold => {
-                self.requantise_shaped::<THRESHOLD_ORDER>(input, output, frames);
+            let until = from + run * channels;
+            let taken = input.get(from..until).unwrap_or_default();
+            let made = output.get_mut(from..until).unwrap_or_default();
+            match heard {
+                Heard::Sound => self.requantise_run(taken, made, run),
+                Heard::DigitalSilence => {
+                    made.fill(0.0);
+                    self.history.fill(0.0);
+                }
             }
+            done += run;
         }
 
         ProcessCount {
@@ -1094,6 +1166,80 @@ mod tests {
             assert_eq!(above, 1.0 - step);
             assert_eq!(below, -1.0);
             assert_eq!(huge, 1.0 - step);
+        }
+    }
+
+    fn every_curve() -> [NoiseShaping; 3] {
+        [
+            NoiseShaping::None,
+            NoiseShaping::Lipshitz,
+            NoiseShaping::Threshold,
+        ]
+    }
+
+    fn a_moment_at_44_1_khz() -> usize {
+        (SILENT_FOR_BEFORE_MUTING_SECONDS * f64::from(SampleRate::HZ_44100.hz())).ceil() as usize
+    }
+
+    fn through_in_blocks(stage: &mut Dither, input: &[f64]) -> Vec<f64> {
+        let mut output = vec![0.0; input.len()];
+        for (taken, made) in input.chunks(511).zip(output.chunks_mut(511)) {
+            let count = stage.process(taken, made);
+            assert_eq!(count.frames_out, taken.len());
+        }
+        output
+    }
+
+    #[test]
+    fn digital_silence_held_for_a_moment_comes_out_as_digital_silence() {
+        for shaping in every_curve() {
+            let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+            through_in_blocks(&mut stage, &sine(SampleRate::HZ_44100, 997.0, 0.5, 4_096));
+            let quiet = through_in_blocks(&mut stage, &[0.0; 4 * 4_096]);
+            let (moment, after) = quiet.split_at(a_moment_at_44_1_khz());
+            assert!(
+                moment.iter().any(|sample| *sample != 0.0),
+                "{shaping:?}: the dither went quiet the instant the music stopped"
+            );
+            assert!(
+                after.iter().all(|sample| *sample == 0.0),
+                "{shaping:?}: digital silence came out as hiss"
+            );
+            assert!(
+                stage.history.iter().all(|error| *error == 0.0),
+                "{shaping:?}: an error from before the silence was kept"
+            );
+        }
+    }
+
+    #[test]
+    fn a_fade_below_the_last_step_is_still_dithered() {
+        for shaping in every_curve() {
+            let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+            let faint = sine(SampleRate::HZ_44100, 997.0, 1e-6, 4 * 4_096);
+            let output = through_in_blocks(&mut stage, &faint);
+            let tail = output.get(output.len() - a_moment_at_44_1_khz()..);
+            assert!(
+                tail.is_some_and(|tail| tail.iter().any(|sample| *sample != 0.0)),
+                "{shaping:?}: a signal under the last step was muted as if it were silence"
+            );
+        }
+    }
+
+    #[test]
+    fn sound_after_digital_silence_is_dithered_from_a_clean_history() {
+        for shaping in every_curve() {
+            let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+            through_in_blocks(&mut stage, &[0.0; 4 * 4_096]);
+            let level = 0.25;
+            let output = through_in_blocks(&mut stage, &[level; 64]);
+            let unshaped = DitherKind::Triangular.largest_error_steps() * stage.step();
+            let first = output.first().copied().unwrap_or_default();
+            assert!(
+                (first - level).abs() <= unshaped,
+                "{shaping:?}: the first frame after the silence carried an error fed back from \
+                 before it, {level} coming out as {first}"
+            );
         }
     }
 

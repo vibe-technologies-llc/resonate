@@ -1172,6 +1172,18 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   out of the box, and so does a 24-bit device behind a volume below full. `--dither` and
   `--noise-shaping` are the command line's way to say otherwise, `dither` and `noise-shaping` the
   config file's, and the settings pane's Processing category the window's.
+- **Digital silence held for a moment is handed on as digital silence.** Dither is there to
+  decorrelate the error of a signal the grid cannot hold, and a run of exact zeros has no error to
+  decorrelate: dithered, a gap between tracks or a track's leading silence reached a 16-bit device
+  as shaped hiss that a DAC's own silence detection could never see as silence. Once every
+  channel has read exact zero for `SILENT_FOR_BEFORE_MUTING_SECONDS`, 50 ms, the stage writes
+  zeros and clears the error it feeds back, and the first frame that is not zero is dithered again
+  from that clean history — so a fade, however far under the last step, is never mistaken for
+  silence, and the 50 ms before the mute let the shaped error of what came before ring out rather
+  than stopping it on a step. `digital_silence_held_for_a_moment_comes_out_as_digital_silence`,
+  `a_fade_below_the_last_step_is_still_dithered` and
+  `sound_after_digital_silence_is_dithered_from_a_clean_history` hold the three claims; checking
+  each frame costs the stage about a tenth of what it cost.
 - **`OutputMode` names what the plan does to the signal, and a shorter word length is not a
   resample.** Four readings, decided in `plan_for` and drawn as the chip the playback bar and the
   inspector carry: `BitPerfect` where the stream is the source's own triple; `Repacked` where the
