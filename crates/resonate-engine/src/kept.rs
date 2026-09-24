@@ -61,7 +61,7 @@ impl Keeping {
             }));
         }
 
-        if !self.moved_on(state, row, at) {
+        if state.queue_position.is_none() || !self.moved_on(state, row, at) {
             return None;
         }
         self.kept = Some((row, at));
@@ -249,6 +249,34 @@ mod tests {
             keeping.kept(&playing_at(&queue, 1, Frames::ZERO), &drawn(&queue, 1)),
             Some(Keep::Place {
                 row: 1,
+                at: Frames::ZERO,
+            })
+        );
+    }
+
+    #[test]
+    fn a_queue_that_played_through_keeps_the_last_place_it_reached() {
+        let mut keeping = Keeping::default();
+        let queue = queued(3);
+
+        keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+        keeping.kept(&playing_at(&queue, 2, seconds(40)), &drawn(&queue, 1));
+        let finished = PlayerState {
+            playback: PlaybackState::Stopped,
+            current: None,
+            queue_position: None,
+            loaded_position: None,
+            ..playing_at(&queue, 2, seconds(40))
+        };
+        assert_eq!(
+            keeping.kept(&finished, &drawn(&queue, 1)),
+            None,
+            "a queue that ran out was kept as its first row"
+        );
+        assert_eq!(
+            keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1)),
+            Some(Keep::Place {
+                row: 0,
                 at: Frames::ZERO,
             })
         );

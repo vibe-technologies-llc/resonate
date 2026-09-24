@@ -776,7 +776,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the rows are the same rows and rewriting a URI per row said nothing. Anything else answers
   `Keep::Place`, and only where the row changed or the position moved `KEPT_EVERY` — five
   seconds — in either direction, so a 60 Hz observer writes to SQLite about as often as a 500 ms
-  tick does. The two triggers are read together because `QueueStamp` is `stamp_of(self.items)`,
+  tick does. A sample with no queue position — a queue that played through to its end — answers
+  no `Keep::Place` at all, so the last real place stands rather than being written over as the
+  first row at its start. The two triggers are read together because `QueueStamp` is `stamp_of(self.items)`,
   the rows in load order, where the revision counts every republication including a reorder; and
   the shuffle is weighed beside the revision because it rides on `PlayerState` while the order
   rides on `Queued`, so a sample that read the two a beat apart is put right by the next one
