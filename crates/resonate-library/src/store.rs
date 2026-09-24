@@ -171,6 +171,9 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
             merged += 1;
         }
         rekey_artist(&tx, keeps.id, &key, &spelling)?;
+        if !gone.is_empty() {
+            reindex_the_tracks_of(&tx, keeps.id)?;
+        }
     }
     tx.commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
@@ -2059,6 +2062,52 @@ mod tests {
         };
         assert_eq!(held(1), (Some(500), Some(vec![0x89]), Some(1)));
         assert_eq!(held(3), (Some(700), Some(vec![0x01]), Some(0)));
+    }
+
+    #[test]
+    fn the_tracks_of_a_folded_artist_are_found_by_every_genre_it_now_holds() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name, mbid) VALUES
+                     (1, 'marcin przybylowicz', 'Marcin Przybylowicz',
+                      '8d8e1d53-2a0a-4b53-9f0b-d1d4e7c1b3a8'),
+                     (2, 'marcin przybyłowicz', 'Marcin Przybyłowicz', NULL);
+                 INSERT INTO artist_genres (artist_id, name, weight) VALUES
+                     (1, 'soundtrack', 1), (2, 'folk', 1);
+                 INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO tracks (id, root_id, path, title, artist, artist_id, sample_rate,
+                                     channels, sample_format, codec, file_size, modified,
+                                     added, seen)
+                 VALUES
+                     (10, 1, '/music/a.flac', 'Blood', 'Marcin Przybylowicz', 1,
+                      44100, 2, 0, 0, 1, 0, 0, 0),
+                     (20, 1, '/music/b.flac', 'Wine', 'Marcin Przybyłowicz', 2,
+                      44100, 2, 0, 0, 1, 0, 0, 0);",
+            )
+            .expect("a catalog keyed the old way");
+        let tx = connection.transaction().expect("a transaction");
+        reindex_the_tracks_of(&tx, 1).expect("the first artist's tracks index");
+        reindex_the_tracks_of(&tx, 2).expect("the second artist's tracks index");
+        tx.commit().expect("the index commits");
+
+        reconcile_artists(&mut connection).expect("the artists reconcile");
+
+        let found = |genre: &str| {
+            connection
+                .prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1 ORDER BY rowid")
+                .and_then(|mut statement| {
+                    statement
+                        .query_map(params![format!("genre:{genre}")], |row| {
+                            row.get::<_, i64>(0)
+                        })
+                        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+                })
+                .expect("the index answers")
+        };
+        assert_eq!(found("folk"), [10, 20]);
+        assert_eq!(found("soundtrack"), [10, 20]);
     }
 
     #[test]
