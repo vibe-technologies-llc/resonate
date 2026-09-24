@@ -12,6 +12,7 @@ use crate::{
         hint::Names,
         kit, listing,
         root::{RootView, empty, row},
+        scrollbar::Scrollbars,
         sorting,
     },
 };
@@ -213,7 +214,7 @@ impl RootView {
                 })
             })
             .when(!nothing, |pane| {
-                pane.child(super::scrollbar::around(
+                pane.child(Scrollbars::of(cx).around(
                     "statistics-scrollbar",
                     self.statistics_scroll.clone(),
                     self.what_was_heard(counts, &listened, &chart, cx),

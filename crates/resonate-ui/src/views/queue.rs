@@ -20,6 +20,7 @@ use crate::{
         playlists::{self, Held, ROW_GROUP},
         reorder::{self, Carried, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row},
+        scrollbar::Scrollbars,
         sorting,
     },
 };
@@ -370,10 +371,7 @@ impl RootView {
                     .h_full()
                     .w_full(),
                 )
-                .child(super::scrollbar::vertical(
-                    "queue-scrollbar",
-                    self.queue_rows.clone(),
-                )),
+                .child(Scrollbars::of(cx).vertical("queue-scrollbar", self.queue_rows.clone())),
             )
             .into_any_element()
     }

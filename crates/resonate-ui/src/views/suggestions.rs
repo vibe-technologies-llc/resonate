@@ -23,6 +23,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis, Press, Tone},
         listing,
         root::{RootView, empty, listed},
+        scrollbar::Scrollbars,
         sorting,
     },
 };
@@ -131,7 +132,7 @@ impl RootView {
                 pane.child(empty(Icon::Suggestions, NOTHING_OFFERED, Some(SCAN_MORE)))
             })
             .when(!nothing, |pane| {
-                pane.child(super::scrollbar::around(
+                pane.child(Scrollbars::of(cx).around(
                     "suggestions-scrollbar",
                     self.suggestions_scroll.clone(),
                     shelves,
@@ -304,34 +305,36 @@ impl RootView {
             .min_w(px(0.0))
             .child(heading)
             .child(listing::columns("#", true, sorting::unsorted(), cx))
-            .child(super::scrollbar::around(
-                "suggestion-tracks-scrollbar",
-                self.suggestion_rows.clone(),
-                uniform_list(
-                    "suggestion-tracks",
-                    shown,
-                    cx.processor(move |this, range: Range<usize>, _, cx| {
-                        let mut drawn = Vec::new();
-                        for index in range {
-                            let Some(track) = rows.get(index) else {
-                                continue;
-                            };
-                            drawn.push(this.track_row(
-                                &rows,
-                                index,
-                                track,
-                                playing == Some(track.id),
-                                false,
-                                cx,
-                            ));
-                        }
-                        drawn
-                    }),
-                )
-                .track_scroll(self.suggestion_rows.clone())
-                .h_full()
-                .w_full(),
-            ))
+            .child(
+                Scrollbars::of(cx).around(
+                    "suggestion-tracks-scrollbar",
+                    self.suggestion_rows.clone(),
+                    uniform_list(
+                        "suggestion-tracks",
+                        shown,
+                        cx.processor(move |this, range: Range<usize>, _, cx| {
+                            let mut drawn = Vec::new();
+                            for index in range {
+                                let Some(track) = rows.get(index) else {
+                                    continue;
+                                };
+                                drawn.push(this.track_row(
+                                    &rows,
+                                    index,
+                                    track,
+                                    playing == Some(track.id),
+                                    false,
+                                    cx,
+                                ));
+                            }
+                            drawn
+                        }),
+                    )
+                    .track_scroll(self.suggestion_rows.clone())
+                    .h_full()
+                    .w_full(),
+                ),
+            )
             .into_any_element()
     }
 

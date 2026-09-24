@@ -30,6 +30,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
         root::{Magnified, Pane, RootView, empty, listed, row, tall_row},
+        scrollbar::Scrollbars,
         sorting,
         transport::COVER_HINT,
     },
@@ -224,10 +225,9 @@ impl RootView {
                                 .w_full(),
                             )
                         })
-                        .child(super::scrollbar::vertical(
-                            "album-scrollbar",
-                            self.album_rows.clone(),
-                        )),
+                        .child(
+                            Scrollbars::of(cx).vertical("album-scrollbar", self.album_rows.clone()),
+                        ),
                 )
             })
             .into_any_element()
@@ -498,92 +498,96 @@ impl RootView {
             .child(heading)
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when(!nothing, |pane| {
-                pane.child(super::scrollbar::around(
-                    "artist-scrollbar",
-                    self.artist_rows.clone(),
-                    uniform_list(
-                        "artists",
-                        held,
-                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                            this.reach_further(range.end, held, cx);
-                            let mut rows = Vec::new();
-                            for index in range {
-                                let Some(artist) = artists.get(index) else {
-                                    continue;
-                                };
-                                let id = artist.id;
-                                let chosen = selected == Selection::Artist(id);
-                                let favourite = this
-                                    .library
-                                    .read(cx)
-                                    .favours(Favoured::Artist(id), artist.favourite.is_some());
-                                let reached = this.reaches(Shift::Listing(Listed::Artists), index);
+                pane.child(
+                    Scrollbars::of(cx).around(
+                        "artist-scrollbar",
+                        self.artist_rows.clone(),
+                        uniform_list(
+                            "artists",
+                            held,
+                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                this.reach_further(range.end, held, cx);
+                                let mut rows = Vec::new();
+                                for index in range {
+                                    let Some(artist) = artists.get(index) else {
+                                        continue;
+                                    };
+                                    let id = artist.id;
+                                    let chosen = selected == Selection::Artist(id);
+                                    let favourite = this
+                                        .library
+                                        .read(cx)
+                                        .favours(Favoured::Artist(id), artist.favourite.is_some());
+                                    let reached =
+                                        this.reaches(Shift::Listing(Listed::Artists), index);
 
-                                let listed = reorder::marked(
-                                    tall_row(chosen)
-                                        .id(index)
-                                        .group(ROW_GROUP)
-                                        .cursor_pointer()
-                                        .hover(|entry| entry.bg(rgb(theme::hover())))
-                                        .names(OPEN_ARTIST_HINT)
-                                        .child(this.artist_mark(artist, chosen, cx))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w(px(0.0))
-                                                .truncate()
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .child(listing::matched(
-                                                    artist.name.clone().into(),
-                                                    this.library
-                                                        .read(cx)
-                                                        .search()
-                                                        .lit(&artist.name, Column::Artist),
-                                                )),
-                                        )
-                                        .child(kit::figure(format!(
-                                            "{} · {}",
-                                            format::counted(
-                                                artist.album_count as usize,
-                                                "album",
-                                                "albums"
-                                            ),
-                                            format::counted(
-                                                artist.track_count as usize,
-                                                "track",
-                                                "tracks"
+                                    let listed = reorder::marked(
+                                        tall_row(chosen)
+                                            .id(index)
+                                            .group(ROW_GROUP)
+                                            .cursor_pointer()
+                                            .hover(|entry| entry.bg(rgb(theme::hover())))
+                                            .names(OPEN_ARTIST_HINT)
+                                            .child(this.artist_mark(artist, chosen, cx))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w(px(0.0))
+                                                    .truncate()
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .child(listing::matched(
+                                                        artist.name.clone().into(),
+                                                        this.library
+                                                            .read(cx)
+                                                            .search()
+                                                            .lit(&artist.name, Column::Artist),
+                                                    )),
                                             )
-                                        )))
-                                        .child(this.favour_mark_under(
-                                            ("artist-favourite", index),
-                                            Favoured::Artist(id),
-                                            favourite,
-                                            ROW_GROUP,
-                                            cx,
-                                        ))
-                                        .on_click(cx.listener(move |this, event, _, cx| {
-                                            if !menu::pressed(event) {
-                                                return;
-                                            }
-                                            this.opened(Selection::Artist(id), cx);
-                                        })),
-                                    reached,
-                                );
-                                rows.push(menu::opens_a_menu(
-                                    listed,
-                                    move |_, at, _| {
-                                        artist_menu(at, id).favours(Favoured::Artist(id), favourite)
-                                    },
-                                    cx,
-                                ));
-                            }
-                            rows
-                        }),
-                    )
-                    .track_scroll(self.artist_rows.clone())
-                    .h_full()
-                    .w_full(),
-                ))
+                                            .child(kit::figure(format!(
+                                                "{} · {}",
+                                                format::counted(
+                                                    artist.album_count as usize,
+                                                    "album",
+                                                    "albums"
+                                                ),
+                                                format::counted(
+                                                    artist.track_count as usize,
+                                                    "track",
+                                                    "tracks"
+                                                )
+                                            )))
+                                            .child(this.favour_mark_under(
+                                                ("artist-favourite", index),
+                                                Favoured::Artist(id),
+                                                favourite,
+                                                ROW_GROUP,
+                                                cx,
+                                            ))
+                                            .on_click(cx.listener(move |this, event, _, cx| {
+                                                if !menu::pressed(event) {
+                                                    return;
+                                                }
+                                                this.opened(Selection::Artist(id), cx);
+                                            })),
+                                        reached,
+                                    );
+                                    rows.push(menu::opens_a_menu(
+                                        listed,
+                                        move |_, at, _| {
+                                            artist_menu(at, id)
+                                                .favours(Favoured::Artist(id), favourite)
+                                        },
+                                        cx,
+                                    ));
+                                }
+                                rows
+                            }),
+                        )
+                        .track_scroll(self.artist_rows.clone())
+                        .h_full()
+                        .w_full(),
+                    ),
+                )
             })
             .into_any_element()
     }
@@ -639,7 +643,7 @@ impl RootView {
             .min_w(px(0.0))
             .child(heading.flex_none())
             .when_some(records, |pane, records| {
-                pane.child(super::scrollbar::around(
+                pane.child(Scrollbars::of(cx).around(
                     "artist-records-scrollbar",
                     self.artist_records_scroll.clone(),
                     records,
@@ -655,86 +659,90 @@ impl RootView {
             })
             .when_some(found_nothing, |pane, nothing| pane.child(nothing))
             .when(!nothing && listing_shown, |pane| {
-                pane.child(super::scrollbar::around(
-                    "track-scrollbar",
-                    self.track_rows.clone(),
-                    uniform_list(
-                        "tracks",
-                        listed,
-                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                            this.reach_further(range.end, held, cx);
-                            let mut drawn = Vec::new();
-                            for index in range {
-                                let row = if rowed {
-                                    rows.get(index).copied()
-                                } else {
-                                    Some(ListedRow::Held(index))
-                                };
-                                match row {
-                                    Some(ListedRow::Disc(disc)) => {
-                                        drawn.push(disc_heading(disc, &media).into_any_element());
-                                    }
-                                    Some(ListedRow::Held(held)) => {
-                                        let Some(track) = tracks.get(held) else {
-                                            continue;
-                                        };
-                                        let reached =
-                                            this.reaches(Shift::Listing(Listed::Tracks), index);
-                                        drawn.push(
-                                            reorder::marked(
-                                                this.track_row(
-                                                    &tracks,
-                                                    held,
-                                                    track,
-                                                    playing == Some(track.id),
-                                                    in_an_album,
-                                                    cx,
-                                                ),
-                                                reached,
-                                            )
-                                            .into_any_element(),
-                                        );
-                                    }
-                                    Some(ListedRow::Missing(missing)) => {
-                                        let Some(row) = release_tracks.get(missing) else {
-                                            continue;
-                                        };
-                                        drawn.push(
-                                            this.unheld_row(missing, Unheld::from(row), cx)
+                pane.child(
+                    Scrollbars::of(cx).around(
+                        "track-scrollbar",
+                        self.track_rows.clone(),
+                        uniform_list(
+                            "tracks",
+                            listed,
+                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                this.reach_further(range.end, held, cx);
+                                let mut drawn = Vec::new();
+                                for index in range {
+                                    let row = if rowed {
+                                        rows.get(index).copied()
+                                    } else {
+                                        Some(ListedRow::Held(index))
+                                    };
+                                    match row {
+                                        Some(ListedRow::Disc(disc)) => {
+                                            drawn.push(
+                                                disc_heading(disc, &media).into_any_element(),
+                                            );
+                                        }
+                                        Some(ListedRow::Held(held)) => {
+                                            let Some(track) = tracks.get(held) else {
+                                                continue;
+                                            };
+                                            let reached =
+                                                this.reaches(Shift::Listing(Listed::Tracks), index);
+                                            drawn.push(
+                                                reorder::marked(
+                                                    this.track_row(
+                                                        &tracks,
+                                                        held,
+                                                        track,
+                                                        playing == Some(track.id),
+                                                        in_an_album,
+                                                        cx,
+                                                    ),
+                                                    reached,
+                                                )
                                                 .into_any_element(),
-                                        );
+                                            );
+                                        }
+                                        Some(ListedRow::Missing(missing)) => {
+                                            let Some(row) = release_tracks.get(missing) else {
+                                                continue;
+                                            };
+                                            drawn.push(
+                                                this.unheld_row(missing, Unheld::from(row), cx)
+                                                    .into_any_element(),
+                                            );
+                                        }
+                                        Some(ListedRow::Beyond(beyond)) => {
+                                            drawn.push(beyond_heading(beyond).into_any_element());
+                                        }
+                                        Some(ListedRow::Unheld(at)) => {
+                                            let Some(row) = unheld.get(at) else {
+                                                continue;
+                                            };
+                                            drawn.push(
+                                                this.unheld_row(at, Unheld::searched_for(row), cx)
+                                                    .into_any_element(),
+                                            );
+                                        }
+                                        Some(ListedRow::Found(at)) => {
+                                            let Some(row) = found.get(at) else {
+                                                continue;
+                                            };
+                                            drawn.push(
+                                                this.unheld_row(at, Unheld::found(row), cx)
+                                                    .into_any_element(),
+                                            );
+                                        }
+                                        None => {}
                                     }
-                                    Some(ListedRow::Beyond(beyond)) => {
-                                        drawn.push(beyond_heading(beyond).into_any_element());
-                                    }
-                                    Some(ListedRow::Unheld(at)) => {
-                                        let Some(row) = unheld.get(at) else {
-                                            continue;
-                                        };
-                                        drawn.push(
-                                            this.unheld_row(at, Unheld::searched_for(row), cx)
-                                                .into_any_element(),
-                                        );
-                                    }
-                                    Some(ListedRow::Found(at)) => {
-                                        let Some(row) = found.get(at) else {
-                                            continue;
-                                        };
-                                        drawn.push(
-                                            this.unheld_row(at, Unheld::found(row), cx)
-                                                .into_any_element(),
-                                        );
-                                    }
-                                    None => {}
                                 }
-                            }
-                            drawn
-                        }),
-                    )
-                    .track_scroll(self.track_rows.clone())
-                    .h_full()
-                    .w_full(),
-                ))
+                                drawn
+                            }),
+                        )
+                        .track_scroll(self.track_rows.clone())
+                        .h_full()
+                        .w_full(),
+                    ),
+                )
             })
             .into_any_element()
     }
@@ -1463,7 +1471,7 @@ impl RootView {
             .entry(id)
             .or_default()
             .clone();
-        shelf(id, named, albums.len(), cells, scroll)
+        shelf(id, named, albums.len(), cells, scroll, Scrollbars::of(cx))
     }
 
     pub(crate) fn artist_shelf_of(
@@ -1487,7 +1495,7 @@ impl RootView {
             .entry(id)
             .or_default()
             .clone();
-        shelf(id, named, artists.len(), cells, scroll)
+        shelf(id, named, artists.len(), cells, scroll, Scrollbars::of(cx))
     }
 
     fn artist_cell_at(&self, artist: &Artist, side: f32, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -2111,6 +2119,7 @@ fn shelf(
     held: usize,
     cells: Vec<AnyElement>,
     scroll: gpui::ScrollHandle,
+    bars: Scrollbars,
 ) -> Div {
     let drawn = cells.len();
     let eyebrow = if held > drawn {
@@ -2141,6 +2150,6 @@ fn shelf(
             div()
                 .relative()
                 .child(strip)
-                .child(super::scrollbar::horizontal(id, scroll)),
+                .child(bars.horizontal(id, scroll)),
         )
 }

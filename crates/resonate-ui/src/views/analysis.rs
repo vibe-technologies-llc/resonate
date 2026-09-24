@@ -23,6 +23,7 @@ use crate::{
         inspector::{beside, card, fields},
         kit,
         root::RootView,
+        scrollbar::Scrollbars,
         transport::Playing,
     },
 };
@@ -266,7 +267,8 @@ impl RootView {
             ]))
             .children(trailing);
 
-        super::scrollbar::around("analysis-scrollbar", self.analysis_scroll.clone(), pane)
+        Scrollbars::of(cx)
+            .around("analysis-scrollbar", self.analysis_scroll.clone(), pane)
             .into_any_element()
     }
 }

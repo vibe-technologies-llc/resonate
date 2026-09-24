@@ -10,6 +10,7 @@ use crate::{
     views::{
         kit, listing,
         root::{RootView, empty},
+        scrollbar::Scrollbars,
         sorting,
     },
 };
@@ -96,34 +97,36 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .child(listing::columns("#", true, sorting::unsorted(), cx))
-            .child(super::scrollbar::around(
-                "favourites-scrollbar",
-                self.favourite_rows.clone(),
-                uniform_list(
-                    "favourite-tracks",
-                    held,
-                    cx.processor(move |this, range: Range<usize>, _, cx| {
-                        let mut drawn = Vec::new();
-                        for index in range {
-                            let Some(track) = rows.get(index) else {
-                                continue;
-                            };
-                            drawn.push(this.track_row(
-                                &rows,
-                                index,
-                                track,
-                                playing == Some(track.id),
-                                false,
-                                cx,
-                            ));
-                        }
-                        drawn
-                    }),
-                )
-                .track_scroll(self.favourite_rows.clone())
-                .h_full()
-                .w_full(),
-            ))
+            .child(
+                Scrollbars::of(cx).around(
+                    "favourites-scrollbar",
+                    self.favourite_rows.clone(),
+                    uniform_list(
+                        "favourite-tracks",
+                        held,
+                        cx.processor(move |this, range: Range<usize>, _, cx| {
+                            let mut drawn = Vec::new();
+                            for index in range {
+                                let Some(track) = rows.get(index) else {
+                                    continue;
+                                };
+                                drawn.push(this.track_row(
+                                    &rows,
+                                    index,
+                                    track,
+                                    playing == Some(track.id),
+                                    false,
+                                    cx,
+                                ));
+                            }
+                            drawn
+                        }),
+                    )
+                    .track_scroll(self.favourite_rows.clone())
+                    .h_full()
+                    .w_full(),
+                ),
+            )
     }
 }
 

@@ -55,6 +55,7 @@ pub enum SettingKey {
     MinimiseButton,
     MaximiseButton,
     ScrollVolume,
+    Scrollbars,
     Inbox,
     Discord,
     DiscordApp,
@@ -66,7 +67,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 44] = [
+    pub const ALL: [Self; 45] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -103,6 +104,7 @@ impl SettingKey {
         Self::MinimiseButton,
         Self::MaximiseButton,
         Self::ScrollVolume,
+        Self::Scrollbars,
         Self::Inbox,
         Self::Discord,
         Self::DiscordApp,
@@ -155,6 +157,7 @@ pub enum Setting {
     MinimiseButton(bool),
     MaximiseButton(bool),
     ScrollVolume(bool),
+    Scrollbars(bool),
     Inbox(PathBuf),
     Discord(bool),
     DiscordApp(Option<AppId>),
@@ -204,6 +207,7 @@ impl Setting {
             Self::MinimiseButton(_) => SettingKey::MinimiseButton,
             Self::MaximiseButton(_) => SettingKey::MaximiseButton,
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
+            Self::Scrollbars(_) => SettingKey::Scrollbars,
             Self::Inbox(_) => SettingKey::Inbox,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
@@ -332,6 +336,7 @@ pub struct Stored {
     pub notify: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
+    pub scrollbars: bool,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
 }

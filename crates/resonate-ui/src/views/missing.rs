@@ -16,6 +16,7 @@ use crate::{
         kit::{self, KeepsItsWidth},
         listing::{self, Pictured},
         root::{RootView, empty, row},
+        scrollbar::Scrollbars,
     },
 };
 
@@ -146,56 +147,60 @@ impl RootView {
                 })
             })
             .when(!nothing, |pane| {
-                pane.child(super::scrollbar::around(
-                    "missing-scrollbar",
-                    self.missing_rows.clone(),
-                    uniform_list(
-                        match shows {
-                            MissingShows::Tracks => "missing-tracks",
-                            MissingShows::Releases => "unheld-releases",
-                        },
-                        rows.len(),
-                        cx.processor(move |this, range: Range<usize>, _, cx| {
-                            let mut drawn = Vec::new();
-                            for index in range {
-                                let listed = match rows.get(index).copied() {
-                                    Some(MissingRow::Album(first)) => tracks
-                                        .get(first)
-                                        .map(|track| this.album_heading(first, track, &tracks, cx)),
-                                    Some(MissingRow::Disc(first)) => {
-                                        tracks.get(first).map(|track| disc_heading(track.disc))
+                pane.child(
+                    Scrollbars::of(cx).around(
+                        "missing-scrollbar",
+                        self.missing_rows.clone(),
+                        uniform_list(
+                            match shows {
+                                MissingShows::Tracks => "missing-tracks",
+                                MissingShows::Releases => "unheld-releases",
+                            },
+                            rows.len(),
+                            cx.processor(move |this, range: Range<usize>, _, cx| {
+                                let mut drawn = Vec::new();
+                                for index in range {
+                                    let listed = match rows.get(index).copied() {
+                                        Some(MissingRow::Album(first)) => {
+                                            tracks.get(first).map(|track| {
+                                                this.album_heading(first, track, &tracks, cx)
+                                            })
+                                        }
+                                        Some(MissingRow::Disc(first)) => {
+                                            tracks.get(first).map(|track| disc_heading(track.disc))
+                                        }
+                                        Some(MissingRow::Track(track)) => {
+                                            tracks.get(track).map(|row| {
+                                                this.unheld_row(track, Unheld::short_of(row), cx)
+                                            })
+                                        }
+                                        Some(MissingRow::Artist(first)) => {
+                                            releases.get(first).map(|release| {
+                                                this.artist_heading(first, release, &releases, cx)
+                                            })
+                                        }
+                                        Some(MissingRow::Release(release)) => {
+                                            releases.get(release).map(release_row)
+                                        }
+                                        None => None,
+                                    };
+                                    if let Some(listed) = listed {
+                                        drawn.push(
+                                            in_a_card(listed, Place::of(&rows, index))
+                                                .into_any_element(),
+                                        );
                                     }
-                                    Some(MissingRow::Track(track)) => {
-                                        tracks.get(track).map(|row| {
-                                            this.unheld_row(track, Unheld::short_of(row), cx)
-                                        })
-                                    }
-                                    Some(MissingRow::Artist(first)) => {
-                                        releases.get(first).map(|release| {
-                                            this.artist_heading(first, release, &releases, cx)
-                                        })
-                                    }
-                                    Some(MissingRow::Release(release)) => {
-                                        releases.get(release).map(release_row)
-                                    }
-                                    None => None,
-                                };
-                                if let Some(listed) = listed {
-                                    drawn.push(
-                                        in_a_card(listed, Place::of(&rows, index))
-                                            .into_any_element(),
-                                    );
                                 }
-                            }
-                            drawn
-                        }),
-                    )
-                    .track_scroll(self.missing_rows.clone())
-                    .h_full()
-                    .w_full()
-                    .pt_1p5()
-                    .pb_4(),
-                ))
+                                drawn
+                            }),
+                        )
+                        .track_scroll(self.missing_rows.clone())
+                        .h_full()
+                        .w_full()
+                        .pt_1p5()
+                        .pb_4(),
+                    ),
+                )
             })
             .into_any_element()
     }

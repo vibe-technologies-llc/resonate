@@ -34,6 +34,7 @@ use crate::{
         hint::{self, Names},
         kit::{self, Press, Tone},
         root::RootView,
+        scrollbar::Scrollbars,
         settings::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
             find::Narrowing,
@@ -93,12 +94,12 @@ impl RootView {
                             .w(theme::width(theme::settings_rail()))
                             .min_h(px(0.0))
                             .child(rail)
-                            .child(super::scrollbar::vertical(
+                            .child(Scrollbars::of(cx).vertical(
                                 "settings-categories-scrollbar",
                                 self.settings_rail_scroll.clone(),
                             )),
                     )
-                    .child(super::scrollbar::around(
+                    .child(Scrollbars::of(cx).around(
                         "settings-scrollbar",
                         self.settings_scroll.clone(),
                         body,
@@ -394,6 +395,7 @@ impl RootView {
             Group::Layout => self.layout_group(cx),
             Group::WindowButtons => self.window_buttons_group(cx),
             Group::VolumeWheel => self.volume_wheel_group(cx),
+            Group::Scrollbars => self.scrollbars_group(cx),
             Group::Build => self.build_group(cx),
             Group::Places => self.places_group(cx),
             Group::Everything => self.everything_group(cx),
@@ -505,6 +507,7 @@ impl RootView {
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
+            Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
             _ => {}
         }
 
@@ -524,6 +527,7 @@ impl RootView {
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
+        let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let presence = cx.global::<ResonateApp>().presence.clone();
         let contact_given = !self.contact.read(cx).text().trim().is_empty();
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
@@ -550,6 +554,7 @@ impl RootView {
             notify,
             window_buttons,
             scroll_volume,
+            scrollbars,
             presence,
             template_given,
             inbox_given,

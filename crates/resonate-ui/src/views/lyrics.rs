@@ -18,6 +18,7 @@ use crate::{
         kit::{self, Tone},
         menu::{self, Menu},
         root::RootView,
+        scrollbar::Scrollbars,
         transport::Playing,
     },
 };
@@ -338,7 +339,7 @@ impl RootView {
             .min_h(px(0.0))
             .opacity(shown)
             .child(column)
-            .child(super::scrollbar::vertical("lyrics-scrollbar", scroll))
+            .child(Scrollbars::of(cx).vertical("lyrics-scrollbar", scroll))
             .child(dissolving(true))
             .child(dissolving(false))
             .child(self.follows_the_pointer(cx))

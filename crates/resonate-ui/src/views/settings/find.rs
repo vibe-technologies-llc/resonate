@@ -122,13 +122,14 @@ pub(crate) enum Group {
     Layout,
     WindowButtons,
     VolumeWheel,
+    Scrollbars,
     Build,
     Places,
     Everything,
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 41] = [
+    pub(crate) const ALL: [Self; 42] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
@@ -167,6 +168,7 @@ impl Group {
         Self::Layout,
         Self::WindowButtons,
         Self::VolumeWheel,
+        Self::Scrollbars,
         Self::Build,
         Self::Places,
         Self::Everything,
@@ -201,9 +203,11 @@ impl Group {
             | Self::Listening
             | Self::LookUpNow => Category::Online,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
-            Self::Colour | Self::Layout | Self::WindowButtons | Self::VolumeWheel => {
-                Category::Appearance
-            }
+            Self::Colour
+            | Self::Layout
+            | Self::WindowButtons
+            | Self::VolumeWheel
+            | Self::Scrollbars => Category::Appearance,
             Self::Build | Self::Places | Self::Everything => Category::About,
         }
     }
@@ -248,6 +252,7 @@ impl Group {
             Self::Layout => "Layout",
             Self::WindowButtons => "Window buttons",
             Self::VolumeWheel => "The volume wheel",
+            Self::Scrollbars => "Scrollbars",
             Self::Build => "This build",
             Self::Places => "Where things are kept",
             Self::Everything => "Start again",
@@ -294,6 +299,7 @@ impl Group {
             Self::Layout => LAYOUT_HINT,
             Self::WindowButtons => WINDOW_BUTTONS_HINT,
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
+            Self::Scrollbars => SCROLLBARS_HINT,
             Self::Build => BUILD_HINT,
             Self::Places => PLACES_HINT,
             Self::Everything => EVERYTHING_HINT,
@@ -385,6 +391,7 @@ impl Group {
                                      controls hide"
             }
             Self::VolumeWheel => "scroll mouse wheel touchpad volume slider louder quieter",
+            Self::Scrollbars => "scroll bar thumb track overlay lists panes drag hide",
             Self::Build => "version typeface font features sinks",
             Self::Places => "config.toml library database path xdg",
             Self::Everything => "reset defaults factory put back",
@@ -434,6 +441,7 @@ impl Group {
             Self::Layout => &[SettingKey::TextSize],
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
+            Self::Scrollbars => &[SettingKey::Scrollbars],
             Self::Bands
             | Self::Measured
             | Self::Folders
@@ -750,6 +758,10 @@ pub(crate) const WINDOW_BUTTONS_HINT: &str = "Whether the titlebar this window d
 pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the volume slider \
      moves the volume, a notch at a time. Off, the slider answers only to a press or a drag and \
      the keys.";
+
+pub(crate) const SCROLLBARS_HINT: &str = "Whether the lists and panes that scroll draw a bar \
+     down their edge that shows where the view stands and can be dragged. Off, they still scroll \
+     with the wheel and the keys.";
 
 pub(crate) const BUILD_HINT: &str = "What this copy of Resonate is: its version, the faces it \
                                      settled on out of the families this machine has installed, \

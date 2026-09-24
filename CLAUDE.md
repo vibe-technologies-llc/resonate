@@ -910,13 +910,13 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-forty-six have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other thirty-eight have none, so the
+forty-seven have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other thirty-nine have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `volume` and
 `buffer-ms`; the window's `theme`, `accent`, `text-size`, `minimise-button`,
-`maximise-button` and `scroll-volume`, which every headless subcommand has no use for; and the standing decisions
+`maximise-button`, `scroll-volume` and `scrollbars`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `organise-as`, `notify`, `audd-token`,
 `listen-from`, `listen-for` and `inbox`, the last
@@ -939,7 +939,9 @@ route needs its print.
 the next frame and close is never one of them. `scroll-volume` defaults to true and is the
 window's too: it rides on `Stored` onto `ResonateApp::scroll_volume`, the Appearance category's
 *The volume wheel* switch writes it, and while it is on a wheel over the volume slider moves the
-volume a notch — five per cent — at a time. `vault` has a flag —
+volume a notch — five per cent — at a time. `scrollbars` defaults to true and rides the same
+way onto `ResonateApp::scrollbars`, written by the Appearance category's *Scrollbars* switch; off,
+no pane draws a bar and every region still scrolls. `vault` has a flag —
 `--vault` outranks it the way `--library` outranks `library` — and it defaults to
 `$XDG_DATA_HOME/resonate/vault`. A run that does not name one opens the vault only where that
 folder is already there, so a build nobody has imported into creates nothing and carries no vault

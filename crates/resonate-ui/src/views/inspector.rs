@@ -19,6 +19,7 @@ use crate::{
         browser::OPEN_ALBUM_HINT,
         kit::{self, Tone},
         root::RootView,
+        scrollbar::Scrollbars,
         transport::Heard,
     },
 };
@@ -110,12 +111,13 @@ impl RootView {
 
         let carried = self.player.update(cx, |model, _| model.carried_lines());
 
-        super::scrollbar::around(
-            "inspector-scrollbar",
-            self.inspector_scroll.clone(),
-            pane.child(tags(&digest.info.tags, carried)),
-        )
-        .into_any_element()
+        Scrollbars::of(cx)
+            .around(
+                "inspector-scrollbar",
+                self.inspector_scroll.clone(),
+                pane.child(tags(&digest.info.tags, carried)),
+            )
+            .into_any_element()
     }
 }
 

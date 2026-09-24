@@ -1,17 +1,16 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    Bounds, Context, Div, DragMoveEvent, IntoElement, Render, ScrollHandle, Stateful,
-    UniformListScrollHandle, Window, canvas, div, fill, point, prelude::*, px, rgb,
+    App, Bounds, Context, Div, DragMoveEvent, ElementId, IntoElement, MouseButton, Pixels, Point,
+    Render, ScrollHandle, SharedString, Size, Stateful, UniformListScrollHandle, Window, canvas,
+    div, fill, point, prelude::*, px, rgb, size,
 };
 
-use crate::theme;
+use crate::{app::ResonateApp, theme};
 
-// GPUI scrolls these regions but does not paint a scrollbar for them.
-const TRACK_WIDTH: f32 = 12.0;
-const THUMB_WIDTH: f32 = 6.0;
-const MIN_THUMB_HEIGHT: f32 = 48.0;
-const MIN_THUMB_WIDTH: f32 = 48.0;
+const TRACK_BREADTH: f32 = 12.0;
+const THUMB_BREADTH: f32 = 6.0;
+const SHORTEST_THUMB: f32 = 48.0;
 
 #[derive(Clone)]
 pub(crate) enum Target {
@@ -31,6 +30,40 @@ impl From<UniformListScrollHandle> for Target {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Axis {
+    Vertical,
+    Horizontal,
+}
+
+impl Axis {
+    fn along(self, at: Point<Pixels>) -> f32 {
+        f32::from(match self {
+            Self::Vertical => at.y,
+            Self::Horizontal => at.x,
+        })
+    }
+
+    fn length(self, extent: Size<Pixels>) -> f32 {
+        f32::from(match self {
+            Self::Vertical => extent.height,
+            Self::Horizontal => extent.width,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Thumb {
+    start: f32,
+    length: f32,
+}
+
+impl Thumb {
+    fn holds(self, at: f32) -> bool {
+        (self.start..=self.start + self.length).contains(&at)
+    }
+}
+
 impl Target {
     fn handle(&self) -> ScrollHandle {
         match self {
@@ -39,45 +72,44 @@ impl Target {
         }
     }
 
-    fn thumb(&self, track_height: f32) -> Option<(f32, f32)> {
+    fn thumb(&self, axis: Axis, track: f32) -> Option<Thumb> {
         let handle = self.handle();
-        let max = f32::from(handle.max_offset().height);
-        let viewport = f32::from(handle.bounds().size.height);
-        if max <= 0.0 || viewport <= 0.0 || track_height <= 0.0 {
+        let furthest = axis.length(handle.max_offset());
+        let viewport = axis.length(handle.bounds().size);
+        if furthest <= 0.0 || viewport <= 0.0 || track <= 0.0 {
             return None;
         }
-        let height = (track_height * viewport / (viewport + max))
-            .max(MIN_THUMB_HEIGHT)
-            .min(track_height);
-        let top = (-f32::from(handle.offset().y) / max).clamp(0.0, 1.0) * (track_height - height);
-        Some((top, height))
+        let length = (track * viewport / (viewport + furthest))
+            .max(SHORTEST_THUMB)
+            .min(track);
+        let start = (-axis.along(handle.offset()) / furthest).clamp(0.0, 1.0) * (track - length);
+        Some(Thumb { start, length })
     }
 
-    fn move_thumb(&self, top: f32, track_height: f32) {
-        let Some((_, height)) = self.thumb(track_height) else {
+    fn move_thumb(&self, axis: Axis, start: f32, track: f32) {
+        let Some(thumb) = self.thumb(axis, track) else {
             return;
         };
-        let handle = self.handle();
-        let max = f32::from(handle.max_offset().height);
-        let travel = track_height - height;
-        if travel > 0.0 {
-            let mut offset = handle.offset();
-            offset.y = px(-(top / travel).clamp(0.0, 1.0) * max);
-            handle.set_offset(offset);
+        let travel = track - thumb.length;
+        if travel <= 0.0 {
+            return;
         }
+        let handle = self.handle();
+        let reached = px(-(start / travel).clamp(0.0, 1.0) * axis.length(handle.max_offset()));
+        let mut offset = handle.offset();
+        match axis {
+            Axis::Vertical => offset.y = reached,
+            Axis::Horizontal => offset.x = reached,
+        }
+        handle.set_offset(offset);
     }
 }
 
 #[derive(Clone)]
-struct ThumbDrag {
+struct Grip {
     id: &'static str,
-    grab: Rc<Cell<f32>>,
-}
-
-#[derive(Clone)]
-struct HorizontalDrag {
-    id: &'static str,
-    grab: Rc<Cell<f32>>,
+    axis: Axis,
+    held_at: Rc<Cell<f32>>,
 }
 
 struct EmptyDrag;
@@ -88,195 +120,148 @@ impl Render for EmptyDrag {
     }
 }
 
-pub(crate) fn vertical(id: &'static str, handle: impl Into<Target>) -> Stateful<Div> {
-    let target = handle.into();
-    let grab = Rc::new(Cell::new(0.0));
-    let paint_target = target.clone();
-    let down_target = target.clone();
-    let move_target = target.clone();
-    let down_grab = Rc::clone(&grab);
-    let hovered = Rc::new(Cell::new(false));
-    let paint_hovered = Rc::clone(&hovered);
+#[derive(Clone, Copy)]
+pub(crate) struct Scrollbars {
+    shown: bool,
+}
 
-    div()
-        .id(id)
-        .absolute()
-        .top_0()
-        .bottom_0()
-        .right_0()
-        .w(px(TRACK_WIDTH))
-        .cursor_default()
-        .on_hover(move |over, window, _| {
-            hovered.set(*over);
-            window.refresh();
-        })
-        .on_mouse_down(gpui::MouseButton::Left, move |event, window, _| {
-            let bounds = down_target.handle().bounds();
-            let track_height = f32::from(bounds.size.height);
-            let y = f32::from(event.position.y - bounds.origin.y);
-            if let Some((top, height)) = down_target.thumb(track_height) {
-                if (top..=top + height).contains(&y) {
-                    down_grab.set(y - top);
-                } else {
-                    down_grab.set(height / 2.0);
-                    down_target.move_thumb(y - height / 2.0, track_height);
-                    window.refresh();
-                }
-            }
-        })
-        .on_drag(ThumbDrag { id, grab }, |_, _, _, cx| cx.new(|_| EmptyDrag))
-        .on_drag_move::<ThumbDrag>(move |event: &DragMoveEvent<ThumbDrag>, window, cx| {
-            let drag = event.drag(cx);
-            if drag.id != id {
-                return;
-            }
-            let track_height = f32::from(event.bounds.size.height);
-            let y = f32::from(event.event.position.y - event.bounds.origin.y);
-            move_target.move_thumb(y - drag.grab.get(), track_height);
-            window.refresh();
-        })
-        .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, _, window, _| {
-                    let Some((top, height)) = paint_target.thumb(f32::from(bounds.size.height))
-                    else {
-                        return;
-                    };
-                    let x = bounds.origin.x + px((TRACK_WIDTH - THUMB_WIDTH) / 2.0);
-                    let y = bounds.origin.y + px(top);
-                    let mut thumb = fill(
-                        Bounds::from_corners(
-                            point(x, y),
-                            point(x + px(THUMB_WIDTH), y + px(height)),
-                        ),
-                        rgb(if paint_hovered.get() {
-                            theme::text()
-                        } else {
-                            theme::muted()
-                        }),
-                    );
-                    thumb.corner_radii = px(THUMB_WIDTH / 2.0).into();
-                    window.paint_quad(thumb);
-                },
-            )
-            .size_full(),
+impl Scrollbars {
+    pub(crate) fn of(cx: &App) -> Self {
+        Self {
+            shown: cx.global::<ResonateApp>().scrollbars,
+        }
+    }
+
+    pub(crate) fn vertical(self, id: &'static str, handle: impl Into<Target>) -> Stateful<Div> {
+        self.bar(id.into(), id, Axis::Vertical, handle.into())
+    }
+
+    pub(crate) fn horizontal(self, id: &'static str, handle: ScrollHandle) -> Stateful<Div> {
+        self.bar(
+            SharedString::from(format!("{id}-scrollbar")).into(),
+            id,
+            Axis::Horizontal,
+            handle.into(),
         )
-}
-
-pub(crate) fn around(
-    id: &'static str,
-    handle: impl Into<Target>,
-    content: impl IntoElement,
-) -> Div {
-    div()
-        .relative()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .min_w(px(0.0))
-        .min_h(px(0.0))
-        .child(content)
-        .child(vertical(id, handle))
-}
-
-fn horizontal_thumb(handle: &ScrollHandle, track_width: f32) -> Option<(f32, f32)> {
-    let max = f32::from(handle.max_offset().width);
-    let viewport = f32::from(handle.bounds().size.width);
-    if max <= 0.0 || viewport <= 0.0 || track_width <= 0.0 {
-        return None;
     }
-    let width = (track_width * viewport / (viewport + max))
-        .max(MIN_THUMB_WIDTH)
-        .min(track_width);
-    let left = (-f32::from(handle.offset().x) / max).clamp(0.0, 1.0) * (track_width - width);
-    Some((left, width))
+
+    pub(crate) fn around(
+        self,
+        id: &'static str,
+        handle: impl Into<Target>,
+        content: impl IntoElement,
+    ) -> Div {
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(0.0))
+            .min_h(px(0.0))
+            .child(content)
+            .child(self.vertical(id, handle))
+    }
+
+    fn bar(
+        self,
+        element: ElementId,
+        id: &'static str,
+        axis: Axis,
+        target: Target,
+    ) -> Stateful<Div> {
+        if self.shown {
+            bar(element, id, axis, target)
+        } else {
+            div().id(element).absolute()
+        }
+    }
 }
 
-fn move_horizontal_thumb(handle: &ScrollHandle, left: f32, track_width: f32) {
-    let Some((_, width)) = horizontal_thumb(handle, track_width) else {
-        return;
+fn bar(element: ElementId, id: &'static str, axis: Axis, target: Target) -> Stateful<Div> {
+    let track: Rc<Cell<Bounds<Pixels>>> = Rc::default();
+    let placed = div().id(element).absolute().bottom_0().right_0();
+    let placed = match axis {
+        Axis::Vertical => placed.top_0().w(px(TRACK_BREADTH)),
+        Axis::Horizontal => placed.left_0().h(px(TRACK_BREADTH)),
     };
-    let travel = track_width - width;
-    if travel > 0.0 {
-        let mut offset = handle.offset();
-        offset.x = px(-(left / travel).clamp(0.0, 1.0) * f32::from(handle.max_offset().width));
-        handle.set_offset(offset);
-    }
-}
 
-pub(crate) fn horizontal(id: &'static str, handle: ScrollHandle) -> Stateful<Div> {
-    let grab = Rc::new(Cell::new(0.0));
-    let paint_handle = handle.clone();
-    let down_handle = handle.clone();
-    let move_handle = handle;
-    let down_grab = Rc::clone(&grab);
-    let hovered = Rc::new(Cell::new(false));
-    let paint_hovered = Rc::clone(&hovered);
-
-    div()
-        .id(gpui::SharedString::from(format!("{id}-scrollbar")))
-        .absolute()
-        .left_0()
-        .right_0()
-        .bottom_0()
-        .h(px(TRACK_WIDTH))
+    placed
         .cursor_default()
-        .on_hover(move |over, window, _| {
-            hovered.set(*over);
-            window.refresh();
-        })
-        .on_mouse_down(gpui::MouseButton::Left, move |event, window, _| {
-            let bounds = down_handle.bounds();
-            let track_width = f32::from(bounds.size.width);
-            let x = f32::from(event.position.x - bounds.origin.x);
-            if let Some((left, width)) = horizontal_thumb(&down_handle, track_width) {
-                if (left..=left + width).contains(&x) {
-                    down_grab.set(x - left);
-                } else {
-                    down_grab.set(width / 2.0);
-                    move_horizontal_thumb(&down_handle, x - width / 2.0, track_width);
+        .on_hover(|_, window, _| window.refresh())
+        .on_mouse_down(MouseButton::Left, {
+            let target = target.clone();
+            let track = Rc::clone(&track);
+            move |event, window, _| {
+                let track = track.get();
+                let length = axis.length(track.size);
+                let at = axis.along(event.position) - axis.along(track.origin);
+                if let Some(thumb) = target.thumb(axis, length)
+                    && !thumb.holds(at)
+                {
+                    target.move_thumb(axis, at - thumb.length / 2.0, length);
                     window.refresh();
                 }
             }
         })
-        .on_drag(HorizontalDrag { id, grab }, |_, _, _, cx| {
-            cx.new(|_| EmptyDrag)
-        })
-        .on_drag_move::<HorizontalDrag>(move |event: &DragMoveEvent<HorizontalDrag>, window, cx| {
-            let drag = event.drag(cx);
-            if drag.id != id {
-                return;
+        .on_drag(
+            Grip {
+                id,
+                axis,
+                held_at: Rc::default(),
+            },
+            {
+                let target = target.clone();
+                let track = Rc::clone(&track);
+                move |grip, cursor, _, cx| {
+                    let length = axis.length(track.get().size);
+                    let at = axis.along(cursor);
+                    let held_at = target
+                        .thumb(axis, length)
+                        .map_or(0.0, |thumb| (at - thumb.start).clamp(0.0, thumb.length));
+                    grip.held_at.set(held_at);
+                    cx.new(|_| EmptyDrag)
+                }
+            },
+        )
+        .on_drag_move::<Grip>({
+            let target = target.clone();
+            move |event: &DragMoveEvent<Grip>, window, cx| {
+                let grip = event.drag(cx);
+                if grip.id != id || grip.axis != axis {
+                    return;
+                }
+                let length = axis.length(event.bounds.size);
+                let at = axis.along(event.event.position) - axis.along(event.bounds.origin);
+                target.move_thumb(axis, at - grip.held_at.get(), length);
+                window.refresh();
             }
-            let width = f32::from(event.bounds.size.width);
-            let x = f32::from(event.event.position.x - event.bounds.origin.x);
-            move_horizontal_thumb(&move_handle, x - drag.grab.get(), width);
-            window.refresh();
         })
         .child(
             canvas(
                 |_, _, _| (),
                 move |bounds, _, window, _| {
-                    let Some((left, width)) =
-                        horizontal_thumb(&paint_handle, f32::from(bounds.size.width))
-                    else {
+                    track.set(bounds);
+                    let Some(thumb) = target.thumb(axis, axis.length(bounds.size)) else {
                         return;
                     };
-                    let x = bounds.origin.x + px(left);
-                    let y = bounds.origin.y + px((TRACK_WIDTH - THUMB_WIDTH) / 2.0);
-                    let mut thumb = fill(
-                        Bounds::from_corners(
-                            point(x, y),
-                            point(x + px(width), y + px(THUMB_WIDTH)),
+                    let inset = px((TRACK_BREADTH - THUMB_BREADTH) / 2.0);
+                    let (origin, extent) = match axis {
+                        Axis::Vertical => (
+                            point(bounds.origin.x + inset, bounds.origin.y + px(thumb.start)),
+                            size(px(THUMB_BREADTH), px(thumb.length)),
                         ),
-                        rgb(if paint_hovered.get() {
-                            theme::text()
-                        } else {
-                            theme::muted()
-                        }),
+                        Axis::Horizontal => (
+                            point(bounds.origin.x + px(thumb.start), bounds.origin.y + inset),
+                            size(px(thumb.length), px(THUMB_BREADTH)),
+                        ),
+                    };
+                    let lit = bounds.contains(&window.mouse_position());
+                    let mut quad = fill(
+                        Bounds::new(origin, extent),
+                        rgb(if lit { theme::text() } else { theme::muted() }),
                     );
-                    thumb.corner_radii = px(THUMB_WIDTH / 2.0).into();
-                    window.paint_quad(thumb);
+                    quad.corner_radii = px(THUMB_BREADTH / 2.0).into();
+                    window.paint_quad(quad);
                 },
             )
             .size_full(),

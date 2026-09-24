@@ -153,6 +153,7 @@ impl Settings for File {
             Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
             Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
             Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
+            Setting::Scrollbars(drawn) => (ConfigKey::Scrollbars, Some((*drawn).into())),
             Setting::OrganiseAs(template) => {
                 (ConfigKey::OrganiseAs, Some(template.as_str().into()))
             }
@@ -225,6 +226,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::MinimiseButton => ConfigKey::MinimiseButton,
         SettingKey::MaximiseButton => ConfigKey::MaximiseButton,
         SettingKey::ScrollVolume => ConfigKey::ScrollVolume,
+        SettingKey::Scrollbars => ConfigKey::Scrollbars,
         SettingKey::Inbox => ConfigKey::Inbox,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,

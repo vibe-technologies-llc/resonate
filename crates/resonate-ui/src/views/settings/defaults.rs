@@ -16,6 +16,7 @@ pub(crate) const RESUME: bool = true;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
+pub(crate) const SCROLLBARS: bool = true;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {
@@ -34,6 +35,7 @@ pub(crate) struct Standing {
     pub(crate) notify: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
+    pub(crate) scrollbars: bool,
     pub(crate) presence: Presence,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
@@ -57,6 +59,7 @@ impl Standing {
             notify: NOTIFY,
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
+            scrollbars: SCROLLBARS,
             presence: Presence::OFF,
             template_given: false,
             inbox_given: false,
@@ -120,6 +123,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Layout => standing.appearance.text_size != Appearance::DEFAULT.text_size,
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
+        Group::Scrollbars => standing.scrollbars != SCROLLBARS,
         Group::Bands
         | Group::Measured
         | Group::Folders
@@ -171,6 +175,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Layout
         | Group::WindowButtons
         | Group::VolumeWheel
+        | Group::Scrollbars
         | Group::Folders
         | Group::Scanning
         | Group::Refreshing

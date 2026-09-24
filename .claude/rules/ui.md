@@ -1487,7 +1487,20 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   is what the player tells the rest of the session — worn through `RootView::show_window_buttons`
   onto the global rather than through `theme`, because a button is not a colour or a measure.
   *The volume wheel* is the fourth, one switch worn onto `ResonateApp::scroll_volume` the same way
-  and written as `scroll-volume`.
+  and written as `scroll-volume`, and *Scrollbars* the fifth, worn onto `ResonateApp::scrollbars`
+  and written as `scrollbars`.
+- **gpui scrolls a region and draws no bar for it, so `views/scrollbar.rs` does.** `Scrollbars::of`
+  reads the setting once where a pane is built, and `vertical`, `horizontal` and `around` answer
+  a bar over the region's edge — or an empty absolute div where the setting is off, so a pane is
+  built one way either way. A bar reads the region's own `ScrollHandle` — a `uniform_list`'s base
+  handle — and paints the thumb in a `canvas`, because the offset moves between renders and only
+  paint sees where it is now. **Nothing a bar knows survives a render**: a `Cell` made in the
+  builder is a new one each frame, so a hover written into one by `on_hover` was gone by the
+  redraw it asked for. The bar lights by weighing `Window::mouse_position` against its own bounds
+  in paint, and the paint writes those bounds into a cell the same frame's listeners read, so a
+  press on the track and a drag's grip measure the bar the pointer is actually over. Where on the
+  thumb it was held is taken when the drag *starts*, in `on_drag`'s constructor, rather than on
+  the press, because a press on the track moves the thumb and redraws before the drag begins.
 - **A setting that has moved off its default says so, and the mark is what puts it back.**
   `defaults.rs` is the arithmetic: `Standing` is what is worn — the `OutputSettings`, the
   `Appearance`, the two online flags and whether a contact is given — `differs` weighs it against

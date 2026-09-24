@@ -1967,6 +1967,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             notify,
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
+            scrollbars: config.draws_scrollbars(),
             presence: config.presence(),
             present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
         },

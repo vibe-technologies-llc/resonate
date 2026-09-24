@@ -21,6 +21,7 @@ use crate::{
         menu::{self, Menu},
         reorder::{self, Carried, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row, tall_row},
+        scrollbar::Scrollbars,
         sorting,
     },
 };
@@ -331,7 +332,7 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(heading)
-            .child(super::scrollbar::around(
+            .child(Scrollbars::of(cx).around(
                 "playlists-scrollbar",
                 self.all_playlist_rows.clone(),
                 listed,
@@ -585,10 +586,7 @@ impl RootView {
                 cx,
             )
             .child(listing)
-            .child(super::scrollbar::vertical(
-                "playlist-scrollbar",
-                self.playlist_rows.clone(),
-            ))
+            .child(Scrollbars::of(cx).vertical("playlist-scrollbar", self.playlist_rows.clone()))
             .into_any_element()
         };
 
@@ -1188,7 +1186,7 @@ impl RootView {
                                         .w_full()
                                         .h(theme::width(theme::row_height() * shown as f32))
                                         .child(rows)
-                                        .child(super::scrollbar::vertical(
+                                        .child(Scrollbars::of(cx).vertical(
                                             "playlist-picker-scrollbar",
                                             self.picker_rows.clone(),
                                         )),

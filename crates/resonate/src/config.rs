@@ -114,6 +114,7 @@ pub struct Config {
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
+    pub scrollbars: Option<bool>,
     pub inbox: Option<PathBuf>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
@@ -207,6 +208,11 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn scrolls_the_volume(&self) -> bool {
         self.scroll_volume.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn draws_scrollbars(&self) -> bool {
+        self.scrollbars.unwrap_or(true)
     }
 
     pub fn presence(&self) -> Presence {
@@ -320,6 +326,7 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
+            ConfigKey::Scrollbars => config.scrollbars = Some(at.boolean(value)?),
             ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
             ConfigKey::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
@@ -919,6 +926,17 @@ mod tests {
             !read("scroll-volume = false")
                 .expect("a boolean is valid")
                 .scrolls_the_volume()
+        );
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn scrollbars_are_drawn_until_the_file_says_they_are_not() {
+        assert!(read("").expect("empty is valid").draws_scrollbars());
+        assert!(
+            !read("scrollbars = false")
+                .expect("a boolean is valid")
+                .draws_scrollbars()
         );
     }
 
