@@ -824,9 +824,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Queued::revision` or the shuffle moving where the stamp did not answers `Keep::Order` with the
   order alone, which is a drag, a toggle, or the reshuffle a wrap under `RepeatMode::Queue` takes:
   the rows are the same rows and rewriting a URI per row said nothing. Anything else answers
-  `Keep::Place`, and only where the row changed or the position moved `KEPT_EVERY` — five
-  seconds — in either direction, so a 60 Hz observer writes to SQLite about as often as a 500 ms
-  tick does. A sample with no queue position — a queue that played through to its end — answers
+  `Keep::Place`, and only where the row changed, the position moved `KEPT_EVERY` — a second — in
+  either direction, or the transport is at rest somewhere other than the place kept, so a 60 Hz
+  observer writes a row about once a second while playing and once more where it stops. A sample with no queue position — a queue that played through to its end — answers
   no `Keep::Place` at all, so the last real place stands rather than being written over as the
   first row at its start. The two triggers are read together because `QueueStamp` is `stamp_of(self.items)`,
   the rows in load order, where the revision counts every republication including a reorder; and
@@ -834,7 +834,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   rides on `Queued`, so a sample that read the two a beat apart is put right by the next one
   rather than settling wrong. Only the first of the three allocates a `Resumption`, which is what
   keeps a 2 000-row queue from being cloned every time the position ticks. What it costs is that a
-  run killed rather than closed loses up to `KEPT_EVERY` of position. Worth knowing: an
+  run killed mid-play loses up to `KEPT_EVERY` of position; one killed paused loses nothing,
+  because the pause itself was written —
+  `a_transport_that_comes_to_rest_keeps_where_it_stopped_at_once`. It was five seconds, which
+  lost that much to any kill and to a pause shorter than it. Worth knowing: an
   *unshuffled* wrap under `RepeatMode::Queue` moves neither the stamp nor the revision, because
   only `reshuffle` bumps it — the cursor alone returns to nought — so it has always taken the
   `Keep::Place` path. `Resumable`, `Resumption` and `Reordered` are `resonate-core`'s because the

@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use resonate_core::{Frames, QueueStamp, Reordered, Resumable, Resumption, plays_in};
 
-use crate::{PlayerState, QueueItem, Queued};
+use crate::{PlaybackState, PlayerState, QueueItem, Queued};
 
-pub const KEPT_EVERY: Duration = Duration::from_secs(5);
+pub const KEPT_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Keep {
@@ -75,6 +75,9 @@ impl Keeping {
         if held_row != row {
             return true;
         }
+        if state.playback != PlaybackState::Playing {
+            return held_at != at;
+        }
 
         let rate = match state.current.as_ref() {
             Some(track) => track.source.rate,
@@ -116,6 +119,10 @@ mod tests {
 
     fn seconds(count: u64) -> Frames {
         Frames(RATE.hz() as u64 * count)
+    }
+
+    fn kept_every() -> Frames {
+        Frames::from_duration(KEPT_EVERY, RATE)
     }
 
     fn track(number: u64) -> TrackId {
@@ -200,9 +207,10 @@ mod tests {
         let queue = queued(3);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
-        for second in 1..5 {
+        for quarter in 1..4 {
+            let at = Frames(kept_every().get() * quarter / 4);
             assert_eq!(
-                keeping.kept(&playing_at(&queue, 0, seconds(second)), &drawn(&queue, 1)),
+                keeping.kept(&playing_at(&queue, 0, at), &drawn(&queue, 1)),
                 None
             );
         }
@@ -215,11 +223,34 @@ mod tests {
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
         assert_eq!(
-            keeping.kept(&playing_at(&queue, 0, seconds(5)), &drawn(&queue, 1)),
+            keeping.kept(&playing_at(&queue, 0, kept_every()), &drawn(&queue, 1)),
             Some(Keep::Place {
                 row: 0,
-                at: seconds(5),
+                at: kept_every(),
             })
+        );
+    }
+
+    #[test]
+    fn a_transport_that_comes_to_rest_keeps_where_it_stopped_at_once() {
+        let mut keeping = Keeping::default();
+        let queue = queued(3);
+        let barely = Frames(kept_every().get() / 4);
+
+        keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+        let paused = PlayerState {
+            playback: PlaybackState::Paused,
+            ..playing_at(&queue, 0, barely)
+        };
+        assert_eq!(
+            keeping.kept(&paused, &drawn(&queue, 1)),
+            Some(Keep::Place { row: 0, at: barely }),
+            "a pause left the place a moment behind where it stopped"
+        );
+        assert_eq!(
+            keeping.kept(&paused, &drawn(&queue, 1)),
+            None,
+            "a transport standing still was written again"
         );
     }
 

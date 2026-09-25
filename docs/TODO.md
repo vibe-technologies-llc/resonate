@@ -10,8 +10,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   costs the gap a sink switch does, and so does switching the equaliser while a resampler runs,
   because `OutputPlan::becomes_on_the_same_stream` will not carry a resampler's history into a new
   chain. Handing the new resampler the old one's state would close the equaliser case
-- The place is written only where the row changed or the position moved `KEPT_EVERY`, so a run
-  killed rather than closed loses up to five seconds of position
 - A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
   with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
   of a file that is itself over full scale reaches the device as the file has it
