@@ -818,17 +818,17 @@ impl RootView {
                     cx,
                 ))
             })
-            .child(listing::title_cell(
-                SharedString::from(track.title.clone()),
-                lit_title,
-                playing,
-            ))
-            .when(track.alternatives > 0, |row| {
-                row.child(
+            .child(if track.alternatives > 0 {
+                listing::tagged_title_cell(
+                    SharedString::from(track.title.clone()),
+                    lit_title,
+                    playing,
                     kit::tag(format!("+{}", track.alternatives))
                         .id(("track-copies", index))
                         .names(OTHER_COPIES_HINT),
                 )
+            } else {
+                listing::title_cell(SharedString::from(track.title.clone()), lit_title, playing)
             })
             .child(listing::artist_cell(
                 self.opens(
@@ -841,7 +841,8 @@ impl RootView {
                     track.artist_id.map(Selection::Artist),
                     cx,
                 )
-                .keeps_its_width(),
+                .flex_shrink()
+                .ends_in_an_ellipsis(),
             ))
             .child(listing::format_cell(Some((track.codec, track.spec))))
             .child(listing::heard(track.plays, track.played, self.drawn_at()))
@@ -988,7 +989,8 @@ impl RootView {
                         None,
                         cx,
                     )
-                    .keeps_its_width(),
+                    .flex_shrink()
+                    .ends_in_an_ellipsis(),
                 )
                 .text_color(rgb(theme::faint())),
             )

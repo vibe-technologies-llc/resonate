@@ -372,9 +372,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   card's *Enrich* through `held_back`, and a scan can still be started under one. The run is
   visible from every pane: `RootView::enrichment_status` sits above the sidebar's *Settings* row
   only while `LibraryModel::is_enriching`, drawing the globe in the accent, *Enriching…* and the
-  albums and artists asked so far off `enrich_stats`, and a press on it opens `Category::Online`.
-  It says albums and artists alone because the sidebar is `SIDEBAR_WIDTH` and the full
-  `asked_so_far` line does not fit at `TEXT_XS`.
+  albums, tracks and artists asked so far off `enrich_stats`, both lines ending in an ellipsis
+  where the sidebar is narrower than they are, and a press on it opens `Category::Online`.
 - **What a listener reaches for is what the lookup asks about next.** `LibraryModel` holds one
   `Sought` for the whole run and hands it to every `enrich`, so a nudge made while nothing is
   running is still there when a run starts. Three gestures put something on it, all through
@@ -417,7 +416,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   that give way, and they give way together: `title_room` and `artist_room` both start from
   `theme::row_artist()` and both shrink, and only the title grows. A title that was `flex_1` from
   nothing beside an artist of fixed width was the first thing a narrow window took, to the last
-  letter, while the artist kept all two hundred pixels. The playing row draws
+  letter, while the artist kept all two hundred pixels. A track with other copies carries its `+N`
+  tag *inside* the title cell — `tagged_title_cell`, the title `flex_1` beside it — so the tag takes
+  its room out of the title rather than pushing every cell after it along, and both text cells end
+  in an ellipsis rather than a square cut. The playing row draws
   `listing::playing_mark` in the number cell and its title in the accent. A row's controls sit in
   `browser::row_controls`, which is invisible until the row is hovered — the heading carries the
   same gestures for the whole listing, so a row does not have to advertise its own.
@@ -1082,8 +1084,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   under an album's cover in the grid, and the artist cell of every track row in the tracks, queue
   and playlist listings. The listener stops the press, because a row is itself a press — clicking
   the artist in a track row opens the artist and does not also start the track, the same way the
-  queue and playlist marks in `row_controls` stop theirs. The link is `keeps_its_width` inside a
-  cell, so it is as wide as the name and no wider: the rest of the artist column belongs to the row.
+  queue and playlist marks in `row_controls` stop theirs. The link is `flex_shrink` under
+  `ends_in_an_ellipsis` inside a cell, never grown, so it is as wide as the name and no wider — the
+  rest of the artist column belongs to the row — and a name longer than the column is shrunk to it
+  and measured again at that width, which is what draws its ellipsis.
   What a row knows is what `listing::Row` carries — `artist_id` beside the `artist`, filled by
   `listing::scanned` and left `None` by `read` and `unread` — so a queue row the library has never
   seen draws its artist as text. `unheld_row` passes `None` outright, because a release track the

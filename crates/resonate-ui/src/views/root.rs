@@ -43,7 +43,7 @@ use crate::{
         field::{Field, Submitted},
         focus::Controls,
         hint::{self, Names},
-        kit,
+        kit::{self, EndsInAnEllipsis},
         listing::Pictured,
         menu::{self, Menu},
         missing::MissingShows,
@@ -2707,11 +2707,14 @@ impl RootView {
                 div()
                     .flex()
                     .flex_col()
+                    .flex_1()
                     .min_w_0()
                     .child(
                         div()
                             .text_size(px(theme::text_sm()))
                             .text_color(rgb(theme::muted()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
                             .child("Enriching…"),
                     )
                     .child(
@@ -2719,6 +2722,7 @@ impl RootView {
                             .text_size(px(theme::text_xs()))
                             .text_color(rgb(theme::faint()))
                             .truncate()
+                            .ends_in_an_ellipsis()
                             .child(format!(
                                 "albums {} · tracks {} · artists {}",
                                 stats.albums, stats.tracks, stats.artists

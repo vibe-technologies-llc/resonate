@@ -15,7 +15,7 @@ use crate::{
     views::{
         browser,
         hint::Names as _,
-        kit,
+        kit::{self, EndsInAnEllipsis},
         menu::{self, Menu},
         pointed::LitUnderThePointer,
         root::RootView,
@@ -180,6 +180,7 @@ fn heard_cell(reading: SharedString) -> Div {
         .w(px(theme::row_plays()))
         .text_color(rgb(theme::faint()))
         .truncate()
+        .ends_in_an_ellipsis()
 }
 
 fn how_often_and_how_lately(
@@ -220,15 +221,45 @@ fn artist_room() -> Div {
 }
 
 pub(crate) fn title_cell(title: SharedString, lit: Lit, playing: bool) -> Div {
+    titled(
+        title_room().truncate().ends_in_an_ellipsis(),
+        title,
+        lit,
+        playing,
+    )
+}
+
+pub(crate) fn tagged_title_cell(
+    title: SharedString,
+    lit: Lit,
+    playing: bool,
+    tag: impl IntoElement,
+) -> Div {
     title_room()
-        .truncate()
-        .text_color(rgb(if playing {
-            theme::accent()
-        } else {
-            theme::text()
-        }))
-        .when(playing, |cell| cell.font_weight(FontWeight::MEDIUM))
-        .child(matched(title, lit))
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(titled(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis(),
+            title,
+            lit,
+            playing,
+        ))
+        .child(tag)
+}
+
+fn titled(cell: Div, title: SharedString, lit: Lit, playing: bool) -> Div {
+    cell.text_color(rgb(if playing {
+        theme::accent()
+    } else {
+        theme::text()
+    }))
+    .when(playing, |cell| cell.font_weight(FontWeight::MEDIUM))
+    .child(matched(title, lit))
 }
 
 pub(crate) fn matched(text: SharedString, lit: Lit) -> AnyElement {

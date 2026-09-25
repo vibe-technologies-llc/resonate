@@ -16,7 +16,7 @@ use crate::{
     views::{
         browser::{OPEN_ARTIST_HINT, row_controls},
         hint,
-        kit::{self, KeepsItsWidth, Tone},
+        kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
         menu::{self, Menu},
         playlists::{self, Held, ROW_GROUP},
@@ -337,7 +337,8 @@ impl RootView {
                                             drawn.artist_id.map(Selection::Artist),
                                             cx,
                                         )
-                                        .keeps_its_width(),
+                                        .flex_shrink()
+                                        .ends_in_an_ellipsis(),
                                     ))
                                     .child(listing::format_cell(drawn.shape))
                                     .child(listing::heard(
