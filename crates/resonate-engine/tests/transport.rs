@@ -26,7 +26,7 @@ use resonate_engine::{
     OutputMode, Placement, PlaybackState, Player, Preamp, Profile, Q, QueueItem, Reading,
     RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, Tapped, Until, stamp_of,
+    StreamEvent, StreamRequest, Surveyor, Tapped, Until, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -219,15 +219,23 @@ impl FakeSink {
     }
 }
 
+struct Surveyed(Arc<Mutex<Graph>>);
+
+impl Surveyor for Surveyed {
+    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+        let mut graph = self.0.lock();
+        graph.enumerations += 1;
+        Ok(graph.sinks.clone())
+    }
+}
+
 impl Backend for FakeSink {
     fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         self.changes.clone()
     }
 
-    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        let mut graph = self.graph.lock();
-        graph.enumerations += 1;
-        Ok(graph.sinks.clone())
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Surveyed(Arc::clone(&self.graph)))
     }
 
     fn open(
@@ -1391,10 +1399,9 @@ fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
     Ok(())
 }
 
-fn deep_buffered(sink: Option<NodeName>) -> EngineConfig {
+fn bound_by(sink: Option<NodeName>) -> EngineConfig {
     EngineConfig {
         sink,
-        buffer: Duration::from_millis(400),
         ..EngineConfig::default()
     }
 }
@@ -1445,7 +1452,7 @@ fn playing_one_track_over(config: EngineConfig) -> Result<(Player, Arc<Mutex<Gra
 
 #[test]
 fn a_stream_following_the_default_moves_when_the_desktop_chooses_another() -> Result<()> {
-    let (player, graph) = playing_one_track_over(deep_buffered(None))?;
+    let (player, graph) = playing_one_track_over(bound_by(None))?;
 
     change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
         make_the_default(sinks, SinkId::new(2));
@@ -1467,9 +1474,51 @@ fn a_stream_following_the_default_moves_when_the_desktop_chooses_another() -> Re
 }
 
 #[test]
+fn a_stream_whose_ring_holds_under_a_tenth_of_a_second_still_follows_the_default() -> Result<()> {
+    const RATE_AT: Range<usize> = 24..28;
+    const BYTES_A_SECOND_AT: Range<usize> = 28..32;
+    const HIGH_RATE: u32 = 192_000;
+
+    let tree = Tree::new();
+    let mut file = pcm(16, FRAMES).file;
+    file[RATE_AT].copy_from_slice(&HIGH_RATE.to_le_bytes());
+    file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * 4).to_le_bytes());
+    let path = tree.write("high.wav", &file);
+
+    let (backend, graph) = FakeSink::new(vec![
+        sink(&[SampleRate::HZ_192000], &[SampleFormat::S16]),
+        arriving(),
+    ]);
+    let player = Player::with_backend(
+        EngineConfig {
+            buffer: Duration::from_millis(40),
+            ..EngineConfig::default()
+        },
+        move |_| Ok(Box::new(backend)),
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    assert_eq!(bound_to(&player), Some(SinkId::new(1)));
+
+    change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
+        make_the_default(sinks, SinkId::new(2));
+    });
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(2)),
+        "a stream whose ring never holds 100 ms to follow the new default all the same",
+    );
+    Ok(())
+}
+
+#[test]
 fn a_device_chosen_by_name_stays_bound_when_the_desktops_default_moves() -> Result<()> {
     let (player, graph) =
-        playing_one_track_over(deep_buffered(Some(NodeName::new("alsa_output.fake"))))?;
+        playing_one_track_over(bound_by(Some(NodeName::new("alsa_output.fake"))))?;
     let enumerated = graph.lock().enumerations;
 
     change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
@@ -1493,7 +1542,7 @@ fn a_device_chosen_by_name_stays_bound_when_the_desktops_default_moves() -> Resu
 #[test]
 fn a_stream_whose_device_goes_away_moves_to_the_one_the_desktop_falls_back_to() -> Result<()> {
     let (player, graph) =
-        playing_one_track_over(deep_buffered(Some(NodeName::new("alsa_output.fake"))))?;
+        playing_one_track_over(bound_by(Some(NodeName::new("alsa_output.fake"))))?;
 
     change_the_graph(&graph, SinkChange::Removed(SinkId::new(1)), |sinks| {
         sinks.retain(|sink| sink.id != SinkId::new(1));

@@ -22,7 +22,7 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
     PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Until,
+    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Surveyor, Until,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
@@ -234,13 +234,21 @@ impl RealtimeSink {
     }
 }
 
+struct Standing(Vec<SinkInfo>);
+
+impl Surveyor for Standing {
+    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+        Ok(self.0.clone())
+    }
+}
+
 impl Backend for RealtimeSink {
     fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         self.changes.clone()
     }
 
-    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Ok(self.sinks.clone())
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Standing(self.sinks.clone()))
     }
 
     fn open(

@@ -9,7 +9,7 @@ mod stream;
 
 pub use crate::{
     capture::{AudioSink, CaptureRequest, CaptureStream, Capturing, Microphone},
-    client::PipeWire,
+    client::{PipeWire, Survey},
     error::{Error, PodParam, PwOp, Result},
     sink::{
         HardwareVolume, NodeName, Plugged, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,

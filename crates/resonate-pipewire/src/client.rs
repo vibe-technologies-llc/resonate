@@ -242,11 +242,49 @@ impl Discovered {
 }
 
 pub struct PipeWire {
-    commands: LoopSender<Request>,
+    survey: Survey,
     thread: Option<JoinHandle<()>>,
+    changes: Receiver<SinkChange>,
+}
+
+#[derive(Clone)]
+pub struct Survey {
+    commands: LoopSender<Request>,
     shared: Arc<Mutex<Discovered>>,
     connected: Arc<AtomicBool>,
-    changes: Receiver<SinkChange>,
+}
+
+impl Survey {
+    fn roundtrip(&self, timeout: Duration) -> Result<()> {
+        let (reply, done) = bounded(1);
+        self.commands
+            .send(Request::Sync(reply))
+            .map_err(|_| Error::LoopStopped)?;
+        done.recv_timeout(timeout).map_err(|_| self.unanswered())
+    }
+
+    fn unanswered(&self) -> Error {
+        if self.connected.load(Ordering::Acquire) {
+            Error::LoopStopped
+        } else {
+            Error::Disconnected
+        }
+    }
+
+    fn settled(&self, timeout: Duration) -> Result<()> {
+        let half = timeout / 2;
+        self.roundtrip(half)?;
+        self.roundtrip(half)
+    }
+
+    pub fn enumerate_sinks(&self, timeout: Duration) -> Result<Vec<SinkInfo>> {
+        self.settled(timeout)?;
+        let sinks = self.shared.lock().snapshot();
+        if sinks.is_empty() {
+            return Err(Error::NoSink);
+        }
+        Ok(sinks)
+    }
 }
 
 impl PipeWire {
@@ -274,10 +312,12 @@ impl PipeWire {
 
         match started.recv_timeout(Duration::from_secs(5)) {
             Ok(Ok(())) => Ok(Self {
-                commands,
+                survey: Survey {
+                    commands,
+                    shared,
+                    connected,
+                },
                 thread: Some(thread),
-                shared,
-                connected,
                 changes,
             }),
             Ok(Err(error)) => Err(error),
@@ -285,31 +325,12 @@ impl PipeWire {
         }
     }
 
-    fn roundtrip(&self, timeout: Duration) -> Result<()> {
-        let (reply, done) = bounded(1);
-        self.commands
-            .send(Request::Sync(reply))
-            .map_err(|_| Error::LoopStopped)?;
-        done.recv_timeout(timeout).map_err(|_| self.unanswered())
-    }
-
-    fn unanswered(&self) -> Error {
-        if self.connected.load(Ordering::Acquire) {
-            Error::LoopStopped
-        } else {
-            Error::Disconnected
-        }
+    pub fn survey(&self) -> Survey {
+        self.survey.clone()
     }
 
     pub fn enumerate_sinks(&self, timeout: Duration) -> Result<Vec<SinkInfo>> {
-        let half = timeout / 2;
-        self.roundtrip(half)?;
-        self.roundtrip(half)?;
-        let sinks = self.shared.lock().snapshot();
-        if sinks.is_empty() {
-            return Err(Error::NoSink);
-        }
-        Ok(sinks)
+        self.survey.enumerate_sinks(timeout)
     }
 
     pub fn default_sink(&self, timeout: Duration) -> Result<Option<SinkInfo>> {
@@ -322,10 +343,8 @@ impl PipeWire {
     }
 
     pub fn microphones(&self, timeout: Duration) -> Result<Vec<Microphone>> {
-        let half = timeout / 2;
-        self.roundtrip(half)?;
-        self.roundtrip(half)?;
-        Ok(self.shared.lock().microphones())
+        self.survey.settled(timeout)?;
+        Ok(self.survey.shared.lock().microphones())
     }
 
     pub fn capture(
@@ -335,7 +354,8 @@ impl PipeWire {
     ) -> Result<CaptureStream> {
         let (events, incoming) = bounded(64);
         let (reply, outcome) = bounded(1);
-        self.commands
+        self.survey
+            .commands
             .send(Request::Capture(Box::new(CaptureOpen {
                 request: request.clone(),
                 sink,
@@ -347,7 +367,7 @@ impl PipeWire {
             .recv_timeout(Duration::from_secs(5))
             .map_err(|_| Error::LoopStopped)??;
 
-        let control = self.commands.clone();
+        let control = self.survey.commands.clone();
         Ok(CaptureStream::new(
             incoming,
             Box::new(move || {
@@ -363,7 +383,8 @@ impl PipeWire {
     }
 
     fn node_name(&self, node: SinkId) -> Result<NodeName> {
-        self.shared
+        self.survey
+            .shared
             .lock()
             .sinks
             .get(&node.get())
@@ -384,7 +405,8 @@ impl PipeWire {
         let latency = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let (reply, outcome) = bounded(1);
 
-        self.commands
+        self.survey
+            .commands
             .send(Request::Open(Box::new(OpenRequest {
                 request: request.clone(),
                 target,
@@ -401,7 +423,7 @@ impl PipeWire {
             .recv_timeout(Duration::from_secs(5))
             .map_err(|_| Error::LoopStopped)??;
 
-        let control = self.commands.clone();
+        let control = self.survey.commands.clone();
         Ok(SinkStream::new(
             incoming,
             latency,
@@ -418,7 +440,7 @@ impl PipeWire {
     }
 
     pub fn shutdown(mut self) -> Result<()> {
-        let _ = self.commands.send(Request::Shutdown);
+        let _ = self.survey.commands.send(Request::Shutdown);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -428,7 +450,7 @@ impl PipeWire {
 
 impl Drop for PipeWire {
     fn drop(&mut self) {
-        let _ = self.commands.send(Request::Shutdown);
+        let _ = self.survey.commands.send(Request::Shutdown);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }

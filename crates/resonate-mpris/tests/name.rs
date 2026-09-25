@@ -7,7 +7,7 @@ use std::{
 use crossbeam_channel::{Receiver, unbounded};
 use resonate_engine::{
     AudioSource, Backend, EngineConfig, Player, SinkChange, SinkError, SinkInfo, SinkResult,
-    SinkStream, StreamRequest,
+    SinkStream, StreamRequest, Surveyor,
 };
 use resonate_mpris::{Host, Mpris};
 use zbus::{
@@ -39,8 +39,8 @@ impl Backend for NoSinks {
         self.changes.clone()
     }
 
-    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Ok(Vec::new())
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Nothing)
     }
 
     fn open(
@@ -53,6 +53,14 @@ impl Backend for NoSinks {
 
     fn shutdown(self: Box<Self>) -> SinkResult<()> {
         Ok(())
+    }
+}
+
+struct Nothing;
+
+impl Surveyor for Nothing {
+    fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+        Ok(Vec::new())
     }
 }
 

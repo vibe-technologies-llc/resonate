@@ -622,17 +622,26 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   body that rebinds — which is why it was rebuilt from scratch at up to 250 Hz, a
   `Vec::with_capacity(4)` and three registrations a wakeup, for a set that changes only when a
   stream opens, closes or goes deaf. `Heard` is that set lifted out: `Engine::heard` clones the
-  two `Receiver`s, which share their channels with the originals rather than copying them, and
+  three `Receiver`s, which share their channels with the originals rather than copying them, and
   the outer loop owns it while the inner one parks on it. `Heard::is_what` is read at the foot of
   each pass and compares by `same_channel`, so the inner loop breaks and the set is built again
   exactly when it has changed and never otherwise — which is also why the outer loop cannot spin,
   a set just built always being what the engine is holding. `unsafe_code = "forbid"` is what ruled
   out the self-referential field this replaces.
-- **Enumerating sinks mid-stream is paid for out of the ring.** A `SinkChange` sets a flag rather
-  than enumerating on the spot; the refresh runs on a later tick, and only while the ring holds at
-  least twice the 50 ms `SINK_REFRESH_BUDGET`, so a daemon that has stopped answering costs a
-  fraction of the buffer rather than an underrun. Nothing streaming means the `SINK_TIMEOUT` startup
-  budget of 2 s applies instead.
+- **Enumerating sinks mid-stream happens on a thread of its own.** A `SinkChange` sets a flag
+  rather than enumerating on the spot, and the next tick hands the flag to `Surveying`: a
+  `resonate-sinks` thread holding the backend's `Surveyor` — for PipeWire a `Survey`, the loop
+  sender, the discovered state and the connection flag, which is all two round trips need — that
+  answers on a channel `Heard` parks on beside the commands, the changes and the stream. So the
+  engine never waits on the graph's answer, and nothing about it depends on how much the ring
+  holds: it used to enumerate in line only while the ring held twice a 50 ms budget, which a
+  high-rate stream's 8 192-frame ring never did, so a new device, a new default and the playing
+  device going away all waited for the next stream open.
+  `a_stream_whose_ring_holds_under_a_tenth_of_a_second_still_follows_the_default` is the claim. One
+  survey is in flight at a time; a change announced while one is out leaves the flag set, and the
+  answer landing asks again. Where the thread could not be started the engine enumerates in line
+  only while no stream is open, under the 2 s `SINK_TIMEOUT`, and otherwise leaves the list for
+  the next bind to refresh.
 - **A bind reads the published sink list; only an announcement refreshes it.** `select_sink` is on
   the path every track change, every seek that cannot be done in place, every settings change and
   every renegotiation takes, so enumerating there put a 2 s `SINK_TIMEOUT` in front of each of them

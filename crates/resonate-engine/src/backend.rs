@@ -1,18 +1,29 @@
-use std::{result, time::Duration};
+use std::{result, sync::Arc, time::Duration};
 
 use crossbeam_channel::Receiver;
 use resonate_pipewire::{
     AudioSource, Error as SinkError, PipeWire, SinkChange, SinkInfo, SinkStream, StreamRequest,
+    Survey,
 };
 
 pub type SinkResult<T> = result::Result<T, SinkError>;
 
+pub trait Surveyor: Send + Sync + 'static {
+    fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>>;
+}
+
 pub trait Backend: Send + 'static {
     fn subscribe_sinks(&self) -> Receiver<SinkChange>;
-    fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>>;
+    fn surveyor(&self) -> Arc<dyn Surveyor>;
     fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>)
     -> SinkResult<SinkStream>;
     fn shutdown(self: Box<Self>) -> SinkResult<()>;
+}
+
+impl Surveyor for Survey {
+    fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+        Self::enumerate_sinks(self, timeout)
+    }
 }
 
 impl Backend for PipeWire {
@@ -20,8 +31,8 @@ impl Backend for PipeWire {
         Self::subscribe_sinks(self)
     }
 
-    fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Self::enumerate_sinks(self, timeout)
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(self.survey())
     }
 
     fn open(

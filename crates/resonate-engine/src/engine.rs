@@ -24,13 +24,14 @@ use crate::{
     OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, RepeatMode,
     ReplayGainMode, Reply, Request, Result, Seeks, SkipUnderRepeat, Sleeping, StreamDigest, Tapped,
     Tapping, TrackState, TransportState,
+    backend::Surveyor,
     pipeline::{Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{Queue, Queued, Removal},
     ring::{RingConsumer, RingMonitor, RingProducer, ring},
+    surveying::{Surveyed, Surveying},
 };
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
-const SINK_REFRESH_BUDGET: Duration = Duration::from_millis(50);
 const SHORTEST_TICK: Duration = Duration::from_millis(4);
 const PUBLISH_TICK: Duration = Duration::from_millis(16);
 const IDLE_TICK: Duration = Duration::from_millis(100);
@@ -406,6 +407,8 @@ pub struct Engine {
     config: EngineConfig,
     sources: Arc<Sources>,
     backend: Box<dyn Backend>,
+    surveyor: Arc<dyn Surveyor>,
+    surveying: Option<Surveying>,
     commands: Receiver<Request>,
     events: Sender<Event>,
     published: Published,
@@ -441,6 +444,7 @@ enum Answering {
 
 struct Heard {
     changes: Option<Receiver<SinkChange>>,
+    surveyed: Option<Receiver<Surveyed>>,
     events: Option<Receiver<StreamEvent>>,
 }
 
@@ -450,6 +454,9 @@ impl Heard {
         select.recv(commands);
         if let Some(changes) = self.changes.as_ref() {
             select.recv(changes);
+        }
+        if let Some(surveyed) = self.surveyed.as_ref() {
+            select.recv(surveyed);
         }
         if let Some(events) = self.events.as_ref() {
             select.recv(events);
@@ -485,16 +492,20 @@ impl Engine {
         published: Published,
     ) -> Self {
         let changes = Some(backend.subscribe_sinks());
-        *published.sinks.write() = backend
+        let surveyor = backend.surveyor();
+        *published.sinks.write() = surveyor
             .enumerate_sinks(SINK_TIMEOUT)
             .unwrap_or_default()
             .into();
+        let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
         *published.settings.write() = Arc::new(OutputSettings::of(&config));
 
         Self {
             config,
             sources,
             backend,
+            surveyor,
+            surveying,
             commands,
             events,
             published,
@@ -555,6 +566,9 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.close();
         }
+        if let Some(surveying) = self.surveying.as_mut() {
+            surveying.stop();
+        }
         if let Err(error) = self.backend.shutdown() {
             tracing::warn!(%error, "the sink backend did not shut down cleanly");
         }
@@ -563,6 +577,10 @@ impl Engine {
     fn heard(&self) -> Heard {
         Heard {
             changes: self.changes.clone(),
+            surveyed: self
+                .surveying
+                .as_ref()
+                .map(|surveying| surveying.answers().clone()),
             events: self.listening().map(|stream| stream.events().clone()),
         }
     }
@@ -1393,15 +1411,30 @@ impl Engine {
 
     fn rediscover(&mut self) {
         self.note_sink_changes();
+        if let Some(found) = self.surveying.as_mut().and_then(Surveying::answered) {
+            self.take_the_survey(found);
+        }
         if !self.stale_sinks {
             return;
         }
-        let Some(budget) = self.enumeration_budget() else {
-            return;
-        };
 
-        self.stale_sinks = false;
-        match self.backend.enumerate_sinks(budget) {
+        match self.surveying.as_mut() {
+            Some(surveying) => {
+                if surveying.ask() {
+                    self.stale_sinks = false;
+                }
+            }
+            None if self.output.is_none() => {
+                self.stale_sinks = false;
+                let found = self.surveyor.enumerate_sinks(SINK_TIMEOUT);
+                self.take_the_survey(found);
+            }
+            None => {}
+        }
+    }
+
+    fn take_the_survey(&mut self, found: Surveyed) {
+        match found {
             Ok(found) => {
                 *self.published.sinks.write() = found.into();
                 self.follow_the_sink_it_would_choose();
@@ -1430,19 +1463,11 @@ impl Engine {
         }
     }
 
-    fn enumeration_budget(&self) -> Option<Duration> {
-        let Some(output) = self.output.as_ref() else {
-            return Some(SINK_TIMEOUT);
-        };
-        let held = Frames(output.buffered() as u64).to_duration(output.plan.stream.rate);
-        (held >= SINK_REFRESH_BUDGET.saturating_mul(2)).then_some(SINK_REFRESH_BUDGET)
-    }
-
     fn select_sink(&mut self) -> Result<SinkInfo> {
         self.note_sink_changes();
         if self.sinks_are_stale() {
             self.stale_sinks = false;
-            match self.backend.enumerate_sinks(SINK_TIMEOUT) {
+            match self.surveyor.enumerate_sinks(SINK_TIMEOUT) {
                 Ok(found) => *self.published.sinks.write() = found.into(),
                 Err(error) if self.published.sinks.read().is_empty() => return Err(error.into()),
                 Err(error) => {
@@ -1682,7 +1707,7 @@ impl Engine {
         };
 
         let back = self
-            .backend
+            .surveyor
             .enumerate_sinks(SINK_TIMEOUT)
             .map_err(Error::Sink)
             .and_then(|found| {
@@ -2130,12 +2155,14 @@ mod tests {
     }
 
     #[test]
-    fn the_set_parks_on_the_commands_the_sink_changes_and_the_stream_in_that_order() {
+    fn the_set_parks_on_the_commands_the_sink_changes_the_survey_and_the_stream_in_that_order() {
         let (_orders, commands) = unbounded::<Request>();
         let (announce, changes) = unbounded::<SinkChange>();
+        let (answer, surveyed) = unbounded::<Surveyed>();
         let (report, events) = unbounded::<StreamEvent>();
         let heard = Heard {
             changes: Some(changes.clone()),
+            surveyed: Some(surveyed.clone()),
             events: Some(events.clone()),
         };
         let mut parked = heard.registered(&commands);
@@ -2151,8 +2178,14 @@ mod tests {
         assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(1));
         changes.try_recv().expect("the announcement is read back");
 
-        report.send(StreamEvent::Drained).expect("the event lands");
+        answer
+            .send(Ok(Vec::new()))
+            .expect("the survey's answer lands");
         assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(2));
+        let _ = surveyed.try_recv().expect("the answer is read back");
+
+        report.send(StreamEvent::Drained).expect("the event lands");
+        assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(3));
         events.try_recv().expect("the event is read back");
 
         assert!(parked.ready_timeout(SHORTEST_TICK).is_err());
@@ -2163,6 +2196,7 @@ mod tests {
         let (orders, commands) = unbounded::<Request>();
         let heard = Heard {
             changes: None,
+            surveyed: None,
             events: None,
         };
         let mut parked = heard.registered(&commands);

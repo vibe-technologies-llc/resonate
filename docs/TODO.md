@@ -4,11 +4,6 @@ Categories run from most to least important. Everything under a `Later:` heading
 that no listener is waiting on, and is worked only once the categories above it are quiet.
 
 ## Playback and output
-- A `SinkChange` while a stream is open refreshes the device list only once the ring holds twice
-  the 50 ms enumeration budget, so under a buffer shorter than 100 ms a new device, a new default
-  and the playing device going away all wait for the next stream open — and since WirePlumber no
-  longer moves the stream, the sound stays on the old device until then, or goes silent where it
-  has gone
 - The volume is the software gain stage alone, so anything under 100 % leaves bit-perfect. Whether
   a device has a hardware volume is read and drawn, and nothing drives it
 - Changing the rate policy, the graph rate, the buffer or DoP mid-track reopens the stream and
