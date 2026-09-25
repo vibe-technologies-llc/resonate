@@ -4,7 +4,7 @@ High-confidence correctness defects. Read against `9670cbc`. Each item was confi
 code it names. Nothing here is a fix.
 
 The catalog upserts, the enrichment pairing, the organise apply, the vault keep, the DSP
-stages and the lyric reader were read in the same pass and did not yield a defect of this
+stages and the LRC reader were read in the same pass and did not yield a defect of this
 confidence.
 
 ## The queue
@@ -69,6 +69,26 @@ that arm. The toast is the only thing the window shows for the failure. The word
 playlist edit the listener did not make.
 
 Name the operation the call was. The playlist edits can keep the playlist wording.
+
+## The lyrics
+
+### The sheet steps a pixel as its bounce is cut off
+
+A line change glides on `spring` in `crates/resonate-ui/src/lyrics.rs`. The damping is 0.8, so
+the sheet travels past the sung line and comes back: the peak is about 1.5 % past the landing,
+near 520 ms. `spring` then returns 1.0 the moment `GLIDE_SETTLES_IN` (820 ms) is reached. The
+curve has not arrived there. A millisecond before the cut it is still about 0.13 % long, which
+on a glide of a few hundred pixels is about one pixel, and on a long one a pixel and a half.
+`Glide::at` writes that value straight into the scroll offset, and `lag_of` uses the same clock
+for the lines below the sung one, so they step with it.
+
+The frames keep coming after the cut — `settled` waits out the last line's lag — so the step is
+drawn on its own, after the bounce has already come back. `a_spring_runs_from_rest_to_rest`
+holds the value at 820 ms to exactly 1.0 and allows the overshoot before that, which is this
+cut.
+
+Let the spring run until it is inside half a pixel of the landing, and take the offset from the
+curve the whole way. The lines' lag should read that same curve.
 
 ## Playback
 
