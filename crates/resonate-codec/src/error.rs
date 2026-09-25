@@ -179,6 +179,35 @@ pub enum Error {
 }
 
 impl Error {
+    pub const fn location(&self) -> Option<&MediaLocation> {
+        match self {
+            Self::Io { location, .. }
+            | Self::UnrecognisedContainer { location }
+            | Self::NoAudioTrack { location }
+            | Self::NoDecoder { location, .. }
+            | Self::TrackPropertyMissing { location, .. }
+            | Self::RateNotRepresentable { location, .. }
+            | Self::LayoutNotRepresentable { location, .. }
+            | Self::SampleFormatNotRepresentable { location, .. }
+            | Self::UnknownDuration { location, .. }
+            | Self::NotSeekable { location }
+            | Self::SeekBackwardUnsupported { location }
+            | Self::SeekInvalidTrack { location }
+            | Self::ResetRequired { location }
+            | Self::Symphonia { location, .. }
+            | Self::DsdChunkMissing { location, .. }
+            | Self::DsdFieldNotUsable { location, .. }
+            | Self::DsdCompressed { location, .. }
+            | Self::SheetTooLarge { location, .. }
+            | Self::NoSuchSource { location }
+            | Self::LocatorNotUsable { location }
+            | Self::Unwritable { location }
+            | Self::TagsUnread { location, .. }
+            | Self::TagsUnwritten { location, .. } => Some(location),
+            Self::SeekOutOfRange { .. } | Self::Domain(_) => None,
+        }
+    }
+
     pub(crate) fn from_symphonia(
         source: errors::Error,
         op: CodecOp,

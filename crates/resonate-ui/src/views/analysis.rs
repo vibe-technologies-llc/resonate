@@ -17,7 +17,7 @@ use crate::{
     format,
     icons::Icon,
     models::Notice,
-    theme,
+    theme, toast,
     views::{
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
@@ -311,7 +311,7 @@ impl RootView {
                     Ok(None) => Notice::Trouble(NOTHING_TO_TAKE.to_owned()),
                     Err(error) => {
                         tracing::warn!(%error, "the name the audio was heard as was not taken");
-                        Notice::Trouble(error.to_string())
+                        toast::could_not("rename the track", &error)
                     }
                 };
                 this.report(notice, cx);

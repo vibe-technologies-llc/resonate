@@ -17,6 +17,7 @@ mod recent;
 mod settings;
 mod spectrum;
 mod theme;
+mod toast;
 mod views;
 
 pub use crate::{

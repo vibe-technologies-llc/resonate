@@ -39,7 +39,7 @@ use crate::{
     format,
     recent::{Leaving, Recent},
     settings::{Online, Sourcing},
-    theme,
+    theme, toast,
     views::statistics::{BARS_AT_MOST, Chart},
 };
 
@@ -81,10 +81,9 @@ const TAKEN_BACK: &str = " · ctrl-z puts it back";
 
 const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 
-const NOTHING_TO_SHARE: &str = "The library holds no row for that track";
+const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 
-const ALREADY_WALKING: &str = "Something else is already walking the library. Wait for it to \
-                               finish, then try again.";
+const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
 pub(crate) const fn side(pixels: u32) -> NonZeroU32 {
     match NonZeroU32::new(pixels) {
@@ -510,7 +509,6 @@ pub struct LibraryModel {
     enriching: Option<Arc<EnrichProgress>>,
     enriched: Option<EnrichSummary>,
     sought: Arc<Sought>,
-    notice: Option<Notice>,
     reach: usize,
     albums_counted: u32,
     artists_counted: u32,
@@ -645,7 +643,6 @@ impl LibraryModel {
             enriching: None,
             enriched: None,
             sought: Arc::default(),
-            notice: None,
             reach,
             albums_counted: 0,
             artists_counted: 0,
@@ -964,7 +961,6 @@ impl LibraryModel {
         if self.wanting.contains_key(&found.recording) {
             return;
         }
-        self.notice = None;
         cx.notify();
         let library = Arc::clone(&self.library);
         let recording = found.recording.clone();
@@ -982,17 +978,20 @@ impl LibraryModel {
                 }
                 match wanted {
                     Ok(_) => {
-                        this.notice = Some(Notice::Done(format!(
-                            "Wanted {} by {}{WANTED_ELSEWHERE}",
-                            found.title, found.artist
-                        )));
+                        toast::tell(
+                            Notice::Done(format!(
+                                "Wanted {} by {}{WANTED_ELSEWHERE}",
+                                found.title, found.artist
+                            )),
+                            cx,
+                        );
                         this.found_for = None;
                         this.ask_elsewhere_after(Duration::ZERO, cx);
                         this.poll_as(Prompted::OnItsOwn, cx);
                     }
                     Err(error) => {
                         tracing::error!(%error, "a song found elsewhere could not be wanted");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("want that song", &error), cx);
                     }
                 }
                 this.read(Wanted::Everything, cx);
@@ -1255,7 +1254,6 @@ impl LibraryModel {
     }
 
     pub fn share(&mut self, track: TrackId, cx: &mut Context<Self>) {
-        self.notice = None;
         let library = Arc::clone(&self.library);
 
         self._shared = cx.spawn(async move |this, cx| {
@@ -1264,19 +1262,22 @@ impl LibraryModel {
                 .spawn(async move { library.shareable(track) })
                 .await;
 
-            let outcome = this.update(cx, |this, cx| {
-                this.notice = Some(match read {
-                    Err(error) => {
-                        tracing::error!(%error, "a track could not be shared");
-                        Notice::Trouble(error.to_string())
-                    }
-                    Ok(None) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
-                    Ok(Some(shared)) => {
-                        let said = on_the_clipboard(&shared);
-                        clipboard::copy(shared.written(), cx);
-                        Notice::Done(said)
-                    }
-                });
+            let outcome = this.update(cx, |_, cx| {
+                toast::tell(
+                    match read {
+                        Err(error) => {
+                            tracing::error!(%error, "a track could not be shared");
+                            toast::could_not("share that track", &error)
+                        }
+                        Ok(None) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
+                        Ok(Some(shared)) => {
+                            let said = on_the_clipboard(&shared);
+                            clipboard::copy(shared.written(), cx);
+                            Notice::Done(said)
+                        }
+                    },
+                    cx,
+                );
                 cx.notify();
             });
             let _ = outcome;
@@ -1565,7 +1566,6 @@ impl LibraryModel {
         self.opened = opened;
         self.held = None;
         self.entries = Arc::default();
-        self.notice = None;
         self.reload_playlists(cx);
     }
 
@@ -1901,7 +1901,6 @@ impl LibraryModel {
         then: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.notice = None;
         let library = Arc::clone(&self.library);
 
         self._edit = cx.spawn(async move |this, cx| {
@@ -1914,10 +1913,10 @@ impl LibraryModel {
                 match done {
                     Err(error) => {
                         tracing::error!(%error, "a playlist could not be edited");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("change the playlist", &error), cx);
                     }
                     Ok(Some(said)) => {
-                        this.notice = Some(Notice::Done(said));
+                        toast::tell(Notice::Done(said), cx);
                         then(this, cx);
                     }
                     Ok(None) => then(this, cx),
@@ -2050,14 +2049,6 @@ impl LibraryModel {
 
     pub const fn previewed_tags(&self) -> Planned {
         self.previewed_tags
-    }
-
-    pub const fn notice(&self) -> Option<&Notice> {
-        self.notice.as_ref()
-    }
-
-    pub fn report(&mut self, notice: Notice) {
-        self.notice = Some(notice);
     }
 
     pub fn cover(
@@ -2512,7 +2503,10 @@ impl LibraryModel {
             Ok(_) => self.enrich(false, cx),
             Err(error) => {
                 tracing::error!(%error, "the covers still missing could not be asked for again");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(
+                    toast::could_not("look for the missing covers again", &error),
+                    cx,
+                );
                 cx.notify();
             }
         }
@@ -2548,7 +2542,7 @@ impl LibraryModel {
             }
             Err(error) => {
                 tracing::error!(%error, "the scan could not be started");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(toast::could_not("start the scan", &error), cx);
                 cx.notify();
                 return false;
             }
@@ -2556,9 +2550,6 @@ impl LibraryModel {
 
         self.work = Work::Scanning(Arc::clone(handle.progress()));
         self.summary = None;
-        if prompted == Prompted::ByHand {
-            self.notice = None;
-        }
         cx.notify();
 
         self._scan = cx.spawn(async move |this, cx| {
@@ -2596,7 +2587,7 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the scan failed");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("finish the scan", &error), cx);
                     }
                 }
                 this.reload(cx);
@@ -2722,7 +2713,7 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the lookup could not be started");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(toast::could_not("start the lookup", &error), cx);
                 cx.notify();
                 return;
             }
@@ -2730,7 +2721,6 @@ impl LibraryModel {
 
         self.enriching = Some(Arc::clone(handle.progress()));
         self.enriched = None;
-        self.notice = None;
         cx.notify();
 
         self._enrich = cx.spawn(async move |this, cx| {
@@ -2756,11 +2746,11 @@ impl LibraryModel {
                 match handle.join() {
                     Ok(summary) => {
                         this.enriched = Some(summary);
-                        this.notice = Some(looked_up(&summary));
+                        toast::tell(looked_up(&summary), cx);
                     }
                     Err(error) => {
                         tracing::error!(%error, "the lookup failed");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("finish the lookup", &error), cx);
                     }
                 }
                 this.reload(cx);
@@ -2847,7 +2837,7 @@ impl LibraryModel {
 
     pub fn import(&mut self, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            self.notice = Some(Notice::Trouble(ALREADY_WALKING.to_owned()));
+            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
             cx.notify();
             return;
         }
@@ -2862,7 +2852,7 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the tracks could not be kept in the vault");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(toast::could_not("keep the tracks in the vault", &error), cx);
                 cx.notify();
                 return;
             }
@@ -2871,7 +2861,6 @@ impl LibraryModel {
         self.work = Work::Importing(pass, Arc::clone(handle.progress()));
         self.imported = None;
         self.previewed_import = Planned::Not;
-        self.notice = None;
         cx.notify();
 
         self._import = cx.spawn(async move |this, cx| {
@@ -2891,7 +2880,7 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the tracks were not kept in the vault");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("keep the tracks in the vault", &error), cx);
                     }
                 }
                 this.reload(cx);
@@ -2942,7 +2931,7 @@ impl LibraryModel {
     fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) -> bool {
         if self.work.is_busy() {
             if prompted == Prompted::ByHand {
-                self.notice = Some(Notice::Trouble(ALREADY_WALKING.to_owned()));
+                toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
                 cx.notify();
             }
             return false;
@@ -2959,7 +2948,7 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the providers could not be asked");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(toast::could_not("ask the providers", &error), cx);
                 cx.notify();
                 return true;
             }
@@ -2967,9 +2956,6 @@ impl LibraryModel {
 
         self.work = Work::Polling(Arc::clone(handle.progress()));
         self.polled = None;
-        if prompted == Prompted::ByHand {
-            self.notice = None;
-        }
         cx.notify();
 
         self._poll = cx.spawn(async move |this, cx| {
@@ -2986,7 +2972,7 @@ impl LibraryModel {
                     Ok(summary) => this.polled = Some(summary),
                     Err(error) => {
                         tracing::error!(%error, "the providers were not asked");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("ask the providers", &error), cx);
                     }
                 }
                 this.reload(cx);
@@ -3043,7 +3029,7 @@ impl LibraryModel {
 
     pub fn retag(&mut self, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            self.notice = Some(Notice::Trouble(ALREADY_WALKING.to_owned()));
+            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
             cx.notify();
             return;
         }
@@ -3058,7 +3044,10 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the catalog could not be written back into the files");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(
+                    toast::could_not("write the tags into the files", &error),
+                    cx,
+                );
                 cx.notify();
                 return;
             }
@@ -3067,18 +3056,18 @@ impl LibraryModel {
         self.work = Work::Tagging(pass, Arc::clone(handle.progress()));
         self.tagged = None;
         self.previewed_tags = Planned::Not;
-        self.notice = None;
         cx.notify();
 
-        self._retag = cx.spawn(async move |this, cx| {
-            while !handle.is_finished() {
-                cx.background_executor().timer(SCAN_POLL).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
-                    return;
+        self._retag =
+            cx.spawn(async move |this, cx| {
+                while !handle.is_finished() {
+                    cx.background_executor().timer(SCAN_POLL).await;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        return;
+                    }
                 }
-            }
 
-            let finished = this.update(cx, |this, cx| {
+                let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
                 match handle.join() {
                     Ok(summary) => {
@@ -3087,18 +3076,18 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the catalog was not written back into the files");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("write the tags into the files", &error), cx);
                     }
                 }
                 this.reload(cx);
             });
-            let _ = finished;
-        });
+                let _ = finished;
+            });
     }
 
     pub fn organise(&mut self, layout: Layout, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            self.notice = Some(Notice::Trouble(ALREADY_WALKING.to_owned()));
+            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
             cx.notify();
             return;
         }
@@ -3111,7 +3100,7 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the files could not be put in order");
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                toast::tell(toast::could_not("put the files in order", &error), cx);
                 cx.notify();
                 return;
             }
@@ -3120,7 +3109,6 @@ impl LibraryModel {
         self.work = Work::Organising(pass, Arc::clone(handle.progress()));
         self.organised = None;
         self.previewed = Planned::Not;
-        self.notice = None;
         cx.notify();
 
         self._organise = cx.spawn(async move |this, cx| {
@@ -3140,7 +3128,7 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the files were not put in order");
-                        this.notice = Some(Notice::Trouble(error.to_string()));
+                        toast::tell(toast::could_not("put the files in order", &error), cx);
                     }
                 }
                 this.reload(cx);
@@ -3154,7 +3142,6 @@ impl LibraryModel {
             return;
         }
         self.work = Work::Forgetting;
-        self.notice = None;
         cx.notify();
 
         let library = Arc::clone(&self.library);
@@ -3168,7 +3155,7 @@ impl LibraryModel {
                 this.work = Work::Nothing;
                 if let Err(error) = dropped {
                     tracing::error!(%error, "a library folder could not be dropped");
-                    this.notice = Some(Notice::Trouble(error.to_string()));
+                    toast::tell(toast::could_not("drop that library folder", &error), cx);
                 }
                 this.summary = None;
                 this.reload(cx);
@@ -3231,7 +3218,7 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
 
     match summary.stopped_by {
         Some(op) => Notice::Trouble(format!(
-            "The reference could not be reached while asking for {} · {said}",
+            "MusicBrainz couldn't be reached while looking up {} · {said}",
             asked_for(op)
         )),
         None => Notice::Noted(said),

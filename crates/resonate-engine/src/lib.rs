@@ -46,7 +46,7 @@ pub use crate::{
     backend::{Backend, SinkResult, Surveyor},
     catalog::{ArtRead, TagsRead},
     command::{Command, CommandKind, Landing, Outcome, RepeatMode, SkipUnderRepeat},
-    error::{Error, Result},
+    error::{Cause, Error, Result},
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
     kept::{KEPT_EVERY, Keep, Keeping},
     pipeline::{

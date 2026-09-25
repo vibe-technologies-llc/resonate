@@ -12,24 +12,24 @@ use gpui::{
     App, AppContext as _, Application, Bounds, Context, Global, Image, KeyBinding, Task,
     TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
-use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode};
+use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId};
 use resonate_engine::{
-    ArtRead, BitRate, Command, Event, MediaInfo, OutputSettings, Player, PlayerState, QueueItem,
-    Queued, SinkInfo, StreamDigest, Tapped, TrackState,
+    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, OutputSettings, Player, PlayerState,
+    QueueItem, Queued, SinkInfo, StreamDigest, Tapped, TrackState,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, Reference};
 use resonate_lyrics::Lyricists;
 
 use crate::{
-    AppIcon, Bindings, Error, Launcher, Result, RootView, Settings, WindowKind,
+    AppIcon, Bindings, Error, Launcher, Notice, Result, RootView, Settings, WindowKind,
     drawing::Drawer,
-    icons,
+    format, icons,
     listening::Listens,
     models::{Art, Drawn, FirstRead, Forget, Magnifying, held, whole_of},
     recent::Recent,
     settings::{Online, Places, Present, Sourcing, Stored, Tabs, WindowButtons},
-    theme,
+    theme, toast,
     views::field,
 };
 
@@ -210,7 +210,6 @@ pub struct PlayerModel {
     carried_lines: Option<usize>,
     queued: Queued,
     reads: u64,
-    notice: Option<String>,
     pictures: Recent<MediaLocation, Option<Art>>,
     decoding: AHashSet<MediaLocation>,
     unsettled: AHashMap<MediaLocation, u64>,
@@ -240,7 +239,6 @@ impl PlayerModel {
             carried_lines: None,
             queued: player.queued(),
             reads: player.media_revision(),
-            notice: None,
             pictures: Recent::new(PICTURES_HELD),
             decoding: AHashSet::new(),
             unsettled: AHashMap::new(),
@@ -430,22 +428,27 @@ impl PlayerModel {
         None
     }
 
-    pub fn notice(&self) -> Option<&str> {
-        self.notice.as_deref()
-    }
-
-    pub fn report(&mut self, notice: String) {
-        self.notice = Some(notice);
-    }
-
-    pub fn dismiss(&mut self) {
-        self.notice = None;
-    }
-
     pub fn send(&self, command: Command) {
         if let Err(error) = self.player.send(command) {
             tracing::error!(?error, "the engine refused a transport command");
         }
+    }
+
+    fn title_of(&self, track: TrackId) -> Option<String> {
+        let queue = self.player.queue();
+        let item = self
+            .queued
+            .rows
+            .iter()
+            .chain(queue.iter())
+            .find(|item| item.id == track)?;
+
+        Some(
+            self.player
+                .media(&item.location, item.span)
+                .and_then(|info| info.tags.title.clone())
+                .unwrap_or_else(|| format::stem(&item.location)),
+        )
     }
 
     pub const fn poll_interval() -> Duration {
@@ -460,14 +463,27 @@ impl PlayerModel {
             match event {
                 Event::Failed { track, error } => {
                     tracing::error!(%error, %track, "playback failed");
-                    self.notice = Some(format!("track {track} failed: {error}"));
+                    let said = match self
+                        .title_of(track)
+                        .or_else(|| error.location().map(format::stem))
+                    {
+                        Some(title) => toast::would_not_play(error.cause(), &title),
+                        None => toast::would_not_do(CommandKind::Play, error.cause()),
+                    };
+                    toast::tell(Notice::Trouble(said), cx);
                 }
                 Event::CommandFailed { command, error } => {
                     tracing::warn!(%error, ?command, "the engine refused a command");
-                    self.notice = Some(format!("{command} was refused — {error}"));
+                    toast::tell(
+                        Notice::Trouble(toast::would_not_do(command, error.cause())),
+                        cx,
+                    );
                 }
-                Event::OutputChanged(_) | Event::TrackStarted(_) => self.notice = None,
-                Event::TrackFinished(_) | Event::QueueFinished | Event::Underrun { .. } => {}
+                Event::OutputChanged(_)
+                | Event::TrackStarted(_)
+                | Event::TrackFinished(_)
+                | Event::QueueFinished
+                | Event::Underrun { .. } => {}
             }
         }
 

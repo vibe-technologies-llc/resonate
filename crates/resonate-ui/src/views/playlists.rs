@@ -31,6 +31,8 @@ const NEW_HINT: &str = "Start a playlist, and name it";
 
 const PLAY_HINT: &str = "Play this playlist from the top";
 
+const NO_FILE_PICKER: &str = "Couldn't open the file picker";
+
 pub(crate) const NEXT_HINT: &str = "Hear this straight after the track playing";
 
 pub(crate) const QUEUE_HINT: &str =
@@ -346,7 +348,6 @@ impl RootView {
     fn playlists_heading(&self, any_saved: bool, cx: &mut Context<Self>) -> Div {
         let naming = self.naming.filter(|naming| !naming.is_a_search());
         let library = self.library.read(cx);
-        let notice = library.notice().cloned();
         let reads = library.search().reads();
         let undoable = library.undoable();
         let redoable = library.redoable();
@@ -409,7 +410,6 @@ impl RootView {
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
             })
-            .when_some(notice, |pane, notice| pane.child(listing::noticed(&notice)))
     }
 
     fn playlists_order(&self, cx: &mut Context<Self>) -> Div {
@@ -619,7 +619,6 @@ impl RootView {
     ) -> Div {
         let library = self.library.read(cx);
         let named = library.opened_playlist().cloned();
-        let notice = library.notice().cloned();
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
         let naming = self.naming.filter(|naming| !naming.is_a_search());
@@ -863,7 +862,6 @@ impl RootView {
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
             })
-            .when_some(notice, |pane, notice| pane.child(listing::noticed(&notice)))
     }
 
     fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
@@ -1243,7 +1241,7 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let reported = this.update(cx, |this, cx| {
-                        this.report(Notice::Trouble(error.to_string()), cx);
+                        this.report(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
                     });
                     let _ = reported;
                     return;
@@ -1280,7 +1278,7 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let reported = this.update(cx, |this, cx| {
-                        this.report(Notice::Trouble(error.to_string()), cx);
+                        this.report(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
                     });
                     let _ = reported;
                     return;

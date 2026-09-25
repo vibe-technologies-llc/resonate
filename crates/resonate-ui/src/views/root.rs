@@ -37,6 +37,7 @@ use crate::{
     icons::{self, Icon},
     listening::ListenModel,
     theme,
+    toast::{self, Toaster},
     views::{
         browser::{ArtistShows, ArtistsDrawn},
         chrome,
@@ -60,6 +61,9 @@ use crate::{
 };
 
 const VOLUME_SETTLE: Duration = Duration::from_millis(400);
+
+pub(crate) const SETTING_UNSAVED: &str =
+    "Couldn't save that setting — the settings file couldn't be written";
 
 const LISTEN_BUTTON_HINT: &str = "Listen for a song on the desktop or a microphone — ctrl-l";
 
@@ -448,6 +452,7 @@ impl RootView {
         let listens = cx.global::<ResonateApp>().listens.clone();
         let listen = cx.new(|_| ListenModel::new(listens));
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
+        cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         cx.observe(&player, |this, player, cx| {
             this.count_a_play(&player, cx);
             this.keep_the_queue(&player, cx);
@@ -611,6 +616,12 @@ impl RootView {
         let equaliser = cx.new(|_| {
             EqualiserModel::new(places.equaliser.clone(), Arc::clone(&corrections), bindings)
         });
+        cx.observe(&equaliser, |_, equaliser, cx| {
+            if let Some(notice) = equaliser.update(cx, |model, _| model.take_notice()) {
+                toast::tell(notice, cx);
+            }
+        })
+        .detach();
 
         Self {
             player,
@@ -757,12 +768,8 @@ impl RootView {
         self.show_row(Shift::Queue, row);
     }
 
-    pub(crate) fn dismiss_notice(&self, cx: &mut Context<Self>) {
-        self.player.update(cx, |player, _| player.dismiss());
-    }
-
-    fn noticed(&self, cx: &App) -> bool {
-        self.player.read(cx).notice().is_some()
+    fn noticed(cx: &App) -> bool {
+        toast::is_showing(cx)
     }
 
     pub(crate) fn send(&self, command: Command, cx: &mut Context<Self>) {
@@ -770,7 +777,7 @@ impl RootView {
     }
 
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {
-        self.library.update(cx, |library, _| library.report(notice));
+        toast::tell(notice, cx);
     }
 
     pub(crate) fn store(&self, setting: &Setting, cx: &mut Context<Self>) {
@@ -779,8 +786,7 @@ impl RootView {
         };
         tracing::error!(%error, ?setting, "a setting could not be saved");
 
-        let notice = error.to_string();
-        self.player.update(cx, |player, _| player.report(notice));
+        toast::tell(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
     }
 
     pub(crate) fn play(&mut self, tracks: &[Track], start_at: usize, cx: &mut Context<Self>) {
@@ -2052,7 +2058,7 @@ impl RootView {
             }
             "escape" if self.listening_open => self.close_the_listener(cx),
             "escape" if self.magnified.is_some() => self.shrink_cover(cx),
-            "escape" if self.noticed(cx) => self.dismiss_notice(cx),
+            "escape" if Self::noticed(cx) => toast::dismiss(cx),
             "escape" => {
                 if !self.stop_typing(cx) {
                     self.dismiss_search(window, cx);
@@ -3049,6 +3055,10 @@ impl Render for RootView {
             .child(transport)
             .child(self.drag_surface(cx))
             .child(self.pointer_watch(cx))
+            .when_some(
+                toast::drawn(self.type_ahead.typed().is_some(), cx),
+                ParentElement::child,
+            )
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.menu_over_the_app(cx), ParentElement::child)
             .when_some(self.adding.clone(), |app, holding| {

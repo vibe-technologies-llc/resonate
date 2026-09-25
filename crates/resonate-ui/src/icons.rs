@@ -59,6 +59,7 @@ icons! {
     Search => "search",
     Rename => "rename",
     Info => "info",
+    Alert => "alert",
     Check => "check",
     Folder => "folder",
     Plus => "plus",

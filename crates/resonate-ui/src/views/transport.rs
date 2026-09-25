@@ -88,8 +88,6 @@ fn inspects(sink: Option<&str>) -> SharedString {
     }
 }
 
-const DISMISS_HINT: &str = "click or escape to dismiss";
-
 pub(crate) struct Playing {
     pub(crate) track: Option<TrackId>,
     pub(crate) favourite: bool,
@@ -206,7 +204,6 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
-        let notice = model.notice().map(ToOwned::to_owned);
         let sink = state
             .output
             .and_then(|output| model.sinks().iter().find(|sink| sink.id == output.sink))
@@ -232,7 +229,6 @@ impl RootView {
             .rounded_bl(corners.bottom_left)
             .rounded_br(corners.bottom_right)
             .bg(rgb(theme::surface()))
-            .when_some(notice, |bar, notice| bar.child(self.trouble(notice, cx)))
             .child(
                 div()
                     .flex()
@@ -273,41 +269,6 @@ impl RootView {
             ))
             .child(self.play_button(playing, cx))
             .child(self.step("next", Icon::Next, NEXT_HINT, Command::Next, cx))
-    }
-
-    fn trouble(&self, notice: String, cx: &mut Context<Self>) -> Stateful<Div> {
-        let whole = SharedString::from(format!("{notice} — {DISMISS_HINT}"));
-
-        div()
-            .id("notice")
-            .flex()
-            .w_full()
-            .items_center()
-            .gap_2()
-            .px_5()
-            .py_1p5()
-            .cursor_pointer()
-            .bg(theme::tinted(theme::failure(), 0x14))
-            .hover(|strip| strip.bg(theme::tinted(theme::failure(), 0x2a)))
-            .border_b_1()
-            .border_color(theme::tinted(theme::failure(), 0x33))
-            .names(whole)
-            .child(kit::mode_dot(theme::failure()))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .text_size(px(theme::text_sm()))
-                    .text_color(rgb(theme::failure()))
-                    .truncate()
-                    .child(SharedString::from(notice)),
-            )
-            .child(icons::icon(
-                Icon::Close,
-                theme::row_control_icon(),
-                theme::failure(),
-            ))
-            .on_click(cx.listener(|this, _, _, cx| this.dismiss_notice(cx)))
     }
 
     fn status(&self, state: &PlayerState, cx: &mut Context<Self>) -> Div {

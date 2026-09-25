@@ -12,7 +12,7 @@ use crate::{
     theme,
     views::{
         field::Field,
-        kit, listing,
+        kit,
         root::RootView,
         settings::{Choice, action, note, switch_row},
     },
@@ -322,7 +322,6 @@ impl RootView {
         let enriching = library.is_enriching();
         let stopping = library.is_stopping_enrich();
         let stats = library.enrich_stats();
-        let notice = library.notice().cloned();
         let held_back = enriching || !(on && reachable);
 
         kit::section_body()
@@ -336,7 +335,6 @@ impl RootView {
                     .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
             )
             .when_some(stats, |body, stats| body.child(note(asked_so_far(stats))))
-            .when_some(notice, |body, notice| body.child(listing::noticed(&notice)))
     }
 
     fn look_up(&self, held_back: bool, enriching: bool, cx: &mut Context<Self>) -> Stateful<Div> {

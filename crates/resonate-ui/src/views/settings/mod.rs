@@ -26,14 +26,14 @@ pub(crate) use crate::views::settings::{
     find::{Category, Group},
 };
 use crate::{
-    AppIcon, ResonateApp, Setting, SettingKey,
+    AppIcon, Notice, ResonateApp, Setting, SettingKey,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     theme,
     views::{
         hint::{self, Names},
         kit::{self, Press, Tone},
-        root::RootView,
+        root::{RootView, SETTING_UNSAVED},
         scrollbar::Scrollbars,
         settings::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
@@ -714,8 +714,7 @@ impl RootView {
         };
         tracing::error!(%error, ?key, "a setting could not be taken out of the file");
 
-        let notice = error.to_string();
-        self.player.update(cx, |player, _| player.report(notice));
+        self.report(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
     }
 
     pub(crate) fn dress(&self, dressed: Appearance, cx: &mut Context<Self>) {

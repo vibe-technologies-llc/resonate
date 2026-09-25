@@ -16,7 +16,7 @@ use resonate_library::{
 use crate::{
     Notice, Pass, Planned, ResonateApp, Setting, format,
     icons::{self, Icon},
-    theme,
+    theme, toast,
     views::{
         kit::{self, EndsInAnEllipsis as _, Press},
         listing,
@@ -26,6 +26,8 @@ use crate::{
 };
 
 const FOLDER_GROUP: &str = "folder";
+
+const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker";
 
 const FORGET_HINT: &str = "Forget this folder and every track scanned from it. The files are left \
                            alone.";
@@ -84,7 +86,6 @@ impl RootView {
         let library = self.library.read(cx);
         let roots = library.roots().to_vec();
         let busy = library.is_busy();
-        let notice = library.notice().cloned();
 
         let mut listed = rows();
         for root in &roots {
@@ -96,7 +97,6 @@ impl RootView {
             .when(!roots.is_empty(), |body| body.child(listed))
             .child(hugging(self.add_folder(busy, cx)))
             .when(!roots.is_empty(), |body| body.child(note(FOLDERS_NOTE)))
-            .when_some(notice, |body, notice| body.child(listing::noticed(&notice)))
     }
 
     fn folder(&self, root: &Path, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -323,10 +323,8 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
-                    let reported = this.update(cx, |this, cx| {
-                        this.library.update(cx, |library, _| {
-                            library.report(Notice::Trouble(error.to_string()));
-                        });
+                    let reported = this.update(cx, |_, cx| {
+                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
                     });
                     let _ = reported;
                     return;
@@ -589,7 +587,7 @@ impl RootView {
             Ok(layout) => self
                 .library
                 .update(cx, |library, cx| library.organise(layout, pass, cx)),
-            Err(error) => self.report(Notice::Trouble(error.to_string()), cx),
+            Err(error) => self.report(toast::could_not("file the tracks that way", &error), cx),
         }
         cx.notify();
     }
@@ -602,7 +600,7 @@ impl RootView {
                 self.set_organise_as(given, cx);
                 self.leave_organising(window, cx);
             }
-            Err(error) => self.report(Notice::Trouble(error.to_string()), cx),
+            Err(error) => self.report(toast::could_not("use that layout", &error), cx),
         }
         cx.notify();
     }
@@ -1205,10 +1203,8 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
-                    let reported = this.update(cx, |this, cx| {
-                        this.library.update(cx, |library, _| {
-                            library.report(Notice::Trouble(error.to_string()));
-                        });
+                    let reported = this.update(cx, |_, cx| {
+                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
                     });
                     let _ = reported;
                     return;

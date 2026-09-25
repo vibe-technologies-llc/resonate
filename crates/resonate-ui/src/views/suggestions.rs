@@ -15,7 +15,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Drawn, Notice, Pane, format,
+    Drawn, Pane, format,
     icons::{self, Icon},
     theme,
     views::{
@@ -77,7 +77,6 @@ impl RootView {
             return self.opened_suggestion(&suggestion, &opened.tracks, cx);
         }
 
-        let notice = library.notice().cloned();
         let nothing = offered.is_empty();
 
         let mut shelves = div()
@@ -126,7 +125,7 @@ impl RootView {
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
-            .child(suggestions_heading(offered.len(), notice))
+            .child(suggestions_heading(offered.len()))
             .when(nothing, |pane| {
                 pane.child(empty(Icon::Suggestions, NOTHING_OFFERED, Some(SCAN_MORE)))
             })
@@ -291,10 +290,6 @@ impl RootView {
                         })
                         .child(div().pt_2().child(actions)),
                 ),
-            )
-            .when_some(
-                self.library.read(cx).notice().cloned(),
-                |heading, notice| heading.child(listing::noticed(&notice)),
             );
 
         div()
@@ -641,26 +636,22 @@ impl Corner {
     }
 }
 
-fn suggestions_heading(offered: usize, notice: Option<Notice>) -> Div {
-    kit::heading()
-        .child(
-            kit::heading_row().child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .gap_1()
-                    .child(kit::eyebrow("COLLECTION"))
-                    .child(kit::title("Suggestions"))
-                    .when(offered > 0, |column| {
-                        column.child(kit::subtitle(format::counted(offered, "list", "lists")))
-                    }),
-            ),
-        )
-        .when_some(notice, |heading, notice| {
-            heading.child(listing::noticed(&notice))
-        })
+fn suggestions_heading(offered: usize) -> Div {
+    kit::heading().child(
+        kit::heading_row().child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w(px(0.0))
+                .gap_1()
+                .child(kit::eyebrow("COLLECTION"))
+                .child(kit::title("Suggestions"))
+                .when(offered > 0, |column| {
+                    column.child(kit::subtitle(format::counted(offered, "list", "lists")))
+                }),
+        ),
+    )
 }
 
 #[cfg(test)]

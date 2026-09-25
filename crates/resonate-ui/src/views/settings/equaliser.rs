@@ -13,14 +13,13 @@ use resonate_engine::{Command, NodeName};
 use resonate_eq::{Binding, Device, ProfileName};
 
 use crate::{
-    Setting,
+    Notice, Setting,
     equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing},
     icons::Icon,
-    theme,
+    theme, toast,
     views::{
         hint::Names as _,
         kit::{self, Tone},
-        listing,
         root::RootView,
         settings::{
             action,
@@ -35,6 +34,8 @@ const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here 
                              device bound to nothing takes what every other device does.";
 
 const CURVE_HEIGHT: f32 = 168.0;
+
+const NO_FILE_PICKER: &str = "Couldn't open the file picker";
 const CURVE_MARKED_AT_HZ: [f64; 3] = [100.0, 1_000.0, 10_000.0];
 const LEVEL_MARKED_EVERY_DB: f32 = 5.0;
 const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
@@ -200,7 +201,6 @@ impl RootView {
             .shown()
             .map_or(Preamp::NONE, resonate_core::eq::Profile::preamp);
         let peak = model.peak_db();
-        let notice = model.notice().cloned();
         let chosen = model.chosen();
 
         let curve = self.curve(
@@ -216,8 +216,7 @@ impl RootView {
             return kit::section_body()
                 .child(curve)
                 .child(note(NOTHING_BOUND))
-                .child(self.band_actions(false, cx))
-                .when_some(notice, |body, notice| body.child(listing::noticed(&notice)));
+                .child(self.band_actions(false, cx));
         };
 
         let mut listed = rows();
@@ -240,7 +239,6 @@ impl RootView {
             )
             .when(!bands.is_empty(), |body| body.child(listed))
             .child(self.band_actions(true, cx))
-            .when_some(notice, |body, notice| body.child(listing::noticed(&notice)))
     }
 
     fn curve(
@@ -1100,12 +1098,14 @@ impl RootView {
                     }
                 }
                 Ok(Ok(None)) => {}
-                Ok(Err(error)) => this.equaliser.update(cx, |model, _| {
-                    model.told(crate::models::Notice::Trouble(error.to_string()));
-                }),
-                Err(error) => this.equaliser.update(cx, |model, _| {
-                    model.told(crate::models::Notice::Trouble(error.to_string()));
-                }),
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
+                Err(error) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
             });
             let _ = outcome;
         })
@@ -1128,12 +1128,14 @@ impl RootView {
                     this.equaliser.update(cx, |model, cx| model.export(to, cx));
                 }
                 Ok(Ok(None)) => {}
-                Ok(Err(error)) => this.equaliser.update(cx, |model, _| {
-                    model.told(crate::models::Notice::Trouble(error.to_string()));
-                }),
-                Err(error) => this.equaliser.update(cx, |model, _| {
-                    model.told(crate::models::Notice::Trouble(error.to_string()));
-                }),
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
+                Err(error) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
             });
             let _ = outcome;
         })

@@ -10,7 +10,7 @@ use resonate_eq::{
     Binding, Catalogue, Corrected, Device, DeviceId, Found, ProfileName, Store, search, suggest,
 };
 
-use crate::{Bindings, models::Notice};
+use crate::{Bindings, models::Notice, toast};
 
 pub const CURVE_COLUMNS: usize = 192;
 pub const DRAWN_BETWEEN_MILLIBELS: i32 = 15_000;
@@ -224,10 +224,6 @@ impl EqualiserModel {
         self.chosen = row.filter(|row| self.band(*row).is_some());
     }
 
-    pub const fn notice(&self) -> Option<&Notice> {
-        self.notice.as_ref()
-    }
-
     pub fn is_looking(&self) -> bool {
         self.looking
     }
@@ -236,12 +232,8 @@ impl EqualiserModel {
         self.corrections.has_a_source()
     }
 
-    pub fn told(&mut self, notice: Notice) {
-        self.notice = Some(notice);
-    }
-
-    pub fn dismiss_notice(&mut self) {
-        self.notice = None;
+    pub fn take_notice(&mut self) -> Option<Notice> {
+        self.notice.take()
     }
 
     pub fn shown_curve(&self) -> Option<&Curve> {
@@ -292,7 +284,7 @@ impl EqualiserModel {
             }
             Err(error) => {
                 self.shown = None;
-                self.notice = Some(Notice::Trouble(error.to_string()));
+                self.notice = Some(toast::eq_could_not("read that profile", &error));
             }
         }
         self.step();
@@ -313,7 +305,7 @@ impl EqualiserModel {
         if let Some((curve, profile)) = self.shown.as_ref()
             && let Err(error) = curve.keep(&self.store, profile)
         {
-            self.notice = Some(Notice::Trouble(error.to_string()));
+            self.notice = Some(toast::eq_could_not("save the curve", &error));
         }
     }
 
@@ -592,10 +584,11 @@ impl EqualiserModel {
                 .spawn(async move { curve.keep(&Store::at(folder), &profile) })
                 .await;
 
-            let outcome = this.update(cx, |this, _| {
+            let outcome = this.update(cx, |this, cx| {
                 this.unsaved = false;
                 if let Err(error) = written {
-                    this.notice = Some(Notice::Trouble(error.to_string()));
+                    this.notice = Some(toast::eq_could_not("save the curve", &error));
+                    cx.notify();
                 }
             });
             let _ = outcome;
@@ -622,11 +615,14 @@ impl EqualiserModel {
                             kept.profile.bands().len()
                         )
                     } else {
-                        format!("kept {name}, {} bands", kept.profile.bands().len())
+                        format!("Kept {name}, {} bands", kept.profile.bands().len())
                     }));
                     cx.notify();
                 }
-                Err(error) => this.notice = Some(Notice::Trouble(error.to_string())),
+                Err(error) => {
+                    this.notice = Some(toast::eq_could_not("import that profile", &error));
+                    cx.notify();
+                }
             });
             let _ = outcome;
         });
@@ -647,8 +643,8 @@ impl EqualiserModel {
 
             let outcome = this.update(cx, |this, cx| {
                 this.notice = Some(match written {
-                    Ok(()) => Notice::Done(format!("wrote {name} out")),
-                    Err(error) => Notice::Trouble(error.to_string()),
+                    Ok(()) => Notice::Done(format!("Wrote {name} out")),
+                    Err(error) => toast::eq_could_not("export the profile", &error),
                 });
                 cx.notify();
             });
@@ -667,9 +663,9 @@ impl EqualiserModel {
                 self.reload();
                 self.replaced(name);
                 self.step();
-                self.notice = Some(Notice::Done(format!("forgot {name}")));
+                self.notice = Some(Notice::Done(format!("Forgot {name}")));
             }
-            Err(error) => self.notice = Some(Notice::Trouble(error.to_string())),
+            Err(error) => self.notice = Some(toast::eq_could_not("forget that profile", &error)),
         }
         cx.notify();
     }
@@ -717,7 +713,9 @@ impl EqualiserModel {
                             this.look(&typed, cx);
                         }
                     }
-                    Err(error) => this.notice = Some(Notice::Trouble(error.to_string())),
+                    Err(error) => {
+                        this.notice = Some(toast::eq_could_not("read the AutoEq catalogue", &error))
+                    }
                 }
                 cx.notify();
             });
@@ -778,8 +776,9 @@ impl EqualiserModel {
                         this.step();
                     }
                     Ok(None) => {
-                        this.notice =
-                            Some(Notice::Trouble("nothing is measured for that".to_owned()));
+                        this.notice = Some(Notice::Trouble(
+                            "AutoEq has no measurement for that device".to_owned(),
+                        ));
                     }
                     Err(error) => {
                         this.notice = Some(Notice::Trouble(resonate_eq::Error::to_string(&error)));

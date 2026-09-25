@@ -205,18 +205,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   escape outside the search field, because `LeaveSearch` is bound under `SEARCH_CONTEXT` alone: an
   action fires before any `on_key_down` listener and stops propagation, so binding escape under
   `!Search` as well would take the key off the handler that already answers it. The order is the
-  match arms — a magnified cover shrinks first, then a notice the engine raised or a settings write
-  could not make is taken down through `RootView::dismiss_notice`, and only then does
+  match arms — a magnified cover shrinks first, then a toast standing is taken down through
+  `toast::dismiss`, and only then does
   `dismiss_search` close the naming row, clear the query, or — where the query is already empty —
   step back through `RootView::step_back`, which is the same seam the page's way back presses.
   That last step is what makes a scope escapable: opening an artist from the tracks pane
   leaves the pane where it was and narrows it, so without a key the only way back was a button in
   the heading. The chain backs out innermost first, so a scoped search takes two presses — the
-  words, then the scope. `dismiss_notice` is the one seam and the
-  playback bar's strip presses it too, which is why `DISMISS_HINT` reads *click or escape to
-  dismiss*. The caret keeps escape for itself: a focused field never reaches the match at all,
-  because `editing` returns before it, so what escape does in the box is what it always did and a
-  red line that only a track change used to clear now has a key.
+  words, then the scope. A click on the toast is the same `toast::dismiss`. The caret keeps escape
+  for itself: a focused field never reaches the match at all, because `editing` returns before it,
+  so what escape does in the box is what it always did.
 - **A slider is grabbed on the press and followed from a window-wide surface, not from the rail.**
   `views/slider.rs` owns both rails: the press starts a `Grab`, and `drag_surface` — an absolutely
   positioned child of the app that occludes while held — carries the move and release listeners,
@@ -386,7 +384,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `kit::heading` holds a `kit::heading_row` — an eyebrow naming the section (*LIBRARY*,
   *COLLECTION*, *NOW PLAYING*, *SETTINGS*), a `kit::title`, a `kit::subtitle` carrying the counts
   and the total length, and `kit::actions` on the right — and, under it, the *Reads* chips, a
-  naming row and a notice where a pane has one. The actions wrap inside at most 64 % of the row,
+  and a naming row where a pane has one. The actions wrap inside at most 64 % of the row,
   which is what keeps a long playlist name from being ground down to a letter by thirteen
   controls. **An album or an artist is not a pane heading with a picture bolted on**: it is
   `album_page_heading` and `artist_page_heading`, a `kit::way_back` at the top left and a
@@ -803,16 +801,35 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   handful of tokens — so the *Reads* row and a pane's own narrowed reading are live as the box is
   typed and only the SQLite work settles. The wait lives in the `_load` task, so a keystroke inside
   it drops the one before rather than queueing a second.
-- **A library notice says whether it went well, and in what voice.** `LibraryModel::notice` is a
-  `Notice`, which is `Trouble`, `Done` or `Noted`: import, export and tidy achieved what was asked
-  and go out in the palette's green, a finished enrichment merely happened and goes out in
-  `theme::muted()`, and a red line is the wrong way to say either. `looked_up` says *34 albums and
-  12 artists answered* and leaves the eight-field breakdown in the Online card, which is where
-  someone goes to read it; the sidebar's enrichment line wears `faint` and `muted` rather than the
-  accent, so a run in progress is not the brightest thing on screen. `listing::noticed` picks the colour, so the settings pane, the
-  tracks heading and both playlist headings cannot disagree. The tracks heading draws one because a
-  queue gesture pressed there has nothing else to report through: the playback bar's count moves,
-  but only the notice says where the rows landed.
+- **Every notice is a toast: a pill that rises over the playback bar, lingers and goes.** It is
+  the cousin project wsg's `chrome::toast`, and `toast.rs` is the whole of it. `Toaster` is a gpui
+  global rather than a field of any model, so the engine's failures, the library's passes, the
+  equaliser and every gesture tell it the same way — `toast::tell(notice, cx)` from anywhere that
+  holds an `App` — and `RootView` redraws on `observe_global`. One pill stands at a time,
+  centred over the content `type_ahead_lift` above the bar and lifted clear of the type-ahead pill
+  when that is showing; it rises 10 px and fades in over 220 ms, lingers six seconds — two where
+  more are waiting, at most four of them and never the same words twice — and fades out rising the
+  same 10 px, a click or escape taking it early. A `Notice` is still `Trouble`, `Done` or `Noted`,
+  and the tone is the pill's icon — the alert in the failure colour, the tick in green, the info
+  mark in the accent — while the words stay the body text colour. `EqualiserModel` sets its notice
+  in places that hold no `cx`, so the notice is an outbox `RootView` drains into the toaster
+  whenever the model notifies. Two lines stay where they are, because they belong to the control
+  beside them rather than to the moment: the queue heading's *Took N tracks out* with its *Put
+  back*, and the Library card's refusal of a typed layout field.
+- **A toast speaks plainly, and the error behind it goes to the log.** Nothing an error's `Display`
+  says reaches the pill. The engine names what went wrong as `resonate_engine::Cause` —
+  `Unreadable`, `Unsupported`, `Damaged`, `NoDevice`, `DeviceGone`, `SoundServer`,
+  `DeviceRefused`, `CannotSeek`, `QueueMoved`, `NothingPlaying` and `PlayerStopped` — read
+  exhaustively off the codec's and PipeWire's own errors in `Error::cause`, because the window may
+  see neither crate, and `Error::location` names the file a failed read was of, so a queued row
+  that failed and left the queue before the next poll is still named: *Couldn't find “Gone Song” —
+  it may have been moved or deleted*. `toast::would_not_play` and `toast::would_not_do` turn a
+  cause into words, and a library or equaliser failure is `toast::could_not("start the scan",
+  &error)` — *Couldn't start the scan — another library task is still running* — the reason
+  after the dash only where the typed error says one worth saying. A notice is a label: no full
+  stop. `looked_up` still says *34 albums and 12 artists answered* and leaves the breakdown in the
+  Online card, and the sidebar's enrichment line wears `faint` and `muted` rather than the
+  accent.
 - **The device name is not in the playback bar.** The sink's description was the one child of the
   signal path with no width of its own, so a long one pushed the panel to its clip edge and took
   the album title with it. The inspector's OUTPUT stage names the device and the settings row
@@ -869,12 +886,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `flex_1`, because the star rides right after it, so `kit::cut_to_fit` cuts the text itself —
   gpui's own `LineWrapper::truncate_line` at the width `RootView::playing_room` measured a frame
   behind, less the star — and the element draws the shortened string at its own width. The
-  inspector's stage cards are `flex_1` already and take the clamp. A notice the engine raised is not in either half: it is a strip of its own above
-  the bar, the full width of it over a wash of the failure colour, truncated with the whole of it on
-  hover and taken away by a click anywhere on it or by escape away from the search field, because a
-  load that was refused starts no track and `TrackStarted` is what otherwise clears one. What it
-  says names the command rather than debug-printing it: `CommandKind::as_str` is the prose, so a
-  refused `Load` reads *the load was refused* and not the whole of the queue items it carried. Every
+  inspector's stage cards are `flex_1` already and take the clamp. A notice the engine raised is not
+  in either half: it is a toast over the content, like every other notice. Every
   control in the bar names itself through `views/hint.rs`, because a
   silhouette does not say what it does: a step names its key, and a toggle names the state it is in
   and what the key does next, so the accent is not the only thing reporting it. A rail is drawn

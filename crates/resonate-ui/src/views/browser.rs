@@ -1261,7 +1261,6 @@ impl RootView {
         let library = self.library.read(cx);
         let reads = library.search().reads();
         let naming = self.naming.filter(|naming| naming.is_a_search());
-        let notice = library.notice().cloned();
 
         heading
             .when(!reads.is_empty(), |heading| {
@@ -1272,9 +1271,6 @@ impl RootView {
             })
             .when_some(naming, |heading, naming| {
                 heading.child(self.naming_row(naming, cx))
-            })
-            .when_some(notice, |heading, notice| {
-                heading.child(listing::noticed(&notice))
             })
     }
 
