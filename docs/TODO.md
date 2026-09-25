@@ -79,8 +79,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   count is one date and one total with no history
 - A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS
   and XSPF have no vocabulary for a region
-- A delivered row can only be forgotten with `resonate forget`; the window offers no gesture. It
-  carries no genre or lyrics, and is levelled only once studied
+- A delivered row carries no genre or lyrics, and is levelled only once studied
 
 ## Identification
 - A strict match is written without a pane to confirm it or a gesture to undo it: an album taken

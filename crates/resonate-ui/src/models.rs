@@ -1143,6 +1143,22 @@ impl LibraryModel {
         );
     }
 
+    pub fn forget_delivered(&mut self, track: &Track, cx: &mut Context<Self>) {
+        let Some(path) = track.location.as_path().map(Path::to_path_buf) else {
+            return;
+        };
+        let title = track.title.clone();
+        self.edited(
+            Wanted::Everything,
+            move |library| {
+                library
+                    .forget_delivered(&path)
+                    .map(|forgot| forgot.then(|| format!("Forgot the delivered {title}")))
+            },
+            cx,
+        );
+    }
+
     pub fn favourite_albums(&self) -> Arc<[Album]> {
         Arc::clone(&self.favourite_albums)
     }

@@ -911,6 +911,7 @@ impl RootView {
                     .favours(Favoured::Track(track.id), track.favourite.is_some());
                 let queued = listed(slice::from_ref(track));
                 let held = Cut::of(track);
+                let delivered = track.delivered.then(|| track.clone());
                 let others = (track.alternatives > 0).then(|| {
                     (
                         track.clone(),
@@ -931,6 +932,13 @@ impl RootView {
                         this.library.update(cx, |library, cx| {
                             library.hide_track(track_id, !hidden, cx);
                         });
+                    })
+                    .when_some(delivered, |menu, delivered| {
+                        menu.does(Icon::Close, menu::FORGET_DELIVERY, move |this, _, cx| {
+                            this.library.update(cx, |library, cx| {
+                                library.forget_delivered(&delivered, cx);
+                            });
+                        })
                     })
             },
             cx,

@@ -90,7 +90,9 @@ A provider does none of this, so none of it is written twice:
   vault object's own, which is what `resonate wants` prints as `OFFERED` and what
   `resonate forget` reads beside a root, URI or path alike — and nothing a scan filed, leaving
   the object to `--prune` and the want standing, so a wrong file dropped in the inbox is replaced
-  by the next poll rather than kept for ever.
+  by the next poll rather than kept for ever. The window reaches it too: `Track::delivered` reads
+  `root_id IS NULL` beside every other column a row is read with, and a delivered row's menu
+  offers *Forget this delivery*, which is `LibraryModel::forget_delivered` over the same call.
 
 ## Writing one
 

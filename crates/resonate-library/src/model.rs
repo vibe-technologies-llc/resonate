@@ -37,6 +37,7 @@ pub struct Track {
     pub genre: Option<String>,
     pub hidden: bool,
     pub alternatives: u32,
+    pub delivered: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

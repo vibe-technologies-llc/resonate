@@ -310,6 +310,7 @@ pub(crate) const TAKE_OUT: &str = "Take out of the queue";
 pub(crate) const REMOVE_ROW: &str = "Take out of the playlist";
 pub(crate) const MAGNIFY: &str = "See the cover whole";
 pub(crate) const INSPECT: &str = "Show in the inspector";
+pub(crate) const FORGET_DELIVERY: &str = "Forget this delivery";
 pub(crate) const OPEN_ALBUM: &str = "Show this album";
 pub(crate) const OPEN_ARTIST: &str = "Show this artist";
 pub(crate) const FAVOUR: &str = "Add to favourites";
@@ -475,6 +476,7 @@ mod tests {
             genre: None,
             hidden: false,
             alternatives: 0,
+            delivered: false,
         }
     }
 

@@ -15003,6 +15003,10 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     assert_eq!(track.title, "San Tropez");
     assert_eq!(track.album_id, Some(album.id));
     assert_eq!(track.location.as_path(), Some(objects[0].path.as_path()));
+    assert!(
+        track.delivered,
+        "a row a provider delivered read back as scanned"
+    );
     assert_eq!(
         titles(&library.search("Tropez", 10)?.tracks),
         vec!["San Tropez"]
