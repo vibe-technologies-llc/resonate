@@ -26,6 +26,8 @@ const AUTHORITY_MARK: &str = "//";
 
 const LOCAL_AUTHORITY: &str = "localhost";
 
+const REFERENCE_PATH_ENDS: [char; 2] = ['?', '#'];
+
 const BYTE_ORDER_MARK: char = '\u{feff}';
 
 const NOTHING_TEXT_HOLDS: u8 = 0;
@@ -204,7 +206,7 @@ pub fn local_file(line: &str) -> Option<String> {
     if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
         return None;
     }
-    let encoded = match rest.strip_prefix(AUTHORITY_MARK) {
+    let encoded = match path_of_reference(rest).strip_prefix(AUTHORITY_MARK) {
         Some(named) => {
             let (authority, path) = named.split_at(named.find('/')?);
             let here = authority.is_empty() || authority.eq_ignore_ascii_case(LOCAL_AUTHORITY);
@@ -217,6 +219,12 @@ pub fn local_file(line: &str) -> Option<String> {
         return None;
     }
     unescaped(&encoded)
+}
+
+pub fn path_of_reference(reference: &str) -> &str {
+    reference
+        .find(REFERENCE_PATH_ENDS)
+        .map_or(reference, |ends| &reference[..ends])
 }
 
 pub fn forward_escaped(encoded: &str) -> Cow<'_, str> {
@@ -471,6 +479,33 @@ mod tests {
         assert_eq!(
             read_at("file:///music/AC%5CDC.wav"),
             Some(PathBuf::from("/music/AC\\DC.wav"))
+        );
+    }
+
+    #[test]
+    fn a_file_uri_is_read_up_to_its_query_or_fragment_and_an_escaped_mark_stays_in_the_name() {
+        let echoes = Some(PathBuf::from("/music/Echoes.flac"));
+
+        assert_eq!(read_at("file:///music/Echoes.flac#t=10"), echoes);
+        assert_eq!(read_at("file:///music/Echoes.flac?at=10"), echoes);
+        assert_eq!(read_at("file:///music/Echoes.flac?at=10#t=10"), echoes);
+        assert_eq!(read_at("file:///music/Echoes.flac#frames=0-44100"), echoes);
+        assert_eq!(read_at("file://localhost/music/Echoes.flac#t=10"), echoes);
+        assert_eq!(
+            read_at("file:///music/Take%235%3F.flac"),
+            Some(PathBuf::from("/music/Take#5?.flac"))
+        );
+    }
+
+    #[test]
+    fn a_row_that_is_not_a_uri_keeps_a_mark_in_the_middle_of_its_name() {
+        assert_eq!(
+            read_at("/music/Take #5?.flac"),
+            Some(PathBuf::from("/music/Take #5?.flac"))
+        );
+        assert_eq!(
+            read_at("Take #5.flac"),
+            Some(PathBuf::from("/music/Take #5.flac"))
         );
     }
 

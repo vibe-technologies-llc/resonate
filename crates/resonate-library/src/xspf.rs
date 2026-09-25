@@ -367,7 +367,9 @@ fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
     }
 
     Some(sheet::resolved(
-        PathBuf::from(sheet::unescaped(&sheet::forward_escaped(reference))?),
+        PathBuf::from(sheet::unescaped(&sheet::forward_escaped(
+            sheet::path_of_reference(reference),
+        ))?),
         base.beside()?,
     ))
 }
@@ -455,4 +457,34 @@ fn entity(named: &str) -> Option<char> {
         .iter()
         .find(|(name, _)| *name == named)
         .map(|(_, character)| *character)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read_at(location: &str) -> Vec<PathBuf> {
+        let text = format!(
+            "<playlist><trackList><track><location>{location}</location></track></trackList></playlist>"
+        );
+        read(&text, Path::new("/music"))
+            .locations
+            .iter()
+            .filter_map(|held| held.as_path().map(Path::to_path_buf))
+            .collect()
+    }
+
+    #[test]
+    fn a_location_is_read_up_to_its_query_or_fragment_whether_it_is_a_uri_or_relative() {
+        let echoes = vec![PathBuf::from("/music/Echoes.flac")];
+
+        assert_eq!(read_at("file:///music/Echoes.flac#t=10"), echoes);
+        assert_eq!(read_at("file:///music/Echoes.flac?at=10"), echoes);
+        assert_eq!(read_at("Echoes.flac#t=10"), echoes);
+        assert_eq!(read_at("Echoes.flac?at=10"), echoes);
+        assert_eq!(
+            read_at("Take%235.flac"),
+            vec![PathBuf::from("/music/Take#5.flac")]
+        );
+    }
 }

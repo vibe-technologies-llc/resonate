@@ -2081,7 +2081,12 @@ the pass.
   backslash cannot stand in a `file://` URI or an XSPF location, whose writers escape one as
   `%5C`, so `sheet::forward_escaped` turns every literal one into a separator *before* the text
   is unescaped — `file:///music\a.wav` and an XSPF `album\a.wav` or `xml:base="discs\"` name
-  folders — while `AC%5CDC.wav` still reads back as the one file it names. The 8 MiB ceiling is weighed against what the name declares
+  folders — while `AC%5CDC.wav` still reads back as the one file it names. A reference ends at
+  its first raw `?` or `#`: `sheet::path_of_reference` cuts a `file:` URI and a relative XSPF
+  location there before anything is unescaped, the way `MediaLocation::from_uri` already reads
+  one, so `file:///music/Echoes.flac#t=10` and this build's own `#frames=` URI are the file they
+  name while `%23` and `%3F` still decode into it. A plain M3U or PLS row is not a URI, so a `#`
+  in the middle of one stays part of the name. The 8 MiB ceiling is weighed against what the name declares
   and again against what the read took, so a FIFO reporting zero is refused rather than read
   unbounded. `Library::prune_playlist` is the companion that drops the rows whose files have gone,
   and it is asked for rather than automatic. A sheet that says how many rows it holds is taken at
