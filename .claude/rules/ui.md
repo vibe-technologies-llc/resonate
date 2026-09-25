@@ -212,7 +212,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   That last step is what makes a scope escapable: opening an artist from the tracks pane
   leaves the pane where it was and narrows it, so without a key the only way back was a button in
   the heading. The chain backs out innermost first, so a scoped search takes two presses — the
-  words, then the scope. A click on the toast is the same `toast::dismiss`. The caret keeps escape
+  words, then the scope. That holds only because typing is not a gesture on the scope:
+  `LibraryModel::set_query` leaves `selection` where it was, so a word typed into an open album
+  narrows the album, and the callers that mean the whole library — `revise_search` and
+  `search_instead`, which *Did you mean*, *Sung in*, a suggestion's *Search for these*
+  and Listen's *Find it* go through — call `show_everything` before they write the words. A click on the toast is the same `toast::dismiss`. The caret keeps escape
   for itself: a focused field never reaches the match at all, because `editing` returns before it,
   so what escape does in the box is what it always did.
 - **A slider is grabbed on the press and followed from a window-wide surface, not from the rail.**

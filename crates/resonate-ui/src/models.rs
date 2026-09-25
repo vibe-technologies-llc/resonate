@@ -2211,7 +2211,6 @@ impl LibraryModel {
         }
         self.search = Search::read(&query);
         self.query = query;
-        self.selection = Selection::Everything;
         self.reach = PAGE;
         self.read_after(SEARCH_SETTLE, Wanted::Everything, cx);
         self.ask_elsewhere_after(ASKED_ELSEWHERE_AFTER, cx);

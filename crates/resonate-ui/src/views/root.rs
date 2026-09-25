@@ -962,6 +962,7 @@ impl RootView {
             .and_then(|query| query.text)
             .unwrap_or_default();
 
+        self.show_everything(cx);
         self.search
             .update(cx, |search, cx| search.set_text(text, cx));
         self.pane = Pane::Tracks;
@@ -2337,6 +2338,7 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.show_everything(cx);
         self.search.update(cx, |search, cx| {
             search.take_focus(window);
             search.set_text(instead, cx);
