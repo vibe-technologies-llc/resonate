@@ -18,7 +18,8 @@ const STOOD_IN: &str = "SELECT t.vault_path, t.title, t.artist, coalesce(a.relea
        FROM tracks t
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = a.artist_id
-      WHERE t.path = ?1 AND t.span_start = ?2 AND t.vault_path IS NOT NULL";
+      WHERE t.path = ?1 AND t.span_start = ?2 AND t.span_frames IS ?3
+        AND t.vault_path IS NOT NULL";
 
 pub(crate) struct Vaulted {
     inner: Arc<Inner>,
@@ -33,11 +34,11 @@ impl Vaulted {
 impl StandIn for Vaulted {
     fn stands_in(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<StoodIn> {
         let path = path_text(location.as_path()?).ok()?.to_owned();
-        let start = span.map_or(0, |span| span.start().get() as i64);
+        let (start, frames) = store::span_columns(span);
 
         let found = self.inner.read(|connection| {
             connection
-                .query_row(STOOD_IN, params![path, start], stood_in)
+                .query_row(STOOD_IN, params![path, start, frames], stood_in)
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))
         });

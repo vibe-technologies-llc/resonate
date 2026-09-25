@@ -14532,6 +14532,38 @@ fn an_import_on_several_workers_keeps_every_row_and_shared_audio_once() -> Resul
 }
 
 #[test]
+fn a_file_a_vaulted_sheet_cuts_is_stood_in_for_only_by_the_cut_it_was_asked_as() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let file = tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(vaulted(&library, true)?.stats.vaulted, 3);
+
+    let first = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.span.map(FrameSpan::start) == Some(Frames(0)))
+        .expect("the sheet's first cut");
+    let whole = MediaLocation::local(&file);
+    let stand_in = library.stand_in();
+
+    assert!(stand_in.stands_in(&first.location, first.span).is_some());
+    assert!(
+        stand_in.stands_in(&whole, None).is_none(),
+        "the whole file was stood in for by its first cut"
+    );
+    assert!(
+        stand_in
+            .stands_in(&whole, Some(FrameSpan::starting(Frames(0))))
+            .is_none(),
+        "a span sharing the first cut's start alone was stood in for by it"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_vaulted_row_counts_its_plays_and_sits_in_a_playlist_as_the_file_it_came_from() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

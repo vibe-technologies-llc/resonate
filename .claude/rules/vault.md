@@ -187,8 +187,9 @@ rule of the day, which `library.md`'s migration steps have since replaced.
   is decided at the `Sources` it opens through: `Library::stand_in` is a
   `resonate_codec::StandIn`, and the binary registers it on the player's sources with
   `Sources::standing_in`. `Decoder::open`, `Decoder::open_span`, `probe` and `probe_span` ask it
-  first, and where the catalog names a `vault_path` for that `(path, span_start)` they decode the
-  object *whole* — a cue row's object is that row alone, so the span is not applied twice — under
+  first, and where the catalog names a `vault_path` for that `(path, span_start, span_frames)` —
+  the span matched whole, so an open of a file with no span, or with one that shares only a cut's
+  start, reads the file rather than the first cut's object — they decode the object *whole* — a cue row's object is that row alone, so the span is not applied twice — under
   a `TagSet` the catalog fills: the names, the numbers, the MusicBrainz ids, `rg_*` as the
   ReplayGain the engine resolves its gain from, and `tracks.lyrics`, which the scan keeps for
   exactly this. An object that will not open falls back to the row's own file. `resonate info`,
