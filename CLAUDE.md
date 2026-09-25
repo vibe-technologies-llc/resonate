@@ -218,7 +218,10 @@ Invariants the layering exists to protect:
   an id alone published the last file's cover. The folder is made 0700 with a
   `create` that refuses one already standing, so a predictable name in a shared folder cannot be
   taken first by another user to read what is playing or to aim a symlink, and each cover is
-  opened `create_new` at 0600. Only the last
+  written at 0600 under a staging name, synced and renamed into place, the staging file removed
+  on any error, so a cover the disc could not finish is never what `mpris:artUrl` names; a file
+  already under the name is taken for the picture only where its length is that of the bytes
+  just hashed. Only the last
   `COVERS_KEPT` are held — a cover no kept track names any more is taken off the disc — and
   `Mpris::shutdown` takes the folder away again; a run that never got to, one the signal
   fallback's `process::exit` ended, is swept by the next run, which removes every

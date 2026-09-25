@@ -29,6 +29,8 @@ const OURS_ALONE: u32 = 0o700;
 
 const READ_BY_US_ALONE: u32 = 0o600;
 
+const STAGED: &str = ".laying";
+
 #[derive(Default)]
 pub(crate) struct Pictures {
     folder: Folder,
@@ -188,16 +190,36 @@ fn made_ours(folder: &Path) -> io::Result<()> {
 }
 
 fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let opened = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(READ_BY_US_ALONE)
-        .open(path);
-    match opened {
-        Ok(mut file) => file.write_all(bytes),
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
-        Err(error) => Err(error),
+    if already_laid(path, bytes) {
+        return Ok(());
     }
+    let staged = staging_for(path);
+    let laid = write_staged(&staged, bytes).and_then(|()| fs::rename(&staged, path));
+    if laid.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    laid
+}
+
+fn already_laid(path: &Path, bytes: &[u8]) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|held| held.is_file() && held.len() == bytes.len() as u64)
+}
+
+fn staging_for(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(STAGED);
+    path.with_file_name(name)
+}
+
+fn write_staged(staged: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(READ_BY_US_ALONE)
+        .open(staged)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 #[cfg(test)]
@@ -328,6 +350,51 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, OURS_ALONE);
+        pictures.forget();
+    }
+
+    fn laid_for(pictures: &Pictures, art: &CoverArt) -> PathBuf {
+        pictures.folder.0.join(format!(
+            "{:016x}.{}",
+            digest_of(&art.bytes),
+            art.format.extension()
+        ))
+    }
+
+    #[test]
+    fn a_cover_that_could_not_be_written_is_never_named_and_leaves_nothing_behind() {
+        let pictures = Pictures::default();
+        pictures.uri(track(1), &cover(1)).expect("the folder made");
+        let unwritten = cover(2);
+        let path = laid_for(&pictures, &unwritten);
+        let staged = staging_for(&path);
+        fs::create_dir(&staged).expect("something standing where the staging file goes");
+
+        assert_eq!(pictures.uri(track(2), &unwritten), None);
+        assert!(
+            !path.exists(),
+            "a cover that failed was left where the bus reads it"
+        );
+
+        fs::remove_dir(&staged).expect("the obstacle taken away");
+        let uri = pictures
+            .uri(track(2), &unwritten)
+            .expect("the cover laid down the second time");
+        assert_eq!(fs::read(laid(&uri)).expect("the cover"), unwritten.bytes);
+        assert!(!staged.exists(), "the staging file outlived the rename");
+        pictures.forget();
+    }
+
+    #[test]
+    fn a_cover_cut_short_on_disc_is_written_again_rather_than_named() {
+        let pictures = Pictures::default();
+        pictures.uri(track(1), &cover(1)).expect("the folder made");
+        let art = cover(2);
+        let path = laid_for(&pictures, &art);
+        fs::write(&path, &art.bytes[..3]).expect("a cover cut short");
+
+        let uri = pictures.uri(track(2), &art).expect("the cover laid down");
+        assert_eq!(fs::read(laid(&uri)).expect("the cover"), art.bytes);
         pictures.forget();
     }
 
