@@ -3176,6 +3176,27 @@ fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
 }
 
 #[test]
+fn a_blank_pls_row_names_no_file_rather_than_the_sheets_own_folder() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    tree.write("a.wav", b"a file no scan has read");
+
+    let sheet = tree.path().join("blank.pls");
+    fs::write(
+        &sheet,
+        "[playlist]\nFile1=\nFile2=a.wav\nNumberOfEntries=2\nVersion=2\n",
+    )
+    .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+    assert_eq!(imported.added, 1);
+    assert_eq!(imported.elsewhere, 1, "a blank row was read as a file");
+    assert_eq!(imported.missing, 0);
+    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["a"]);
+    Ok(())
+}
+
+#[test]
 fn a_sheet_is_read_by_what_it_holds_rather_than_what_it_is_called() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("mislabelled.m3u");

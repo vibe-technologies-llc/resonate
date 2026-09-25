@@ -2055,7 +2055,9 @@ the pass.
   `localhost` authority are read whatever their case, as RFC 3986 has them, so `FILE:///a.wav` and
   `file://LocalHost/a.wav` are local rows and an `xml:base` written either way still resolves what
   sits under it; `file:/a.wav`, the form with no authority at all, reads as `file:///a.wav` does,
-  while `file:track.flac`, with no slash, stays a relative path. A sheet that is not
+  while `file:track.flac`, with no slash, stays a relative path. A row that is empty once trimmed
+  — a PLS `File1=` with nothing after it — names nothing and is counted as elsewhere, where it
+  used to resolve to the sheet's own folder and be stored as a row. A sheet that is not
   UTF-8 is read as Windows-1252, unless its name declares UTF-8 — `.m3u8` and `.xspf` do — or its
   bytes hold a NUL, which no text sheet does. Importing reconciles by count rather than by set: a
   row the playlist already holds is counted as already there, so the same sheet read twice is a

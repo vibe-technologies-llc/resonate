@@ -130,6 +130,9 @@ pub fn describe(entry: &PlaylistEntry) -> Described {
 }
 
 pub fn located(named: &str, beside: &Path) -> Option<MediaLocation> {
+    if named.is_empty() {
+        return None;
+    }
     match scheme_of(named) {
         None => Some(resolved(
             PathBuf::from(forward_separated(named).as_ref()),
