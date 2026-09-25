@@ -10,10 +10,10 @@ use crate::{
 
 const OVERSAMPLED: usize = 8;
 const INTERPOLATOR: SincParams = SincParams {
-    half_taps: 24,
+    half_taps: 48,
     phases: OVERSAMPLED as u32,
-    cutoff: 0.985,
-    kaiser_beta: 8.0,
+    cutoff: 0.998,
+    kaiser_beta: 10.0,
 };
 const REACH: usize = INTERPOLATOR.half_taps as usize;
 const TAPS: usize = 2 * REACH;
@@ -546,6 +546,32 @@ mod tests {
             read.abs() < NEAR_NYQUIST_READS_WITHIN_DB,
             "the meter read {read:.3} dBTP"
         );
+    }
+
+    #[test]
+    fn every_phase_passes_a_tone_at_nineteen_twentieths_of_nyquist_within_a_tenth_of_a_decibel() {
+        const FRACTION_OF_NYQUIST: f64 = 0.95;
+        let omega = PI * FRACTION_OF_NYQUIST;
+        let weights = Oversampler::new(1).weights;
+        for phase in 1..OVERSAMPLED {
+            let (real, imaginary) =
+                weights
+                    .iter()
+                    .enumerate()
+                    .fold((0.0, 0.0), |(real, imaginary), (tap, lanes)| {
+                        let weight = lanes[phase];
+                        let turned = omega * tap as f64;
+                        (
+                            real + weight * turned.cos(),
+                            imaginary - weight * turned.sin(),
+                        )
+                    });
+            let passed = decibels(real.hypot(imaginary));
+            assert!(
+                passed.abs() < NEAR_NYQUIST_READS_WITHIN_DB,
+                "phase {phase} passed the tone at {passed:.3} dB"
+            );
+        }
     }
 
     #[test]

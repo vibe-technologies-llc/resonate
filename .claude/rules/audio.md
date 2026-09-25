@@ -1398,30 +1398,37 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   that snaps back to exactly one within 2⁻³² of it. A stream that never passes the ceiling is
   multiplied by exactly one and comes out bit for bit what went in, only later —
   `a_stream_that_never_nears_full_scale_passes_through_exactly_and_whole`. The audio waits
-  `lookahead + 24` frames, which it holds back rather than padding with silence and hands on in its
+  `lookahead + 48` frames, which it holds back rather than padding with silence and hands on in its
   flush, so a track keeps its length. Because it holds frames, `Engine::swap_chain` first flushes
   the running chain's held tail into the ring — `Output::hand_on_what_the_chain_holds` — and
   defers the swap to the next pump where the ring has no room for it, so a reshape between a
   guarded chain and another never drops what the guard was holding.
-- **The guard's interpolator is 48 taps, because 32 could not see the top of the band.** Sixteen
-  half-taps at a cutoff of 0.95 under-read a tone at 85 % of Nyquist by 0.38 dB and one at 90 %
-  by 2 dB, so an over carried by the last few kilohertz passed the ceiling unseen; 24 half-taps at
-  0.985 under a Kaiser β of 8 are flat within 0.001 dB to 85 % and 0.06 dB at 90 %, and never
-  read more than 0.001 dB over — `a_tone_at_nine_tenths_of_nyquist_is_read_at_its_peak`. The
-  study's `TruePeakMeter` reads through the same interpolator, so the two still agree.
+- **The guard's interpolator is 96 taps, because 48 could not see the top tenth of the band.**
+  Every fractional phase has to pass a tone near Nyquist at its own level, or an over carried there
+  is read low and passes the ceiling. 24 half-taps at a cutoff of 0.985 under a Kaiser β of 8 —
+  which had replaced sixteen at 0.95 for the same reason — were flat to 85 % of Nyquist but read a
+  tone at 90 % 0.06 dB low, at 92 % 0.33 dB and at 95 % 2 dB. 48 half-taps at 0.998 under a β of
+  10 are flat within 0.001 dB to 92 % and 0.09 dB at 95 %, inside the 0.1 dB between the ceiling
+  and full scale, and read nothing over —
+  `every_phase_passes_a_tone_at_nineteen_twentieths_of_nyquist_within_a_tenth_of_a_decibel` weighs
+  each phase's own response there. What is left is the top 5 %, above 22.8 kHz at 48 kHz, which 64
+  half-taps would take to 97 % for another third of the cost. It costs the interpolating path
+  0.42 % of a core at 48 kHz stereo where it cost 0.23, and 1.7 % at 192 kHz where it cost 1.0;
+  the skip below is untouched. The study's `TruePeakMeter` reads through the same interpolator,
+  so the two still agree.
 - **The guard skips the interpolation wherever it can prove nothing is over, and is constant time
   when something is.** No phase can answer more than the input's loudest sample times the largest
-  sum of absolute weights any phase holds — 2.6 — so while no sample in the window has been louder
-  than the ceiling over that, −8.4 dBFS, the frame is written into the history and not
+  sum of absolute weights any phase holds — 3.0 — so while no sample in the window has been louder
+  than the ceiling over that, −9.7 dBFS, the frame is written into the history and not
   interpolated; `the_detector_skips_only_frames_no_phase_could_carry_over_the_ceiling` holds the
   skip to frames the full reading also passes. A volume under 100 % or a ReplayGain that turns a
   loud master down is exactly that case, and it costs 0.05 % of a core at 48 kHz stereo where the
-  interpolation costs 0.23 %. The interpolation keeps the eight phases' weights transposed, fused
+  interpolation costs 0.42 %. The interpolation keeps the eight phases' weights transposed, fused
   multiply-adds them, and reads the channels a pair at a time so one load of a weight row serves
   both. What limiting costs is kept constant too: the smallest gain asked across the lookahead is
   a monotonic queue rather than a scan, and its average a running sum that is summed again once a
-  lookahead so the error cannot build, so a hot 192 kHz master costs 1 % of a core where it
-  cost 4.7 %.
+  lookahead so the error cannot build, so a hot 192 kHz master costs 1.8 % of a core where a
+  scan cost it 4.7 % under the 48-tap interpolator.
 - **The pre-amp and the gain of an untagged track are part of what ReplayGain asks for, so clip
   prevention weighs them too.** `Levelling` is a `Trim` for each — quantised millibels, so
   `OutputSettings` keeps its `Eq` — and `resolve_replay_gain` folds them into the `AppliedGain` it

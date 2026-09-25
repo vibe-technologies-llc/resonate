@@ -15,8 +15,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
   with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
   of a file that is itself over full scale reaches the device as the file has it
-- The true-peak interpolator under-reads a tone at 90 % of Nyquist by 0.06 dB, at 92 % by 0.33 dB
-  and at 95 % by 2 dB, so an over carried by the top tenth of the band can pass the ceiling by that
 - A stream's reported delay misses the frames in buffers it has already queued — `pw_time.queued`
   has no safe setter in pipewire-rs 0.10 — so the position and the visualiser's frame are short by
   up to one cycle
