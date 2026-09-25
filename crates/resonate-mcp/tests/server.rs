@@ -1294,6 +1294,24 @@ fn a_folder_that_is_not_there_is_refused_rather_than_kept_as_a_root() {
 }
 
 #[test]
+fn a_folder_that_is_there_is_not_kept_when_a_later_one_in_the_list_is_refused() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = nothing_running();
+
+    let said = failed(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string(), "/nowhere/resonate/music"] }),
+    );
+    assert!(said.contains("not a folder"), "{said}");
+
+    let bare = called(&server, "start_scan", json!({}));
+    assert_eq!(bare["roots"], json!([]), "{bare}");
+    assert_eq!(once_settled(&server, "scan")["stats"]["added"], 0);
+}
+
+#[test]
 fn a_lookup_asked_of_a_build_that_reaches_nothing_is_that_tool_failing_alone() {
     let server = nothing_running();
 

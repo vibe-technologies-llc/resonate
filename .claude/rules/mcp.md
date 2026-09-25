@@ -180,7 +180,8 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   walk is the library's own `AlreadyWalking`.
 - **The passes are started the way the command line starts them.** A scan adds each folder it is
   given as a root — refusing one that is not a folder, `Error::NoSuchFolder`, before anything is
-  kept — and walks every root where it is given none, incrementally and with covers, on the
+  kept, so every path in the list is weighed before the first is added, because `add_root`
+  commits each on its own — and walks every root where it is given none, incrementally and with covers, on the
   machine's parallelism; a lookup carries on one a run left unfinished unless asked to refresh,
   and honours the `study` setting; a poll asks every registered provider. What the passes need
   from outside the crate arrives as `Lookups` — the reference, the fingerprinters, the providers

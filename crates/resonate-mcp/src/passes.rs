@@ -286,10 +286,12 @@ impl Passes {
 
     pub(crate) fn scan(&self, library: &Library, roots: &[PathBuf]) -> Result<Value> {
         self.free(Pass::Scan)?;
+        if let Some(missing) = roots.iter().find(|root| !root.is_dir()) {
+            return Err(Error::NoSuchFolder {
+                path: missing.clone(),
+            });
+        }
         for root in roots {
-            if !root.is_dir() {
-                return Err(Error::NoSuchFolder { path: root.clone() });
-            }
             library.add_root(root)?;
         }
 
