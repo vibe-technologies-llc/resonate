@@ -2087,6 +2087,51 @@ fn a_seek_into_opus_hears_what_decoding_from_the_start_hears_there() {
 }
 
 #[test]
+fn a_seek_into_the_first_moments_of_opus_in_matroska_hears_what_decoding_from_the_start_hears() {
+    let tree = Tree::new();
+    let Some((path, _)) = shaped(
+        &tree,
+        BROADCAST,
+        "broadcast.mka",
+        &["-c:a", "libopus", "-b:a", "320k"],
+    ) else {
+        return;
+    };
+    let whole = decode(&path).samples;
+    let channels = usize::from(BROADCAST.channels);
+
+    for at in [
+        Frames::ZERO,
+        Frames(4_800),
+        Frames(u64::from(BROADCAST.rate) / 4),
+    ] {
+        let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a well-formed file opens");
+        assert!(
+            info.priming() > Frames::ZERO,
+            "the stream declared no priming"
+        );
+        decoder
+            .seek(Frames(u64::from(BROADCAST.rate)))
+            .expect("a seek into the track");
+        assert_eq!(decoder.seek(at).expect("a seek back"), at);
+        let from_there = drain(&mut decoder, info.spec);
+
+        let skipped = at.get() as usize * channels;
+        assert_eq!(
+            from_there.len(),
+            whole.len() - skipped,
+            "a seek to {at} heard another length than the whole decode holds from there"
+        );
+        let apart = drift(&from_there, &whole[skipped..]);
+        assert!(
+            apart < 1e-6,
+            "a seek to {at} landed {apart:e} RMS of full scale away from what the whole decode holds there"
+        );
+    }
+}
+
+#[test]
 fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone() {
     let tree = Tree::new();
     let Some((path, _)) = shaped(

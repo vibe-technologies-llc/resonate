@@ -240,7 +240,13 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `music_at` — back to the start, or anywhere inside Opus's pre-roll — and a frame count cannot
   say how far, so `seek_reader` answers a `Landing` carrying `short_of_the_music` beside the frame
   and `restart` drops that much before it counts; saturating it to frame zero played the priming
-  as music and heard the rest of the track that many frames late.
+  as music and heard the rest of the track that many frames late. On a timeline that is not
+  sample-accurate the tick delta is too coarse for the first packet: Matroska counts in
+  milliseconds, so symphonia turns an Opus `CodecDelay` of 6.5 ms into 6 ticks — 288 frames of a
+  312-frame pre-skip — and a seek inside the pre-roll heard 24 frames of priming. `Coded` notes
+  the first packet's timestamp as it reads it, and a landing on that packet drops
+  `MediaInfo::priming` whole, as the cold open does; a sample-accurate timeline such as Ogg's, and
+  any later packet, keep the delta.
 - **Every revision of a file's metadata is read, not only the newest.** symphonia's
   `Metadata::skip_to_latest` discards the revisions it walks past, and a container publishes more
   than one as a matter of course: Matroska pushes one per `Tags` element, isomp4 one for a top-level

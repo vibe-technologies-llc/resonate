@@ -12,6 +12,7 @@ use symphonia::core::{
     errors,
     formats::{FormatReader, SeekMode, SeekTo},
     packet::Packet,
+    units::Timestamp,
 };
 
 use crate::{
@@ -232,6 +233,7 @@ struct Coded {
     consumed: usize,
     ahead: Option<Packet>,
     trailing: usize,
+    first_ts: Option<Timestamp>,
 }
 
 impl Coded {
@@ -241,7 +243,10 @@ impl Coded {
         }
         loop {
             match self.reader.next_packet() {
-                Ok(Some(packet)) if packet.track_id == self.track.0 => return Ok(Some(packet)),
+                Ok(Some(packet)) if packet.track_id == self.track.0 => {
+                    self.first_ts.get_or_insert(packet.pts);
+                    return Ok(Some(packet));
+                }
                 Ok(Some(_)) => {}
                 Ok(None) => return Ok(None),
                 Err(errors::Error::IoError(source))
@@ -413,6 +418,7 @@ impl Decoder {
                         consumed: 0,
                         ahead: None,
                         trailing: padding_past_an_open_window(&info),
+                        first_ts: None,
                     })),
                     timeline,
                 )
@@ -753,9 +759,15 @@ impl Decoder {
             .seek(SeekMode::Accurate, seek_to)
             .map_err(|source| Error::from_symphonia(source, CodecOp::Seek, location))?;
 
+        let on_the_first_packet = coded.first_ts == Some(landed.actual_ts);
+        let short_of_the_music = if on_the_first_packet && !timeline.is_sample_accurate() {
+            info.priming()
+        } else {
+            timeline.short_of_the_music(landed.actual_ts)
+        };
         Ok(Landing {
             at: timeline.frames(landed.actual_ts),
-            short_of_the_music: timeline.short_of_the_music(landed.actual_ts),
+            short_of_the_music,
         })
     }
 }
