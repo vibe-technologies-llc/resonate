@@ -155,10 +155,9 @@ pub(crate) struct TakenBack {
 }
 
 impl TakenBack {
-    pub(crate) fn keeping(&mut self, queue: &[QueueItem], rows: Span) {
-        let Some(taken) = TakenOut::of(queue, rows) else {
-            return;
-        };
+    pub(crate) fn keeping(&mut self, queue: &[QueueItem], rows: Span) -> Option<usize> {
+        let taken = TakenOut::of(queue, rows)?;
+        let kept = taken.rows.len();
         if self.standing(queue).is_none() {
             self.steps.clear();
         }
@@ -166,6 +165,7 @@ impl TakenBack {
             self.steps.remove(0);
         }
         self.steps.push(taken);
+        Some(kept)
     }
 
     fn standing(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
@@ -604,9 +604,6 @@ impl RootView {
             .when(self.ordering, |heading| {
                 heading.child(self.queue_in_order(cx))
             })
-            .when_some(taken_out, |heading, offer| {
-                heading.child(listing::noticed(&Notice::Done(took_out(offer))))
-            })
     }
 
     fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
@@ -749,19 +746,11 @@ fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> usize {
     })
 }
 
-fn took_out(offer: Offer) -> String {
-    let taken = format!(
+pub(crate) fn took_out(rows: usize) -> Notice {
+    Notice::Done(format!(
         "Took {} out of the queue",
-        format::counted(offer.rows, "track", "tracks")
-    );
-
-    match offer.behind {
-        0 => taken,
-        behind => format!(
-            "{taken} · {} to walk back through",
-            format::counted(behind + 1, "gesture", "gestures")
-        ),
-    }
+        format::counted(rows, "track", "tracks")
+    ))
 }
 
 fn puts_back(offer: Option<Offer>) -> SharedString {
@@ -867,14 +856,8 @@ mod tests {
 
     #[test]
     fn the_offer_says_how_far_back_it_reaches() {
-        assert_eq!(
-            took_out(Offer { rows: 3, behind: 0 }),
-            "Took 3 tracks out of the queue"
-        );
-        assert_eq!(
-            took_out(Offer { rows: 1, behind: 2 }),
-            "Took 1 track out of the queue · 3 gestures to walk back through"
-        );
+        assert_eq!(took_out(3).text(), "Took 3 tracks out of the queue");
+        assert_eq!(took_out(1).text(), "Took 1 track out of the queue");
         assert!(puts_back(None).ends_with("the last one there is to put back"));
         assert!(
             puts_back(Some(Offer { rows: 1, behind: 1 }))

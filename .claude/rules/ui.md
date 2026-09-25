@@ -421,14 +421,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `listing::playing_mark` in the number cell and its title in the accent. A row's controls sit in
   `browser::row_controls`, which is invisible until the row is hovered — the heading carries the
   same gestures for the whole listing, so a row does not have to advertise its own.
-- **Whatever a gesture takes out of the queue is kept, and the queue says so.** A playlist edit
+- **Whatever a gesture takes out of the queue is kept, and a toast says so.** A playlist edit
   answers with a `Notice` and an undo; the queue answered with rows that were simply gone, which is
   the same gesture with none of the safety. `TakenOut` is what the last one took — the rows, the
   row they started at and the ids the queue was left holding — and `RootView::took_out` is the one
   the offer stands on. `drop_rows` is where it is written, so a row's ✕, a reach of thirty rows
   and the backspace key all keep what they take; *Clear* is the same call over `Span::between(0,
-  last)` rather than a `Command::Remove` of its own. The heading draws `listing::noticed` for it —
-  *Took 34 tracks out of the queue* — and *Put back* sends the rows as a `Command::Insert` at
+  last)` rather than a `Command::Remove` of its own. `TakenBack::keeping` answers how many rows it kept,
+  and `drop_rows` tells that as a toast — *Took 34 tracks out of the queue* — rather than a line
+  under the heading that stood for as long as the offer did; *Put back* stays in the heading and sends the rows as a `Command::Insert` at
   `Placement::At` the row they came out of. The rows are kept as `QueueItem`s rather than as ids,
   because `one_id_each` mints new ones on the way back in.
 - **A run of gestures is walked back through one at a time, and each step is the queue the one
@@ -439,8 +440,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   stands clears the whole walk rather than leaving stale steps under a fresh one, which is why
   `keeping` is handed the queue *as it was before the drop*: the previous top standing over that
   queue is what says the two gestures are consecutive. `KEPT_GESTURES` bounds it at sixteen, the
-  oldest going first, and the heading says how many are behind — the notice counts them and the
-  button's hint names the next one — so a walk is as visible as the playlists pane's `Undoable`
+  oldest going first, and the button's hint says how many are behind — so a walk is as visible as the playlists pane's `Undoable`
   makes its own.
 - **The offer stands while the queue is what the gesture left, and `TakenOut::stands_over` is that
   reading.** It weighs the ids the queue holds now against the ids it held once the rows were out,
@@ -813,9 +813,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   and the tone is the pill's icon — the alert in the failure colour, the tick in green, the info
   mark in the accent — while the words stay the body text colour. `EqualiserModel` sets its notice
   in places that hold no `cx`, so the notice is an outbox `RootView` drains into the toaster
-  whenever the model notifies. Two lines stay where they are, because they belong to the control
-  beside them rather than to the moment: the queue heading's *Took N tracks out* with its *Put
-  back*, and the Library card's refusal of a typed layout field.
+  whenever the model notifies. One line stays where it is, because it belongs to the control beside
+  it rather than to the moment: the Library card's refusal of a typed layout field. **A finished
+  pass is a toast too, never a line left standing.** A scan, a lookup, an organise, a retag, a vault
+  import and an inbox poll draw their counts in their settings group only while they run —
+  `stats`, `enrich_stats` and `poll_stats` answer `None` once the pass is over — and the model
+  tells what came of it as it joins: `scanned`, `looked_up`, `filed`, `retagged`, `vaulted` and
+  `polled` in `models.rs`. A scan or poll the window started on its own is told only where it brought
+  something, so a watch rescan that found nothing new stays quiet. A *preview* keeps its summary
+  in the group, because it is the plan the second press arms against rather than news.
 - **A toast speaks plainly, and the error behind it goes to the log.** Nothing an error's `Display`
   says reaches the pill. The engine names what went wrong as `resonate_engine::Cause` —
   `Unreadable`, `Unsupported`, `Damaged`, `NoDevice`, `DeviceGone`, `SoundServer`,

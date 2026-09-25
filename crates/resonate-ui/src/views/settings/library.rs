@@ -193,7 +193,6 @@ impl RootView {
         let busy = library.is_busy();
         let scanning = library.is_scanning();
         let stopping = library.is_stopping();
-        let stopped = library.was_stopped();
         let stats = library.stats();
         let enriching = library.is_enriching();
         let held_back = busy || enriching || !library.can_enrich();
@@ -212,7 +211,7 @@ impl RootView {
                 body.child(progress(read_so_far(stats.unwrap_or_default())))
             })
             .child(note(match stats {
-                Some(stats) => SharedString::from(counted(stats, stopped && !scanning)),
+                Some(stats) => SharedString::from(counted(stats)),
                 None => SharedString::new_static(SCANNING_NOTE),
             }))
     }
@@ -363,8 +362,8 @@ fn broken_down(failed: Failures) -> String {
     }
 }
 
-fn counted(stats: ScanStats, stopped: bool) -> String {
-    let counts = format!(
+fn counted(stats: ScanStats) -> String {
+    format!(
         "discovered {} · read {} · added {} · updated {} · moved {} · removed {} · failed {}{}",
         stats.discovered,
         stats.processed,
@@ -374,13 +373,7 @@ fn counted(stats: ScanStats, stopped: bool) -> String {
         stats.removed,
         stats.failed.total(),
         broken_down(stats.failed)
-    );
-
-    if stopped {
-        format!("{counts} · stopped before it finished")
-    } else {
-        counts
-    }
+    )
 }
 
 impl RootView {
@@ -451,7 +444,8 @@ impl RootView {
         let stats = library.organise_stats();
         let told = library
             .organised()
-            .map(|(pass, summary)| filed(summary, pass.applies()));
+            .filter(|(pass, _)| !pass.applies())
+            .map(|(_, summary)| filed(summary));
 
         kit::section_body()
             .child(kit::field(TEMPLATE_LABEL, self.template_field(cx)))
@@ -628,7 +622,8 @@ impl RootView {
         let stats = library.retag_stats();
         let told = library
             .tagged()
-            .map(|(pass, summary)| (written(summary, pass.applies()), listed(summary)));
+            .filter(|(pass, _)| !pass.applies())
+            .map(|(_, summary)| (written(summary), listed(summary)));
 
         kit::section_body()
             .child(note(TAGGING_NOTE))
@@ -794,51 +789,32 @@ fn so_far(stats: RetagStats, writing: bool) -> String {
     }
 }
 
-fn written(summary: &RetagSummary, applied: bool) -> String {
+fn written(summary: &RetagSummary) -> String {
     let stats = summary.stats;
     let retagging = &summary.retagging;
     if retagging.writes.is_empty() && retagging.passed_over.is_empty() && stats.unchanged == 0 {
         return NOTHING_TO_TAG.to_owned();
     }
 
-    let (leading, fields, pictures) = if applied {
-        (
-            format!("written {}", stats.written),
-            stats.fields,
-            stats.pictures,
-        )
-    } else {
-        (
-            format!("would write {}", retagging.writes.len()),
-            retagging
-                .writes
-                .iter()
-                .map(|write| write.edits.len() as u64)
-                .sum(),
-            retagging
-                .writes
-                .iter()
-                .filter(|write| write.picture.is_some())
-                .count() as u64,
-        )
-    };
-
+    let fields: u64 = retagging
+        .writes
+        .iter()
+        .map(|write| write.edits.len() as u64)
+        .sum();
+    let pictures = retagging
+        .writes
+        .iter()
+        .filter(|write| write.picture.is_some())
+        .count();
     let told = format!(
-        "{leading} · fields {fields} · pictures {pictures} · already said {} · passed over {}",
-        stats.unchanged, stats.passed_over
+        "would write {} · fields {fields} · pictures {pictures} · already said {} · passed over \
+         {} · nothing has been written",
+        retagging.writes.len(),
+        stats.unchanged,
+        stats.passed_over
     );
 
-    let told = if applied {
-        told
-    } else {
-        format!("{told} · nothing has been written")
-    };
-
-    if summary.cancelled {
-        format!("{told} · stopped before it finished")
-    } else {
-        told
-    }
+    stopped_early(told, summary.cancelled)
 }
 
 fn going(stats: OrganiseStats, moving: bool) -> String {
@@ -854,32 +830,24 @@ fn going(stats: OrganiseStats, moving: bool) -> String {
     }
 }
 
-fn filed(summary: &OrganiseSummary, applied: bool) -> String {
+fn filed(summary: &OrganiseSummary) -> String {
     let stats = summary.stats;
-    let (leading, folders) = if applied {
-        (
-            format!("moved {}", stats.moved),
-            format!("folders pruned {}", stats.pruned),
-        )
-    } else {
-        (
-            format!("would move {}", summary.plan.files_moving()),
-            format!("folders to empty {}", summary.plan.folders.len()),
-        )
-    };
-
     let told = format!(
-        "{leading} · in place {} · unidentified {} · collided {} · failed {} · {folders}",
-        stats.unchanged, stats.unidentified, stats.collided, stats.failed
+        "would move {} · in place {} · unidentified {} · collided {} · failed {} · folders to \
+         empty {} · nothing has moved",
+        summary.plan.files_moving(),
+        stats.unchanged,
+        stats.unidentified,
+        stats.collided,
+        stats.failed,
+        summary.plan.folders.len()
     );
 
-    let told = if applied {
-        told
-    } else {
-        format!("{told} · nothing has moved")
-    };
+    stopped_early(told, summary.cancelled)
+}
 
-    if summary.cancelled {
+fn stopped_early(told: String, cancelled: bool) -> String {
+    if cancelled {
         format!("{told} · stopped before it finished")
     } else {
         told
@@ -920,7 +888,8 @@ impl RootView {
         let stats = library.import_stats();
         let told = library
             .imported()
-            .map(|(pass, summary)| vaulted(summary, pass.applies()));
+            .filter(|(pass, _)| !pass.applies())
+            .map(|(_, summary)| vaulted(summary));
         let listed = library
             .imported()
             .filter(|(pass, _)| !pass.applies())
@@ -1087,26 +1056,14 @@ fn named_file(path: &Path) -> String {
     )
 }
 
-fn vaulted(summary: &ImportSummary, applied: bool) -> String {
-    let stats = summary.stats;
-    let told = if applied {
+fn vaulted(summary: &ImportSummary) -> String {
+    stopped_early(
         format!(
-            "kept {} · already held {} · covers {} · passed over {} · saved {}",
-            stats.vaulted,
-            stats.deduped,
-            stats.covers,
-            stats.passed,
-            format::bytes(stats.saved())
-        )
-    } else {
-        format!("would keep {} · nothing has been written", stats.walked)
-    };
-
-    if summary.cancelled {
-        format!("{told} · stopped before it finished")
-    } else {
-        told
-    }
+            "would keep {} · nothing has been written",
+            summary.stats.walked
+        ),
+        summary.cancelled,
+    )
 }
 
 const NO_INBOX: &str = "No inbox is named, so nothing can fill a want. Choose the folder the \
@@ -1124,12 +1081,7 @@ impl RootView {
         let polling = library.is_polling();
         let stopping = library.is_stopping_poll();
         let held_back = busy || !library.can_poll();
-        let told = library.poll_stats().map(|stats| {
-            asked_of_the_inbox(
-                stats,
-                library.polled().is_some_and(|summary| summary.cancelled),
-            )
-        });
+        let told = library.poll_stats().map(asked_of_the_inbox);
 
         kit::section_body()
             .child(match &inbox {
@@ -1253,16 +1205,11 @@ fn inbox_row(folder: &Path) -> Div {
         )
 }
 
-fn asked_of_the_inbox(stats: PollStats, stopped: bool) -> String {
-    let told = format!(
+fn asked_of_the_inbox(stats: PollStats) -> String {
+    format!(
         "asked {} · kept {} · not kept {} · nothing {} · refused {} · late {}",
         stats.asked, stats.kept, stats.unkept, stats.nothing, stats.refused, stats.late
-    );
-    if stopped {
-        format!("{told} · stopped before it finished")
-    } else {
-        told
-    }
+    )
 }
 
 const fn unplanned(planned: Planned, first: &'static str) -> &'static str {

@@ -50,7 +50,7 @@ use crate::{
         missing::MissingShows,
         playlists::{self, Held, Naming, Rows},
         pointed::{self, LitUnderThePointer},
-        queue::{QueueLength, QueueNames, TakenBack},
+        queue::{QueueLength, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
         settings::{Category, FILTER_PLACEHOLDER, HeldBand, Plotted},
         slider::{Grab, Rail},
@@ -1547,8 +1547,11 @@ impl RootView {
         match shift {
             Shift::Queue => {
                 let queued = self.player.read(cx).queue();
-                self.took_out.keeping(&queued, rows);
+                let kept = self.took_out.keeping(&queued, rows);
                 self.send(Command::Remove(rows), cx);
+                if let Some(kept) = kept {
+                    toast::tell(took_out(kept), cx);
+                }
             }
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 library.remove_from_playlist(playlist, rows, cx);

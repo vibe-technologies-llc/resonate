@@ -497,7 +497,6 @@ pub struct LibraryModel {
     search: Search,
     instead: Option<String>,
     work: Work,
-    summary: Option<ScanSummary>,
     organised: Option<(Pass, OrganiseSummary)>,
     previewed: Planned,
     imported: Option<(Pass, ImportSummary)>,
@@ -505,9 +504,7 @@ pub struct LibraryModel {
     tagged: Option<(Pass, RetagSummary)>,
     previewed_tags: Planned,
     sourcing: Sourcing,
-    polled: Option<PollSummary>,
     enriching: Option<Arc<EnrichProgress>>,
-    enriched: Option<EnrichSummary>,
     sought: Arc<Sought>,
     reach: usize,
     albums_counted: u32,
@@ -631,7 +628,6 @@ impl LibraryModel {
             search: Search::default(),
             instead: None,
             work: Work::Nothing,
-            summary: None,
             organised: None,
             previewed: Planned::Not,
             imported: None,
@@ -639,9 +635,7 @@ impl LibraryModel {
             tagged: None,
             previewed_tags: Planned::Not,
             sourcing,
-            polled: None,
             enriching: None,
-            enriched: None,
             sought: Arc::default(),
             reach,
             albums_counted: 0,
@@ -1954,14 +1948,7 @@ impl LibraryModel {
     }
 
     pub fn stats(&self) -> Option<ScanStats> {
-        match self.work.scanning() {
-            Some(progress) => Some(progress.snapshot()),
-            None => self.summary.map(|summary| summary.stats),
-        }
-    }
-
-    pub fn was_stopped(&self) -> bool {
-        self.summary.is_some_and(|summary| summary.cancelled)
+        self.work.scanning().map(|progress| progress.snapshot())
     }
 
     pub const fn is_organising(&self) -> bool {
@@ -2549,7 +2536,6 @@ impl LibraryModel {
         };
 
         self.work = Work::Scanning(Arc::clone(handle.progress()));
-        self.summary = None;
         cx.notify();
 
         self._scan = cx.spawn(async move |this, cx| {
@@ -2574,7 +2560,9 @@ impl LibraryModel {
                 this.work = Work::Nothing;
                 match handle.join() {
                     Ok(summary) => {
-                        this.summary = Some(summary);
+                        if let Some(notice) = scanned(&summary, prompted) {
+                            toast::tell(notice, cx);
+                        }
                         let brought = summary.stats.added + summary.stats.updated > 0;
                         let worth_asking = prompted == Prompted::ByHand || brought;
                         if !summary.cancelled
@@ -2687,10 +2675,7 @@ impl LibraryModel {
     }
 
     pub fn enrich_stats(&self) -> Option<EnrichStats> {
-        match self.enriching.as_ref() {
-            Some(progress) => Some(progress.snapshot()),
-            None => self.enriched.map(|summary| summary.stats),
-        }
+        self.enriching.as_ref().map(|progress| progress.snapshot())
     }
 
     pub fn enrich(&mut self, refresh: bool, cx: &mut Context<Self>) {
@@ -2720,7 +2705,6 @@ impl LibraryModel {
         };
 
         self.enriching = Some(Arc::clone(handle.progress()));
-        self.enriched = None;
         cx.notify();
 
         self._enrich = cx.spawn(async move |this, cx| {
@@ -2744,10 +2728,7 @@ impl LibraryModel {
             let finished = this.update(cx, |this, cx| {
                 this.enriching = None;
                 match handle.join() {
-                    Ok(summary) => {
-                        this.enriched = Some(summary);
-                        toast::tell(looked_up(&summary), cx);
-                    }
+                    Ok(summary) => toast::tell(looked_up(&summary), cx),
                     Err(error) => {
                         tracing::error!(%error, "the lookup failed");
                         toast::tell(toast::could_not("finish the lookup", &error), cx);
@@ -2876,6 +2857,9 @@ impl LibraryModel {
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed_import = Planned::after(pass, summary.cancelled, read_at);
+                        if pass.applies() {
+                            toast::tell(vaulted(&summary), cx);
+                        }
                         this.imported = Some((pass, summary));
                     }
                     Err(error) => {
@@ -2895,7 +2879,6 @@ impl LibraryModel {
 
     pub fn set_inbox(&mut self, inbox: Option<PathBuf>, cx: &mut Context<Self>) {
         self.sourcing.inbox = inbox;
-        self.polled = None;
         cx.notify();
     }
 
@@ -2914,14 +2897,7 @@ impl LibraryModel {
     }
 
     pub fn poll_stats(&self) -> Option<PollStats> {
-        match self.work.polling() {
-            Some(progress) => Some(progress.snapshot()),
-            None => self.polled.map(|summary| summary.stats),
-        }
-    }
-
-    pub const fn polled(&self) -> Option<&PollSummary> {
-        self.polled.as_ref()
+        self.work.polling().map(|progress| progress.snapshot())
     }
 
     pub fn poll(&mut self, cx: &mut Context<Self>) {
@@ -2955,7 +2931,6 @@ impl LibraryModel {
         };
 
         self.work = Work::Polling(Arc::clone(handle.progress()));
-        self.polled = None;
         cx.notify();
 
         self._poll = cx.spawn(async move |this, cx| {
@@ -2969,7 +2944,11 @@ impl LibraryModel {
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
                 match handle.join() {
-                    Ok(summary) => this.polled = Some(summary),
+                    Ok(summary) => {
+                        if let Some(notice) = polled(&summary, prompted) {
+                            toast::tell(notice, cx);
+                        }
+                    }
                     Err(error) => {
                         tracing::error!(%error, "the providers were not asked");
                         toast::tell(toast::could_not("ask the providers", &error), cx);
@@ -3072,6 +3051,9 @@ impl LibraryModel {
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed_tags = Planned::after(pass, summary.cancelled, read_at);
+                        if pass.applies() {
+                            toast::tell(retagged(&summary), cx);
+                        }
                         this.tagged = Some((pass, summary));
                     }
                     Err(error) => {
@@ -3124,6 +3106,9 @@ impl LibraryModel {
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed = Planned::after(pass, summary.cancelled, read_at);
+                        if pass.applies() {
+                            toast::tell(filed(&summary), cx);
+                        }
                         this.organised = Some((pass, summary));
                     }
                     Err(error) => {
@@ -3157,7 +3142,6 @@ impl LibraryModel {
                     tracing::error!(%error, "a library folder could not be dropped");
                     toast::tell(toast::could_not("drop that library folder", &error), cx);
                 }
-                this.summary = None;
                 this.reload(cx);
             });
             let _ = outcome;
@@ -3203,6 +3187,110 @@ fn done_again_as(done_again: &Undoable) -> String {
             format!("Put {name} back in the order that edit left")
         }
     }
+}
+
+fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notice> {
+    let stats = summary.stats;
+    let failed = stats.failed.total();
+    let mut said: Vec<String> = [
+        (stats.added, "added"),
+        (stats.updated, "updated"),
+        (stats.moved, "moved"),
+        (stats.removed, "removed"),
+    ]
+    .into_iter()
+    .filter(|(count, _)| *count > 0)
+    .map(|(count, done)| {
+        format!(
+            "{} {done}",
+            format::counted(count as usize, "track", "tracks")
+        )
+    })
+    .collect();
+    if failed > 0 {
+        said.push(format!("{failed} couldn't be read"));
+    }
+    if said.is_empty() && prompted != Prompted::ByHand && !summary.cancelled {
+        return None;
+    }
+
+    let mut told = if said.is_empty() {
+        "The library is up to date".to_owned()
+    } else {
+        said.join(" · ")
+    };
+    if summary.cancelled {
+        told.push_str(", stopped early");
+    }
+    Some(Notice::Noted(told))
+}
+
+fn filed(summary: &OrganiseSummary) -> Notice {
+    let stats = summary.stats;
+    let mut told = match stats.moved {
+        0 => "No file needed moving".to_owned(),
+        moved => format!("Moved {}", format::counted(moved as usize, "file", "files")),
+    };
+    let unmoved = stats.collided + stats.failed;
+    if unmoved > 0 {
+        told.push_str(&format!(" · {unmoved} couldn't be moved"));
+    }
+    if summary.cancelled {
+        told.push_str(", stopped early");
+    }
+    Notice::Done(told)
+}
+
+fn retagged(summary: &RetagSummary) -> Notice {
+    let mut told = match summary.stats.written {
+        0 => "No file needed its tags written".to_owned(),
+        written => format!(
+            "Wrote the tags into {}",
+            format::counted(written as usize, "file", "files")
+        ),
+    };
+    if summary.cancelled {
+        told.push_str(", stopped early");
+    }
+    Notice::Done(told)
+}
+
+fn vaulted(summary: &ImportSummary) -> Notice {
+    let stats = summary.stats;
+    let mut told = match stats.vaulted {
+        0 => "The vault already holds every track it can".to_owned(),
+        vaulted => format!(
+            "Kept {} in the vault · saved {}",
+            format::counted(vaulted as usize, "track", "tracks"),
+            format::bytes(stats.saved())
+        ),
+    };
+    if summary.cancelled {
+        told.push_str(", stopped early");
+    }
+    Notice::Done(told)
+}
+
+fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
+    let stats = summary.stats;
+    if stats.kept == 0 && prompted != Prompted::ByHand && !summary.cancelled {
+        return None;
+    }
+
+    let mut told = match stats.kept {
+        0 => "Nothing in the inbox filled a want".to_owned(),
+        kept => format!(
+            "The inbox filled {}",
+            format::counted(kept as usize, "want", "wants")
+        ),
+    };
+    if stats.unkept > 0 {
+        told.push_str(&format!(" · {} couldn't be kept", stats.unkept));
+    }
+    if summary.cancelled {
+        told.push_str(", stopped early");
+    }
+    Some(Notice::Done(told))
 }
 
 fn looked_up(summary: &EnrichSummary) -> Notice {
