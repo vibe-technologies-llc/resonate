@@ -899,11 +899,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   gpui's text element truncates only inside its measure, and it keeps the first measure of a
   no-wrap text whatever width it is later handed, so a `truncate`d name inside a content-sized
   flex item is laid out whole and sliced by its parent's clip; a `line_clamp` on the same item is
-  measured at its min-content width and drew *The Tr…*, or nothing. The album is `flex_1` under
-  `ends_in_an_ellipsis`, so it is measured at the room the row leaves it. The title cannot be
-  `flex_1`, because the star rides right after it, so `kit::cut_to_fit` cuts the text itself —
-  gpui's own `LineWrapper::truncate_line` at the width `RootView::playing_room` measured a frame
-  behind, less the star — and the element draws the shortened string at its own width. The
+  measured at its min-content width and drew *The Tr…*, or nothing. The title and the album are
+  both cut by `kit::cut_to_fit`, which cuts the text itself — gpui's own
+  `LineWrapper::truncate_line` — so the element draws the shortened string at its own width. The
+  title is cut at the width `RootView::playing_room` measured a frame behind, less the star; the
+  album at the room `by_line` is handed less what the artist and the separator take, which
+  `kit::width_of` adds up from the font's advances, and a by-line with no room left for it draws
+  the artist alone. The inspector measures its heading into `inspected_room` the same way. The
+  album used to be `flex_1` under `ends_in_an_ellipsis`, and gpui 0.2.2 paints a clamped line's
+  underline to the whole unwrapped run — a one-line clamp records no wrap boundary to end it at —
+  so hovering an album longer than its slot underlined the rest of the panel. The
   inspector's stage cards are `flex_1` already and take the clamp. A notice the engine raised is not
   in either half: it is a toast over the content, like every other notice. Every
   control in the bar names itself through `views/hint.rs`, because a

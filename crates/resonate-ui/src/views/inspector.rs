@@ -41,7 +41,9 @@ impl RootView {
         div()
             .flex()
             .flex_col()
+            .relative()
             .gap_1()
+            .child(kit::measures_its_width(self.inspected_room.clone()))
             .child(kit::eyebrow("INSPECTOR"))
             .child(kit::linked_title(self.opens(
                 "inspected-title",
@@ -50,7 +52,13 @@ impl RootView {
                 playing.cover.album.map(Selection::Album),
                 cx,
             )))
-            .child(self.by_line("inspected-artist", "inspected-album", &playing, cx))
+            .child(self.by_line(
+                "inspected-artist",
+                "inspected-album",
+                &playing,
+                self.inspected_room.get(),
+                cx,
+            ))
     }
 
     pub(crate) fn inspector(&mut self, cx: &mut Context<Self>) -> AnyElement {

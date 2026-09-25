@@ -136,6 +136,14 @@ pub(crate) fn cut_to_fit(
         .truncate_line(text, room, ELLIPSIS, &mut Vec::new())
 }
 
+pub(crate) fn width_of(text: &str, font: &Font, size: Pixels, cx: &App) -> Pixels {
+    let system = cx.text_system();
+    let id = system.resolve_font(font);
+    text.chars()
+        .filter_map(|ch| system.advance(id, size, ch).ok())
+        .fold(px(0.0), |width, advance| width + advance.width)
+}
+
 pub(crate) fn button(
     id: impl Into<ElementId>,
     icon: Option<Icon>,

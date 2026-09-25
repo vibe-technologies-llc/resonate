@@ -24,7 +24,7 @@ use crate::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::Names,
-        kit::{self, EndsInAnEllipsis, KeepsItsWidth},
+        kit::{self, KeepsItsWidth},
         listing::Pictured,
         menu::{self, Menu},
         slider::Handle,
@@ -54,6 +54,10 @@ const VOLUME_HINT_WHEELED: &str = "Mute — click. Volume — the wheel, ctrl-up
 const VOLUME_ICON_GROUP: &str = "volume-icon";
 
 const TITLE_GAP: f32 = 4.0;
+
+const BY_LINE_SEPARATOR: &str = "·";
+
+const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
 
 const UNMUTE_HINT: &str = "Muted — click, the wheel or ctrl-up to hear it again";
 
@@ -392,7 +396,13 @@ impl RootView {
                     .gap_0p5()
                     .child(kit::measures_its_width(self.playing_room.clone()))
                     .child(self.played_title(&playing, idle, cx))
-                    .child(self.by_line("playing-artist", "playing-album", &playing, cx))
+                    .child(self.by_line(
+                        "playing-artist",
+                        "playing-album",
+                        &playing,
+                        self.playing_room.get(),
+                        cx,
+                    ))
                     .when(!idle, |panel| {
                         panel.child(self.signal_path(state, &playing, sink, cx))
                     }),
@@ -436,6 +446,7 @@ impl RootView {
         of_the_artist: &'static str,
         of_the_album: &'static str,
         playing: &Playing,
+        room: Pixels,
         cx: &mut Context<Self>,
     ) -> Div {
         let line = div()
@@ -458,17 +469,31 @@ impl RootView {
         let Some(album) = playing.album.clone() else {
             return line;
         };
+        let size = px(theme::text_sm());
+        let font = theme::ui(FontWeight::NORMAL);
+        let taken = kit::width_of(&playing.artist, &font, size, cx)
+            + kit::width_of(BY_LINE_SEPARATOR, &font, size, cx)
+            + px(BY_LINE_SEPARATOR_PADDING * 2.0);
+        let album_room = room - taken;
+        if album_room <= px(0.0) {
+            return line;
+        }
 
-        line.child(div().flex_none().px_1p5().child("·")).child(
+        line.child(
+            div()
+                .flex_none()
+                .px(px(BY_LINE_SEPARATOR_PADDING))
+                .child(BY_LINE_SEPARATOR),
+        )
+        .child(
             self.opens(
                 of_the_album,
-                album,
+                kit::cut_to_fit(album, album_room, font, size, cx),
                 OPEN_ALBUM_HINT,
                 playing.cover.album.map(Selection::Album),
                 cx,
             )
-            .flex_1()
-            .ends_in_an_ellipsis(),
+            .keeps_its_width(),
         )
     }
 
