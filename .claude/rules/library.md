@@ -2075,7 +2075,11 @@ the pass.
   `..\Music\01.mp3` resolves beside the sheet rather than as one file of that literal name. The
   reverse is held to it too: `reads_back_as_itself` refuses a row `forward_separated` would turn,
   so a file of ours named `AC\DC.wav` is written as an escaped `file://` URI rather than as a row
-  that would read back as `AC/DC.wav`. The 8 MiB ceiling is weighed against what the name declares
+  that would read back as `AC/DC.wav`. What is escaped is not ambiguous that way: a literal
+  backslash cannot stand in a `file://` URI or an XSPF location, whose writers escape one as
+  `%5C`, so `sheet::forward_escaped` turns every literal one into a separator *before* the text
+  is unescaped — `file:///music\a.wav` and an XSPF `album\a.wav` or `xml:base="discs\"` name
+  folders — while `AC%5CDC.wav` still reads back as the one file it names. The 8 MiB ceiling is weighed against what the name declares
   and again against what the read took, so a FIFO reporting zero is refused rather than read
   unbounded. `Library::prune_playlist` is the companion that drops the rows whose files have gone,
   and it is asked for rather than automatic. A sheet that says how many rows it holds is taken at

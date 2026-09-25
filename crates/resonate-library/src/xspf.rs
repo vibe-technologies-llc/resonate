@@ -96,7 +96,8 @@ impl Base {
         let Self::Beside(beside) = self else {
             return Self::Elsewhere;
         };
-        let folder = folder_of(declared.trim());
+        let declared = sheet::forward_escaped(declared.trim());
+        let folder = folder_of(&declared);
 
         match sheet::scheme_of(folder) {
             Some(_) => match sheet::local_file(folder) {
@@ -366,7 +367,7 @@ fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
     }
 
     Some(sheet::resolved(
-        PathBuf::from(sheet::unescaped(reference)?),
+        PathBuf::from(sheet::unescaped(&sheet::forward_escaped(reference))?),
         base.beside()?,
     ))
 }

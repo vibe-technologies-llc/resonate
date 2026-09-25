@@ -212,10 +212,18 @@ pub fn local_file(line: &str) -> Option<String> {
         }
         None => rest,
     };
+    let encoded = forward_escaped(encoded);
     if !encoded.starts_with('/') {
         return None;
     }
-    unescaped(encoded)
+    unescaped(&encoded)
+}
+
+pub fn forward_escaped(encoded: &str) -> Cow<'_, str> {
+    if encoded.contains(WINDOWS_SEPARATOR) {
+        return Cow::Owned(encoded.replace(WINDOWS_SEPARATOR, "/"));
+    }
+    Cow::Borrowed(encoded)
 }
 
 pub fn unescaped(encoded: &str) -> Option<String> {
@@ -451,6 +459,19 @@ mod tests {
             Some(PathBuf::from("/music/file:track.flac"))
         );
         assert_eq!(read_at("file://elsewhere/tmp/a.wav"), None);
+    }
+
+    #[test]
+    fn a_file_uri_a_windows_player_wrote_reads_with_its_separators_turned_and_an_escaped_one_kept()
+    {
+        assert_eq!(
+            read_at("file:///music\\Pink Floyd\\Echoes.flac"),
+            Some(PathBuf::from("/music/Pink Floyd/Echoes.flac"))
+        );
+        assert_eq!(
+            read_at("file:///music/AC%5CDC.wav"),
+            Some(PathBuf::from("/music/AC\\DC.wav"))
+        );
     }
 
     #[test]
