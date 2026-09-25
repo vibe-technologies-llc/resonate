@@ -2005,6 +2005,20 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   of the album or playlist playing — a suggestion's card says the same words rather than a
   shorter *Queue*. The queue pane marks a row waiting to play next with the *queue next* icon
   where its number would be, off `Queued::next`, and its heading counts them.
+- **The queue is drawn in the four parts the engine keeps it in, each under a heading of its
+  own.** The published list is `order[..after] ++ next ++ order[after..]`, so where it stands
+  relative to the row being heard is the whole of what it is: `QueueParts::of` reads the length,
+  `PlayerState::queue_position` and `Queued::next` into runs of `Part::Heard`, `Playing`, `Next`
+  and `Rest` — *HISTORY*, *NOW PLAYING*, *PLAYING NEXT* and *CONTINUE PLAYING*, the last naming
+  the playlist where `Library::playing_playlist` still badges one — and a queued row being heard
+  is `Playing` rather than `Next`, because `Queued::next` still spans it. A heading is one more
+  row of the `uniform_list`, an eyebrow, a count and a hairline, so the list keeps one height a
+  row; a queue of one part draws none. What was heard is drawn at `HEARD_FADED` and lit whole
+  under the pointer. Every gesture still speaks in queue rows, and `QueueParts::line_of` and
+  `line` are the one mapping between those and the list's lines — `show_row` scrolls through it,
+  so following the playing row, the reach keys and a type-ahead jump land on the row rather than
+  one heading short of it — and `every_row_is_shown_at_the_line_that_draws_it` is the claim. A
+  row dragged across a heading is sorted by the engine as any drop is, by the row it lands after.
 - **Every major listing is put in order, from a chip row and from its header.** The tracks, albums
   and artists panes each hold an order and a reading on `LibraryModel::sorting`, kept for the run
   like the settings category and the playlists order. Two controls write it: a *Sort* action

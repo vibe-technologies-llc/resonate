@@ -1,13 +1,13 @@
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
+    AnyElement, App, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
     uniform_list,
 };
 use resonate_core::{Span, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem};
 use resonate_library::{Cut, Direction, Favoured, Library, Lit, RowOrder, Track};
-use smallvec::smallvec;
+use smallvec::{SmallVec, smallvec};
 
 use crate::{
     Notice, Selection, format,
@@ -118,6 +118,136 @@ const PUT_BACK_HINT: &str = "Put the rows last taken out of the queue back where
 
 const KEPT_GESTURES: usize = 16;
 
+const HEARD_FADED: f32 = 0.55;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Part {
+    Heard,
+    Playing,
+    Next,
+    Rest,
+}
+
+impl Part {
+    fn of(row: usize, playing: Option<usize>, next: Option<Span>) -> Self {
+        match playing {
+            Some(at) if row < at => Self::Heard,
+            Some(at) if row == at => Self::Playing,
+            _ if next.is_some_and(|next| next.holds(row)) => Self::Next,
+            _ => Self::Rest,
+        }
+    }
+
+    const fn named(self) -> &'static str {
+        match self {
+            Self::Heard => "HISTORY",
+            Self::Playing => "NOW PLAYING",
+            Self::Next => "PLAYING NEXT",
+            Self::Rest => "CONTINUE PLAYING",
+        }
+    }
+
+    const fn is_counted(self) -> bool {
+        !matches!(self, Self::Playing)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Run {
+    part: Part,
+    rows: Span,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Line {
+    Heading(Run),
+    Row(usize),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct QueueParts {
+    rows: usize,
+    playing: Option<usize>,
+    next: Option<Span>,
+    runs: SmallVec<[Run; 5]>,
+}
+
+impl QueueParts {
+    fn of(rows: usize, playing: Option<usize>, next: Option<Span>) -> Self {
+        let playing = playing.filter(|at| *at < rows);
+        let mut edges: SmallVec<[usize; 6]> = smallvec![0, rows];
+        edges.extend(playing.into_iter().flat_map(|at| [at, at + 1]));
+        edges.extend(
+            next.into_iter()
+                .flat_map(|next| [next.first(), next.last() + 1]),
+        );
+        edges.retain(|edge| *edge <= rows);
+        edges.sort_unstable();
+        edges.dedup();
+
+        let mut runs: SmallVec<[Run; 5]> = SmallVec::new();
+        for pair in edges.windows(2) {
+            let &[first, end] = pair else {
+                continue;
+            };
+            let part = Part::of(first, playing, next);
+            match runs.last_mut() {
+                Some(run) if run.part == part => {
+                    run.rows = Span::between(run.rows.first(), end - 1)
+                }
+                _ => runs.push(Run {
+                    part,
+                    rows: Span::between(first, end - 1),
+                }),
+            }
+        }
+        if runs.len() < 2 {
+            runs.clear();
+        }
+
+        Self {
+            rows,
+            playing,
+            next,
+            runs,
+        }
+    }
+
+    fn lines(&self) -> usize {
+        self.rows + self.runs.len()
+    }
+
+    fn line(&self, item: usize) -> Option<Line> {
+        if self.runs.is_empty() {
+            return (item < self.rows).then_some(Line::Row(item));
+        }
+
+        let mut headed = 0;
+        for run in &self.runs {
+            if item == run.rows.first() + headed {
+                return Some(Line::Heading(*run));
+            }
+            headed += 1;
+            if item <= run.rows.last() + headed {
+                return Some(Line::Row(item - headed));
+            }
+        }
+        None
+    }
+
+    pub(crate) fn line_of(&self, row: usize) -> usize {
+        row + self
+            .runs
+            .iter()
+            .filter(|run| run.rows.first() <= row)
+            .count()
+    }
+
+    fn part_of(&self, row: usize) -> Part {
+        Part::of(row, self.playing, self.next)
+    }
+}
+
 pub(crate) struct TakenOut {
     rows: Vec<QueueItem>,
     at: usize,
@@ -215,6 +345,26 @@ impl Reaching {
 }
 
 impl RootView {
+    pub(crate) fn queue_parts(&self, cx: &App) -> QueueParts {
+        let player = self.player.read(cx);
+        QueueParts::of(
+            player.queue().len(),
+            player.state().queue_position,
+            player.queued().next,
+        )
+    }
+
+    fn playing_from(&self, cx: &App) -> Option<SharedString> {
+        let playlist = self.playing_playlist(cx)?;
+        let library = self.library.read(cx);
+        library
+            .saved_playlists()
+            .iter()
+            .chain(library.lists().iter())
+            .find(|held| held.id == playlist)
+            .map(|held| SharedString::from(held.name.clone()))
+    }
+
     pub(crate) fn queue_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let _ = self.names_in_the_queue(cx);
         let queue = self.player.read(cx).queue();
@@ -238,9 +388,10 @@ impl RootView {
                 .into_any_element();
         }
 
-        let position = self.player.read(cx).state().queue_position;
-        let playing_next = self.player.read(cx).queued().next;
+        let parts = self.queue_parts(cx);
+        let from = self.playing_from(cx);
         let queued = queue.len();
+        let lines = parts.lines();
         let heading = self.queue_heading(&queue, cx);
         let scroll = self.queue_rows.clone();
         let reaching = self
@@ -263,24 +414,33 @@ impl RootView {
                         .flex_1()
                         .min_h(px(0.0)),
                     scroll.clone(),
-                    queued,
+                    lines,
                     cx,
                 )
                 .child(
                     uniform_list(
                         "queue",
-                        queue.len(),
+                        lines,
                         cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                             let mut rows = Vec::new();
-                            for index in range {
+                            for drawn in range {
+                                let index = match parts.line(drawn) {
+                                    Some(Line::Row(index)) => index,
+                                    Some(Line::Heading(run)) => {
+                                        rows.push(part_heading(drawn, run, from.clone()));
+                                        continue;
+                                    }
+                                    None => continue,
+                                };
                                 let Some(item) = queue.get(index) else {
                                     continue;
                                 };
                                 let track =
                                     this.library.update(cx, |library, _| library.track_of(item));
-                                let current = position == Some(index);
-                                let waiting =
-                                    !current && playing_next.is_some_and(|next| next.holds(index));
+                                let part = parts.part_of(index);
+                                let current = part == Part::Playing;
+                                let waiting = part == Part::Next;
+                                let heard = part == Part::Heard;
                                 let drawn = match track {
                                     Some(track) => listing::scanned(track),
                                     None => this
@@ -322,7 +482,11 @@ impl RootView {
                                     .id(index)
                                     .group(ROW_GROUP)
                                     .cursor_pointer()
-                                    .hover(|entry| entry.bg(rgb(theme::hover())))
+                                    .when(heard, |entry| entry.opacity(HEARD_FADED))
+                                    .hover(move |entry| {
+                                        let entry = entry.bg(rgb(theme::hover()));
+                                        if heard { entry.opacity(1.0) } else { entry }
+                                    })
                                     .child(if current {
                                         listing::playing_mark()
                                     } else if waiting {
@@ -440,7 +604,10 @@ impl RootView {
                                     cx,
                                 );
 
-                                rows.push(reorder::movable(listed, index, carried, reached, cx));
+                                rows.push(
+                                    reorder::movable(listed, index, carried, reached, cx)
+                                        .into_any_element(),
+                                );
                             }
                             rows
                         }),
@@ -738,6 +905,46 @@ impl Keyed {
     }
 }
 
+fn part_heading(drawn: usize, run: Run, from: Option<SharedString>) -> AnyElement {
+    let from = from.filter(|_| run.part == Part::Rest);
+
+    row(false)
+        .id(("queue-part", drawn))
+        .items_end()
+        .pb_1()
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .min_w(px(0.0))
+                .items_center()
+                .gap_2()
+                .child(kit::eyebrow(run.part.named()))
+                .when(run.part.is_counted(), |heading| {
+                    heading.child(kit::figure(run.rows.rows().to_string()))
+                })
+                .when_some(from, |heading, from| {
+                    heading.child(
+                        div()
+                            .flex_shrink()
+                            .min_w(px(0.0))
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .child(from)
+                            .ends_in_an_ellipsis(),
+                    )
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(theme::row_number()))
+                        .h(px(1.0))
+                        .bg(rgb(theme::border())),
+                ),
+        )
+        .into_any_element()
+}
+
 fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> usize {
     next.map_or(0, |next| {
         playing.map_or(next.rows(), |at| {
@@ -768,7 +975,10 @@ fn puts_back(offer: Option<Offer>) -> SharedString {
 mod tests {
     use resonate_core::{MediaLocation, Span, TrackId};
 
-    use super::{KEPT_GESTURES, Offer, QueueItem, TakenBack, puts_back, took_out};
+    use super::{
+        KEPT_GESTURES, Line, Offer, Part, QueueItem, QueueParts, Run, TakenBack, puts_back,
+        took_out,
+    };
 
     fn queued(ids: &[u64]) -> Vec<QueueItem> {
         ids.iter()
@@ -797,6 +1007,89 @@ mod tests {
         };
         queue.splice(taken.at..taken.at, taken.rows);
         true
+    }
+
+    fn run(part: Part, first: usize, last: usize) -> Line {
+        Line::Heading(Run {
+            part,
+            rows: Span::between(first, last),
+        })
+    }
+
+    #[test]
+    fn a_queue_is_parted_into_what_was_heard_what_plays_what_was_queued_and_the_rest() {
+        let parts = QueueParts::of(6, Some(2), Some(Span::between(3, 4)));
+
+        let drawn: Vec<Option<Line>> = (0..=parts.lines()).map(|item| parts.line(item)).collect();
+        assert_eq!(
+            drawn,
+            [
+                Some(run(Part::Heard, 0, 1)),
+                Some(Line::Row(0)),
+                Some(Line::Row(1)),
+                Some(run(Part::Playing, 2, 2)),
+                Some(Line::Row(2)),
+                Some(run(Part::Next, 3, 4)),
+                Some(Line::Row(3)),
+                Some(Line::Row(4)),
+                Some(run(Part::Rest, 5, 5)),
+                Some(Line::Row(5)),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_queued_row_being_heard_is_playing_rather_than_queued() {
+        let parts = QueueParts::of(5, Some(1), Some(Span::between(1, 2)));
+
+        assert_eq!(parts.line(0), Some(run(Part::Heard, 0, 0)));
+        assert_eq!(parts.line(2), Some(run(Part::Playing, 1, 1)));
+        assert_eq!(parts.line(4), Some(run(Part::Next, 2, 2)));
+        assert_eq!(parts.line(6), Some(run(Part::Rest, 3, 4)));
+        assert_eq!(parts.part_of(1), Part::Playing);
+        assert_eq!(parts.part_of(2), Part::Next);
+    }
+
+    #[test]
+    fn a_queue_of_one_part_draws_no_headings() {
+        let parts = QueueParts::of(4, None, None);
+
+        assert_eq!(parts.lines(), 4);
+        assert_eq!(parts.line(3), Some(Line::Row(3)));
+        assert_eq!(parts.line(4), None);
+        assert_eq!(parts.line_of(2), 2);
+    }
+
+    #[test]
+    fn the_first_row_playing_heads_what_plays_and_what_follows() {
+        let parts = QueueParts::of(3, Some(0), None);
+
+        assert_eq!(parts.lines(), 5);
+        assert_eq!(parts.line(0), Some(run(Part::Playing, 0, 0)));
+        assert_eq!(parts.line(2), Some(run(Part::Rest, 1, 2)));
+    }
+
+    #[test]
+    fn every_row_is_shown_at_the_line_that_draws_it() {
+        let shapes = [
+            QueueParts::of(8, Some(3), Some(Span::between(4, 6))),
+            QueueParts::of(8, Some(3), Some(Span::between(3, 6))),
+            QueueParts::of(8, Some(7), None),
+            QueueParts::of(8, None, Some(Span::between(0, 2))),
+            QueueParts::of(8, None, None),
+            QueueParts::of(8, Some(12), Some(Span::between(9, 10))),
+        ];
+
+        for parts in shapes {
+            for row in 0..8 {
+                assert_eq!(
+                    parts.line(parts.line_of(row)),
+                    Some(Line::Row(row)),
+                    "row {row} of {parts:?}"
+                );
+            }
+        }
     }
 
     #[test]

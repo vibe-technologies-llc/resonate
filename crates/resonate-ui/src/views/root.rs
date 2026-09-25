@@ -765,7 +765,7 @@ impl RootView {
             return;
         };
 
-        self.show_row(Shift::Queue, row);
+        self.show_row(Shift::Queue, row, cx);
     }
 
     fn noticed(cx: &App) -> bool {
@@ -1369,7 +1369,7 @@ impl RootView {
         };
 
         self.reach = Some(Reach::at(shift, row));
-        self.show_row(shift, row);
+        self.show_row(shift, row, cx);
         cx.notify();
     }
 
@@ -1384,7 +1384,7 @@ impl RootView {
         };
 
         self.reach = Some(Reach::at(shift, row));
-        self.show_row(shift, row);
+        self.show_row(shift, row, cx);
         cx.notify();
     }
 
@@ -1404,7 +1404,7 @@ impl RootView {
         };
 
         self.reach = Some(Reach::at(shift, row));
-        self.show_row(shift, row);
+        self.show_row(shift, row, cx);
         cx.notify();
     }
 
@@ -1480,7 +1480,7 @@ impl RootView {
             anchor: reach.anchor,
             row,
         });
-        self.show_row(shift, row);
+        self.show_row(shift, row, cx);
         cx.notify();
     }
 
@@ -1497,7 +1497,7 @@ impl RootView {
 
         self.shift_rows(shift, reach.rows(), to, cx);
         self.reach = Some(reach.stepped(step));
-        self.show_row(shift, to);
+        self.show_row(shift, to, cx);
         cx.notify();
     }
 
@@ -1726,9 +1726,11 @@ impl RootView {
         }
     }
 
-    fn show_row(&self, shift: Shift, row: usize) {
+    fn show_row(&self, shift: Shift, row: usize, cx: &App) {
         match shift {
-            Shift::Queue => self.queue_rows.scroll_to_item(row, ScrollStrategy::Center),
+            Shift::Queue => self
+                .queue_rows
+                .scroll_to_item(self.queue_parts(cx).line_of(row), ScrollStrategy::Center),
             Shift::Playlist(_) => self
                 .playlist_rows
                 .scroll_to_item(row, ScrollStrategy::Center),
@@ -2143,7 +2145,7 @@ impl RootView {
             return;
         };
         self.reach_at(shift, row, false, cx);
-        self.show_row(shift, row);
+        self.show_row(shift, row, cx);
     }
 
     fn stops_typing_soon(&mut self, cx: &mut Context<Self>) {

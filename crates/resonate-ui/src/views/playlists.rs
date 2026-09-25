@@ -893,7 +893,7 @@ impl RootView {
         .child(keeps)
     }
 
-    fn playing_playlist(&self, cx: &App) -> Option<PlaylistId> {
+    pub(crate) fn playing_playlist(&self, cx: &App) -> Option<PlaylistId> {
         let queue = self.player.read(cx).state().queue_stamp;
         self.library.read(cx).playing_playlist(queue)
     }
