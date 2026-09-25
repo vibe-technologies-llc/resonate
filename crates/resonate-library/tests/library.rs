@@ -12919,6 +12919,43 @@ fn an_album_moving_into_a_folder_another_album_already_names_keeps_the_key_it_ha
     Ok(())
 }
 
+#[test]
+fn a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_was() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("A/1.wav", &hunted(SILVER, "Marcin Przybylowicz", "1"));
+    tree.write("B/2.wav", &hunted(FIELDS, "Marcin Przybylowicz", "2"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let filed = |library: &Library| -> Result<Vec<(String, Option<AlbumId>)>> {
+        Ok(all(library)?
+            .into_iter()
+            .map(|track| (track.title, track.album_id))
+            .collect())
+    };
+    let before = filed(&library)?;
+    assert_ne!(
+        before[0].1, before[1].1,
+        "two folders were expected to be two albums"
+    );
+
+    applied(&library)?;
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+
+    assert_eq!(
+        filed(&library)?,
+        before,
+        "a whole rescan filed a track under the album its new folder names"
+    );
+    assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
+    Ok(())
+}
+
 const MEDDLE_AIFF_SHEET: &str = r#"PERFORMER "Pink Floyd"
 TITLE "Meddle"
 FILE "Meddle.aiff" AIFF

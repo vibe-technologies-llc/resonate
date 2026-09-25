@@ -1238,7 +1238,8 @@ fn album(
     let release_group = mbid_in(record.tags.musicbrainz_release_group_id.as_deref());
     let declaration = Declaration::of(&record.tags);
 
-    let held = naming.iter().find_map(|key| cache.albums.get(key).copied());
+    let kept = kept_where_it_was(tx, record, title, &naming)?;
+    let held = kept.or_else(|| naming.iter().find_map(|key| cache.albums.get(key).copied()));
 
     let id = match held {
         Some(mut held) => {
@@ -1256,7 +1257,11 @@ fn album(
                 fill_declared(tx, held.id, &declaration)?;
                 held.declared = declaration.over(held.declared);
             }
-            name_the_album(tx, cache, &naming, held)?;
+            if kept.is_some() {
+                lend_the_free_names(tx, cache, &naming, held)?;
+            } else {
+                name_the_album(tx, cache, &naming, held)?;
+            }
             held.id
         }
         None => {
@@ -1363,6 +1368,77 @@ fn fill_album(tx: &Transaction<'_>, album: i64, tagged: &Tagged<'_>) -> Result<G
         grouped_row,
     )
     .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+fn kept_where_it_was(
+    tx: &Transaction<'_>,
+    record: &TrackRecord,
+    title: &str,
+    naming: &[String],
+) -> Result<Option<Grouped>> {
+    let Some(folder) = record.sleeve.as_deref() else {
+        return Ok(None);
+    };
+    let sleeve = sleeve_key(title, folder);
+    if !naming.contains(&sleeve) {
+        return Ok(None);
+    }
+    let Some(was) = album_of_the_row(tx, record)? else {
+        return Ok(None);
+    };
+    for key in naming {
+        match album_keyed(tx, key)? {
+            Some(named) if *key != sleeve || named == was => return Ok(None),
+            _ => {}
+        }
+    }
+
+    let held = tx
+        .query_row(
+            "SELECT id, artist_id, year, barcode IS NOT NULL, catalog_number IS NOT NULL,
+                    label IS NOT NULL, tagged_tracks IS NOT NULL, title
+               FROM albums WHERE id = ?1",
+            params![was],
+            |row| Ok((grouped_row(row)?, row.get::<_, String>(7)?)),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(held
+        .filter(|(_, called)| called.to_lowercase() == title.to_lowercase())
+        .map(|(grouped, _)| grouped))
+}
+
+fn album_of_the_row(tx: &Transaction<'_>, record: &TrackRecord) -> Result<Option<i64>> {
+    let path = path_text(&record.path)?;
+    let (span_start, _) = span_columns(record.span);
+    tx.prepare_cached("SELECT album_id FROM tracks WHERE path = ?1 AND span_start = ?2")
+        .and_then(|mut statement| {
+            statement
+                .query_row(params![path, span_start], |row| row.get(0))
+                .optional()
+        })
+        .map(Option::flatten)
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn lend_the_free_names(
+    tx: &Transaction<'_>,
+    cache: &mut Cache,
+    naming: &[String],
+    grouped: Grouped,
+) -> Result<()> {
+    for key in naming {
+        tx.execute(
+            "INSERT INTO album_keys (key, album_id) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING",
+            params![key, grouped.id],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        if album_keyed(tx, key)? == Some(grouped.id) {
+            cache.albums.insert(key.clone(), grouped);
+        }
+    }
+
+    Ok(())
 }
 
 fn album_already_named(tx: &Transaction<'_>, naming: &[String]) -> Result<Option<i64>> {

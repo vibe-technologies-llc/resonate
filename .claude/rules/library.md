@@ -298,6 +298,14 @@ through `Player::media` like any other unscanned row.
   `album_keys.key` is a primary key, so an album moving into a folder another album already names
   keeps its old key too: merging two albums *by where they landed* is a decision nobody asked for,
   where merging two that turn out to be one release is one the pass can make on evidence.
+  **What the re-key leaves alone, a probe keeps.** A whole rescan, or any probe of a file whose
+  size or mtime moved, computes the new folder's key afresh, and that key naming another album —
+  or nothing — used to file the track there and let `ORPHANS` take the album it left, its release,
+  cover and wants with it. `store::kept_where_it_was` answers first: where the row already belongs
+  to an album of the same title, none of its other names finds an album, and its folder's key
+  names another album or none, the row stays where it is and `lend_the_free_names` gives the
+  album whichever of its keys nobody holds. `a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_was`
+  is the claim.
 
 - **A row names what it is billed to, because a listing beside it is narrowed and capped.**
   `ALBUM_COLUMNS` reads the artist's name by id — `(SELECT r.name FROM artists r WHERE r.id =
