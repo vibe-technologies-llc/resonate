@@ -189,7 +189,8 @@
   it is a `Shape` and a `Favourited` order written separately rather than one thing read two ways
 - Nothing bounds what the vocabulary weighs. It holds every distinct word *and* every distinct
   multi-word name across the three columns, held for as long as no name moves, and `holds`,
-  `names` and `nearest` each walk the whole of it — bearable for a personal library and untested
+  `names`, `nearest` and `completing` each walk the whole of it — the last once per keystroke a
+  model's client sends while a brief is filled in — bearable for a personal library and untested
   against the 500k-track one the scan is written for
 - A run of tokens is weighed as a name from every start position it could begin at, so a query of
   T tokens costs up to T runs of `nearest_name` over the whole named vocabulary where a word at a
@@ -514,8 +515,6 @@
   notification while a scan, a lookup or a poll runs, because the server answers on the one
   thread that reads stdin and has nothing to write from between requests. A client sees how far
   a pass has come only by reading `library_passes` again
-- The prompts take their arguments as they are typed, and `completion/complete` is not answered,
-  so a client offers no playlist names, windows or search words while one is filled in
 - An edit a model makes is not on the window's *Undo*: the library keeps its undo stacks in the
   process that made the edit, and `resonate mcp` is another process. The window draws the edit
   within a few seconds, but its own undo stack is not told, so undoing past it acts on rows the

@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Result, catalog,
+    completions::Completable,
     controlling::Reach,
     passes::Passes,
     tools::{LISTED_BY_DEFAULT, MISSING_BY_DEFAULT, QUEUED_BY_DEFAULT, TOP_BY_DEFAULT},
@@ -143,27 +144,7 @@ impl Resource {
     }
 
     pub(crate) fn templates() -> Value {
-        json!([
-            {
-                "uriTemplate": ONE_PLAYLIST_TEMPLATE,
-                "name": "playlist",
-                "description": format!(
-                    "The first {LISTED_BY_DEFAULT} rows of one playlist, by the name playlists \
-                     gives it."
-                ),
-                "mimeType": JSON,
-            },
-            {
-                "uriTemplate": STATISTICS_TEMPLATE,
-                "name": "listening_statistics_over",
-                "description": format!(
-                    "What was listened to over a window — {} — with the {TOP_BY_DEFAULT} tracks, \
-                     albums and artists heard most.",
-                    Window::ALL.map(Window::name).join(", ")
-                ),
-                "mimeType": JSON,
-            },
-        ])
+        json!(Template::ALL.map(Template::listed))
     }
 
     pub(crate) fn read(
@@ -203,6 +184,65 @@ impl Resource {
     ) -> Result<Value> {
         let read = self.read(library, players, passes)?;
         Ok(json!({ "type": "resource", "resource": written(&self.uri(), &read) }))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Template {
+    Playlist,
+    Statistics,
+}
+
+impl Template {
+    const ALL: [Self; 2] = [Self::Playlist, Self::Statistics];
+
+    pub(crate) fn at(uri: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|template| template.uri() == uri)
+    }
+
+    const fn uri(self) -> &'static str {
+        match self {
+            Self::Playlist => ONE_PLAYLIST_TEMPLATE,
+            Self::Statistics => STATISTICS_TEMPLATE,
+        }
+    }
+
+    const fn argument(self) -> &'static str {
+        match self {
+            Self::Playlist => "name",
+            Self::Statistics => "window",
+        }
+    }
+
+    pub(crate) fn completes(self, argument: &str) -> Option<Completable> {
+        (argument == self.argument()).then_some(match self {
+            Self::Playlist => Completable::Playlist,
+            Self::Statistics => Completable::Window,
+        })
+    }
+
+    fn listed(self) -> Value {
+        match self {
+            Self::Playlist => json!({
+                "uriTemplate": self.uri(),
+                "name": "playlist",
+                "description": format!(
+                    "The first {LISTED_BY_DEFAULT} rows of one playlist, by the name playlists \
+                     gives it."
+                ),
+                "mimeType": JSON,
+            }),
+            Self::Statistics => json!({
+                "uriTemplate": self.uri(),
+                "name": "listening_statistics_over",
+                "description": format!(
+                    "What was listened to over a window — {} — with the {TOP_BY_DEFAULT} tracks, \
+                     albums and artists heard most.",
+                    Window::ALL.map(Window::name).join(", ")
+                ),
+                "mimeType": JSON,
+            }),
+        }
     }
 }
 

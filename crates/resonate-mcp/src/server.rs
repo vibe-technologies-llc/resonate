@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     Code, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp, ToolName,
+    completions::Completing,
     controlling::Reach,
     error::said,
     passes::{Lookups, Passes},
@@ -28,6 +29,7 @@ const RESOURCE_TEMPLATES_LIST: &str = "resources/templates/list";
 const RESOURCES_READ: &str = "resources/read";
 const PROMPTS_LIST: &str = "prompts/list";
 const PROMPTS_GET: &str = "prompts/get";
+const COMPLETION_COMPLETE: &str = "completion/complete";
 
 const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read and edit its \
                             library directly — its favourites, its playlists and the missing \
@@ -45,7 +47,8 @@ const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read a
                             rows, the favourites, the listening over a window, the suggestions \
                             and the missing tracks. The prompts build a playlist from a brief, \
                             review the listening, weigh what the albums are short of and talk \
-                            about what is playing.";
+                            about what is playing; their arguments, and those of the resource \
+                            templates, are completed from the catalog.";
 
 pub struct Server {
     library: Library,
@@ -221,6 +224,10 @@ impl Server {
                 };
                 Ok(prompt.get(arguments, &self.library, &*self.players, &self.passes)??)
             }
+            COMPLETION_COMPLETE => {
+                let asked: Completing = parameters(method, params)?;
+                Ok(asked.complete(&self.library)??)
+            }
             other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
         }
     }
@@ -292,6 +299,7 @@ fn initialised(asked: &str) -> Value {
             "tools": { "listChanged": false },
             "resources": { "subscribe": false, "listChanged": false },
             "prompts": { "listChanged": false },
+            "completions": {},
         },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
         "instructions": INSTRUCTIONS,

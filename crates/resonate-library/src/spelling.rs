@@ -1,6 +1,6 @@
-use std::ops::Range;
+use std::{cmp::Reverse, ops::Range};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 
 use crate::{
     Clause, Column, Condition, Search, Word,
@@ -44,6 +44,18 @@ struct Spelled {
 struct Nearness {
     apart: usize,
     rows: std::cmp::Reverse<u32>,
+}
+
+struct Offered {
+    runs: usize,
+    whole: bool,
+    rows: u32,
+    written: String,
+}
+
+struct Tail {
+    from: usize,
+    folded: String,
 }
 
 struct Instead {
@@ -343,6 +355,60 @@ impl Spellings {
         })
     }
 
+    pub fn completing(&self, typed: &str) -> Vec<String> {
+        let tails = tails_of(typed);
+        let Some(last) = tails.first() else {
+            return Vec::new();
+        };
+
+        let mut offered = Vec::new();
+        for vocabulary in [&self.artists, &self.albums, &self.genres] {
+            for (folded, spelt) in &vocabulary.named {
+                for (taken, tail) in tails.iter().enumerate() {
+                    if folded.starts_with(&tail.folded) {
+                        offered.push(Offered {
+                            runs: taken + 1,
+                            whole: true,
+                            rows: spelt.rows,
+                            written: format!("{}{}", &typed[..tail.from], spelt.spelling),
+                        });
+                    }
+                }
+            }
+            for (folded, spelt) in &vocabulary.spelled {
+                if folded.starts_with(&last.folded) {
+                    offered.push(Offered {
+                        runs: 1,
+                        whole: false,
+                        rows: spelt.rows,
+                        written: format!("{}{}", &typed[..last.from], spelt.spelling),
+                    });
+                }
+            }
+        }
+
+        offered.sort_by(|one, other| {
+            (
+                Reverse(one.runs),
+                Reverse(one.whole),
+                Reverse(one.rows),
+                &one.written,
+            )
+                .cmp(&(
+                    Reverse(other.runs),
+                    Reverse(other.whole),
+                    Reverse(other.rows),
+                    &other.written,
+                ))
+        });
+        let mut seen = AHashSet::new();
+        offered
+            .into_iter()
+            .map(|offer| offer.written)
+            .filter(|written| written != typed && seen.insert(written.clone()))
+            .collect()
+    }
+
     pub fn did_you_mean(&self, text: &str) -> Option<String> {
         let mut search = Search::read(text);
         let mut corrected = self.run_tokens_together(&mut search);
@@ -518,6 +584,27 @@ fn one_run_of(clause: &Clause) -> Option<(&Option<Column>, String)> {
     Some((&word.column, folded.clone()))
 }
 
+fn tails_of(typed: &str) -> Vec<Tail> {
+    let runs = lettered_runs(typed);
+    if runs.last().is_none_or(|(at, _)| at.end != typed.len()) {
+        return Vec::new();
+    }
+
+    (1..=runs.len().min(MOST_TOKENS_IN_A_NAME))
+        .map(|taken| {
+            let first = runs.len() - taken;
+            Tail {
+                from: runs[first].0.start,
+                folded: runs[first..]
+                    .iter()
+                    .map(|(_, folded)| folded.as_str())
+                    .collect::<Vec<_>>()
+                    .join(&BETWEEN_RUNS.to_string()),
+            }
+        })
+        .collect()
+}
+
 fn better_spelt(spelling: &str, than: &str) -> bool {
     (store::marks_in(spelling), spelling) > (store::marks_in(than), than)
 }
@@ -582,6 +669,45 @@ mod tests {
         spellings.taking(Column::Title, "Echoes");
         spellings.taking(Column::Title, "The Great Gig in the Sky");
         spellings
+    }
+
+    #[test]
+    fn the_last_word_typed_is_completed_with_a_whole_name_before_a_word_of_one() {
+        let offered = catalogued().completing("something like pi");
+
+        assert_eq!(
+            offered.first().map(String::as_str),
+            Some("something like Pink Floyd"),
+            "{offered:?}"
+        );
+        assert!(
+            offered.iter().any(|offer| offer == "something like Pink"),
+            "{offered:?}"
+        );
+    }
+
+    #[test]
+    fn the_words_typed_of_a_name_are_completed_together_in_the_spelling_the_catalog_holds() {
+        let offered = catalogued().completing("like marcin przybylo");
+
+        assert_eq!(
+            offered,
+            ["like Marcin Przybyłowicz", "like marcin Przybyłowicz"]
+        );
+    }
+
+    #[test]
+    fn a_title_is_not_offered_and_nothing_is_offered_after_a_space() {
+        assert!(catalogued().completing("ech").is_empty());
+        assert!(catalogued().completing("pink ").is_empty());
+        assert!(catalogued().completing("").is_empty());
+    }
+
+    #[test]
+    fn a_word_already_whole_is_not_offered_back() {
+        let offered = catalogued().completing("Floyd");
+
+        assert!(offered.iter().all(|offer| offer != "Floyd"), "{offered:?}");
     }
 
     #[test]

@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Refusal, Result,
+    completions::Completable,
     controlling::Reach,
     passes::Passes,
     resources::{Resource, over},
@@ -24,6 +25,7 @@ struct Argument {
     name: &'static str,
     describes: &'static str,
     required: bool,
+    completes: Completable,
 }
 
 const BRIEF: &str = "brief";
@@ -86,20 +88,30 @@ impl Prompt {
                     name: BRIEF,
                     describes: "What the playlist is for: a mood, an occasion, a sound.",
                     required: true,
+                    completes: Completable::Brief,
                 },
                 Argument {
                     name: "name",
                     describes: "What to call it; one is chosen where none is given.",
                     required: false,
+                    completes: Completable::NewPlaylist,
                 },
             ],
             Self::ReviewMyListening => &[Argument {
                 name: "window",
                 describes: "How far back to look: week, month, year or everything.",
                 required: false,
+                completes: Completable::Window,
             }],
             Self::CompleteMyAlbums | Self::AboutThisTrack => &[],
         }
+    }
+
+    pub(crate) fn completes(self, argument: &str) -> Option<Completable> {
+        self.takes()
+            .iter()
+            .find(|taken| taken.name == argument)
+            .map(|taken| taken.completes)
     }
 
     pub(crate) fn listed(self) -> Value {

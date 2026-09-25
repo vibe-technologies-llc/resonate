@@ -1168,6 +1168,10 @@ impl Library {
         Ok(self.inner.vocabulary()?.did_you_mean(text))
     }
 
+    pub fn names_completing(&self, typed: &str) -> Result<Vec<String>> {
+        Ok(self.inner.vocabulary()?.completing(typed))
+    }
+
     pub fn cover_art(&self, id: AlbumId) -> Result<Option<CoverArt>> {
         self.inner.cover_art(id)
     }

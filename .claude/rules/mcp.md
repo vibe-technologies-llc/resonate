@@ -38,12 +38,12 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
 - **A notification is never answered**, whatever its method, and neither is a message carrying
   a `result` or an `error`, because this server sends no requests of its own to be answered.
 - `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS` and answers
-  the latest otherwise. The server offers tools, resources and prompts; `listChanged` is false
-  for all three, because the tools are `Tool::ALL`, the prompts `Prompt::ALL`, and a client lists
+  the latest otherwise. The server offers tools, resources, prompts and completions;
+  `listChanged` is false for the first three, because the tools are `Tool::ALL`, the prompts `Prompt::ALL`, and a client lists
   the resources again whenever it wants the playlists as they stand, and `subscribe` is false
   because the one thread that reads stdin has nothing to write an update from. The instructions
   say that the three long passes run in the background, how to ask after them, that the readings
-  are resources too and what the prompts are for.
+  are resources too, what the prompts are for and that their arguments complete.
 
 ## The resources
 
@@ -86,6 +86,26 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   argument. `Prompt::get` answers `Result<Result<Value>, Refusal>` like `Tool::run`, and a
   reading that ran and failed — `about_this_track` with no player — is a JSON-RPC error under
   `InternalError`, because a prompt, like a resource, has no `isError` to carry it.
+
+## Completions
+
+- **Every argument a client fills in says how it completes, so none is left answering nothing.**
+  `completion/complete` names a prompt or a resource template and one of its arguments, and the
+  answer is a `Completable`: a prompt's `Argument` carries one beside its name, and `Template` —
+  the two URI templates, which `resources/templates/list` is written from — answers one for
+  the argument its URI names. A playlist's `name` offers the playlists the catalog holds and a
+  `window` the four `Window` names, those beginning with what was typed before those merely
+  holding it, ignoring case. `build_a_playlist`'s `name` offers the suggestions' names no playlist
+  already has, because the prompt asks for a new one, and its `brief` completes its last words
+  through `Library::names_completing`: the spelling vocabulary the search's *did you mean* reads,
+  over the artists, albums and genres and never the titles, a whole name reached by the most words
+  typed first, then a whole name before a single word of one, then the name more rows hold. A brief
+  that ends in anything but a letter is offered nothing, and what was typed is never offered back.
+- **At most a hundred values, with the total**, which is the spec's cap, and `hasMore` says the
+  rest were left out. A prompt or an argument nobody offers is refused — `UnknownPrompt`, or
+  `UnknownArgument` under `InvalidParams` — and a template nobody offers is `UnknownResource`
+  under `ResourceNotFound`, the way a read of one is; a catalog that fails is `InternalError`,
+  because a completion has no `isError` either.
 
 ## The tools
 

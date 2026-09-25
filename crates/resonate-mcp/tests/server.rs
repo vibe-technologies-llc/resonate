@@ -502,7 +502,7 @@ fn a_broken_envelope_is_a_json_rpc_error_rather_than_a_tool_failure() {
         -32_600
     );
     assert_eq!(
-        error_code(&server, &request("completion/complete", json!({}))),
+        error_code(&server, &request("logging/setLevel", json!({}))),
         -32_601
     );
     assert_eq!(
@@ -1699,4 +1699,126 @@ fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
         templates["resourceTemplates"][1]["uriTemplate"],
         "resonate://library/statistics/{window}"
     );
+}
+
+fn completed(server: &Server, reference: Value, argument: &str, value: &str) -> Vec<String> {
+    let answer = result(
+        server,
+        "completion/complete",
+        json!({ "ref": reference, "argument": { "name": argument, "value": value } }),
+    );
+    let values = answer["completion"]["values"]
+        .as_array()
+        .expect("a completion carries values");
+    assert_eq!(answer["completion"]["total"], values.len(), "{answer}");
+    assert_eq!(answer["completion"]["hasMore"], false, "{answer}");
+    values
+        .iter()
+        .map(|value| value.as_str().expect("a value is text").to_owned())
+        .collect()
+}
+
+#[test]
+fn an_argument_is_completed_from_what_the_catalog_holds() {
+    let tree = Tree::new();
+    tree.wav("a.wav", "Night Signal", "Hours", "1");
+    let library = scanned(&tree);
+    for name in ["Late Night", "Mornings", "Night Drive"] {
+        library
+            .create_playlist(name)
+            .expect("a playlist to be made");
+    }
+    let server = server(library, Fake::default());
+
+    let initialised = result(
+        &server,
+        "initialize",
+        json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+    );
+    assert_eq!(initialised["capabilities"]["completions"], json!({}));
+
+    let playlist = json!({ "type": "ref/resource", "uri": "resonate://library/playlist/{name}" });
+    assert_eq!(
+        completed(&server, playlist.clone(), "name", "night"),
+        ["Night Drive", "Late Night"],
+        "a name beginning with what was typed is offered before one merely holding it"
+    );
+    assert_eq!(
+        completed(&server, playlist, "name", ""),
+        ["Late Night", "Mornings", "Night Drive"]
+    );
+
+    let over = json!({ "type": "ref/resource", "uri": "resonate://library/statistics/{window}" });
+    assert_eq!(completed(&server, over, "window", "Ye"), ["year"]);
+    let review = json!({ "type": "ref/prompt", "name": "review_my_listening" });
+    assert_eq!(
+        completed(&server, review, "window", ""),
+        ["week", "month", "year", "everything"]
+    );
+
+    let build = json!({ "type": "ref/prompt", "name": "build_a_playlist" });
+    let briefs = completed(&server, build.clone(), "brief", "something like the orb");
+    assert_eq!(
+        briefs.first().map(String::as_str),
+        Some("something like The Orbiters"),
+        "{briefs:?}"
+    );
+    assert!(
+        completed(&server, build.clone(), "brief", "something like ").is_empty(),
+        "a brief ending in a space was completed"
+    );
+    let named = completed(&server, build, "name", "");
+    assert!(
+        named
+            .iter()
+            .all(|name| !["Late Night", "Mornings", "Night Drive"].contains(&name.as_str())),
+        "a name already taken was offered for a new playlist: {named:?}"
+    );
+}
+
+#[test]
+fn a_completion_naming_nothing_offered_is_refused() {
+    let server = nothing_running();
+
+    for (params, code) in [
+        (
+            json!({
+                "ref": { "type": "ref/prompt", "name": "compose_a_symphony" },
+                "argument": { "name": "brief", "value": "" },
+            }),
+            -32_602,
+        ),
+        (
+            json!({
+                "ref": { "type": "ref/prompt", "name": "about_this_track" },
+                "argument": { "name": "brief", "value": "" },
+            }),
+            -32_602,
+        ),
+        (
+            json!({
+                "ref": { "type": "ref/resource", "uri": "resonate://library/playlist/{title}" },
+                "argument": { "name": "title", "value": "" },
+            }),
+            -32_002,
+        ),
+        (
+            json!({
+                "ref": { "type": "ref/resource", "uri": "resonate://library/statistics/{window}" },
+                "argument": { "name": "name", "value": "" },
+            }),
+            -32_602,
+        ),
+        (
+            json!({ "ref": { "type": "ref/tool", "name": "search_library" } }),
+            -32_602,
+        ),
+        (json!({}), -32_602),
+    ] {
+        assert_eq!(
+            error_code(&server, &request("completion/complete", params.clone())),
+            code,
+            "{params}"
+        );
+    }
 }

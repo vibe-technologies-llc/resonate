@@ -126,6 +126,21 @@ impl fmt::Display for PromptName {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ArgumentName(Box<str>);
+
+impl ArgumentName {
+    pub fn new(name: impl Into<Box<str>>) -> Self {
+        Self(name.into())
+    }
+}
+
+impl fmt::Display for ArgumentName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Refusal {
     #[error("the message is not JSON")]
@@ -152,6 +167,9 @@ pub enum Refusal {
 
     #[error("{0} is not a prompt this server offers")]
     UnknownPrompt(PromptName),
+
+    #[error("{0} is not an argument of what the completion names")]
+    UnknownArgument(ArgumentName),
 
     #[error("the arguments of {prompt} are not what it takes")]
     BadPromptArguments {
@@ -231,6 +249,7 @@ impl Refusal {
             Self::BadParameters { .. }
             | Self::UnknownTool(_)
             | Self::UnknownPrompt(_)
+            | Self::UnknownArgument(_)
             | Self::BadPromptArguments { .. }
             | Self::BlankArgument { .. }
             | Self::BadArguments { .. }
@@ -268,7 +287,7 @@ mod tests {
     fn a_refusal_carries_the_code_json_rpc_gives_its_kind() {
         assert_eq!(Refusal::NotARequest.code().number(), -32_600);
         assert_eq!(
-            Refusal::UnknownMethod(MethodName::new("completion/complete"))
+            Refusal::UnknownMethod(MethodName::new("logging/setLevel"))
                 .code()
                 .number(),
             -32_601

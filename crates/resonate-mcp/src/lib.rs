@@ -1,4 +1,5 @@
 mod catalog;
+mod completions;
 mod controlling;
 mod edits;
 mod error;
@@ -13,7 +14,8 @@ mod written;
 pub use crate::{
     controlling::{Controlling, OnTheBus, Reach, Row},
     error::{
-        Code, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp, ToolName,
+        ArgumentName, Code, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp,
+        ToolName,
     },
     passes::{Lookups, Pass},
     prompts::Prompt,
