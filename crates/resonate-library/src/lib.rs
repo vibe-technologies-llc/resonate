@@ -54,7 +54,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use crate::{
-    db::{Library, WrittenElsewhere},
+    db::{CatalogStamp, Library, WrittenElsewhere},
     elsewhere::{FOUND_ELSEWHERE_AT_MOST, Found, Sung, asks_elsewhere},
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,

@@ -20,10 +20,10 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
-    CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress, EnrichStats,
-    EnrichSummary, Favoured, FileTags, Fingerprinters, Found, HeldReleaseTrack, ImageFormat,
-    ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout, Library,
-    LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, OrganiseOptions,
+    CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
+    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, HeldReleaseTrack,
+    ImageFormat, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout,
+    Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, OrganiseOptions,
     OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry,
     PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Reference, ReleaseDetail,
     RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
@@ -319,6 +319,34 @@ impl Pass {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Planned {
+    #[default]
+    Not,
+    Shown(CatalogStamp),
+    Outdated,
+}
+
+impl Planned {
+    fn after(pass: Pass, cancelled: bool, read_at: CatalogStamp) -> Self {
+        match pass {
+            Pass::Preview if !cancelled => Self::Shown(read_at),
+            Pass::Preview | Pass::Apply => Self::Not,
+        }
+    }
+
+    pub const fn is_shown(self) -> bool {
+        matches!(self, Self::Shown(_))
+    }
+
+    fn outdated_at(self, now: CatalogStamp) -> bool {
+        match self {
+            Self::Shown(read_at) => !read_at.still_holds_at(now),
+            Self::Not | Self::Outdated => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Prompted {
     ByHand,
@@ -472,11 +500,11 @@ pub struct LibraryModel {
     work: Work,
     summary: Option<ScanSummary>,
     organised: Option<(Pass, OrganiseSummary)>,
-    previewed: bool,
+    previewed: Planned,
     imported: Option<(Pass, ImportSummary)>,
-    previewed_import: bool,
+    previewed_import: Planned,
     tagged: Option<(Pass, RetagSummary)>,
-    previewed_tags: bool,
+    previewed_tags: Planned,
     sourcing: Sourcing,
     polled: Option<PollSummary>,
     enriching: Option<Arc<EnrichProgress>>,
@@ -607,11 +635,11 @@ impl LibraryModel {
             work: Work::Nothing,
             summary: None,
             organised: None,
-            previewed: false,
+            previewed: Planned::Not,
             imported: None,
-            previewed_import: false,
+            previewed_import: Planned::Not,
             tagged: None,
-            previewed_tags: false,
+            previewed_tags: Planned::Not,
             sourcing,
             polled: None,
             enriching: None,
@@ -1922,17 +1950,33 @@ impl LibraryModel {
             .map(|(pass, summary)| (*pass, summary))
     }
 
-    pub const fn previewed(&self) -> bool {
+    pub const fn previewed(&self) -> Planned {
         self.previewed
     }
 
     pub fn forget_the_preview(&mut self, cx: &mut Context<Self>) {
-        if self.organised.is_none() && !self.previewed {
+        if self.organised.is_none() && self.previewed == Planned::Not {
             return;
         }
         self.organised = None;
-        self.previewed = false;
+        self.previewed = Planned::Not;
         cx.notify();
+    }
+
+    fn take_down_what_moved(&mut self) {
+        let now = self.library.plans_stamp();
+        if self.previewed.outdated_at(now) {
+            self.organised = None;
+            self.previewed = Planned::Outdated;
+        }
+        if self.previewed_tags.outdated_at(now) {
+            self.tagged = None;
+            self.previewed_tags = Planned::Outdated;
+        }
+        if self.previewed_import.outdated_at(now) {
+            self.imported = None;
+            self.previewed_import = Planned::Outdated;
+        }
     }
 
     pub const fn is_tagging(&self) -> bool {
@@ -1960,7 +2004,7 @@ impl LibraryModel {
         self.tagged.as_ref().map(|(pass, summary)| (*pass, summary))
     }
 
-    pub const fn previewed_tags(&self) -> bool {
+    pub const fn previewed_tags(&self) -> Planned {
         self.previewed_tags
     }
 
@@ -2263,6 +2307,7 @@ impl LibraryModel {
         match loaded {
             Ok(loaded) => {
                 self.take(loaded);
+                self.take_down_what_moved();
                 self.warm_the_covers(cx);
             }
             Err(error) => tracing::error!(%error, "the library could not be read"),
@@ -2751,7 +2796,7 @@ impl LibraryModel {
             .map(|(pass, summary)| (*pass, summary))
     }
 
-    pub const fn previewed_import(&self) -> bool {
+    pub const fn previewed_import(&self) -> Planned {
         self.previewed_import
     }
 
@@ -2761,6 +2806,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+        let read_at = self.library.plans_stamp();
         let handle = match self.library.import(
             Arc::new(Sources::local()),
             ImportOptions {
@@ -2779,7 +2825,7 @@ impl LibraryModel {
 
         self.work = Work::Importing(pass, Arc::clone(handle.progress()));
         self.imported = None;
-        self.previewed_import = false;
+        self.previewed_import = Planned::Not;
         self.notice = None;
         cx.notify();
 
@@ -2795,7 +2841,7 @@ impl LibraryModel {
                 this.work = Work::Nothing;
                 match handle.join() {
                     Ok(summary) => {
-                        this.previewed_import = !pass.applies() && !summary.cancelled;
+                        this.previewed_import = Planned::after(pass, summary.cancelled, read_at);
                         this.imported = Some((pass, summary));
                     }
                     Err(error) => {
@@ -2956,6 +3002,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+        let read_at = self.library.plans_stamp();
         let handle = match self.library.retag(
             Arc::new(FileTags::default()),
             RetagOptions {
@@ -2974,7 +3021,7 @@ impl LibraryModel {
 
         self.work = Work::Tagging(pass, Arc::clone(handle.progress()));
         self.tagged = None;
-        self.previewed_tags = false;
+        self.previewed_tags = Planned::Not;
         self.notice = None;
         cx.notify();
 
@@ -2990,7 +3037,7 @@ impl LibraryModel {
                 this.work = Work::Nothing;
                 match handle.join() {
                     Ok(summary) => {
-                        this.previewed_tags = !pass.applies() && !summary.cancelled;
+                        this.previewed_tags = Planned::after(pass, summary.cancelled, read_at);
                         this.tagged = Some((pass, summary));
                     }
                     Err(error) => {
@@ -3010,6 +3057,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+        let read_at = self.library.plans_stamp();
         let handle = match self.library.organise(OrganiseOptions {
             layout,
             apply: pass.applies(),
@@ -3026,7 +3074,7 @@ impl LibraryModel {
 
         self.work = Work::Organising(pass, Arc::clone(handle.progress()));
         self.organised = None;
-        self.previewed = false;
+        self.previewed = Planned::Not;
         self.notice = None;
         cx.notify();
 
@@ -3042,7 +3090,7 @@ impl LibraryModel {
                 this.work = Work::Nothing;
                 match handle.join() {
                     Ok(summary) => {
-                        this.previewed = !pass.applies() && !summary.cancelled;
+                        this.previewed = Planned::after(pass, summary.cancelled, read_at);
                         this.organised = Some((pass, summary));
                     }
                     Err(error) => {
@@ -3988,12 +4036,12 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
-    use resonate_library::{Direction, SortOrder};
+    use resonate_library::{Direction, Library, SortOrder};
 
     use super::{
-        Arranging, Beyond, Favourited, ListedRow, MissingRow, Reaching, Shared, arranged,
-        beyond_the_listing, headed_by_disc, held_at, held_in, landed_since, missing_track_rows,
-        on_the_clipboard, unheld_release_rows,
+        Arranging, Beyond, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching, Shared,
+        arranged, beyond_the_listing, headed_by_disc, held_at, held_in, landed_since,
+        missing_track_rows, on_the_clipboard, unheld_release_rows,
     };
 
     const SEARCHED: Reaching = Reaching {
@@ -4432,5 +4480,27 @@ mod tests {
         );
         assert!(!landed_since(&folder.join("gone"), before));
         std::fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_preview_stands_until_what_it_read_moves_and_an_apply_leaves_none() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let read_at = library.plans_stamp();
+
+        assert_eq!(Planned::after(Pass::Apply, false, read_at), Planned::Not);
+        assert_eq!(Planned::after(Pass::Preview, true, read_at), Planned::Not);
+        let shown = Planned::after(Pass::Preview, false, read_at);
+        assert!(shown.is_shown());
+        assert!(!shown.outdated_at(library.plans_stamp()));
+
+        library
+            .add_root(&std::env::temp_dir())
+            .expect("the catalog takes a root");
+        assert!(
+            shown.outdated_at(library.plans_stamp()),
+            "a root added under a preview left it standing"
+        );
+        assert!(!Planned::Outdated.outdated_at(library.plans_stamp()));
+        assert!(!Planned::Not.outdated_at(library.plans_stamp()));
     }
 }

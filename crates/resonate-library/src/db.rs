@@ -378,6 +378,7 @@ pub(crate) struct Inner {
     playlists: AtomicU64,
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
+    planned: Arc<AtomicU64>,
     spellings: Mutex<Option<KeptVocabulary>>,
     suggested: Mutex<Option<KeptSuggestions>>,
     playing: Mutex<Option<Playing>>,
@@ -385,14 +386,14 @@ pub(crate) struct Inner {
     walked: Mutex<Vec<Step>>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct NamesStamp {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CatalogStamp {
     named: u64,
     written_elsewhere: Option<i64>,
 }
 
-impl NamesStamp {
-    fn still_holds_at(self, now: Self) -> bool {
+impl CatalogStamp {
+    pub fn still_holds_at(self, now: Self) -> bool {
         self.named == now.named
             && now
                 .written_elsewhere
@@ -401,12 +402,12 @@ impl NamesStamp {
 }
 
 struct KeptVocabulary {
-    stamp: NamesStamp,
+    stamp: CatalogStamp,
     spellings: Arc<Spellings>,
 }
 
 struct KeptSuggestions {
-    stamp: NamesStamp,
+    stamp: CatalogStamp,
     suggestions: Arc<[Suggestion]>,
 }
 
@@ -620,16 +621,20 @@ impl Inner {
         Ok(value)
     }
 
-    fn names_stamp(&self) -> NamesStamp {
+    fn names_stamp(&self) -> CatalogStamp {
         self.stamped_by(&self.named)
     }
 
-    fn rows_stamp(&self) -> NamesStamp {
+    fn rows_stamp(&self) -> CatalogStamp {
         self.stamped_by(&self.written)
     }
 
-    fn stamped_by(&self, counter: &AtomicU64) -> NamesStamp {
-        NamesStamp {
+    fn plans_stamp(&self) -> CatalogStamp {
+        self.stamped_by(&self.planned)
+    }
+
+    fn stamped_by(&self, counter: &AtomicU64) -> CatalogStamp {
+        CatalogStamp {
             named: counter.load(Ordering::Acquire),
             written_elsewhere: self.written_elsewhere(),
         }
@@ -665,6 +670,60 @@ impl Inner {
 
 const NAMED_TABLES: [&str; 4] = ["tracks", "albums", "artists", "artist_genres"];
 const NAMES_MOVED: &str = "names_moved";
+const PLANS_MOVED: &str = "plans_moved";
+
+const PLANNED_FROM: [(&str, Option<&[&str]>); 7] = [
+    (
+        "tracks",
+        Some(&[
+            "root_id",
+            "path",
+            "span_start",
+            "span_frames",
+            "title",
+            "artist",
+            "artist_mbid",
+            "album_id",
+            "track_number",
+            "disc_number",
+            "codec",
+            "sample_rate",
+            "channels",
+            "sample_format",
+            "file_size",
+            "modified",
+            "mbid",
+            "release_track_mbid",
+            "isrc",
+            "vault_key",
+            "answered",
+        ]),
+    ),
+    (
+        "albums",
+        Some(&[
+            "title",
+            "release_title",
+            "artist_id",
+            "year",
+            "cover_art",
+            "cover_key",
+            "cover_path",
+            "mbid",
+            "release_group",
+            "date",
+            "label",
+            "catalog_number",
+            "barcode",
+            "answered",
+        ]),
+    ),
+    ("artists", Some(&["name", "mbid", "answered"])),
+    ("roots", Some(&["path"])),
+    ("release_tracks", None),
+    ("release_media", None),
+    ("vault_objects", None),
+];
 const TEMPORARY: &str = "temp";
 
 const NAMES_MOVED_TRIGGERS: &str = "
@@ -706,22 +765,63 @@ CREATE TEMP TRIGGER genre_renamed AFTER UPDATE ON main.artist_genres
 BEGIN UPDATE temp.names_moved SET times = times + 1; END;
 ";
 
+fn plans_moved_triggers() -> String {
+    let mut sql = format!(
+        "CREATE TEMP TABLE {PLANS_MOVED} (
+             id    INTEGER PRIMARY KEY CHECK (id = 1),
+             times INTEGER NOT NULL
+         );
+         INSERT INTO temp.{PLANS_MOVED} (id, times) VALUES (1, 0);"
+    );
+    let bump = format!("BEGIN UPDATE temp.{PLANS_MOVED} SET times = times + 1; END;");
+    for (table, columns) in PLANNED_FROM {
+        for (event, named) in [("INSERT", "added"), ("DELETE", "taken")] {
+            sql.push_str(&format!(
+                "CREATE TEMP TRIGGER {table}_{named}_under_a_plan AFTER {event} ON main.{table} {bump}"
+            ));
+        }
+        let moved = match columns {
+            Some(columns) => format!(
+                "AFTER UPDATE OF {} ON main.{table} WHEN {}",
+                columns.join(", "),
+                columns
+                    .iter()
+                    .map(|column| format!("OLD.{column} IS NOT NEW.{column}"))
+                    .collect::<Vec<_>>()
+                    .join(" OR ")
+            ),
+            None => format!("AFTER UPDATE ON main.{table}"),
+        };
+        sql.push_str(&format!(
+            "CREATE TEMP TRIGGER {table}_moved_under_a_plan {moved} {bump}"
+        ));
+    }
+    sql
+}
+
 fn watch_the_names(
     connection: &Connection,
     named: &Arc<AtomicU64>,
     written: &Arc<AtomicU64>,
+    planned: &Arc<AtomicU64>,
 ) -> Result<()> {
     connection
         .execute_batch(NAMES_MOVED_TRIGGERS)
         .map_err(|source| Error::store(StoreOp::Open, source))?;
+    connection
+        .execute_batch(&plans_moved_triggers())
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
 
     let named = Arc::clone(named);
     let written = Arc::clone(written);
+    let planned = Arc::clone(planned);
     connection
         .update_hook(Some(
             move |_: Action, database: &str, table: &str, _: i64| {
                 if database == TEMPORARY && table == NAMES_MOVED {
                     named.fetch_add(1, Ordering::AcqRel);
+                } else if database == TEMPORARY && table == PLANS_MOVED {
+                    planned.fetch_add(1, Ordering::AcqRel);
                 } else if NAMED_TABLES.contains(&table) {
                     written.fetch_add(1, Ordering::AcqRel);
                 }
@@ -794,7 +894,8 @@ impl Library {
 
         let named = Arc::new(AtomicU64::new(0));
         let written = Arc::new(AtomicU64::new(0));
-        watch_the_names(&writer, &named, &written)?;
+        let planned = Arc::new(AtomicU64::new(0));
+        watch_the_names(&writer, &named, &written, &planned)?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -807,6 +908,7 @@ impl Library {
                 playlists: AtomicU64::new(0),
                 named,
                 written,
+                planned,
                 spellings: Mutex::new(None),
                 suggested: Mutex::new(None),
                 playing: Mutex::new(None),
@@ -1425,6 +1527,10 @@ impl Library {
 
     pub fn written_elsewhere(&self) -> Option<WrittenElsewhere> {
         self.inner.written_elsewhere().map(WrittenElsewhere)
+    }
+
+    pub fn plans_stamp(&self) -> CatalogStamp {
+        self.inner.plans_stamp()
     }
 
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {
@@ -4699,6 +4805,51 @@ mod tests {
             "a write that moved a name left the vocabulary that was read before it standing"
         );
         assert_eq!(suggested(&library, "fearliss"), Some("Fearless".to_owned()));
+    }
+
+    #[test]
+    fn a_plan_is_stamped_stale_by_what_it_reads_and_not_by_a_play_or_a_favourite() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        titled(&library, "Echoes");
+        let planned = library.plans_stamp();
+        let written = |sql: &str| {
+            library
+                .inner
+                .writer
+                .lock()
+                .execute(sql, [])
+                .expect("the catalog takes the write");
+        };
+
+        written("UPDATE tracks SET plays = plays + 1, played = 1, favourite = 1, title = title");
+        assert!(
+            planned.still_holds_at(library.plans_stamp()),
+            "a counted play or a favourite took down a plan nothing it reads moved under"
+        );
+
+        written("UPDATE tracks SET track_number = 3");
+        assert!(
+            !planned.still_holds_at(library.plans_stamp()),
+            "a track number written under a plan left it standing"
+        );
+
+        let renumbered = library.plans_stamp();
+        written("INSERT INTO albums (title) VALUES ('Meddle')");
+        let albumed = library.plans_stamp();
+        assert!(
+            !renumbered.still_holds_at(albumed),
+            "an album landed under a plan left it standing"
+        );
+        written("UPDATE albums SET favourite = 2");
+        assert!(
+            albumed.still_holds_at(library.plans_stamp()),
+            "an album favoured took down a plan"
+        );
+        written("UPDATE albums SET mbid = 'b1f3'");
+        assert!(
+            !albumed.still_holds_at(library.plans_stamp()),
+            "a release matched under a plan left it standing"
+        );
     }
 
     #[test]

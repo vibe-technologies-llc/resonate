@@ -1811,6 +1811,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   and a tag write cannot overlap and each greys the others' controls; `Library::retag` takes the
   same `Walk` guard `Library::scan` and `Library::organise` do, so a second caller would be refused
   anyway and the greying is what stops it being asked.
+- **A preview is taken down once the catalog it read has moved.** `Planned` is what each of
+  *Organising*, *Tagging* and the vault's *Import* holds: `Not`, `Shown` with the
+  `resonate_library::CatalogStamp` taken as the preview started, or `Outdated`. Every reload's
+  `landed` weighs a shown preview against `Library::plans_stamp` and, where the stamp moved, drops
+  its rows and counts and greys *Apply* again, and the group says the catalog moved rather than
+  asking for a first preview. The stamp is a counter of its own on the writer connection — temp
+  triggers over the columns a plan reads, `PLANNED_FROM` in `db.rs` — beside `PRAGMA data_version`
+  for another process, so a lookup landing a release or a scan reading a file anew takes the
+  preview down while a counted play or a favourite does not. An arming is read as the flag *and* a
+  shown preview, so a preview taken down cannot leave a half-armed *Apply* behind it.
 - **The Tagging group draws the plan rather than a count of it.** `listed` is the first
   `WRITES_SHOWN` of `Retagging::writes`, one raised row per file carrying the file name over the
   fields that would be written — `cover art` among them where a picture would go — with *and N more*

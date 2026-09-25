@@ -28,7 +28,7 @@ pub use crate::{
     lyrics::{Look, LyricsModel},
     models::{
         Beyond, Consulted, Drawn, Favourited, LibraryModel, ListedRow, MissingRow, Notice, Pass,
-        Portrayed, Previewed, Selection, Tone,
+        Planned, Portrayed, Previewed, Selection, Tone,
     },
     settings::{
         Bindings, Ephemeral, Online, Places, Present, Setting, SettingKey, Settings, Sourcing,

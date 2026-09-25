@@ -14,7 +14,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Notice, Pass, ResonateApp, Setting, format,
+    Notice, Pass, Planned, ResonateApp, Setting, format,
     icons::{self, Icon},
     theme,
     views::{
@@ -52,6 +52,9 @@ const TEMPLATE_LABEL: &str = "Where each track is filed";
 const ORGANISING_NOTE: &str = "Each / is a folder under the music folder the track was scanned \
                                from. Preview lists what would move; only Apply moves anything, \
                                and the catalog follows the files.";
+
+const MOVED_UNDER_THE_PREVIEW: &str = "The catalog moved since the last preview, so it was taken \
+                                       down. Preview again to see what would happen now.";
 
 const PREVIEW_FIRST: &str = "Preview first, so what would move is on screen before anything does.";
 
@@ -439,13 +442,13 @@ impl RootView {
         let typed = self.organising.read(cx).text().trim().to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
-        let armed = self.moving_the_files;
-
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let organising = library.is_organising();
         let moving = library.is_moving();
-        let previewed = library.previewed();
+        let planned = library.previewed();
+        let previewed = planned.is_shown();
+        let armed = self.moving_the_files && previewed;
         let stopping = library.is_stopping_organise();
         let stats = library.organise_stats();
         let told = library
@@ -473,7 +476,7 @@ impl RootView {
                     .when(organising, |row| row.child(self.stop_filing(stopping, cx))),
             )
             .when(!previewed && !organising, |body| {
-                body.child(note(PREVIEW_FIRST))
+                body.child(note(unplanned(planned, PREVIEW_FIRST)))
             })
             .when(armed, |body| body.child(note(ASK_AGAIN_TO_MOVE)))
             .when(organising, |body| {
@@ -616,13 +619,13 @@ impl RootView {
 
 impl RootView {
     pub(super) fn tagging_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let armed = self.writing_the_tags;
-
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let tagging = library.is_tagging();
         let writing = library.is_writing_tags();
-        let previewed = library.previewed_tags();
+        let planned = library.previewed_tags();
+        let previewed = planned.is_shown();
+        let armed = self.writing_the_tags && previewed;
         let stopping = library.is_stopping_retag();
         let stats = library.retag_stats();
         let told = library
@@ -641,7 +644,7 @@ impl RootView {
                     .when(tagging, |row| row.child(self.stop_tagging(stopping, cx))),
             )
             .when(!previewed && !tagging, |body| {
-                body.child(note(PREVIEW_TAGS_FIRST))
+                body.child(note(unplanned(planned, PREVIEW_TAGS_FIRST)))
             })
             .when(armed, |body| body.child(note(ASK_AGAIN_TO_WRITE)))
             .when(tagging, |body| {
@@ -904,8 +907,6 @@ const NOTHING_TO_KEEP: &str = "Nothing to import. The vault already holds every 
 
 impl RootView {
     pub(super) fn vault_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let armed = self.keeping_the_tracks;
-
         let library = self.library.read(cx);
         if !library.has_a_vault() {
             return kit::section_body().child(note(NO_VAULT));
@@ -914,7 +915,9 @@ impl RootView {
         let busy = library.is_busy();
         let importing = library.is_importing();
         let keeping = library.is_keeping();
-        let previewed = library.previewed_import();
+        let planned = library.previewed_import();
+        let previewed = planned.is_shown();
+        let armed = self.keeping_the_tracks && previewed;
         let stopping = library.is_stopping_import();
         let stats = library.import_stats();
         let told = library
@@ -937,7 +940,7 @@ impl RootView {
                     .when(importing, |row| row.child(self.stop_keeping(stopping, cx))),
             )
             .when(!previewed && !importing, |body| {
-                body.child(note(PREVIEW_IMPORT_FIRST))
+                body.child(note(unplanned(planned, PREVIEW_IMPORT_FIRST)))
             })
             .when(armed, |body| body.child(note(ASK_AGAIN_TO_KEEP)))
             .when(importing && keeping, |body| {
@@ -1263,5 +1266,12 @@ fn asked_of_the_inbox(stats: PollStats, stopped: bool) -> String {
         format!("{told} · stopped before it finished")
     } else {
         told
+    }
+}
+
+const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
+    match planned {
+        Planned::Outdated => MOVED_UNDER_THE_PREVIEW,
+        Planned::Not | Planned::Shown(_) => first,
     }
 }
