@@ -69,7 +69,7 @@ const ENTITIES: [(&str, char); 5] = [
     ("apos", '\''),
 ];
 
-const HEXADECIMAL: char = 'x';
+const HEXADECIMAL: [char; 2] = ['x', 'X'];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Depth {

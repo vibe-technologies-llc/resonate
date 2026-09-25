@@ -2101,7 +2101,8 @@ the pass.
   `<album>`, `<image>`, `<annotation>` and `<meta>` stay unread on purpose: a row is a path, so a
   sheet is never a source of tags. What it takes on trust is the rest: an element is matched by its
   local name, so two namespaces both calling something `track` are one element to it; it knows the
-  five entities XML defines and a numeric reference and nothing else; and it trusts the nesting, so
+  five entities XML defines and a numeric reference — decimal, or hexadecimal after an `x` or an
+  `X`, both of which XML allows — and nothing else; and it trusts the nesting, so
   a sheet that never closes an element it opened carries that element's base to everything after it.
 
 ## The MPRIS seam

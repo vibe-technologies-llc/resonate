@@ -3182,6 +3182,31 @@ fn an_xspf_sheet_a_windows_player_wrote_resolves_with_its_separators_turned() ->
 }
 
 #[test]
+fn an_xspf_location_written_with_a_capital_hex_reference_reads_as_the_character() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    tree.write("discs/a.wav", b"a file no scan has read");
+
+    let sheet = tree.path().join("referenced.xspf");
+    fs::write(
+        &sheet,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <playlist version=\"1\" xmlns=\"http://xspf.org/ns/0/\">\n\
+         <trackList><track><location>discs&#X2F;a.wav</location></track></trackList>\n\
+         </playlist>\n",
+    )
+    .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+    assert_eq!(imported.added, 1);
+    assert_eq!(
+        imported.missing, 0,
+        "the reference was kept as literal text"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
