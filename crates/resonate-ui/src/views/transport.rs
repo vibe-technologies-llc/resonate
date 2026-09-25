@@ -17,9 +17,10 @@ use resonate_library::{Codec, Favoured};
 use crate::{
     Drawn, ResonateApp, RootView, Selection,
     app::Grain,
-    format,
+    clipboard, format,
     icons::{self, Icon},
-    theme,
+    models::Notice,
+    theme, toast,
     views::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
@@ -421,18 +422,21 @@ impl RootView {
             .font_weight(FontWeight::MEDIUM)
             .text_color(rgb(if idle { theme::muted() } else { theme::text() }))
             .child(
-                self.opens(
-                    "playing-title",
-                    kit::cut_to_fit(
-                        playing.title.clone(),
-                        self.playing_room.get() - px(theme::row_control() + TITLE_GAP),
-                        theme::ui(FontWeight::MEDIUM),
-                        px(theme::text_base()),
+                copied_on_a_right_click(
+                    self.opens(
+                        "playing-title",
+                        kit::cut_to_fit(
+                            playing.title.clone(),
+                            self.playing_room.get() - px(theme::row_control() + TITLE_GAP),
+                            theme::ui(FontWeight::MEDIUM),
+                            px(theme::text_base()),
+                            cx,
+                        ),
+                        OPEN_ALBUM_HINT,
+                        playing.cover.album.map(Selection::Album),
                         cx,
                     ),
-                    OPEN_ALBUM_HINT,
-                    playing.cover.album.map(Selection::Album),
-                    cx,
+                    playing.title.clone(),
                 )
                 .keeps_its_width(),
             )
@@ -456,12 +460,15 @@ impl RootView {
             .text_size(px(theme::text_sm()))
             .text_color(rgb(theme::muted()))
             .child(
-                self.opens(
-                    of_the_artist,
+                copied_on_a_right_click(
+                    self.opens(
+                        of_the_artist,
+                        playing.artist.clone(),
+                        OPEN_ARTIST_HINT,
+                        playing.artist_id.map(Selection::Artist),
+                        cx,
+                    ),
                     playing.artist.clone(),
-                    OPEN_ARTIST_HINT,
-                    playing.artist_id.map(Selection::Artist),
-                    cx,
                 )
                 .keeps_its_width(),
             );
@@ -486,12 +493,15 @@ impl RootView {
                 .child(BY_LINE_SEPARATOR),
         )
         .child(
-            self.opens(
-                of_the_album,
-                kit::cut_to_fit(album, album_room, font, size, cx),
-                OPEN_ALBUM_HINT,
-                playing.cover.album.map(Selection::Album),
-                cx,
+            copied_on_a_right_click(
+                self.opens(
+                    of_the_album,
+                    kit::cut_to_fit(album.clone(), album_room, font, size, cx),
+                    OPEN_ALBUM_HINT,
+                    playing.cover.album.map(Selection::Album),
+                    cx,
+                ),
+                album,
             )
             .keeps_its_width(),
         )
@@ -1002,4 +1012,15 @@ fn nothing_playing() -> Playing {
         cover: Cover::default(),
         heard: None,
     }
+}
+
+pub(crate) fn copied_on_a_right_click(named: Stateful<Div>, name: SharedString) -> Stateful<Div> {
+    if name.trim().is_empty() {
+        return named;
+    }
+    named.on_mouse_down(MouseButton::Right, move |_, _, cx| {
+        cx.stop_propagation();
+        clipboard::copy(name.to_string(), cx);
+        toast::tell(Notice::Done(format!("{name} is on the clipboard")), cx);
+    })
 }

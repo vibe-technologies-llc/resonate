@@ -20,7 +20,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis, Tone},
         root::RootView,
         scrollbar::Scrollbars,
-        transport::Heard,
+        transport::{Heard, copied_on_a_right_click},
     },
 };
 
@@ -45,12 +45,15 @@ impl RootView {
             .gap_1()
             .child(kit::measures_its_width(self.inspected_room.clone()))
             .child(kit::eyebrow("INSPECTOR"))
-            .child(kit::linked_title(self.opens(
-                "inspected-title",
+            .child(kit::linked_title(copied_on_a_right_click(
+                self.opens(
+                    "inspected-title",
+                    playing.title.clone(),
+                    OPEN_ALBUM_HINT,
+                    playing.cover.album.map(Selection::Album),
+                    cx,
+                ),
                 playing.title.clone(),
-                OPEN_ALBUM_HINT,
-                playing.cover.album.map(Selection::Album),
-                cx,
             )))
             .child(self.by_line(
                 "inspected-artist",

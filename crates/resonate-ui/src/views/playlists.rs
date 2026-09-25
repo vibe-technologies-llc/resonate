@@ -19,7 +19,7 @@ use crate::{
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
-        menu::{self, Menu},
+        menu::{self, Called, Menu},
         reorder::{self, Carried, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row, tall_row},
         scrollbar::Scrollbars,
@@ -978,6 +978,9 @@ impl RootView {
         let scanned = drawn.track;
         let favourite = drawn.favourite;
         let location = entry.cut.location.clone();
+        let span = entry.span();
+        let title = drawn.title.clone();
+        let artist = drawn.artist.clone();
         let listed = row(current)
             .id(index)
             .group(ROW_GROUP)
@@ -1068,7 +1071,12 @@ impl RootView {
         let edited = rows.are_edited();
         let listed = menu::opens_a_menu(
             listed,
-            move |this, at, _| {
+            move |this, at, cx| {
+                let names = Called {
+                    title: title.clone(),
+                    artist: artist.clone(),
+                    album: this.album_named(album, &location, span, cx),
+                };
                 let taken = if reaches {
                     this.acting_on(shift, index)
                 } else {
@@ -1089,7 +1097,7 @@ impl RootView {
                     .when_some(scanned, |menu, track| {
                         menu.favours(Favoured::Track(track), favourite)
                     })
-                    .offers_the_file(location.clone())
+                    .offers_the_file(&location, names)
                     .when_some(scanned, Menu::shares)
                     .apart()
                     .when_some(edited.then_some(taken), |menu, taken| {

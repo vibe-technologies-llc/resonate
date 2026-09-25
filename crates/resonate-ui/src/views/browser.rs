@@ -26,7 +26,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
-        menu::{self, Menu},
+        menu::{self, Called, Menu},
         missing::MissingShows,
         playlists::{ADD_ALL_HINT, ADD_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
@@ -913,6 +913,11 @@ impl RootView {
                 let queued = listed(slice::from_ref(track));
                 let held = Cut::of(track);
                 let delivered = track.delivered.then(|| track.clone());
+                let names = Called {
+                    title: SharedString::from(track.title.clone()),
+                    artist: SharedString::from(track.artist.clone().unwrap_or_default()),
+                    album: this.album_named(track.album_id, &track.location, track.span, cx),
+                };
                 let others = (track.alternatives > 0).then(|| {
                     (
                         track.clone(),
@@ -926,7 +931,7 @@ impl RootView {
                     .when_some(others, Menu::offers_the_other_copies)
                     .reaches(track.album_id, track.artist_id)
                     .favours(Favoured::Track(track.id), favourite)
-                    .offers_the_file(track.location.clone())
+                    .offers_the_file(&track.location, names)
                     .shares(track.id)
                     .apart()
                     .does(icon, hiding, move |this, _, cx| {

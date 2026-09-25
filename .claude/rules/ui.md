@@ -1774,11 +1774,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   on every such listener once and could never answer false; it was taken out. A gpui that routes
   other buttons to `on_aux_click` keeps the same promise.
   A track row plays, queues either way, holds for a playlist, reaches the artist and the album,
-  shows its file in the file manager and copies the path — *Go to album* being the gesture with
-  nowhere else to live, a track row having no album column. `Menu::offers_the_file` is the last
-  two, written once for the tracks, queue and playlist rows alike: *Show in the file manager* is
+  shows its file in the file manager and copies the path, the title, the artist and the album —
+  *Go to album* being the gesture with nowhere else to live, a track row having no album column.
+  `Menu::offers_the_file` is that last group, written once for the tracks, queue and playlist rows
+  alike and handed the row's `Called`, whose album `RootView::album_named` reads off the catalog's
+  album or, for a row no scan has seen, off the tags the player read; a name with nothing in it is
+  not offered. *Show in the file manager* is
   gpui's `reveal_path`, which asks the portal's `OpenURI.OpenDirectory` for the folder with the
-  file selected and falls back to opening the folder. An album cell, an artist row, the two covers, a queue row, a playlist row, a
+  file selected and falls back to opening the folder. The playback bar's and the inspector's
+  names are a left click to their album or artist, so a right click on one copies that name
+  whole — not the cut the bar draws — through `copied_on_a_right_click`, and a toast says what is
+  on the clipboard. An album cell, an artist row, the two covers, a queue row, a playlist row, a
   column header, the search box and a lyric line each carry their own. A sidebar row, a settings
   control and a missing row deliberately carry none: each would offer only what one press already
   does.

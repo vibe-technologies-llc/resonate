@@ -18,7 +18,7 @@ use crate::{
         hint,
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
-        menu::{self, Menu},
+        menu::{self, Called, Menu},
         playlists::{self, Held, ROW_GROUP},
         reorder::{self, Carried, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row},
@@ -477,6 +477,9 @@ impl RootView {
                                 let scanned = drawn.track;
                                 let favourite = drawn.favourite;
                                 let location = item.location.clone();
+                                let span = item.span;
+                                let title = drawn.title.clone();
+                                let artist = drawn.artist.clone();
                                 let menued = Arc::clone(&holding);
                                 let listed = row(current)
                                     .id(index)
@@ -571,9 +574,14 @@ impl RootView {
                                     ));
                                 let listed = menu::opens_a_menu(
                                     listed,
-                                    move |this, at, _| {
+                                    move |this, at, cx| {
                                         let taken = this.acting_on(Shift::Queue, index);
                                         let put = Arc::clone(&menued);
+                                        let names = Called {
+                                            title: title.clone(),
+                                            artist: artist.clone(),
+                                            album: this.album_named(album, &location, span, cx),
+                                        };
 
                                         Menu::at(at)
                                             .under(
@@ -589,7 +597,7 @@ impl RootView {
                                             .when_some(scanned, |menu, track| {
                                                 menu.favours(Favoured::Track(track), favourite)
                                             })
-                                            .offers_the_file(location.clone())
+                                            .offers_the_file(&location, names)
                                             .when_some(scanned, Menu::shares)
                                             .apart()
                                             .under(

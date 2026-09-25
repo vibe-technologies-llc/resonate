@@ -1,10 +1,11 @@
 use std::{path::Path, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, BoxShadow, ClickEvent, Context, Div, MouseButton, MouseDownEvent, Pixels, Point,
-    SharedString, Stateful, Window, anchored, deferred, div, hsla, point, prelude::*, px, rgb,
+    AnyElement, App, BoxShadow, ClickEvent, Context, Div, MouseButton, MouseDownEvent, Pixels,
+    Point, SharedString, Stateful, Window, anchored, deferred, div, hsla, point, prelude::*, px,
+    rgb,
 };
-use resonate_core::{AlbumId, ArtistId, MediaLocation, TrackId};
+use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{Favoured, PlaylistEntry, Track};
 
@@ -128,7 +129,36 @@ impl Menu {
     }
 }
 
+pub(crate) struct Called {
+    pub(crate) title: SharedString,
+    pub(crate) artist: SharedString,
+    pub(crate) album: Option<SharedString>,
+}
+
 impl RootView {
+    pub(crate) fn album_named(
+        &self,
+        album: Option<AlbumId>,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+        cx: &App,
+    ) -> Option<SharedString> {
+        album
+            .and_then(|id| {
+                self.library
+                    .read(cx)
+                    .album_of(id)
+                    .map(|held| SharedString::from(held.title.clone()))
+            })
+            .or_else(|| {
+                self.player
+                    .read(cx)
+                    .media(location, span)
+                    .and_then(|info| info.tags.album.clone())
+                    .map(SharedString::from)
+            })
+    }
+
     pub(crate) fn open_a_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
         if !menu.offers_anything() {
             return;
@@ -305,6 +335,9 @@ pub(crate) const ADD_TO_PLAYLIST: &str = "Add to playlist…";
 pub(crate) const GO_TO_ARTIST: &str = "Go to artist";
 pub(crate) const GO_TO_ALBUM: &str = "Go to album";
 pub(crate) const COPY_PATH: &str = "Copy the file path";
+pub(crate) const COPY_TITLE: &str = "Copy the title";
+pub(crate) const COPY_ARTIST: &str = "Copy the artist";
+pub(crate) const COPY_ALBUM: &str = "Copy the album";
 pub(crate) const SHOW_IN_FOLDER: &str = "Show in the file manager";
 pub(crate) const TAKE_OUT: &str = "Take out of the queue";
 pub(crate) const REMOVE_ROW: &str = "Take out of the playlist";
@@ -395,20 +428,37 @@ impl Menu {
         menu
     }
 
-    pub(crate) fn offers_the_file(self, location: MediaLocation) -> Self {
-        let Some(path) = location.locator().as_path() else {
-            return self;
+    pub(crate) fn offers_the_file(self, location: &MediaLocation, names: Called) -> Self {
+        let menu = self.apart();
+        let menu = match location.locator().as_path() {
+            Some(path) => {
+                let written = path.to_string_lossy().into_owned();
+                let shown = path.to_path_buf();
+                menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
+                    cx.reveal_path(&shown);
+                })
+                .does(Icon::Rename, COPY_PATH, move |_, _, cx| {
+                    clipboard::copy(written.clone(), cx);
+                })
+            }
+            None => menu,
         };
-        let written = path.to_string_lossy().into_owned();
-        let shown = path.to_path_buf();
 
-        self.apart()
-            .does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-                cx.reveal_path(&shown);
+        [
+            (COPY_TITLE, Some(names.title)),
+            (COPY_ARTIST, Some(names.artist)),
+            (COPY_ALBUM, names.album),
+        ]
+        .into_iter()
+        .filter_map(|(label, name)| {
+            name.filter(|name| !name.trim().is_empty())
+                .map(|name| (label, name))
+        })
+        .fold(menu, |menu, (label, name)| {
+            menu.does(Icon::Export, label, move |_, _, cx| {
+                clipboard::copy(name.to_string(), cx);
             })
-            .does(Icon::Rename, COPY_PATH, move |_, _, cx| {
-                clipboard::copy(written.clone(), cx);
-            })
+        })
     }
 }
 
