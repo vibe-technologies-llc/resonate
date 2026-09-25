@@ -318,9 +318,6 @@ impl RootView {
                                     )
                                     .on_click(cx.listener(
                                         move |this, event: &ClickEvent, _, cx| {
-                                            if !menu::pressed(event) {
-                                                return;
-                                            }
                                             let extending = event.modifiers().shift;
                                             this.reach_at(Shift::Queue, index, extending, cx);
                                             if !extending {

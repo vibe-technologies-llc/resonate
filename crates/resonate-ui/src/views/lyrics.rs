@@ -473,10 +473,7 @@ impl RootView {
                 .id(("lyric", line.index))
                 .cursor_pointer()
                 .hover(|line| line.bg(theme::tinted(theme::text(), 0x0e)))
-                .on_click(cx.listener(move |this, event, _, cx| {
-                    if !menu::pressed(event) {
-                        return;
-                    }
+                .on_click(cx.listener(move |this, _, _, cx| {
                     this.lyrics.update(cx, |model, _| model.follow_again());
                     this.seek_to_moment(at, cx);
                 })),

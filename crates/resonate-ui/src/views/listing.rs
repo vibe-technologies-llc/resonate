@@ -364,10 +364,7 @@ fn heads(
         .when(held, |head| {
             head.child(icons::icon(mark, theme::column_mark(), theme::accent()))
         })
-        .on_click(cx.listener(move |this, event, _, cx| {
-            if !menu::pressed(event) {
-                return;
-            }
+        .on_click(cx.listener(move |this, _, _, cx| {
             press(this, column, cx);
         }));
 

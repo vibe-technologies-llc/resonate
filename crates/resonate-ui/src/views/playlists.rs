@@ -1056,9 +1056,6 @@ impl RootView {
                     }),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
                 let extending = event.modifiers().shift && reaches;
                 if reaches {
                     this.reach_at(shift, index, extending, cx);
@@ -1420,10 +1417,7 @@ fn playlist_row(
             row_controls()
                 .child(
                     control("pin-saved", id, pin_icon(pinned), pin_hint(pinned)).on_click(
-                        cx.listener(move |this, event: &ClickEvent, _, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.library.update(cx, |library, cx| {
                                 library.pin_playlist(id, !pinned, cx);
@@ -1433,10 +1427,7 @@ fn playlist_row(
                 )
                 .child(
                     control("play-saved", id, Icon::Play, PLAY_HINT).on_click(cx.listener(
-                        move |this, event: &ClickEvent, _, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        move |this, _, _, cx| {
                             cx.stop_propagation();
                             let entries = this.library.read(cx).entries_of(id);
                             this.play_playlist(id, &entries, 0, true, cx);
@@ -1445,10 +1436,7 @@ fn playlist_row(
                 )
                 .child(
                     control("next-saved", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(
-                        cx.listener(move |this, event: &ClickEvent, _, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             let entries = this.library.read(cx).entries_of(id);
                             this.queue(&entries, Placement::Next, cx);
@@ -1457,10 +1445,7 @@ fn playlist_row(
                 )
                 .child(
                     control("last-saved", id, Icon::QueueLast, PLAYLIST_LAST_HINT).on_click(
-                        cx.listener(move |this, event: &ClickEvent, _, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             let entries = this.library.read(cx).entries_of(id);
                             this.queue(&entries, Placement::Last, cx);
@@ -1469,10 +1454,7 @@ fn playlist_row(
                 )
                 .child(
                     control("copy-saved", id, Icon::Plus, COPY_PLAYLIST_HINT).on_click(
-                        cx.listener(move |this, event: &ClickEvent, window, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             let holding: Arc<[Cut]> = this
                                 .library
@@ -1487,10 +1469,7 @@ fn playlist_row(
                 )
                 .child(
                     control("drop-saved", id, Icon::Discard, DISCARD_HINT).on_click(cx.listener(
-                        move |this, event: &ClickEvent, _, cx| {
-                            if !menu::pressed(event) {
-                                return;
-                            }
+                        move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.library
                                 .update(cx, |library, cx| library.drop_playlist(id, cx));
@@ -1498,10 +1477,7 @@ fn playlist_row(
                     )),
                 ),
         )
-        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-            if !menu::pressed(event) {
-                return;
-            }
+        .on_click(cx.listener(move |this, _, _, cx| {
             this.show_playlist(Some(id), cx);
         }));
 

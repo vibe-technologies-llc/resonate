@@ -1850,10 +1850,7 @@ impl RootView {
                             .text_decoration_color(rgb(theme::accent()))
                     })
                     .names(saying)
-                    .on_click(cx.listener(move |this, event, _, cx| {
-                        if !menu::pressed(event) {
-                            return;
-                        }
+                    .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.opened(selection, cx);
                     }))

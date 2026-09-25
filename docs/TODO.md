@@ -4,10 +4,6 @@ Categories run from most to least important. Everything under a `Later:` heading
 that no listener is waiting on, and is worked only once the categories above it are quiet.
 
 ## Defects
-- A right press on a row's own ✕, arrow or + in the queue probably acts on it as well as opening
-  the row's menu: `kit::icon_button`'s `on_click` fires on a right click, and the ✕'s handler in
-  `views/queue.rs` has none of the `menu::pressed` guard the row's own handler has, so a right press
-  on ✕ would remove the row under the menu it opened. Not yet seen in the window
 - A preview under Organising or Tagging is taken down only by a change of layout, never by a scan
   or a lookup moving the catalog under it, so the rows and counts on screen can describe a catalog
   that is no longer there. *Apply* re-runs the pass rather than applying the plan, so nothing wrong

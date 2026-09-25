@@ -1173,10 +1173,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   along the frame's edge and wherever two half-pixel tiles met. The side is a whole pixel, a tile
   is the floor of half of it, each tile and its cover are rounded on the one corner they stand in —
   `Corner::of_tile` — and a single cover is rounded itself; an empty tile is its accent, solid.
-- **The playlists index row grew its first context menu, and that cost its controls a guard.**
-  gpui fires `on_click` for a right press, so once the row answers a menu every one of its five
-  pre-existing controls — play, next, last, copy, discard — needs `menu::pressed(event)`, or the
-  press that opens the menu also fires whichever control it landed on. A pinned row wears a
+- **The playlists index row carries a context menu beside its controls, and neither answers the
+  other's press.** gpui 0.2.2 starts a click only on a left press, so a right press on play, next,
+  last, copy or discard opens the row's menu and fires none of them. A pinned row wears a
   `kit::badge` beside the `SEARCH` and `KEPT` ones; the catalog already sorts pinned rows first,
   so the pane does no ordering of its own.
 - **The sleep control draws no clock of its own.** It sits between repeat and the volume in the
@@ -1696,9 +1695,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   takes down. It needs no key context of its own: `up`, `down` and `enter` already name actions
   this window handles, so `reach_row` and `play_reached_rows` step and press the menu before they
   reach for a row.
-  **`on_click` fires for a right press too**, which is the trap the whole thing turns on — every
-  row would have played, scoped or seeked on the press that opened its menu. `menu::pressed` is
-  the one reading that says otherwise and every listener sharing an element with a menu takes it.
+  **`on_click` never fires for a right press**, because gpui 0.2.2 records a pending press only for
+  `MouseButton::Left`, so the press that opens a menu plays, scopes or seeks nothing and no
+  listener sharing an element with a menu needs a guard. A guard that read `is_right_click` stood
+  on every such listener once and could never answer false; it was taken out. A gpui that routes
+  other buttons to `on_aux_click` keeps the same promise.
   A track row plays, queues either way, holds for a playlist, reaches the artist and the album,
   shows its file in the file manager and copies the path — *Go to album* being the gesture with
   nowhere else to live, a track row having no album column. `Menu::offers_the_file` is the last

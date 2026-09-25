@@ -298,10 +298,6 @@ pub(crate) fn opens_a_menu(
     )
 }
 
-pub(crate) fn pressed(event: &ClickEvent) -> bool {
-    !event.is_right_click()
-}
-
 pub(crate) const PLAY: &str = "Play";
 pub(crate) const PLAY_NEXT: &str = "Play next";
 pub(crate) const ADD_TO_QUEUE: &str = "Add to queue";

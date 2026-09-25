@@ -109,10 +109,7 @@ impl RootView {
             false => kit::icon_button(id, Icon::Favourite, FAVOUR_HINT),
         };
 
-        mark.on_click(cx.listener(move |this, event, _, cx| {
-            if !menu::pressed(event) {
-                return;
-            }
+        mark.on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
             this.library
                 .update(cx, |library, cx| library.favour(what, !already, cx));
@@ -396,10 +393,7 @@ impl RootView {
                     )
                     .child(under),
             )
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.opened(Selection::Album(id), cx);
             }));
 
@@ -590,10 +584,7 @@ impl RootView {
                                                 ROW_GROUP,
                                                 cx,
                                             ))
-                                            .on_click(cx.listener(move |this, event, _, cx| {
-                                                if !menu::pressed(event) {
-                                                    return;
-                                                }
+                                            .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.opened(Selection::Artist(id), cx);
                                             })),
                                         reached,
@@ -891,19 +882,13 @@ impl RootView {
                             )),
                     ),
             )
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
-                match plays {
-                    Plays::TheseRows => this.play(&played, index, cx),
-                    Plays::AsTheListingIsDrawn { .. } => {
-                        let Some((drawn, start)) = this.library.read(cx).played_from_held(index)
-                        else {
-                            return;
-                        };
-                        this.play(&drawn, start, cx);
-                    }
+            .on_click(cx.listener(move |this, _, _, cx| match plays {
+                Plays::TheseRows => this.play(&played, index, cx),
+                Plays::AsTheListingIsDrawn { .. } => {
+                    let Some((drawn, start)) = this.library.read(cx).played_from_held(index) else {
+                        return;
+                    };
+                    this.play(&drawn, start, cx);
                 }
             }));
 
@@ -1224,10 +1209,7 @@ impl RootView {
                             )),
                     ),
             )
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.opened(Selection::Artist(id), cx);
             }));
 
@@ -1365,10 +1347,7 @@ impl RootView {
             .cursor_pointer()
             .hover(|cover| cover.opacity(kit::LIT))
             .names(COVER_HINT)
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.magnify(Magnified::Album(id), cx);
             }));
         let cover = menu::opens_a_menu(
@@ -1786,10 +1765,7 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(SharedString::from(artist.name.clone())),
             )
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.opened(Selection::Artist(id), cx);
             }));
 
@@ -2272,10 +2248,7 @@ fn heard_on(id: &'static str, services: Vec<HeardOn>, room: Pixels) -> Option<Di
                         .text_decoration_color(rgb(theme::accent()))
                 })
                 .names(format!("Open on {}", heard.name))
-                .on_click(move |event, _, cx| {
-                    if !menu::pressed(event) {
-                        return;
-                    }
+                .on_click(move |_, _, cx| {
                     cx.stop_propagation();
                     cx.open_url(&url);
                 })

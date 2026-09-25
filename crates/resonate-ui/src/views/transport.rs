@@ -582,10 +582,7 @@ impl RootView {
                     .rounded_md(),
             )
             .names(COVER_HINT)
-            .on_click(cx.listener(move |this, event, _, cx| {
-                if !menu::pressed(event) {
-                    return;
-                }
+            .on_click(cx.listener(move |this, _, _, cx| {
                 this.magnify(magnified.clone(), cx);
             }));
 
@@ -777,10 +774,7 @@ impl RootView {
                         VOLUME_ICON_GROUP,
                     ))
                     .names(if muted { UNMUTE_HINT } else { hint })
-                    .on_click(cx.listener(|this, event, _, cx| {
-                        if !menu::pressed(event) {
-                            return;
-                        }
+                    .on_click(cx.listener(|this, _, _, cx| {
                         cx.stop_propagation();
                         this.toggle_mute(cx);
                     })),
