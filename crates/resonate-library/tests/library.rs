@@ -14991,6 +14991,76 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
 }
 
 #[test]
+fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<()> {
+    let tree = Tree::new();
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .text(ALBUM, "Meddle")
+            .build(),
+    );
+    let vault = Arc::new(Vault::open(tree.path().join("vault")).expect("a writable vault"));
+    let library = Library::open_in_memory_with_vault(vault)?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(vaulted(&library, true)?.stats.vaulted, 1);
+
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+
+    assert_eq!(titles(&all(&library)?), vec!["Echoes"]);
+    assert!(all(&library)?.iter().all(|track| !track.delivered));
+    Ok(())
+}
+
+#[test]
+fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> Result<()> {
+    let tree = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let database = tree.path().join("library.db");
+    let vault = Arc::new(Vault::open(orbits.path().join("vault")).expect("a writable vault"));
+    {
+        let library = Library::open_with_vault(&database, vault)?;
+        scan(&library, &options(&orbits))?;
+        wanted_san_tropez(&library)?;
+        let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+        let summary = library
+            .poll(inbox.registered(), PollOptions::default())?
+            .join()?;
+        assert_eq!(summary.stats.kept, 1);
+    }
+
+    let library = Library::open(&database)?;
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&orbits)
+        },
+    )?;
+
+    let rows = all(&library)?;
+    let landed: Vec<Track> = rows
+        .iter()
+        .filter(|track| track.delivered)
+        .cloned()
+        .collect();
+    assert_eq!(titles(&landed), vec!["San Tropez"]);
+    assert_eq!(rows.len(), 4);
+    Ok(())
+}
+
+#[test]
 fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

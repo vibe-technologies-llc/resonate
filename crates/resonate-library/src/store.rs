@@ -772,7 +772,14 @@ pub fn apply(
     record: &TrackRecord,
     generation: i64,
     extract_cover_art: bool,
-) -> Result<()> {
+) -> Result<bool> {
+    if delivered_at(tx, record)? {
+        tracing::debug!(
+            path = %record.path.display(),
+            "leaving a delivered row to the delivery rather than to the root it was walked under"
+        );
+        return Ok(false);
+    }
     let (owner, performer) = attribution(&record.tags);
     let owner_id = match owner {
         Some(billed) => Some(artist(tx, cache, billed)?),
@@ -799,7 +806,19 @@ pub fn apply(
     };
 
     let stored = track(tx, record, performer_id, album_id, generation)?;
-    index(tx, &stored, record)
+    index(tx, &stored, record)?;
+    Ok(true)
+}
+
+fn delivered_at(tx: &Transaction<'_>, record: &TrackRecord) -> Result<bool> {
+    let path = path_text(&record.path)?;
+    let (span_start, _) = span_columns(record.span);
+    tx.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM tracks
+                         WHERE path = ?1 AND span_start = ?2 AND root_id IS NULL)",
+    )
+    .and_then(|mut statement| statement.query_row(params![path, span_start], |row| row.get(0)))
+    .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {

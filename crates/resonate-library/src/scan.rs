@@ -444,10 +444,18 @@ fn run(
     let walker = {
         let options = options.clone();
         let progress = Arc::clone(progress);
+        let vault = inner.vault_root().map(Path::to_path_buf);
         thread::Builder::new()
             .name("resonate-walk".to_owned())
             .spawn(move || {
-                let outcome = walk_all(&known, &roots, &options, &progress, &work_tx);
+                let outcome = walk_all(
+                    &known,
+                    &roots,
+                    &options,
+                    &progress,
+                    &work_tx,
+                    vault.as_deref(),
+                );
                 drop(work_tx);
                 outcome
             })
@@ -617,34 +625,35 @@ fn walk_all(
     options: &ScanOptions,
     progress: &ScanProgress,
     work: &Sender<Job>,
+    vault: Option<&Path>,
 ) -> Result<()> {
     let mut visited = AHashSet::new();
     for root in roots {
-        walk(known, root, options, progress, work, &mut visited)?;
+        let walking = Walking {
+            known,
+            root,
+            options,
+            progress,
+            work,
+            vault,
+        };
+        walk(&walking, &mut visited)?;
     }
     Ok(())
 }
 
-fn walk(
-    known: &Known,
-    root: &Root,
-    options: &ScanOptions,
-    progress: &ScanProgress,
-    work: &Sender<Job>,
-    visited: &mut AHashSet<PathBuf>,
-) -> Result<()> {
-    let walking = Walking {
-        known,
-        root,
-        options,
-        progress,
-        work,
-    };
-    let mut stack = vec![(root.path.clone(), 1_u8)];
+fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
+    let Walking {
+        options, progress, ..
+    } = *walking;
+    let mut stack = vec![(walking.root.path.clone(), 1_u8)];
 
     while let Some((directory, depth)) = stack.pop() {
         if progress.is_cancelled() {
             return Ok(());
+        }
+        if walking.is_the_vault(&directory) {
+            continue;
         }
         if depth > MAX_DEPTH.get() {
             tracing::warn!(
@@ -694,7 +703,7 @@ fn walk(
                 }
             };
 
-            if kind.is_symlink() && metadata.is_dir() && !followed(&path, visited) {
+            if kind.is_symlink() && metadata.is_dir() && !followed(&path, visited, walking) {
                 continue;
             }
             if metadata.is_dir() {
@@ -711,17 +720,20 @@ fn walk(
             }
         }
 
-        if !directory_of(&walking, &sheets, &audio)? {
+        if !directory_of(walking, &sheets, &audio)? {
             return Ok(());
         }
     }
     Ok(())
 }
 
-fn followed(path: &Path, visited: &mut AHashSet<PathBuf>) -> bool {
+fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>) -> bool {
     let Ok(target) = path.canonicalize() else {
         return false;
     };
+    if walking.is_the_vault(&target) {
+        return false;
+    }
     if visited.insert(target) {
         return true;
     }
@@ -739,6 +751,20 @@ struct Walking<'a> {
     options: &'a ScanOptions,
     progress: &'a ScanProgress,
     work: &'a Sender<Job>,
+    vault: Option<&'a Path>,
+}
+
+impl Walking<'_> {
+    fn is_the_vault(&self, directory: &Path) -> bool {
+        let inside = self.vault.is_some_and(|vault| directory.starts_with(vault));
+        if inside {
+            tracing::debug!(
+                path = %directory.display(),
+                "stepping past the vault, whose objects the catalog names by the rows they came from"
+            );
+        }
+        inside
+    }
 }
 
 fn directory_of(
@@ -797,6 +823,7 @@ fn sheet_job(
         options,
         progress,
         work,
+        ..
     } = walking;
     let (file, metadata) = held;
     let tracks = cut.audio_tracks().count();
@@ -857,6 +884,7 @@ fn whole_file_job(walking: &Walking<'_>, path: &Path, metadata: &Metadata) -> Re
         options,
         progress,
         work,
+        ..
     } = walking;
     progress.discovered.fetch_add(1, Ordering::Relaxed);
     let Some(text) = path.to_str() else {
@@ -1564,13 +1592,16 @@ fn commit(
             match outcome {
                 Outcome::Seen(id) => store::touch(transaction, *id, generation)?,
                 Outcome::Store(record) => {
-                    store::apply(
+                    let stored = store::apply(
                         transaction,
                         cache,
                         record,
                         generation,
                         options.extract_cover_art,
                     )?;
+                    if !stored {
+                        continue;
+                    }
                     if record.existing.is_some() {
                         updated += 1;
                     } else {

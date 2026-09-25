@@ -447,6 +447,10 @@ impl Drop for Reader<'_> {
 }
 
 impl Inner {
+    pub(crate) fn vault_root(&self) -> Option<&Path> {
+        self.vault.as_deref().map(Vault::root)
+    }
+
     fn opened_vault(&self) -> Result<&Arc<Vault>> {
         self.vault.as_ref().ok_or(Error::NoVault)
     }

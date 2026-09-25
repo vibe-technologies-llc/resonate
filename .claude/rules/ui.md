@@ -1255,9 +1255,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   went rather than forgetting it and counting it anew. A path
   *changed* — an audio file or a sheet made, written or renamed in, a folder made or renamed in
   whatever its name holds, `Dr. Dre` as readily as `Meddle`, a sheet taken away — notes its root, and `settled` hands the root out once it has been quiet for
-  `ROOTS_QUIET_FOR`. An inotify queue that overflowed notes every root. A catalog or a vault kept
-  inside a root cannot set off the scan that writes it, because neither writes audio or sheets
-  there. The model's `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY`, a quarter second: it
+  `ROOTS_QUIET_FOR`. An inotify queue that overflowed notes every root. A catalog kept inside a
+  root cannot set off the scan that writes it, because it writes no audio or sheets there; a vault
+  kept inside one does, since its objects are audio, and the scan that follows steps past it. The model's `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY`, a quarter second: it
   rebuilds the watch wherever `Library::roots` moved — `RootsWatch::taking_over` carrying every
   root and path the old watch had heard and not yet handed out onto the new one with the moment
   each was heard, so a drive coming or going costs no other root a change still settling, and a

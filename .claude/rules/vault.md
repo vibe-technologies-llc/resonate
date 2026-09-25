@@ -193,6 +193,12 @@ rule of the day, which `library.md`'s migration steps have since replaced.
   ReplayGain the engine resolves its gain from, and `tracks.lyrics`, which the scan keeps for
   exactly this. An object that will not open falls back to the row's own file. `resonate info`,
   the scan and the import open through sources with no stand-in, so they always read the file.
+- **A vault kept inside a scanned root is not part of the library it holds.** The walk steps past
+  the open vault's root, a link into it included, so an object is never scanned as a track of its
+  own titled by its digest; and `store::apply` leaves a row with no root alone wherever a scan
+  reaches one anyway — a catalog opened without its vault — so a delivery keeps its name, its
+  pairing and its place outside every root. `a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own`
+  and `a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root` are the claims.
 - **`vault_path` is denormalised beside the key on purpose.** The stand-in reads it by the row's
   own unique key, so resolving an open is one indexed read rather than a join through
   `vault_objects`.
