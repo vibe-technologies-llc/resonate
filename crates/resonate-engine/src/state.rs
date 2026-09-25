@@ -12,8 +12,8 @@ use resonate_pipewire::{NodeName, SinkId, SinkInfo, Words};
 
 use crate::{
     Asleep, BluetoothWake, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase,
-    Levelling, NoiseShaping, OutputMode, Quality, Queued, RepeatMode, ReplayGainMode, Restoration,
-    SkipUnderRepeat, Tapped,
+    Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality, Queued, RepeatMode,
+    ReplayGainMode, Restoration, SkipUnderRepeat, Tapped,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -72,6 +72,7 @@ pub struct PlayerState {
     pub volume: Volume,
     pub repeat: RepeatMode,
     pub skip_under_repeat: SkipUnderRepeat,
+    pub previous_restarts: PreviousRestarts,
     pub shuffle: bool,
     pub queue_position: Option<usize>,
     pub loaded_position: Option<usize>,
@@ -90,6 +91,7 @@ impl Default for PlayerState {
             volume: Volume::MAX,
             repeat: RepeatMode::Off,
             skip_under_repeat: SkipUnderRepeat::default(),
+            previous_restarts: PreviousRestarts::default(),
             shuffle: false,
             queue_position: None,
             loaded_position: None,

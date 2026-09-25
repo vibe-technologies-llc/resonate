@@ -1,7 +1,7 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
-use resonate_core::{Frames, Resumption, Span, Volume};
+use resonate_core::{Frames, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration};
 use resonate_pipewire::NodeName;
 
@@ -20,6 +20,34 @@ pub enum SkipUnderRepeat {
     #[default]
     RepeatsTheQueue,
     KeepsRepeatingTheTrack,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PreviousRestarts {
+    #[default]
+    RestartsTheTrack,
+    AlwaysGoesBack,
+}
+
+impl PreviousRestarts {
+    pub const OPENING: Duration = Duration::from_secs(3);
+
+    pub fn starts_the_track_over(
+        self,
+        heard: Frames,
+        duration: Option<Frames>,
+        rate: SampleRate,
+    ) -> bool {
+        if self != Self::RestartsTheTrack {
+            return false;
+        }
+        let opening = Frames::from_duration(Self::OPENING, rate);
+        let past_a_short_track = match duration {
+            Some(length) => length > opening,
+            None => true,
+        };
+        past_a_short_track && heard > opening
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +81,7 @@ pub enum Command {
     SetVolume(Volume),
     SetRepeat(RepeatMode),
     SetSkipUnderRepeat(SkipUnderRepeat),
+    SetPreviousRestarts(PreviousRestarts),
     SetShuffle(bool),
     SetSink(Option<NodeName>),
     SetQuality(Quality),
@@ -92,6 +121,7 @@ pub enum CommandKind {
     SetVolume,
     SetRepeat,
     SetSkipUnderRepeat,
+    SetPreviousRestarts,
     SetShuffle,
     SetSink,
     SetQuality,
@@ -131,6 +161,7 @@ impl CommandKind {
             Self::SetVolume => "the volume",
             Self::SetRepeat => "repeat",
             Self::SetSkipUnderRepeat => "what a skip does to repeat",
+            Self::SetPreviousRestarts => "what previous does past the opening",
             Self::SetShuffle => "shuffle",
             Self::SetSink => "the device",
             Self::SetQuality => "the resampler",
@@ -179,6 +210,7 @@ impl Command {
             Self::SetVolume(_) => CommandKind::SetVolume,
             Self::SetRepeat(_) => CommandKind::SetRepeat,
             Self::SetSkipUnderRepeat(_) => CommandKind::SetSkipUnderRepeat,
+            Self::SetPreviousRestarts(_) => CommandKind::SetPreviousRestarts,
             Self::SetShuffle(_) => CommandKind::SetShuffle,
             Self::SetSink(_) => CommandKind::SetSink,
             Self::SetQuality(_) => CommandKind::SetQuality,
@@ -289,5 +321,34 @@ impl Landing {
             Err(RecvTimeoutError::Timeout) => Err(Error::CommandPending { command: self.kind }),
             Err(RecvTimeoutError::Disconnected) => Err(Error::EngineStopped),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_restarts_only_once_the_song_is_past_its_opening() {
+        let rate = SampleRate::HZ_44100;
+        let opening = Frames::from_duration(PreviousRestarts::OPENING, rate);
+        let long = Some(Frames(opening.get() * 2));
+        let restarts = PreviousRestarts::RestartsTheTrack;
+
+        assert_eq!(PreviousRestarts::OPENING, Duration::from_secs(3));
+        assert!(!restarts.starts_the_track_over(Frames::ZERO, long, rate));
+        assert!(!restarts.starts_the_track_over(opening, long, rate));
+        assert!(restarts.starts_the_track_over(Frames(opening.get() + 1), long, rate));
+
+        let just_past = Some(Frames(opening.get() + 1));
+        assert!(!restarts.starts_the_track_over(opening, just_past, rate));
+        assert!(restarts.starts_the_track_over(Frames(opening.get() + 1), just_past, rate));
+        assert!(!restarts.starts_the_track_over(Frames(opening.get() + 1), Some(opening), rate));
+        assert!(restarts.starts_the_track_over(Frames(opening.get() + 1), None, rate));
+        assert!(!PreviousRestarts::AlwaysGoesBack.starts_the_track_over(
+            Frames(opening.get() + 1),
+            long,
+            rate
+        ));
     }
 }

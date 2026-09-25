@@ -823,10 +823,14 @@ impl Engine {
             }
             Command::Previous => {
                 self.failures = 0;
-                self.skipped_by_hand();
-                self.queue.retreat().ok_or(Error::QueueEmpty)?;
-                let started = self.start(Frames::ZERO);
-                self.past_what_will_not_open(started)
+                if self.restarts_the_track() {
+                    self.seek(Frames::ZERO)
+                } else {
+                    self.skipped_by_hand();
+                    self.queue.retreat().ok_or(Error::QueueEmpty)?;
+                    let started = self.start(Frames::ZERO);
+                    self.past_what_will_not_open(started)
+                }
             }
             Command::JumpTo(item) => self.hear(item),
             Command::SetVolume(volume) => {
@@ -839,6 +843,10 @@ impl Engine {
             }
             Command::SetSkipUnderRepeat(skip) => {
                 self.config.skip_under_repeat = skip;
+                Ok(())
+            }
+            Command::SetPreviousRestarts(previous) => {
+                self.config.previous_restarts = previous;
                 Ok(())
             }
             Command::SetShuffle(shuffle) => {
@@ -1057,6 +1065,20 @@ impl Engine {
         }
         let started = self.start(Frames::ZERO);
         self.past_what_will_not_open(started)
+    }
+
+    fn restarts_the_track(&mut self) -> bool {
+        let Some((rate, duration)) = self
+            .track
+            .as_ref()
+            .map(|track| (track.source().rate, track.info.duration))
+        else {
+            return false;
+        };
+        let heard = self.heard_position();
+        self.config
+            .previous_restarts
+            .starts_the_track_over(heard, duration, rate)
     }
 
     fn skipped_by_hand(&mut self) {
@@ -1973,6 +1995,7 @@ impl Engine {
             volume: self.config.volume,
             repeat: self.queue.repeat(),
             skip_under_repeat: self.config.skip_under_repeat,
+            previous_restarts: self.config.previous_restarts,
             shuffle: self.queue.shuffle(),
             queue_position: self.queue.cursor(),
             loaded_position: self.queue.position(),

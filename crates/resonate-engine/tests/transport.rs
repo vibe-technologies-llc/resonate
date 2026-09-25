@@ -23,9 +23,9 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Command, DitherKind, EngineConfig,
     Equalisation, Error as EngineError, Event, Frequency, Hinting, Media, MediaProvider, NodeName,
-    OutputMode, Placement, PlaybackState, Player, Preamp, Profile, Q, QueueItem, Reading,
-    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
+    OutputMode, Placement, PlaybackState, Player, Preamp, PreviousRestarts, Profile, Q, QueueItem,
+    Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats,
+    SinkId, SinkInfo, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
     StreamEvent, StreamRequest, Surveyor, Tapped, Until, Words, stamp_of,
 };
 
@@ -1334,6 +1334,189 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
     player.request(Command::Next)?.wait_for(PATIENCE)?;
     assert_eq!(player.state().repeat, RepeatMode::Off);
     Ok(())
+}
+
+#[test]
+fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_it() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, RATE as usize * 8);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let past = Frames(u64::from(RATE) * 5);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 1,
+        autoplay: true,
+    })?;
+    wait_for(&player, |player| plays(player, 2), "the second row to play");
+    assert_eq!(
+        player.state().previous_restarts,
+        PreviousRestarts::RestartsTheTrack
+    );
+
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 1),
+        "previous to leave a song still in its opening",
+    );
+
+    player.request(Command::Next)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 2),
+        "next to return to the second row",
+    );
+    player.request(Command::Seek(past))?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| heard_past(player, 3),
+        "the seek to pass the opening",
+    );
+    let seeks = player.state().seeks;
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    let restarted = player.state();
+    assert_eq!(restarted.current.map(|track| track.id.get()), Some(2));
+    assert_eq!(restarted.queue_position, Some(1));
+    assert!(
+        restarted
+            .current
+            .is_some_and(|track| track.position.get() < u64::from(RATE)),
+        "previous past the opening left the song where it was, at {}",
+        restarted
+            .current
+            .map(|track| track.position.get())
+            .unwrap_or(0)
+    );
+    assert_ne!(restarted.seeks, seeks);
+
+    player.request(Command::Seek(past))?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| heard_past(player, 3),
+        "the seek before a pause to pass the opening",
+    );
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    wait_for(&player, paused, "the transport to pause");
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| paused(player) && plays(player, 2) && near_the_start(player),
+        "previous while paused to restart the song and stay paused",
+    );
+    let paused_at_the_start = player.state();
+    assert_eq!(paused_at_the_start.playback, PlaybackState::Paused);
+    assert_eq!(
+        paused_at_the_start.current.map(|track| track.id.get()),
+        Some(2)
+    );
+    assert!(
+        paused_at_the_start
+            .current
+            .is_some_and(|track| track.position.get() < u64::from(RATE)),
+        "previous while paused left the song at {}",
+        paused_at_the_start
+            .current
+            .map(|track| track.position.get())
+            .unwrap_or(0)
+    );
+    player.request(Command::Play)?.wait_for(PATIENCE)?;
+    wait_for(&player, playing, "play to resume on the restarted song");
+
+    player
+        .request(Command::SetRepeat(RepeatMode::Track))?
+        .wait_for(PATIENCE)?;
+    player.request(Command::Seek(past))?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| heard_past(player, 3),
+        "the seek under repeat to pass the opening",
+    );
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    let repeating = player.state();
+    assert_eq!(repeating.repeat, RepeatMode::Track);
+    assert_eq!(repeating.current.map(|track| track.id.get()), Some(2));
+
+    player
+        .request(Command::SetRepeat(RepeatMode::Off))?
+        .wait_for(PATIENCE)?;
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 1),
+        "previous inside the opening to go back",
+    );
+
+    player.request(Command::Next)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 2),
+        "next to the second row again",
+    );
+    player
+        .request(Command::SetPreviousRestarts(
+            PreviousRestarts::AlwaysGoesBack,
+        ))?
+        .wait_for(PATIENCE)?;
+    assert_eq!(
+        player.state().previous_restarts,
+        PreviousRestarts::AlwaysGoesBack
+    );
+    player.request(Command::Seek(past))?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| heard_past(player, 3),
+        "the seek under the other policy to pass the opening",
+    );
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 1),
+        "previous to go back once the restart is off",
+    );
+    Ok(())
+}
+
+#[test]
+fn previous_leaves_a_song_shorter_than_the_opening() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 1,
+        autoplay: true,
+    })?;
+    wait_for(&player, |player| plays(player, 2), "the second row to play");
+    player
+        .request(Command::Seek(Frames(FRAMES as u64 / 2)))?
+        .wait_for(PATIENCE)?;
+    player.request(Command::Previous)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| plays(player, 1),
+        "previous to leave a song shorter than the opening",
+    );
+    Ok(())
+}
+
+fn heard_past(player: &Player, seconds: u64) -> bool {
+    player
+        .state()
+        .current
+        .is_some_and(|track| track.position.get() > u64::from(RATE) * seconds)
+}
+
+fn near_the_start(player: &Player) -> bool {
+    player
+        .state()
+        .current
+        .is_some_and(|track| track.position.get() < u64::from(RATE))
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::{
 };
 
 use resonate_core::{Appearance, Presence, ScrollbarMode};
-use resonate_engine::{Command, EngineConfig, OutputSettings, SkipUnderRepeat};
+use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
 use crate::{Tabs, WindowButtons, views::settings::find::Group};
@@ -34,6 +34,7 @@ pub(crate) struct Standing {
     pub(crate) listening_for: Duration,
     pub(crate) resume: bool,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
+    pub(crate) previous_restarts: PreviousRestarts,
     pub(crate) notify: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
@@ -60,6 +61,7 @@ impl Standing {
             listening_for: CLIP_BY_DEFAULT,
             resume: RESUME,
             skip_under_repeat: SkipUnderRepeat::default(),
+            previous_restarts: PreviousRestarts::default(),
             notify: NOTIFY,
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
@@ -101,6 +103,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Studies => standing.studies != STUDY,
         Group::Resuming => standing.resume != RESUME,
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
+        Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
         Group::Notifications => standing.notify != NOTIFY,
         Group::Discord => {
             let (worn, off) = (&standing.presence, &Presence::OFF);
@@ -169,6 +172,9 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         Group::TruePeak => vec![Command::SetTruePeak(built.true_peak)],
         Group::LossySources => vec![Command::SetRestoration(built.restoration)],
         Group::Repeating => vec![Command::SetSkipUnderRepeat(SkipUnderRepeat::default())],
+        Group::PreviousButton => {
+            vec![Command::SetPreviousRestarts(PreviousRestarts::default())]
+        }
         Group::Equalising | Group::BoundTo => {
             vec![Command::SetEqualisation(Arc::clone(&built.equaliser))]
         }
@@ -264,6 +270,7 @@ mod tests {
                     | Group::Equalising
                     | Group::BoundTo
                     | Group::Repeating
+                    | Group::PreviousButton
             );
 
             assert_eq!(

@@ -13,7 +13,7 @@ use resonate_dsp::{
 };
 use resonate_pipewire::{NodeName, SinkInfo};
 
-use crate::{SkipUnderRepeat, seed};
+use crate::{PreviousRestarts, SkipUnderRepeat, seed};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Equalisation {
@@ -55,6 +55,7 @@ pub struct EngineConfig {
     pub volume: Volume,
     pub equaliser: Arc<Equalisation>,
     pub skip_under_repeat: SkipUnderRepeat,
+    pub previous_restarts: PreviousRestarts,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -106,6 +107,7 @@ impl Default for EngineConfig {
             volume: Volume::MAX,
             equaliser: Arc::new(Equalisation::default()),
             skip_under_repeat: SkipUnderRepeat::default(),
+            previous_restarts: PreviousRestarts::default(),
         }
     }
 }

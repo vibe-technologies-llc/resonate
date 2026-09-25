@@ -8,8 +8,8 @@ use resonate_core::{
     Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
-    DitherKind, FilterPhase, NodeName, NoiseShaping, Quality, ReplayGainMode, Restoration,
-    SkipUnderRepeat,
+    DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
+    Restoration, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_listen::Listening;
@@ -54,6 +54,7 @@ pub enum SettingKey {
     EqualiserProfile,
     Resume,
     SkipUnderRepeat,
+    PreviousRestarts,
     OrganiseAs,
     Notify,
     MinimiseButton,
@@ -74,7 +75,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 52] = [
+    pub const ALL: [Self; 53] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -110,6 +111,7 @@ impl SettingKey {
         Self::EqualiserProfile,
         Self::Resume,
         Self::SkipUnderRepeat,
+        Self::PreviousRestarts,
         Self::OrganiseAs,
         Self::Notify,
         Self::MinimiseButton,
@@ -170,6 +172,7 @@ pub enum Setting {
     EqualiserProfile(Option<Binding>),
     Resume(bool),
     SkipUnderRepeat(SkipUnderRepeat),
+    PreviousRestarts(PreviousRestarts),
     OrganiseAs(String),
     Notify(bool),
     MinimiseButton(bool),
@@ -227,6 +230,7 @@ impl Setting {
             Self::EqualiserProfile(_) => SettingKey::EqualiserProfile,
             Self::Resume(_) => SettingKey::Resume,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
+            Self::PreviousRestarts(_) => SettingKey::PreviousRestarts,
             Self::OrganiseAs(_) => SettingKey::OrganiseAs,
             Self::Notify(_) => SettingKey::Notify,
             Self::MinimiseButton(_) => SettingKey::MinimiseButton,

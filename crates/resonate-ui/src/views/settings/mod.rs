@@ -386,6 +386,7 @@ impl RootView {
             Group::Inbox => self.inbox_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::Repeating => self.repeating_group(cx),
+            Group::PreviousButton => self.previous_group(cx),
             Group::Lookups => self.lookups_group(cx),
             Group::AfterScan => self.after_scan_group(cx),
             Group::Studies => self.studies_group(cx),
@@ -536,6 +537,7 @@ impl RootView {
         let studies = library.studies();
         let resume = library.resumes();
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
+        let previous_restarts = self.player.read(cx).state().previous_restarts;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
@@ -566,6 +568,7 @@ impl RootView {
             listening_for,
             resume,
             skip_under_repeat,
+            previous_restarts,
             notify,
             window_buttons,
             scroll_volume,

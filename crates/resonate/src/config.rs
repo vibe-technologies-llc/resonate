@@ -16,7 +16,8 @@ use resonate_core::{
     Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
-    DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration, SkipUnderRepeat,
+    DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode, Restoration,
+    SkipUnderRepeat,
 };
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::Layout;
@@ -111,6 +112,7 @@ pub struct Config {
     pub enrich_after_scan: Option<bool>,
     pub study: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
+    pub previous_restarts: Option<bool>,
     pub contact: Option<String>,
     pub read_from: Option<PathBuf>,
     pub acoustid_key: Option<String>,
@@ -209,6 +211,13 @@ impl Config {
         match self.skip_repeats_queue {
             Some(false) => SkipUnderRepeat::KeepsRepeatingTheTrack,
             Some(true) | None => SkipUnderRepeat::RepeatsTheQueue,
+        }
+    }
+
+    pub fn previous_restarts(&self) -> PreviousRestarts {
+        match self.previous_restarts {
+            Some(false) => PreviousRestarts::AlwaysGoesBack,
+            Some(true) | None => PreviousRestarts::RestartsTheTrack,
         }
     }
 
@@ -398,6 +407,9 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::Study => config.study = Some(at.boolean(value)?),
             ConfigKey::SkipRepeatsQueue => {
                 config.skip_repeats_queue = Some(at.boolean(value)?);
+            }
+            ConfigKey::PreviousRestarts => {
+                config.previous_restarts = Some(at.boolean(value)?);
             }
             ConfigKey::Contact => config.contact = given(at.string(value)?),
             ConfigKey::AcoustidKey => config.acoustid_key = given(at.string(value)?),
@@ -996,6 +1008,24 @@ mod tests {
         assert_eq!(
             config.skip_under_repeat(),
             SkipUnderRepeat::KeepsRepeatingTheTrack
+        );
+    }
+
+    #[test]
+    fn previous_restarts_by_default_and_is_turned_off_by_its_key() {
+        let config = read("").expect("empty is valid");
+        assert_eq!(
+            config.previous_restarts(),
+            PreviousRestarts::RestartsTheTrack
+        );
+
+        let config = read("previous-restarts = false").expect("a well formed document");
+        assert_eq!(config.previous_restarts(), PreviousRestarts::AlwaysGoesBack);
+
+        let config = read("previous-restarts = true").expect("a well formed document");
+        assert_eq!(
+            config.previous_restarts(),
+            PreviousRestarts::RestartsTheTrack
         );
     }
 

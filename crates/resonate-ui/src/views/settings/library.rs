@@ -7,7 +7,7 @@ use gpui::{
     Context, Div, ElementId, PathPromptOptions, SharedString, Stateful, Window, div, prelude::*,
     px, rgb,
 };
-use resonate_engine::{Command, SkipUnderRepeat};
+use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{
     Failure, Failures, ImportStats, ImportSummary, Layout, OrganiseStats, OrganiseSummary,
     PollStats, RetagStats, RetagSummary, ScanStats, Wanted, Written,
@@ -415,6 +415,31 @@ impl RootView {
             move |this, _, cx| {
                 this.send(Command::SetSkipUnderRepeat(flipped), cx);
                 this.store(&Setting::SkipUnderRepeat(flipped), cx);
+            },
+            cx,
+        ))
+    }
+
+    pub(super) fn previous_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let policy = self.player.read(cx).state().previous_restarts;
+        let restarts = policy == PreviousRestarts::RestartsTheTrack;
+        let flipped = if restarts {
+            PreviousRestarts::AlwaysGoesBack
+        } else {
+            PreviousRestarts::RestartsTheTrack
+        };
+
+        kit::section_body().child(self.in_the_ring(
+            "previous-restarts",
+            switch_row(
+                "Previous restarts the song",
+                "Off, previous always goes back a track",
+                restarts,
+                "previous-restarts",
+            ),
+            move |this, _, cx| {
+                this.send(Command::SetPreviousRestarts(flipped), cx);
+                this.store(&Setting::PreviousRestarts(flipped), cx);
             },
             cx,
         ))

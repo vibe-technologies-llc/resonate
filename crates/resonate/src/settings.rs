@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use clap::ValueEnum;
 use resonate_core::Trim;
 use resonate_engine::{
-    DitherKind, FilterPhase, NodeName, NoiseShaping, Quality, ReplayGainMode, SkipUnderRepeat,
+    DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
+    SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_ui::{Setting, SettingKey, Settings};
@@ -117,6 +118,10 @@ impl Settings for File {
             Setting::SkipUnderRepeat(skip) => (
                 ConfigKey::SkipRepeatsQueue,
                 Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
+            ),
+            Setting::PreviousRestarts(previous) => (
+                ConfigKey::PreviousRestarts,
+                Some((*previous == PreviousRestarts::RestartsTheTrack).into()),
             ),
             Setting::Contact(contact) => {
                 let contact = contact.trim();
@@ -244,6 +249,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
         SettingKey::Study => ConfigKey::Study,
         SettingKey::SkipUnderRepeat => ConfigKey::SkipRepeatsQueue,
+        SettingKey::PreviousRestarts => ConfigKey::PreviousRestarts,
         SettingKey::Contact => ConfigKey::Contact,
         SettingKey::AcoustidKey => ConfigKey::AcoustidKey,
         SettingKey::AuddToken => ConfigKey::AuddToken,

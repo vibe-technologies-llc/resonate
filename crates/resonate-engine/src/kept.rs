@@ -182,6 +182,7 @@ mod tests {
             volume: Volume::MAX,
             repeat: RepeatMode::Off,
             skip_under_repeat: crate::SkipUnderRepeat::default(),
+            previous_restarts: crate::PreviousRestarts::default(),
             shuffle: false,
             queue_position: Some(row),
             loaded_position: Some(row),

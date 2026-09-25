@@ -42,6 +42,7 @@ pub enum ConfigKey {
     EqualiserProfile,
     Resume,
     SkipRepeatsQueue,
+    PreviousRestarts,
     OrganiseAs,
     Notify,
     MinimiseButton,
@@ -67,7 +68,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 54] = [
+    pub const ALL: [Self; 55] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -100,6 +101,7 @@ impl ConfigKey {
         Self::EqualiserProfile,
         Self::Resume,
         Self::SkipRepeatsQueue,
+        Self::PreviousRestarts,
         Self::OrganiseAs,
         Self::Notify,
         Self::MinimiseButton,
@@ -153,6 +155,7 @@ impl ConfigKey {
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::Study => "study",
             Self::SkipRepeatsQueue => "skip-repeats-queue",
+            Self::PreviousRestarts => "previous-restarts",
             Self::Contact => "contact",
             Self::Equaliser => "equaliser",
             Self::EqualiserFor => "equaliser-for",

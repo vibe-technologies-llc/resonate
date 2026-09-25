@@ -925,15 +925,28 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   as it is set, so a `SetSleep` of `u64::MAX` seconds or a minute count `resonate sleep` saturated
   is a timer that reads back as a day rather than an `Instant` overflowing on the engine thread.
 - **A skip while one track repeats repeats the queue instead, unless the listener said otherwise.**
-  `Command::Next` and `Command::Previous` are a person's skip — the end of a track reaches `skip`
-  as `natural` and never through either — so `skipped_by_hand` turns `RepeatMode::Track` into
-  `RepeatMode::Queue` before it moves, the way a streaming player does, and a skip past the last
-  row then wraps rather than stopping. `EngineConfig::skip_under_repeat` is the policy,
-  `SkipUnderRepeat::KeepsRepeatingTheTrack` the way out, `Command::SetSkipUnderRepeat` sets it and
-  `PlayerState::skip_under_repeat` publishes it; it lives in the engine rather than in the window
-  so a media key, an MPRIS `Next` and `resonate play`'s `n` all obey it. A jump to a chosen row is
-  not a skip and leaves the repeat alone. The `skip-repeats-queue` key and the Library category's
-  *Repeating a track* are where it is set.
+  `Command::Next` is a person's skip, and so is `Command::Previous` when it goes back a track —
+  the end of a track reaches `skip` as `natural` and never through either — so `skipped_by_hand`
+  turns `RepeatMode::Track` into `RepeatMode::Queue` before it moves, the way a streaming player
+  does, and a skip past the last row then wraps rather than stopping. `EngineConfig::skip_under_repeat`
+  is the policy, `SkipUnderRepeat::KeepsRepeatingTheTrack` the way out, `Command::SetSkipUnderRepeat`
+  sets it and `PlayerState::skip_under_repeat` publishes it; it lives in the engine rather than in
+  the window so a media key, an MPRIS `Next` and `resonate play`'s `n` all obey it. A jump to a
+  chosen row is not a skip and leaves the repeat alone. The `skip-repeats-queue` key and the
+  Library category's *Repeating a track* are where it is set.
+- **Previous starts the song again once it is past its opening, unless the listener said otherwise.**
+  `PreviousRestarts::starts_the_track_over` reads the heard position — the same clock the scrubber
+  shows, the decoder less what the ring, the chain and the sink still hold — against
+  `PreviousRestarts::OPENING`, three seconds. Past that, and where the policy is
+  `RestartsTheTrack`, `Command::Previous` seeks to the start and leaves the queue where it is, so
+  the window's button, a media key and an MPRIS `Previous` all restart rather than stepping back.
+  Inside those three seconds, on a track no longer than them, with no track open, or with the
+  policy `AlwaysGoesBack`, it retreats as it always did, `skipped_by_hand` included. A track whose
+  length is unknown is weighed on the heard position alone. A restart is
+  a seek, so it steps `Seeks` and clears the heard floor; a retreat runs `start`. The policy
+  defaults to restarting, `previous-restarts` is the key, `Command::SetPreviousRestarts` sets it
+  and `PlayerState::previous_restarts` publishes it. The Library category's *The previous button*
+  writes the key and sends the command, so it is live.
 - **What is published as the position never steps back within a stretch of listening.** The
   position is the decoder's less what the ring, the chain and the sink still hold, and the sink's
   latency is only known once a stream reports it, so every rebind and every seek used to publish

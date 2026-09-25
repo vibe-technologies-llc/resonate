@@ -1978,6 +1978,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         buffer: config.buffer.unwrap_or(defaults.buffer),
         equaliser: Arc::new(equaliser::resolved(config)),
         skip_under_repeat: config.skip_under_repeat(),
+        previous_restarts: config.previous_restarts(),
         ..defaults
     }
 }

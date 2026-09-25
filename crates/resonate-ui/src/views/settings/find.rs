@@ -109,6 +109,7 @@ pub(crate) enum Group {
     Inbox,
     Resuming,
     Repeating,
+    PreviousButton,
     Lookups,
     AfterScan,
     Studies,
@@ -132,7 +133,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 45] = [
+    pub(crate) const ALL: [Self; 46] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
@@ -158,6 +159,7 @@ impl Group {
         Self::Inbox,
         Self::Resuming,
         Self::Repeating,
+        Self::PreviousButton,
         Self::Lookups,
         Self::AfterScan,
         Self::Studies,
@@ -203,7 +205,8 @@ impl Group {
             | Self::Vault
             | Self::Inbox
             | Self::Resuming
-            | Self::Repeating => Category::Library,
+            | Self::Repeating
+            | Self::PreviousButton => Category::Library,
             Self::Lookups
             | Self::AfterScan
             | Self::Studies
@@ -254,6 +257,7 @@ impl Group {
             Self::Inbox => "The inbox",
             Self::Resuming => "Resuming",
             Self::Repeating => "Repeating a track",
+            Self::PreviousButton => "The previous button",
             Self::Lookups => "Reference lookups",
             Self::AfterScan => "After a scan",
             Self::Studies => "Studying tracks",
@@ -304,6 +308,7 @@ impl Group {
             Self::Inbox => INBOX_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::Repeating => REPEATING_HINT,
+            Self::PreviousButton => PREVIOUS_HINT,
             Self::Lookups => ONLINE_HINT,
             Self::AfterScan => AFTER_SCAN_HINT,
             Self::Studies => STUDIES_HINT,
@@ -386,6 +391,10 @@ impl Group {
             Self::Inbox => "provider poll wants missing download drop folder fill obtain supply",
             Self::Resuming => "queue restart restore carry on position where left off",
             Self::Repeating => "loop repeat one single track skip next previous spotify",
+            Self::PreviousButton => {
+                "restart replay beginning start over back previous button spotify apple first \
+                 seconds opening"
+            }
             Self::Lookups => "musicbrainz network internet covers lyrics lrclib offline",
             Self::AfterScan => "enrich automatic handover",
             Self::Studies => {
@@ -464,6 +473,7 @@ impl Group {
             Self::Inbox => &[SettingKey::Inbox],
             Self::Resuming => &[SettingKey::Resume],
             Self::Repeating => &[SettingKey::SkipUnderRepeat],
+            Self::PreviousButton => &[SettingKey::PreviousRestarts],
             Self::Lookups => &[SettingKey::Online],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
             Self::Studies => &[SettingKey::Study],
@@ -733,6 +743,13 @@ pub(crate) const REPEATING_HINT: &str = "What a skip does while one track is rep
                                          whole queue from there, the way a streaming player \
                                          does. Off, it moves on and repeats the track it lands \
                                          on instead.";
+
+pub(crate) const PREVIOUS_HINT: &str = "What previous does once a song is under way. On, \
+                                         previous starts the song again once it is past its \
+                                         first three seconds, and goes back a track while it \
+                                         is still in those. Off, previous always goes back a \
+                                         track. A song shorter than three seconds is left for \
+                                         the one before it.";
 
 pub(crate) const RESUMING_HINT: &str = "Whether the queue, the row it is on and how far through \
                                         that row are kept in the library for the next run. On, \

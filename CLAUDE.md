@@ -1036,15 +1036,15 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-fifty-four have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-six have none, so the
+fifty-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-seven have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `bluetooth-wake`,
 `bluetooth-lead-ms`, `bluetooth-awake-s`, `volume` and `buffer-ms`; the window's `theme`, `accent`, `text-size`, `minimise-button`,
 `maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab` and `tab-counts`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
-`equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `organise-as`, `notify`, `audd-token`,
+`equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
 `listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
 chosen with the Library category's *The inbox* group, which polls from the window as well — and
 the seven that shape a Discord presence, `discord`, `discord-app`, `discord-shows`, `discord-art`,
@@ -1053,7 +1053,10 @@ Discord groups and live the moment they are.
 `listen-from` is `desktop`, `microphone` or a microphone's node name and `listen-for` a whole
 number of seconds; `resonate listen --microphone` and `--seconds` outrank them for one run, and
 the Online category's *Listening* group and the Listen sheet's own chips write them.
-`ConfigKey::ALL` is the list. `enrich-after-scan` defaults to true and is
+`ConfigKey::ALL` is the list. `previous-restarts` defaults to true: previous starts the song
+again once the heard position is past its first three seconds, and goes back a track while it is
+still in those. The Library category's *The previous button* writes it, and it is live.
+`enrich-after-scan` defaults to true and is
 read by `resonate scan` and the window's scan alike; off, the reference is asked only by
 `resonate enrich`, the Library card's *Enrich* and the Online card's *Look up*. `study` defaults
 to true and is read by every lookup, from the command line or the window; off, no lookup starts
