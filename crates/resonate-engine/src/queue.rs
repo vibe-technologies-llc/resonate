@@ -649,6 +649,7 @@ impl Queue {
         self.order = order;
         self.next = next;
         self.revision = self.revision.wrapping_add(1);
+        self.stamp_what_is_playing_from();
     }
 
     fn unshuffle_alongside(&mut self, order: &[usize], next: &[usize]) {
@@ -790,7 +791,10 @@ impl Queue {
     fn rows_changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.stamp = stamp_of(&self.items);
+        self.stamp_what_is_playing_from();
+    }
 
+    fn stamp_what_is_playing_from(&mut self) {
         let mut waits = vec![false; self.items.len()];
         for index in &self.next {
             waits[*index] = true;
@@ -1909,6 +1913,44 @@ mod tests {
             .expect("the row moves back down");
         assert_eq!(numbered(&queue), [1, 90, 2, 3, 4]);
         assert_eq!(queue.playing_next(), Some(Span::one(1)));
+    }
+
+    #[test]
+    fn a_drag_across_the_queued_rows_moves_what_is_playing_from_and_a_drag_back_restores_it() {
+        let mut queue = loaded(4, 0);
+        queue.insert(vec![item(90)], Placement::Queued);
+        let playing_from = queue.playing_from();
+
+        queue
+            .move_rows(Span::one(4), 1)
+            .expect("an album row moves up into the queued rows");
+        let joined = queue.playing_from();
+        assert_ne!(
+            joined, playing_from,
+            "an album row left and the stamp stood"
+        );
+
+        queue
+            .move_rows(Span::one(1), 4)
+            .expect("the row moves back down into the album");
+        assert_eq!(queue.playing_from(), playing_from);
+
+        queue
+            .move_rows(Span::one(4), 3)
+            .expect("an album row moves within the album");
+        assert_eq!(numbered(&queue), [1, 90, 2, 4, 3]);
+        assert_eq!(queue.playing_next(), Some(Span::one(1)));
+        assert_eq!(queue.playing_from(), playing_from);
+
+        queue
+            .move_rows(Span::one(1), 3)
+            .expect("the queued row moves down into the album");
+        assert_eq!(queue.playing_next(), None);
+        assert_ne!(
+            queue.playing_from(),
+            playing_from,
+            "a queued row joined and the stamp stood"
+        );
     }
 
     #[test]

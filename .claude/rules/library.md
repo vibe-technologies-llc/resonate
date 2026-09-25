@@ -1971,8 +1971,10 @@ the pass.
   tear up. `Queue::rows_changed` restamps whenever a row arrives or leaves and the engine publishes
   it as `PlayerState::queue_stamp`, so an `Insert` or a `Remove` takes the badge off wherever it
   came from — `RootView::queue`, a row's ✕, or `AddTrack` and `RemoveTrack` over the bus without the
-  window in between. A reorder restamps nothing, because `move_rows` and `set_shuffle` move `order`
-  and not `items`, so a queue move and a shuffle both leave the playlist in play and
+  window in between. `Queue::split` restamps too, because a drag that crosses into or out of the
+  rows queued to play next changes which rows the queue plays from, and a drag back restores the
+  stamp it had. A reorder that keeps the same rows in `order` stamps the same, because the stamp
+  is read off `items` rather than `order`, so a queue move and a shuffle both leave the playlist in play and
   `PlayerState::loaded_position` still names the playlist row being heard. Three callers set it,
   each stamping the items it is about to send: `RootView::play_playlist`, `Collection::activate` and
   the binary's `play_queue`. MPRIS's `ActivePlaylist` reads the same cell through the same stamp, so
