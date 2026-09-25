@@ -1262,6 +1262,10 @@ impl LibraryModel {
         self.tracks_measured.rows
     }
 
+    pub(crate) fn catalog(&self) -> Arc<Library> {
+        Arc::clone(&self.library)
+    }
+
     pub(crate) fn listing_whole(&self) -> (Arc<Library>, TrackQuery) {
         let (album, artist) = match self.selection {
             Selection::Everything => (None, None),

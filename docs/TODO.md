@@ -56,8 +56,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   artists, albums and genres — and a query weighs a run of tokens as a name from every start and
   length up to `MOST_TOKENS_IN_A_NAME`. Neither has been measured against the 500k-track library
   the scan is written for
-- `names_in_the_queue` resolves the whole queue on the render thread on the first keystroke of a
-  jump, up to two SQLite reads a row
 - `resonate tag` and `resonate organise` read every scanned row into memory before planning
 - A cover is decoded once and resized to all three drawn sizes whether or not the grid is opened,
   at a fixed twice-the-cell that is exact only at a scale factor of 1 or 2

@@ -49,7 +49,7 @@ use crate::{
         missing::MissingShows,
         playlists::{self, Held, Naming, Rows},
         pointed::{self, LitUnderThePointer},
-        queue::{QueueLength, TakenBack},
+        queue::{QueueLength, QueueNames, TakenBack},
         reorder::{Creeping, Listed, Reach, Shift, Step},
         settings::{Category, FILTER_PLACEHOLDER, HeldBand, Plotted},
         slider::{Grab, Rail},
@@ -399,6 +399,7 @@ pub struct RootView {
     pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
+    pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
     pub(crate) resolved: RefCell<Option<Resolved>>,
     pub(crate) focus: FocusHandle,
@@ -703,6 +704,7 @@ impl RootView {
             muted_from: None,
             type_ahead: TypeAhead::default(),
             typing_stops: Task::ready(()),
+            queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
             resolved: RefCell::new(None),
             focus,
@@ -2073,45 +2075,38 @@ impl RootView {
         cx.notify();
     }
 
-    fn jumping(&mut self, cx: &mut Context<Self>) -> Option<(Shift, usize, Vec<String>)> {
+    fn jumping(&mut self, cx: &mut Context<Self>) -> Option<(Shift, usize)> {
         let (shift, held) = self.reachable(cx)?;
-        let names = match shift {
-            Shift::Queue => self.names_in_the_queue(cx),
+        match shift {
+            Shift::Queue => {}
             Shift::Playlist(_) | Shift::Listing(_) => return None,
-        };
+        }
         let from = self
             .reach_in(shift, held)
             .map_or_else(|| self.opening_row(shift, held, cx), |reach| reach.row);
 
-        Some((shift, from, names))
+        Some((shift, from))
     }
 
-    fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Vec<String> {
-        let queue = self.player.read(cx).queue();
-        let mut names = Vec::with_capacity(queue.len());
-        for item in queue.iter() {
-            let scanned = self.library.update(cx, |library, _| library.track_of(item));
-            names.push(match scanned {
-                Some(track) => track.title,
-                None => self
-                    .player
-                    .read(cx)
-                    .media(&item.location, item.span)
-                    .and_then(|info| info.tags.title.clone())
-                    .unwrap_or_else(|| format::stem(&item.location)),
-            });
+    pub(crate) fn jump_where_typed(&mut self, cx: &mut Context<Self>) {
+        if !self.type_ahead.is_live() {
+            return;
         }
-
-        names
+        let Some((shift, from)) = self.jumping(cx) else {
+            return;
+        };
+        if let Some(names) = self.names_in_the_queue(cx) {
+            self.jumped_to(shift, from, &names, cx);
+        }
     }
 
     fn typed_ahead(&mut self, letter: &str, cx: &mut Context<Self>) -> bool {
-        let Some((shift, from, names)) = self.jumping(cx) else {
+        if self.jumping(cx).is_none() {
             return false;
-        };
+        }
 
         self.type_ahead.took(letter, Instant::now());
-        self.jumped_to(shift, from, &names, cx);
+        self.jump_where_typed(cx);
         self.stops_typing_soon(cx);
         true
     }
@@ -2122,9 +2117,7 @@ impl RootView {
         }
 
         self.type_ahead.dropped_a_letter(Instant::now());
-        if let Some((shift, from, names)) = self.jumping(cx) {
-            self.jumped_to(shift, from, &names, cx);
-        }
+        self.jump_where_typed(cx);
         self.stops_typing_soon(cx);
         true
     }

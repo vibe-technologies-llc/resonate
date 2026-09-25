@@ -166,6 +166,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   tested the way `Following` and `Step::landing` are. It folds through
   `resonate_library::folded_letters`, the same fold the search box and `artists.key` read, so
   *przybylowicz* reaches *Przybyłowicz* at the queue as it does in the search field.
+  **The names a jump reads are read off the render thread.** `QueueNames` holds the queue's titles
+  against the `Queued::revision` they were read at, and `names_in_the_queue` hands them out only
+  while that revision stands; otherwise it asks the background executor for them — by id, then by
+  path, then `Player::media`, then the stem, the same order the queue's own rows are drawn in — and
+  a keystroke before they land is still taken as a jump, which `jump_where_typed` makes once they
+  do. The queue pane asks as it draws, so the names are usually there before the first letter.
+  They used to be read on the first keystroke, on the render thread, at up to two SQLite reads a
+  row through a cache smaller than a long queue.
 - **Backspace drops a typed letter before it drops a reach.** A jump *sets* the reach, so the
   other order would have made backspacing a mistyped letter in the queue take the row the jump
   had just landed on out of it. `drop_typed` answers false whenever nothing is live, so with no

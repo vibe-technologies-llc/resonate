@@ -1,11 +1,12 @@
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, SharedString, div, prelude::*, px, rgb, uniform_list,
+    AnyElement, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
+    uniform_list,
 };
 use resonate_core::{Span, TrackId};
-use resonate_engine::{Command, Placement, QueueItem};
-use resonate_library::{Cut, Direction, Favoured, Lit, RowOrder};
+use resonate_engine::{Command, Placement, Player, QueueItem};
+use resonate_library::{Cut, Direction, Favoured, Library, Lit, RowOrder, Track};
 use smallvec::smallvec;
 
 use crate::{
@@ -25,6 +26,78 @@ use crate::{
         sorting,
     },
 };
+
+#[derive(Default)]
+pub(crate) struct QueueNames {
+    named: Option<(u64, Arc<[String]>)>,
+    asked: Option<u64>,
+    reading: Option<Task<()>>,
+}
+
+impl RootView {
+    pub(crate) fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Option<Arc<[String]>> {
+        let revision = self.player.read(cx).queued().revision;
+        if let Some((named, names)) = self.queue_names.named.as_ref()
+            && *named == revision
+        {
+            return Some(Arc::clone(names));
+        }
+        self.name_the_queue(revision, cx);
+        None
+    }
+
+    fn name_the_queue(&mut self, revision: u64, cx: &mut Context<Self>) {
+        if self.queue_names.asked == Some(revision) {
+            return;
+        }
+        self.queue_names.asked = Some(revision);
+        let queued = self.player.read(cx).queued();
+        let player = self.player.read(cx).engine();
+        let library = self.library.read(cx).catalog();
+
+        self.queue_names.reading = Some(cx.spawn(async move |this, cx| {
+            let names: Arc<[String]> = cx
+                .background_executor()
+                .spawn(async move {
+                    queued
+                        .rows
+                        .iter()
+                        .map(|item| queued_name(&library, &player, item))
+                        .collect()
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                this.queue_names.named = Some((revision, names));
+                this.jump_where_typed(cx);
+                cx.notify();
+            });
+            let _ = landed;
+        }));
+    }
+}
+
+fn queued_name(library: &Library, player: &Player, item: &QueueItem) -> String {
+    match queued_row(library, item) {
+        Some(track) => track.title,
+        None => player
+            .media(&item.location, item.span)
+            .and_then(|info| info.tags.title.clone())
+            .unwrap_or_else(|| format::stem(&item.location)),
+    }
+}
+
+fn queued_row(library: &Library, item: &QueueItem) -> Option<Track> {
+    match library.track(item.id) {
+        Ok(Some(track)) if track.location == item.location => return Some(track),
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "a queued track could not be read by id"),
+    }
+    library
+        .track_at(item.location.as_path()?, item.span)
+        .inspect_err(|error| tracing::warn!(%error, "a queued track could not be read by path"))
+        .ok()
+        .flatten()
+}
 
 fn queued_cut(item: &QueueItem) -> Cut {
     Cut {
@@ -143,6 +216,7 @@ impl Reaching {
 
 impl RootView {
     pub(crate) fn queue_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let _ = self.names_in_the_queue(cx);
         let queue = self.player.read(cx).queue();
         if queue.is_empty() {
             let nothing = empty(

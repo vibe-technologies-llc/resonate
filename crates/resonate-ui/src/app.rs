@@ -325,6 +325,10 @@ impl PlayerModel {
         self.queued.clone()
     }
 
+    pub(crate) fn engine(&self) -> Arc<Player> {
+        Arc::clone(&self.player)
+    }
+
     pub fn media(
         &self,
         location: &MediaLocation,
