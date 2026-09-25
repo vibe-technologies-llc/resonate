@@ -2006,7 +2006,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   album and year, which service named it, and *Listen again*, *Open* where the service gave a link
   and *Find it*, which is `search_instead` and `choose_pane(Pane::Tracks)` over the title and the
   artist, so a held track is one press away and a song not held lands on the search that lists
-  what the catalog and MusicBrainz know of it. The last `HEARD_KEPT` songs stay listed under it for
+  what the catalog and MusicBrainz know of it. Those buttons, and the *Listen* under an idle,
+  unknown, silent or unreached prompt, are drawn in `sheet_actions`, a row the width of the card
+  starting at the prompt's left edge — `kit::actions` is a heading's row, pushed right and held to
+  64 % of its parent, and in the sheet's column it stood the button off at the right of a line the
+  prompt and the recording bar both begin at the left. The last `HEARD_KEPT` songs stay listed under it for
   the run. *Desktop* and *Microphone* are a `kit::segmented` over the chips of the microphones
   PipeWire offers, listed each time the sheet opens, and a choice is written back as `listen-from`
   through the `Settings` seam; the Online category's *Listening* group writes the same key and

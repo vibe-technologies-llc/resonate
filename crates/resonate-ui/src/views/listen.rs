@@ -258,7 +258,7 @@ impl RootView {
 
     fn listen_again(&self, said: &str, cx: &mut Context<Self>) -> Div {
         listen_note(said.to_owned()).child(
-            kit::actions().child(
+            sheet_actions().child(
                 kit::button(
                     "listen-again",
                     Some(Icon::Listen),
@@ -342,7 +342,7 @@ impl RootView {
                     ),
             )
             .child(
-                kit::actions()
+                sheet_actions()
                     .child(
                         kit::button(
                             "listen-again",
@@ -415,6 +415,10 @@ impl RootView {
             },
         )
     }
+}
+
+fn sheet_actions() -> Div {
+    div().flex().flex_wrap().items_center().gap_1p5().w_full()
 }
 
 fn listen_note(said: String) -> Div {
