@@ -1560,10 +1560,26 @@ fn track(
              sheet_modified     = excluded.sheet_modified,
              seen               = excluded.seen,
              span_frames        = excluded.span_frames,
-             mbid               = excluded.mbid,
-             artist_mbid        = excluded.artist_mbid,
-             release_track_mbid = excluded.release_track_mbid,
-             isrc               = excluded.isrc,
+             mbid               = CASE
+                 WHEN excluded.mbid IS NOT NULL                          THEN excluded.mbid
+                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
+                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 ELSE tracks.mbid END,
+             artist_mbid        = CASE
+                 WHEN excluded.artist_mbid IS NOT NULL                   THEN excluded.artist_mbid
+                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
+                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 ELSE tracks.artist_mbid END,
+             release_track_mbid = CASE
+                 WHEN excluded.release_track_mbid IS NOT NULL            THEN excluded.release_track_mbid
+                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
+                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 ELSE tracks.release_track_mbid END,
+             isrc               = CASE
+                 WHEN excluded.isrc IS NOT NULL                          THEN excluded.isrc
+                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
+                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 ELSE tracks.isrc END,
              tagged_title       = excluded.tagged_title,
              tagged_artist      = excluded.tagged_artist,
              genre              = excluded.genre,

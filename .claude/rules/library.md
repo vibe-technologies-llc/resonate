@@ -635,8 +635,13 @@ through `Player::media` like any other unscanned row.
   what `Declared` says the row is still without, so a file that stopped carrying its barcode
   leaves the one held, which `a_scan_stores_what_the_tags_declare_about_the_release` and
   `a_rescan_keeps_a_barcode_the_file_no_longer_carries` are the claims of — and `tracks.mbid`,
-  `artist_mbid`, `release_track_mbid` and `isrc` overwritten from the tags, so a rescan leaves
-  every other enrichment column where it stood, which
+  `artist_mbid`, `release_track_mbid` and `isrc` taken from the tags wherever the file names one,
+  and kept where it names none unless the file was retagged — the same weighing of the two
+  `tagged_` columns the names take — because those four are also what a lookup and a pairing
+  *find*, and a whole rescan used to write the file's silence over a recording a search had
+  identified, which the lookup would not ask about again for a month;
+  `a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_retagged` is the
+  claim. So a rescan leaves every other enrichment column where it stood, which
   `a_rescan_leaves_every_enrichment_column_where_it_stood` in `tests/library.rs` is the claim of —
   the one exception being the retagging rule below, which is the only place a scan writes
   `tracks.answered`. The four declared columns are what the ask is built from: `asking_albums`
@@ -968,8 +973,8 @@ through `Player::media` like any other unscanned row.
   `release_track_mbid` and `isrc` by `coalesce` from the release row, so a file tagged with no
   identifier learns the ones its seat on the release carries, which
   `a_paired_track_receives_the_identifiers_its_release_row_holds` is the claim of. It is a fill
-  and not a correction — a code the file itself carries stands — and a changed file's rescan
-  still overwrites the three from its tags, so the scan rule above holds.
+  and not a correction — a code the file itself carries stands — and a rescan
+  overwrites the three only where the file names one, so the scan rule above holds.
   `AlbumToAsk::rematch_only` is what makes an album holding release rows rematch
   whether or not it is due, so a rescan that added a file pairs it without asking the network —
   but only where a pairing could change anything: `albums_to_ask` offers such an album only where

@@ -10650,6 +10650,52 @@ fn a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_a
 }
 
 #[test]
+fn a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_retagged()
+-> Result<()> {
+    let (tree, library, database, file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+    let fake = Arc::new(Fake::new(Canned {
+        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        recordings: vec![orbits_recording(
+            RECORDING,
+            "One of These Days",
+            CODE,
+            on_orbits(1),
+        )],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
+
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+
+    assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
+
+    fs::write(
+        &file,
+        Wav::new()
+            .text(TITLE, "Fearless")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    )
+    .expect("a writable temporary file");
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(recorded(&database, &file), None);
+    Ok(())
+}
+
+#[test]
 fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
