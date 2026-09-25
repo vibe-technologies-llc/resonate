@@ -1909,7 +1909,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   backed labels and the cutoff as a line in the verdict's colour; the average spectrum as a washed
   polyline over faint lines every 20 dB; the levels and the source as `fields` cards dealt by
   `beside`, which the inspector lends; and the recognition card, led to the top where the audio is
-  not the song the file names. `analysis_plot.rs` is the arithmetic, with no gpui in it. The
+  not the song the file names and carrying *Take this name* there, which `analysis.md` has. `analysis_plot.rs` is the arithmetic, with no gpui in it. The
   Online category's *Recognition* group is the `acoustid-key` field, written through the
   `Settings` seam the way *Contact* is and read from the next start. `analysis.md` has the model.
 - **Listen is a sheet over whatever pane is in front, not a pane of its own.** It names a song that

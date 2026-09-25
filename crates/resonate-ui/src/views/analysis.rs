@@ -16,6 +16,7 @@ use crate::{
     },
     format,
     icons::Icon,
+    models::Notice,
     theme,
     views::{
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
@@ -46,6 +47,14 @@ const READS_HINT: &str = "The whole track decoded once, off the audio thread. A 
                           from one shows a wall in its spectrum where the encoder cut; an \
                           upsample shows the wall where the lower rate ended; padded bits are \
                           low bits that never move.";
+
+const TAKE_THE_NAME: &str = "Take this name";
+
+const NOTHING_TO_TAKE: &str = "The catalog holds no recognition of this track to take a name from";
+
+const TAKE_THE_NAME_HINT: &str = "Write the title, the artist and the recording the audio was \
+                                  heard as into the catalog in place of what the file names. The \
+                                  file itself is left as it is.";
 
 const WAVEFORM_HINT: &str = "Press anywhere on the waveform to play from there";
 
@@ -203,7 +212,19 @@ impl RootView {
             .analysis
             .update(cx, |model, cx| model.spectrogram(stops, cx));
         let plotted = self.analysis.read(cx).plotted.clone();
-        let heard = heard_card(hearing, recognises);
+        let taking = hearing.leads().then(|| {
+            div().flex().pt_2().child(
+                kit::button(
+                    "take-the-heard-name",
+                    Some(Icon::Check),
+                    TAKE_THE_NAME,
+                    TAKE_THE_NAME_HINT,
+                    kit::Tone::Outlined,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.take_the_heard_name(cx))),
+            )
+        });
+        let heard = heard_card(hearing, recognises).children(taking);
         let (leading, trailing) = if hearing.leads() {
             (Some(heard), None)
         } else {
@@ -270,6 +291,34 @@ impl RootView {
         Scrollbars::of(cx)
             .around("analysis-scrollbar", self.analysis_scroll.clone(), pane)
             .into_any_element()
+    }
+}
+
+impl RootView {
+    fn take_the_heard_name(&mut self, cx: &mut Context<Self>) {
+        let taking = self
+            .analysis
+            .update(cx, |analysis, cx| analysis.take_the_name(cx));
+        cx.spawn(async move |this, cx| {
+            let taken = taking.await;
+            let _ = this.update(cx, |this, cx| {
+                let notice = match taken {
+                    Ok(Some((track, heard))) => {
+                        this.library
+                            .update(cx, |library, cx| library.renamed(track, cx));
+                        Notice::Done(format!("The track is now {}", billed(&heard)))
+                    }
+                    Ok(None) => Notice::Trouble(NOTHING_TO_TAKE.to_owned()),
+                    Err(error) => {
+                        tracing::warn!(%error, "the name the audio was heard as was not taken");
+                        Notice::Trouble(error.to_string())
+                    }
+                };
+                this.report(notice, cx);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }
 

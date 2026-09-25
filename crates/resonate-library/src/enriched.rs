@@ -6,9 +6,9 @@ use rusqlite::{
 };
 
 use crate::{
-    AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt, CoverSource, Error,
-    Fruitless, Isrc, Link, Mbid, Medium, Recording, RecordingRelease, Release, ReleaseGroup,
-    ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
+    Agreement, AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt,
+    CoverSource, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium, Recording, RecordingRelease,
+    Release, ReleaseGroup, ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
     model::{CoverFrom, CoverWanted},
     store,
 };
@@ -896,6 +896,90 @@ pub(crate) fn land_recording(
     )?;
 
     Ok(title != held.title || artist != held.artist)
+}
+
+pub(crate) fn land_what_was_heard(
+    tx: &Transaction<'_>,
+    track: TrackId,
+    now: SystemTime,
+) -> Result<Option<HeardAs>> {
+    let id = track.get() as i64;
+    let Some(held) = held_names(tx, id)? else {
+        return Err(Error::UnknownTrack(track));
+    };
+    let heard = tx
+        .query_row(
+            "SELECT heard_as, heard_score, heard_title, heard_artist
+               FROM track_studies
+              WHERE track_id = ?1 AND heard_as IS NOT NULL AND heard_title IS NOT NULL",
+            params![id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((recording, score, title, artist)) = heard else {
+        return Ok(None);
+    };
+    let Some(recording) = store::mbid_in(Some(&recording)) else {
+        return Ok(None);
+    };
+    let billed = artist.filter(|artist| !artist.trim().is_empty());
+    let artist_id = billed
+        .as_deref()
+        .map(|name| store::artist_named_in(tx, name, None))
+        .transpose()?;
+
+    let (title, artist) = tx
+        .query_row(
+            "UPDATE tracks SET
+                 title = ?1,
+                 artist = coalesce(?2, artist),
+                 artist_id = coalesce(?3, artist_id),
+                 mbid = ?4,
+                 asks = 0, refusals = 0, asked = ?5, answered = ?5
+              WHERE id = ?6
+             RETURNING title, artist",
+            params![
+                title,
+                billed,
+                artist_id,
+                recording.as_str(),
+                store::to_nanos(now),
+                id
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.execute(
+        "UPDATE track_studies SET agreement = ?1 WHERE track_id = ?2",
+        params![Agreement::Agrees.as_str(), id],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+
+    store::index_row(
+        tx,
+        id,
+        &title,
+        artist.as_deref().unwrap_or_default(),
+        held.album.as_deref().unwrap_or_default(),
+        &store::indexed_genre_of(tx, held.genre.as_deref(), artist_id.or(held.artist_id))?,
+    )?;
+
+    Ok(Some(HeardAs {
+        recording,
+        score: score
+            .and_then(|score| u8::try_from(score).ok())
+            .unwrap_or_default(),
+        title,
+        artist,
+    }))
 }
 
 pub(crate) fn stamp_artist_asked(

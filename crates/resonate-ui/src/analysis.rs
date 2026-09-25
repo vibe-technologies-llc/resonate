@@ -1,7 +1,7 @@
 use std::{cell::Cell, num::NonZeroUsize, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{Bounds, Context, Image, Pixels, Task};
-use resonate_core::{FrameSpan, MediaLocation};
+use resonate_core::{FrameSpan, MediaLocation, TrackId};
 use resonate_engine::{Analysis, AnalysisError, Player, Reach, Watch};
 use resonate_library::{Agreement, Fingerprinters, HeardAs, Library, Sounded, Studied};
 
@@ -254,6 +254,55 @@ impl AnalysisModel {
                 }
             });
         });
+    }
+
+    pub(crate) fn take_the_name(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Task<resonate_library::Result<Option<(TrackId, HeardAs)>>> {
+        let Some(row) = self.following.clone() else {
+            return Task::ready(Ok(None));
+        };
+        let library = Arc::clone(&self.library);
+        let asked = row.clone();
+        let taken = cx.background_executor().spawn(async move {
+            let Some(track) = library.track_held(&asked.location, asked.span)? else {
+                return Ok(None);
+            };
+            Ok(library
+                .take_what_was_heard(track)?
+                .map(|heard| (track, heard)))
+        });
+        cx.spawn(async move |this, cx| {
+            let taken = taken.await;
+            if let Ok(Some(_)) = &taken {
+                let _ = this.update(cx, |this, cx| this.agreed(row, cx));
+            }
+            taken
+        })
+    }
+
+    fn agreed(&mut self, row: Row, cx: &mut Context<Self>) {
+        let agreeing = |hearing: &Hearing| match hearing {
+            Hearing::Heard { matches, .. } => Some(Hearing::Heard {
+                matches: Arc::clone(matches),
+                agreement: Some(Agreement::Agrees),
+            }),
+            Hearing::Unasked
+            | Hearing::Unserved
+            | Hearing::Unprinted
+            | Hearing::Asking
+            | Hearing::Refused => None,
+        };
+        if let Some(agreed) = self.heard.get(&row).and_then(agreeing) {
+            self.heard.insert(row.clone(), agreed);
+        }
+        if self.following.as_ref() == Some(&row)
+            && let Some(agreed) = agreeing(&self.hearing)
+        {
+            self.hearing = agreed;
+            cx.notify();
+        }
     }
 
     pub(crate) fn spectrogram(

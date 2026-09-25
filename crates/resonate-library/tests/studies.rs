@@ -563,6 +563,88 @@ fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() 
 }
 
 #[test]
+fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through_a_rescan()
+-> Result<()> {
+    let tree = Tree::new();
+    let renamed = tree.write(
+        "renamed.wav",
+        &song(21_700.0, 4, &[(TITLE, "Tuesday Again"), (ARTIST, "Ada")]),
+    );
+    let library = scanned(&tree)?;
+    let ear = Arc::new(ByEar::new(vec![(
+        "renamed.wav",
+        heard_as(HEARD, "Wednesday", "Grace", 96),
+    )]));
+    enriched(
+        &library,
+        Silent::new(),
+        Fingerprinters::none().and(Arc::clone(&ear) as Arc<dyn Fingerprints>),
+    )?;
+    let track = library
+        .track_at(&renamed, None)?
+        .expect("the scanned track")
+        .id;
+
+    let taken = library
+        .take_what_was_heard(track)?
+        .expect("what the audio was heard as");
+    assert_eq!(taken.title, "Wednesday");
+    assert_eq!(taken.artist.as_deref(), Some("Grace"));
+    assert_eq!(taken.recording.as_str(), HEARD);
+
+    let named = library.track(track)?.expect("the renamed track");
+    assert_eq!(named.title, "Wednesday");
+    assert_eq!(named.artist.as_deref(), Some("Grace"));
+    let recorded = |library: &Library| {
+        library
+            .shareable(track)
+            .ok()
+            .flatten()
+            .and_then(|shared| shared.recording)
+            .map(|recording| recording.as_str().to_owned())
+    };
+    assert_eq!(recorded(&library).as_deref(), Some(HEARD));
+    let (_, studied) = library
+        .study_of(&MediaLocation::local(&renamed), None)?
+        .expect("a study");
+    assert_eq!(studied.agreement, Some(Agreement::Agrees));
+    assert!(matched(&library, "is:misnamed")?.is_empty());
+    assert_eq!(matched(&library, "wednesday grace")?, vec!["Wednesday"]);
+
+    library
+        .scan(ScanOptions {
+            roots: vec![tree.path().to_path_buf()],
+            incremental: false,
+            follow_symlinks: false,
+            extract_cover_art: false,
+            workers: NonZeroUsize::MIN,
+        })?
+        .join()?;
+    let rescanned = library.track(track)?.expect("the rescanned track");
+    assert_eq!(rescanned.title, "Wednesday");
+    assert_eq!(recorded(&library).as_deref(), Some(HEARD));
+    Ok(())
+}
+
+#[test]
+fn a_track_heard_as_nothing_has_nothing_to_take() -> Result<()> {
+    let tree = Tree::new();
+    let quiet = tree.write(
+        "quiet.wav",
+        &song(21_700.0, 6, &[(TITLE, "Tuesday"), (ARTIST, "Ada")]),
+    );
+    let library = scanned(&tree)?;
+    let track = library.track_at(&quiet, None)?.expect("the scanned track");
+
+    assert_eq!(library.take_what_was_heard(track.id)?, None);
+    assert_eq!(
+        library.track(track.id)?.expect("the track").title,
+        "Tuesday"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_track_that_names_nothing_is_named_by_what_its_audio_was_heard_as() -> Result<()> {
     let tree = Tree::new();
     let unnamed = tree.write("untitled.wav", &song(21_700.0, 5, &[]));

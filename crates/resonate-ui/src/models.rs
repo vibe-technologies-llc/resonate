@@ -1098,6 +1098,15 @@ impl LibraryModel {
         );
     }
 
+    pub fn renamed(&mut self, id: TrackId, cx: &mut Context<Self>) {
+        match self.library.track(id) {
+            Ok(Some(track)) => self.remember(slice::from_ref(&track)),
+            Ok(None) => {}
+            Err(error) => tracing::warn!(%error, "a renamed track could not be read back"),
+        }
+        self.read(Wanted::Everything, cx);
+    }
+
     pub fn hide_track(&mut self, id: TrackId, hidden: bool, cx: &mut Context<Self>) {
         self.edited(
             Wanted::Everything,

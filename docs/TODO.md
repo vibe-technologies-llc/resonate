@@ -101,8 +101,11 @@
   the lowpass wall, the upsampled wall and the padded bits alone
 - The pane's waveform and spectrogram are held for the run and never kept; only the summary study
   is in the catalog, so a track analysed once is decoded whole again after a restart
-- A disagreement is flagged and nothing more: no gesture takes the recognised title and artist as
-  the row's, and nothing asks MusicBrainz about what the audio was heard as
+- Taking the name a track was heard as writes the title, the artist and the recording id and
+  nothing more: nothing asks MusicBrainz about that recording until the row is next due, so the
+  release it sits on is not landed, and a row paired to a release row of the song the file named
+  stays paired to it. The pane's *Take this name* has been seen drawn and never pressed, and the
+  command line has no way to it
 - The recognition is AcoustID's alone, and it has never been reached from here — there is no key in
   this build and the fixture is written from the service's documentation rather than captured.
   The gzipped form the lookup is posted as has been read by the real service — which answered a

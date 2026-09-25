@@ -170,6 +170,20 @@ it answers could change, because it is what a stored study is weighed against.
   studies the track on the spot through the same claim, and it takes a match under the strict
   score as `Certainty::Nearly`, so audio fills a name the file never gave and never overwrites one
   it did.
+- **What the audio was heard as is taken as the row's name only when a listener says so.**
+  `Library::take_what_was_heard` is `enriched::land_what_was_heard`: in one transaction it writes
+  the study's `heard_title` as the title, `heard_artist` as the artist — repointing `artist_id`
+  through `store::artist_named_in` — and `heard_as` as `tracks.mbid`, *replacing* a recording id
+  the file carried rather than filling around it, because a file misnamed by its tags is misnamed
+  by its tag ids too; it stamps `answered`, so a rescan of the unchanged file keeps the names the
+  way it keeps any lookup's, marks the study `Agrees`, and writes the row into `tracks_fts` again.
+  A row with no recognition kept answers `None` and writes nothing. It is a gesture rather than a
+  rule of the pass because a fingerprint is weighed on its score alone, and a score is not a
+  reason to rename a file somebody tagged. The Analysis pane's recognition card offers it as
+  *Take this name* wherever the card leads — the audio disagreeing with the file or the file
+  naming nothing — and `AnalysisModel::take_the_name` marks the card agreeing once it lands.
+  `a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through_a_rescan` and
+  `a_track_heard_as_nothing_has_nothing_to_take` are the claims.
 - **`is:fake`, `is:suspect` and `is:misnamed` are `Shape`s**, an `EXISTS` over `track_studies`, so
   the tracks pane lists every fake in the library through the ordinary grammar.
 

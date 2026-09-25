@@ -2706,6 +2706,12 @@ impl Library {
             .write(|transaction| studies::write_study(transaction, track, study, SystemTime::now()))
     }
 
+    pub fn take_what_was_heard(&self, track: TrackId) -> Result<Option<HeardAs>> {
+        self.inner.write(|transaction| {
+            enriched::land_what_was_heard(transaction, track, SystemTime::now())
+        })
+    }
+
     pub fn note_recognition(
         &self,
         track: TrackId,
