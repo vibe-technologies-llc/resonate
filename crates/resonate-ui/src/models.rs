@@ -219,6 +219,12 @@ enum Change {
     Redo,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edited {
+    Landed,
+    Failed,
+}
+
 impl Change {
     const fn doing(self) -> &'static str {
         match self {
@@ -1143,8 +1149,10 @@ impl LibraryModel {
             Wanted::ThePlaylists,
             Change::Want,
             move |library| library.want(release_track).map(|_| None),
-            |this, cx| {
-                this.poll_as(Prompted::OnItsOwn, cx);
+            |this, edited, cx| {
+                if edited == Edited::Landed {
+                    this.poll_as(Prompted::OnItsOwn, cx);
+                }
             },
             cx,
         );
@@ -1160,22 +1168,44 @@ impl LibraryModel {
 
     pub fn favour(&mut self, what: Favoured, favourite: bool, cx: &mut Context<Self>) {
         self.favoured.insert(what, favourite);
+        let mut named_before = None;
         if let Favoured::Track(id) = what
-            && let Some(mut named) = self.named.get(&id).cloned()
-            && let Some(track) = named.track.as_mut()
+            && let Some(before) = self.named.get(&id).cloned()
+            && before.track.is_some()
         {
-            track.favourite = favourite.then(SystemTime::now);
+            let mut named = before.clone();
+            if let Some(track) = named.track.as_mut() {
+                track.favourite = favourite.then(SystemTime::now);
+            }
             self.named.insert(id, named);
             self.revision = self.revision.wrapping_add(1);
+            named_before = Some((id, before));
         }
         cx.notify();
 
-        self.edited(
+        self.edited_then(
             Wanted::Everything,
             Change::Favour { favourite },
             move |library| library.favour(what, favourite).map(|_| None),
+            move |this, edited, _| {
+                if edited == Edited::Failed {
+                    this.unfavour_what_did_not_save(what, named_before);
+                }
+            },
             cx,
         );
+    }
+
+    fn unfavour_what_did_not_save(
+        &mut self,
+        what: Favoured,
+        named_before: Option<(TrackId, Named)>,
+    ) {
+        self.favoured.remove(&what);
+        if let Some((id, before)) = named_before {
+            self.named.insert(id, before);
+        }
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn renamed(&mut self, id: TrackId, cx: &mut Context<Self>) {
@@ -1945,7 +1975,7 @@ impl LibraryModel {
         change: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.edited_then(wanted, what, change, |_, _| {}, cx);
+        self.edited_then(wanted, what, change, |_, _, _| {}, cx);
     }
 
     fn edited_then(
@@ -1953,7 +1983,7 @@ impl LibraryModel {
         wanted: Wanted,
         what: Change,
         change: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
-        then: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
+        then: impl FnOnce(&mut Self, Edited, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
@@ -1969,12 +1999,13 @@ impl LibraryModel {
                     Err(error) => {
                         tracing::error!(%error, edit = ?what, "an edit could not be made");
                         toast::tell(toast::could_not(what.doing(), &error), cx);
+                        then(this, Edited::Failed, cx);
                     }
                     Ok(Some(said)) => {
                         toast::tell(Notice::Done(said), cx);
-                        then(this, cx);
+                        then(this, Edited::Landed, cx);
                     }
-                    Ok(None) => then(this, cx),
+                    Ok(None) => then(this, Edited::Landed, cx),
                 }
                 this.read(wanted, cx);
             });

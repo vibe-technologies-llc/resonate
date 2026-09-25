@@ -1157,7 +1157,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   track is cached, and notifies before the write has run; `LibraryModel::favours` is what every
   star, every cell and every menu asks, with what its own row read as the fallback, and
   `favoured_album` and `favoured_artist` go through it too. The map lives as long as the run and
-  is never wrong within it, because every favour this window makes goes through `favour`.
+  is never wrong within it, because every favour this window makes goes through `favour` — and a
+  write that fails takes its entry out again: `edited_then` hands its closure `Edited::Failed`,
+  and `unfavour_what_did_not_save` drops the key and puts back the `named` row it replaced before
+  the reload, so the star falls back to what the catalog kept rather than holding what it did
+  not, and the next press sends the opposite of what is stored.
 - **Three panes were added and each one is the same six edits.** `Pane::Favourites` and
   `Pane::Suggestions` sit under `Section::Collection` and `Pane::Statistics` under
   `Section::Library`; each is a variant, a place in `Pane::BROWSE`, arms in `label`, `about`,
