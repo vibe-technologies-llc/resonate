@@ -2467,9 +2467,17 @@ impl RootView {
                 div()
                     .flex()
                     .flex_1()
+                    .items_center()
                     .justify_center()
+                    .gap_2()
                     .min_w(px(0.0))
-                    .child(self.search_field(window, cx)),
+                    .child(self.search_field(window, cx))
+                    .child(
+                        kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
+                            .flex_none()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(|this, _, _, cx| this.open_the_listener(cx))),
+                    ),
             )
             .child(
                 div()
@@ -2478,12 +2486,7 @@ impl RootView {
                     .items_center()
                     .gap_2()
                     .w(px(theme::sidebar_width() - 32.0))
-                    .justify_between()
-                    .child(
-                        kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(|this, _, _, cx| this.open_the_listener(cx))),
-                    )
+                    .justify_end()
                     .when(client_side, |bar| {
                         bar.child(self.window_controls(window, cx))
                     }),
