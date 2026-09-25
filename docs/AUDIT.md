@@ -70,6 +70,58 @@ playlist edit the listener did not make.
 
 Name the operation the call was. The playlist edits can keep the playlist wording.
 
+### The album name's underline runs to the end of the player panel
+
+The album on the playback bar is the one name given `flex_1` and `ends_in_an_ellipsis`.
+`TransportView::by_line` in `crates/resonate-ui/src/views/transport.rs` does that after
+`opens`. `opens` has already called `truncate()`, so the element still carries an ellipsis
+overflow, and `ends_in_an_ellipsis` then sets `whitespace_normal` and `line_clamp(1)`. The
+title above it is cut with `cut_to_fit` and kept at its own width. The artist is kept at its
+own width. Hovering either of those underlines the glyphs.
+
+gpui 0.2.2 paints that underline to the unwrapped line. `paint_line` in `text_system/line.rs`
+ends it at `first_glyph_x + layout.width`, and subtracts a wrap boundary's glyph only when one
+was recorded. `compute_wrap_boundaries` with a clamp of one line records none: the moment the
+name passes the slot, `boundaries.len() >= max_lines - 1` breaks while `boundaries` is still
+empty. The underline is the whole unwrapped run. Once the album is longer than the room left
+beside the artist, that run is wider than the glyphs still inside the slot, and `overflow_hidden`
+clips the line at the slot's edge. The underline fills the leftover of the panel.
+
+Shape the album the way the title is shaped, at the room it was given, and paint the underline
+to that cut. A clamp of one line has to record the boundary it stopped on.
+
+### The names on the player panel are not a right click
+
+`played_title` and `by_line` draw the track, the artist and the album through `opens`. That is
+a left click: `opened` scopes the library to the album or the artist. A right click on the
+track name, the artist or the album reaches no menu.
+
+The cover beside them has a menu — magnify, the inspector, the artist, the album, favourite,
+share — and none of those copies the words. A track row's menu copies the file path
+(`offers_the_file`, `COPY_PATH` in `views/menu.rs`) and does not copy the title, the artist or
+the album. The window copies text from a lyric line and from the search field. A track name, an
+artist and an album name have no copy of their own.
+
+A right click on each of those three names should copy that name. The row menu can offer the
+same three beside the path.
+
+### Stopping Listen leaves the button and the prompt out of line
+
+`ListenModel::stop` in `crates/resonate-ui/src/listening.rs` sets `Stage::Idle` while a
+recording or a lookup is still running. `listen_stage` draws `Idle` through `listen_again`, and
+`Unknown`, `Silent` and `Unreached` take the same function. The prompt is a full-width line.
+The button under it is `kit::actions`.
+
+`kit::actions` in `views/kit.rs` is the heading's action row: `flex_none`, `justify_end`, and
+a max width of 64% of its parent. In the sheet's column that row stays at the left and the
+Listen button sits at the right edge of the 64%. The prompt stays on the card's left edge.
+While the sheet is recording, the same column draws the prompt and a bar at `w_full`, and
+stopping swaps that bar for the offset button. A found
+song puts Listen again, Open and Find it through the same `actions` row.
+
+Draw the Listen button in the sheet's own row, at the prompt's left edge and at the card's
+width. Leave `kit::actions` on the headings it was built for.
+
 ## The lyrics
 
 ### The sheet steps a pixel as its bounce is cut off
