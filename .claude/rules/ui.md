@@ -1023,9 +1023,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   both go through `Turn::onto`, so the lines a wider reading brings up fade in over the same span
   rather than appearing at once, and `standing` is the falloff turn blended over the reads turn.
   The `Glide` is different in kind: it carries the scroll offset to `centre_of` the read line on
-  `spring`, a closed-form damped spring of `GLIDE_RESPONSE_SECS` and `GLIDE_DAMPING` that settles
-  within `GLIDE_SETTLES_IN` with a two-percent overshoot, because a move that decelerates into its
-  landing reads as the sheet arriving where an ease-in-out reads as it being pushed there.
+  `spring`, a closed-form damped spring of `GLIDE_RESPONSE_SECS` and `GLIDE_DAMPING` with a
+  two-percent overshoot, because a move that decelerates into its landing reads as the sheet
+  arriving where an ease-in-out reads as it being pushed there. The curve is never cut short:
+  `settles_in` is how long its decay envelope takes to bring a travel of that many pixels inside
+  `SETTLED`, half a pixel, of the landing, so a long glide runs longer than a short one, and the
+  offset, the lines' lag and the rise all read the raw curve the whole way. A fixed 820 ms that
+  returned exactly 1.0 cut the bounce off while it was still some 0.13 % long, which on a glide of
+  a few hundred pixels was a pixel's step drawn on its own after the bounce had come back —
+  `a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps` is the claim.
 - **A line further down the sheet sets off later, so a change ripples rather than shifts.** Every
   row is two boxes: the outer one is what `bounds_for_item` measures, and the inner one is
   `relative()` with a `top` inset of `LyricsModel::lag` plus `LyricsModel::rise`, so nothing the

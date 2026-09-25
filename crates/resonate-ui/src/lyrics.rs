@@ -43,8 +43,6 @@ const GLIDE_RESPONSE_SECS: f32 = 0.62;
 
 const GLIDE_DAMPING: f32 = 0.8;
 
-const GLIDE_SETTLES_IN: Duration = Duration::from_millis(820);
-
 const LAG_PER_LINE: Duration = Duration::from_millis(32);
 
 const LAGS_AT_MOST: usize = 6;
@@ -220,27 +218,40 @@ impl Sprung {
         )
     }
 
-    fn settled_after(self, lag: Duration, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= GLIDE_SETTLES_IN + lag
+    fn settled_after(self, travel: Pixels, lag: Duration, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= settles_in(travel) + lag
     }
 
-    fn settled(self, now: Instant) -> bool {
-        self.settled_after(Duration::ZERO, now)
+    fn settled(self, travel: Pixels, now: Instant) -> bool {
+        self.settled_after(travel, Duration::ZERO, now)
     }
 }
 
+fn natural_frequency() -> f32 {
+    TAU / GLIDE_RESPONSE_SECS
+}
+
+fn damped_share() -> f32 {
+    GLIDE_DAMPING.mul_add(-GLIDE_DAMPING, 1.0).sqrt()
+}
+
 fn spring(elapsed: Duration) -> f32 {
-    if elapsed >= GLIDE_SETTLES_IN {
-        return 1.0;
-    }
     let seconds = elapsed.as_secs_f32();
-    let natural = TAU / GLIDE_RESPONSE_SECS;
-    let damped = natural * GLIDE_DAMPING.mul_add(-GLIDE_DAMPING, 1.0).sqrt();
+    let natural = natural_frequency();
+    let damped = natural * damped_share();
     let decay = (-GLIDE_DAMPING * natural * seconds).exp();
     let swing =
         (damped * seconds).cos() + (GLIDE_DAMPING * natural / damped) * (damped * seconds).sin();
 
     decay.mul_add(-swing, 1.0)
+}
+
+fn settles_in(travel: Pixels) -> Duration {
+    let widest_swing = travel.abs() / (SETTLED * damped_share());
+    if widest_swing <= 1.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs_f32(widest_swing.ln() / (GLIDE_DAMPING * natural_frequency()))
 }
 
 fn lagged(lines: usize, per_line: Duration, at_most: usize) -> Duration {
@@ -320,9 +331,16 @@ impl Glide {
         (self.lands - self.was) * -behind
     }
 
+    fn travel(self) -> Pixels {
+        self.lands - self.was
+    }
+
     fn settled(self, now: Instant) -> bool {
-        self.clock
-            .settled_after(lagged(LAGS_AT_MOST, LAG_PER_LINE, LAGS_AT_MOST), now)
+        self.clock.settled_after(
+            self.travel(),
+            lagged(LAGS_AT_MOST, LAG_PER_LINE, LAGS_AT_MOST),
+            now,
+        )
     }
 }
 
@@ -639,7 +657,7 @@ impl LyricsModel {
             return;
         }
 
-        self.glide = if drift < RESETTLE && !glide.clock.settled(now) {
+        self.glide = if drift < RESETTLE && !glide.clock.settled(glide.travel(), now) {
             Some(Glide { lands, ..glide })
         } else {
             Some(Glide {
@@ -671,7 +689,11 @@ impl LyricsModel {
 
     fn is_arriving(&self, now: Instant) -> bool {
         self.arrived.is_some_and(|arrived| {
-            !arrived.settled_after(lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST), now)
+            !arrived.settled_after(
+                RISES_FROM,
+                lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST),
+                now,
+            )
         })
     }
 
@@ -1009,18 +1031,48 @@ mod tests {
 
     #[test]
     fn a_spring_runs_from_rest_to_rest_and_never_wanders_far_past_the_end() {
+        let settles = settles_in(px(300.0));
         assert!(spring(Duration::ZERO).abs() < f32::EPSILON);
-        assert!((spring(GLIDE_SETTLES_IN) - 1.0).abs() < f32::EPSILON);
-        assert!((spring(GLIDE_SETTLES_IN * 3) - 1.0).abs() < f32::EPSILON);
+        assert!((spring(settles * 3) - 1.0).abs() < 1e-4);
 
         let mut furthest: f32 = 0.0;
         for step in 0..=80 {
-            let through = spring(GLIDE_SETTLES_IN * step / 80);
+            let through = spring(settles * step / 80);
             furthest = furthest.max(through);
         }
         assert!(furthest > 0.99);
         assert!(furthest < 1.05);
         assert!(spring(Duration::from_millis(150)) > spring(Duration::from_millis(50)));
+    }
+
+    #[test]
+    fn a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps() {
+        const PAST_THE_PEAK_MS: u64 = 600;
+        for travel in [px(12.0), px(120.0), px(400.0), px(-900.0), px(2_400.0)] {
+            let settles = settles_in(travel);
+            let mut was = px(0.0);
+            for millis in 0..4_000_u64 {
+                let elapsed = Duration::from_millis(millis);
+                let at = travel * spring(elapsed);
+                if elapsed >= settles {
+                    assert!(
+                        (travel - at).abs() <= SETTLED,
+                        "a glide of {travel:?} was {:?} from its landing after it settled",
+                        (travel - at).abs()
+                    );
+                }
+                if millis >= PAST_THE_PEAK_MS {
+                    assert!(
+                        (at - was).abs() < SETTLED,
+                        "a glide of {travel:?} stepped {:?} at {millis} ms",
+                        (at - was).abs()
+                    );
+                }
+                was = at;
+            }
+        }
+        assert_eq!(settles_in(px(0.2)), Duration::ZERO);
+        assert!(settles_in(px(400.0)) > settles_in(px(40.0)));
     }
 
     #[test]
@@ -1037,8 +1089,8 @@ mod tests {
         assert!(model.lag(5, midway) > model.lag(3, midway));
         assert!(model.lag(0, midway).abs() < px(f32::EPSILON));
 
-        let settled = now + GLIDE_SETTLES_IN + LAG_PER_LINE * 8;
-        assert!(model.lag(5, settled).abs() < px(f32::EPSILON));
+        let settled = now + settles_in(px(300.0)) + LAG_PER_LINE * 8;
+        assert!(model.lag(5, settled).abs() < SETTLED);
         assert!(model.glide(midway));
         assert!(!model.glide(settled));
     }
@@ -1062,8 +1114,8 @@ mod tests {
         assert!(model.arrival(soon) > 0.0);
         assert!(model.is_turning(soon));
 
-        let there = now + GLIDE_SETTLES_IN + RISE_PER_LINE * 8;
-        assert!(model.rise(7, there).abs() < px(f32::EPSILON));
+        let there = now + settles_in(RISES_FROM) + RISE_PER_LINE * 8;
+        assert!(model.rise(7, there).abs() < SETTLED);
         assert!((model.arrival(there) - 1.0).abs() < f32::EPSILON);
         assert!(!model.is_turning(there));
     }
@@ -1254,13 +1306,7 @@ mod tests {
         assert!(model.glide(half));
 
         model.glide_to(px(412.0), half);
-        assert!(
-            !model
-                .glide
-                .expect("a glide is in flight")
-                .clock
-                .settled(half)
-        );
+        assert!(!model.glide.expect("a glide is in flight").settled(half));
 
         model.glide_to(px(-900.0), half);
         assert!(
