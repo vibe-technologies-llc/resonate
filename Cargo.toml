@@ -44,7 +44,7 @@ crossbeam-channel = { version = "0.5.17", default-features = false, features = [
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.4.4", default-features = false, features = ["iterator"] }
 rtrb = { version = "0.4.0", default-features = false, features = ["std"] }
-smallvec = { version = "1.16.1", default-features = false, features = ["union", "const_generics"] }
+smallvec = { version = "1.16.2", default-features = false, features = ["union", "const_generics"] }
 unicode-segmentation = { version = "1.13.3", default-features = false }
 unicode-width = { version = "0.2.2", default-features = false }
 unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
