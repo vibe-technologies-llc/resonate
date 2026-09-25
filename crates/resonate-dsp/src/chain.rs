@@ -6,8 +6,10 @@ use crate::{Easing, Error, ProcessCount, Processor, Result};
 
 pub struct Chain {
     stages: Vec<Box<dyn Processor>>,
+    specs: Vec<StreamSpec>,
     widths: Vec<usize>,
     scratch: [Vec<f64>; 2],
+    input: StreamSpec,
     input_channels: usize,
     output_channels: usize,
     max_output_frames: usize,
@@ -15,13 +17,69 @@ pub struct Chain {
     latency: f64,
 }
 
+pub struct Front {
+    stages: Vec<Box<dyn Processor>>,
+    specs: Vec<StreamSpec>,
+    input: StreamSpec,
+}
+
+impl Front {
+    pub fn output(&self) -> StreamSpec {
+        self.specs.last().copied().unwrap_or(self.input)
+    }
+}
+
 impl Chain {
     pub fn builder(input: StreamSpec) -> ChainBuilder {
         ChainBuilder {
             input,
+            front: None,
             stages: Vec::new(),
             max_frames_in: 0,
         }
+    }
+
+    pub fn builder_after(front: Front) -> ChainBuilder {
+        ChainBuilder {
+            input: front.input,
+            front: Some(front),
+            stages: Vec::new(),
+            max_frames_in: 0,
+        }
+    }
+
+    pub fn take_the_front(&mut self) -> Option<Front> {
+        let resampled_at = self
+            .specs
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(at, spec)| spec.rate != self.stage_input(*at).rate)
+            .map(|(at, _)| at)?;
+
+        let taken = resampled_at + 1;
+        let front = Front {
+            stages: self.stages.drain(..taken).collect(),
+            specs: self.specs.drain(..taken).collect(),
+            input: self.input,
+        };
+        self.widths.drain(..taken);
+        self.input = front.output();
+        self.input_channels = self.input.channel_count().get() as usize;
+        self.max_flush_frames = self.stages.iter().fold(0, |draining, stage| {
+            stage
+                .max_output_frames(draining)
+                .saturating_add(stage.max_flush_frames())
+        });
+        self.latency = 0.0;
+        Some(front)
+    }
+
+    fn stage_input(&self, at: usize) -> StreamSpec {
+        at.checked_sub(1)
+            .and_then(|before| self.specs.get(before))
+            .copied()
+            .unwrap_or(self.input)
     }
 
     #[cfg(test)]
@@ -190,8 +248,33 @@ impl Chain {
 
 pub struct ChainBuilder {
     input: StreamSpec,
+    front: Option<Front>,
     stages: Vec<Box<dyn Processor>>,
     max_frames_in: usize,
+}
+
+struct Measure {
+    spec: StreamSpec,
+    frames: usize,
+    draining: usize,
+    samples: usize,
+    latency: f64,
+}
+
+impl Measure {
+    fn through(&mut self, stage: &dyn Processor, next: StreamSpec) {
+        self.draining = stage
+            .max_output_frames(self.draining)
+            .saturating_add(stage.max_flush_frames());
+        self.frames = stage.max_output_frames(self.frames);
+        let channels = next.channel_count().get() as usize;
+        self.samples = self
+            .samples
+            .max(self.frames.max(self.draining).saturating_mul(channels));
+        self.latency = self.latency * f64::from(next.rate.hz()) / f64::from(self.spec.rate.hz())
+            + stage.latency_frames();
+        self.spec = next;
+    }
 }
 
 impl ChainBuilder {
@@ -213,42 +296,49 @@ impl ChainBuilder {
 
     pub fn build(self) -> Result<Chain> {
         let input_channels = self.input.channel_count().get() as usize;
-        let mut spec = self.input;
-        let mut frames = self.max_frames_in;
-        let mut draining = 0;
-        let mut samples = self.max_frames_in.saturating_mul(input_channels);
-        let mut latency = 0.0;
+        let mut measure = Measure {
+            spec: self.input,
+            frames: self.max_frames_in,
+            draining: 0,
+            samples: self.max_frames_in.saturating_mul(input_channels),
+            latency: 0.0,
+        };
         let mut stages: Vec<Box<dyn Processor>> = Vec::new();
-        let mut widths: Vec<usize> = Vec::new();
+        let mut specs: Vec<StreamSpec> = Vec::new();
 
+        if let Some(front) = self.front {
+            for (stage, next) in front.stages.into_iter().zip(front.specs) {
+                measure.through(stage.as_ref(), next);
+                stages.push(stage);
+                specs.push(next);
+            }
+        }
         for mut stage in self.stages {
             if stage.is_transparent() {
                 continue;
             }
-            let next = stage.output_spec(spec);
-            stage.prepare(spec, frames.max(draining))?;
-            draining = stage
-                .max_output_frames(draining)
-                .saturating_add(stage.max_flush_frames());
-            frames = stage.max_output_frames(frames);
-            let channels = next.channel_count().get() as usize;
-            samples = samples.max(frames.max(draining).saturating_mul(channels));
-            latency = latency * f64::from(next.rate.hz()) / f64::from(spec.rate.hz())
-                + stage.latency_frames();
-            spec = next;
+            let next = stage.output_spec(measure.spec);
+            stage.prepare(measure.spec, measure.frames.max(measure.draining))?;
+            measure.through(stage.as_ref(), next);
             stages.push(stage);
-            widths.push(channels);
+            specs.push(next);
         }
 
+        let widths: Vec<usize> = specs
+            .iter()
+            .map(|spec| spec.channel_count().get() as usize)
+            .collect();
         Ok(Chain {
             output_channels: widths.last().copied().unwrap_or(input_channels),
             stages,
+            specs,
             widths,
-            scratch: [vec![0.0; samples], vec![0.0; samples]],
+            scratch: [vec![0.0; measure.samples], vec![0.0; measure.samples]],
+            input: self.input,
             input_channels,
-            max_output_frames: frames.max(draining),
-            max_flush_frames: draining,
-            latency,
+            max_output_frames: measure.frames.max(measure.draining),
+            max_flush_frames: measure.draining,
+            latency: measure.latency,
         })
     }
 }
@@ -293,6 +383,59 @@ mod tests {
             ramp: Duration::ZERO,
             ..GainConfig::default()
         }))
+    }
+
+    #[test]
+    fn a_chain_split_at_its_resampler_goes_on_exactly_where_the_resampler_left_off() {
+        const BLOCKS: usize = 8;
+        let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
+            .map(|sample| (sample as f64 * 0.01).sin() * 0.8)
+            .collect();
+        let blocks: Vec<&[f64]> = input.chunks(BLOCK * 2).collect();
+        let resampled = || {
+            Chain::builder(spec(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_48000))
+        };
+        let run = |chain: &mut Chain, blocks: &[&[f64]]| {
+            let mut heard = Vec::new();
+            let mut output = vec![0.0; chain.max_output_frames() * 2];
+            for block in blocks {
+                let count = chain.process(block, &mut output);
+                heard.extend_from_slice(&output[..count.frames_out * 2]);
+            }
+            heard
+        };
+
+        let mut whole = resampled().build().expect("a resampler builds");
+        let straight = run(&mut whole, &blocks);
+
+        let mut attenuated = resampled()
+            .push(attenuator())
+            .build()
+            .expect("a resampler and a gain build");
+        let before = run(&mut attenuated, &blocks[..BLOCKS / 2]);
+        let front = attenuated
+            .take_the_front()
+            .expect("a resampling chain has a front to carry");
+        let mut held = vec![0.0; attenuated.max_flush_frames() * 2 + 2];
+        assert_eq!(
+            attenuated.flush(&mut held).expect("the back flushes"),
+            0,
+            "a gain stage behind the resampler held frames"
+        );
+        let mut carried = Chain::builder_after(front)
+            .max_frames_in(BLOCK)
+            .build()
+            .expect("the carried resampler builds alone");
+        assert_eq!(carried.latency_frames(), whole.latency_frames());
+        let after = run(&mut carried, &blocks[BLOCKS / 2..]);
+
+        assert_eq!(
+            after,
+            straight[before.len()..],
+            "the carried resampler did not pick up where it left off"
+        );
     }
 
     #[test]

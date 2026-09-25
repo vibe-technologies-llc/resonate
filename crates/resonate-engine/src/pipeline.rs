@@ -7,8 +7,8 @@ use resonate_core::{
     eq::{Frequency, Profile},
 };
 use resonate_dsp::{
-    Chain, Dither, DitherKind, Equaliser, FilterPhase, GainConfig, GainStage, NoiseShaping,
-    Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig, Restoration, Restore,
+    Chain, ChainBuilder, Dither, DitherKind, Equaliser, FilterPhase, Front, GainConfig, GainStage,
+    NoiseShaping, Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig, Restoration, Restore,
     RestoreConfig, Result, TruePeak, Tuning,
 };
 use resonate_pipewire::{NodeName, SinkInfo};
@@ -200,11 +200,15 @@ impl OutputPlan {
     }
 
     pub fn becomes_on_the_same_stream(&self, wanted: &Self) -> bool {
-        self.resample.is_none()
-            && self.resample == wanted.resample
+        self.resample == wanted.resample
             && self.stream == wanted.stream
             && self.packing == wanted.packing
             && self.remix == wanted.remix
+            && (self.resample.is_none() || self.restoration == wanted.restoration)
+    }
+
+    pub fn carries_the_front_into(&self, wanted: &Self) -> bool {
+        self.resample.is_some() && self.becomes_on_the_same_stream(wanted)
     }
 
     pub fn same_shape_as(&self, other: &Self) -> bool {
@@ -230,8 +234,26 @@ impl OutputPlan {
         block: usize,
     ) -> Result<Chain> {
         let carrier = StreamSpec::new(source.rate, source.channels, SampleFormat::F32);
-        let mut builder = Chain::builder(carrier).max_frames_in(block);
+        let builder = self.fronted(Chain::builder(carrier).max_frames_in(block), config, block)?;
+        self.backed(builder, config).build()
+    }
 
+    pub fn build_chain_after(
+        &self,
+        front: Front,
+        config: &EngineConfig,
+        block: usize,
+    ) -> Result<Chain> {
+        self.backed(Chain::builder_after(front).max_frames_in(block), config)
+            .build()
+    }
+
+    fn fronted(
+        &self,
+        mut builder: ChainBuilder,
+        config: &EngineConfig,
+        block: usize,
+    ) -> Result<ChainBuilder> {
         if let Some((from, to)) = self.remix {
             builder = builder.push(Box::new(Remix::new(from, to)));
         }
@@ -248,6 +270,10 @@ impl OutputPlan {
                 max_frames_in: block,
             })?));
         }
+        Ok(builder)
+    }
+
+    fn backed(&self, mut builder: ChainBuilder, config: &EngineConfig) -> ChainBuilder {
         if let Some(profile) = self.equalisation.as_ref() {
             builder = builder.push(Box::new(Equaliser::new(
                 Arc::clone(profile),
@@ -268,8 +294,7 @@ impl OutputPlan {
                 seed::from_clock(),
             )));
         }
-
-        builder.build()
+        builder
     }
 }
 
@@ -2096,9 +2121,14 @@ mod tests {
         }
 
         let resampled = plan(cd, &slower, &plain);
+        let resampled_and_equalised = plan(cd, &slower, &equalised);
         assert!(
-            !resampled.becomes_on_the_same_stream(&plan(cd, &slower, &equalised)),
-            "an equaliser switched on under a resampler kept a history the new chain cannot carry"
+            resampled.carries_the_front_into(&resampled_and_equalised),
+            "an equaliser switched on under a resampler reopened a stream whose resampler it could carry"
+        );
+        assert!(
+            !plan(cd, &exact, &plain).carries_the_front_into(&plan(cd, &exact, &equalised)),
+            "a chain with no resampler claimed a front to carry"
         );
 
         let renegotiated = plan_for(

@@ -7,9 +7,7 @@ that no listener is waiting on, and is worked only once the categories above it 
 - The volume is the software gain stage alone, so anything under 100 % leaves bit-perfect. Whether
   a device has a hardware volume is read and drawn, and nothing drives it
 - Changing the rate policy, the graph rate, the buffer or DoP mid-track reopens the stream and
-  costs the gap a sink switch does, and so does switching the equaliser while a resampler runs,
-  because `OutputPlan::becomes_on_the_same_stream` will not carry a resampler's history into a new
-  chain. Handing the new resampler the old one's state would close the equaliser case
+  costs the gap a sink switch does
 - A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
   with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
   of a file that is itself over full scale reaches the device as the file has it

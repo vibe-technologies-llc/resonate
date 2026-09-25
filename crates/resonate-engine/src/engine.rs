@@ -286,19 +286,19 @@ impl Output {
         self.status
     }
 
-    fn hand_on_what_the_chain_holds(&mut self) -> bool {
-        let held = self.chain.max_flush_frames();
-        if held == 0 {
-            return true;
-        }
-        if self.producer.free_frames() < held {
-            return false;
+    fn has_room_for_what_the_chain_holds(&self) -> bool {
+        self.producer.free_frames() >= self.chain.max_flush_frames()
+    }
+
+    fn hand_on_what_the_chain_holds(&mut self) {
+        if self.chain.max_flush_frames() == 0 {
+            return;
         }
         let frames = match self.chain.flush(&mut self.carrier) {
             Ok(frames) => frames,
             Err(error) => {
                 tracing::error!(%error, "the chain's held frames did not fit the carrier; they were dropped");
-                return true;
+                return;
             }
         };
         self.stage(frames);
@@ -306,7 +306,6 @@ impl Output {
         if let Some(tapping) = self.tapping.as_mut() {
             tapping.record(&self.staged, 0, written);
         }
-        true
     }
 
     fn stage(&mut self, frames: usize) {
@@ -1366,19 +1365,27 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return Ok(());
         };
-        if !output.hand_on_what_the_chain_holds() {
+        if !output.has_room_for_what_the_chain_holds() {
             output.settles_into = Some(wanted);
             return Ok(());
         }
+        let front = output
+            .plan
+            .carries_the_front_into(&wanted)
+            .then(|| output.chain.take_the_front())
+            .flatten();
+        output.hand_on_what_the_chain_holds();
         let source = track.source();
-        let mut chain = wanted
-            .build_chain(source, &self.config, CHAIN_BLOCK)
-            .map_err(|error| Error::Convert {
-                track: track.id,
-                source_spec: source,
-                sink_spec: wanted.stream,
-                source: error,
-            })?;
+        let built = match front {
+            Some(front) => wanted.build_chain_after(front, &self.config, CHAIN_BLOCK),
+            None => wanted.build_chain(source, &self.config, CHAIN_BLOCK),
+        };
+        let mut chain = built.map_err(|error| Error::Convert {
+            track: track.id,
+            source_spec: source,
+            sink_spec: wanted.stream,
+            source: error,
+        })?;
         chain.ramp_gain_from(output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get()));
         let brings_the_equaliser =
             wanted.equalisation.is_some() && output.plan.equalisation.is_none();

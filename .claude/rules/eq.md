@@ -155,10 +155,10 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   is a filter; the samples reaching the device are not the file's own. `OutputMode`'s definition
   names it beside a gain stage.
 - **The first band and the last one taken away reshape the chain rather than reopening the stream,
-  unless a resampler runs.** Switching the equaliser on or off changes the plan's shape, and
+  a resampler included.** Switching the equaliser on or off changes the plan's shape, and
   `retune` swaps a chain built from the new plan in under the stream it already holds wherever
-  `OutputPlan::becomes_on_the_same_stream` says it may — `audio.md` has how. Under a resampler it
-  still rebinds, because the resampler's history cannot be carried into a new chain without a click.
+  `OutputPlan::becomes_on_the_same_stream` says it may — `audio.md` has how. Under a resampler the
+  running resampler is carried into the new chain, its history with it, rather than rebuilt.
   An equalised plan always carries a gain stage, so neither swap steps the level, and the stage
   crossfades itself in and out: `Easing` is what the engine tells it. A stage *entering* a stream
   that is playing starts wholly dry and blends toward its own output over `EASED_OVER`, 40 ms,

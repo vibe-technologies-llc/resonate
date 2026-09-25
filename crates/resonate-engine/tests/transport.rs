@@ -3540,11 +3540,15 @@ fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> 
 }
 
 #[test]
-fn switching_the_equaliser_on_under_a_resampler_still_reopens_the_stream() -> Result<()> {
-    let tree = Tree::new();
-    let source = pcm(16, FRAMES);
-    let path = tree.write("track.wav", &source.file);
+fn switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its_level()
+-> Result<()> {
+    const SETTLED_AFTER: usize = 4_096;
+    const STEPS_AT_MOST: f64 = 64.0 / 32_768.0;
 
+    let tree = Tree::new();
+    let level = 16_000_i16;
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * 2));
+    let frame = frame_bytes(SampleFormat::S32);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
     player.send(Command::Load {
         items: vec![track(&path, 1)],
@@ -3552,22 +3556,64 @@ fn switching_the_equaliser_on_under_a_resampler_still_reopens_the_stream() -> Re
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(SETTLED_AFTER * 2),
+        "the resampled level to play",
+    );
 
     player
         .request(Command::SetEqualisation(equalised(vec![(
-            1_000.0, 6.0, 1.0,
+            1_000.0, 3.0, 1.0,
         )])))?
         .wait_for(PATIENCE)?;
-    wait_for(
+    play_until(
         &player,
-        |_| graph.lock().opens == 2,
-        "the stream to reopen around the equaliser, the resampler's history going with it",
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(32_000),
+        "the equaliser to take hold",
+    );
+    player
+        .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(72_000),
+        "the equaliser to let go",
     );
 
-    assert_eq!(graph.lock().closes, 1);
+    let graph = graph.lock();
     assert_eq!(
-        player.state().output.map(|output| output.mode),
-        Some(OutputMode::Converted)
+        (graph.opens, graph.closes),
+        (1, 0),
+        "the equaliser reopened a stream whose resampler it could carry: {}",
+        pulls(&graph)
+    );
+    let left: Vec<f64> = graph
+        .played
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|frame| {
+            f64::from(i32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
+                / f64::from(i32::MAX)
+        })
+        .collect();
+    let largest_step = left
+        .windows(2)
+        .skip(SETTLED_AFTER)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f64::max);
+    assert!(
+        largest_step < STEPS_AT_MOST,
+        "the level stepped by {largest_step} where the equaliser came and went"
     );
     Ok(())
 }

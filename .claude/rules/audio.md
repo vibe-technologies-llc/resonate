@@ -565,11 +565,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   while nothing pulls, because a clock that can never run out leaves the ring discarding, `fill`
   returning nothing and the next Play starting on an empty ring. A sink
   switch and a renegotiation still reopen too, because the negotiated format changes with them.
-- **Leaving or returning to unity gain, and switching the equaliser on or off without a resampler,
-  reshape the chain in place.** `retune` builds the wanted plan against the stream that is open.
+- **Leaving or returning to unity gain, and switching the equaliser on or off, reshape the chain
+  in place.** `retune` builds the wanted plan against the stream that is open.
   Where `OutputPlan::same_shape_as` holds it retunes the chain it has; where it does not but
   `OutputPlan::becomes_on_the_same_stream` does — the same `stream`, `packing`, `remix` and
-  `resample`, and no resampler — it builds the new chain with `build_chain` on the engine thread and
+  `resample`, and under a resampler the same `restoration` — it builds the new chain with `build_chain` on the engine thread and
   swaps it in under the ring, the stream and the consumer it already holds, so what the ring carries
   is still in the negotiated format and nothing reaches the realtime thread. The new chain's gain
   stage is handed what the old one was applying, `Chain::gain_amplitude` or unity where the old
@@ -589,9 +589,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   stage already at unity has nothing to ramp, because `GainStage` does not ramp to where it already
   stands, so the equaliser switched off at full volume swaps at once. A newer command drops what was
   waiting and is judged against the chain still running, and a rebind replaces the `Output` and the
-  wait with it. A resampler forces a rebind: its history and the phase it has reached cannot be
-  carried into a new chain without a click, so the equaliser switched on or off while resampling
-  still costs a gap. A volume or ReplayGain change under a resampler never does, because a
+  wait with it. **A resampler is carried across, not rebuilt.** Its history and the phase it has
+  reached cannot be handed to a fresh one without a click — a new resampler starts from silence,
+  and a steady level stepped by a twentieth of full scale where the equaliser came and went — so
+  where `OutputPlan::carries_the_front_into` holds, `Chain::take_the_front` lifts the stages up to
+  and including the one that changes the rate off the running chain, the rest is flushed into the
+  ring as a whole chain's would be, and `build_chain_after` builds the new stages behind the very
+  resampler that was running. `ChainBuilder::build` prepares only what it is handed new, because
+  `Restore::prepare` rebuilds its buffers. It used to rebind instead, so switching the equaliser
+  while resampling cost the gap a sink switch does.
+  `switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its_level` and
+  `a_chain_split_at_its_resampler_goes_on_exactly_where_the_resampler_left_off` are the claims. A
+  restoration switched on or off under a resampler still rebinds, because it stands in front of it.
+  A volume or ReplayGain change under a resampler never does, because a
   converting plan always carries a gain stage — see DSP — and is retuned rather than reshaped.
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the spec the graph settled on, and `downgrade` hands it to

@@ -11,7 +11,7 @@ mod resample;
 mod restore;
 
 pub use crate::{
-    chain::{Chain, ChainBuilder},
+    chain::{Chain, ChainBuilder, Front},
     dither::{Dither, DitherKind, NoiseShaping},
     eq::{Easing, Equaliser},
     error::{Error, RatioLimits, Result},
