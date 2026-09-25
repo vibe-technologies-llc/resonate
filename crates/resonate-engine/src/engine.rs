@@ -247,6 +247,7 @@ impl Output {
             status: OutputStatus {
                 sink: sink.id,
                 negotiated: plan.stream,
+                words: None,
                 mode: plan.mode,
                 latency: Frames::ZERO,
                 underruns: 0,
@@ -1782,11 +1783,14 @@ impl Engine {
 
         for event in events {
             match event {
-                StreamEvent::FormatChanged(spec) if spec != output.plan.stream => {
-                    renegotiated = Some(spec);
+                StreamEvent::FormatChanged { spec, words } => {
+                    output.status.words = Some(words);
+                    if spec != output.plan.stream {
+                        renegotiated = Some(spec);
+                    }
                 }
                 StreamEvent::Drained if output.tail == Tail::Asked => output.tail = Tail::Played,
-                StreamEvent::FormatChanged(_) | StreamEvent::Drained => {}
+                StreamEvent::Drained => {}
                 StreamEvent::StateChanged {
                     from,
                     to: StreamState::Failed,

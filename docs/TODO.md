@@ -14,9 +14,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A stream's reported delay misses the frames in buffers it has already queued — `pw_time.queued`
   has no safe setter in pipewire-rs 0.10 — so the position and the visualiser's frame are short by
   up to one cycle
-- `resonate sinks` and `resonate explain` cannot say whether a device takes `S24LE` or `S24_32LE`:
-  `SinkFormats` folds both into `SampleFormat::S24`, and only the unpublished `FormatChanged` knows
-  which the graph settled on
 - `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
   the same one; a per-device rate is the driver node's own clock, which the registry publishes
   nowhere

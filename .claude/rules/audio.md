@@ -1598,12 +1598,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   staging buffer. A device may want three. `format::WireWord` is that difference and it lives in
   `resonate-pipewire`: `sample_format` reads `S24LE` and `S24_32LE` as the same depth, `one_of_each`
   keeps the depth once so a device offering both is one row rather than two, and `spa_format` takes
-  the word as a second argument. `build_stream` offers both as two `EnumFormat` params, the packed
+  the word as a second argument. The row still says which words were named: `SinkFormats::words` is
+  a `Words` — `Whole` for every depth that fills its word, and `Packed`, `Padded` or
+  `PackedAndPadded` for twenty-four bits — so `resonate sinks` spells the row `S24LE`, `S24_32LE` or
+  both, and `resonate explain` prints, under a 24-bit output, the words the stream offers beside the
+  ones the device names. `build_stream` offers both as two `EnumFormat` params, the packed
   one first because a 24-bit DAC's own default is usually the packed word and a conversion avoided
   is the whole point of the bit-perfect path; a peer that will not take it settles on the second.
   What the graph actually chose comes back through `param_changed`, which stores it on an
   `AtomicBool` the callback reads — the same shape the reported latency already uses, because
-  `process.rs` may hold no lock.
+  `process.rs` may hold no lock. The same callback sends `StreamEvent::FormatChanged` carrying the
+  spec and the `Words` it settled on, and the engine keeps the latter on `OutputStatus::words` —
+  `None` until the graph has said — which the inspector draws as *on the wire* wherever the depth
+  has two words; `the_word_the_graph_settled_on_is_published_once_it_says` is the claim.
 - **Packing is done in the graph's own buffer, forward, with nothing allocated.** `process::pack`
   reads the low three bytes of the word at `4i` and writes them at `3i`, and `3i + 3 <= 4i + 3` for
   every `i`, so the write never reaches a word that has not been read yet and no scratch buffer is

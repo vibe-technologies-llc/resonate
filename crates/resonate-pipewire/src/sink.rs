@@ -2,6 +2,8 @@ use std::fmt;
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 
+use crate::format::WireWord;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SinkId(u32);
 
@@ -40,9 +42,54 @@ impl fmt::Display for NodeName {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Words {
+    #[default]
+    Whole,
+    Packed,
+    Padded,
+    PackedAndPadded,
+}
+
+impl Words {
+    pub(crate) const fn of(format: SampleFormat, word: WireWord) -> Self {
+        match (format, word) {
+            (SampleFormat::S24, WireWord::Packed) => Self::Packed,
+            (SampleFormat::S24, WireWord::Padded) => Self::Padded,
+            (SampleFormat::S16 | SampleFormat::S32 | SampleFormat::F32, _) => Self::Whole,
+        }
+    }
+
+    pub(crate) const fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (held, Self::Whole) | (Self::Whole, held) => held,
+            (Self::Packed, Self::Packed) => Self::Packed,
+            (Self::Padded, Self::Padded) => Self::Padded,
+            _ => Self::PackedAndPadded,
+        }
+    }
+
+    pub const fn offered_for(format: SampleFormat) -> Self {
+        match format {
+            SampleFormat::S24 => Self::PackedAndPadded,
+            SampleFormat::S16 | SampleFormat::S32 | SampleFormat::F32 => Self::Whole,
+        }
+    }
+
+    pub fn spelled(self, format: SampleFormat) -> String {
+        match (format, self) {
+            (SampleFormat::S24, Self::Packed) => "S24LE".to_owned(),
+            (SampleFormat::S24, Self::Padded) => "S24_32LE".to_owned(),
+            (SampleFormat::S24, Self::PackedAndPadded) => "S24LE, S24_32LE".to_owned(),
+            (format, _) => format.to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SinkFormats {
     pub format: SampleFormat,
+    pub words: Words,
     pub rates: Vec<SampleRate>,
     pub channels: Vec<ChannelLayout>,
 }
@@ -86,7 +133,20 @@ pub struct SinkInfo {
 
 const BLUETOOTH_NODES: [&str; 2] = ["bluez_output.", "bluez_sink."];
 
+impl SinkFormats {
+    pub fn spelled(&self) -> String {
+        self.words.spelled(self.format)
+    }
+}
+
 impl SinkInfo {
+    pub fn words_for(&self, format: SampleFormat) -> Option<Words> {
+        self.formats
+            .iter()
+            .find(|entry| entry.format == format)
+            .map(|entry| entry.words)
+    }
+
     pub fn is_bluetooth(&self) -> bool {
         BLUETOOTH_NODES
             .iter()
@@ -251,6 +311,7 @@ mod tests {
             .iter()
             .map(|format| SinkFormats {
                 format: *format,
+                words: Words::offered_for(*format),
                 rates: allowed.to_vec(),
                 channels: vec![ChannelLayout::Stereo],
             })
@@ -280,6 +341,7 @@ mod tests {
     ) -> SinkFormats {
         SinkFormats {
             format,
+            words: Words::offered_for(format),
             rates: rates.to_vec(),
             channels: channels.to_vec(),
         }

@@ -64,7 +64,9 @@ use resonate_library::{
     VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
-use resonate_pipewire::{HardwareVolume, NodeName, PipeWire, Plugged, SinkInfo};
+use resonate_pipewire::{
+    HardwareVolume, NodeName, PipeWire, Plugged, SinkFormats, SinkInfo, Words,
+};
 use resonate_providers::Providers;
 use tracing_subscriber::{
     EnvFilter,
@@ -444,7 +446,7 @@ fn list_sinks() -> Result<()> {
             driven_by(sink).to_owned(),
             sink.profile.clone().unwrap_or_else(|| "none".to_owned()),
             comes_out_of(sink),
-            first.map_or_else(|| "none".to_owned(), |entry| entry.format.to_string()),
+            first.map_or_else(|| "none".to_owned(), SinkFormats::spelled),
             first.map_or_else(|| "none".to_owned(), |entry| rates(&entry.rates)),
             rates(&sink.allowed_rates),
             current,
@@ -458,7 +460,7 @@ fn list_sinks() -> Result<()> {
                 String::new(),
                 String::new(),
                 String::new(),
-                entry.format.to_string(),
+                entry.spelled(),
                 rates(&entry.rates),
             ]);
         }
@@ -1076,6 +1078,15 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     }
     println!("sink:   {} ({})", sink.description, sink.name);
     println!("output: {} [{:?}]", plan.stream, plan.mode);
+    if let Some(words) = sink.words_for(plan.stream.format)
+        && words != Words::Whole
+    {
+        println!(
+            "words:  offered as {}; the device names {}",
+            Words::offered_for(plan.stream.format).spelled(plan.stream.format),
+            words.spelled(plan.stream.format)
+        );
+    }
     if let Some((from, to)) = plan.remix {
         println!("remix:    {from} -> {to}");
     }

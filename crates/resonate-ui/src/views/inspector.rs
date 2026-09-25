@@ -8,7 +8,7 @@ use resonate_core::{AppliedGain, Decibels, Frames, SampleRate};
 use resonate_engine::{
     BitRate, BoxLayout, Codec, Container, Faststart, MediaInfo, OutputMode, OutputStatus,
     PacketSpan, Packing, PlayerState, ReplayGain, ReplayGainMode, StreamDigest, TagSet,
-    TopLevelBox, WINDOW,
+    TopLevelBox, WINDOW, Words,
 };
 
 use crate::{
@@ -302,6 +302,13 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
         ),
         vec![
             ("negotiated", Some(format::quality(output.negotiated))),
+            (
+                "on the wire",
+                output
+                    .words
+                    .filter(|words| *words != Words::Whole)
+                    .map(|words| words.spelled(output.negotiated.format)),
+            ),
             ("latency", Some(format!("{latency} ms"))),
             ("underruns", Some(output.underruns.to_string())),
             (

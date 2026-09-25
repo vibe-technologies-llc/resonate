@@ -852,8 +852,9 @@ fn watch_the_registry(
                                         index,
                                         formats
                                             .into_iter()
-                                            .map(|format| SinkFormats {
+                                            .map(|(format, words)| SinkFormats {
                                                 format,
+                                                words,
                                                 rates: rates.clone(),
                                                 channels: layouts.clone(),
                                             })
@@ -1114,7 +1115,7 @@ fn build_stream(
                     return;
                 };
                 packed.store(taken.word.is_packed(), Ordering::Relaxed);
-                let _ = events.try_send(StreamEvent::FormatChanged(taken.spec));
+                let _ = events.try_send(taken.changed());
             }
         })
         .register()
@@ -1201,7 +1202,7 @@ fn build_capture_stream(
                     return;
                 }
                 if let Some(taken) = param.and_then(negotiated) {
-                    let _ = events.try_send(StreamEvent::FormatChanged(taken.spec));
+                    let _ = events.try_send(taken.changed());
                 }
             }
         })

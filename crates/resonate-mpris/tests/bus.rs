@@ -23,6 +23,7 @@ use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
     PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Surveyor, Until,
+    Words,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
@@ -222,6 +223,7 @@ impl RealtimeSink {
                 profile: None,
                 formats: vec![SinkFormats {
                     format: SampleFormat::S16,
+                    words: Words::Whole,
                     rates: vec![SampleRate::HZ_44100],
                     channels: vec![ChannelLayout::Stereo],
                 }],

@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::Receiver;
 use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 
-use crate::{Result, SinkId};
+use crate::{Result, SinkId, Words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GraphTime {
@@ -92,7 +92,7 @@ pub enum StreamCommand {
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamEvent {
     StateChanged { from: StreamState, to: StreamState },
-    FormatChanged(StreamSpec),
+    FormatChanged { spec: StreamSpec, words: Words },
     Drained,
 }
 

@@ -13,6 +13,7 @@ pub use crate::{
     error::{Error, PodParam, PwOp, Result},
     sink::{
         HardwareVolume, NodeName, Plugged, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
+        Words,
     },
     source::AudioSource,
     stream::{

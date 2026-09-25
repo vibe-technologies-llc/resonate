@@ -496,7 +496,7 @@ mod tests {
         ChannelLayout, Decibels, SampleFormat,
         eq::{Band, BandGain, BandKind, Frequency, Preamp, Q, Target, TargetPoint},
     };
-    use resonate_pipewire::{SinkFormats, SinkId};
+    use resonate_pipewire::{SinkFormats, SinkId, Words};
 
     use super::*;
 
@@ -538,6 +538,7 @@ mod tests {
                 .iter()
                 .map(|format| SinkFormats {
                     format: *format,
+                    words: Words::offered_for(*format),
                     rates: allowed.to_vec(),
                     channels: channels.to_vec(),
                 })

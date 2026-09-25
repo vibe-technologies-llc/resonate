@@ -39,7 +39,7 @@ pub use resonate_dsp::{
 pub use resonate_pipewire::{
     AudioSource, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, NodeName, Plugged,
     SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent,
-    StreamRequest, StreamState,
+    StreamRequest, StreamState, Words,
 };
 
 pub use crate::{

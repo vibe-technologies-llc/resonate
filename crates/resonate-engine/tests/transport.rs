@@ -26,7 +26,7 @@ use resonate_engine::{
     OutputMode, Placement, PlaybackState, Player, Preamp, Profile, Q, QueueItem, Reading,
     RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, Surveyor, Tapped, Until, stamp_of,
+    StreamEvent, StreamRequest, Surveyor, Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -298,6 +298,7 @@ fn sink(rates: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
             .iter()
             .map(|format| SinkFormats {
                 format: *format,
+                words: Words::offered_for(*format),
                 rates: rates.to_vec(),
                 channels: vec![ChannelLayout::Stereo],
             })
@@ -658,6 +659,7 @@ fn surround(rates: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
             .iter()
             .map(|format| SinkFormats {
                 format: *format,
+                words: Words::offered_for(*format),
                 rates: rates.to_vec(),
                 channels: vec![ChannelLayout::Stereo, ChannelLayout::Surround51],
             })
@@ -948,6 +950,46 @@ fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
         output.went_without,
         Frames((A_SECOND - taken) as u64),
         "what the graph went without is not what it asked for less what it was handed"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_word_the_graph_settled_on_is_published_once_it_says() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("deep.wav", &pcm(24, FRAMES).file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    assert_eq!(player.state().output.and_then(|output| output.words), None);
+
+    let spec = {
+        let graph = graph.lock();
+        let spec = graph.requests[0].spec;
+        graph
+            .events
+            .as_ref()
+            .expect("an open stream")
+            .send(StreamEvent::FormatChanged {
+                spec,
+                words: Words::Packed,
+            })
+            .expect("the engine hears the stream");
+        spec
+    };
+    wait_for(
+        &player,
+        |player| player.state().output.and_then(|output| output.words) == Some(Words::Packed),
+        "the settled word to be published",
+    );
+    assert_eq!(
+        player.state().output.map(|output| output.negotiated),
+        Some(spec),
+        "the word moved the spec it was settled under"
     );
     Ok(())
 }

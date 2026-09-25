@@ -8,7 +8,7 @@ use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
 use resonate_core::{
     AppliedGain, FrameSpan, Frames, MediaLocation, QueueStamp, StreamSpec, TrackId, Volume,
 };
-use resonate_pipewire::{NodeName, SinkId, SinkInfo};
+use resonate_pipewire::{NodeName, SinkId, SinkInfo, Words};
 
 use crate::{
     Asleep, BluetoothWake, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase,
@@ -58,6 +58,7 @@ impl Seeks {
 pub struct OutputStatus {
     pub sink: SinkId,
     pub negotiated: StreamSpec,
+    pub words: Option<Words>,
     pub mode: OutputMode,
     pub latency: Frames,
     pub underruns: u64,

@@ -13,7 +13,7 @@ use libspa::{
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use smallvec::{SmallVec, smallvec};
 
-use crate::{HardwareVolume, Plugged, SinkPort};
+use crate::{HardwareVolume, Plugged, SinkPort, StreamEvent, Words};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum WireWord {
@@ -59,11 +59,16 @@ pub(crate) const fn packs_narrower(format: SampleFormat) -> bool {
     matches!(format, SampleFormat::S24)
 }
 
-fn one_of_each(raw: impl Iterator<Item = u32>) -> Vec<SampleFormat> {
-    let mut kept: Vec<SampleFormat> = Vec::new();
-    for format in raw.filter_map(sample_format) {
-        if !kept.contains(&format) {
-            kept.push(format);
+fn one_of_each(raw: impl Iterator<Item = u32>) -> Vec<(SampleFormat, Words)> {
+    let mut kept: Vec<(SampleFormat, Words)> = Vec::new();
+    for raw in raw {
+        let Some(format) = sample_format(raw) else {
+            continue;
+        };
+        let named = Words::of(format, WireWord::of(AudioFormat(raw)));
+        match kept.iter_mut().find(|(held, _)| *held == format) {
+            Some((_, words)) => *words = words.and(named),
+            None => kept.push((format, named)),
         }
     }
     kept
@@ -238,7 +243,7 @@ fn offered(value: &Value) -> Option<Offered> {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct AdvertisedFormat {
-    pub formats: Vec<SampleFormat>,
+    pub formats: Vec<(SampleFormat, Words)>,
     pub rates: Vec<SampleRate>,
     pub layouts: Vec<ChannelLayout>,
 }
@@ -247,6 +252,15 @@ pub(crate) struct AdvertisedFormat {
 pub(crate) struct Negotiated {
     pub spec: StreamSpec,
     pub word: WireWord,
+}
+
+impl Negotiated {
+    pub(crate) const fn changed(self) -> StreamEvent {
+        StreamEvent::FormatChanged {
+            spec: self.spec,
+            words: Words::of(self.spec.format, self.word),
+        }
+    }
 }
 
 pub(crate) fn negotiated(param: &Pod) -> Option<Negotiated> {
@@ -974,7 +988,35 @@ mod tests {
             .into_iter(),
         );
 
-        assert_eq!(advertised, vec![SampleFormat::S24, SampleFormat::S16]);
+        assert_eq!(
+            advertised,
+            vec![
+                (SampleFormat::S24, Words::PackedAndPadded),
+                (SampleFormat::S16, Words::Whole)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_device_naming_one_twenty_four_bit_word_is_read_as_naming_that_one() {
+        for (raw, words, spelled) in [
+            (sys::SPA_AUDIO_FORMAT_S24_LE, Words::Packed, "S24LE"),
+            (sys::SPA_AUDIO_FORMAT_S24_32_LE, Words::Padded, "S24_32LE"),
+        ] {
+            assert_eq!(
+                one_of_each([raw, sys::SPA_AUDIO_FORMAT_F32_LE].into_iter()),
+                vec![
+                    (SampleFormat::S24, words),
+                    (SampleFormat::F32, Words::Whole)
+                ]
+            );
+            assert_eq!(words.spelled(SampleFormat::S24), spelled);
+        }
+        assert_eq!(
+            Words::PackedAndPadded.spelled(SampleFormat::S24),
+            "S24LE, S24_32LE"
+        );
+        assert_eq!(Words::Whole.spelled(SampleFormat::S32), "S32LE");
     }
 
     #[test]

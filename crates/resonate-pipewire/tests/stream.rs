@@ -116,7 +116,7 @@ fn a_source_with_no_engine_behind_it_is_pulled_whole_frames_at_a_time() {
         _ => None,
     });
     let negotiated = announced.iter().find_map(|event| match event {
-        StreamEvent::FormatChanged(spec) => Some(*spec),
+        StreamEvent::FormatChanged { spec, .. } => Some(*spec),
         _ => None,
     });
     stream.close().expect("the stream closes");
