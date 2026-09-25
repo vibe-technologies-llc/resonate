@@ -25,7 +25,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - Only a card's current `Profile` is read. `EnumProfile` is not, so nothing can offer to switch one
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
-- A capture running when the daemon restarts is dropped and not started again
 - Nothing has proved a forced graph rate change against hardware — the only card here offers 48 kHz
   alone — nor DoP against a DAC that decodes it
 

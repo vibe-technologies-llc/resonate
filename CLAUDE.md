@@ -742,6 +742,8 @@ cargo test -p <crate> <test_name> -- --exact --nocapture
 cargo test -p resonate-pipewire --test stream  # needs a live daemon; prints a skip without one
 cargo test -p resonate-pipewire --test reconnect  # hosts a daemon of its own and restarts it;
                                                   #   needs the pipewire binary
+cargo test -p resonate-listen --test reconnect    # the same, under a recording; needs pipewire
+                                                  #   and pw-cli
 cargo test -p resonate-mpris --test bus        # needs a session bus; prints a skip without one,
                                                #   but for the notification press, which hosts a
                                                #   bus of its own and needs dbus-run-session
@@ -770,8 +772,8 @@ takes every push to `master` and every pull request through clippy with `-D warn
 build and tests, the whole workspace's build and tests, the `cargo tree` refusals above and
 `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
 plus ffmpeg and `metaflac`, so the tests that want them run rather than skip. There is no daemon and
-no session bus there, so the PipeWire and bus tests print their skip — all but the reconnect test,
-which starts a daemon of its own, and the notification press, which starts a bus of its own under
+no session bus there, so the PipeWire and bus tests print their skip — all but the two reconnect
+tests, which start a daemon of their own, and the notification press, which starts a bus of its own under
 `dbus-run-session` from the `dbus` package the container is given for it. `RUSTFLAGS` is emptied over `target-cpu=native`, because the cache
 a job restores may have been built on a runner with another CPU, and a native build from one faults
 on another. The separate Fedora 44 workflow builds the source RPM and attaches the binary and

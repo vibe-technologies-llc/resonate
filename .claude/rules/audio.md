@@ -1499,6 +1499,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   session's: it runs its own binary again under `PIPEWIRE_RUNTIME_DIR`, starts a `pipewire` of its
   own with a null sink and nothing else, kills it under an open stream, asserts `Disconnected`,
   starts it again and opens a stream on the sink it finds.
+  **A recording carries on across the restart, because the listener reopens what the client
+  dropped.** `Lost` takes a capture with it, and the capture's events channel disconnects when it
+  goes — the only sender is in the stream's own listener — so `resonate-listen`'s `Capture` reads
+  that as lost and asks the same client for the same capture again every `LOOKS_EVERY`, recording
+  into the same `Recording` from where it had filled to, and adds the time the graph was away to
+  its deadline once one opens. `crates/resonate-listen/tests/reconnect.rs` is the claim: the same
+  hosted daemon, killed under a recording and started again, holds the capture's node a second
+  time. It reads the graph through `pw-cli`, because with no session manager nothing links a
+  capture and no sound reaches it to weigh.
 - **The chosen sink is named, not numbered.** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, which `select_sink` matches on every stream open, because a PipeWire id is assigned
   per object and a device that is unplugged and put back carries a new one. `OutputStatus::sink`

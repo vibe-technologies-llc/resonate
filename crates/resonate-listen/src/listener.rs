@@ -8,7 +8,7 @@ use std::{
 };
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
-use resonate_pipewire::{CaptureRequest, Capturing, Microphone, NodeName, PipeWire};
+use resonate_pipewire::{CaptureRequest, CaptureStream, Capturing, Microphone, NodeName, PipeWire};
 
 use crate::{
     CaptureOp, Clip, Error, Result,
@@ -126,20 +126,19 @@ impl Listener {
             spec,
             media_name: STREAM_NAME.to_owned(),
         };
-        let stream = pipewire
+        let opened = pipewire
             .capture(&request, Box::new(Recorder(Arc::clone(&recording))))
             .map_err(|source| Error::capture(CaptureOp::Open, source))?;
 
-        let started = Instant::now();
-        let deadline = length + GIVES_UP_AFTER_MORE_THAN_ASKED;
-        while !recording.is_full() && !hearing.stopped() && started.elapsed() < deadline {
-            thread::sleep(LOOKS_EVERY);
-            hearing
-                .heard
-                .store((recording.filled() / channels) as u64, Ordering::Relaxed);
-        }
-        let stopped = stream
-            .stop()
+        let capturing = Capture {
+            pipewire: &pipewire,
+            request: &request,
+            recording: &recording,
+        };
+        let left = capturing.until_full(opened, length, channels, hearing);
+        let stopped = left
+            .map(CaptureStream::stop)
+            .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
         let _ = pipewire.shutdown();
         stopped?;
@@ -156,6 +155,66 @@ impl Listener {
             channels: u16::from(spec.channel_count().get()),
             samples,
         })
+    }
+}
+
+struct Capture<'a> {
+    pipewire: &'a PipeWire,
+    request: &'a CaptureRequest,
+    recording: &'a Arc<Recording>,
+}
+
+impl Capture<'_> {
+    fn until_full(
+        &self,
+        opened: CaptureStream,
+        length: Duration,
+        channels: usize,
+        hearing: &Hearing,
+    ) -> Option<CaptureStream> {
+        let started = Instant::now();
+        let mut deadline = length + GIVES_UP_AFTER_MORE_THAN_ASKED;
+        let mut stream = Some(opened);
+        let mut lost_since = None;
+        while !self.recording.is_full() && !hearing.stopped() && started.elapsed() < deadline {
+            thread::sleep(LOOKS_EVERY);
+            hearing.heard.store(
+                (self.recording.filled() / channels) as u64,
+                Ordering::Relaxed,
+            );
+
+            if stream.as_ref().is_some_and(was_lost) {
+                tracing::warn!("the capture went with the PipeWire daemon; opening it again");
+                stream = None;
+                lost_since = Some(Instant::now());
+            }
+            if stream.is_none() {
+                stream = self.again();
+                if stream.is_some()
+                    && let Some(since) = lost_since.take()
+                {
+                    deadline += since.elapsed();
+                }
+            }
+        }
+        stream
+    }
+
+    fn again(&self) -> Option<CaptureStream> {
+        self.pipewire
+            .capture(self.request, Box::new(Recorder(Arc::clone(self.recording))))
+            .inspect(|_| tracing::info!("the capture carries on where it was lost"))
+            .inspect_err(|error| tracing::debug!(%error, "the capture cannot open again yet"))
+            .ok()
+    }
+}
+
+fn was_lost(stream: &CaptureStream) -> bool {
+    loop {
+        match stream.events().try_recv() {
+            Ok(_) => {}
+            Err(error) => return error.is_disconnected(),
+        }
     }
 }
 
