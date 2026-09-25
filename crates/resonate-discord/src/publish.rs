@@ -83,6 +83,7 @@ struct Sent {
 struct CachedCover {
     track: TrackId,
     location: MediaLocation,
+    span: Option<FrameSpan>,
     cover: Option<Cover>,
     checked: Instant,
 }
@@ -274,6 +275,7 @@ fn cover_for(
     if let Some(held) = cached.as_ref()
         && held.track == track
         && held.location == *location
+        && held.span == span
         && (held.cover.is_some()
             || now.saturating_duration_since(held.checked) < COVER_REFRESH_AFTER)
     {
@@ -283,6 +285,7 @@ fn cover_for(
     *cached = Some(CachedCover {
         track,
         location: location.clone(),
+        span,
         cover: cover.clone(),
         checked: now,
     });
@@ -326,7 +329,7 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
     };
 
-    use resonate_core::AppId;
+    use resonate_core::{AppId, Frames};
 
     use super::*;
 
@@ -376,6 +379,48 @@ mod tests {
             Some(Cover::Group(Mbid::new(GROUP).expect("a group id")))
         );
         assert_eq!(releases.reads.load(Ordering::Relaxed), 2);
+    }
+
+    struct CoverPerCut;
+
+    impl Releases for CoverPerCut {
+        fn cover(&self, _location: &MediaLocation, span: Option<FrameSpan>) -> Option<Cover> {
+            let release = match span.map(FrameSpan::start) {
+                Some(Frames(0)) => RELEASE,
+                _ => GROUP,
+            };
+            Some(Cover::Release(Mbid::new(release).expect("a release id")))
+        }
+    }
+
+    #[test]
+    fn another_cut_of_the_same_file_under_the_same_id_is_asked_about_again() {
+        let mut cached = None;
+        let track = TrackId::MAX;
+        let location = MediaLocation::local(Path::new("album.flac"));
+        let now = Instant::now();
+        let first = FrameSpan::between(Frames(0), Frames(44_100));
+        let second = FrameSpan::starting(Frames(44_100));
+        let read = |cached: &mut Option<CachedCover>, span| {
+            cover_for(
+                &CoverPerCut,
+                cached,
+                track,
+                &location,
+                Some(span),
+                &TagSet::default(),
+                now,
+            )
+        };
+
+        assert_eq!(
+            read(&mut cached, first),
+            Some(Cover::Release(Mbid::new(RELEASE).expect("a release id")))
+        );
+        assert_eq!(
+            read(&mut cached, second),
+            Some(Cover::Release(Mbid::new(GROUP).expect("a release id")))
+        );
     }
 
     fn activity(title: &str, position: u64) -> Activity {

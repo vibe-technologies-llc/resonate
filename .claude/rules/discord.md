@@ -70,7 +70,9 @@ and `ureq`.
   being five in twenty seconds. A change inside the window is sent when it ends.
 - **The release is resolved once per track**: `MUSICBRAINZ_ALBUMID` from the tags, then the
   release group, then `Releases`, and only where a cover is going to be drawn. A cover found is
-  held for the track; a miss is asked again after `COVER_REFRESH_AFTER`, because the enrichment
+  held for the track — its id, its location and its span together, because an unscanned row's
+  id is minted again from `TrackId::MAX` by the next load and two cuts of one file share the
+  rest; a miss is asked again after `COVER_REFRESH_AFTER`, because the enrichment
   may land the release while the track is still playing.
 
 ## What it does not do
