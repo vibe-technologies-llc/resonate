@@ -1,6 +1,7 @@
+use resonate_core::{FrameSpan, MediaLocation};
 use resonate_library::{Agreement, Library, StudiedTrack, StudyFilter, Verdict};
 
-use crate::{Result, table::Table};
+use crate::{Error, Result, table::Table};
 
 const NOTHING: &str = "-";
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
@@ -49,6 +50,30 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         table.push(row(track));
     }
     print!("{}", table.render());
+    Ok(())
+}
+
+pub fn take(library: &Library, location: &MediaLocation, span: Option<FrameSpan>) -> Result<()> {
+    let track = location
+        .as_path()
+        .and_then(|path| library.track_at(path, span).transpose())
+        .transpose()?
+        .ok_or_else(|| Error::NotInTheCatalog {
+            location: location.clone(),
+        })?;
+    let taken = library
+        .take_what_was_heard(track.id)?
+        .ok_or_else(|| Error::NothingHeardAs {
+            location: location.clone(),
+        })?;
+
+    println!(
+        "{} — {} | recording {} | heard at {}",
+        taken.artist.as_deref().unwrap_or(NOTHING),
+        taken.title,
+        taken.recording,
+        taken.score
+    );
     Ok(())
 }
 

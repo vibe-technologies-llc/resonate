@@ -963,5 +963,15 @@ pub enum Sub {
             help = "Only the tracks whose audio was recognised as another song"
         )]
         misnamed: bool,
+
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = ["fakes", "suspects", "misnamed"],
+            help = "Name a track by what its audio was recognised as: the title, the artist and \
+                    the recording, in place of what its file says. A file, or a file:// URI whose \
+                    #frames=START-END names one cut of it"
+        )]
+        take: Option<OsString>,
     },
 }

@@ -936,16 +936,22 @@ pub(crate) fn land_what_was_heard(
         .map(|name| store::artist_named_in(tx, name, None))
         .transpose()?;
 
-    let (title, artist) = tx
+    let (title, artist, album) = tx
         .query_row(
             "UPDATE tracks SET
                  title = ?1,
                  artist = coalesce(?2, artist),
                  artist_id = coalesce(?3, artist_id),
+                 artist_mbid = CASE WHEN ?2 IS NULL THEN artist_mbid END,
                  mbid = ?4,
-                 asks = 0, refusals = 0, asked = ?5, answered = ?5
+                 release_track_mbid = NULL,
+                 isrc = NULL,
+                 release_title = NULL,
+                 track_number = NULL,
+                 disc_number = NULL,
+                 asks = 0, refusals = 0, asked = NULL, answered = ?5
               WHERE id = ?6
-             RETURNING title, artist",
+             RETURNING title, artist, album_id",
             params![
                 title,
                 billed,
@@ -954,7 +960,13 @@ pub(crate) fn land_what_was_heard(
                 store::to_nanos(now),
                 id
             ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            },
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
     tx.execute(
@@ -962,6 +974,7 @@ pub(crate) fn land_what_was_heard(
         params![Agreement::Agrees.as_str(), id],
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
+    seated_where_it_was_heard(tx, id, album)?;
 
     store::index_row(
         tx,
@@ -980,6 +993,26 @@ pub(crate) fn land_what_was_heard(
         title,
         artist,
     }))
+}
+
+fn seated_where_it_was_heard(tx: &Transaction<'_>, track: i64, album: Option<i64>) -> Result<()> {
+    tx.execute(
+        "UPDATE release_tracks SET track_id = NULL WHERE track_id = ?1",
+        params![track],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    let Some(album) = album else {
+        return Ok(());
+    };
+    rematch_release_tracks(tx, AlbumId::new(album as u64)?)?;
+    tx.execute(
+        "UPDATE tracks SET (track_number, disc_number) =
+                (SELECT position, disc FROM release_tracks WHERE track_id = ?1 LIMIT 1)
+          WHERE id = ?1 AND EXISTS (SELECT 1 FROM release_tracks WHERE track_id = ?1)",
+        params![track],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 pub(crate) fn stamp_artist_asked(

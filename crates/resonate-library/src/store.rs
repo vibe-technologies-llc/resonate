@@ -2,6 +2,7 @@ use std::{
     cmp::Reverse,
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -1496,24 +1497,14 @@ fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool>
     Ok(true)
 }
 
-fn track(
-    tx: &Transaction<'_>,
-    record: &TrackRecord,
-    artist_id: Option<i64>,
-    album_id: Option<i64>,
-    generation: i64,
-) -> Result<Stored> {
-    let ReplayGain {
-        track_gain,
-        track_peak,
-        album_gain,
-        album_peak,
-    } = record.tags.replay_gain;
-    let now = to_nanos(SystemTime::now());
-    let path = path_text(&record.path)?;
-    let (span_start, span_frames) = span_columns(record.span);
+const ANSWERED_AND_UNCHANGED: &str = "tracks.answered IS NOT NULL
+    AND tracks.file_size      =  excluded.file_size
+    AND tracks.modified       =  excluded.modified
+    AND tracks.sheet_modified IS excluded.sheet_modified
+    AND tracks.span_frames    IS excluded.span_frames";
 
-    tx.query_row(
+static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
+    format!(
         "INSERT INTO tracks (
              root_id, path, title, artist, artist_id, album_id, track_number, disc_number,
              duration, sample_rate, channels, sample_format, codec,
@@ -1544,8 +1535,12 @@ fn track(
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.artist_id
                  ELSE tracks.artist_id END,
              album_id           = excluded.album_id,
-             track_number       = excluded.track_number,
-             disc_number        = excluded.disc_number,
+             track_number       = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.track_number
+                 ELSE excluded.track_number END,
+             disc_number        = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.disc_number
+                 ELSE excluded.disc_number END,
              duration           = excluded.duration,
              sample_rate        = excluded.sample_rate,
              channels           = excluded.channels,
@@ -1561,21 +1556,25 @@ fn track(
              seen               = excluded.seen,
              span_frames        = excluded.span_frames,
              mbid               = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.mbid
                  WHEN excluded.mbid IS NOT NULL                          THEN excluded.mbid
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
                  ELSE tracks.mbid END,
              artist_mbid        = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.artist_mbid
                  WHEN excluded.artist_mbid IS NOT NULL                   THEN excluded.artist_mbid
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
                  ELSE tracks.artist_mbid END,
              release_track_mbid = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.release_track_mbid
                  WHEN excluded.release_track_mbid IS NOT NULL            THEN excluded.release_track_mbid
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
                  ELSE tracks.release_track_mbid END,
              isrc               = CASE
+                 WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.isrc
                  WHEN excluded.isrc IS NOT NULL                          THEN excluded.isrc
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
                  WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
@@ -1606,7 +1605,29 @@ fn track(
                  WHEN tracks.tagged_title  IS NOT excluded.tagged_title
                    OR tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
                  ELSE tracks.answered END
-         RETURNING id, title, artist, artist_id",
+         RETURNING id, title, artist, artist_id"
+    )
+});
+
+fn track(
+    tx: &Transaction<'_>,
+    record: &TrackRecord,
+    artist_id: Option<i64>,
+    album_id: Option<i64>,
+    generation: i64,
+) -> Result<Stored> {
+    let ReplayGain {
+        track_gain,
+        track_peak,
+        album_gain,
+        album_peak,
+    } = record.tags.replay_gain;
+    let now = to_nanos(SystemTime::now());
+    let path = path_text(&record.path)?;
+    let (span_start, span_frames) = span_columns(record.span);
+
+    tx.query_row(
+        UPSERT_TRACK.as_str(),
         params![
             record.root_id,
             path,

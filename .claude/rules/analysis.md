@@ -175,15 +175,29 @@ it answers could change, because it is what a stored study is weighed against.
   the study's `heard_title` as the title, `heard_artist` as the artist — repointing `artist_id`
   through `store::artist_named_in` — and `heard_as` as `tracks.mbid`, *replacing* a recording id
   the file carried rather than filling around it, because a file misnamed by its tags is misnamed
-  by its tag ids too; it stamps `answered`, so a rescan of the unchanged file keeps the names the
-  way it keeps any lookup's, marks the study `Agrees`, and writes the row into `tracks_fts` again.
+  by its tag ids too. It takes the rest of the file's word about which song it is away with it:
+  the ISRC, the release-track id, the release title, the track and disc numbers and — where a
+  heard artist is billed — the artist id, and it lets go of any `release_tracks` row the track was
+  paired to, since that row is the song the file claimed. It then rematches the album, so where
+  the album's release holds the recording the audio is, the track is seated on that row and takes
+  its position; where it holds none the track stands unpaired and unnumbered and the row it left
+  is listed as missing, because a position is what would otherwise pair it straight back. It
+  stamps `answered` and clears `asked`, so a rescan of the unchanged file keeps all of it — the
+  rescan rule in `library.md` — and an unpaired track is due at once, which the next lookup
+  answers through `Route::Recording` and lands the release the recording sits on. It marks the
+  study `Agrees` and writes the row into `tracks_fts` again.
   A row with no recognition kept answers `None` and writes nothing. It is a gesture rather than a
   rule of the pass because a fingerprint is weighed on its score alone, and a score is not a
   reason to rename a file somebody tagged. The Analysis pane's recognition card offers it as
   *Take this name* wherever the card leads — the audio disagreeing with the file or the file
-  naming nothing — and `AnalysisModel::take_the_name` marks the card agreeing once it lands.
-  `a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through_a_rescan` and
-  `a_track_heard_as_nothing_has_nothing_to_take` are the claims.
+  naming nothing — and `AnalysisModel::take_the_name` marks the card agreeing once it lands;
+  `resonate studies --take <FILE>` is the same gesture from the command line, reading a file or a
+  `#frames=` URI through the reader `analyse` takes.
+  `a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through_a_rescan`,
+  `a_track_heard_as_nothing_has_nothing_to_take`,
+  `a_name_taken_from_the_audio_moves_the_track_to_the_row_of_the_album_that_song_is` and
+  `a_name_taken_from_the_audio_lets_go_of_what_the_file_said_it_was_through_a_rescan` are the
+  claims.
 - **`is:fake`, `is:suspect` and `is:misnamed` are `Shape`s**, an `EXISTS` over `track_studies`, so
   the tracks pane lists every fake in the library through the ordinary grammar.
 

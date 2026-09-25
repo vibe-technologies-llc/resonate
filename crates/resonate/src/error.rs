@@ -306,6 +306,10 @@ pub enum Error {
     #[error("the catalog holds no track at {uri}", uri = location.to_uri())]
     NotInTheCatalog { location: MediaLocation },
 
+    #[error("nothing the audio at {uri} was heard as is held; a lookup with an acoustid-key \
+             recognises it", uri = location.to_uri())]
+    NothingHeardAs { location: MediaLocation },
+
     #[error("{sheet} is a cue sheet; name one of its tracks with --track", sheet = sheet.display())]
     SheetWithoutATrack { sheet: PathBuf },
 

@@ -14,9 +14,9 @@ use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
     Agreement, ArtistMatch, ArtistProfile, ArtistRelease, CoverArt, Credit, EnrichOptions,
     EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
-    Library, Link, Mbid, Printed, Recording, RecordingAsked, RecordingMatch, Reference, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, Result, ScanOptions, SortOrder, Sounded, Sources,
-    StudyFilter, TrackQuery, Vault, Verdict,
+    Library, Link, Mbid, Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions,
+    SortOrder, Sounded, Sources, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -27,9 +27,16 @@ const UTF8: u8 = 3;
 const TITLE: &[u8; 4] = b"TIT2";
 const ARTIST: &[u8; 4] = b"TPE1";
 const ALBUM: &[u8; 4] = b"TALB";
+const NUMBER: &[u8; 4] = b"TRCK";
+const ISRC: &[u8; 4] = b"TSRC";
+const RECORDING_ID: &[u8; 4] = b"UFID";
+const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const REPLAY_GAIN_REFERENCE_LUFS: f32 = -18.0;
 const HEARD: &str = "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a";
 const RIGHT: &str = "e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b";
+const TAGGED: &str = "f3a4b5c6-d7e8-4f9a-8b1c-2d3e4f5a6b7c";
+const THURSDAY: &str = "a4b5c6d7-e8f9-4a0b-9c2d-3e4f5a6b7c8d";
+const WEEK: &str = "b5c6d7e8-f9a0-4b1c-8d3e-4f5a6b7c8d9e";
 
 struct Tree {
     root: PathBuf,
@@ -74,7 +81,13 @@ fn synchsafe(value: u32) -> [u8; 4] {
 }
 
 fn frame(into: &mut Vec<u8>, id: &[u8; 4], value: &str) {
-    let mut body = vec![UTF8];
+    let mut body = if id == RECORDING_ID {
+        let mut owned = MUSICBRAINZ_OWNER.as_bytes().to_vec();
+        owned.push(0);
+        owned
+    } else {
+        vec![UTF8]
+    };
     body.extend_from_slice(value.as_bytes());
     into.extend_from_slice(id);
     into.extend_from_slice(&synchsafe(body.len() as u32));
@@ -623,6 +636,191 @@ fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through
     let rescanned = library.track(track)?.expect("the rescanned track");
     assert_eq!(rescanned.title, "Wednesday");
     assert_eq!(recorded(&library).as_deref(), Some(HEARD));
+    Ok(())
+}
+
+fn a_week(tree: &Tree) -> PathBuf {
+    tree.write(
+        "thursday.wav",
+        &song(
+            21_700.0,
+            7,
+            &[
+                (TITLE, "Thursday"),
+                (ARTIST, "Ada"),
+                (ALBUM, "Week"),
+                (NUMBER, "2"),
+            ],
+        ),
+    );
+    tree.write(
+        "renamed.wav",
+        &song(
+            21_700.0,
+            4,
+            &[
+                (TITLE, "Tuesday Again"),
+                (ARTIST, "Ada"),
+                (ALBUM, "Week"),
+                (NUMBER, "1"),
+                (ISRC, "GBAAA0000001"),
+                (RECORDING_ID, TAGGED),
+            ],
+        ),
+    )
+}
+
+fn week_row(position: u32, title: &str, recording: &str) -> ReleaseTrack {
+    ReleaseTrack {
+        position,
+        number: position.to_string(),
+        title: title.to_owned(),
+        artist: Some("Ada".to_owned()),
+        recording: Some(Mbid::new(recording).expect("an mbid")),
+        track: None,
+        length: Some(Duration::from_secs(u64::from(SECONDS))),
+        isrc: None,
+        links: Vec::new(),
+    }
+}
+
+fn week(rows: Vec<ReleaseTrack>) -> Release {
+    Release {
+        id: Mbid::new(WEEK).expect("an mbid"),
+        group: None,
+        title: "Week".to_owned(),
+        credit: vec![Credit {
+            name: "Ada".to_owned(),
+            joined_by: String::new(),
+            mbid: None,
+        }],
+        date: None,
+        country: None,
+        label: None,
+        catalog_number: None,
+        barcode: None,
+        kind: None,
+        disambiguation: None,
+        has_front_cover: false,
+        links: Vec::new(),
+        media: vec![Medium {
+            position: 1,
+            format: None,
+            title: None,
+            tracks: rows,
+        }],
+    }
+}
+
+fn heard_in_a_week(tree: &Tree, rows: Vec<ReleaseTrack>) -> Result<(Library, Track)> {
+    let renamed = a_week(tree);
+    let library = scanned(tree)?;
+    let ear = Arc::new(ByEar::new(vec![(
+        "renamed.wav",
+        heard_as(HEARD, "Wednesday", "Grace", 96),
+    )]));
+    enriched(
+        &library,
+        Silent::new(),
+        Fingerprinters::none().and(ear as Arc<dyn Fingerprints>),
+    )?;
+    let track = library
+        .track_at(&renamed, None)?
+        .expect("the scanned track");
+    let album = track.album_id.expect("the track's album");
+    library.land_release(album, &week(rows))?;
+    library.rematch(album)?;
+    Ok((library, track))
+}
+
+fn paired_to(library: &Library, track: &Track) -> Result<Vec<String>> {
+    Ok(library
+        .release_tracks(track.album_id.expect("the track's album"))?
+        .into_iter()
+        .filter(|row| row.track == Some(track.id))
+        .map(|row| row.title)
+        .collect())
+}
+
+#[test]
+fn a_name_taken_from_the_audio_moves_the_track_to_the_row_of_the_album_that_song_is() -> Result<()>
+{
+    let tree = Tree::new();
+    let (library, track) = heard_in_a_week(
+        &tree,
+        vec![
+            week_row(1, "Tuesday Again", TAGGED),
+            week_row(2, "Thursday", THURSDAY),
+            week_row(3, "Wednesday", HEARD),
+        ],
+    )?;
+    assert_eq!(paired_to(&library, &track)?, vec!["Tuesday Again"]);
+
+    library
+        .take_what_was_heard(track.id)?
+        .expect("a name to take");
+
+    assert_eq!(paired_to(&library, &track)?, vec!["Wednesday"]);
+    let seated = library.track(track.id)?.expect("the track");
+    assert_eq!(seated.track_number, Some(3));
+    assert_eq!(seated.disc_number, Some(1));
+    Ok(())
+}
+
+#[test]
+fn a_name_taken_from_the_audio_lets_go_of_what_the_file_said_it_was_through_a_rescan() -> Result<()>
+{
+    let tree = Tree::new();
+    let (library, track) = heard_in_a_week(
+        &tree,
+        vec![
+            week_row(1, "Tuesday Again", TAGGED),
+            week_row(2, "Thursday", THURSDAY),
+        ],
+    )?;
+    assert_eq!(paired_to(&library, &track)?, vec!["Tuesday Again"]);
+    assert!(
+        !library.tracks_to_ask(WAITS, false)?.contains(&track.id),
+        "a paired track is not asked about"
+    );
+
+    library
+        .take_what_was_heard(track.id)?
+        .expect("a name to take");
+
+    let unseated = |library: &Library| -> Result<()> {
+        assert!(paired_to(library, &track)?.is_empty());
+        let held = library.track(track.id)?.expect("the track");
+        assert_eq!(held.title, "Wednesday");
+        assert_eq!(held.track_number, None);
+        let shared = library.shareable(track.id)?.expect("a share");
+        assert_eq!(
+            shared.recording.as_ref().map(Mbid::as_str),
+            Some(HEARD),
+            "the recording the file carries is not put back"
+        );
+        assert!(
+            library.tracks_to_ask(WAITS, false)?.contains(&track.id),
+            "the track is asked about under the recording it was heard as"
+        );
+        Ok(())
+    };
+    unseated(&library)?;
+
+    library.rematch(track.album_id.expect("the track's album"))?;
+    unseated(&library)?;
+
+    library
+        .scan(ScanOptions {
+            roots: vec![tree.path().to_path_buf()],
+            incremental: false,
+            follow_symlinks: false,
+            extract_cover_art: false,
+            workers: NonZeroUsize::MIN,
+        })?
+        .join()?;
+    library.rematch(track.album_id.expect("the track's album"))?;
+    unseated(&library)?;
     Ok(())
 }
 

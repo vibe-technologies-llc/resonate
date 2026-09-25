@@ -185,9 +185,16 @@ fn run() -> Result<()> {
             )
         }
         Some(Sub::Studies {
+            take: Some(file), ..
+        }) => {
+            let (location, span) = cut_of_argument(file, &sources_over(None))?;
+            studies::take(&open_library(&cli, &config)?, &location, span)
+        }
+        Some(Sub::Studies {
             fakes,
             suspects,
             misnamed,
+            take: None,
         }) => studies::print(
             &open_library(&cli, &config)?,
             StudyFilter {

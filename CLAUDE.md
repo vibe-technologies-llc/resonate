@@ -977,7 +977,9 @@ cargo run -- eq                       # the equaliser: whether it is on, what is
                                       #   measurement and --suggest weighs the chosen sink's own
                                       #   description against the catalogue
 cargo run -- studies                  # what the lookup's studies of every track found, with a
-                                      #   count line; --fakes, --suspects and --misnamed narrow it
+                                      #   count line; --fakes, --suspects and --misnamed narrow it,
+                                      #   and --take <file> names that track by what its audio
+                                      #   was heard as
 cargo run -- stats                    # what was listened to: the totals and the three tables of
                                       #   what was heard most, over --window week, month, year or
                                       #   all, with --top <N> rows in each

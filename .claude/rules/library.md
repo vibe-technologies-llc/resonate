@@ -641,7 +641,12 @@ through `Player::media` like any other unscanned row.
   *find*, and a whole rescan used to write the file's silence over a recording a search had
   identified, which the lookup would not ask about again for a month;
   `a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_retagged` is the
-  claim. So a rescan leaves every other enrichment column where it stood, which
+  claim. An *answered* row whose file is unchanged — the same size, mtime, sheet mtime and span —
+  keeps all four and its `track_number` and `disc_number` as they stand whatever the file says,
+  because the one write that replaces what a file carried is a listener taking the name its audio
+  was heard as, which `analysis.md` has, and a rescan of the same bytes putting the file's word
+  back would undo the gesture; a lookup otherwise only fills, so for every other answered row the
+  file's value and the held one are the same. So a rescan leaves every other enrichment column where it stood, which
   `a_rescan_leaves_every_enrichment_column_where_it_stood` in `tests/library.rs` is the claim of —
   the one exception being the retagging rule below, which is the only place a scan writes
   `tracks.answered`. The four declared columns are what the ask is built from: `asking_albums`
