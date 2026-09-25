@@ -1258,7 +1258,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `ROOTS_QUIET_FOR`. An inotify queue that overflowed notes every root. A catalog or a vault kept
   inside a root cannot set off the scan that writes it, because neither writes audio or sheets
   there. The model's `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY`, a quarter second: it
-  rebuilds the watch wherever `Library::roots` moved, hands what is gone to
+  rebuilds the watch wherever `Library::roots` moved — `RootsWatch::taking_over` carrying every
+  root and path the old watch had heard and not yet handed out onto the new one with the moment
+  each was heard, so a drive coming or going costs no other root a change still settling, and a
+  watch that cannot be laid leaving the old one standing and the roots untried, so the next look
+  tries again — hands what is gone to
   `Library::forget_the_gone` — which takes the `Walk` guard, deletes the rows at each path or under
   it whose file is not there, spares a vaulted row and a delivered one the way the scan's prune
   does, and sweeps what that orphaned — and reloads where it forgot anything, and where a root has

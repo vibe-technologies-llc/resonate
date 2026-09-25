@@ -20,6 +20,17 @@ struct Moved {
     gone: BTreeMap<PathBuf, Instant>,
 }
 
+impl Moved {
+    fn carry(&mut self, left: Self) {
+        self.roots.extend(left.roots);
+        self.last = self.last.max(left.last);
+        for (path, heard) in left.gone {
+            let at = self.gone.entry(path).or_insert(heard);
+            *at = (*at).max(heard);
+        }
+    }
+}
+
 enum Heard {
     Gone,
     Changed,
@@ -63,6 +74,17 @@ impl RootsWatch {
             moved,
             _watcher: watcher,
         })
+    }
+
+    pub fn taking_over(self, previous: Self) -> Self {
+        let Self {
+            moved: left,
+            _watcher: stopped,
+        } = previous;
+        drop(stopped);
+        let left = std::mem::take(&mut *left.lock());
+        self.moved.lock().carry(left);
+        self
     }
 
     pub fn settled(&self, quiet: Duration) -> Vec<PathBuf> {
@@ -331,6 +353,42 @@ mod tests {
             vec![scratch.path.clone()]
         );
         assert!(watch.taken_away(Duration::ZERO).is_empty());
+    }
+
+    fn heard_anything(watch: &RootsWatch, wait: Duration) -> bool {
+        let started = Instant::now();
+        while started.elapsed() < wait {
+            let moved = watch.moved.lock();
+            if moved.last.is_some() || !moved.gone.is_empty() {
+                return true;
+            }
+            drop(moved);
+            thread::sleep(LOOKED_EVERY);
+        }
+        false
+    }
+
+    #[test]
+    fn a_watch_laid_again_hands_out_what_the_one_it_replaced_had_heard() {
+        let scratch = Scratch::new("laid-again");
+        let taken = scratch.path.join("album/echoes.flac");
+        fs::write(&taken, b"fLaC").expect("a file");
+        let first = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
+        fs::remove_file(&taken).expect("the file taken away");
+        assert!(heard_anything(&first, HEARD_WITHIN));
+        fs::write(scratch.path.join("album/time.flac"), b"fLaC").expect("a file");
+        thread::sleep(QUIET / 2);
+
+        let second = RootsWatch::over(std::slice::from_ref(&scratch.path))
+            .expect("a watch")
+            .taking_over(first);
+
+        assert_eq!(
+            settled_within(&second, HEARD_WITHIN),
+            vec![scratch.path.clone()]
+        );
+        assert_eq!(taken_away_within(&second, HEARD_WITHIN), vec![taken]);
     }
 
     #[test]

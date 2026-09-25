@@ -787,8 +787,8 @@ impl LibraryModel {
                     continue;
                 }
 
-                if changed_while_closed && watching.is_laid() {
-                    if !watching.watches_anything() {
+                if changed_while_closed && watching.has_read_the_roots() {
+                    if !watching.finds_a_root_there() {
                         changed_while_closed = false;
                         continue;
                     }
@@ -3571,6 +3571,7 @@ fn read_in(imported: Imported) -> String {
 struct Watching {
     watch: Option<RootsWatch>,
     tried: Option<Vec<PathBuf>>,
+    there: Option<bool>,
     gone: Vec<PathBuf>,
     absent: Vec<PathBuf>,
     returned: Vec<PathBuf>,
@@ -3587,18 +3588,23 @@ impl Watching {
         };
         let (present, absent): (Vec<PathBuf>, Vec<PathBuf>) =
             roots.into_iter().partition(|root| root.is_dir());
+        self.there = Some(!present.is_empty());
         if self.tried.as_deref() == Some(present.as_slice()) {
             return self;
         }
+        let Some(laid) = RootsWatch::over(&present) else {
+            return self;
+        };
 
         if self.tried.is_some() {
             let returned = self.absent.iter().filter(|root| present.contains(root));
             self.returned.extend(returned.cloned());
         }
         self.absent = absent;
-        self.watch = (!present.is_empty())
-            .then(|| RootsWatch::over(&present))
-            .flatten();
+        self.watch = Some(match self.watch.take() {
+            Some(previous) => laid.taking_over(previous),
+            None => laid,
+        });
         self.tried = Some(present);
         self
     }
@@ -3607,12 +3613,12 @@ impl Watching {
         mem::take(&mut self.returned)
     }
 
-    const fn is_laid(&self) -> bool {
-        self.tried.is_some()
+    const fn has_read_the_roots(&self) -> bool {
+        self.there.is_some()
     }
 
-    fn watches_anything(&self) -> bool {
-        self.tried.as_ref().is_some_and(|roots| !roots.is_empty())
+    fn finds_a_root_there(&self) -> bool {
+        self.there == Some(true)
     }
 
     fn settled(&self) -> Vec<PathBuf> {
