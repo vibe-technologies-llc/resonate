@@ -363,7 +363,11 @@ through `Player::media` like any other unscanned row.
   from the bare scan's walk and stepped over by the tidy, because an unmounted drive is not an
   empty one and pruning it would take every play counted under it. A root named on the command
   line is still `Error::RootNotADirectory` where it is missing, that being a thing somebody asked
-  for rather than a thing found in the table.
+  for rather than a thing found in the table. A scan the window's watch asks for is the other
+  kind: `Library::scan_what_is_held` walks only the roots it names that `roots` still holds and
+  that are there, registers nothing, and settles them before the thread starts — answering `None`
+  where none is left — so a drive unplugged after its root was queued costs the roots queued
+  beside it nothing, and the window takes a root off what it owes only once a scan has taken it.
 - **A track is keyed by `(path, span_start)`, not by path.** N cue rows share one path, so the
   `UNIQUE` is on the pair and `span_start` is `NOT NULL DEFAULT 0` rather than nullable — SQLite
   treats NULLs as distinct in a unique index, which would let one file insert twice. Every lookup

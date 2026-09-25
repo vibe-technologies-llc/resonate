@@ -2539,8 +2539,9 @@ impl LibraryModel {
         if self.work.is_busy() {
             return false;
         }
-        let handle = match walk(&self.library, roots, reading) {
-            Ok(handle) => handle,
+        let handle = match walk(&self.library, roots, reading, prompted) {
+            Ok(Some(handle)) => handle,
+            Ok(None) => return true,
             Err(error) if prompted == Prompted::OnItsOwn => {
                 tracing::debug!(%error, "a scan for files changed under the roots could not start yet");
                 return false;
@@ -3652,15 +3653,20 @@ fn walk(
     library: &Library,
     roots: Vec<PathBuf>,
     reading: Reading,
-) -> resonate_library::Result<ScanHandle> {
+    prompted: Prompted,
+) -> resonate_library::Result<Option<ScanHandle>> {
     let workers = thread::available_parallelism().unwrap_or(NonZeroUsize::MIN);
-    library.scan(ScanOptions {
+    let options = ScanOptions {
         roots,
         incremental: reading == Reading::WhatChanged,
         follow_symlinks: false,
         extract_cover_art: true,
         workers,
-    })
+    };
+    match prompted {
+        Prompted::OnItsOwn => library.scan_what_is_held(options),
+        Prompted::ByHand | Prompted::ByTheInbox => library.scan(options).map(Some),
+    }
 }
 
 fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Result<Loaded> {

@@ -242,13 +242,38 @@ pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandl
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
-            let outcome = run(&inner, &options, &progress);
+            let outcome = roots(&inner, &options.roots)
+                .and_then(|roots| run(&inner, &options, roots, &progress));
             drop(walking);
             outcome
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
     Ok(PassHandle::of(PassKind::Scan, owned, thread))
+}
+
+pub(crate) fn start_over_held(
+    inner: Arc<Inner>,
+    options: ScanOptions,
+) -> Result<Option<ScanHandle>> {
+    let walking = inner.walk_the_tree()?;
+    let roots = held_roots(&inner, &options.roots)?;
+    if roots.is_empty() {
+        return Ok(None);
+    }
+    let progress = Arc::new(ScanProgress::default());
+    let owned = Arc::clone(&progress);
+
+    let thread = thread::Builder::new()
+        .name("resonate-scan".to_owned())
+        .spawn(move || {
+            let outcome = run(&inner, &options, roots, &progress);
+            drop(walking);
+            outcome
+        })
+        .map_err(|source| Error::ThreadSpawn { source })?;
+
+    Ok(Some(PassHandle::of(PassKind::Scan, owned, thread)))
 }
 
 struct Root {
@@ -385,10 +410,10 @@ enum Outcome {
 fn run(
     inner: &Arc<Inner>,
     options: &ScanOptions,
+    roots: Vec<Root>,
     progress: &Arc<ScanProgress>,
 ) -> Result<ScanSummary> {
     let generation = store::to_nanos(SystemTime::now());
-    let roots = roots(inner, &options.roots)?;
     let ids: Vec<i64> = roots.iter().map(|root| root.id).collect();
     let known = Known::under(inner, &roots)?;
 
@@ -461,29 +486,34 @@ fn run(
     })
 }
 
+fn held_roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
+    let held = inner.read(|connection| {
+        let mut statement = connection
+            .prepare("SELECT id, path FROM roots ORDER BY path")
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map([], |row| {
+                Ok(Root {
+                    id: row.get(0)?,
+                    path: PathBuf::from(row.get::<_, String>(1)?),
+                })
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+
+    Ok(held
+        .into_iter()
+        .filter(|root| wanted.is_empty() || wanted.contains(&root.path))
+        .filter(is_there)
+        .collect())
+}
+
 fn roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
+    if wanted.is_empty() {
+        return held_roots(inner, wanted);
+    }
     inner.write(|transaction| {
-        if wanted.is_empty() {
-            let mut statement = transaction
-                .prepare("SELECT id, path FROM roots ORDER BY path")
-                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-            let found = statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-                })
-                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-                .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-            return Ok(found
-                .into_iter()
-                .map(|(id, path)| Root {
-                    id,
-                    path: PathBuf::from(path),
-                })
-                .filter(is_there)
-                .collect());
-        }
-
         let mut resolved: Vec<Root> = Vec::with_capacity(wanted.len());
         for root in wanted {
             if !root.is_dir() {

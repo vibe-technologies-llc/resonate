@@ -1561,6 +1561,10 @@ impl Library {
         scan::start(Arc::clone(&self.inner), options)
     }
 
+    pub fn scan_what_is_held(&self, options: ScanOptions) -> Result<Option<ScanHandle>> {
+        scan::start_over_held(Arc::clone(&self.inner), options)
+    }
+
     pub fn forget_the_gone(&self, gone: &[PathBuf]) -> Result<u64> {
         scan::forget_the_gone(&self.inner, gone)
     }

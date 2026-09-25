@@ -1709,6 +1709,50 @@ fn a_root_that_is_not_a_directory_is_refused() -> Result<()> {
 }
 
 #[test]
+fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() -> Result<()> {
+    let kept = Tree::new();
+    let unplugged = Tree::new();
+    let dropped = Tree::new();
+    kept.write("one.wav", &Wav::new().build());
+    unplugged.write("two.wav", &Wav::new().build());
+    dropped.write("three.wav", &Wav::new().build());
+    let library = Library::open_in_memory()?;
+    for tree in [&kept, &unplugged, &dropped] {
+        scan(&library, &options(tree))?;
+    }
+    let canonical = |tree: &Tree| tree.path().canonicalize().expect("the tree exists");
+    let (kept_root, unplugged_root, dropped_root) =
+        (canonical(&kept), canonical(&unplugged), canonical(&dropped));
+
+    assert!(library.remove_root(&dropped_root)?);
+    fs::remove_dir_all(&unplugged_root).expect("the tree taken away");
+    kept.write("four.wav", &Wav::new().build());
+
+    assert!(
+        library
+            .scan_what_is_held(ScanOptions {
+                roots: vec![dropped_root.clone()],
+                ..options(&kept)
+            })?
+            .is_none()
+    );
+    let summary = library
+        .scan_what_is_held(ScanOptions {
+            roots: vec![unplugged_root.clone(), kept_root.clone(), dropped_root],
+            ..options(&kept)
+        })?
+        .expect("a held root to walk")
+        .join()?;
+
+    assert_eq!(summary.stats.added, 1);
+    let mut held = vec![kept_root, unplugged_root];
+    held.sort();
+    assert_eq!(library.roots()?, held);
+    assert_eq!(all(&library)?.len(), 3);
+    Ok(())
+}
+
+#[test]
 fn a_root_inside_a_root_is_refused() -> Result<()> {
     let tree = Tree::new();
     tree.write("rock/one.wav", &Wav::new().build());
