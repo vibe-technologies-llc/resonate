@@ -2386,15 +2386,16 @@ impl Library {
 
     pub fn resumption(&self) -> Result<Option<Resumption>> {
         self.inner.read(|connection| {
-            let Some((row, at, shuffle)) = connection
+            let Some((row, at, shuffle, next)) = connection
                 .query_row(
-                    "SELECT row, at, shuffle FROM resume WHERE id = 1",
+                    "SELECT row, at, shuffle, next_first, next_last FROM resume WHERE id = 1",
                     [],
                     |read| {
                         Ok((
                             read.get::<_, i64>(0)?,
                             read.get::<_, i64>(1)?,
                             read.get::<_, bool>(2)?,
+                            kept_span(read.get(3)?, read.get(4)?),
                         ))
                     },
                 )
@@ -2446,6 +2447,7 @@ impl Library {
                 row: row.max(0) as usize,
                 at: Frames(at.max(0) as u64),
                 shuffle,
+                next,
             }))
         })
     }
@@ -2470,9 +2472,12 @@ impl Library {
             keep_order(
                 transaction,
                 &resumption.order,
-                resumption.row,
-                resumption.at,
-                resumption.shuffle,
+                KeptPlace {
+                    row: resumption.row,
+                    at: resumption.at,
+                    shuffle: resumption.shuffle,
+                    next: resumption.next,
+                },
             )
         })
     }
@@ -2482,9 +2487,12 @@ impl Library {
             keep_order(
                 transaction,
                 &reordered.order,
-                reordered.row,
-                reordered.at,
-                reordered.shuffle,
+                KeptPlace {
+                    row: reordered.row,
+                    at: reordered.at,
+                    shuffle: reordered.shuffle,
+                    next: reordered.next,
+                },
             )
         })
     }
@@ -3444,12 +3452,23 @@ fn collect(inner: &Inner, sql: &str, binds: Vec<Value>) -> Result<Vec<Track>> {
     raw.into_iter().map(RawTrack::into_track).collect()
 }
 
-fn keep_order(
-    transaction: &rusqlite::Transaction<'_>,
-    order: &[usize],
+struct KeptPlace {
     row: usize,
     at: Frames,
     shuffle: bool,
+    next: Option<Span>,
+}
+
+fn kept_span(first: Option<i64>, last: Option<i64>) -> Option<Span> {
+    let first = usize::try_from(first?).ok()?;
+    let last = usize::try_from(last?).ok()?;
+    Some(Span::between(first, last))
+}
+
+fn keep_order(
+    transaction: &rusqlite::Transaction<'_>,
+    order: &[usize],
+    kept: KeptPlace,
 ) -> Result<()> {
     transaction
         .execute("DELETE FROM resume_order", [])
@@ -3467,11 +3486,21 @@ fn keep_order(
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
 
-    keep_place(transaction, row, at)?;
+    keep_place(transaction, kept.row, kept.at)?;
+    let next = kept.next.map(|next| {
+        (
+            i64::try_from(next.first()).unwrap_or(i64::MAX),
+            i64::try_from(next.last()).unwrap_or(i64::MAX),
+        )
+    });
     transaction
         .execute(
-            "UPDATE resume SET shuffle = ?1 WHERE id = 1",
-            params![shuffle],
+            "UPDATE resume SET shuffle = ?1, next_first = ?2, next_last = ?3 WHERE id = 1",
+            params![
+                kept.shuffle,
+                next.map(|(first, _)| first),
+                next.map(|(_, last)| last)
+            ],
         )
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Update, source))

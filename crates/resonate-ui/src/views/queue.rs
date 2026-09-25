@@ -239,6 +239,7 @@ impl RootView {
         }
 
         let position = self.player.read(cx).state().queue_position;
+        let playing_next = self.player.read(cx).queued().next;
         let queued = queue.len();
         let heading = self.queue_heading(&queue, cx);
         let scroll = self.queue_rows.clone();
@@ -278,6 +279,8 @@ impl RootView {
                                 let track =
                                     this.library.update(cx, |library, _| library.track_of(item));
                                 let current = position == Some(index);
+                                let waiting =
+                                    !current && playing_next.is_some_and(|next| next.holds(index));
                                 let drawn = match track {
                                     Some(track) => listing::scanned(track),
                                     None => this
@@ -322,6 +325,8 @@ impl RootView {
                                     .hover(|entry| entry.bg(rgb(theme::hover())))
                                     .child(if current {
                                         listing::playing_mark()
+                                    } else if waiting {
+                                        listing::playing_next_mark()
                                     } else {
                                         listing::number_cell(SharedString::from(
                                             (index + 1).to_string(),
@@ -491,6 +496,10 @@ impl RootView {
         }
         if let Some(position) = position {
             under.push(format!("on row {}", position + 1));
+        }
+        let waiting = waiting_to_play(self.player.read(cx).queued().next, position);
+        if waiting > 0 {
+            under.push(format!("{waiting} to play next"));
         }
 
         let taken_out = self.took_out.offered(queue);
@@ -730,6 +739,14 @@ impl Keyed {
             RowOrder::File => self.file.cmp(&other.file),
         }
     }
+}
+
+fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> usize {
+    next.map_or(0, |next| {
+        playing.map_or(next.rows(), |at| {
+            next.last().saturating_sub(at).min(next.rows())
+        })
+    })
 }
 
 fn took_out(offer: Offer) -> String {

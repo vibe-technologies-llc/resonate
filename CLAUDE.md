@@ -231,9 +231,11 @@ Invariants the layering exists to protect:
   serves it is the one that speaks it.** `resonate queue <files>` is `resonate-mpris`'s `Running`:
   it lists the bus names, takes `org.mpris.MediaPlayer2.resonate` or, where that is not there, the
   first `instance<pid>` under it by name, and calls `AddTrack` a row at a time. Where a row lands is
-  a `Placement` and `Placement::row` is the arithmetic, the same two the window and the service
-  already use; what the client adds is the turn from a row into the *anchor* the spec asks for,
-  which is the track before it, `NoTrack` being the front. A run of files is added back to front
+  the `Placement` the window and the service already use, and what the client adds is the turn
+  from it into the *anchor* the spec asks for, which is the track before it, `NoTrack` being the
+  front: `Next` anchors on the row being played and `Queued` on the last row waiting to play
+  after it, which `org.resonate.Player1`'s `PlayingNext` counts, so an `AddTrack` there joins
+  what is queued rather than landing after the whole playlist. A run of files is added back to front
   against one anchor, because each lands immediately after it, so what was named first arrives
   first with no read between the calls, and `--play` is `set_as_current` on the last call, which is
   the first file. Living beside the service is what keeps one notion of a track path, one of a
@@ -306,7 +308,8 @@ Invariants the layering exists to protect:
   `PlayerState::sleeping` publishes what is left, so no front end keeps a clock of its own.
 - **What MPRIS has no word for gets an interface of our own, not a stretched one.**
   `org.resonate.Player1` sits at the same object path as the four MPRIS interfaces and carries
-  `SetSleep` and `Sleep`, because the spec has no vocabulary for a sleep timer and inventing a
+  `SetSleep` and `Sleep`, and `PlayingNext` beside them, because the spec has no vocabulary for a
+  sleep timer or for rows queued apart from what is playing and inventing a
   meaning for one of its properties would be worse than answering on a name that is plainly ours.
   The mode strings are one typed mapping in `track.rs` beside the one `PlaybackStatus` already
   is, so the property is written and read back through one vocabulary. The poll diffs the

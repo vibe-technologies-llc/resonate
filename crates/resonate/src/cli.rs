@@ -381,7 +381,8 @@ pub struct QueueArgs {
 
     #[arg(
         long,
-        help = "Put them after the row being played rather than at the end of the queue"
+        help = "Play them straight after the row being played, ahead of anything already \
+                queued, rather than after what is queued"
     )]
     pub next: bool,
 

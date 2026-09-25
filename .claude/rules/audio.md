@@ -766,15 +766,35 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   binary's `play_queue` all read through it, so a row the queue renamed on the way in still stamps
   as the playlist it came from. Hashing the whole `QueueItem` would have made `one_id_each` look
   like an edit to the queue.
-- **Loading replaces the queue; queueing adds to it, and where a row lands is a `Placement`.**
-  `Command::Insert` carries `Placement::Next`, `Placement::Last` or `Placement::At(row)` rather than
-  an `Option<usize>`, and `Placement::row` is the one place that says what *next* means — the row
-  after the one playing, or the end where nothing is — so the window, `resonate-mpris`'s `AddTrack`
-  and the binary's `Host::open` all land a row by the same arithmetic. Queueing takes the queue
-  out of `Library::playing_playlist`, because a queue with a row added to it is no longer the
-  playlist it was loaded from, even where the row came from that playlist — it restamps the queue
-  rather than clearing the cell, so the badge comes back if the row is dropped again. Whether it
-  starts the transport is the `play` flag beside them, which the note below is the whole of.
+- **What was queued is kept apart from what is playing, and sits between the row being heard
+  and the rest of it.** `Queue` holds two lists, the way Apple Music does: `order`, the album or
+  playlist that was loaded — what the queue is *playing from*, and the only list shuffle, a wrap
+  under `RepeatMode::Queue` and unshuffling ever touch — and `next`, the rows somebody asked to
+  hear, in the order they asked. `after` says how many rows of `order` are drawn ahead of `next`
+  and `Seat` whether the row being heard is `order[after - 1]`, `next[0]` or nothing, so the one
+  list every reader draws is `order[..after] ++ next ++ order[after..]` and a position still means
+  a row of it. Playing moves through `next` before `order` goes on, and a row of `next` that has
+  been heard, or skipped by choosing another row, *leaves the queue* rather than joining the
+  playlist, which is why `PlayerState::queue_stamp` is `Queue::playing_from` — the stamp of
+  `order`'s rows alone — and `Library::playing_playlist` still badges the playlist while a queued
+  row plays; `Queued::stamp` is every row, and it is what `Keeping` weighs. Going back from a
+  queued row leaves it queued, and `next` follows whatever row of `order` is heard, so a *Previous*
+  or a jump into the playlist keeps what was queued waiting after it; choosing a queued row hears
+  it and leaves the rest queued. A load replaces `order` and keeps what waits in `next`, and a
+  resumption carries `next` as `Resumption::next`, the span of it in the drawn list, which the
+  `resume` table holds as `next_first` and `next_last`.
+- **Loading replaces what is playing; queueing adds to what waits, and where a row lands is a
+  `Placement`.** `Command::Insert` carries `Placement::Next` — the front of `next`, behind a
+  queued row being heard — `Placement::Queued` — the end of `next` — or `Placement::At(row)`, a
+  row of the drawn list, which joins `next` wherever the row before it is the one being heard or
+  a queued one, and joins `order` otherwise, so *Put back* and MPRIS's `AddTrack` land a row where
+  they name. Where nothing is being heard there is nothing to wait behind, so every placement
+  lands in `order` and the queue is left on the first row it placed. A drag sorts a row the same
+  way, by the row it lands after, and a row put into `order` takes the queue out of
+  `Library::playing_playlist`, because it is no longer the playlist it was loaded from — it
+  restamps the queue rather than clearing the cell, so the badge comes back if the row is dropped
+  again. Whether it starts the transport is the `play` flag beside them, which the note below is
+  the whole of.
   `RootView::queue` takes `PlaylistEntry`s, which is already the vocabulary for a location and the
   library row where there is one, so a scanned track and an unscanned playlist row reach the queue
   the same way — `root::listed` turns the first into the second.
@@ -830,7 +850,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **What the transport was doing is sampled the way a play is, and what it answers says how much
   of it moved.** `Keeping` sits beside `Listening` and reads the same `PlayerState` and published
   queue, and the three things it can answer are the three tables the catalog holds.
-  `QueueStamp` moving — rows arriving or leaving — answers `Keep::Queue` with the whole run.
+  `Queued::stamp` moving — rows arriving or leaving, queued ones among them — answers
+  `Keep::Queue` with the whole run.
   `Queued::revision` or the shuffle moving where the stamp did not answers `Keep::Order` with the
   order alone, which is a drag, a toggle, or the reshuffle a wrap under `RepeatMode::Queue` takes:
   the rows are the same rows and rewriting a URI per row said nothing. Anything else answers

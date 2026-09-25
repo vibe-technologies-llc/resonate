@@ -31,13 +31,15 @@ const NEW_HINT: &str = "Start a playlist, and name it";
 
 const PLAY_HINT: &str = "Play this playlist from the top";
 
-pub(crate) const NEXT_HINT: &str = "Put this after the track playing, and hear it next";
+pub(crate) const NEXT_HINT: &str = "Hear this straight after the track playing";
 
-pub(crate) const LAST_HINT: &str = "Put this at the end of the queue";
+pub(crate) const QUEUE_HINT: &str =
+    "Queue this after what is already queued, ahead of the rest of what is playing";
 
-const PLAYLIST_NEXT_HINT: &str = "Put this playlist after the track playing, and hear it next";
+const PLAYLIST_NEXT_HINT: &str = "Hear this playlist straight after the track playing";
 
-const PLAYLIST_LAST_HINT: &str = "Put this playlist at the end of the queue";
+const PLAYLIST_QUEUE_HINT: &str =
+    "Queue this playlist after what is already queued, ahead of the rest of what is playing";
 
 const RENAME_HINT: &str = "Give this playlist another name";
 
@@ -797,7 +799,7 @@ impl RootView {
                     kit::button(
                         "playlist-next",
                         Some(Icon::QueueNext),
-                        "Play next",
+                        menu::PLAY_NEXT,
                         PLAYLIST_NEXT_HINT,
                         Tone::Ghost,
                     )
@@ -810,12 +812,12 @@ impl RootView {
                     kit::button(
                         "playlist-last",
                         Some(Icon::QueueLast),
-                        "Add to queue",
-                        PLAYLIST_LAST_HINT,
+                        menu::ADD_TO_QUEUE,
+                        PLAYLIST_QUEUE_HINT,
                         Tone::Outlined,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.queue(&queued, Placement::Last, cx);
+                        this.queue(&queued, Placement::Queued, cx);
                     }))
                 })
                 .child({
@@ -1017,7 +1019,7 @@ impl RootView {
                     ))
                     .child(self.queue_control(
                         ("entry-last", index),
-                        Placement::Last,
+                        Placement::Queued,
                         move || Arc::clone(&queueing),
                         cx,
                     ))
@@ -1304,7 +1306,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let (icon, saying) = match at {
             Placement::Next => (Icon::QueueNext, NEXT_HINT),
-            Placement::Last | Placement::At(_) => (Icon::QueueLast, LAST_HINT),
+            Placement::Queued | Placement::At(_) => (Icon::QueueLast, QUEUE_HINT),
         };
 
         kit::icon_button(id, icon, saying).on_click(cx.listener(move |this, _, _, cx| {
@@ -1445,11 +1447,11 @@ fn playlist_row(
                     ),
                 )
                 .child(
-                    control("last-saved", id, Icon::QueueLast, PLAYLIST_LAST_HINT).on_click(
+                    control("last-saved", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(
                         cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             let entries = this.library.read(cx).entries_of(id);
-                            this.queue(&entries, Placement::Last, cx);
+                            this.queue(&entries, Placement::Queued, cx);
                         }),
                     ),
                 )
@@ -1497,7 +1499,7 @@ fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool) -> Menu {
         })
         .does(Icon::QueueLast, menu::ADD_TO_QUEUE, move |this, _, cx| {
             let entries = this.library.read(cx).entries_of(id);
-            this.queue(&entries, Placement::Last, cx);
+            this.queue(&entries, Placement::Queued, cx);
         })
         .apart()
         .does(pin_icon(pinned), pin_label(pinned), move |this, _, cx| {

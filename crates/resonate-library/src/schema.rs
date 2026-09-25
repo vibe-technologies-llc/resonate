@@ -25,6 +25,8 @@ const MIGRATIONS: &[&str] = &[
          service TEXT PRIMARY KEY,
          through INTEGER NOT NULL
      ) STRICT, WITHOUT ROWID;",
+    "ALTER TABLE resume ADD COLUMN next_first INTEGER;
+     ALTER TABLE resume ADD COLUMN next_last INTEGER;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

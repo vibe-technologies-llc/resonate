@@ -33,7 +33,7 @@ use crate::{
     BusOp, Error, Heard, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
     art::Pictures,
     desktop::Errands,
-    interfaces::{Owed, OwnInterface, PlayerInterface, Root, Shared},
+    interfaces::{Owed, OwnInterface, PlayerInterface, Root, Shared, waiting_to_play},
     notify::{Shown, shown},
     playlists::{PlaylistsInterface, listed, unheard_of},
     track::{
@@ -351,6 +351,7 @@ struct Watched {
     can_seek: bool,
     seeks: Seeks,
     sleep: Sleep,
+    waiting: u32,
     playhead: Option<Playhead>,
     reads: u64,
 }
@@ -399,7 +400,7 @@ fn announce(
 
         let next = snapshot(shared, playlists, Some(&watched));
         publish(&player, &watched, &next);
-        publish_sleep(&ours, &watched, &next);
+        publish_ours(&ours, &watched, &next);
         publish_tracks(&tracks, shared, &watched, &next);
         if let Some(collected) = collected.as_ref() {
             publish_playlists(collected, &watched.playlists, &next.playlists);
@@ -544,7 +545,8 @@ fn snapshot(
     let digest = shared.player.digest();
     let current = state.current;
     let art = shared.art(&state, digest.as_ref());
-    let queue = shared.player.queue();
+    let queued = shared.player.queued();
+    let queue = queued.rows;
     let heard = Reading::again(shared, &state, &queue, before.map(|held| &held.heard));
     let described = Described {
         track: current.map(|track| TrackState {
@@ -588,6 +590,7 @@ fn snapshot(
         }),
         seeks: state.seeks,
         sleep: sleep_status(state.sleeping),
+        waiting: waiting_to_play(queued.next, state.queue_position),
         playhead: current.map(|current| Playhead {
             position: current.position,
             rate: current.source.rate.hz(),
@@ -636,13 +639,17 @@ fn status_moved(before: PlaybackState, now: PlaybackState) -> bool {
     PlaybackStatus::from(before) != PlaybackStatus::from(now)
 }
 
-fn publish_sleep(ours: &InterfaceRef<OwnInterface>, before: &Watched, now: &Watched) {
-    if before.sleep == now.sleep {
-        return;
+fn publish_ours(ours: &InterfaceRef<OwnInterface>, before: &Watched, now: &Watched) {
+    if before.sleep != now.sleep {
+        report(zbus::block_on(
+            ours.get().sleep_changed(ours.signal_emitter()),
+        ));
     }
-    report(zbus::block_on(
-        ours.get().sleep_changed(ours.signal_emitter()),
-    ));
+    if before.waiting != now.waiting {
+        report(zbus::block_on(
+            ours.get().playing_next_changed(ours.signal_emitter()),
+        ));
+    }
 }
 
 fn publish_tracks(

@@ -31,6 +31,7 @@ const GET_TRACKS_METADATA: &str = "GetTracksMetadata";
 const GET_PLAYLISTS: &str = "GetPlaylists";
 const ACTIVATE_PLAYLIST: &str = "ActivatePlaylist";
 const SET_SLEEP: &str = "SetSleep";
+const PLAYING_NEXT: &str = "PlayingNext";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
 const PLAY_PAUSE: &str = "PlayPause";
@@ -378,16 +379,33 @@ impl Running {
 
     fn landing(&self, at: Placement) -> Result<OwnedObjectPath> {
         let tracks = self.tracks()?;
-        let playing = match at {
-            Placement::Next => self.playing(&tracks)?,
-            Placement::Last | Placement::At(_) => None,
+        let row = match at {
+            Placement::At(row) => row.min(tracks.len()),
+            Placement::Next => self.after_the_playing(&tracks, 0)?,
+            Placement::Queued => self.after_the_playing(&tracks, self.waiting()?)?,
         };
 
-        let row = at.row(tracks.len(), playing);
         Ok(row
             .checked_sub(1)
             .and_then(|before| tracks.get(before).cloned())
             .unwrap_or_else(no_track))
+    }
+
+    fn after_the_playing(&self, tracks: &[OwnedObjectPath], waiting: usize) -> Result<usize> {
+        Ok(self.playing(tracks)?.map_or(tracks.len(), |at| {
+            at.saturating_add(1)
+                .saturating_add(waiting)
+                .min(tracks.len())
+        }))
+    }
+
+    fn waiting(&self) -> Result<usize> {
+        let waiting: u32 = self
+            .proxy(OWN_INTERFACE)?
+            .get_property(PLAYING_NEXT)
+            .map_err(|source| Error::bus(BusOp::Read, source))?;
+
+        Ok(usize::try_from(waiting).unwrap_or(usize::MAX))
     }
 
     fn tracks(&self) -> Result<Vec<OwnedObjectPath>> {

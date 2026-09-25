@@ -309,14 +309,18 @@ pub(crate) fn number_cell(text: SharedString) -> Div {
 }
 
 pub(crate) fn playing_mark() -> Div {
+    row_mark(Icon::Play)
+}
+
+pub(crate) fn playing_next_mark() -> Div {
+    row_mark(Icon::QueueNext)
+}
+
+fn row_mark(icon: Icon) -> Div {
     div()
         .w(px(theme::row_number()))
         .flex_none()
-        .child(icons::icon(
-            Icon::Play,
-            theme::row_marker_icon(),
-            theme::accent(),
-        ))
+        .child(icons::icon(icon, theme::row_marker_icon(), theme::accent()))
 }
 
 pub(crate) fn columns(

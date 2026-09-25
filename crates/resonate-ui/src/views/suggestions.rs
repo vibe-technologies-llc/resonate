@@ -22,7 +22,7 @@ use crate::{
         browser::Plays,
         hint::Names,
         kit::{self, EndsInAnEllipsis, Press, Tone},
-        listing,
+        listing, menu,
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
         sorting,
@@ -37,9 +37,9 @@ const PLAY_HINT: &str = "Play what this list would hold";
 
 const SHUFFLE_HINT: &str = "Play what this list would hold, shuffled";
 
-const NEXT_HINT: &str = "Put what this list would hold after the track playing";
+const NEXT_HINT: &str = "Hear what this list would hold straight after the track playing";
 
-const LAST_HINT: &str = "Add what this list would hold to the end of the queue";
+const QUEUE_HINT: &str = "Queue what this list would hold after what is already queued, ahead of the rest of what is playing";
 
 const SAVE_HINT: &str = "Keep this as a playlist that fills itself";
 
@@ -207,7 +207,7 @@ impl RootView {
                     .child(self.queue_suggestion(
                         ("suggestion-queue", index),
                         &suggestion.query,
-                        Queued::OnACard,
+                        Placement::Queued,
                         cx,
                     ))
                     .child(self.play_suggestion(("suggestion-play", index), &suggestion.query, cx)),
@@ -250,13 +250,13 @@ impl RootView {
             .child(self.queue_suggestion(
                 "opened-suggestion-next",
                 &suggestion.query,
-                Queued::Next,
+                Placement::Next,
                 cx,
             ))
             .child(self.queue_suggestion(
                 "opened-suggestion-last",
                 &suggestion.query,
-                Queued::Last,
+                Placement::Queued,
                 cx,
             ))
             .child(self.shuffle_suggestion(&suggestion.query, cx))
@@ -418,15 +418,15 @@ impl RootView {
         &self,
         id: impl Into<gpui::ElementId>,
         query: &SavedQuery,
-        queued: Queued,
+        at: Placement,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let queueing = query.clone();
-        let at = queued.placement();
-        let (icon, label, hint) = match queued {
-            Queued::Next => (Icon::QueueNext, "Play next", NEXT_HINT),
-            Queued::Last => (Icon::QueueLast, "Add to queue", LAST_HINT),
-            Queued::OnACard => (Icon::QueueLast, "Queue", LAST_HINT),
+        let (icon, label, hint) = match at {
+            Placement::Next => (Icon::QueueNext, menu::PLAY_NEXT, NEXT_HINT),
+            Placement::Queued | Placement::At(_) => {
+                (Icon::QueueLast, menu::ADD_TO_QUEUE, QUEUE_HINT)
+            }
         };
 
         kit::button(id, Some(icon), label, hint, Tone::Outlined).on_click(cx.listener(
@@ -471,22 +471,6 @@ impl RootView {
                 this.send(Command::SetShuffle(true), cx);
             });
         }))
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Queued {
-    Next,
-    Last,
-    OnACard,
-}
-
-impl Queued {
-    const fn placement(self) -> Placement {
-        match self {
-            Self::Next => Placement::Next,
-            Self::Last | Self::OnACard => Placement::Last,
-        }
     }
 }
 

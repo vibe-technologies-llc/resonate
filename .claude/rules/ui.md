@@ -1979,7 +1979,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   whole reach the row is in. The + sits on a track row, a queue row, an opened playlist's row and
   the index row that stands for a whole playlist, and every one of them opens the one picker. The
   albums and artists panes carry neither, because a row there scopes the tracks pane rather than
-  playing, and the queue pane carries neither because its rows are already in it.
+  playing, and the queue pane carries neither because its rows are already in it. The two are
+  the only queueing gestures there are, each named once in `menu::PLAY_NEXT` and
+  `menu::ADD_TO_QUEUE`: *Play next* is `Placement::Next`, straight after the track playing, and
+  *Add to queue* is `Placement::Queued`, after whatever is already queued and ahead of the rest
+  of the album or playlist playing — a suggestion's card says the same words rather than a
+  shorter *Queue*. The queue pane marks a row waiting to play next with the *queue next* icon
+  where its number would be, off `Queued::next`, and its heading counts them.
 - **Every major listing is put in order, from a chip row and from its header.** The tracks, albums
   and artists panes each hold an order and a reading on `LibraryModel::sorting`, kept for the run
   like the settings category and the playlists order. Two controls write it: a *Sort* action

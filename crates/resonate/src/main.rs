@@ -1625,7 +1625,7 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
             at: if wanted.next {
                 Placement::Next
             } else {
-                Placement::Last
+                Placement::Queued
             },
             play: wanted.play,
         },

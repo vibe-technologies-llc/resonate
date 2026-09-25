@@ -11337,10 +11337,42 @@ fn a_kept_queue_comes_back_as_it_was_left() -> Result<()> {
         row: 1,
         at: Frames(12_345),
         shuffle: false,
+        next: None,
     };
 
     library.keep_resumption(&kept)?;
     assert_eq!(library.resumption()?, Some(kept));
+    Ok(())
+}
+
+#[test]
+fn what_was_queued_to_play_next_comes_back_and_goes_when_nothing_is() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let kept = Resumption {
+        rows: vec![
+            resumable("/music/first.flac"),
+            resumable("/music/queued.flac"),
+            resumable("/music/also-queued.flac"),
+            resumable("/music/second.flac"),
+        ],
+        order: vec![0, 1, 2, 3],
+        row: 0,
+        at: Frames(4_410),
+        shuffle: false,
+        next: Some(Span::between(1, 2)),
+    };
+
+    library.keep_resumption(&kept)?;
+    assert_eq!(library.resumption()?, Some(kept.clone()));
+
+    library.keep_order(&Reordered {
+        order: vec![0, 1, 2, 3],
+        row: 3,
+        at: Frames::ZERO,
+        shuffle: false,
+        next: None,
+    })?;
+    assert_eq!(library.resumption()?.and_then(|kept| kept.next), None);
     Ok(())
 }
 
@@ -11357,6 +11389,7 @@ fn a_shuffled_queue_comes_back_saying_where_each_row_was_loaded() -> Result<()> 
         row: 1,
         at: Frames(4_410),
         shuffle: true,
+        next: None,
     };
 
     library.keep_resumption(&kept)?;
@@ -11377,6 +11410,7 @@ fn a_row_from_a_source_that_is_not_the_filesystem_is_kept_by_its_uri() -> Result
         row: 0,
         at: Frames::ZERO,
         shuffle: false,
+        next: None,
     };
 
     library.keep_resumption(&kept)?;
@@ -11404,6 +11438,7 @@ fn keeping_the_place_moves_it_without_rewriting_the_rows_or_the_shuffle() -> Res
         row: 0,
         at: Frames::ZERO,
         shuffle: true,
+        next: None,
     })?;
     library.keep_place(1, Frames(999))?;
 
@@ -11415,6 +11450,7 @@ fn keeping_the_place_moves_it_without_rewriting_the_rows_or_the_shuffle() -> Res
             row: 1,
             at: Frames(999),
             shuffle: true,
+            next: None,
         })
     );
     Ok(())
@@ -11434,6 +11470,7 @@ fn an_order_kept_on_its_own_leaves_the_rows_where_they_were() -> Result<()> {
         row: 0,
         at: Frames::ZERO,
         shuffle: false,
+        next: None,
     })?;
 
     library.keep_order(&Reordered {
@@ -11441,6 +11478,7 @@ fn an_order_kept_on_its_own_leaves_the_rows_where_they_were() -> Result<()> {
         row: 1,
         at: Frames(4_410),
         shuffle: true,
+        next: None,
     })?;
 
     assert_eq!(
@@ -11451,6 +11489,7 @@ fn an_order_kept_on_its_own_leaves_the_rows_where_they_were() -> Result<()> {
             row: 1,
             at: Frames(4_410),
             shuffle: true,
+            next: None,
         }),
         "keeping the order alone did not leave the rows as they were"
     );
@@ -11468,6 +11507,7 @@ fn a_queue_kept_again_replaces_the_rows_rather_than_adding_to_them() -> Result<(
         row: 2,
         at: Frames::ZERO,
         shuffle: true,
+        next: None,
     };
     let shorter = Resumption {
         rows: vec![resumable("/music/only.flac")],
@@ -11475,6 +11515,7 @@ fn a_queue_kept_again_replaces_the_rows_rather_than_adding_to_them() -> Result<(
         row: 0,
         at: Frames::ZERO,
         shuffle: false,
+        next: None,
     };
 
     library.keep_resumption(&longer)?;
@@ -11493,6 +11534,7 @@ fn a_queue_kept_as_nothing_leaves_nothing_to_resume() -> Result<()> {
         row: 0,
         at: Frames::ZERO,
         shuffle: false,
+        next: None,
     })?;
     library.keep_resumption(&Resumption {
         rows: Vec::new(),
@@ -11500,6 +11542,7 @@ fn a_queue_kept_as_nothing_leaves_nothing_to_resume() -> Result<()> {
         row: 0,
         at: Frames::ZERO,
         shuffle: false,
+        next: None,
     })?;
 
     assert_eq!(library.resumption()?, None);
@@ -11516,6 +11559,7 @@ fn forgetting_a_kept_queue_takes_the_place_with_it() -> Result<()> {
         row: 0,
         at: Frames(500),
         shuffle: false,
+        next: None,
     })?;
     library.forget_resumption()?;
 
@@ -12505,6 +12549,7 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
         row: 0,
         at: Frames(4_410),
         shuffle: false,
+        next: None,
     })?;
 
     applied(&library)?;

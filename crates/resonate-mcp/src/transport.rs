@@ -146,7 +146,7 @@ pub(crate) fn add(player: &dyn Controlling, library: &Library, adding: &Adding) 
             at: if adding.next {
                 Placement::Next
             } else {
-                Placement::Last
+                Placement::Queued
             },
             play: adding.play,
         },

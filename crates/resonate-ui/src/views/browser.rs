@@ -47,9 +47,9 @@ const WAY_BACK_HINT: &str = "Back to where this was opened from — escape";
 
 const ORDER_HINT: &str = "Choose what this listing is put in order by";
 
-const NEXT_ALL_HINT: &str = "Put every track listed here after the track playing";
+const NEXT_ALL_HINT: &str = "Hear every track listed here straight after the track playing";
 
-const LAST_ALL_HINT: &str = "Put every track listed here at the end of the queue";
+const QUEUE_ALL_HINT: &str = "Queue every track listed here after what is already queued, ahead of the rest of what is playing";
 
 const PLAY_ALL_HINT: &str = "Play every track listed here, in place of the queue";
 
@@ -871,7 +871,7 @@ impl RootView {
                             ))
                             .child(self.queue_control(
                                 ("track-last", index),
-                                Placement::Last,
+                                Placement::Queued,
                                 queueing(tracks, index),
                                 cx,
                             ))
@@ -1304,7 +1304,7 @@ impl RootView {
             .child(self.add_all_to_a_playlist(cx))
             .child(self.orders_a_listing("order-tracks", cx))
             .child(self.queue_all(Placement::Next, cx))
-            .child(self.queue_all(Placement::Last, cx))
+            .child(self.queue_all(Placement::Queued, cx))
             .child(self.play_all(cx));
 
         kit::heading().child(
@@ -1571,7 +1571,7 @@ impl RootView {
     ) -> Div {
         kit::hero_actions(self.hero_width.get())
             .child(self.play_all(cx))
-            .child(self.queue_all(Placement::Last, cx))
+            .child(self.queue_all(Placement::Queued, cx))
             .child(self.queue_all(Placement::Next, cx))
             .child(self.add_all_to_a_playlist(cx))
             .child(self.favour_mark("scope-favourite", what, already, cx))
@@ -1600,15 +1600,15 @@ impl RootView {
             Placement::Next => (
                 "next-all",
                 Icon::QueueNext,
-                "Play next",
+                menu::PLAY_NEXT,
                 NEXT_ALL_HINT,
                 Tone::Ghost,
             ),
-            Placement::Last | Placement::At(_) => (
+            Placement::Queued | Placement::At(_) => (
                 "last-all",
                 Icon::QueueLast,
-                "Add to queue",
-                LAST_ALL_HINT,
+                menu::ADD_TO_QUEUE,
+                QUEUE_ALL_HINT,
                 Tone::Outlined,
             ),
         };
@@ -1904,7 +1904,7 @@ enum Caption {
 fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Menu {
     Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, window, cx| {
-            this.plays_everything_in(Selection::Album(album), Placement::Last, true, window, cx);
+            this.plays_everything_in(Selection::Album(album), Placement::Queued, true, window, cx);
         })
         .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
             this.plays_everything_in(Selection::Album(album), Placement::Next, false, window, cx);
@@ -1915,7 +1915,7 @@ fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Men
             move |this, window, cx| {
                 this.plays_everything_in(
                     Selection::Album(album),
-                    Placement::Last,
+                    Placement::Queued,
                     false,
                     window,
                     cx,
@@ -1936,7 +1936,13 @@ fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Men
 fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
     Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, window, cx| {
-            this.plays_everything_in(Selection::Artist(artist), Placement::Last, true, window, cx);
+            this.plays_everything_in(
+                Selection::Artist(artist),
+                Placement::Queued,
+                true,
+                window,
+                cx,
+            );
         })
         .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
             this.plays_everything_in(
@@ -1953,7 +1959,7 @@ fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
             move |this, window, cx| {
                 this.plays_everything_in(
                     Selection::Artist(artist),
-                    Placement::Last,
+                    Placement::Queued,
                     false,
                     window,
                     cx,

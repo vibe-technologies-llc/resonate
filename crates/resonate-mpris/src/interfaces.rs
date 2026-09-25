@@ -2,7 +2,7 @@ use std::{collections::HashMap, mem, sync::Arc, time::Duration};
 
 use ahash::AHashSet;
 use parking_lot::Mutex;
-use resonate_core::{FrameSpan, Frames, MediaLocation, TrackId, Volume};
+use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
 use resonate_engine::{
     Command, Player, PlayerState, QueueItem, RepeatMode, StreamDigest, TrackState,
 };
@@ -392,6 +392,24 @@ impl OwnInterface {
     fn sleep(&self) -> Sleep {
         sleep_status(self.shared.player.state().sleeping)
     }
+
+    #[zbus(property)]
+    fn playing_next(&self) -> u32 {
+        waiting_to_play(
+            self.shared.player.queued().next,
+            self.shared.player.state().queue_position,
+        )
+    }
+}
+
+pub(crate) fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> u32 {
+    let Some(next) = next else {
+        return 0;
+    };
+    let waiting = playing.map_or(next.rows(), |at| {
+        next.last().saturating_sub(at).min(next.rows())
+    });
+    u32::try_from(waiting).unwrap_or(u32::MAX)
 }
 
 fn micros_to_frames_signed(offset: i64, rate: u32) -> i64 {

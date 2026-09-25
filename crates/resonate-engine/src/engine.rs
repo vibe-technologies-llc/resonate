@@ -1977,7 +1977,7 @@ impl Engine {
             queue_position: self.queue.cursor(),
             loaded_position: self.queue.position(),
             queue_len: self.queue.len(),
-            queue_stamp: self.queue.stamp(),
+            queue_stamp: self.queue.playing_from(),
             seeks: self.seeks,
             sleeping: self.sleep.map(Sleeping::published),
             output: self.output.as_ref().map(|output| output.status),
@@ -2017,6 +2017,8 @@ impl Engine {
             revision,
             rows: Arc::new(self.queue.in_play_order()),
             loaded_at: self.queue.loaded_at(),
+            next: self.queue.playing_next(),
+            stamp: self.queue.stamp(),
         };
     }
 

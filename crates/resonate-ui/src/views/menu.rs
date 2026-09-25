@@ -334,7 +334,7 @@ impl Menu {
             this.queue(&next(), Placement::Next, cx);
         })
         .does(Icon::QueueLast, ADD_TO_QUEUE, move |this, _, cx| {
-            this.queue(&last(), Placement::Last, cx);
+            this.queue(&last(), Placement::Queued, cx);
         })
     }
 

@@ -34,7 +34,7 @@ impl Keeping {
             .as_ref()
             .map_or(Frames::ZERO, |track| track.position);
         let held = Held {
-            stamp: state.queue_stamp,
+            stamp: queued.stamp,
             revision: queued.revision,
             shuffle: state.shuffle,
         };
@@ -49,6 +49,7 @@ impl Keeping {
                 row,
                 at,
                 shuffle: state.shuffle,
+                next: queued.next,
             }));
         }
         if standing != Some(held) {
@@ -58,6 +59,7 @@ impl Keeping {
                 row,
                 at,
                 shuffle: state.shuffle,
+                next: queued.next,
             }));
         }
 
@@ -144,14 +146,27 @@ mod tests {
             revision,
             rows: Arc::new(queue.to_vec()),
             loaded_at: Arc::from((0..queue.len()).collect::<Vec<_>>()),
+            next: None,
+            stamp: stamp_of(queue),
         }
     }
 
     fn reordered(queue: &[QueueItem], revision: u64, loaded_at: Vec<usize>) -> Queued {
+        let mut in_load_order: Vec<(usize, QueueItem)> = loaded_at
+            .iter()
+            .copied()
+            .zip(queue.iter().cloned())
+            .collect();
+        in_load_order.sort_by_key(|(loaded, _)| *loaded);
+        let in_load_order: Vec<QueueItem> =
+            in_load_order.into_iter().map(|(_, item)| item).collect();
+
         Queued {
             revision,
             rows: Arc::new(queue.to_vec()),
             loaded_at: Arc::from(loaded_at),
+            next: None,
+            stamp: stamp_of(&in_load_order),
         }
     }
 
@@ -357,11 +372,12 @@ mod tests {
     fn shuffling_is_kept_beside_the_order_it_produced() {
         let mut keeping = Keeping::default();
         let queue = queued(4);
+        let played: Vec<QueueItem> = [3, 1, 0, 2].iter().map(|at| queue[*at].clone()).collect();
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
         let Some(Keep::Order(kept)) = keeping.kept(
             &shuffled_at(&queue, 0, Frames::ZERO),
-            &reordered(&queue, 2, vec![3, 1, 0, 2]),
+            &reordered(&played, 2, vec![3, 1, 0, 2]),
         ) else {
             panic!("a queue that has been shuffled keeps the order it produced");
         };
@@ -374,7 +390,7 @@ mod tests {
         assert_eq!(
             keeping.kept(
                 &shuffled_at(&queue, 0, Frames::ZERO),
-                &reordered(&queue, 2, vec![3, 1, 0, 2])
+                &reordered(&played, 2, vec![3, 1, 0, 2])
             ),
             None,
             "a queue that had not moved was written again"

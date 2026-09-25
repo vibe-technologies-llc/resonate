@@ -826,7 +826,7 @@ fn the_catalog_is_searched_and_what_it_finds_is_queued_by_its_track_ids() {
                 (MediaLocation::local(second), None),
             ],
             Queueing {
-                at: Placement::Last,
+                at: Placement::Queued,
                 play: false
             }
         )

@@ -1,4 +1,4 @@
-use crate::{FrameSpan, Frames, MediaLocation};
+use crate::{FrameSpan, Frames, MediaLocation, Span};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Resumable {
@@ -12,6 +12,7 @@ pub struct Reordered {
     pub row: usize,
     pub at: Frames,
     pub shuffle: bool,
+    pub next: Option<Span>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -21,6 +22,7 @@ pub struct Resumption {
     pub row: usize,
     pub at: Frames,
     pub shuffle: bool,
+    pub next: Option<Span>,
 }
 
 impl Resumption {
@@ -76,6 +78,7 @@ mod tests {
             row: 0,
             at: Frames::ZERO,
             shuffle: false,
+            next: None,
         }
     }
 

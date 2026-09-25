@@ -818,27 +818,45 @@ fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with()
     player
         .request(Command::Insert {
             items: vec![track(&first, 3)],
-            at: Placement::Last,
+            at: Placement::Queued,
             play: false,
         })?
         .wait_for(PATIENCE)?;
     wait_for(
         &player,
         |player| player.state().queue_len == 3,
+        "the queued row to publish",
+    );
+    assert_eq!(
+        player.state().queue_stamp,
+        as_loaded,
+        "a row queued to play next took the queue out of what it was playing from"
+    );
+
+    player
+        .request(Command::Insert {
+            items: vec![track(&second, 4)],
+            at: Placement::At(0),
+            play: false,
+        })?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.state().queue_len == 4,
         "the arriving row to publish",
     );
     assert_ne!(
         player.state().queue_stamp,
         as_loaded,
-        "a row arriving over the bus left the queue stamped as it was loaded"
+        "a row put into what plays left the queue stamped as it was loaded"
     );
 
     player
-        .request(Command::Remove(Span::one(2)))?
+        .request(Command::Remove(Span::one(0)))?
         .wait_for(PATIENCE)?;
     wait_for(
         &player,
-        |player| player.state().queue_len == 2,
+        |player| player.state().queue_len == 3,
         "the dropped row to publish",
     );
     assert_eq!(
@@ -2327,7 +2345,7 @@ fn queueing_into_an_empty_queue_waits_for_play() -> Result<()> {
     player
         .request(Command::Insert {
             items: vec![track(&queued, 90)],
-            at: Placement::Last,
+            at: Placement::Queued,
             play: false,
         })?
         .wait_for(PATIENCE)?;
@@ -2356,7 +2374,7 @@ fn queueing_into_an_empty_queue_to_hear_it_plays_it_without_a_play() -> Result<(
     player
         .request(Command::Insert {
             items: vec![track(&queued, 90)],
-            at: Placement::Last,
+            at: Placement::Queued,
             play: true,
         })?
         .wait_for(PATIENCE)?;
@@ -3840,6 +3858,7 @@ fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Res
             row: 1,
             at: resumed,
             shuffle: false,
+            next: None,
         }))?
         .wait_for(PATIENCE)?;
 
@@ -3886,6 +3905,7 @@ fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
             row: 0,
             at: resumed,
             shuffle: false,
+            next: None,
         }))?
         .wait_for(PATIENCE)?;
     player.request(Command::Play)?.wait_for(PATIENCE)?;
@@ -3950,6 +3970,7 @@ fn a_shuffled_queue_resumed_plays_as_it_played_and_unshuffles_into_what_it_was_l
             row: 0,
             at: Frames::ZERO,
             shuffle: true,
+            next: None,
         }))?
         .wait_for(PATIENCE)?;
 
@@ -4691,6 +4712,7 @@ fn a_resumption_past_the_end_of_a_file_since_cut_shorter_opens_at_its_start() ->
             row: 0,
             at: Frames(FRAMES as u64 * 4),
             shuffle: false,
+            next: None,
         }))?
         .wait_for(PATIENCE)?;
     wait_for(&player, paused, "the resumed row to open paused");

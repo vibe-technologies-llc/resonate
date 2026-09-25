@@ -235,8 +235,10 @@ impl Tool {
             Self::AddToQueue => format!(
                 "Add tracks to the running player's queue: either catalog track_ids from \
                  search_library, playlist_tracks or favourites, or a search whose matches are \
-                 queued in album order. They go at the end, or after the row being played with \
-                 next, and play starts on the first of them with play. {GRAMMAR}"
+                 queued in album order. They go after whatever is already queued to play next and \
+                 before the rest of the album or playlist playing, or straight after the row \
+                 being played with next, and play starts on the first of them with play. \
+                 {GRAMMAR}"
             ),
             Self::RemoveFromQueue => "Take one row out of the running player's queue, by the \
                                       queue_id show_queue gives it."
@@ -439,7 +441,8 @@ impl Tool {
                 "next": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Queue them after the row being played rather than at the end.",
+                    "description": "Play them straight after the row being played, ahead of anything \
+                                    already queued.",
                 },
                 "play": {
                     "type": "boolean",

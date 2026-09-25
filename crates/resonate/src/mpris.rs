@@ -118,7 +118,6 @@ impl Host for Desktop {
 
     fn open(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Opened {
         let queue = self.player.queue();
-        let at = Placement::Next.row(queue.len(), self.player.state().queue_position);
         let mut minting = Unclaimed::beside(&queue);
 
         let items = match location.as_path().filter(|_| names_a_sheet(location)) {
@@ -134,7 +133,7 @@ impl Host for Desktop {
         }
         let insert = Command::Insert {
             items,
-            at: Placement::At(at),
+            at: Placement::Next,
             play: true,
         };
 

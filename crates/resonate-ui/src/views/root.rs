@@ -3080,8 +3080,8 @@ fn queued(rows: usize, at: Placement, play: bool) -> String {
 
     match (play, at) {
         (true, _) => format!("{tracks} queued and playing"),
-        (false, Placement::Next) => format!("{tracks} queued to play next"),
-        (false, Placement::Last | Placement::At(_)) => format!("{tracks} queued"),
+        (false, Placement::Next) => format!("{tracks} to play next"),
+        (false, Placement::Queued | Placement::At(_)) => format!("{tracks} added to the queue"),
     }
 }
 

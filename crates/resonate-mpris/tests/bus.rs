@@ -1346,21 +1346,23 @@ fn queued_rows(harness: &Harness) -> Vec<MediaLocation> {
 }
 
 #[test]
-fn files_queued_onto_a_running_player_land_at_the_end_in_the_order_they_were_named() {
+fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest() {
     let Some(harness) = Harness::start() else {
         return;
     };
     let tree = Tree::new();
     let playing = tree.wav("playing.wav");
-    harness.load(&playing);
+    let rest = tree.wav("rest.wav");
+    harness.load_all(&[playing.clone(), rest.clone()]);
     harness.wait_for(
-        |harness| harness.tracks().len() == 1,
+        |harness| harness.tracks().len() == 2,
         "the queue to reach the track list",
     );
 
     let running = listed_as(&harness.destination);
     let first = tree.wav("first.wav");
     let second = tree.wav("second.wav");
+    let third = tree.wav("third.wav");
     let rows = [
         (MediaLocation::local(&first), None),
         (MediaLocation::local(&second), None),
@@ -1371,7 +1373,7 @@ fn files_queued_onto_a_running_player_land_at_the_end_in_the_order_they_were_nam
             .queue(
                 &[],
                 Queueing {
-                    at: Placement::Last,
+                    at: Placement::Queued,
                     play: false
                 }
             )
@@ -1383,17 +1385,30 @@ fn files_queued_onto_a_running_player_land_at_the_end_in_the_order_they_were_nam
             .queue(
                 &rows,
                 Queueing {
-                    at: Placement::Last,
+                    at: Placement::Queued,
                     play: false
                 }
             )
             .expect("the running player takes the rows"),
         2
     );
+    harness.wait_for(
+        |harness| harness.tracks().len() == 4,
+        "the queued rows to reach the track list",
+    );
+    running
+        .queue(
+            &[(MediaLocation::local(&third), None)],
+            Queueing {
+                at: Placement::Queued,
+                play: false,
+            },
+        )
+        .expect("the running player takes the row");
 
     harness.wait_for(
-        |harness| harness.tracks().len() == 3,
-        "the queued rows to reach the track list",
+        |harness| harness.tracks().len() == 5,
+        "the last queued row to reach the track list",
     );
     assert_eq!(
         queued_rows(&harness),
@@ -1401,8 +1416,11 @@ fn files_queued_onto_a_running_player_land_at_the_end_in_the_order_they_were_nam
             MediaLocation::local(&playing),
             MediaLocation::local(&first),
             MediaLocation::local(&second),
+            MediaLocation::local(&third),
+            MediaLocation::local(&rest),
         ],
-        "the rows landed somewhere other than the end, or out of the order they were named in"
+        "the rows landed somewhere other than after what was queued, or out of the order they \
+         were named in"
     );
     assert_eq!(
         harness.player.state().queue_position,
