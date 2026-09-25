@@ -1267,8 +1267,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   it whose file is not there, spares a vaulted row and a delivered one the way the scan's prune
   does, and sweeps what that orphaned — and reloads where it forgot anything, and where a root has
   settled and nothing holds the work slot it runs the ordinary incremental scan of that root,
-  `Prompted::OnItsOwn`. A forget refused because a scan or an import holds the guard is kept and
-  tried on the next look, so a file deleted mid-scan leaves the list the moment the scan ends
+  `Prompted::OnItsOwn`. A path that is not UTF-8 names nothing the catalog could have stored and
+  is passed over rather than failing the batch it arrived in. A forget refused because a scan or
+  an import holds the guard is kept and tried on the next look, and so is one the store failed, so a file deleted mid-scan leaves the list the moment the scan ends
   rather than after another quiet period and another whole-root scan. What this replaced waited
   for the root to be quiet and then rescanned all of it for every deletion, so deleting files one
   after another kept pushing the scan back and a large root took its whole walk to drop one row.

@@ -595,7 +595,7 @@ fn a_file_that_left_the_tree_leaves_the_library() -> Result<()> {
 }
 
 #[test]
-fn a_file_the_watch_heard_taken_away_is_forgotten_without_a_scan() -> Result<()> {
+fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write("album/gone.wav", &Wav::new().text(TITLE, "gone").build());
     tree.write("album/kept.wav", &Wav::new().text(TITLE, "kept").build());
@@ -610,6 +610,9 @@ fn a_file_the_watch_heard_taken_away_is_forgotten_without_a_scan() -> Result<()>
     fs::remove_dir_all(tree.path().join("other")).expect("the folder is removable");
     let root = tree.path().canonicalize().expect("the tree is there");
     let named = [
+        root.join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+            b"caf\xe9.wav",
+        )),
         root.join("album/gone.wav"),
         root.join("other"),
         root.join("album/kept.wav"),

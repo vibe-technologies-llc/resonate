@@ -344,7 +344,13 @@ pub(crate) fn forget_the_gone(inner: &Arc<Inner>, named: &[PathBuf]) -> Result<u
     inner.write(|transaction| {
         let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
         for path in named {
-            let text = store::path_text(path)?;
+            let Some(text) = path.to_str() else {
+                tracing::debug!(
+                    path = %path.display(),
+                    "a path the catalog cannot store names no row to forget"
+                );
+                continue;
+            };
             let (from, past) = walked_from(text);
             for (root, held) in store::rooted_paths_at(transaction, text, &from, &past)? {
                 if !held.exists() {

@@ -3647,8 +3647,7 @@ impl Watching {
             }
             Err(resonate_library::Error::AlreadyWalking) => 0,
             Err(error) => {
-                tracing::warn!(%error, "the files taken away under the roots could not be forgotten");
-                self.gone.clear();
+                tracing::warn!(%error, "the files taken away under the roots could not be forgotten yet");
                 0
             }
         }
