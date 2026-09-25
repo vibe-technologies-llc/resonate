@@ -286,7 +286,10 @@ delivered `../flac` stages as `flac` under `staging/` and nowhere else. The poll
 `vault_objects` row, a `tracks` row with no root named by the object's own path and paired with
 the release track the want was for, and records `wants.offered` as the *vault* object's URI
 rather than the provider's, because that is where the bytes now are. `providers.md` has why the
-row belongs to no root.
+row belongs to no root. A poll cancelled while a delivery was being kept stops at that file
+boundary the way every pass does: an object that landed is noted, row and want alike, before the
+poll ends, because `--prune` walks the rows rather than `audio/` and an object nothing names would
+otherwise stand there for good — `a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted`.
 `a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went` and
 `a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims.
 

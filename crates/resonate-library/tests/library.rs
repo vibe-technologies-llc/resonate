@@ -29,9 +29,9 @@ use resonate_library::{
     Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
     HeldMedium, ImageFormat, ImportOptions, ImportSummary, Isrc, Kept, Layout, Library, LifeSpan,
     Link, ListeningService, LookupOp, Mbid, Medium, Missing, MissingTrack, OrganiseOptions,
-    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, Pruned,
-    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
-    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress,
+    Pruned, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
     RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
     Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, Suggestion, TagField,
     TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording,
@@ -15326,6 +15326,68 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     assert!(
         library.search(other, 10)?.tracks.is_empty(),
         "the row was indexed under the later want's names"
+    );
+    Ok(())
+}
+
+struct CancelledAsItAnswers {
+    source: SourceId,
+    file: PathBuf,
+    poll: Mutex<Option<Arc<PollProgress>>>,
+}
+
+impl Provider for CancelledAsItAnswers {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(5) {
+            if let Some(poll) = self.poll.lock().as_ref() {
+                poll.cancel();
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        Ok(Obtained::Found(Delivery::File(self.file.clone())))
+    }
+}
+
+#[test]
+fn a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let (library, vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let want = wanted_san_tropez(&library)?;
+
+    let provider = Arc::new(CancelledAsItAnswers {
+        source: SourceId::new("inbox").expect("a nameable source"),
+        file: delivered,
+        poll: Mutex::new(None),
+    });
+    let handle = library.poll(
+        Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
+        PollOptions::default(),
+    )?;
+    *provider.poll.lock() = Some(Arc::clone(handle.progress()));
+    let summary = handle.join()?;
+
+    assert!(summary.cancelled);
+    let objects = library.vault_objects()?;
+    assert_eq!(objects.len(), 1, "what landed was not noted");
+    assert!(objects[0].path.starts_with(vault.root()));
+    let wants = library.wants()?;
+    assert_eq!(wants[0].id, want);
+    assert_eq!(
+        wants[0].offered.as_deref(),
+        Some(MediaLocation::local(&objects[0].path).to_uri().as_str())
     );
     Ok(())
 }

@@ -160,10 +160,13 @@ fn landed(
         }
     };
 
-    if progress.is_cancelled() {
-        return Ok(None);
-    }
     match keeping {
+        Ok(Keeping::Kept(kept)) => {
+            library.note_delivered(want, &kept, &taken_from)?;
+            progress.kept.fetch_add(1, Ordering::Relaxed);
+            Ok(Some(MediaLocation::local(&kept.path)))
+        }
+        _ if progress.is_cancelled() => Ok(None),
         Err(source) => {
             tracing::warn!(%taken_from, %source, "a delivered track could not be kept");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
@@ -173,11 +176,6 @@ fn landed(
             tracing::warn!(%taken_from, refused = refusal.as_str(), "a delivered track was refused");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
             Ok(None)
-        }
-        Ok(Keeping::Kept(kept)) => {
-            library.note_delivered(want, &kept, &taken_from)?;
-            progress.kept.fetch_add(1, Ordering::Relaxed);
-            Ok(Some(MediaLocation::local(&kept.path)))
         }
     }
 }
@@ -337,10 +335,13 @@ fn run(
             Some(delivered) => {
                 progress.offered.fetch_add(1, Ordering::Relaxed);
                 let noted = landed(library, want, delivered, options, progress)?;
-                if progress.is_cancelled() {
+                let cancelled = progress.is_cancelled();
+                if noted.is_some() || !cancelled {
+                    library.note_tried(want.id, noted.as_ref())?;
+                }
+                if cancelled {
                     break;
                 }
-                library.note_tried(want.id, noted.as_ref())?;
             }
             None => {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);
