@@ -20,6 +20,10 @@ const WINDOWS_SEPARATOR: char = '\\';
 
 const FILE_SCHEME: &str = "file://";
 
+const FILE_SCHEME_NAME: &str = "file";
+
+const AUTHORITY_MARK: &str = "//";
+
 const LOCAL_AUTHORITY: &str = "localhost";
 
 const BYTE_ORDER_MARK: char = '\u{feff}';
@@ -177,6 +181,12 @@ fn settled(file: &Path) -> PathBuf {
 }
 
 pub fn scheme_of(line: &str) -> Option<&str> {
+    if let Some((scheme, rest)) = line.split_once(':')
+        && scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME)
+        && rest.starts_with('/')
+    {
+        return Some(scheme);
+    }
     let (scheme, _) = line.split_once(SCHEME_SEPARATOR)?;
     let named = scheme.starts_with(|first: char| first.is_ascii_alphabetic())
         && scheme.chars().all(|character| {
@@ -187,8 +197,18 @@ pub fn scheme_of(line: &str) -> Option<&str> {
 }
 
 pub fn local_file(line: &str) -> Option<String> {
-    let encoded = line.strip_prefix(FILE_SCHEME)?;
-    let encoded = encoded.strip_prefix(LOCAL_AUTHORITY).unwrap_or(encoded);
+    let (scheme, rest) = line.split_once(':')?;
+    if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
+        return None;
+    }
+    let encoded = match rest.strip_prefix(AUTHORITY_MARK) {
+        Some(named) => {
+            let (authority, path) = named.split_at(named.find('/')?);
+            let here = authority.is_empty() || authority.eq_ignore_ascii_case(LOCAL_AUTHORITY);
+            here.then_some(path)?
+        }
+        None => rest,
+    };
     if !encoded.starts_with('/') {
         return None;
     }
@@ -409,6 +429,25 @@ mod tests {
             located(&row, beside).and_then(|held| held.as_path().map(Path::to_path_buf)),
             Some(file.to_path_buf())
         );
+    }
+
+    fn read_at(row: &str) -> Option<PathBuf> {
+        located(row, Path::new("/music")).and_then(|held| held.as_path().map(Path::to_path_buf))
+    }
+
+    #[test]
+    fn a_file_uri_is_read_whatever_the_case_of_its_scheme_and_host_and_with_one_slash() {
+        let echoes = Some(PathBuf::from("/tmp/a.wav"));
+
+        assert_eq!(read_at("FILE:///tmp/a.wav"), echoes);
+        assert_eq!(read_at("File://LocalHost/tmp/a.wav"), echoes);
+        assert_eq!(read_at("file:/tmp/a.wav"), echoes);
+        assert_eq!(read_at("FILE:/tmp/a.wav"), echoes);
+        assert_eq!(
+            read_at("file:track.flac"),
+            Some(PathBuf::from("/music/file:track.flac"))
+        );
+        assert_eq!(read_at("file://elsewhere/tmp/a.wav"), None);
     }
 
     #[test]

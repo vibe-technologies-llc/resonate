@@ -3121,6 +3121,34 @@ fn an_xspf_sheet_resolves_its_rows_against_the_base_it_declares() -> Result<()> 
 }
 
 #[test]
+fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under_it() -> Result<()>
+{
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    tree.write("discs/a.wav", b"a file no scan has read");
+
+    let sheet = tree.path().join("shouted.xspf");
+    fs::write(
+        &sheet,
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <playlist version=\"1\" xmlns=\"http://xspf.org/ns/0/\" \
+             xml:base=\"FILE://LOCALHOST{root}/discs/\">\n\
+             <trackList><track><location>a.wav</location></track></trackList>\n\
+             </playlist>\n",
+            root = tree.path().display()
+        ),
+    )
+    .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+    assert_eq!(imported.added, 1);
+    assert_eq!(imported.elsewhere, 0, "a local base was read as elsewhere");
+    assert_eq!(imported.missing, 0);
+    Ok(())
+}
+
+#[test]
 fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
