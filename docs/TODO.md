@@ -510,10 +510,12 @@
   rather than its id for as long as it is queued
 
 ## MCP
-- No prompt is offered, and nothing is told as it moves: a resource is read and never subscribed
-  to, and nothing sends a notification while a scan, a lookup or a poll runs, because the server
-  answers on the one thread that reads stdin and has nothing to write from between requests. A
-  client sees how far a pass has come only by reading `library_passes` again
+- Nothing is told as it moves: a resource is read and never subscribed to, and nothing sends a
+  notification while a scan, a lookup or a poll runs, because the server answers on the one
+  thread that reads stdin and has nothing to write from between requests. A client sees how far
+  a pass has come only by reading `library_passes` again
+- The prompts take their arguments as they are typed, and `completion/complete` is not answered,
+  so a client offers no playlist names, windows or search words while one is filled in
 - An edit a model makes is not on the window's *Undo*: the library keeps its undo stacks in the
   process that made the edit, and `resonate mcp` is another process. The window draws the edit
   within a few seconds, but its own undo stack is not told, so undoing past it acts on rows the

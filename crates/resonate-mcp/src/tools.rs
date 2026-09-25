@@ -918,7 +918,7 @@ struct Limited {
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum WindowArg {
+pub(crate) enum WindowArg {
     Week,
     Month,
     Year,
@@ -926,7 +926,7 @@ enum WindowArg {
 }
 
 impl WindowArg {
-    const fn window(self) -> Window {
+    pub(crate) const fn window(self) -> Window {
         match self {
             Self::Week => Window::Week,
             Self::Month => Window::Month,

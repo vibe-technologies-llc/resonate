@@ -5,7 +5,7 @@ use resonate_library::PlaylistName;
 use resonate_mpris::PlayerName;
 use thiserror::Error;
 
-use crate::{passes::Pass, tools::Tool};
+use crate::{passes::Pass, prompts::Prompt, tools::Tool};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StreamOp {
@@ -111,6 +111,21 @@ impl fmt::Display for ResourceUri {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PromptName(Box<str>);
+
+impl PromptName {
+    pub fn new(name: impl Into<Box<str>>) -> Self {
+        Self(name.into())
+    }
+}
+
+impl fmt::Display for PromptName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Refusal {
     #[error("the message is not JSON")]
@@ -134,6 +149,22 @@ pub enum Refusal {
 
     #[error("{0} is not a resource this server offers")]
     UnknownResource(ResourceUri),
+
+    #[error("{0} is not a prompt this server offers")]
+    UnknownPrompt(PromptName),
+
+    #[error("the arguments of {prompt} are not what it takes")]
+    BadPromptArguments {
+        prompt: Prompt,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("{prompt} needs a {argument} that is not blank")]
+    BlankArgument {
+        prompt: Prompt,
+        argument: &'static str,
+    },
 
     #[error("the arguments of {tool} are not what it takes")]
     BadArguments {
@@ -199,6 +230,9 @@ impl Refusal {
             Self::UnknownResource(_) => Code::ResourceNotFound,
             Self::BadParameters { .. }
             | Self::UnknownTool(_)
+            | Self::UnknownPrompt(_)
+            | Self::BadPromptArguments { .. }
+            | Self::BlankArgument { .. }
             | Self::BadArguments { .. }
             | Self::OneOf { .. }
             | Self::AtLeastOneOf { .. }
@@ -234,7 +268,7 @@ mod tests {
     fn a_refusal_carries_the_code_json_rpc_gives_its_kind() {
         assert_eq!(Refusal::NotARequest.code().number(), -32_600);
         assert_eq!(
-            Refusal::UnknownMethod(MethodName::new("prompts/list"))
+            Refusal::UnknownMethod(MethodName::new("completion/complete"))
                 .code()
                 .number(),
             -32_601

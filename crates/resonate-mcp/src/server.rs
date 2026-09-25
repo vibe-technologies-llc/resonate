@@ -5,10 +5,11 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    Code, Error, MethodName, Refusal, ResourceUri, Result, StreamOp, ToolName,
+    Code, Error, MethodName, PromptName, Refusal, ResourceUri, Result, StreamOp, ToolName,
     controlling::Reach,
     error::said,
     passes::{Lookups, Passes},
+    prompts::Prompt,
     resources::{self, Resource},
     tools::Tool,
 };
@@ -25,6 +26,8 @@ const TOOLS_CALL: &str = "tools/call";
 const RESOURCES_LIST: &str = "resources/list";
 const RESOURCE_TEMPLATES_LIST: &str = "resources/templates/list";
 const RESOURCES_READ: &str = "resources/read";
+const PROMPTS_LIST: &str = "prompts/list";
+const PROMPTS_GET: &str = "prompts/get";
 
 const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read and edit its \
                             library directly — its favourites, its playlists and the missing \
@@ -39,8 +42,10 @@ const INSTRUCTIONS: &str = "Resonate is a music player. The catalog tools read a
                             has come, and one still running when the session ends is stopped \
                             at the next file. The same readings are offered as resources: what \
                             is playing, the queue, the passes, the playlists and each playlist's \
-                            rows, the favourites, the month's listening, the suggestions and \
-                            the missing tracks.";
+                            rows, the favourites, the listening over a window, the suggestions \
+                            and the missing tracks. The prompts build a playlist from a brief, \
+                            review the listening, weigh what the albums are short of and talk \
+                            about what is playing.";
 
 pub struct Server {
     library: Library,
@@ -100,6 +105,12 @@ impl Unanswered {
             Self::Failed(error) => said(error),
         }
     }
+}
+
+#[derive(Deserialize)]
+struct Getting {
+    name: String,
+    arguments: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -199,6 +210,17 @@ impl Server {
                 let read = resource.read(&self.library, &*self.players, &self.passes)?;
                 Ok(Resource::contents(&asked.uri, &read))
             }
+            PROMPTS_LIST => Ok(json!({ "prompts": Prompt::ALL.map(Prompt::listed) })),
+            PROMPTS_GET => {
+                let asked: Getting = parameters(method, params)?;
+                let prompt = Prompt::named(&asked.name)
+                    .ok_or_else(|| Refusal::UnknownPrompt(PromptName::new(asked.name)))?;
+                let arguments = match asked.arguments {
+                    None | Some(Value::Null) => Value::Object(Map::new()),
+                    Some(given) => given,
+                };
+                Ok(prompt.get(arguments, &self.library, &*self.players, &self.passes)??)
+            }
             other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
         }
     }
@@ -269,6 +291,7 @@ fn initialised(asked: &str) -> Value {
         "capabilities": {
             "tools": { "listChanged": false },
             "resources": { "subscribe": false, "listChanged": false },
+            "prompts": { "listChanged": false },
         },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
         "instructions": INSTRUCTIONS,

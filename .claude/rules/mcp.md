@@ -38,11 +38,12 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
 - **A notification is never answered**, whatever its method, and neither is a message carrying
   a `result` or an `error`, because this server sends no requests of its own to be answered.
 - `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS` and answers
-  the latest otherwise. The server offers tools and resources and no prompts; `listChanged` is
-  false for both, because the tools are `Tool::ALL` and a client lists the resources again
-  whenever it wants the playlists as they stand, and `subscribe` is false because the one thread
-  that reads stdin has nothing to write an update from. The instructions say that the three long
-  passes run in the background, how to ask after them and that the readings are resources too.
+  the latest otherwise. The server offers tools, resources and prompts; `listChanged` is false
+  for all three, because the tools are `Tool::ALL`, the prompts `Prompt::ALL`, and a client lists
+  the resources again whenever it wants the playlists as they stand, and `subscribe` is false
+  because the one thread that reads stdin has nothing to write an update from. The instructions
+  say that the three long passes run in the background, how to ask after them, that the readings
+  are resources too and what the prompts are for.
 
 ## The resources
 
@@ -57,12 +58,34 @@ subcommand in the grammar, because `build.rs` reads `cli.rs` with no features, a
   transport tools do where there is none; `resonate://library/…` reads the catalog with no player.
   `resources/list` is the eight fixed ones and then one per playlist the catalog holds, named as
   the playlist is, and `resonate://library/playlist/{name}` is also offered as a template, so a
-  client that does not list can still name one. The name is written through core's
+  client that does not list can still name one. `resonate://library/statistics/{window}` is the
+  second template, one per `Window` by the name the tool's `window` takes: `Resource::Statistics`
+  carries its window, the month's is the fixed one listed under the bare URI, and
+  `a_window_of_listening_is_a_resource_under_the_window_it_names` holds each to the tool. The name is written through core's
   `uri_escaped` — the same escaping a `file://` URI takes — and read back through
   `uri_unescaped`, and it is found the way `playlist_tracks` finds it, ignoring case. A name that
   is blank or does not unescape to text is no resource at all rather than a playlist nobody made.
 - **A read answers under the URI it was asked for**, not the one the playlist would be listed
   under, because the URI inside `contents` is what a client keys the reading to.
+
+## The prompts
+
+- **A prompt is an instruction and a resource embedded beside it, read when it is asked for.**
+  `Prompt::ALL` is four: `build_a_playlist` takes a `brief` and an optional `name` and embeds the
+  playlists, so a name already taken is in front of the model; `review_my_listening` takes an
+  optional `window` and embeds `Resource::Statistics` for it; `complete_my_albums` embeds the
+  missing tracks and asks for agreement before anything is wanted; `about_this_track` embeds what
+  is playing. The embedding is `Resource::embedded`, the same `read` a `resources/read` answers
+  with under the resource's own URI, so a prompt cannot say something the resource would not, and
+  the instruction names each tool through `Tool::name` rather than spelling it, so a renamed tool
+  cannot leave a prompt pointing at nothing.
+- **A prompt is refused the way a tool is and fails the way a resource does.** A name nobody
+  offers is `Refusal::UnknownPrompt`, arguments that do not deserialise — a missing `brief`, a
+  `window` that is not one — are `BadPromptArguments` and a `brief` of nothing but space is
+  `BlankArgument`, all under `InvalidParams`, which is what the spec gives a bad prompt name or
+  argument. `Prompt::get` answers `Result<Result<Value>, Refusal>` like `Tool::run`, and a
+  reading that ran and failed — `about_this_track` with no player — is a JSON-RPC error under
+  `InternalError`, because a prompt, like a resource, has no `isError` to carry it.
 
 ## The tools
 

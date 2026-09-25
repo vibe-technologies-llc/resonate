@@ -17,6 +17,8 @@ const PASSES: &str = "resonate://library/passes";
 const PLAYLISTS: &str = "resonate://library/playlists";
 const FAVOURITES: &str = "resonate://library/favourites";
 const STATISTICS: &str = "resonate://library/statistics";
+const STATISTICS_OVER: &str = "resonate://library/statistics/";
+const STATISTICS_TEMPLATE: &str = "resonate://library/statistics/{window}";
 const SUGGESTIONS: &str = "resonate://library/suggestions";
 const MISSING: &str = "resonate://library/missing";
 const ONE_PLAYLIST: &str = "resonate://library/playlist/";
@@ -30,7 +32,7 @@ pub enum Resource {
     Playlists,
     Playlist(PlaylistName),
     Favourites,
-    Statistics,
+    Statistics(Window),
     Suggestions,
     Missing,
 }
@@ -42,7 +44,7 @@ impl Resource {
         Self::Passes,
         Self::Playlists,
         Self::Favourites,
-        Self::Statistics,
+        Self::Statistics(Window::Month),
         Self::Suggestions,
         Self::Missing,
     ];
@@ -51,6 +53,12 @@ impl Resource {
         if let Some(escaped) = uri.strip_prefix(ONE_PLAYLIST) {
             let name = String::from_utf8(uri_unescaped(escaped)?).ok()?;
             return (!name.trim().is_empty()).then(|| Self::Playlist(PlaylistName::new(name)));
+        }
+        if let Some(named) = uri.strip_prefix(STATISTICS_OVER) {
+            return Window::ALL
+                .into_iter()
+                .find(|window| window.name() == named)
+                .map(Self::Statistics);
         }
         Self::FIXED.into_iter().find(|fixed| fixed.uri() == uri)
     }
@@ -65,7 +73,8 @@ impl Resource {
                 format!("{ONE_PLAYLIST}{}", uri_escaped(name.as_str().as_bytes()))
             }
             Self::Favourites => FAVOURITES.to_owned(),
-            Self::Statistics => STATISTICS.to_owned(),
+            Self::Statistics(Window::Month) => STATISTICS.to_owned(),
+            Self::Statistics(window) => format!("{STATISTICS_OVER}{}", window.name()),
             Self::Suggestions => SUGGESTIONS.to_owned(),
             Self::Missing => MISSING.to_owned(),
         }
@@ -79,7 +88,8 @@ impl Resource {
             Self::Playlists => "playlists".to_owned(),
             Self::Playlist(name) => name.to_string(),
             Self::Favourites => "favourites".to_owned(),
-            Self::Statistics => "listening_statistics".to_owned(),
+            Self::Statistics(Window::Month) => "listening_statistics".to_owned(),
+            Self::Statistics(window) => format!("listening_statistics_{}", window.name()),
             Self::Suggestions => "suggested_playlists".to_owned(),
             Self::Missing => "missing_tracks".to_owned(),
         }
@@ -108,9 +118,10 @@ impl Resource {
                 "The {LISTED_BY_DEFAULT} tracks, albums and artists most recently marked as \
                  favourites."
             ),
-            Self::Statistics => format!(
-                "What was listened to over the last month: the totals and the {TOP_BY_DEFAULT} \
-                 tracks, albums and artists heard most."
+            Self::Statistics(window) => format!(
+                "What was listened to over {}: the totals and the {TOP_BY_DEFAULT} tracks, \
+                 albums and artists heard most.",
+                over(*window)
             ),
             Self::Suggestions => "The playlists the catalog suggests to itself, each with the \
                                   search it would fill from."
@@ -132,15 +143,27 @@ impl Resource {
     }
 
     pub(crate) fn templates() -> Value {
-        json!([{
-            "uriTemplate": ONE_PLAYLIST_TEMPLATE,
-            "name": "playlist",
-            "description": format!(
-                "The first {LISTED_BY_DEFAULT} rows of one playlist, by the name playlists gives \
-                 it."
-            ),
-            "mimeType": JSON,
-        }])
+        json!([
+            {
+                "uriTemplate": ONE_PLAYLIST_TEMPLATE,
+                "name": "playlist",
+                "description": format!(
+                    "The first {LISTED_BY_DEFAULT} rows of one playlist, by the name playlists \
+                     gives it."
+                ),
+                "mimeType": JSON,
+            },
+            {
+                "uriTemplate": STATISTICS_TEMPLATE,
+                "name": "listening_statistics_over",
+                "description": format!(
+                    "What was listened to over a window — {} — with the {TOP_BY_DEFAULT} tracks, \
+                     albums and artists heard most.",
+                    Window::ALL.map(Window::name).join(", ")
+                ),
+                "mimeType": JSON,
+            },
+        ])
     }
 
     pub(crate) fn read(
@@ -162,14 +185,37 @@ impl Resource {
                 catalog::playlist_tracks(library, name.as_str(), None, LISTED_BY_DEFAULT)
             }
             Self::Favourites => catalog::favourites(library, LISTED_BY_DEFAULT),
-            Self::Statistics => catalog::statistics(library, Window::Month, TOP_BY_DEFAULT),
+            Self::Statistics(window) => catalog::statistics(library, *window, TOP_BY_DEFAULT),
             Self::Suggestions => catalog::suggestions(library),
             Self::Missing => catalog::missing(library, None, MISSING_BY_DEFAULT),
         }
     }
 
     pub(crate) fn contents(asked: &str, read: &Value) -> Value {
-        json!({ "contents": [{ "uri": asked, "mimeType": JSON, "text": read.to_string() }] })
+        json!({ "contents": [written(asked, read)] })
+    }
+
+    pub(crate) fn embedded(
+        &self,
+        library: &Library,
+        players: &dyn Reach,
+        passes: &Passes,
+    ) -> Result<Value> {
+        let read = self.read(library, players, passes)?;
+        Ok(json!({ "type": "resource", "resource": written(&self.uri(), &read) }))
+    }
+}
+
+fn written(uri: &str, read: &Value) -> Value {
+    json!({ "uri": uri, "mimeType": JSON, "text": read.to_string() })
+}
+
+pub(crate) const fn over(window: Window) -> &'static str {
+    match window {
+        Window::Week => "the last week",
+        Window::Month => "the last month",
+        Window::Year => "the last year",
+        Window::Everything => "all time",
     }
 }
 

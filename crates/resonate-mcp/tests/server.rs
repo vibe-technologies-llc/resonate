@@ -502,7 +502,7 @@ fn a_broken_envelope_is_a_json_rpc_error_rather_than_a_tool_failure() {
         -32_600
     );
     assert_eq!(
-        error_code(&server, &request("prompts/list", json!({}))),
+        error_code(&server, &request("completion/complete", json!({}))),
         -32_601
     );
     assert_eq!(
@@ -1522,5 +1522,181 @@ fn a_resource_nobody_offers_is_refused_and_one_that_cannot_be_read_fails() {
             .as_str()
             .is_some_and(|said| said.contains("no playlist named Morning")),
         "{absent}"
+    );
+}
+
+fn prompted(server: &Server, name: &str, arguments: Value) -> (String, Value) {
+    let got = result(
+        server,
+        "prompts/get",
+        json!({ "name": name, "arguments": arguments }),
+    );
+    let messages = got["messages"]
+        .as_array()
+        .expect("a prompt carries messages");
+    assert_eq!(messages.len(), 2, "{got}");
+    assert!(
+        messages.iter().all(|message| message["role"] == "user"),
+        "{got}"
+    );
+    let asked = messages[0]["content"]["text"]
+        .as_str()
+        .expect("a prompt opens with what it asks")
+        .to_owned();
+    assert_eq!(messages[1]["content"]["type"], "resource", "{got}");
+    (asked, messages[1]["content"]["resource"].clone())
+}
+
+#[test]
+fn every_prompt_is_listed_with_the_arguments_it_requires() {
+    let server = nothing_running();
+
+    let initialised = result(
+        &server,
+        "initialize",
+        json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+    );
+    assert_eq!(initialised["capabilities"]["prompts"]["listChanged"], false);
+
+    let listed = result(&server, "prompts/list", json!({}));
+    let prompts = listed["prompts"].as_array().expect("a list of prompts");
+    let names: Vec<&str> = prompts
+        .iter()
+        .map(|prompt| prompt["name"].as_str().expect("a prompt has a name"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "build_a_playlist",
+            "review_my_listening",
+            "complete_my_albums",
+            "about_this_track"
+        ]
+    );
+    assert_eq!(prompts[0]["arguments"][0]["name"], "brief");
+    assert_eq!(prompts[0]["arguments"][0]["required"], true);
+    assert_eq!(prompts[0]["arguments"][1]["required"], false);
+    assert_eq!(prompts[3]["arguments"], json!([]));
+}
+
+#[test]
+fn a_prompt_embeds_the_reading_its_resource_answers() {
+    let tree = Tree::new();
+    tree.wav("a.wav", "Night Signal", "Hours", "1");
+    let library = scanned(&tree);
+    library
+        .create_playlist("Mornings")
+        .expect("a playlist to be made");
+    let (players, _) = Fake::with(Standing {
+        rows: vec![row(9, "Echoes")],
+        playing: Some(0),
+        status: Some(PlaybackStatus::Playing),
+        ..Standing::default()
+    });
+    let server = server(library, players);
+
+    let (asked, embedded) = prompted(
+        &server,
+        "build_a_playlist",
+        json!({ "brief": "  rain on a window  ", "name": "Drizzle" }),
+    );
+    assert!(asked.contains("brief: rain on a window."), "{asked}");
+    assert!(asked.contains("under the name Drizzle"), "{asked}");
+    assert!(asked.contains("search_library") && asked.contains("create_playlist"));
+    assert_eq!(embedded["uri"], "resonate://library/playlists");
+    let text = embedded["text"]
+        .as_str()
+        .expect("an embedded reading is text");
+    assert_eq!(
+        serde_json::from_str::<Value>(text).expect("the text to be JSON"),
+        read_resource(&server, "resonate://library/playlists")
+    );
+
+    let (unnamed, _) = prompted(&server, "build_a_playlist", json!({ "brief": "rain" }));
+    assert!(unnamed.contains("of your choosing"), "{unnamed}");
+
+    let (asked, embedded) = prompted(&server, "review_my_listening", json!({ "window": "year" }));
+    assert!(asked.contains("over the last year"), "{asked}");
+    assert_eq!(embedded["uri"], "resonate://library/statistics/year");
+    assert_eq!(
+        serde_json::from_str::<Value>(embedded["text"].as_str().expect("text"))
+            .expect("the text to be JSON"),
+        called(&server, "listening_statistics", json!({ "window": "year" }))
+    );
+
+    let (_, embedded) = prompted(&server, "review_my_listening", json!({}));
+    assert_eq!(embedded["uri"], "resonate://library/statistics");
+
+    let (asked, embedded) = prompted(&server, "complete_my_albums", json!({}));
+    assert!(asked.contains("want_tracks"), "{asked}");
+    assert_eq!(embedded["uri"], "resonate://library/missing");
+
+    let (_, embedded) = prompted(&server, "about_this_track", json!({}));
+    assert_eq!(embedded["uri"], "resonate://player/now-playing");
+    assert!(
+        embedded["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("Echoes")),
+        "{embedded}"
+    );
+}
+
+#[test]
+fn a_prompt_asked_wrongly_is_refused_and_one_whose_reading_fails_fails() {
+    let server = nothing_running();
+
+    for params in [
+        json!({ "name": "compose_a_symphony" }),
+        json!({ "name": "build_a_playlist" }),
+        json!({ "name": "build_a_playlist", "arguments": { "brief": "   " } }),
+        json!({ "name": "review_my_listening", "arguments": { "window": "decade" } }),
+        json!({}),
+    ] {
+        assert_eq!(
+            error_code(&server, &request("prompts/get", params.clone())),
+            -32_602,
+            "{params}"
+        );
+    }
+
+    let answer = asked(
+        &server,
+        &request("prompts/get", json!({ "name": "about_this_track" })),
+    )
+    .expect("a failed prompt to be answered");
+    assert_eq!(answer["error"]["code"], -32_603, "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|said| said.contains("no player")),
+        "{answer}"
+    );
+}
+
+#[test]
+fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
+    let server = nothing_running();
+
+    for window in ["week", "month", "year", "everything"] {
+        assert_eq!(
+            read_resource(&server, &format!("resonate://library/statistics/{window}")),
+            called(&server, "listening_statistics", json!({ "window": window })),
+            "{window}"
+        );
+    }
+    assert_eq!(
+        error_code(
+            &server,
+            &request(
+                "resources/read",
+                json!({ "uri": "resonate://library/statistics/decade" })
+            )
+        ),
+        -32_002
+    );
+    let templates = result(&server, "resources/templates/list", json!({}));
+    assert_eq!(
+        templates["resourceTemplates"][1]["uriTemplate"],
+        "resonate://library/statistics/{window}"
     );
 }
