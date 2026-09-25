@@ -1592,24 +1592,17 @@ impl RootView {
     }
 
     fn queue_all(&self, placement: Placement, cx: &mut Context<Self>) -> Stateful<Div> {
-        let (id, icon, label, saying, tone) = match placement {
-            Placement::Next => (
-                "next-all",
-                Icon::QueueNext,
-                menu::PLAY_NEXT,
-                NEXT_ALL_HINT,
-                Tone::Ghost,
-            ),
+        let (id, icon, label, saying) = match placement {
+            Placement::Next => ("next-all", Icon::QueueNext, menu::PLAY_NEXT, NEXT_ALL_HINT),
             Placement::Queued | Placement::At(_) => (
                 "last-all",
                 Icon::QueueLast,
                 menu::ADD_TO_QUEUE,
                 QUEUE_ALL_HINT,
-                Tone::Outlined,
             ),
         };
 
-        kit::button(id, Some(icon), label, saying, tone).on_click(cx.listener(
+        kit::button(id, Some(icon), label, saying, Tone::Outlined).on_click(cx.listener(
             move |this, _, window, cx| {
                 this.with_everything_listed(window, cx, move |this, listing, _, cx| {
                     let queued = listed(&listing);

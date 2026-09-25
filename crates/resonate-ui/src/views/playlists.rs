@@ -800,7 +800,7 @@ impl RootView {
                         Some(Icon::QueueNext),
                         menu::PLAY_NEXT,
                         PLAYLIST_NEXT_HINT,
-                        Tone::Ghost,
+                        Tone::Outlined,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.queue(&queued, Placement::Next, cx);

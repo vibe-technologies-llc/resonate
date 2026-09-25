@@ -347,7 +347,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   gpui's rem steps, so the root's `text_size(theme::text_base())` is what a bare `div` inherits.
 - **A control is a `kit::button` in one of three tones, and nothing draws its own.** `Tone::Primary`
   is the accent fill and is the one gesture a heading leads with — *Play* — `Tone::Outlined` is the
-  raised secondary — *Add to queue*, *Save as a playlist*, *Show graph* — and `Tone::Ghost` is
+  raised secondary — *Play next* and *Add to queue*, which are one pair and wear one tone
+  wherever they stand together, *Save as a playlist*, *Show graph* — and `Tone::Ghost` is
   everything else. Every one carries an icon slot and a hint. `kit::icon_button` is the square
   version a row's controls and the playlist index's actions use, `kit::chip` is the pill an order,
   a reading, a cap or a setting is chosen from, and `kit::badge` is the small mono tag a codec, a
