@@ -13982,8 +13982,6 @@ fn a_saved_query_reads_back_the_order_it_was_saved_with() -> Result<()> {
 
 const A_STREAMING_LINK: &str = "https://open.spotify.com/track/1a2b3c4d5e";
 const AN_ENCYCLOPAEDIA_LINK: &str = "https://en.wikipedia.org/wiki/Orbits";
-const SONG_LINK: &str = "https://song.link/";
-const MUSICBRAINZ_RECORDING: &str = "https://musicbrainz.org/recording/";
 
 const HEARD_FOR: Duration = Duration::from_secs(180);
 
@@ -14329,10 +14327,7 @@ fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
     assert_eq!(shared.album.as_deref(), Some("Orbits"));
     assert_eq!(shared.year, Some(1971));
     assert!(shared.links.is_empty());
-    assert_eq!(
-        shared.written(),
-        "The Orbiters — Echoes\nfrom Orbits (1971)"
-    );
+    assert_eq!(shared.written(), None);
     Ok(())
 }
 
@@ -14376,12 +14371,9 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
         Some(A_STREAMING_LINK),
         "the recording\'s own link is not the first the share weighs"
     );
-    assert!(
-        shared
-            .written()
-            .ends_with(&format!("{SONG_LINK}{A_STREAMING_LINK}")),
-        "{}",
-        shared.written()
+    assert_eq!(
+        shared.written().as_deref(),
+        Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c4d5e")
     );
     Ok(())
 }
@@ -14421,18 +14413,15 @@ fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> 
         Some(AN_ENCYCLOPAEDIA_LINK),
         "the album\'s link is held even where song.link cannot resolve it"
     );
-    assert!(
-        shared
-            .written()
-            .ends_with(&format!("{MUSICBRAINZ_RECORDING}{RECORDING}")),
-        "{}",
-        shared.written()
+    assert_eq!(
+        shared.written().as_deref(),
+        Some("https://musicbrainz.org/recording/b1a9c0de-1111-4222-8333-444455556666")
     );
     Ok(())
 }
 
 #[test]
-fn a_share_of_a_track_nothing_knows_about_is_the_text_alone() -> Result<()> {
+fn a_share_of_a_track_nothing_knows_about_has_no_link() -> Result<()> {
     let tree = Tree::new();
     tree.write("mystery.wav", &Wav::new().build());
 
@@ -14445,8 +14434,7 @@ fn a_share_of_a_track_nothing_knows_about_is_the_text_alone() -> Result<()> {
         .expect("the catalog holds the track it just scanned");
     assert_eq!(shared.recording, None);
     assert!(shared.links.is_empty());
-    assert_eq!(shared.written(), shared.title);
-    assert!(!shared.written().contains('\n'));
+    assert_eq!(shared.written(), None);
     Ok(())
 }
 

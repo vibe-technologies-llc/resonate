@@ -5,10 +5,7 @@ use crate::{Error, Link, Mbid, Relation, Result, Service, StoreOp, db::Inner, st
 
 const SONG_LINK: &str = "https://song.link/";
 const MUSICBRAINZ_RECORDING: &str = "https://musicbrainz.org/recording/";
-
-const BETWEEN_ARTIST_AND_TITLE: &str = " — ";
-const FROM_THE_ALBUM: &str = "from ";
-const BEFORE_A_LINK: &str = "\n\n";
+const HEX: &[u8; 16] = b"0123456789ABCDEF";
 
 const RELATIONS_SONG_LINK_TAKES: [Relation; 5] = [
     Relation::Streaming,
@@ -56,39 +53,34 @@ pub struct Shared {
 }
 
 impl Shared {
-    pub fn written(&self) -> String {
-        let mut written = match &self.artist {
-            Some(artist) => format!("{artist}{BETWEEN_ARTIST_AND_TITLE}{}", self.title),
-            None => self.title.clone(),
-        };
-
-        if let Some(album) = &self.album {
-            written.push('\n');
-            written.push_str(FROM_THE_ALBUM);
-            written.push_str(album);
-            if let Some(year) = self.year {
-                written.push_str(&format!(" ({year})"));
-            }
-        }
-        if let Some(link) = self.one_link() {
-            written.push_str(BEFORE_A_LINK);
-            written.push_str(&link);
-        }
-
-        written
-    }
-
-    fn one_link(&self) -> Option<String> {
+    pub fn written(&self) -> Option<String> {
         self.links
             .iter()
             .find(|link| resolved_by_song_link(link).is_some())
-            .map(|link| format!("{SONG_LINK}{}", link.url))
+            .map(|link| format!("{SONG_LINK}{}", escaped_for_a_path(&link.url)))
             .or_else(|| {
                 self.recording
                     .as_ref()
                     .map(|recording| format!("{MUSICBRAINZ_RECORDING}{recording}"))
             })
     }
+}
+
+fn escaped_for_a_path(url: &str) -> String {
+    let mut escaped = String::with_capacity(url.len());
+    for byte in url.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                escaped.push(char::from(byte));
+            }
+            other => {
+                escaped.push('%');
+                escaped.push(char::from(HEX[(other >> 4) as usize]));
+                escaped.push(char::from(HEX[(other & 0x0f) as usize]));
+            }
+        }
+    }
+    escaped
 }
 
 pub(crate) fn shareable(inner: &Inner, track: TrackId) -> Result<Option<Shared>> {
@@ -203,35 +195,12 @@ mod tests {
     }
 
     #[test]
-    fn a_share_names_the_artist_the_title_and_the_year() {
-        assert_eq!(
-            echoes().written(),
-            "Pink Floyd — Echoes\nfrom Meddle (1971)"
-        );
+    fn a_share_with_nothing_song_link_can_open_is_nothing() {
+        assert_eq!(echoes().written(), None);
     }
 
     #[test]
-    fn a_share_of_a_track_with_no_artist_is_its_title_alone() {
-        let shared = Shared {
-            title: "Track 07".to_owned(),
-            ..Shared::default()
-        };
-
-        assert_eq!(shared.written(), "Track 07");
-    }
-
-    #[test]
-    fn an_album_with_no_year_is_named_without_brackets() {
-        let shared = Shared {
-            year: None,
-            ..echoes()
-        };
-
-        assert_eq!(shared.written(), "Pink Floyd — Echoes\nfrom Meddle");
-    }
-
-    #[test]
-    fn a_service_link_is_handed_to_song_link_and_a_recording_is_not() {
+    fn a_service_link_is_handed_to_song_link_escaped_and_a_recording_is_not() {
         let shared = Shared {
             recording: Some(mbid()),
             links: vec![Link {
@@ -243,8 +212,25 @@ mod tests {
         };
 
         assert_eq!(
-            shared.written(),
-            format!("Pink Floyd — Echoes\nfrom Meddle (1971)\n\n{SONG_LINK}{SPOTIFY}")
+            shared.written().as_deref(),
+            Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c")
+        );
+    }
+
+    #[test]
+    fn a_query_in_a_service_url_stays_part_of_the_path_song_link_reads() {
+        let shared = Shared {
+            links: vec![Link {
+                relation: Relation::Streaming,
+                service: Service::AppleMusic,
+                url: "https://music.apple.com/us/album/time/1?i=2".to_owned(),
+            }],
+            ..echoes()
+        };
+
+        assert_eq!(
+            shared.written().as_deref(),
+            Some("https://song.link/https%3A%2F%2Fmusic.apple.com%2Fus%2Falbum%2Ftime%2F1%3Fi%3D2")
         );
     }
 
@@ -261,10 +247,8 @@ mod tests {
         };
 
         assert_eq!(
-            shared.written(),
-            format!(
-                "Pink Floyd — Echoes\nfrom Meddle (1971)\n\n{MUSICBRAINZ_RECORDING}{RECORDING}"
-            )
+            shared.written().as_deref(),
+            Some("https://musicbrainz.org/recording/b1a9c0de-1111-4222-8333-444455556666")
         );
     }
 

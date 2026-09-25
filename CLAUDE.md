@@ -658,14 +658,15 @@ Invariants the layering exists to protect:
   an ordinary one the providers fill. What a track *sings* is the fifth `tracks_fts` column —
   the file's lyrics or the fetched ones, timestamps stripped — reached by `lyrics:` and never by a
   bare word, and a plain-word search some track sings is offered as `lyrics:"…"`.
-- **A share is text and one link, and the catalog already held the link.** `Shared::written` is
-  the whole of it, in `resonate-library` because the window, `resonate share` and anything else
-  that wants it must say the same thing. song.link takes the service URL appended whole — it
-  answers 308 and lands on its own shortcode form — and the URL comes from the
+- **A share is the link alone, and the catalog already held it.** `Shared::written` is the
+  whole of it, in `resonate-library` because the window, `resonate share` and anything else
+  that wants it must say the same thing. It is `https://song.link/` with the service URL
+  percent-encoded as one path segment — appended raw, the server collapses `//` into a 308 to
+  `https:/…` and reads a `?` as its own query — and the URL comes from the
   `release_track_links` and `album_links` MusicBrainz enrichment already wrote, a recording's
   preferred over its release's and the providers weighed in a declared order so one track shares
   the same way twice running. Where no service is linked it is the MusicBrainz recording, and
-  where there is neither it is the text alone.
+  where there is neither there is nothing to copy.
 - **Every major listing has an order, and no index was added to give it one.** `SortOrder` grew a
   `Direction` beside it and `AlbumOrder` and `ArtistOrder` joined `PlaylistOrder` and `RowOrder`,
   so the tracks, albums and artists panes each sort and reverse where only the playlists pane
@@ -997,8 +998,8 @@ cargo run -- favourites               # what is marked, all three kinds or which
                                       #   --albums and --artists is asked for
 cargo run -- suggest                  # the playlists the catalog suggests to itself, each with
                                       #   the search it fills from; --save <name> keeps one
-cargo run -- share [<file>]           # the track, its album and one link, for the file named or
-                                      #   for whatever the running player is playing
+cargo run -- share [<file>]           # the link for the file named, or for whatever the
+                                      #   running player is playing
 cargo run -- sleep <spec>             # stops the running player after so many minutes, or at
                                       #   `track`, `queue` or `off`; --player <name> says which
 cargo run -- mcp                      # serves the catalog and the running player to a language

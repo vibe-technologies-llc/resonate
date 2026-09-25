@@ -94,7 +94,7 @@ resonate queue <files>            # add them to the player already running, over
 resonate players                  # the players running on the session bus and what each plays
 resonate sleep <spec>             # stop the running player after so many minutes, at the end of
                                   #   the track, or at the end of the queue
-resonate share [file]             # what a track reads as when it is passed on, with one link
+resonate share [file]             # the link a track is shared as
 ```
 
 ## The library

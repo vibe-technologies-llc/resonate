@@ -11,8 +11,11 @@ pub fn print(library: &Library, file: Option<&Path>) -> Result<()> {
         None => playing()?,
     };
     let shared = held(library, &location, span)?;
+    let Some(link) = shared.written() else {
+        return Err(Error::NothingToShare);
+    };
 
-    println!("{}", shared.written());
+    println!("{link}");
     Ok(())
 }
 

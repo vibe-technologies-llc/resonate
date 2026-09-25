@@ -82,6 +82,7 @@ const TAKEN_BACK: &str = " · ctrl-z puts it back";
 const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
+const NO_LINK_TO_SHARE: &str = "There's no link for that track";
 
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
@@ -1331,11 +1332,14 @@ impl LibraryModel {
                             toast::could_not("share that track", &error)
                         }
                         Ok(None) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
-                        Ok(Some(shared)) => {
-                            let said = on_the_clipboard(&shared);
-                            clipboard::copy(shared.written(), cx);
-                            Notice::Done(said)
-                        }
+                        Ok(Some(shared)) => match shared.written() {
+                            Some(link) => {
+                                let said = on_the_clipboard(&shared);
+                                clipboard::copy(link, cx);
+                                Notice::Done(said)
+                            }
+                            None => Notice::Noted(NO_LINK_TO_SHARE.to_owned()),
+                        },
                     },
                     cx,
                 );

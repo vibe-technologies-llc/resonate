@@ -848,10 +848,7 @@ pub enum Sub {
         save: Option<String>,
     },
 
-    #[command(
-        about = "Print what a track reads as when it is passed on: who made it, what it is from \
-                 and where it can be heard"
-    )]
+    #[command(about = "Print the link a track is shared as")]
     Share {
         #[arg(
             value_name = "FILE",

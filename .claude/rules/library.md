@@ -169,16 +169,19 @@ through `Player::media` like any other unscanned row.
   `SuggestionKind`, which is how the pane shelves them.
   `a_suggestion_says_how_long_it_runs_and_which_covers_picture_it` and
   `one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once` are the claims.
-- **A share is built here because three callers want the same words.** `Library::shareable` reads
-  the track, its album and the `release_track_links` and `album_links` rows, and
-  `Shared::written` is a pure function over them — the identity, then one link. The link is
-  `https://song.link/` with the service URL appended whole, which is the form the service
-  answers 308 to and resolves to its own shortcode; the candidates are the `Relation`s
-  `RELATIONS_SONG_LINK_TAKES` names crossed with `SERVICES_SONG_LINK_RESOLVES`, a recording's
-  own links ahead of its release's and the providers weighed in the order they are declared, so
-  one track shares identically twice running. Failing that it is the MusicBrainz recording, and
-  failing that the text alone. It is not in the window because `resonate share` and anything
-  else that shares must say the same thing.
+- **A share is the link alone, because three callers want the same one.** `Library::shareable`
+  reads the track and the `release_track_links` and `album_links` rows, and `Shared::written` is
+  a pure function over them — one URL, or nothing. It is `https://song.link/` with the service
+  URL percent-encoded as a single path segment. Appending the URL raw is what the service used
+  to be asked, and it is broken: the server collapses the unescaped `//` and answers 308 to
+  `https:/…`, and a `?` — an Apple `i=` or a YouTube `v=` — is read as song.link's own query, so
+  the track id never arrives. Encoded, the same address answers 302 with the short form.
+  The candidates are the `Relation`s `RELATIONS_SONG_LINK_TAKES` names crossed with
+  `SERVICES_SONG_LINK_RESOLVES`, a recording's own links ahead of its release's and the
+  providers weighed in the order they are declared, so one track shares identically twice
+  running. Failing that it is the MusicBrainz recording, and failing that there is nothing to
+  copy. It is not in the window because `resonate share` and anything else that shares must say
+  the same thing.
 - **Every order a pane offers is read off an index, and what the planner knows about the table is
   written after a scan.** `tracks_by_album` carries the trailing `title COLLATE NOCASE` the album
   order ends on, and `tracks_by_title`, `tracks_by_artist_name`, `tracks_by_added`,
