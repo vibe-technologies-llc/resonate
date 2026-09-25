@@ -1,521 +1,250 @@
 # Roadmap
 
-## Codec
-- A gapless declaration is read from the boxes, so a source that cannot seek reaches it only where
-  it lands inside `MAX_PRESCAN_HEAD`. An `.m4a` with a trailing `moov` piped in therefore plays its
-  priming, which is the same head limit the `LIST INFO` note under Testing has
-- A picture is weighed before `probe_cover_art` copies it, but symphonia has already read it into a
-  buffer of its own by then, so a file embedding a 200 MB picture still costs one materialisation.
-  Declining it before the reader allocates would mean a bound symphonia's own metadata readers take
-- DST-compressed DSDIFF is refused rather than decoded, so a `.dff` whose `CMPR` chunk says `DST `
-  names a file this build can see and not play. It is a decoder to write
-- WavPack and Monkey's Audio have no decoder anywhere in the tree — symphonia carries neither, its
-  `ape` feature being APEv2 metadata alone — so the desktop entry, the bus and the scan's extension
-  list pass them over. Closing it is a decoder beside `opus-rs` in the codec crate's registry
-- `opus-rs` runs SILK six samples early against libopus — bit-identical once shifted — and
-  differs from it for a few hundred milliseconds wherever a stream moves between SILK, hybrid and
-  CELT, which libopus's encoder does at the start of a low-bitrate stream. Music bitrates are CELT
-  throughout and match libopus to 10⁻⁵; a speech-rate Opus file is the one that hears it. Both are
-  the crate's to fix rather than this one's
-- An Opus track in Matroska is counted exactly only where the walk reaches the segment's declared
-  end, so one whose segment is of unknown length and anything piped past `MAX_PRESCAN_HEAD` fall
-  back to the millisecond timestamps, up to 1.5 ms off what they decode to. No laced Opus file
-  written by a real muxer has been counted here — `mkvmerge` is not installed and ffmpeg does not
-  lace — so the three lacings are proved against blocks the tests lay down by hand
-- Opus mapping families 2, 3 and 255 — ambisonics and undefined layouts — are refused by
-  symphonia's own `OpusHead` reader before the decoder is asked, so such a file does not open
-- Nothing applies DSD's +6 dB modulation convention — its 0 dB reference is 50 % modulation — so a
-  DSD master decimates about 6 dB quieter than the same music in PCM. Applying it would clip hot
-  material, so it is a decision to take rather than an oversight
-- DoP has never been proved against a DAC that decodes it. The markers are asserted byte for byte
-  into the fake graph and the plan is asserted against every setting the pane can produce, but no
-  hardware here takes a 176.4 kHz S24 stream
+Categories run from most to least important. Everything under a `Later:` heading is a nice-to-have
+that no listener is waiting on, and is worked only once the categories above it are quiet.
 
-## The vault
-- A kept object whose container holds its tags inside its own structure — an MP4's `udta`, a
-  DSDIFF's `ID3 ` and `DIIN` chunks, Matroska's `Tags` — carries them still, because rewriting an
-  atom tree, a `FRM8` or an EBML segment means a writer per format
-- `flacenc` 0.5.1 caps the Rice parameter at 14 where the format's second partition method reaches
-  30, which is why a 24-bit rip loses to `flac -8` by some 15 % and is kept rather than re-encoded.
-  Closing it means the partitioned-rice-2 method in that crate or an encoder beside it
-- `flacenc` also verifies `sample_rate <= 96_000` and `bits_per_sample <= 24` where the format
-  holds 655 kHz and 32 bits, so a 192 kHz rip is weighed as a `Wave` and then usually kept
-- A rip weighed as a `Wave` and then kept still pays most of a single-threaded zstd level-19 pass
-  first, because `wave::compressed` gives up only once it has written what the source weighs: a
-  five-minute 24/192 FLAC costs about 50 s of one core and is the whole of an import's tail.
-  Spreading it over zstd's own workers changes the bytes and can cost ratio, and predicting the
-  answer before the pass would be a guess about what the vault keeps
+## Defects
+- A right press on a row's own ✕, arrow or + in the queue probably acts on it as well as opening
+  the row's menu: `kit::icon_button`'s `on_click` fires on a right click, and the ✕'s handler in
+  `views/queue.rs` has none of the `menu::pressed` guard the row's own handler has, so a right press
+  on ✕ would remove the row under the menu it opened. Not yet seen in the window
+- A preview under Organising or Tagging is taken down only by a change of layout, never by a scan
+  or a lookup moving the catalog under it, so the rows and counts on screen can describe a catalog
+  that is no longer there. *Apply* re-runs the pass rather than applying the plan, so nothing wrong
+  is written
+- The settings pane's *Buffer* sizes the engine's ring alone: the engine always asks the graph for
+  `LatencyRequest::Auto`, so `node.latency` is whatever the daemon picks. Either the setting drives
+  the graph's quantum too or its hint says plainly that it does not
 
-## Sources
-- No provider reaches a network. `resonate-inbox` is the only one registered, so a want is filled
-  only by a file someone put in the inbox under its MBID or ISRC, and the service links an
-  `Identity` carries are read by nothing yet
-- A delivered row belongs to no root, so a scan never prunes it and only `resonate forget` handed
-  its path or URI takes it away: the window offers no gesture for it. It carries no genre and no lyrics of its own,
-  because the vault strips the tags the delivery came with and the row is written from the release
-  track alone; its ReplayGain is what its study measured, so it is levelled only once studied
-- A provider or a stream left behind as late keeps its thread for as long as its `obtain` or its
-  `read` runs. Nothing can take one back without the provider's help
-- A provider is asked for bytes on the engine thread and on the tag reader, so a slow remote open
-  stalls the track change it is part of, and nothing gives a `MediaProvider` a deadline. A row's
-  name and its picture are one open only where the picture was already asked for when the tags
-  are read, or where the file turns out to carry none; a picture asked for after its tags landed
-  still opens the file again
-
-## DSP
+## Playback and output
+- A `SinkChange` while a stream is open refreshes the device list only once the ring holds twice
+  the 50 ms enumeration budget, so under a buffer shorter than 100 ms a new device, a new default
+  and the playing device going away all wait for the next stream open — and since WirePlumber no
+  longer moves the stream, the sound stays on the old device until then, or goes silent where it
+  has gone
 - The volume is the software gain stage alone, so anything under 100 % leaves bit-perfect. Whether
   a device has a hardware volume is read and drawn, and nothing drives it
-- A track the lookup has not studied yet is turned down by nothing but the peak its tags declare,
-  so a boost with no peak tag still leans on the per-sample limiter until the study lands, and the
-  guard catches only what the chain processes: a bit-perfect or repacked stream of a file that is
-  itself over full scale reaches the device as the file has it
-- The true peak is read at eight times the rate through a 48-tap interpolator that is flat to
-  85 % of Nyquist but under-reads a tone at 90 % by 0.06 dB, at 92 % by 0.33 dB and at 95 % by
-  2 dB, so an over carried by the top tenth of the band — above 21.6 kHz at 48 kHz — can still
-  pass the guard's ceiling by that much
-- Lossy restoration's constants — the droop shelves, the hole depths, the extension's slope — were
-  tuned on a handful of MP3s and synthetic walls; no AAC or Vorbis file was weighed, and nothing
-  listens for whether the rebuilt band is heard as air or as hiss. A wall found as a track plays
-  arrives a second and a half in, so the opening of a track the lookup has not studied plays
-  unextended
-- Restoration works on a hole no shorter than its 1 024-frame analysis window, so a band an MP3
-  encoder switches off for a single 576-sample granule is below what it can see
-- There is no convolution stage, so room correction and a measured impulse response have nowhere
-  to go where a parametric equaliser now does, and a `Processor` is still the seam one would land
-  behind
-- Nothing measures what an equalised stream actually peaks at, so *Fit the preamp* is a model of
-  the curve rather than a reading of the music; the true-peak guard rides down what the curve
-  pushes over, which is a gain that moves where a fitted preamp would have held still
-- AutoEq is the only correction source, and `Corrections` is the seam a second would fill. A
-  measurement is fetched one device at a time; nothing walks the index for everything plugged in
-- A downmix folds by position and never by measurement: `Remix` reads `ChannelLayout::positions`, so
-  a `Discrete(n)` source is truncated one channel for one rather than folded, and nothing reads the
-  `DIALNORM` or downmix coefficients a broadcast stream declares for itself
-
-## Analysis
-- The verdict's thresholds were measured on one library — a few dozen FLACs and a handful of LAME
-  transcodes. No FhG, AAC, Opus or Vorbis transcode was weighed, and an encoder whose lowpass sits
-  between 19.5 and 20.7 kHz can only ever read as suspect
-- Nothing reads an MP3's other marks: the holes a lossy encoder leaves above 16 kHz from frame to
-  frame, its scalefactor-band-21 content, or the pre-echo around a transient. The verdict rests on
-  the lowpass wall, the upsampled wall and the padded bits alone
-- The pane's waveform and spectrogram are held for the run and never kept; only the summary study
-  is in the catalog, so a track analysed once is decoded whole again after a restart
-- Taking the name a track was heard as leaves it due rather than asking at once, so the release
-  its recording sits on lands with the next lookup, and a track the album's release does not hold
-  is then numbered from the earliest release its recording sits on, which is seldom the album it
-  is filed under. The pane's *Take this name* has been seen drawn and never pressed
-- The recognition is AcoustID's alone, and it has never been reached from here — there is no key in
-  this build and the fixture is written from the service's documentation rather than captured.
-  The gzipped form the lookup is posted as has been read by the real service — which answered a
-  made-up key as an invalid one rather than as a missing one — but no print has been matched
-- Shazam is reached through an endpoint it does not document, so a change on its side stops the
-  listener naming anything until this build follows it; AudD is the documented fallback and needs
-  a token, and AcoustID rarely matches a clip from the middle of a song
-- A microphone recording has never been proved here against sound reaching the microphone — the
-  desktop's monitor has, with a real track recognised through it
-- The Listen sheet has been run in the window end to end — a desktop recording named by Shazam and
-  raised as a notification with its cover — but the screen was locked while it ran, so its card
-  has not been seen drawn, nor the microphone chips, nor the Online category's *Listening* group
-- Listen records one clip and asks once. Nothing listens again on its own when a clip is heard as
-  nothing, and nothing keeps listening to name each song as a stream changes track
-
-## PipeWire
-- A daemon restart is proved against a daemon the test hosts, with a null sink and no session
-  manager, and by hand under `resonate play`; the session's own daemon has not been restarted under
-  the window. A capture running when the daemon goes is dropped and not started again, and what a
-  Listen recording does then has not been watched
-- What a stream reports is the delay to the device plus the frames its resampler still holds, and
-  not the ones sitting in the buffers it has already queued: `pw_time.queued` is the sum of
-  `pw_buffer.size` over those, pipewire-rs 0.10 exposes no setter for that field, and writing it
-  would take `unsafe`, which is forbidden. The reading is therefore short by up to what one cycle
-  queued, and so is the visualiser's idea of which frame is being heard, which is read off it
-- Nothing says which of the two twenty-four bit words is on the wire. `SinkFormats` collapses
-  `S24LE` and `S24_32LE` to one `SampleFormat::S24`, so `resonate sinks` cannot report which one a
-  device asked for, and `resonate explain` builds its plan without opening a stream, so it cannot
-  report which one the graph will settle on — only the `FormatChanged` the callback already acts on
-  knows, and that is not published. The listing reads `S24` beside `S16LE` and `S32LE` for the same
-  reason: the depth has two spa names and neither of them is the depth's own
-- A forced graph *rate change* has never been proved against hardware. `NO_CONVERT` has: a real USB
-  DAC takes it and `pw-dump` reports the node negotiated at exactly the spec the plan asked for. But
-  the only card here advertises 48 kHz alone and the graph already runs there, so nothing has yet
-  made the daemon switch the graph under a stream and shown `Engine::downgrade` riding the
-  `StreamEvent::FormatChanged` that comes back. It wants a device offering two rates
-- Support more than one concurrent stream; the loop thread holds a single slot today
-- The port a sink comes out of, the profile its card is switched to and whether its volume is the
-  hardware's own are drawn by `resonate sinks` and by the settings pane's device list, but the pane
-  has only been seen drawing them for sinks staged in the window: the graph here offers
-  `auto_null` alone, so no real port has reached it yet. Only the card's *current* `Profile` is
-  read; `EnumProfile`, which is every profile a card offers, is
-  still unread, so nothing can offer to switch one
-- `SinkInfo::current_rate` comes from the settings metadata, which is graph-wide, so every sink
-  reports the same rate. The `Device` above is not the answer: its four params are `EnumProfile`,
-  `Profile`, `EnumRoute` and `Route`, and not one of them names a rate. A per-device rate is the
-  driver node's own clock, which the registry publishes nowhere
-- `LatencyRequest::Frames` and `LatencyRequest::Duration` are never constructed: the engine always
-  asks for `Auto`, so `node.latency` is whatever the daemon picks and the buffer setting sizes only
-  the engine's own ring. The settings pane calls it a buffer depth, which implies the graph's
-
-## Engine
-- A `SinkChange` while a stream is open refreshes the list only once the ring holds more audio than
-  the enumeration is allowed to spend, so under a buffer shorter than 100 ms a device that
-  appears, a new default the desktop chose and the playing device going away all wait for the
-  next stream open — and since the stream no longer lets WirePlumber move it, the sound stays on
-  the old device until then, or goes silent where that device has gone. The refresh it does take
-  is capped at 50 ms rather than the 2 s a startup enumeration may spend
+- Changing the rate policy, the graph rate, the buffer or DoP mid-track reopens the stream and
+  costs the gap a sink switch does, and so does switching the equaliser while a resampler runs,
+  because `OutputPlan::becomes_on_the_same_stream` will not carry a resampler's history into a new
+  chain. Handing the new resampler the old one's state would close the equaliser case
 - The place is written only where the row changed or the position moved `KEPT_EVERY`, so a run
-  killed rather than closed loses up to five seconds of position. Writing it on the way out would
-  mean the teardown path taking the SQLite writer, which is what `signals.rs` deliberately does not
-  wait on
+  killed rather than closed loses up to five seconds of position
+- A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
+  with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
+  of a file that is itself over full scale reaches the device as the file has it
+- The true-peak interpolator under-reads a tone at 90 % of Nyquist by 0.06 dB, at 92 % by 0.33 dB
+  and at 95 % by 2 dB, so an over carried by the top tenth of the band can pass the ceiling by that
+- A stream's reported delay misses the frames in buffers it has already queued — `pw_time.queued`
+  has no safe setter in pipewire-rs 0.10 — so the position and the visualiser's frame are short by
+  up to one cycle
+- `resonate sinks` and `resonate explain` cannot say whether a device takes `S24LE` or `S24_32LE`:
+  `SinkFormats` folds both into `SampleFormat::S24`, and only the unpublished `FormatChanged` knows
+  which the graph settled on
+- `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
+  the same one; a per-device rate is the driver node's own clock, which the registry publishes
+  nowhere
+- Only a card's current `Profile` is read. `EnumProfile` is not, so nothing can offer to switch one
+- The playback loop holds one playback stream and one capture stream; more than one concurrent
+  playback stream is not supported
+- A capture running when the daemon restarts is dropped and not started again
+- Nothing has proved a forced graph rate change against hardware — the only card here offers 48 kHz
+  alone — nor DoP against a DAC that decodes it
 
-## Lyrics
-- A sidecar's `[ti:]`, `[ar:]` and `[length:]` check is only as good as what the file says about
-  itself: a title transliterated differently from the tag reads as a disagreement, and a sheet that
-  declares none of the three is read as it always was
-- `Lyrics` is a flat list of lines. A karaoke-timed word and a translation beside the original
-  have no representation; its two voice slots need a source that identifies which singer owns a
-  line before a fetched song can use them
-- The ten seconds a line may be lit before the set goes dim is a constant rather than anything the
-  set declares, and nothing says how far through a line the transport is, because there is no word
-  timing to say it with — a karaoke reading wants a richer `Lyrics` first
-- Every line of a set is laid out on every frame, including the ones the falloff has taken to
-  nothing, because their heights are what the scroll positions are measured from. A set of a few
-  hundred lines is a few hundred text layouts at 60 Hz; gpui's `list` is the virtualising
-  variable-height element nothing here uses yet
+## Formats
+- WavPack and Monkey's Audio have no decoder anywhere in the tree, so the desktop entry, the bus
+  and the scan pass them over. Closing it is a decoder beside `opus-rs` in the codec crate's
+  registry
+- DST-compressed DSDIFF is refused rather than decoded
+- A source that cannot seek is prescanned only through its first `MAX_PRESCAN_HEAD` bytes, so over
+  a pipe an `.m4a` with a trailing `moov` plays its priming, a WAV with `LIST INFO` after `data`
+  loses those tags, and an Opus or FLAC track in Matroska falls back to millisecond timestamps
+- A Matroska `Duration` longer than the file's clusters is caught only for Opus and FLAC; Vorbis
+  would need its block sizes out of the setup header
+- A file embedding a huge picture still costs one materialisation, because symphonia reads it into
+  a buffer of its own before `probe_cover_art` can weigh it
+- Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader
+- Nothing applies DSD's +6 dB modulation convention, so a DSD master decimates about 6 dB quieter
+  than the same music in PCM. Applying it would clip hot material; it is a decision to take
 
-## Search
-- Nothing sorts on a term: `SortOrder` is the nine the saved query's chips offer, and a term
-  narrows rather than orders. `is:favourite` is the one reading the catalog has that is both, and
-  it is a `Shape` and a `Favourited` order written separately rather than one thing read two ways
-- Nothing bounds what the vocabulary weighs. It holds every distinct word *and* every distinct
-  multi-word name across the three columns, held for as long as no name moves, and `holds`,
-  `names`, `nearest` and `completing` each walk the whole of it — the last once per keystroke a
-  model's client sends while a brief is filled in — bearable for a personal library and untested
-  against the 500k-track one the scan is written for
-- A run of tokens is weighed as a name from every start position it could begin at, so a query of
-  T tokens costs up to T runs of `nearest_name` over the whole named vocabulary where a word at a
-  time costs one. It is bounded by `MOST_TOKENS_IN_A_NAME` and by the search having matched
-  nothing to be asked at all, and untested against the 500k-track library the scan is written for
-- A lyric reaches only a row the catalog holds a file or a kept fetch for. LRCLIB's search reads
-  the title, the artist and the album and not the words, and no service that indexes lyric text
-  answers without a key, so a line typed from a song nobody holds finds nothing elsewhere
-- The search MusicBrainz is asked for a song not held goes through the paced client the
-  enrichment shares, so a lookup running beside a search holds the answer behind its own queue.
-  Nothing says why the *Asking MusicBrainz…* heading is standing longer than usual
-- A found song is wanted from the earliest-dated release its recording sits on, which is often a
-  single or a compilation rather than the album a listener means. Nothing offers the choice
-- A found song names the release it will be wanted from but the pane draws no cover for it,
-  because the art is fetched only for a release the catalog holds
-
-## Suggestions
-- An opened suggestion lists its first `PREVIEWED_AT_MOST` rows; *Play* and the rest act on the
-  whole search, but a list of thousands cannot be scrolled to its end in the pane
-- Nothing drives the Suggestions pane's press on a card: the opened view was seen by seeding
-  `open_suggestion` at load, the lettered art by withholding every cover
+## Performance and scale
+- The whole window is one `Render`, so any notify lays out and paints the whole tree, and the
+  lyrics, the visualiser and the inspector rebuild it sixty times a second while playing. The answer
+  is views of their own for the playback bar and the panes, which gpui can cache — and which would
+  also let the visualiser repaint at the display's rate
+- A picture the caches let go of leaves its tile in gpui's sprite atlas, so GPU memory grows with
+  every distinct cover drawn in a run. Freeing it means drawing covers from a `RenderImage` the
+  caches own rather than from encoded bytes
+- Every line of a lyric set is laid out on every frame, including the ones faded to nothing; gpui's
+  variable-height `list` is the virtualising element that would fix it
+- The search vocabulary is unbounded — every distinct word and multi-word name across titles,
+  artists, albums and genres — and a query weighs a run of tokens as a name from every start and
+  length up to `MOST_TOKENS_IN_A_NAME`. Neither has been measured against the 500k-track library
+  the scan is written for
+- `names_in_the_queue` resolves the whole queue on the render thread on the first keystroke of a
+  jump, up to two SQLite reads a row
+- `resonate tag` and `resonate organise` read every scanned row into memory before planning
+- A cover is decoded once and resized to all three drawn sizes whether or not the grid is opened,
+  at a fixed twice-the-cell that is exact only at a scale factor of 1 or 2
+- A provider is asked for bytes on the engine thread and the tag reader, and `MediaProvider` has
+  no deadline, so a slow remote open stalls the track change; a provider or stream left behind as
+  late keeps its thread for as long as it runs. A picture asked for after its tags landed opens the
+  file a second time
 
 ## Library
-- M3U, PLS and XSPF have no vocabulary for a region, so a playlist of cue rows exports as one path
-  per row and comes back as one whole-file row per path. XSPF's `<meta>` and `<extension>` are the
-  only extension point any of the three offers, and the reader ignores both by design
-- A root that is itself one album — a single album folder added as a library root — has no sleeve
-  below it, so an album of several singers filed that way still splits per track artist. The guard
-  that keeps two albums loose in a root apart is what costs it
-- A disc numbered in words is composed only in English — `Disc Twenty One` and `Twenty-First
-  Disc` — where every other language reads flat tables capped at twelve, so `Disque Vingt Et Un`
-  names no disc. A folder is a string with no language on it, so composing in each language
-  would mean guessing which one a folder is in
-- A file moved by hand is followed only where a vanished row and a new row are alike in size,
-  length, codec and tagged names, so a file retagged in the same breath as it moved and a cue-cut
-  file each start again at nothing, and so do two identical rips moved at once unless the folders
-  they moved with tell them apart. A file no scan
-  has seen counts nothing at all — a queue of unscanned files plays and is forgotten
-- No *listing* orders on a count inside a window, only narrows on one. The Statistics pane answers
-  what was heard most in one, because `most_listened` is its own read and free to sort on a
-  `count(*)`, but every `SortOrder` is a column read off an index and a correlated count is not
-  one, so the tracks pane still cannot be put in that order. A playlist's own count is still one
-  date and one total with no history behind it
-- Listening time is the time inside plays that *counted*. A track skipped at twenty seconds
-  records nothing at all, so a session spent skipping reads as a quiet evening. Recording every
-  partial visit would mean a `listens` row per skip, and the sampler would have to answer for a
-  visit it had already decided was not a play
-- Nothing writes a favourite back into the file, for the same reason nothing writes a count: no
-  tag vocabulary every format shares, and `ItemKey` offers no way to write a name lofty does not
-  already know
-- Nothing ages or bounds the play history. `listens` takes a row per play for as long as the
-  library lives and only a track leaving the catalog takes its rows with it, so nothing weighs a
-  play from last week against one from ten years ago except by being asked for a window
-- Nothing writes a play back to the file, so a count is this library's alone and a move to another
-  machine leaves it behind. The seam is there now — `resonate tag` writes what the catalog was
-  told — but a count has no vocabulary every format shares: ID3v2's `POPM` carries one, a Vorbis
-  comment has no standard name for it at all, and `ItemKey` offers no way to write a name lofty
-  does not already know, so a FLAC library would get nothing. Scrobbling under MusicBrainz below
-  is the other half of the same question
+- A file moved by hand is followed only where a vanished row and a new one agree in size, length,
+  codec and tagged names, so a file retagged as it moved and a cue-cut file start again at nothing.
+  A file no scan has seen counts nothing — a queue of unscanned files plays and is forgotten
+- A root that is itself one album folder has no sleeve above it, so a various-artists album filed
+  that way splits per track artist
+- Nothing writes a favourite or a play count back into the file, so both stay with this catalog.
+  lofty's `ItemKey::Popularimeter` maps to `POPM`, Vorbis `RATING`, MP4 `rate` and RIFF `IRTD` and
+  carries a counter, so the seam `resonate tag` already is could write them
+- Listening time counts only plays that counted, so a session spent skipping reads as quiet
+- Nothing ages or bounds the play history
+- No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
+  count is one date and one total with no history
+- A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS
+  and XSPF have no vocabulary for a region
+- A delivered row can only be forgotten with `resonate forget`; the window offers no gesture. It
+  carries no genre or lyrics, and is levelled only once studied
 
-## Tagging
-- Nothing undoes a run: the files are the record, and the way back is another lookup and another
-  `--apply`. `resonate tag` also reads every scanned row into memory before it plans anything, the
-  same shape `resonate organise` has
-- `.caf`, `.mka`, `.oga` and the two DSD containers have no writer behind them at any price, and a
-  WAV whose ID3v2 tag stands in front of its `RIFF` header is refused, because lofty does not
-  recognise one as a WAV
-- A row a cue sheet cut out of a file is passed over whole, because twelve rows share one set of
-  tags, so a single-file rip identified track by track keeps that identification in the catalog
-  alone
-- A picture is written only where the file carries none, so a file holding a thumbnail a ripper
-  embedded keeps it however much better the cover the archive gave is. Replacing one would mean a
-  reading of which picture is worth more than the other, and the bytes say nothing about that
-- The two totals are the release's rows and media, so an album landed as its release group alone
-  is written neither: a group names no pressing, and therefore no track count and no disc count
+## Identification
+- A strict match is written without a pane to confirm it or a gesture to undo it: an album taken
+  wrongly is put right only by clearing `albums.mbid` and its rows by hand
+- A found song or a track named by its audio is placed on the earliest-dated release its recording
+  sits on, often a single or compilation rather than the album meant. Nothing offers the choice
+- A file with no title tag and a stem that is neither numbered nor separated gives the search
+  nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or recording id
+- A stem-named row renamed and edited together is asked again from its new name, overwriting what
+  the last lookup wrote
+- Half the artists of a real library have no portrait: nothing falls back to the release group's
+  cover or reads the page a `wikipedia` relation names
+- The discography asks for albums and EPs alone, so singles are never listed as not held, and past
+  `GROUPS_AT_MOST` the rest are passed over with only a log line
+- A group's other pressings are fetched and dropped; nothing lists a release's editions
+- The verdict's thresholds were measured on one library of FLACs and LAME transcodes; no FhG, AAC,
+  Opus or Vorbis transcode was weighed, and it reads only the lowpass wall, the upsampled wall and
+  the padded bits — not an MP3's frame-to-frame holes, sfb21 content or pre-echo
+- The Analysis pane's waveform and spectrogram are not kept, so a track is decoded whole again
+  after a restart
+- AcoustID has never been reached with a real key; its fixture is written from the documentation
 
-## Organising
-- A cycle — `A → B` standing beside `B → A` — is refused where a chain is ordered, because
-  breaking one needs a temporary name and a crash between the renames would leave a file under a
-  name nothing knows. It converges over runs the way a chain used to, with nothing saying so but
-  the count of collisions
-- `resonate organise` reads every scanned row into memory before it plans anything, and nothing
-  undoes a run: the moves are the record, and the way back is another layout and another `--apply`
-
-## MusicBrainz
-- An artist with no `image` and no `wikidata` relation has no portrait and no way to one: the
-  release group's cover is not used as a stand-in, and nothing reads the Wikipedia page a
-  `wikipedia` relation names. Measured on a real library that is half the artists still unpictured
-- A strict match is written without a pane to confirm it in or a gesture to undo it: the rule is
-  `STRICT_SCORE`, the declared count and the owner by id or by folded name, and an album it takes
-  wrongly can only be put right by clearing `albums.mbid` and the rows by hand and asking again
-- A file whose tags name no title is identified by its file name or not at all. `stem.rs` reads
-  `NN - Artist - Title` and fills what the tags left empty, so `tagged_title` and `tagged_artist`
-  carry that reading and `Route::Search` has something to ask with; a stem with no separator in it
-  leaves `tagged_title` NULL, which refuses the search outright, so without an `acoustid-key` such
-  a file can only be identified by an ISRC or a recording id it does not have
-- A stem-named row is identified against its own file name, so re-probing it after it has been
-  renamed moves `tagged_title` and `tagged_artist`, nulls `answered` and asks again from the new
-  name — overwriting what the last lookup wrote. `resonate organise` alone does not trip it, the
-  size and the mtime being unchanged, so it takes a rename and an edit together
-- The discography is asked for albums and EPs alone, so a single an artist released is never
-  listed as not held, and one credited on more than `GROUPS_AT_MOST` of them — 1 000 — has the
-  rest passed over with a warning in the log and nothing in the window
-- The pressings of a group are fetched with their titles and countries and not kept: `settle_group`
-  lands one and drops the rest, so nothing lists a release's other editions or says which pressing
-  the catalog holds against which it could
-- ListenBrainz is told what was heard and nothing more: no `playing_now` is sent as a track
-  starts, a listen's moment is when the play was counted rather than when it began, and the plays
-  counted before a token was first given are never sent — an import of the history would be a
-  gesture of its own. Last.fm is not reached at all; its signed requests and session key are a
-  `Scrobbler` beside the one there is
+## Search
+- A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
+- The MusicBrainz search for a song not held shares the enrichment's paced client, so a running
+  lookup holds it behind its queue, and nothing says why *Asking MusicBrainz…* stands so long
+- A found song draws no cover, because art is fetched only for releases the catalog holds
+- An opened suggestion lists only its first `PREVIEWED_AT_MOST` rows
 
 ## UI
-- The whole window is one `Render`. `RootView::render` is the only `impl Render` outside `Field`,
-  `Hint`, the drag `Ghost` and the visualiser's plot, so any notify lays out and paints the whole
-  tree. `Grain` keeps the position from asking for frames nothing would show, which took a playing
-  window on the tracks pane from 11.5 % of a core to 2.7 %, but the lyrics, the visualiser and the
-  inspector follow every poll and still rebuild the whole window sixty times a second, and each of
-  the frames `Grain` lets through lays out the pane as well as the playback bar. The answer is a
-  view of its own for the playback bar and the panes gpui can cache, which is a structural change
-  to a front end nothing drives under test
-- A picture the caches let go of is taken out of gpui's asset cache but its tile stays in the
-  sprite atlas: `drop_image` wants the decoded `RenderImage`, which gpui answers only through a
-  `Window` and only by decoding again whatever size was never drawn, so the atlas's GPU memory
-  still grows with every distinct cover drawn in a run. Freeing it cleanly means drawing covers
-  from a `RenderImage` the caches own rather than from encoded bytes gpui decodes
-- A reached row in the tracks or artists pane is marked and moved to, but nothing scrolls the
-  album grid from the keyboard and the Missing pane answers no reach at all: its rows are
-  interleaved with headings, so a reach over it would have to skip them
-- The context menus are built from `menu::opens_a_menu` on the element that answers the press, so
-  a right press on a row's own ✕, arrow or + reaches that control and not the row's menu. What
-  each of those marks does is on the row's menu anyway, so nothing is unreachable; it is a
-  surprise rather than a gap
-- A menu's entries are decided when the press lands and never again, so a menu left open while a
-  scan or a lookup moves the catalog underneath it offers rows against what was there. Pressing
-  one is still sound — every entry acts on ids rather than on positions — but a *Go to album* for
-  an album since gathered into another opens nothing
-- `Wayback` keeps the row a list was left on, not the pixel, so going back to a list whose rows
-  have changed height — an album's, where a disc heading may have appeared — lands a row or two
-  out
-- A saved query's direction is written into the `sort` column above the nine order codes, so a
-  catalog this build wrote is read by an older one as the wrong order rather than refused. Nothing
-  else reads that column and nothing older is expected to run, but it is a format widened in place
-  rather than broken
-- Nothing has scrolled the settings body by hand since it stopped being `w_full` under a `max_w`.
-  The fix is the one `wsg`'s own notes record for the same taffy behaviour — a column whose height
-  depends on how its text wraps is given a pixel width — and every category now reaches past a
-  screen, but a screenshot cannot scroll and KWin offers no synthetic input
-- A ramped palette's seven accents are the same seven in Midnight, Graphite and Plum, so those three
-  differ only in their surfaces. Giving a recipe its own accent hues would mean deciding what green
-  means in a palette that leads with violet, and green is what says bit-perfect everywhere else
-- A tooltip names the key a control answers to in no one way: *Pause — space* names the action
-  and then the key, *Repeat is off — r repeats the queue* names the state and what the key does
-  next, *A sleep timer is running — press to change it* names the gesture and no key at all, and
-  a settings field says *then press enter*. One wording for a hint that carries a binding, and one
-  place that writes it, would make them read alike
-- The settings filter matches a group's whole hint, so a long hint is a wide net: *dither* finds the
-  noise-shaping group because its hint names dither. That is usually what is wanted and occasionally
-  a surprise, and nothing weighs a title match above a hint match
-- A tooltip whose control has moved under a stationary pointer — a list scrolled, the notice strip
-  appearing, a row's columns giving way to a longer name — is tested against the bounds the control
-  had when the hint was raised, because gpui freezes them into the check. A press, a scroll or any
-  further motion takes it down now that the hints are not hoverable, but a pointer held perfectly
-  still over the rectangle the control has left keeps it up
-- A row's controls are keyed `("remove", index)` rather than by what the row *is*, so editing a list
-  hands row N's tooltip state to whatever row N becomes. That is a wrong hint rather than a stuck
-  one, and the next press, scroll or motion clears it; keying them by identity touches the drag,
-  drop and reach paths
-- The search caret blinks on a 500 ms timer that the field restarts on every edit, so it is solid
-  while a word is being typed and pulses once the typing stops. The period is the field's own:
-  nothing reads the desktop's cursor-blink setting, so a session that has turned blinking off or
-  slowed it down is not followed
-- Only the window's own marks are not icons: the minimise bar and the maximise and restore boxes
-  are bordered `div`s, because no box is in the primary UI face
-- The application's mark is written twice — `Icon::Resonate` as a mask and `packaging/resonate.svg`
-  in colour — and a test holds the two to the same paths rather than either being derived from the
-  other. Only the five paths are weighed, so the ground, the gradient and the transform around them
-  could still drift without anything saying so
-- An icon under the application's name already standing in `$XDG_DATA_HOME/icons/hicolor` that
-  this build did not draw — the packaged one copied there by hand, as the `run-ui` recipe does — is
-  never written over, so on such a machine the launcher keeps it whatever accent is worn. Only
-  KDE's caches are flushed by name; a desktop that keeps its own lookups and watches neither the
-  theme folder's mtime nor `iconChanged` shows the new colour from its next login
-- The album grid draws one frame at the column count the last width gave before the canvas under
-  it reports the new one, so a resize is a cell or two out for a frame; the first open costs a
-  frame with no cells at all instead, the list being held back until the width has landed.
-  Neither has been seen by anything but the eye — a screenshot cannot catch one frame
-- What the queue was cleared or dropped of can be put back only while nothing has taken its place:
-  queue a row after the gesture and the whole walk goes, because the row the rows came out of is a
-  place in a list that no longer exists. There is no redo either — a walk that has been taken back
-  cannot be taken forward again, where a playlist's `Undoable` holds both stacks
-- A name drawn inside a fixed-width cell is clipped by the cell rather than elided by the text
-  system, so it can be sliced through a glyph with nothing saying so. `opens` is `truncate`, which
-  elides where the link itself is the box that runs out of room; where an ancestor is, the text
-  never learns it is short. `ends_in_an_ellipsis` — a wrapping measure clamped to one line — is
-  what the album cell uses instead, and it costs the collapse a nowrap link must not have, so it
-  cannot simply be put on every link
+- The Missing, Favourites, Statistics and Suggestions panes answer no keyboard reach and no
+  type-ahead
 - The playback bar keeps its controls centred by clipping its side columns, so a narrow window
-  loses the end of the signal path or the notice rather than moving the buttons. Nothing drops an
-  item from the bar before it is clipped. The width it starts clipping at was about 1 200 px idle
-  and 1 280 px with a sleep countdown drawn, and has not been measured since the signal path lost
-  its repeated depth and rate and the queue button its count; at `WINDOW_MIN_WIDTH` the cluster
-  overflowed by some 160 px
-- The type-ahead answers in the queue and nowhere else. Statistics and Suggestions have no
-  keyboard cursor at all — `reachable` answers `None` for both and neither is a `uniform_list`,
-  one being charts over a scrolling div and the other a wrapping row of cards — so there is
-  nothing in either to jump to. Giving them one means a `Listed` variant each, a
-  `UniformListScrollHandle` each and arms in `reach_at`, `show_row` and `rows_a_page`
-- `names_in_the_queue` resolves the whole queue on every keystroke of a jump, which is up to two
-  SQLite reads a row the first time, on the render thread. A 4 096-entry `Recent` holds them after
-  that, so it is one cold walk per queue rather than one per letter, and it is untested against a
-  queue of thousands of rows no scan has seen
-- The statistics chart folds days into wider bars past `BARS_AT_MOST`, so an *all time* window over
-  years is several days to a bar. Its axis and each bar's hint read relatively — *today*,
-  *9 days ago to 7 days ago* — because there is no date crate in the tree and nothing in the
-  window draws a real date anywhere
-- Nothing drives the panes under test. KWin exposes no synthetic input without the remote-desktop
-  portal, so a pane can only be seen by temporarily making it `Pane::default()` and rebuilding, and
-  a search only by seeding `LibraryModel::set_query` the same way — which is how the inspector's,
-  the settings categories', a narrowed playlist's and the browse panes' *Reads* rows and empty
-  messages were checked, the settings filter by seeding `RootView::finding` the same way, and the
-  Tagging group's preview list by seeding `LibraryModel::retag` beside the reload. Anything that
-  only appears on a pointer — the settings hints' tooltips, the folder picker, the playlists pane's
-  Import, Export and Tidy controls, the file picker each of the first two opens, the second press
-  *Apply* wants under Organising and Tagging alike, a span under a drag with the ghost saying how
-  many rows it carries, the list
-  scrolling out from under one and going on scrolling while the pointer is held at the edge, the
-  magnified cover of a file the library never scanned, and a band pressed onto the equaliser's
-  curve, dragged, turned by the wheel or taken out by a secondary press — has been seen by nobody
-  but the person running it. The queue and an opened playlist were both seen by starting the run
-  on them; `Span`, `Reach` and `Step::landing` are the arithmetic under the arrows, the drop and
-  the keys alike, and `curve.rs`'s `Plot` is the arithmetic under the equaliser's handles, and all
-  four are covered without a window
-- A band on the equaliser's curve is reached by the keyboard only through its row's cells: the
-  chosen band has no key that nudges its frequency or gain the way the pointer does, and the
-  handles themselves are not in the focus ring
-- A device's own equaliser curve can be exported but not kept as a named profile from the pane,
-  and the pane has no gesture that discards one either: the curve of a device gone for good is
-  found and discarded by `resonate eq --list` and `--forget-own` alone
-- A drag on the equaliser's curve tells the engine once per pointer move that lands the band
-  somewhere new, and nothing coalesces those to the rate the engine publishes at; each is a
-  retune rather than a rebuild, but a high-rate pointer sends more of them than can be heard
-- The sample rate policy, the graph rate, the buffer and DoP each reopen the stream, so changing
-  one mid-track costs the gap a sink switch does. Switching the equaliser on or off while a
-  resampler runs costs the same, because `OutputPlan::becomes_on_the_same_stream` refuses to carry a
-  resampler's history and phase into a new chain and `retune` falls into a full `rebind`; handing
-  the new resampler the old one's state would close that case
-- A preview under Organising or Tagging is not taken down by anything that moves the catalog under
-  it, so a scan or a lookup leaves a plan on screen that no longer describes what a press would do.
-  Nothing wrong is written — *Apply* re-runs the pass rather than applying the plan it is standing
-  beside — but the rows and the counts are the ones from before
-- A session with no XDG portal has only `resonate scan` to add a library root — the settings pane
-  reports the refusal and does nothing else about it — and a scan still blocks a second edit until
-  it finishes, because one task slot carries both. `resonate scan` on the command line still says
-  nothing until it ends
-- Nothing asks the window for its scale factor, so the twice-the-cell a cover is resampled to is a
-  guess that is exact at a scale of 1 or 2 and neither above that. A cover is decoded once and
-  resized to all three drawn sizes whether or not the grid is ever opened, so the row and
-  now-playing sizes pay for the grid's
-- A settings control that has focus takes `space` and `enter` from the transport until escape lets
-  go, which is the same bargain the search field has always made. Nothing on screen says the caret
-  is in the pane rather than on a row, beyond the focused control's own accent border
-- The visualiser opens on an empty plot for up to a buffer's depth, because the engine taps only
-  while the pane is in front and what the ring already held when it opened was written unlistened.
-  Tapping always would close it for about 0.006 % of a core at 48 kHz; the switch was taken
-  because it cost nothing to arrange, not because the always-on cost was measured to matter
-- The visualiser's frames are the whole window's frames. gpui dirties every ancestor of a notified
-  view, so the pane's repaint is a `RootView::render` like any other, and it is cheap only because
-  it rides the poll the window already redraws on while playing. Were the rest of the window cached
-  views — the structural change the first item in this section asks for — the pane could repaint
-  at the display's own rate for what its transform and its quads cost
-- The spectrum's tilt, floor, band width and fall rates are constants rather than settings, and its
-  axis is 20 Hz to 20 kHz at every rate, so a 96 kHz stream's ultrasonic content is analysed and
-  never drawn. The levels carry no figures because a tilted reading is dBFS only at the pivot
-- The scope draws left over right and nothing else: there are no stereo level meters, no
-  correlation reading and no goniometer, and its trigger is the mid's rising edge, so a signal
-  whose channels are out of phase triggers on whichever side the sum follows
-- A `buffer-ms` written by hand past what the tap holds — about 21 s at 48 kHz, 2.1 s at 384 kHz,
-  `LARGEST_TAP` frames less the slack and the widest window — leaves the frame being heard already
-  gone round, so the visualiser reads silence. Every depth the settings pane offers fits
-- Nothing has pressed the visualiser's *Scope* segment: the scope was seen by making it the default
-  `Showing`, the same way a pane is seen by making it the default `Pane`
-
-## Packaging
-- gpui pulls `stacksafe` and with it `proc-macro-error2`, which re-exports the private `proc_macro`
-  crate and triggers `E0365` as a future-incompatibility warning today and a hard error in a future
-  rustc. Nothing here can fix it but a `[patch]` or a gpui that has moved on, so it is worth knowing
-  about before a toolchain bump stops the build
-
+  loses the end of the signal path or the notice; nothing drops an item before it is clipped
+- A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks
+  a second settings edit until it finishes
+- A band on the equaliser's curve has no key to nudge it and its handles are not in the focus ring;
+  a device's own curve cannot be kept as a named profile or discarded from the pane
+- What the queue was cleared of can be put back only while nothing has been queued since, and the
+  queue has no redo
+- A name clipped by a fixed-width cell is sliced through a glyph rather than elided wherever an
+  ancestor, not the text, is the box that runs out of room
+- A menu's entries are decided when it opens, so one left open across a scan can offer a *Go to
+  album* for an album since gathered away
+- A row's controls are keyed by index, so editing a list can hand row N's tooltip to the new row N
 
 ## Testing
-- Nothing covers `resonate-ui`'s panes; see the note under UI about driving them. What is tested is
-  what needs no window to run — `Recent`, the search field's `Edit`, the curve's `Plot`, the
-  spectrum, the reorder arithmetic, the settings filter, the sort chips and the type-ahead.
-  What `Edit` cannot cover is the half that needs one: the shaped line, the caret's pixel position
-  and everything the platform's input method hands to `EntityInputHandler`
-- `cargo bench -p resonate-dsp --bench stages` prints what every stage costs, but nothing runs it
-  but a person, so a figure the rules quote going away is noticed only when somebody looks. A
-  baseline build's cost is `RUSTFLAGS="-C target-cpu=x86-64"` with a target directory of its own,
-  and it is worth reading beside the native one, because the two do not rank the stages alike
-- A Matroska `Duration` longer than the file's own clusters is not caught for any codec but Opus
-  and FLAC: `matroska.rs` counts where the last block starts, which is a lower bound, so blocks
-  past the declared end prove a short declaration wrong while nothing proves a long one wrong.
-  Opus is counted out of its TOC bytes and FLAC out of its frame headers; Vorbis would need its
-  two block sizes out of its setup header and the mode of every packet, which is a decoder's worth
-  of reading
-- A prescan over a source that cannot seek reaches only the first `MAX_PRESCAN_HEAD` bytes, so a WAV
-  whose writer put its `LIST INFO` after the `data` chunk still loses those tags over a pipe where a
-  file on disc keeps them
+- Nothing drives `resonate-ui`'s panes: KWin offers no synthetic input without the remote-desktop
+  portal, so a pane is seen only by making it the default and rebuilding. Everything that appears
+  only under a pointer — the menus, drags, the pickers, the equaliser curve, *Take this name*, a
+  suggestion card, the Listen card and its microphone chips, the Scope segment, scrolling the
+  settings body — has been checked by eye alone
+- `cargo bench -p resonate-dsp --bench stages` is run by nobody but a person, so a regression in a
+  figure the rules quote is noticed only when somebody looks
+- A microphone recording has not been proved against real sound reaching a microphone
 
-## MPRIS
-- `TrackAdded`, `TrackRemoved` and `TrackListReplaced` are all diffed from a 200 ms poll of the
-  published queue, so a row added and taken away again inside one sample is never announced at
-  all, and a shuffle — more rows moved than left standing — is announced as the whole list
-  replaced
-- Nothing reconciles an id minted by `unclaimed_id` for a file outside the library with the library
-  row for the same file, and a row the queue renamed to keep its ids apart is read back by its path
-  rather than its id for as long as it is queued
+## Later: Sources and providers
+- No provider reaches a network: `resonate-inbox` is the only one, registered only where an inbox
+  folder is set, and the service links an `Identity` carries are read by nothing
 
-## MCP
-- Nothing is told as it moves: a resource is read and never subscribed to, and nothing sends a
-  notification while a scan, a lookup or a poll runs, because the server answers on the one
-  thread that reads stdin and has nothing to write from between requests. A client sees how far
-  a pass has come only by reading `library_passes` again
-- An edit a model makes is not on the window's *Undo*: the library keeps its undo stacks in the
-  process that made the edit, and `resonate mcp` is another process. The window draws the edit
-  within a few seconds, but its own undo stack is not told, so undoing past it acts on rows the
-  model has since moved
+## Later: The vault
+- `flacenc` 0.5.1 caps the Rice parameter at 14, the rate at 96 kHz and the depth at 24 bits, so a
+  24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz rip is weighed as a `Wave`
+  first — which pays most of a single-threaded zstd level-19 pass, about 50 s of a core for five
+  minutes of 24/192, before it is kept anyway
+- A kept object whose container holds tags inside its structure — MP4, DSDIFF, Matroska, WAVE,
+  AIFF and CAF — keeps them
+
+## Later: Tagging and organising
+- Nothing undoes a `resonate tag` or `resonate organise` run; the way back is another run
+- A cue-cut row is never written, a thumbnail a ripper embedded is never replaced by a better
+  cover, and an album landed as a release group gets no totals
+- `.caf`, `.mka`, `.oga` and the DSD containers have no writer, and a WAV with ID3v2 before `RIFF`
+  is refused
+- A move cycle is refused rather than broken through a temporary name
+- A disc numbered in words is composed only in English beyond the flat tables of twelve
+
+## Later: Equaliser and DSP extras
+- There is no convolution stage for room correction or a measured impulse response
+- *Fit the preamp* models the curve rather than measuring what the music peaks at
+- AutoEq is the only correction source, fetched one device at a time
+- A downmix folds by position alone: a `Discrete(n)` source is truncated one for one, and a
+  stream's own downmix coefficients are not read
+- Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
+  1 024-frame window, and leaves the first second and a half of an unstudied track unextended
+
+## Later: Lyrics
+- `Lyrics` is a flat list of lines: no word timing, no translation beside the original, and no
+  source says which singer owns a line
+- A sidecar's `[ti:]`, `[ar:]` and `[length:]` check reads a differently transliterated title as a
+  disagreement
+
+## Later: Listen and recognition
+- Listen records one clip and asks once; nothing listens again on a miss or follows a stream from
+  song to song
+- Shazam is reached through an undocumented endpoint, so a change on its side stops recognition
+
+## Later: Visualiser
+- The spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at
+  20 kHz at every rate
+- The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
+- The plot opens empty for up to a buffer's depth, because the tap runs only while the pane is in
+  front
+
+## Later: Scrobbling
+- ListenBrainz gets no `playing_now`, a listen is stamped when it counted rather than when it
+  began, and plays from before the token are never sent. Last.fm is not reached at all
+
+## Later: MPRIS
+- A row added and removed inside one 200 ms poll is never announced, and a shuffle is announced as
+  the whole list replaced
+- An id `unclaimed_id` minted for a file outside the library is never reconciled with the library
+  row for the same file
+
+## Later: MCP
+- Nothing is pushed: resources cannot be subscribed to and no notification is sent while a pass
+  runs, because the server answers on the one thread reading stdin
+- An edit a model makes is not on the window's *Undo*, since undo stacks live in the process that
+  made the edit
+
+## Later: Packaging
+- gpui pulls `stacksafe` and with it `proc-macro-error2`, whose `E0365` future-incompatibility
+  warning becomes a hard error in a future rustc. Only a `[patch]` or a newer gpui fixes it
+
+## Later: Polish
+- A tooltip names its key in no one wording, and the settings filter weighs a hint match the same
+  as a title match
+- A tooltip whose control moved under a perfectly still pointer stays up
+- The search caret's blink ignores the desktop's cursor-blink setting
+- `Wayback` restores a row rather than a pixel, so a list whose rows changed height lands a row out
+- Midnight, Graphite and Plum share the same seven accents
+- The minimise and maximise marks are `div`s rather than icons, and the application mark is
+  written twice with only its paths held equal
+- An icon already in `$XDG_DATA_HOME/icons/hicolor` that this build did not draw is never
+  replaced, and only KDE's caches are flushed
+- The album grid draws one frame at the old column count on a resize
+- The statistics chart reads dates relatively, because nothing in the window draws a real date
+- A saved query's direction is written into the `sort` column above the order codes, so an older
+  build reads it as the wrong order rather than refusing it
+- A drag on the equaliser's curve retunes the engine on every pointer move, uncoalesced

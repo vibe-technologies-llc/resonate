@@ -34,9 +34,11 @@ high-performance playback as the guiding constraint. Intended shape:
 - A **GPUI** front end running natively on Wayland.
 
 `docs/TODO.md` is the roadmap and holds **open work only** — defects, gaps and what is not built
-yet — written as `## Category` headings with `- Item` bullets. Keep it current: drop an item as it
-lands, add what the work uncovers. What a landed item turns into is a record of the shipped design,
-and that belongs in `.claude/rules/`, never left in the roadmap as something still to do.
+yet — written as `## Category` headings with `- Item` bullets. The categories run from most to
+least important, `Defects` first, and a category no listener is waiting on is headed `Later:` and
+sits below all the rest. Keep it current: drop an item as it lands, add what the work uncovers.
+What a landed item turns into is a record of the shipped design, and that belongs in
+`.claude/rules/`, never left in the roadmap as something still to do.
 
 `AGENTS.md` is the same guidance for agents that do not load `.claude/rules/` on their own: which
 files to read, what is not negotiable and how the rules are kept true. It points here rather than

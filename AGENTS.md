@@ -95,9 +95,10 @@ wrong updates it **in the same commit**:
 - A new crate, subcommand, config key or invariant is added to `CLAUDE.md`, and the counts it
   states — crates, subcommands, config keys — are moved to match. A new crate that carries rules of
   its own gets a `.claude/rules/<name>.md` with a `paths:` list, and a row in `CLAUDE.md`'s table.
-- `docs/TODO.md` holds **open work only**, as `## Category` headings with `- Item` bullets: drop an
-  item as it lands, add what the work uncovers, and write what a landed item became into the rules
-  rather than leaving it in the roadmap.
+- `docs/TODO.md` holds **open work only**, as `## Category` headings with `- Item` bullets, the
+  categories ordered by importance and the nice-to-haves under `Later:` headings at the bottom: drop
+  an item as it lands, add what the work uncovers, and write what a landed item became into the
+  rules rather than leaving it in the roadmap.
 - A new command worth running before a commit goes into `CLAUDE.md`'s commands, this file's
   checks and `.github/workflows/ci.yml` together.
 - This file names the rules and says how to read them; it does not restate the design. Where

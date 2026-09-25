@@ -921,9 +921,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   emits `Seeked` from. `PlayerState::sleeping` rides beside it and carries what is *left* on the
   timer rather than when it is due, so a front end draws a countdown off the publication it
   already polls and keeps no clock of its own; what that costs is a state that differs on every
-  tick for as long as a timer is set, which `docs/TODO.md` records. The queue is republished only when
-  `Queue::revision` moves, which loading and reshuffling bump and advancing does not — comparing the
-  items themselves would mean cloning every path on every 4 ms tick.
+  tick for as long as a timer is set. The queue is republished only when `Queue::revision` moves,
+  which loading and reshuffling bump and advancing does not — comparing the items themselves would
+  mean cloning every path on every 4 ms tick.
 - **A command is answered once the state that answers for it has been published.** `Engine::dispatch`
   keeps each reply as an `Answer` and `Engine::answer` sends the lot after `publish`, at the end of
   the same loop pass that applied the command, so `Outcome::wait` means *the published state already
