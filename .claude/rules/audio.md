@@ -685,6 +685,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   half the ring: an 8 kHz file upsampled onto a 192 kHz sink writes 24 577 frames a block, which a
   100 ms ring of 19 200 could never take, and the track sat in `Buffering` with no error.
   `Frames::from_duration` and `StreamSpec::frames_to_bytes` saturate for the same reason.
+  **The ring's depth is the engine's and never the graph's.** Every stream asks for
+  `LatencyRequest::Auto`, so `node.latency` is left to the daemon: a quantum is a few
+  milliseconds and shared by every client on the device, and a ring of 100 ms to a second
+  written into it would drag the whole graph to PipeWire's largest quantum. What the depth does
+  decide is how long a volume, ReplayGain or equaliser change waits to be heard — the gain runs
+  before the ring — and how much a stream opening primes; a seek discards what the ring holds
+  and a pause deactivates the stream, so neither waits on it. The settings pane's *Buffer* hint
+  says so rather than letting *latency* in its search words suggest otherwise.
 - **A track change does not start the transport; a command does.** `Engine::start` opens the row the
   queue is on at whatever the transport was already doing, so `Next`, `Previous` and removing the
   playing row leave a pause in place — which is what MPRIS says those methods do, and what

@@ -610,11 +610,14 @@ pub(crate) const GRAPH_RATE_HINT: &str = "Whether the stream asks PipeWire to ru
      and resample on the way. The daemon has the last word either way — a rate it refuses to \
      switch to is not in the sink's allowed rates.";
 
-pub(crate) const BUFFER_HINT: &str = "How much decoded audio is held ahead of the device. A deeper \
-                                      buffer rides out a busy machine, a shallower one costs less \
-                                      memory and lets a sink change and a track change land \
-                                      sooner. It is the size the ring is built at, so changing it \
-                                      reopens the stream.";
+pub(crate) const BUFFER_HINT: &str = "How much decoded audio the player holds ahead of the \
+                                      device. A deeper buffer rides out a busy machine or a slow \
+                                      disc; a shallower one costs less memory, starts a stream \
+                                      sooner and lets a volume or equaliser change be heard \
+                                      sooner. A pause and a seek act at once at any depth. It is \
+                                      not the device's latency: how much the graph asks for each \
+                                      cycle is PipeWire's to choose, shared with every other \
+                                      application on the device. Changing it reopens the stream.";
 
 pub(crate) const BLUETOOTH_HINT: &str = "Wireless headphones power their radio down when nothing \
      is sent to them, and the first moment of sound after that is lost while the link wakes. \

@@ -243,17 +243,17 @@ impl Choice for BufferDepth {
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
             Self::Tight => {
-                "A pause, a seek or a volume change is heard almost at once, but a busy machine \
-                 has the least room before the sound breaks up."
+                "A volume or equaliser change is heard almost at once, but a busy machine has \
+                 the least room before the sound breaks up."
             }
             Self::Short => "Quick to answer, with room for a moment's load on the machine.",
             Self::Standard => {
-                "Room for a busy machine or a slow disc without a break in the sound; a seek \
-                 is still heard within half a second."
+                "Room for a busy machine or a slow disc without a break in the sound; a volume \
+                 change is still heard within half a second."
             }
             Self::Deep => {
-                "The most room for a busy machine, a network share or a Bluetooth link, at the \
-                 cost of a second before a change is heard."
+                "The most room for a busy machine or a network share, at the cost of up to a \
+                 second before a volume or equaliser change is heard."
             }
         })
     }

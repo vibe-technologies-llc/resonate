@@ -3,11 +3,6 @@
 Categories run from most to least important. Everything under a `Later:` heading is a nice-to-have
 that no listener is waiting on, and is worked only once the categories above it are quiet.
 
-## Defects
-- The settings pane's *Buffer* sizes the engine's ring alone: the engine always asks the graph for
-  `LatencyRequest::Auto`, so `node.latency` is whatever the daemon picks. Either the setting drives
-  the graph's quantum too or its hint says plainly that it does not
-
 ## Playback and output
 - A `SinkChange` while a stream is open refreshes the device list only once the ring holds twice
   the 50 ms enumeration budget, so under a buffer shorter than 100 ms a new device, a new default
