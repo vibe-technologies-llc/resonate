@@ -18,7 +18,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   sidebar's width less its padding, so the search field between them centres on the window rather
   than on what the wordmark leaves, and it grows no wider than `theme::search_width()`. The
   Listen button stands against the field's right edge, inside the middle column, so the two read
-  as one group. The word *Resonate* is dropped
+  as one group. A window control is `theme::WINDOW_CONTROL` square, an odd width
+  because its mark is an odd width, so the mark centres on a whole pixel rather than rounding a
+  pixel low; and the row is pulled right by `mark_inset`, the room between a control's edge and its
+  mark, so the close mark stands in the same gutter the wordmark's square does. The word *Resonate* is dropped
   `WORDMARK_CAPITALS_CENTRED_BY` below the line box it would sit in, which centres its capitals
   on the accent square rather than its line box, whose descender space leaves them high. An empty,
   unfocused field draws `ctrl-f` in the mono face at its end, because the one key that takes focus

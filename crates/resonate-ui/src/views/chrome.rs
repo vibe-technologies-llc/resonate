@@ -92,6 +92,7 @@ impl RootView {
             .flex_none()
             .items_center()
             .gap_1()
+            .mr(-theme::width(mark_inset()))
             .when(offered.minimize && shown.minimise, |row| {
                 row.child(window_control(Control::Minimise))
             })
@@ -122,6 +123,10 @@ fn window_control(control: Control) -> Stateful<Div> {
 
 const fn mark_edge() -> f32 {
     theme::WINDOW_MARK - theme::WINDOW_MARK_OVERLAP
+}
+
+const fn mark_inset() -> f32 {
+    (theme::WINDOW_CONTROL - mark_edge()) / 2.0
 }
 
 fn bar() -> Div {
