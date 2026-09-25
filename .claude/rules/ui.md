@@ -16,7 +16,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   controls beside them, drags the window and opens the compositor's window menu. The header is
   `theme::header_height()` tall and three columns: the wordmark and the window controls each take the
   sidebar's width less its padding, so the search field between them centres on the window rather
-  than on what the wordmark leaves, and it grows no wider than `theme::search_width()`. An empty,
+  than on what the wordmark leaves, and it grows no wider than `theme::search_width()`. The
+  controls' column is spread apart, so the Listen button stands at its left edge beside the field
+  and the window controls at its right. The word *Resonate* is dropped
+  `WORDMARK_CAPITALS_CENTRED_BY` below the line box it would sit in, which centres its capitals
+  on the accent square rather than its line box, whose descender space leaves them high. An empty,
   unfocused field draws `ctrl-f` in the mono face at its end, because the one key that takes focus
   deliberately is otherwise nowhere on screen. `views/chrome.rs`
   owns the frame around it: a `theme::RESIZE_BORDER` gutter outside the painted window carrying the

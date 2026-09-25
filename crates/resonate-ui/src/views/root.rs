@@ -62,6 +62,8 @@ use crate::{
 
 const VOLUME_SETTLE: Duration = Duration::from_millis(400);
 
+const WORDMARK_CAPITALS_CENTRED_BY: f32 = 1.0;
+
 pub(crate) const SETTING_UNSAVED: &str =
     "Couldn't save that setting — the settings file couldn't be written";
 
@@ -2476,7 +2478,7 @@ impl RootView {
                     .items_center()
                     .gap_2()
                     .w(px(theme::sidebar_width() - 32.0))
-                    .justify_end()
+                    .justify_between()
                     .child(
                         kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -2507,6 +2509,7 @@ impl RootView {
             )
             .child(
                 div()
+                    .pt(px(WORDMARK_CAPITALS_CENTRED_BY))
                     .text_size(px(theme::text_base()))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
