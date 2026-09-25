@@ -1,6 +1,6 @@
 use std::{
     cell::OnceCell,
-    fs,
+    fs, mem,
     num::{NonZeroU32, NonZeroUsize},
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
@@ -752,6 +752,7 @@ impl LibraryModel {
         self._watching_roots = cx.spawn(async move |this, cx| {
             let mut watching = Watching::default();
             let mut owed: Vec<PathBuf> = Vec::new();
+            let mut changed_while_closed = true;
             loop {
                 cx.background_executor().timer(ROOTS_LOOKED_AT_EVERY).await;
                 let Ok(busy) = this.update(cx, |this, _| this.work.is_busy()) else {
@@ -764,7 +765,10 @@ impl LibraryModel {
                     .spawn(async move {
                         let mut followed = watching.following(&reading);
                         let forgotten = followed.forget_what_went(&reading);
-                        let settled = if busy { Vec::new() } else { followed.settled() };
+                        let mut settled = followed.came_back();
+                        if !busy {
+                            settled.extend(followed.settled());
+                        }
                         (followed, settled, forgotten)
                     })
                     .await;
@@ -779,7 +783,27 @@ impl LibraryModel {
                         owed.push(root);
                     }
                 }
-                if busy || owed.is_empty() {
+                if busy {
+                    continue;
+                }
+
+                if changed_while_closed && watching.is_laid() {
+                    if !watching.watches_anything() {
+                        changed_while_closed = false;
+                        continue;
+                    }
+                    let Ok(started) = this.update(cx, |this, cx| {
+                        this.start_scan(Vec::new(), Reading::WhatChanged, Prompted::OnItsOwn, cx)
+                    }) else {
+                        return;
+                    };
+                    if started {
+                        changed_while_closed = false;
+                        owed.clear();
+                    }
+                    continue;
+                }
+                if owed.is_empty() {
                     continue;
                 }
 
@@ -3547,6 +3571,8 @@ struct Watching {
     watch: Option<RootsWatch>,
     tried: Option<Vec<PathBuf>>,
     gone: Vec<PathBuf>,
+    absent: Vec<PathBuf>,
+    returned: Vec<PathBuf>,
 }
 
 impl Watching {
@@ -3558,15 +3584,34 @@ impl Watching {
                 return self;
             }
         };
-        if self.tried.as_deref() == Some(roots.as_slice()) {
+        let (present, absent): (Vec<PathBuf>, Vec<PathBuf>) =
+            roots.into_iter().partition(|root| root.is_dir());
+        if self.tried.as_deref() == Some(present.as_slice()) {
             return self;
         }
 
-        self.watch = (!roots.is_empty())
-            .then(|| RootsWatch::over(&roots))
+        if self.tried.is_some() {
+            let returned = self.absent.iter().filter(|root| present.contains(root));
+            self.returned.extend(returned.cloned());
+        }
+        self.absent = absent;
+        self.watch = (!present.is_empty())
+            .then(|| RootsWatch::over(&present))
             .flatten();
-        self.tried = Some(roots);
+        self.tried = Some(present);
         self
+    }
+
+    fn came_back(&mut self) -> Vec<PathBuf> {
+        mem::take(&mut self.returned)
+    }
+
+    const fn is_laid(&self) -> bool {
+        self.tried.is_some()
+    }
+
+    fn watches_anything(&self) -> bool {
+        self.tried.as_ref().is_some_and(|roots| !roots.is_empty())
     }
 
     fn settled(&self) -> Vec<PathBuf> {

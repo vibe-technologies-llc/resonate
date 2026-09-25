@@ -1270,6 +1270,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   after another kept pushing the scan back and a large root took its whole walk to drop one row.
   A watch that cannot be made — inotify out of watches — is a warning, and that root waits for a
   scan by hand.
+- **What changed while the window was closed is caught up the moment it opens, and a root that
+  was not there is watched once it is.** A watch hears only what happens while it stands, so a
+  file added between two runs used to wait for a scan by hand. The first look that has read the
+  roots runs one incremental scan of every root, `Prompted::OnItsOwn` — asked with no roots named,
+  so a root that is not mounted is left alone by `is_there` rather than failing the scan with
+  `RootNotADirectory` and holding back the rest — and it waits for the work slot like any owed
+  root, a lookup the last run left unfinished not holding it. `Watching` watches only the roots
+  that are folders now and keeps the rest as `absent`; one that turns up later — a drive mounted
+  after the window opened — rebuilds the watch and is owed an incremental scan of its own, where
+  before it was read once and never watched.
 - **A browse pane holds a window onto the listing, and every count comes from the catalog rather
   than from the window.** `LibraryModel::reach` is how many rows `browsed` asks for — `PAGE` of
   2 000 to begin with — and `reach_further` grows it by another page when a list has drawn to
