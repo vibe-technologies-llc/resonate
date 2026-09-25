@@ -167,8 +167,12 @@ fn moves_what_a_scan_reads(event: &Event) -> bool {
     );
 
     folder
-        || (renamed && event.paths.iter().any(|path| path.extension().is_none()))
+        || (renamed && event.paths.iter().any(|path| names_a_folder(path)))
         || (written && event.paths.iter().any(|path| read_by_a_scan(path)))
+}
+
+fn names_a_folder(path: &Path) -> bool {
+    path.extension().is_none() || path.is_dir()
 }
 
 fn read_by_a_scan(path: &Path) -> bool {
@@ -282,6 +286,29 @@ mod tests {
         assert!(
             watch.taken_away(Duration::ZERO).is_empty(),
             "a renamed file was forgotten before the scan could follow it"
+        );
+        assert_eq!(
+            settled_within(&watch, HEARD_WITHIN),
+            vec![scratch.path.clone()]
+        );
+        assert_eq!(watch.taken_away(Duration::ZERO), vec![before]);
+    }
+
+    #[test]
+    fn a_folder_renamed_with_a_dot_in_its_name_is_left_to_the_scan_rather_than_forgotten_first() {
+        let scratch = Scratch::new("dotted");
+        let before = scratch.path.join("Dr. Dre");
+        let after = scratch.path.join("Dr. Dre (2001)");
+        fs::create_dir_all(&before).expect("a folder");
+        fs::write(before.join("still.flac"), b"fLaC").expect("a file");
+        let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
+        fs::rename(&before, &after).expect("the folder renamed");
+
+        thread::sleep(QUIET * 2);
+        assert!(
+            watch.taken_away(Duration::ZERO).is_empty(),
+            "a renamed folder was forgotten before the scan could follow it"
         );
         assert_eq!(
             settled_within(&watch, HEARD_WITHIN),

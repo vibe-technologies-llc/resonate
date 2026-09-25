@@ -1253,8 +1253,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   never while a change under the roots is still settling, because a rename is a path gone and a
   path changed at once, and the scan the change sets off is what follows the file to where it
   went rather than forgetting it and counting it anew. A path
-  *changed* — an audio file or a sheet made, written or renamed in, a folder made, a sheet taken
-  away — notes its root, and `settled` hands the root out once it has been quiet for
+  *changed* — an audio file or a sheet made, written or renamed in, a folder made or renamed in
+  whatever its name holds, `Dr. Dre` as readily as `Meddle`, a sheet taken away — notes its root, and `settled` hands the root out once it has been quiet for
   `ROOTS_QUIET_FOR`. An inotify queue that overflowed notes every root. A catalog or a vault kept
   inside a root cannot set off the scan that writes it, because neither writes audio or sheets
   there. The model's `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY`, a quarter second: it
