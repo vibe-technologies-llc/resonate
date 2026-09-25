@@ -207,6 +207,35 @@ enum Wanted {
     ThePlaylists,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Change {
+    Playlist,
+    Want,
+    Unwant,
+    Favour { favourite: bool },
+    Hide { hidden: bool },
+    ForgetDelivered,
+    Undo,
+    Redo,
+}
+
+impl Change {
+    const fn doing(self) -> &'static str {
+        match self {
+            Self::Playlist => "change the playlist",
+            Self::Want => "want that track",
+            Self::Unwant => "stop wanting that track",
+            Self::Favour { favourite: true } => "mark it a favourite",
+            Self::Favour { favourite: false } => "take it out of the favourites",
+            Self::Hide { hidden: true } => "hide that track",
+            Self::Hide { hidden: false } => "show that track again",
+            Self::ForgetDelivered => "forget that delivery",
+            Self::Undo => "put that back",
+            Self::Redo => "do that again",
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 struct Asked {
     text: Option<String>,
@@ -1112,6 +1141,7 @@ impl LibraryModel {
     pub fn want(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
         self.edited_then(
             Wanted::ThePlaylists,
+            Change::Want,
             move |library| library.want(release_track).map(|_| None),
             |this, cx| {
                 this.poll_as(Prompted::OnItsOwn, cx);
@@ -1121,7 +1151,11 @@ impl LibraryModel {
     }
 
     pub fn unwant(&mut self, want: WantId, cx: &mut Context<Self>) {
-        self.edit(move |library| library.unwant(want).map(|_| None), cx);
+        self.edit(
+            Change::Unwant,
+            move |library| library.unwant(want).map(|_| None),
+            cx,
+        );
     }
 
     pub fn favour(&mut self, what: Favoured, favourite: bool, cx: &mut Context<Self>) {
@@ -1138,6 +1172,7 @@ impl LibraryModel {
 
         self.edited(
             Wanted::Everything,
+            Change::Favour { favourite },
             move |library| library.favour(what, favourite).map(|_| None),
             cx,
         );
@@ -1155,6 +1190,7 @@ impl LibraryModel {
     pub fn hide_track(&mut self, id: TrackId, hidden: bool, cx: &mut Context<Self>) {
         self.edited(
             Wanted::Everything,
+            Change::Hide { hidden },
             move |library| library.hide_track(id, hidden).map(|_| None),
             cx,
         );
@@ -1167,6 +1203,7 @@ impl LibraryModel {
         let title = track.title.clone();
         self.edited(
             Wanted::Everything,
+            Change::ForgetDelivered,
             move |library| {
                 library
                     .forget_delivered(&path)
@@ -1565,6 +1602,7 @@ impl LibraryModel {
 
     pub fn create_playlist(&mut self, name: String, holding: Vec<Cut>, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 library.start_playlist(&name, &holding)?;
 
@@ -1580,6 +1618,7 @@ impl LibraryModel {
 
     pub fn save_query(&mut self, name: String, query: SavedQuery, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 let id = library.save_query(&name, &query)?;
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
@@ -1598,6 +1637,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 library.revise_query(id, &name, &query)?;
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
@@ -1612,6 +1652,7 @@ impl LibraryModel {
 
     pub fn rename_playlist(&mut self, id: PlaylistId, name: String, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| library.rename_playlist(id, &name).map(|()| None),
             cx,
         );
@@ -1623,11 +1664,16 @@ impl LibraryModel {
             self.held = None;
             self.entries = Arc::default();
         }
-        self.edit(move |library| library.remove_playlist(id).map(|_| None), cx);
+        self.edit(
+            Change::Playlist,
+            move |library| library.remove_playlist(id).map(|_| None),
+            cx,
+        );
     }
 
     pub fn pin_playlist(&mut self, id: PlaylistId, pinned: bool, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| library.pin_playlist(id, pinned).map(|_| None),
             cx,
         );
@@ -1635,6 +1681,7 @@ impl LibraryModel {
 
     pub fn add_to_playlist(&mut self, id: PlaylistId, holding: Vec<Cut>, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 let added = library.add_to_playlist(id, &holding)?;
                 let name = library
@@ -1653,6 +1700,7 @@ impl LibraryModel {
 
     pub fn remove_from_playlist(&mut self, id: PlaylistId, rows: Span, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| library.remove_from_playlist(id, rows).map(|_| None),
             cx,
         );
@@ -1663,6 +1711,7 @@ impl LibraryModel {
             return;
         };
         self.edit(
+            Change::Playlist,
             move |library| {
                 Ok(Some(match library.remove_matching(id, &matching)? {
                     0 => "Nothing shown was left to take out".to_owned(),
@@ -1682,6 +1731,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.edit(
+            Change::Playlist,
             move |library| library.move_in_playlist(id, rows, to).map(|_| None),
             cx,
         );
@@ -1692,6 +1742,7 @@ impl LibraryModel {
             return;
         }
         self.edit(
+            Change::Playlist,
             move |library| {
                 let mut said = Vec::with_capacity(files.len());
                 for file in &files {
@@ -1705,6 +1756,7 @@ impl LibraryModel {
 
     pub fn export_playlist(&mut self, id: PlaylistId, path: PathBuf, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 let written = library.export_playlist(id, &path)?;
                 Ok(Some(format!(
@@ -1726,6 +1778,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 Ok(Some(match library.sort_playlist(id, order, reading)? {
                     0 => "Already in that order".to_owned(),
@@ -1744,6 +1797,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 let moved = library.keep_playlist_in_order(id, kept)?;
                 let Some(_) = kept else {
@@ -1764,6 +1818,7 @@ impl LibraryModel {
 
     pub fn prune_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 Ok(Some(match library.prune_playlist(id)? {
                     0 => "Every row still names a file that is there".to_owned(),
@@ -1777,6 +1832,7 @@ impl LibraryModel {
 
     pub fn fold_doubles(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
         self.edit(
+            Change::Playlist,
             move |library| {
                 Ok(Some(match library.fold_doubles(id)? {
                     0 => "Every row names a file no other row does".to_owned(),
@@ -1841,6 +1897,7 @@ impl LibraryModel {
 
     pub fn undo(&mut self, cx: &mut Context<Self>) {
         self.edit(
+            Change::Undo,
             |library| {
                 Ok(Some(match library.undo()? {
                     Some(put_back) => put_back_as(&put_back),
@@ -1857,6 +1914,7 @@ impl LibraryModel {
 
     pub fn redo(&mut self, cx: &mut Context<Self>) {
         self.edit(
+            Change::Redo,
             |library| {
                 Ok(Some(match library.redo()? {
                     Some(done_again) => done_again_as(&done_again),
@@ -1873,24 +1931,27 @@ impl LibraryModel {
 
     fn edit(
         &mut self,
+        what: Change,
         change: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.edited(Wanted::ThePlaylists, change, cx);
+        self.edited(Wanted::ThePlaylists, what, change, cx);
     }
 
     fn edited(
         &mut self,
         wanted: Wanted,
+        what: Change,
         change: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.edited_then(wanted, change, |_, _| {}, cx);
+        self.edited_then(wanted, what, change, |_, _| {}, cx);
     }
 
     fn edited_then(
         &mut self,
         wanted: Wanted,
+        what: Change,
         change: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
         then: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
@@ -1906,8 +1967,8 @@ impl LibraryModel {
             let outcome = this.update(cx, |this, cx| {
                 match done {
                     Err(error) => {
-                        tracing::error!(%error, "a playlist could not be edited");
-                        toast::tell(toast::could_not("change the playlist", &error), cx);
+                        tracing::error!(%error, edit = ?what, "an edit could not be made");
+                        toast::tell(toast::could_not(what.doing(), &error), cx);
                     }
                     Ok(Some(said)) => {
                         toast::tell(Notice::Done(said), cx);
@@ -4189,10 +4250,30 @@ mod tests {
     use resonate_library::{Direction, Library, SortOrder};
 
     use super::{
-        Arranging, Beyond, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching, Shared,
-        arranged, beyond_the_listing, headed_by_disc, held_at, held_in, landed_since,
+        Arranging, Beyond, Change, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching,
+        Shared, arranged, beyond_the_listing, headed_by_disc, held_at, held_in, landed_since,
         missing_track_rows, on_the_clipboard, unheld_release_rows,
     };
+
+    #[test]
+    fn only_a_playlist_edit_is_told_as_one_when_it_fails() {
+        let not_playlists = [
+            Change::Want,
+            Change::Unwant,
+            Change::Favour { favourite: true },
+            Change::Favour { favourite: false },
+            Change::Hide { hidden: true },
+            Change::Hide { hidden: false },
+            Change::ForgetDelivered,
+            Change::Undo,
+            Change::Redo,
+        ];
+
+        assert!(Change::Playlist.doing().contains("playlist"));
+        for change in not_playlists {
+            assert!(!change.doing().contains("playlist"), "{change:?}");
+        }
+    }
 
     const SEARCHED: Reaching = Reaching {
         held: 2,
