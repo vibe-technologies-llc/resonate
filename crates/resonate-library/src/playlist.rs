@@ -715,6 +715,10 @@ pub fn prune(inner: &Inner, id: PlaylistId) -> Result<usize> {
     dropped_where(inner, id, Edit::Tidied, Going::Gone)
 }
 
+pub fn tidy(inner: &Inner, id: PlaylistId) -> Result<usize> {
+    dropped_where(inner, id, Edit::Tidied, Going::Unwanted)
+}
+
 pub fn fold_doubles(inner: &Inner, id: PlaylistId) -> Result<usize> {
     dropped_where(inner, id, Edit::Folded, Going::Doubled)
 }
@@ -726,6 +730,7 @@ pub fn remove_matching(inner: &Inner, id: PlaylistId, matching: &str) -> Result<
 enum Going<'a> {
     Gone,
     Doubled,
+    Unwanted,
     Matching(&'a str),
 }
 
@@ -740,6 +745,12 @@ fn asked_of(
         Going::Doubled => {
             let mut seen = AHashSet::with_capacity(held.len());
             held.iter().map(|(_, row)| !seen.insert(row)).collect()
+        }
+        Going::Unwanted => {
+            let mut seen = AHashSet::with_capacity(held.len());
+            held.iter()
+                .map(|(_, row)| has_gone(&row.path) || !seen.insert(row))
+                .collect()
         }
         Going::Matching(text) => {
             let matched = matched_in(transaction, id, text)?;

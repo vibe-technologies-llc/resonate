@@ -423,8 +423,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `kit::measures_its_width` is a canvas writing `RootView::hero_width` a frame behind — the shape
   the album grid's `grid_width` takes, and that grid now uses the same builder — and the title
   and the services line take it through `kit::hero_title` and `kit::wraps_within`. Until the first
-  frame has measured, the title is one line ending in an ellipsis. The opened playlist's heading carries
-  the same `kit::way_back`, reading *Playlists*, above an eyebrow of *PLAYLIST* or *SAVED SEARCH*.
+  frame has measured, the title is one line ending in an ellipsis. The opened playlist uses the same
+  hero: its cover tiles up to four distinct album covers from its entries, and where none have art
+  it draws a stable name-based gradient, a playlist or search mark and the playlist name. Its text
+  and left-aligned Play and Shuffle row sit beside the cover. The title opens the shared rename
+  field, with a rename selector revealed while hovered; there is no separate rename button in the
+  action row. The heading carries the same `kit::way_back`, reading *Playlists*, above an eyebrow of
+  *PLAYLIST* or *SAVED SEARCH*.
   **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics,
   inspector, visualiser and analysis headings name the playing track through `opens`, and under
   `kit::title`'s block box the link was laid out at no width at all, so the heading drew its
@@ -442,8 +447,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   its room out of the title rather than pushing every cell after it along, and both text cells end
   in an ellipsis rather than a square cut. The playing row draws
   `listing::playing_mark` in the number cell and its title in the accent. A row's controls sit in
-  `browser::row_controls`, which is invisible until the row is hovered — the heading carries the
-  same gestures for the whole listing, so a row does not have to advertise its own.
+  `browser::row_controls`, which is invisible until the row is hovered. Track rows retain their
+  Play next and Add to queue controls; the tracks heading carries Play and Shuffle for the whole
+  listing and no Add to playlist control.
 - **Whatever a gesture takes out of the queue is kept, and a toast says so.** A playlist edit
   answers with a `Notice` and an undo; the queue answered with rows that were simply gone, which is
   the same gesture with none of the safety. `TakenOut` is what the last one took — the rows, the
@@ -1251,7 +1257,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   square, so the art meets the text under it; an empty tile is its accent, solid.
 - **The playlists index row carries a context menu beside its controls, and neither answers the
   other's press.** gpui 0.2.2 starts a click only on a left press, so a right press on play, next,
-  last, copy or discard opens the row's menu and fires none of them. A pinned row wears a
+  last, shuffle, add songs or discard opens the row's menu and fires none of them. A pinned row wears a
   `kit::badge` beside the `SEARCH` and `KEPT` ones; the catalog already sorts pinned rows first,
   so the pane does no ordering of its own.
 - **The sleep control draws no clock of its own.** It sits between repeat and the volume in the
@@ -1376,17 +1382,18 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   2 000 for any library larger than that. `measured` still honours a limit it is given, because a
   saved query's cap is part of what that query *is*; the window passes `limit: None`.
 - **A gesture over "every track listed here" reads the whole listing before it acts.**
-  `RootView::with_everything_listed` reads the unlimited `TrackQuery` that `listing_whole` builds
-  on the background executor and hands the rows to a closure, so *Play*, *Play next*, *Add to
-  queue* and *Add to playlist* in the tracks heading act on everything the search matches rather
-  than on the window that happens to be loaded. It is a task on `RootView` rather than a blocking
-  read, because the listing may be the whole library.
+ `RootView::with_everything_listed` reads the unlimited `TrackQuery` that `listing_whole` builds
+  on the background executor and hands the rows to a closure, so *Play* and *Shuffle* in the tracks
+  heading act on everything the search matches rather than on the window that happens to be
+  loaded. Whole-listing queue and add-to-playlist actions are not in that heading; track rows still
+  expose their queue controls when hovered. It is a task on `RootView` rather than a blocking read,
+  because the listing may be the whole library.
 - **A scope is the tracks pane's alone, and the sidebar counts the library rather than the scope.**
   `Selection` narrows one listing and no other: `browsed` reads the albums, the artists and the
   tracks the search allows, and reads a *second*, narrower track listing beside them only where an
   album or an artist is scoped. `LibraryModel::tracks` is the first and `LibraryModel::listing` is
-  what the tracks pane, its heading, its summary and its *Play*, *Play next*, *Add to queue* and
-  *Add to playlist* all draw from, so the sidebar's three counts say what the library holds however
+  what the tracks pane, its heading, its summary and its *Play* and *Shuffle* all draw from, so the
+  sidebar's three counts say what the library holds however
   deep a listener has gone into it. What it replaces is one listing narrowed in place: opening an
   artist took its albums out of the albums pane and its count down to that artist's, opening an
   album took the tracks count down to that album's, and nothing on screen said why. The second read
@@ -1558,8 +1565,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Everything, an album or an artist, and a playlist is `LibraryModel::opened` instead, with its
   entries riding in the same `Loaded` snapshot as the albums, artists, tracks and roots — so nothing
   else has to know when a playlist changes. Rows are put in one through
-  `RootView::hold_for_a_playlist`, the picker that the tracks pane's `+`, the tracks heading's *Add
-  all* and the queue's *Save as a playlist* all open. What the picker offers is a second listing
+  `RootView::hold_for_a_playlist`, the picker that a queue row's + and the queue's *Save as a
+  playlist* open. The playlist index and opened playlist's + enter track-browsing mode for the
+  target playlist; each track row's + adds that track directly, and *Done* or Escape returns to
+  the playlist. What the picker offers is a second listing
   riding in that same snapshot — `Library::playlist_lists`, read unnarrowed and holding only the
   playlists that hold a list. Unnarrowed because the gesture is most often made from a search and a
   track found by name must still reach a playlist whose name has nothing to do with it; lists alone
@@ -1574,8 +1583,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   rather than at its top. `set_query` puts a fresh handle in whenever a keystroke narrows the rows
   differently, because the rows under the old offset are no longer the ones it was left on, and
   `forget_what_has_gone` drops the handle once the listing stops naming its playlist — passing over
-  a listing a search has narrowed, because what that leaves out is still there. The index puts its
-  sort icon with the icon-only Import and New playlist in the heading's right actions; pressing it
+  a listing a search has narrowed, because what that leaves out is still there. Index rows use up
+  to four distinct album covers from their entries and the same generated fallback as the opened
+  hero. Their + starts the target playlist's track-browsing mode rather than copying it. The index
+  puts its sort icon with the icon-only Import and New playlist in the heading's right actions; pressing it
   reveals the ORDER and READS choices under the heading, and pressing it again tucks them away.
   None of it survives the run, and neither does the settings pane's category, the listing's order
   or the pane the sidebar was on.
@@ -2055,13 +2066,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Field` read at the next start. Its *ListenBrainz* group is the `listenbrainz-token` field, and
   that one is not read at the next start: the binary's submitter follows the settings file, so a
   token given or cleared there is what the next submission, within half a minute, carries.
-- **Play next and Add to queue are explicit actions on listings and rows, and a + wherever rows
-  reach a playlist.** The tracks heading and each track row, the playlists pane's index row, and
-  each row of an opened playlist carry the pair, and on a playlist row they take the whole reach
-  the row is in. An opened playlist's heading carries Shuffle beside Play, starting at a
-  time-chosen row and enabling queue shuffle. The + sits on a track row, a queue row, an opened
-  playlist's row and the index row that stands for a whole playlist, and every one of them opens
-  the one picker. The albums and artists panes carry neither, because a row there scopes the
+- **Play next and Add to queue are row actions, and Shuffle is the tracks heading's second play
+  action.** Each track row, the playlists pane's index row, and each row of an opened playlist
+  carry the queue pair, and on a playlist row they take the whole reach the row is in. The tracks
+  heading carries Shuffle beside Play. An opened playlist's heading does too, starting at a
+  time-chosen row and enabling queue shuffle. The + sits on a queue row and each row of an opened
+  playlist to open the playlist picker; the playlist index and opened playlist headings use + to
+  enter the target's track-browsing mode. The albums and artists panes carry neither, because a
+  row there scopes the
   tracks pane rather than playing, and the queue pane carries neither because its rows are already
   in it. The two are the only queueing gestures there are, each named once in `menu::PLAY_NEXT` and
   `menu::ADD_TO_QUEUE`: *Play next* is `Placement::Next`, straight after the track playing, and
@@ -2119,10 +2131,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   press, so the notice names `ctrl-z` beside where the rows landed; the notice a press either way
   leaves says what was put back or done again rather than what the playlist now holds.
 - **A narrowed playlist says what a gesture reaches rather than leaving it to be found out.** The
-  heading's `NARROWED_HINT` says that Play, Play next, Add to queue, Copy and Drop shown take the
-  rows shown while Rename, Sort, Tidy and Export take the playlist whole. It is behind the pointer
-  like every other hint, and a search that matched nothing draws no mark to hover. The sidebar's
-  count is the narrowed one, so standing inside a playlist whose name the search misses reads as 0.
+  heading's `NARROWED_HINT` says that Play, Play next, Add to queue and Drop shown take the rows
+  shown while Sort, Tidy and Export take the playlist whole. Tidy removes missing and repeated
+  rows together in one undoable edit. The playlist title opens rename, and its selector appears on
+  hover. The hint is behind the pointer like every other hint, and a search that matched nothing
+  draws no mark to hover. The sidebar's count is the narrowed one, so standing inside a playlist
+  whose name the search misses reads as 0.
 - **A pane hands its rows out by reference count rather than cloning them per frame.** An opened
   playlist's rows are an `Arc<[PlaylistEntry]>` the model shares with the pane, its heading, the
   list's closures and every visible row, and the reach is read off it once a frame as a `Reaching` —

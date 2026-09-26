@@ -1914,21 +1914,22 @@ the pass.
   own, because putting a track in a playlist twice is a thing to be able to do. It reconciles on the
   path the way `import_playlist` does, so two names for one file are two rows to it and stay two. A
   saved query refuses it with `Error::NotAList` like every other row edit; a kept list takes it,
-  because dropping a row places none. The window draws *Fold doubles* beside *Tidy*, and
-  `resonate playlist <NAME> --fold` is the same gesture on the command line, which is why `--fold`
-  and `--tidy` refuse each other: each is a whole gesture and the pass is not shared. It is one
-  press for the whole list — nothing folds the doubles out of a span, and nothing says which rows a
-  press would take before it takes them.
+  because dropping a row places none. `Library::tidy_playlist` asks both whether a file is gone and
+  whether an earlier live row already names it, then drops the union in one `Edit::Tidied` step;
+  missing rows do not make later live rows look doubled. The opened playlist draws that combined
+  action as *Tidy*, so one undo restores both kinds of row together. The command line keeps
+  `resonate playlist <NAME> --tidy` for missing files and `--fold` for doubles, and refuses them
+  together because they ask different questions. It is one press for the whole list — nothing folds
+  doubles out of a span, and nothing previews which rows a press would take.
 - **A playlist is copied into another, never moved into it.** `Library::copy_playlist` reads one
   playlist's rows — the whole of it, or only what a search matched — and lands them through
   `add_to_playlist`, so the source keeps them, a kept target puts them in its order, and a saved
   query refuses to receive them with `NotAList` like every other row edit. `Error::IntoItself`
   refuses both sides being the same playlist, because that would only double it. Copying out of a
-  query is what freezes a search into a list, and the window offers no separate gesture for it: the
-  index row's +, an opened playlist's *Copy* and each row's + all open the one picker
-  `hold_for_a_playlist` owns, which carries a `Held` — the rows and the playlist they came out of —
-  so the picker can leave that playlist off its own list and say *Copy* rather than *Add*. The
-  picker's *or a new one* is therefore what duplicates a playlist, and
+  query is what freezes a search into a list; the command line remains the way to copy one. The
+  playlist index and opened playlist use + to enter a track-browsing mode for the chosen target,
+  while row-level + actions that already hold tracks still open `hold_for_a_playlist`. The picker's
+  *or a new one* is therefore what duplicates a playlist, and
   `resonate playlist <NAME> --into <OTHER>` is the same gesture on the command line, creating OTHER
   where nothing is named that. What it costs is the whole source read into memory as locations and a
   write per row, plus the order re-read where the target is kept in one.

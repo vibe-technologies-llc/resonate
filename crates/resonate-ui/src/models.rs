@@ -1850,28 +1850,14 @@ impl LibraryModel {
         );
     }
 
-    pub fn prune_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
+    pub fn tidy_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
         self.edit(
             Change::Playlist,
             move |library| {
-                Ok(Some(match library.prune_playlist(id)? {
-                    0 => "Every row still names a file that is there".to_owned(),
-                    1 => "Dropped 1 row whose file has gone".to_owned(),
-                    dropped => format!("Dropped {dropped} rows whose files have gone"),
-                }))
-            },
-            cx,
-        );
-    }
-
-    pub fn fold_doubles(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
-        self.edit(
-            Change::Playlist,
-            move |library| {
-                Ok(Some(match library.fold_doubles(id)? {
-                    0 => "Every row names a file no other row does".to_owned(),
-                    1 => "Folded 1 doubled row into the one above it".to_owned(),
-                    folded => format!("Folded {folded} doubled rows into the ones above them"),
+                Ok(Some(match library.tidy_playlist(id)? {
+                    0 => "Every row names a file that is there and appears once".to_owned(),
+                    1 => "Removed 1 missing or doubled row".to_owned(),
+                    removed => format!("Removed {removed} missing or doubled rows"),
                 }))
             },
             cx,

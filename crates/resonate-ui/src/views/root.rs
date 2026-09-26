@@ -356,6 +356,7 @@ pub struct RootView {
     pub(crate) row_reading: Direction,
     pub(crate) keeping: bool,
     pub(crate) adding: Option<Held>,
+    pub(crate) adding_songs_to: Option<PlaylistId>,
     pub(crate) name: Entity<Field>,
     pub(crate) contact: Entity<Field>,
     pub(crate) acoustid: Entity<Field>,
@@ -394,6 +395,8 @@ pub struct RootView {
     pub(crate) artist_shows: ArtistShows,
     pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
+    pub(crate) playlist_art_albums: AHashMap<PlaylistId, Arc<[AlbumId]>>,
+    pub(crate) playlist_art_revision: u64,
     landing_on: Option<usize>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
@@ -671,6 +674,7 @@ impl RootView {
             row_reading: Direction::default(),
             keeping: false,
             adding: None,
+            adding_songs_to: None,
             name,
             contact,
             acoustid,
@@ -712,6 +716,8 @@ impl RootView {
             artist_shows: ArtistShows::default(),
             artists_drawn: ArtistsDrawn::default(),
             missing_shows: MissingShows::default(),
+            playlist_art_albums: AHashMap::new(),
+            playlist_art_revision: 0,
             landing_on: None,
             menu: None,
             record: None,
@@ -1306,6 +1312,9 @@ impl RootView {
         } else {
             Pane::default()
         };
+        if pane != Pane::Tracks {
+            self.adding_songs_to = None;
+        }
         pointed::forget();
         self.record = None;
         self.stop_typing(cx);
@@ -2332,6 +2341,10 @@ impl RootView {
         }
         if self.naming.is_some() || self.adding.is_some() {
             self.stop_naming(window, cx);
+            return;
+        }
+        if self.adding_songs_to.is_some() {
+            self.finish_adding_songs(cx);
             return;
         }
 

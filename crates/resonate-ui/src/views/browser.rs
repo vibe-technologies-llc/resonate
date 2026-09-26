@@ -29,7 +29,7 @@ use crate::{
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         missing::MissingShows,
-        playlists::{ADD_ALL_HINT, ADD_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
+        playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
         root::{Magnified, Pane, RootView, empty, listed, row, tall_row},
@@ -47,10 +47,6 @@ const OTHER_COPIES_HINT: &str =
 const WAY_BACK_HINT: &str = "Back to where this was opened from — escape";
 
 const ORDER_HINT: &str = "Choose what this listing is put in order by";
-
-const NEXT_ALL_HINT: &str = "Hear every track listed here straight after the track playing";
-
-const QUEUE_ALL_HINT: &str = "Queue every track listed here after what is already queued, ahead of the rest of what is playing";
 
 const PLAY_ALL_HINT: &str = "Play every track listed here, in place of the queue";
 
@@ -785,8 +781,8 @@ impl RootView {
     ) -> Stateful<Div> {
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
-        let holding = Arc::clone(tracks);
         let menued = Arc::clone(tracks);
+        let adding_to = self.adding_songs_to;
         let id = track.id;
         let favourite = self
             .library
@@ -872,24 +868,43 @@ impl RootView {
                     ))
                     .child(
                         row_controls()
-                            .child(self.queue_control(
-                                ("track-next", index),
-                                Placement::Next,
-                                queueing(tracks, index),
-                                cx,
-                            ))
-                            .child(self.queue_control(
-                                ("track-last", index),
-                                Placement::Queued,
-                                queueing(tracks, index),
-                                cx,
-                            ))
-                            .child(self.add_control(
-                                ("track-to-playlist", index),
-                                ADD_HINT,
-                                move || held_at(&holding, index),
-                                cx,
-                            )),
+                            .when_some(adding_to, |controls, target| {
+                                let cut = Cut::of(track);
+                                controls.child(
+                                    kit::icon_button(
+                                        ("add-song-to-playlist", index),
+                                        Icon::Plus,
+                                        ADD_SONG_HINT,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.library.update(cx, |library, cx| {
+                                                library.add_to_playlist(
+                                                    target,
+                                                    vec![cut.clone()],
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    )),
+                                )
+                            })
+                            .when(adding_to.is_none(), |controls| {
+                                controls
+                                    .child(self.queue_control(
+                                        ("track-next", index),
+                                        Placement::Next,
+                                        queueing(tracks, index),
+                                        cx,
+                                    ))
+                                    .child(self.queue_control(
+                                        ("track-last", index),
+                                        Placement::Queued,
+                                        queueing(tracks, index),
+                                        cx,
+                                    ))
+                            }),
                     ),
             )
             .on_click(cx.listener(move |this, _, _, cx| match plays {
@@ -1292,30 +1307,53 @@ impl RootView {
         let library = self.library.read(cx);
         let searching = !library.query().is_empty();
         let naming = self.naming.filter(|naming| naming.is_a_search());
-        let under = summary(library.listed(), None);
+        let adding_to = self.adding_songs_to;
+        let target = adding_to.and_then(|id| library.saved_playlist(id));
+        let title = target.map_or_else(
+            || "All tracks".to_owned(),
+            |playlist| format!("Add songs to {}", playlist.name),
+        );
+        let under = target.map_or_else(
+            || summary(library.listed(), None),
+            |playlist| format!("Choose tracks to add to {}", playlist.name),
+        );
 
         let sung = self.sung_offer(Tone::Ghost, cx);
         let actions = kit::actions()
-            .when_some(sung, |bar, sung| bar.child(sung))
-            .when(searching && naming.is_none(), |bar| {
+            .when_some(adding_to, |bar, _| {
                 bar.child(
                     kit::button(
-                        "save-search",
-                        Some(Icon::Search),
-                        "Save this search",
-                        SAVE_SEARCH_HINT,
+                        "finish-adding-songs",
+                        Some(Icon::Back),
+                        "Done",
+                        FINISH_ADDING_HINT,
                         Tone::Ghost,
                     )
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.name_a_playlist(Naming::Query(None), window, cx);
-                    })),
+                    .on_click(cx.listener(|this, _, _, cx| this.finish_adding_songs(cx))),
                 )
             })
-            .child(self.add_all_to_a_playlist(cx))
-            .child(self.orders_a_listing("order-tracks", cx))
-            .child(self.queue_all(Placement::Next, cx))
-            .child(self.queue_all(Placement::Queued, cx))
-            .child(self.play_all(cx));
+            .when(adding_to.is_none(), |bar| {
+                bar.when_some(sung, |bar, sung| bar.child(sung))
+                    .when(searching && naming.is_none(), |bar| {
+                        bar.child(
+                            kit::button(
+                                "save-search",
+                                Some(Icon::Search),
+                                "Save this search",
+                                SAVE_SEARCH_HINT,
+                                Tone::Ghost,
+                            )
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.name_a_playlist(Naming::Query(None), window, cx);
+                                },
+                            )),
+                        )
+                    })
+                    .child(self.orders_a_listing("order-tracks", cx))
+                    .child(self.shuffle_all(cx))
+                    .child(self.play_all(cx))
+            });
 
         kit::heading().child(
             kit::heading_row()
@@ -1326,8 +1364,12 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow("LIBRARY"))
-                        .child(kit::title("All tracks"))
+                        .child(kit::eyebrow(if adding_to.is_some() {
+                            "ADD SONGS"
+                        } else {
+                            "LIBRARY"
+                        }))
+                        .child(kit::title(title))
                         .child(kit::subtitle(under)),
                 )
                 .child(actions),
@@ -1699,43 +1741,6 @@ impl RootView {
         .on_click(cx.listener(|this, _, window, cx| {
             this.with_everything_listed(window, cx, |this, listing, _, cx| {
                 this.play_shuffled(&listing, cx);
-            });
-        }))
-    }
-
-    fn queue_all(&self, placement: Placement, cx: &mut Context<Self>) -> Stateful<Div> {
-        let (id, icon, label, saying) = match placement {
-            Placement::Next => ("next-all", Icon::QueueNext, menu::PLAY_NEXT, NEXT_ALL_HINT),
-            Placement::Queued | Placement::At(_) => (
-                "last-all",
-                Icon::QueueLast,
-                menu::ADD_TO_QUEUE,
-                QUEUE_ALL_HINT,
-            ),
-        };
-
-        kit::button(id, Some(icon), label, saying, Tone::Outlined).on_click(cx.listener(
-            move |this, _, window, cx| {
-                this.with_everything_listed(window, cx, move |this, listing, _, cx| {
-                    let queued = listed(&listing);
-                    this.queue(&queued, placement, cx);
-                });
-            },
-        ))
-    }
-
-    fn add_all_to_a_playlist(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        kit::button(
-            "add-all",
-            Some(Icon::Plus),
-            "Add to playlist",
-            ADD_ALL_HINT,
-            Tone::Ghost,
-        )
-        .on_click(cx.listener(|this, _, window, cx| {
-            this.with_everything_listed(window, cx, |this, listing, window, cx| {
-                let holding: Arc<[Cut]> = listing.iter().map(Cut::of).collect();
-                this.hold_for_a_playlist(Held::of(holding), window, cx);
             });
         }))
     }
@@ -2632,14 +2637,6 @@ fn summary(listed: Measured, year: Option<i32>) -> String {
     }
 
     parts.join(" · ")
-}
-
-fn held_at(tracks: &Arc<[Track]>, index: usize) -> Held {
-    Held::of(
-        tracks
-            .get(index)
-            .map_or_else(|| Arc::from([]), |track| Arc::from([Cut::of(track)])),
-    )
 }
 
 fn queueing(tracks: &Arc<[Track]>, index: usize) -> impl Fn() -> Arc<[PlaylistEntry]> + 'static {

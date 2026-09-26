@@ -5254,6 +5254,35 @@ fn folding_a_playlist_that_holds_each_file_once_writes_nothing() -> Result<()> {
 }
 
 #[test]
+fn tidying_drops_gone_and_doubled_rows_in_one_undoable_edit() -> Result<()> {
+    let (tree, library) = sortable_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let evening = library.create_playlist("Evening")?;
+    library.add_to_playlist(
+        evening,
+        &[
+            file("a.wav"),
+            file("a.wav"),
+            file("b.wav"),
+            file("c.wav"),
+            file("c.wav"),
+        ],
+    )?;
+    fs::remove_file(tree.path().join("c.wav")).expect("the file can be removed");
+
+    assert_eq!(library.tidy_playlist(evening)?, 3);
+    assert_eq!(held(&library, evening)?, vec!["a", "b"]);
+
+    let put_back = library.undo()?.expect("the tidy is there to put back");
+    assert_eq!(put_back.edit, Edit::Tidied);
+    assert_eq!(held(&library, evening)?, vec!["a", "a", "b", "c", "c"]);
+
+    assert_eq!(library.redo()?.map(|again| again.edit), Some(Edit::Tidied));
+    assert_eq!(held(&library, evening)?, vec!["a", "b"]);
+    Ok(())
+}
+
+#[test]
 fn what_a_fold_took_out_is_put_back_where_it_stood() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));

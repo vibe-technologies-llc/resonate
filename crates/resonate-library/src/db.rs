@@ -1497,6 +1497,10 @@ impl Library {
         playlist::prune(&self.inner, id)
     }
 
+    pub fn tidy_playlist(&self, id: PlaylistId) -> Result<usize> {
+        playlist::tidy(&self.inner, id)
+    }
+
     pub fn fold_doubles(&self, id: PlaylistId) -> Result<usize> {
         playlist::fold_doubles(&self.inner, id)
     }
