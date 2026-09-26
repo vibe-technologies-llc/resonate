@@ -2874,6 +2874,15 @@ impl RootView {
         }
     }
 
+    pub(crate) fn hero_side(&self) -> f32 {
+        let measured = self.hero_height.get();
+        if measured > px(0.0) {
+            measured / px(1.0)
+        } else {
+            theme::scope_cover()
+        }
+    }
+
     pub(crate) fn cover(&self, pictured: Pictured<'_>, cx: &mut Context<Self>) -> Div {
         self.cover_sized(pictured, Drawn::InARow, theme::row_cover(), cx)
     }

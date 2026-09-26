@@ -400,10 +400,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   which is what keeps a long playlist name from being ground down to a letter by thirteen
   controls. **An album or an artist is not a pane heading with a picture bolted on**: it is
   `album_page_heading` and `artist_page_heading`, a `kit::way_back` at the top left and a
-  `kit::hero` under it — the portrait at `theme::scope_cover()`, 224, and the album cover a
-  square of the text column's own height, both decoded at `Drawn::OnThePage` so a page hero stays
+  `kit::hero` under it — the album cover, the portrait and an opened suggestion's art are each a
+  square of the text column's own height, decoded at `Drawn::OnThePage` so a page hero stays
   sharp at a scale factor of 2. The column is the eyebrow, a `kit::hero_title` at `text_title`
-  and the lines about it, aligned to the bottom of the picture. The album cover is that height
+  and the lines about it, aligned to the bottom of the picture. Each picture is that height
   so it meets the text and leaves no empty band beside it. The height is that column's own,
   read a frame behind by an absolute canvas that fills it, so the inset resolves against the
   height the text has already taken. A zero-width sibling stretched beside the text came out a
@@ -1217,8 +1217,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   art or its name is `LibraryModel::open_suggestion`, which keeps the `SavedQuery` it opened in a
   `Previewed` and reads the first `PREVIEWED_AT_MOST` rows on the background executor; while the
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
-  a way back, the art at `scope_cover` through `Drawn::OnThePage`, and beside it, on the bottom of
-  the art, the kind, the name, the reason, the count and length and the search as *Reads* chips,
+  a way back, the art at the text column's height through `Drawn::OnThePage`, the same square an
+  album cover takes, and beside it, on the bottom of the art, the kind, the name, the reason, the
+  count and length and the search as *Reads* chips,
   and under that text Play, Shuffle, a save mark and a search mark, over an ordinary
   unsorted track listing, each row playing the list from itself. A card on the shelf is the art
   at the full card width, still the grid's texture, with the name under it and Play, then the

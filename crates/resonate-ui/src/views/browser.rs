@@ -1347,14 +1347,8 @@ impl RootView {
         let record = library.release().and_then(record_of);
         let favourite = library.favoured_album(id);
 
-        let measured = self.hero_height.get();
-        let side = if measured > px(0.0) {
-            measured / px(1.0)
-        } else {
-            theme::scope_cover()
-        };
         let cover = self
-            .cover_sized(Pictured::Album(id), Drawn::OnThePage, side, cx)
+            .cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
             .id("magnify-scoped-cover")
             .cursor_pointer()
             .hover(|cover| cover.opacity(kit::LIT))
@@ -1451,13 +1445,14 @@ impl RootView {
         let tracks = library.listed().rows as usize;
         let shows = self.artist_shows.within(records);
 
+        let side = self.hero_side();
         let portrait = match self.library.update(cx, |library, cx| {
             library.portrait(id, Portrayed::OnThePage, cx)
         }) {
-            Some(art) => portrait_frame(art, theme::scope_cover()).into_any_element(),
+            Some(art) => portrait_frame(art, side).into_any_element(),
             None => kit::avatar(&name, true)
-                .size(px(theme::scope_cover()))
-                .text_size(px(theme::text_title() * 1.6))
+                .size(px(side))
+                .text_size(px(side * theme::text_title() * 1.6 / theme::scope_cover()))
                 .into_any_element(),
         };
 
@@ -1469,6 +1464,7 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
+            .child(kit::measures_its_height(self.hero_height.clone()))
             .child(kit::eyebrow("ARTIST"))
             .child(kit::hero_title(
                 SharedString::from(name),
