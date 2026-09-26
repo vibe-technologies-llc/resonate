@@ -807,6 +807,7 @@ pub(crate) fn actions() -> Div {
 pub(crate) fn column_header() -> Div {
     div()
         .flex()
+        .w_full()
         .items_center()
         .gap_3()
         .px_6()

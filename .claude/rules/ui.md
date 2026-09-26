@@ -438,8 +438,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
 - **A track row is the same eight cells wherever it is drawn.** `listing::columns` is the column
   header the tracks pane, the queue and an opened playlist all put over their rows, and
   `number_cell`, `title_cell`, `artist_cell`, `format_cell`, `heard` and `length_cell` are the cells
-  under it, so no two of them can disagree about a width. The title and the artist are the two
-  that give way, and they give way together: `title_room` and `artist_room` both start from
+  under it, so no two of them can disagree about a width. The header fills the same available width
+  as a row, so its growing title cell leaves the artist and later columns where the row puts them.
+  The title and artist give way together: `title_room` and `artist_room` both start from
   `theme::row_artist()` and both shrink, and only the title grows. A title that was `flex_1` from
   nothing beside an artist of fixed width was the first thing a narrow window took, to the last
   letter, while the artist kept all two hundred pixels. A track with other copies carries its `+N`
