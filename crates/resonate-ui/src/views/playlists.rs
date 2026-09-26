@@ -6,7 +6,7 @@ use gpui::{
     uniform_list,
 };
 use resonate_core::{PlaylistId, Span};
-use resonate_engine::{Placement, QueueItem, Unclaimed};
+use resonate_engine::{Command, Placement, QueueItem, Unclaimed};
 use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
 use smallvec::smallvec;
 
@@ -21,7 +21,7 @@ use crate::{
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         reorder::{self, Carried, MOVING_HINT, Shift, Step},
-        root::{RootView, empty, row, tall_row},
+        root::{RootView, empty, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sorting,
     },
@@ -30,6 +30,8 @@ use crate::{
 const NEW_HINT: &str = "Start a playlist, and name it";
 
 const PLAY_HINT: &str = "Play this playlist from the top";
+
+const SHUFFLE_HINT: &str = "Play this playlist, shuffled";
 
 const NO_FILE_PICKER: &str = "Couldn't open the file picker";
 
@@ -364,14 +366,8 @@ impl RootView {
                 bar.child(self.orders_a_listing("playlists-sort", cx))
             })
             .child(
-                kit::button(
-                    "import-playlists",
-                    Some(Icon::Import),
-                    "Import",
-                    IMPORT_HINT,
-                    Tone::Ghost,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.import_playlists(cx))),
+                kit::icon_button("import-playlists", Icon::Import, IMPORT_HINT)
+                    .on_click(cx.listener(|this, _, _, cx| this.import_playlists(cx))),
             )
             .when(naming.is_none(), |bar| {
                 bar.child(
@@ -799,29 +795,23 @@ impl RootView {
                     )
                 })
                 .child({
-                    let queued = Arc::clone(entries);
+                    let played = Arc::clone(entries);
                     kit::button(
-                        "playlist-next",
-                        Some(Icon::QueueNext),
-                        menu::PLAY_NEXT,
-                        PLAYLIST_NEXT_HINT,
+                        "shuffle-playlist",
+                        Some(Icon::Shuffle),
+                        "Shuffle",
+                        SHUFFLE_HINT,
                         Tone::Outlined,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.queue(&queued, Placement::Next, cx);
-                    }))
-                })
-                .child({
-                    let queued = Arc::clone(entries);
-                    kit::button(
-                        "playlist-last",
-                        Some(Icon::QueueLast),
-                        menu::ADD_TO_QUEUE,
-                        PLAYLIST_QUEUE_HINT,
-                        Tone::Outlined,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.queue(&queued, Placement::Queued, cx);
+                        this.play_playlist(
+                            opened,
+                            &played,
+                            somewhere_in(played.len()),
+                            !narrowed,
+                            cx,
+                        );
+                        this.send(Command::SetShuffle(true), cx);
                     }))
                 })
                 .child({

@@ -1575,10 +1575,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   differently, because the rows under the old offset are no longer the ones it was left on, and
   `forget_what_has_gone` drops the handle once the listing stops naming its playlist — passing over
   a listing a search has narrowed, because what that leaves out is still there. The index puts its
-  sort icon with Import and New playlist in the heading's right actions; pressing it reveals the
-  ORDER and READS choices under the heading, and pressing it again tucks them away. None of it
-  survives the run, and neither does the settings pane's category, the listing's order or the pane
-  the sidebar was on.
+  sort icon with the icon-only Import and New playlist in the heading's right actions; pressing it
+  reveals the ORDER and READS choices under the heading, and pressing it again tucks them away.
+  None of it survives the run, and neither does the settings pane's category, the listing's order
+  or the pane the sidebar was on.
 - **One `Field` names every playlist.** `RootView::name` is shared by the pane's new-and-rename row
   and the picker's *or a new one*, so only one of the two can be open: `name_a_playlist` closes the
   picker and `hold_for_a_playlist` closes the naming row. The field emits `Submitted` on enter and
@@ -2055,14 +2055,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Field` read at the next start. Its *ListenBrainz* group is the `listenbrainz-token` field, and
   that one is not read at the next start: the binary's submitter follows the settings file, so a
   token given or cleared there is what the next submission, within half a minute, carries.
-- **Play next and Add to queue sit beside every play gesture, and a + wherever rows reach a
-  playlist.** The tracks heading and each track row, the playlists pane's index row, an opened
-  playlist's heading and each of its rows all carry the pair, and on a playlist row they take the
-  whole reach the row is in. The + sits on a track row, a queue row, an opened playlist's row and
-  the index row that stands for a whole playlist, and every one of them opens the one picker. The
-  albums and artists panes carry neither, because a row there scopes the tracks pane rather than
-  playing, and the queue pane carries neither because its rows are already in it. The two are
-  the only queueing gestures there are, each named once in `menu::PLAY_NEXT` and
+- **Play next and Add to queue are explicit actions on listings and rows, and a + wherever rows
+  reach a playlist.** The tracks heading and each track row, the playlists pane's index row, and
+  each row of an opened playlist carry the pair, and on a playlist row they take the whole reach
+  the row is in. An opened playlist's heading carries Shuffle beside Play, starting at a
+  time-chosen row and enabling queue shuffle. The + sits on a track row, a queue row, an opened
+  playlist's row and the index row that stands for a whole playlist, and every one of them opens
+  the one picker. The albums and artists panes carry neither, because a row there scopes the
+  tracks pane rather than playing, and the queue pane carries neither because its rows are already
+  in it. The two are the only queueing gestures there are, each named once in `menu::PLAY_NEXT` and
   `menu::ADD_TO_QUEUE`: *Play next* is `Placement::Next`, straight after the track playing, and
   *Add to queue* is `Placement::Queued`, after whatever is already queued and ahead of the rest
   of the album or playlist playing. An album page, an artist page and an opened suggestion do not
