@@ -77,6 +77,8 @@ const UNHELD_HINT: &str = "See what this artist has released that the library do
 
 const RECORD_HINT: &str = "About this record";
 
+const GENRES_HINT: &str = "Genres";
+
 const RECORD_LABEL: f32 = 112.0;
 
 pub(crate) const FAVOUR_HINT: &str = "Keep this among your favourites";
@@ -1474,14 +1476,6 @@ impl RootView {
             .when_some(profile, |column, profile| {
                 column.child(kit::subtitle(profile))
             })
-            .when(!genres.is_empty(), |column| {
-                column.child(
-                    kit::wraps_within(self.hero_width.get())
-                        .gap_1p5()
-                        .pt_1()
-                        .children(genres.into_iter().map(kit::tag)),
-                )
-            })
             .when_some(
                 heard_on("artist-heard-on", services, self.hero_width.get()),
                 Div::child,
@@ -1493,6 +1487,15 @@ impl RootView {
                     shows == ArtistShows::Tracks,
                     cx,
                 )
+                .when(!genres.is_empty(), |row| {
+                    row.child(
+                        kit::icon_button("artist-genres", Icon::Info, GENRES_HINT).on_click(
+                            cx.listener(move |this, event: &ClickEvent, _, cx| {
+                                this.show_the_artist(id, event.position(), cx);
+                            }),
+                        ),
+                    )
+                })
                 .when_some(unheld, |row, unheld| {
                     row.child(
                         kit::button(
@@ -1510,15 +1513,17 @@ impl RootView {
                             this.set_pane(Pane::Missing, cx);
                         })),
                     )
+                })
+                .when(records > 0, |row| {
+                    row.child(div().flex_1())
+                        .child(self.artist_tabs(shows, records, tracks, cx))
                 }),
             );
 
         kit::heading()
+            .pb_0()
             .child(self.way_back(cx))
             .child(kit::hero().child(portrait).child(about))
-            .when(records > 0, |heading| {
-                heading.child(self.artist_tabs(shows, records, tracks, cx))
-            })
     }
 
     fn artist_tabs(
@@ -1536,11 +1541,9 @@ impl RootView {
                     .on_click(cx.listener(move |this, _, _, cx| this.show_of_the_artist(shown, cx)))
             };
 
-        div().flex().pt_1().child(
-            kit::segmented()
-                .child(tab(ArtistShows::Records, "Albums", records, cx))
-                .child(tab(ArtistShows::Tracks, "Tracks", tracks, cx)),
-        )
+        kit::segmented()
+            .child(tab(ArtistShows::Records, "Albums", records, cx))
+            .child(tab(ArtistShows::Tracks, "Tracks", tracks, cx))
     }
 
     fn show_of_the_artist(&mut self, shows: ArtistShows, cx: &mut Context<Self>) {
@@ -1571,6 +1574,7 @@ impl RootView {
     ) -> Div {
         kit::action_row()
             .flex_nowrap()
+            .w_full()
             .pt_2()
             .child(self.play_all(cx))
             .child(self.favour_mark("scope-favourite", what, already, cx))
@@ -1580,100 +1584,91 @@ impl RootView {
     }
 
     fn show_the_record(&mut self, album: AlbumId, at: Point<Pixels>, cx: &mut Context<Self>) {
-        if self
-            .record
-            .as_ref()
-            .is_some_and(|opened| opened.album == album)
+        if matches!(self.record, Some(OpenedRecord::Album { album: open, .. }) if open == album) {
+            self.record = None;
+        } else {
+            self.close_the_menu(cx);
+            self.record = Some(OpenedRecord::Album { album, at });
+        }
+        cx.notify();
+    }
+
+    fn show_the_artist(&mut self, artist: ArtistId, at: Point<Pixels>, cx: &mut Context<Self>) {
+        if matches!(self.record, Some(OpenedRecord::Artist { artist: open, .. }) if open == artist)
         {
             self.record = None;
         } else {
             self.close_the_menu(cx);
-            self.record = Some(OpenedRecord { album, at });
+            self.record = Some(OpenedRecord::Artist { artist, at });
         }
         cx.notify();
     }
 
     pub(crate) fn record_over_the_app(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (at, record) = {
-            let opened = self.record.as_ref()?;
+        let (at, card) = {
+            let opened = *self.record.as_ref()?;
             let library = self.library.read(cx);
-            if library.selection() != Selection::Album(opened.album) {
-                return None;
+            match opened {
+                OpenedRecord::Album { album, at } => {
+                    if library.selection() != Selection::Album(album) {
+                        return None;
+                    }
+                    let record = library.release().and_then(record_of)?;
+                    (at, record_card(&record))
+                }
+                OpenedRecord::Artist { artist, at } => {
+                    if library.selection() != Selection::Artist(artist) {
+                        return None;
+                    }
+                    let genres = library
+                        .artist_detail()
+                        .map(|detail| genre_names(&detail.genres))
+                        .unwrap_or_default();
+                    if genres.is_empty() {
+                        return None;
+                    }
+                    (at, genre_card(&genres))
+                }
             }
-            (opened.at, library.release().and_then(record_of)?)
         };
 
-        let mut card = div()
-            .id("record")
-            .flex()
-            .flex_col()
-            .w(px(theme::record_width()))
-            .p_3()
-            .gap_2()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::outline()))
-            .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.5),
-                offset: point(px(0.0), px(6.0)),
-                blur_radius: px(24.0),
-                spread_radius: px(0.0),
-            }])
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            .child(
-                div()
-                    .text_size(px(theme::text_sm()))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme::text()))
-                    .child("About this record"),
-            );
-        for fact in &record.facts {
-            card = card.child(fact_row(fact));
-        }
-        if let Some(note) = &record.note {
-            card = card.child(
-                div()
-                    .text_size(px(theme::text_sm()))
-                    .text_color(rgb(theme::faint()))
-                    .child(note.clone()),
-            );
-        }
-        if !record.on.is_empty() {
-            card = card.child(record_services(&record.on));
-        }
+        Some(self.detail_over(at, card, cx))
+    }
 
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .occlude()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseDownEvent, _, cx| {
-                        this.record = None;
-                        cx.notify();
-                    }),
+    fn detail_over(
+        &self,
+        at: Point<Pixels>,
+        card: Stateful<Div>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .absolute()
+            .inset_0()
+            .occlude()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                    this.record = None;
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                    this.record = None;
+                    cx.notify();
+                }),
+            )
+            .child(
+                deferred(
+                    anchored()
+                        .position(at)
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(card),
                 )
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(|this, _: &MouseDownEvent, _, cx| {
-                        this.record = None;
-                        cx.notify();
-                    }),
-                )
-                .child(
-                    deferred(
-                        anchored()
-                            .position(at)
-                            .snap_to_window_with_margin(px(8.0))
-                            .child(card),
-                    )
-                    .with_priority(1),
-                )
-                .into_any_element(),
-        )
+                .with_priority(1),
+            )
+            .into_any_element()
     }
 
     fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1880,12 +1875,8 @@ impl RootView {
         named: &'static str,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        kit::button(named, Some(Icon::Sort), "Sort", ORDER_HINT, Tone::Ghost)
-            .when(self.ordering, |button| {
-                button
-                    .bg(rgb(theme::hover()))
-                    .text_color(rgb(theme::text()))
-            })
+        kit::icon_button(named, Icon::Sort, ORDER_HINT)
+            .when(self.ordering, |button| button.bg(rgb(theme::hover())))
             .on_click(cx.listener(|this, _, _, cx| this.order_a_listing(cx)))
     }
 
@@ -2362,9 +2353,66 @@ impl Record {
     }
 }
 
-pub(crate) struct OpenedRecord {
-    pub(crate) album: AlbumId,
-    pub(crate) at: Point<Pixels>,
+#[derive(Clone, Copy)]
+pub(crate) enum OpenedRecord {
+    Album { album: AlbumId, at: Point<Pixels> },
+    Artist { artist: ArtistId, at: Point<Pixels> },
+}
+
+fn detail_card(title: &'static str) -> Stateful<Div> {
+    div()
+        .id("record")
+        .flex()
+        .flex_col()
+        .w(px(theme::record_width()))
+        .p_3()
+        .gap_2()
+        .rounded_lg()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::outline()))
+        .shadow(vec![BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.5),
+            offset: point(px(0.0), px(6.0)),
+            blur_radius: px(24.0),
+            spread_radius: px(0.0),
+        }])
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+        .child(
+            div()
+                .text_size(px(theme::text_sm()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text()))
+                .child(title),
+        )
+}
+
+fn record_card(record: &Record) -> Stateful<Div> {
+    let mut card = detail_card("About this record");
+    for fact in &record.facts {
+        card = card.child(fact_row(fact));
+    }
+    if let Some(note) = &record.note {
+        card = card.child(
+            div()
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::faint()))
+                .child(note.clone()),
+        );
+    }
+    if !record.on.is_empty() {
+        card = card.child(record_services(&record.on));
+    }
+    card
+}
+
+fn genre_card(genres: &[String]) -> Stateful<Div> {
+    let mut tags = div().flex().flex_wrap().gap_1p5();
+    for genre in genres {
+        tags = tags.child(kit::tag(genre.clone()));
+    }
+    detail_card("Genres").child(tags)
 }
 
 fn service_names(links: &[Link]) -> Vec<HeardOn> {
@@ -2383,8 +2431,6 @@ fn service_names(links: &[Link]) -> Vec<HeardOn> {
     }
     named
 }
-
-const GENRES_SHOWN: usize = 3;
 
 const SERVICES_SHOWN: usize = 4;
 
@@ -2502,7 +2548,6 @@ fn genre_names(genres: &[Genre]) -> Vec<String> {
     weighed.sort_by_key(|genre| Reverse(genre.weight));
     weighed
         .into_iter()
-        .take(GENRES_SHOWN)
         .map(|genre| genre.name.clone())
         .collect()
 }

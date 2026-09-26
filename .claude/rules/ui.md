@@ -405,16 +405,18 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it,
   aligned to the bottom of the cover.
   The action row is the last child of that column, so it sits under the text and clear of the
-  cover: Play, the favourite and Sort where the listing can be sorted. An album adds the info
-  mark and an artist adds the releases it does not hold. Play next, Add to queue and Add to
-  playlist are not on the page. The row does not wrap. A wrapping row measured to the column laid
-  each button on a line of its own, because taffy sizes a wrapping flex item at the column's
-  min-content width. The title has the whole column and wraps rather than clipping. **The hero's
-  column is measured, because what wraps in it has to be told its width.** `kit::measures_its_width`
-  is a canvas writing `RootView::hero_width` a frame behind — the shape the album grid's
-  `grid_width` takes, and that grid now uses the same builder — and the title and the genre tags
-  take it through `kit::hero_title` and `kit::wraps_within`. Until the first frame has measured,
-  the title is one line ending in an ellipsis. The opened playlist's heading carries
+  cover: Play, the favourite and a sort icon where the listing can be sorted. An album adds the
+  info mark. An artist adds one where it has genres, and where it holds albums the Albums and
+  Tracks choice sits at the right of that same row, so the listing follows the title with no band
+  between them. The releases it does not hold stay on the row too. Play next, Add to queue and
+  Add to playlist are not on the page. The row does not wrap. A wrapping row measured to the
+  column laid each button on a line of its own, because taffy sizes a wrapping flex item at the
+  column's min-content width. The title has the whole column and wraps rather than clipping.
+  **The hero's column is measured, because what wraps in it has to be told its width.**
+  `kit::measures_its_width` is a canvas writing `RootView::hero_width` a frame behind — the shape
+  the album grid's `grid_width` takes, and that grid now uses the same builder — and the title
+  and the services line take it through `kit::hero_title` and `kit::wraps_within`. Until the first
+  frame has measured, the title is one line ending in an ellipsis. The opened playlist's heading carries
   the same `kit::way_back`, reading *Playlists*, above an eyebrow of *PLAYLIST* or *SAVED SEARCH*.
   **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics,
   inspector, visualiser and analysis headings name the playing track through `opens`, and under
@@ -1397,7 +1399,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   it, a number of none sorting last — so the tracks pane's `uniform_list` counts `rows` inside an
   album and `tracks` everywhere else. That seat order is drawn while the pane's sort is the
   album's own, `Relevance` or `AlbumThenTrack`, turned round where it reads backwards; any other
-  sort the heading's *Sort* picks draws the held rows in that sort and what the album lacks after
+  sort the heading's sort icon picks draws the held rows in that sort and what the album lacks after
   them, and `arranged` is that choice. **What plays is what is drawn**: a row's click and Enter go
   through `LibraryModel::played_from`, which queues the `Held` rows in the order `rows` holds
   them, and *Play*, *Play next*, *Add to queue* and *Add to playlist* put the whole listing they
@@ -1417,14 +1419,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Label, Catalogue number, Barcode, Country and Kind, then the disambiguation, then every service
   link. Escape closes it after a magnified cover and before a toast, a second press on the mark
   closes it, and leaving the album — `set_pane` — closes it too. The scrim occludes, the way a
-  menu's does. An artist hero still draws `profile_line`, up to `GENRES_SHOWN` genres as
-  `kit::tag` pills and `heard_on`, and at the end of its actions, where
-  `ArtistDetail::releases_unheld` is above nothing, a `Tone::Ghost` button reading *N releases not
-  held* under `UNHELD_HINT` that opens `Pane::Missing`. **The services on an artist are capped at
-  `SERVICES_SHOWN`, because an artist has a directory of them.** A release's own card is not: the
-  cap was for a line in the heading, and the card has the room. An artist named nineteen — every
-  streaming service, both encyclopaedias and four social networks. Four is what the heading
-  draws, the way three genres are, and as one line of words rather than a cloud of mono figures.
+  menu's does. An artist hero draws `profile_line` and `heard_on`, and its genres open from the
+  info mark — every one, as `kit::tag` pills, and the mark is drawn only where there is one.
+  At the end of its actions, where `ArtistDetail::releases_unheld` is above nothing, a
+  `Tone::Ghost` button reading *N releases not held* under `UNHELD_HINT` opens `Pane::Missing`.
+  **The services on an artist are capped at `SERVICES_SHOWN`, because an artist has a directory
+  of them.** A release's own card is not, and neither is the genre card: the cap was for a line
+  in the heading, and a card has the room. An artist named nineteen — every streaming service,
+  both encyclopaedias and four social networks. Four is what the heading draws, as one line of
+  words rather than a cloud of mono figures.
   **Each service on the line is the link it was named from.** `service_names` keeps the first URL
   a service is linked by beside its `Service::title` — *Apple Music*, *SoundCloud*, not the
   lowercase key the catalog stores — and leaves `Service::Other` out. `heard_on` and the record
@@ -1437,22 +1440,24 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   reads `grid_columns` and lays out rows of `artist_cell`s at `theme::grid_cover()`, each a round
   `portrait_frame` read at `Portrayed::InAGrid` — or `kit::avatar_at` the same size, the initial
   scaled with it, where no portrait is held — over the name and its counts, favoured, pressed and
-  menued as a row is. The choice is a `kit::segmented` of *List* and *Grid* beside *Sort* and
+  menued as a row is. The choice is a `kit::segmented` of *List* and *Grid* beside the sort icon and
   lives for the run like the other listings' orders. The reach keys serve both: in the grid a
   page is whole rows of cells, `show_row` scrolls the grid row holding the artist and a reached
   cell wears the same `reached_ring` a reached album does.
 - **An artist's page is its albums or its tracks, one at a time, chosen from two tabs.** It used
   to stack a horizontally scrolling strip of small covers over the whole track listing, so a
   page was three scrolling regions, an album was a thumbnail and every row repeated the artist's
-  name. `artist_tabs` is a `kit::segmented` of *Albums* and *Tracks*, each with its count, and
-  `RootView::artist_shows` is the `ArtistShows` it chose — kept for the run and put back to
-  `Records` whenever `RootView::opened` opens an artist. *Albums* is `artist_records`: every album
+  name. `artist_tabs` is a `kit::segmented` of *Albums* and *Tracks*, each with its count, at the
+  right of the action row rather than in a band under the hero — that band was the gap between
+  the title and the listing — and `RootView::artist_shows` is the `ArtistShows` it chose, kept
+  for the run and put back to `Records` whenever `RootView::opened` opens an artist. The heading
+  itself keeps no bottom padding, so the listing follows the portrait. *Albums* is `artist_records`: every album
   the artist owns or plays on as a wrapping grid of `album_cell_captioned` cells at the grid's
   own `theme::grid_cover()`, scrolling under an id keyed by the artist so the next artist opens
   at its top. `Caption::Beside` is what the cells are captioned with — the year and the track
   count, and the owner only where it is somebody else, which is what an album the artist merely
   plays on needs to say. *Tracks* is the ordinary listing under the ordinary header, and it is
-  the only tab that offers *Sort*, a sort having nothing to put in order under the other.
+  the only tab that offers the sort icon, a sort having nothing to put in order under the other.
   `ArtistShows::within` answers *Tracks* for an artist who holds no album at all, and then no
   tabs are drawn. *Play*, *Add to queue*, *Play next* and *Add to playlist* read the whole
   listing either way, because they act on the artist rather than on the tab.
@@ -2070,7 +2075,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   row dragged across a heading is sorted by the engine as any drop is, by the row it lands after.
 - **Every major listing is put in order, from a chip row and from its header.** The tracks, albums
   and artists panes each hold an order and a reading on `LibraryModel::sorting`, kept for the run
-  like the settings category and the playlists order. Two controls write it: a *Sort* action
+  like the settings category and the playlists order. Two controls write it: a sort icon
   opening the ORDER and READS chips, and the column header, which is pressable — a press names the
   order, a second press on the one in force turns it round, and the column in force wears the
   accent and a chevron. `views/sorting.rs` is where both live: `Ordering` is the trait the five
@@ -2080,7 +2085,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the press — so the tracks pane, the queue and an opened playlist still draw one header and
   cannot disagree about a width, while offering different vocabularies. A right press on a header
   offers every order it has.
-- **The queue is put in order as a gesture, not as a standing order.** Its heading's *Sort* sends
+- **The queue is put in order as a gesture, not as a standing order.** Its heading's sort icon sends
   one `Command::Order`: the window builds a permutation over the rows it draws — scanned or read
   through `Player::media` — and the engine rewrites the play order in one pass with the cursor
   re-seated onto wherever the playing row went, so a sort mid-track reopens no stream. A queue row
