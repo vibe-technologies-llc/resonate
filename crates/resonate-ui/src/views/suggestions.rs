@@ -159,9 +159,11 @@ impl RootView {
                     .id(("suggestion-open", index))
                     .flex()
                     .flex_col()
+                    .flex_grow()
                     .cursor_pointer()
                     .names(OPEN_HINT)
                     .child(art)
+                    .child(div().flex_1())
                     .child(
                         div()
                             .flex()

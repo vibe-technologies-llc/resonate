@@ -400,9 +400,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   which is what keeps a long playlist name from being ground down to a letter by thirteen
   controls. **An album or an artist is not a pane heading with a picture bolted on**: it is
   `album_page_heading` and `artist_page_heading`, a `kit::way_back` at the top left and a
-  `kit::hero` under it — the cover or the portrait at `theme::scope_cover()`, 240 and decoded at
+  `kit::hero` under it — the cover or the portrait at `theme::scope_cover()`, 224 and decoded at
   `Drawn::OnThePage` so a page hero is larger than a grid cell and still sharp at a scale factor
-  of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it.
+  of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it,
+  aligned to the bottom of the cover.
   The action row is `kit::action_row` under the whole hero, full width and left aligned, Play
   first, then Play next, Add to queue, Add to playlist, the favourite and Sort where the listing
   can be sorted. A narrow window wraps the later buttons and leaves Play on the first line. It
@@ -1211,12 +1212,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   art or its name is `LibraryModel::open_suggestion`, which keeps the `SavedQuery` it opened in a
   `Previewed` and reads the first `PREVIEWED_AT_MOST` rows on the background executor; while the
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
-  a way back, the art at `scope_cover` through `Drawn::OnThePage`, the kind, the name, the reason,
-  the count and length, the search as *Reads* chips, and under the hero the same action row as an
+  a way back, the art at `scope_cover` through `Drawn::OnThePage`, and beside it, on the bottom of
+  the art, the kind, the name, the reason, the count and length and the search as *Reads* chips,
+  and under the hero the same action row as an
   album: Play, Shuffle, Play next, Add to queue, Save and Search for these, over an ordinary
   unsorted track listing, each row playing the list from itself. A card on the shelf is the art
   at the full card width, still the grid's texture, with the name under it and Play, then the
-  queue and save marks, on one row. Play leads; a labeled Add to queue used to wrap it onto the
+  queue and save marks, on one row at the bottom of the card, so a wrapped title does not leave
+  the row beside it short. Play leads; a labeled Add to queue used to wrap it onto the
   bottom of a card stretched to the tallest in the shelf. A suggestion the catalog stops offering
   takes the pane back to the shelves on its own. *Search
   for these* is `search_instead` and `choose_pane(Pane::Tracks)`, so the list can be narrowed

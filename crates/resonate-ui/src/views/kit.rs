@@ -733,7 +733,7 @@ pub(crate) fn way_back(
 }
 
 pub(crate) fn hero() -> Div {
-    div().flex().items_start().gap_6()
+    div().flex().items_end().gap_6()
 }
 
 pub(crate) fn hero_title(text: impl IntoElement, room: Pixels) -> Div {
