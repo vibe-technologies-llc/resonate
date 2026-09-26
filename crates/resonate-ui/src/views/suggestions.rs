@@ -15,7 +15,7 @@ use crate::{
     icons::{self, Icon},
     theme,
     views::{
-        browser::Plays,
+        browser::{Plays, TRACK_CONTROLS},
         hint::Names,
         kit::{self, EndsInAnEllipsis, Press, Tone},
         listing,
@@ -267,7 +267,13 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(heading)
-            .child(listing::columns("#", true, sorting::unsorted(), cx))
+            .child(listing::columns(
+                "#",
+                true,
+                TRACK_CONTROLS,
+                sorting::unsorted(),
+                cx,
+            ))
             .child(
                 Scrollbars::of(cx).around(
                     "suggestion-tracks-scrollbar",

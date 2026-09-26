@@ -240,6 +240,14 @@ impl Rows {
     pub(crate) const fn are_edited(self) -> bool {
         !matches!(self, Self::Matched)
     }
+
+    pub(crate) const fn control_count(self) -> usize {
+        match self {
+            Self::InHand => 6,
+            Self::Kept | Self::Narrowed => 4,
+            Self::Matched => 3,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -616,6 +624,7 @@ impl RootView {
                 pane.child(listing::columns(
                     "#",
                     true,
+                    rows.control_count(),
                     sorting::playlist_sorted(self),
                     cx,
                 ))

@@ -83,12 +83,16 @@ pub(crate) const FAVOUR_HINT: &str = "Keep this among your favourites";
 
 pub(crate) const UNFAVOUR_HINT: &str = "Take this out of your favourites";
 
-const CONTROLS: f32 = 4.0;
+pub(crate) const ROW_CONTROLS: usize = 4;
+
+pub(crate) const TRACK_CONTROLS: usize = 3;
+
+pub(crate) const TRACK_ADD_CONTROLS: usize = 2;
 
 const CONTROL_GAP: f32 = 2.0;
 
-pub(crate) fn controls_width() -> f32 {
-    theme::row_control() * CONTROLS + CONTROL_GAP * (CONTROLS - 1.0)
+pub(crate) fn controls_width(controls: usize) -> f32 {
+    theme::row_control() * controls as f32 + CONTROL_GAP * controls.saturating_sub(1) as f32
 }
 
 const CELL_GROUP: &str = "album-cell";
@@ -676,6 +680,11 @@ impl RootView {
                 pane.child(listing::columns(
                     "#",
                     !in_an_album,
+                    if self.adding_songs_to.is_some() {
+                        TRACK_ADD_CONTROLS
+                    } else {
+                        TRACK_CONTROLS
+                    },
                     sorting::tracks_sorted(self, cx),
                     cx,
                 ))
@@ -2236,7 +2245,7 @@ pub(crate) fn controls_place() -> Div {
         .flex_none()
         .items_center()
         .justify_end()
-        .w(px(controls_width()))
+        .w(px(controls_width(ROW_CONTROLS)))
 }
 
 pub(crate) fn portrait_frame(art: Arc<Image>, side: f32) -> Div {

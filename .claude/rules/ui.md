@@ -440,6 +440,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `number_cell`, `title_cell`, `artist_cell`, `format_cell`, `heard` and `length_cell` are the cells
   under it, so no two of them can disagree about a width. The header fills the same available width
   as a row, so its growing title cell leaves the artist and later columns where the row puts them.
+  Its trailing space matches the controls its rows draw, since an oversized blank cell squeezes the
+  title and shifts every later column left.
   The title and artist give way together: `title_room` and `artist_room` both start from
   `theme::row_artist()` and both shrink, and only the title grows. A title that was `flex_1` from
   nothing beside an artist of fixed width was the first thing a narrow window took, to the last

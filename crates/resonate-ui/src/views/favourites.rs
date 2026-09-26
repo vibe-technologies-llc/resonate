@@ -8,7 +8,7 @@ use crate::{
     Favourited, format,
     icons::Icon,
     views::{
-        browser::Plays,
+        browser::{Plays, TRACK_CONTROLS},
         kit, listing,
         root::{RootView, empty},
         scrollbar::Scrollbars,
@@ -97,7 +97,13 @@ impl RootView {
             .flex_col()
             .flex_1()
             .min_h(px(0.0))
-            .child(listing::columns("#", true, sorting::unsorted(), cx))
+            .child(listing::columns(
+                "#",
+                true,
+                TRACK_CONTROLS,
+                sorting::unsorted(),
+                cx,
+            ))
             .child(
                 Scrollbars::of(cx).around(
                     "favourites-scrollbar",

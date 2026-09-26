@@ -326,6 +326,7 @@ fn row_mark(icon: Icon) -> Div {
 pub(crate) fn columns(
     numbered: &'static str,
     with_cover: bool,
+    trailing_controls: usize,
     sorted: Sorted,
     cx: &mut Context<RootView>,
 ) -> Div {
@@ -363,7 +364,11 @@ pub(crate) fn columns(
         .child(div().w(px(theme::row_format())).flex_none().child("FORMAT"))
         .child(heard)
         .child(length)
-        .child(div().w(px(browser::controls_width())).flex_none())
+        .child(
+            div()
+                .w(px(browser::controls_width(trailing_controls)))
+                .flex_none(),
+        )
 }
 
 fn heads(

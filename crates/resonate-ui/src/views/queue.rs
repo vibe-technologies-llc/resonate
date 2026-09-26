@@ -14,7 +14,7 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::{OPEN_ARTIST_HINT, row_controls},
+        browser::{OPEN_ARTIST_HINT, ROW_CONTROLS, row_controls},
         hint,
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
@@ -404,7 +404,13 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .child(heading)
-            .child(listing::columns("", true, sorting::queue_sorted(self), cx))
+            .child(listing::columns(
+                "",
+                true,
+                ROW_CONTROLS,
+                sorting::queue_sorted(self),
+                cx,
+            ))
             .child(
                 reorder::follows_a_drag(
                     div()
