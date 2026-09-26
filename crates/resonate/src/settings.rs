@@ -49,6 +49,13 @@ impl File {
     fn bound_by_the_rest(&self, binding: Option<&Binding>) -> crate::Result<()> {
         self.written(ConfigKey::EqualiserProfile, binding.map(config::written))
     }
+
+    fn forget_key(&self, setting: SettingKey, key: ConfigKey) -> resonate_ui::Result<()> {
+        config::clear(&self.path, key).map_err(|error| {
+            tracing::error!(%error, key = %key, "the setting could not be taken out of the file");
+            resonate_ui::Error::SettingNotStored { key: setting }
+        })
+    }
 }
 
 impl Settings for File {
@@ -180,6 +187,23 @@ impl Settings for File {
             Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
             Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
             Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
+            Setting::RememberTab(remember) => (ConfigKey::RememberTab, Some((*remember).into())),
+            Setting::LastTab(tab) => (ConfigKey::LastTab, Some(tab.as_str().into())),
+            Setting::RememberWindowSize(remember) => {
+                (ConfigKey::RememberWindowSize, Some((*remember).into()))
+            }
+            Setting::WindowSize(size) => (
+                ConfigKey::WindowSize,
+                Some(format!("{}x{}", size.width(), size.height()).into()),
+            ),
+            Setting::RememberSettingsCategory(remember) => (
+                ConfigKey::RememberSettingsCategory,
+                Some((*remember).into()),
+            ),
+            Setting::LastSettingsCategory(category) => (
+                ConfigKey::LastSettingsCategory,
+                Some(category.as_str().into()),
+            ),
             Setting::OrganiseAs(template) => {
                 (ConfigKey::OrganiseAs, Some(template.as_str().into()))
             }
@@ -202,12 +226,21 @@ impl Settings for File {
     }
 
     fn forget(&self, key: SettingKey) -> resonate_ui::Result<()> {
-        let named = named(key);
-
-        config::clear(&self.path, named).map_err(|error| {
-            tracing::error!(%error, key = %named, "the setting could not be taken out of the file");
-            resonate_ui::Error::SettingNotStored { key }
-        })?;
+        match key {
+            SettingKey::RememberTab => {
+                self.forget_key(key, ConfigKey::RememberTab)?;
+                self.forget_key(key, ConfigKey::LastTab)?;
+            }
+            SettingKey::RememberWindowSize => {
+                self.forget_key(key, ConfigKey::RememberWindowSize)?;
+                self.forget_key(key, ConfigKey::WindowSize)?;
+            }
+            SettingKey::RememberSettingsCategory => {
+                self.forget_key(key, ConfigKey::RememberSettingsCategory)?;
+                self.forget_key(key, ConfigKey::LastSettingsCategory)?;
+            }
+            _ => self.forget_key(key, named(key))?,
+        }
         if key == SettingKey::Contact {
             online::introduce(None);
         }
@@ -269,6 +302,12 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::SuggestionsTab => ConfigKey::SuggestionsTab,
         SettingKey::MissingTab => ConfigKey::MissingTab,
         SettingKey::TabCounts => ConfigKey::TabCounts,
+        SettingKey::RememberTab => ConfigKey::RememberTab,
+        SettingKey::LastTab => ConfigKey::LastTab,
+        SettingKey::RememberWindowSize => ConfigKey::RememberWindowSize,
+        SettingKey::WindowSize => ConfigKey::WindowSize,
+        SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
+        SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,

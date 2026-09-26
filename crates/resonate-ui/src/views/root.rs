@@ -23,7 +23,7 @@ use resonate_library::{
 
 use crate::{
     Consulted, Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp,
-    Selection, Setting, Settings, Tabs,
+    Selection, Setting, Settings, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
@@ -61,6 +61,8 @@ use crate::{
 };
 
 const VOLUME_SETTLE: Duration = Duration::from_millis(400);
+
+const WINDOW_SIZE_SETTLE: Duration = Duration::from_millis(400);
 
 pub(crate) fn somewhere_in(rows: usize) -> usize {
     let now = SystemTime::now()
@@ -262,6 +264,45 @@ impl Pane {
         }
     }
 
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Albums => "albums",
+            Self::Artists => "artists",
+            Self::Tracks => "tracks",
+            Self::Statistics => "statistics",
+            Self::Queue => "queue",
+            Self::Playlists => "playlists",
+            Self::Favourites => "favourites",
+            Self::Suggestions => "suggestions",
+            Self::Missing => "missing",
+            Self::Lyrics => "lyrics",
+            Self::Inspector => "inspector",
+            Self::Visualiser => "visualiser",
+            Self::Analysis => "analysis",
+            Self::Settings => "settings",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "albums" => Some(Self::Albums),
+            "artists" => Some(Self::Artists),
+            "tracks" => Some(Self::Tracks),
+            "statistics" => Some(Self::Statistics),
+            "queue" => Some(Self::Queue),
+            "playlists" => Some(Self::Playlists),
+            "favourites" => Some(Self::Favourites),
+            "suggestions" => Some(Self::Suggestions),
+            "missing" => Some(Self::Missing),
+            "lyrics" => Some(Self::Lyrics),
+            "inspector" => Some(Self::Inspector),
+            "visualiser" => Some(Self::Visualiser),
+            "analysis" => Some(Self::Analysis),
+            "settings" => Some(Self::Settings),
+            _ => None,
+        }
+    }
+
     pub(crate) const fn about(self) -> &'static str {
         match self {
             Self::Albums => "Every album the library has scanned",
@@ -425,11 +466,30 @@ pub struct RootView {
     pub(crate) resolved: RefCell<Option<Resolved>>,
     pub(crate) focus: FocusHandle,
     search: Entity<Field>,
+    pub(crate) remember_tab: bool,
+    pub(crate) remember_window_size: bool,
+    pub(crate) remember_settings_category: bool,
+    pub(crate) last_window_size: Option<WindowSize>,
+    window_size_settled: Task<()>,
 }
 
 impl RootView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let global = cx.global::<ResonateApp>();
+        let tabs = global.tabs;
+        let remember_tab = global.remember_tab;
+        let pane = global
+            .last_tab
+            .filter(|pane| remember_tab && pane.is_shown(tabs))
+            .unwrap_or_default();
+        let remember_window_size = global.remember_window_size;
+        let remember_settings_category = global.remember_settings_category;
+        let settings_category = if remember_settings_category {
+            global.last_settings_category
+        } else {
+            Category::default()
+        };
+        let last_window_size = WindowSize::from_pixels(window.window_bounds().get_bounds().size);
         let player = Arc::clone(&global.player);
         let library = Arc::clone(&global.library);
         let settings = Arc::clone(&global.settings);
@@ -640,7 +700,7 @@ impl RootView {
         })
         .detach();
 
-        Self {
+        let view = Self {
             player,
             library,
             lyrics,
@@ -649,8 +709,8 @@ impl RootView {
             listen,
             listening_open: false,
             settings,
-            pane: Pane::default(),
-            settings_category: Category::default(),
+            pane,
+            settings_category,
             settings_scroll: ScrollHandle::new(),
             settings_rail_scroll: ScrollHandle::new(),
             inspector_scroll: ScrollHandle::new(),
@@ -743,11 +803,45 @@ impl RootView {
             resolved: RefCell::new(None),
             focus,
             search,
-        }
+            remember_tab,
+            remember_window_size,
+            remember_settings_category,
+            last_window_size,
+            window_size_settled: Task::ready(()),
+        };
+        cx.observe_window_bounds(window, |this, window, cx| {
+            this.window_bounds_changed(window, cx);
+        })
+        .detach();
+        view
     }
 
     pub(crate) const fn drawn_at(&self) -> SystemTime {
         self.drawn_at
+    }
+
+    fn window_bounds_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(size) = WindowSize::from_pixels(window.window_bounds().get_bounds().size) else {
+            return;
+        };
+        if self.last_window_size == Some(size) {
+            return;
+        }
+        self.last_window_size = Some(size);
+        if !self.remember_window_size {
+            return;
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| global.window_size = Some(size));
+
+        self.window_size_settled = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(WINDOW_SIZE_SETTLE).await;
+            let stored = this.update(cx, |this, cx| {
+                if this.remember_window_size && this.last_window_size == Some(size) {
+                    this.store(&Setting::WindowSize(size), cx);
+                }
+            });
+            let _ = stored;
+        });
     }
 
     fn count_a_play(&mut self, player: &Entity<PlayerModel>, cx: &mut Context<Self>) {
@@ -993,7 +1087,7 @@ impl RootView {
         self.show_everything(cx);
         self.search
             .update(cx, |search, cx| search.set_text(text, cx));
-        self.pane = Pane::Tracks;
+        self.set_pane(Pane::Tracks, cx);
         self.name_a_playlist(Naming::Query(Some(playlist)), window, cx);
     }
 
@@ -1117,7 +1211,7 @@ impl RootView {
                     None => library.save_query(given, query, cx),
                 });
                 if saved.is_some() {
-                    self.pane = Pane::Playlists;
+                    self.set_pane(Pane::Playlists, cx);
                 }
             }
             (Some(Naming::Rename(playlist)), None) => self.library.update(cx, |library, cx| {
@@ -1265,7 +1359,7 @@ impl RootView {
     }
 
     pub(crate) fn focus_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pane = Pane::Settings;
+        self.set_pane(Pane::Settings, cx);
         self.finding
             .update(cx, |finding, cx| finding.take_focus_and_select(window, cx));
         cx.notify();
@@ -1323,6 +1417,7 @@ impl RootView {
         }
         self.pane = pane;
         self.landing_on = None;
+        self.remember_current_tab(cx);
         cx.notify();
     }
 
@@ -1804,6 +1899,7 @@ impl RootView {
         if self.settings_category != category {
             self.settings_category = category;
             self.settings_scroll.set_offset(Point::default());
+            self.remember_current_settings_category(cx);
         }
         self.disarm();
         cx.notify();
@@ -2757,7 +2853,7 @@ impl RootView {
             .hover(|row| row.bg(rgb(theme::hover())))
             .names(ENRICHING_HINT)
             .on_click(cx.listener(|this, _, _, cx| {
-                this.pane = Pane::Settings;
+                this.set_pane(Pane::Settings, cx);
                 this.show_settings(Category::Online, cx);
             }))
             .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))

@@ -18,6 +18,9 @@ pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::Shown;
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
+pub(crate) const REMEMBER_TAB: bool = true;
+pub(crate) const REMEMBER_WINDOW_SIZE: bool = true;
+pub(crate) const REMEMBER_SETTINGS_CATEGORY: bool = true;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {
@@ -40,6 +43,9 @@ pub(crate) struct Standing {
     pub(crate) scroll_volume: bool,
     pub(crate) scrollbars: ScrollbarMode,
     pub(crate) tabs: Tabs,
+    pub(crate) remember_tab: bool,
+    pub(crate) remember_window_size: bool,
+    pub(crate) remember_settings_category: bool,
     pub(crate) presence: Presence,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
@@ -67,6 +73,9 @@ impl Standing {
             scroll_volume: SCROLL_VOLUME,
             scrollbars: SCROLLBARS,
             tabs: TABS,
+            remember_tab: REMEMBER_TAB,
+            remember_window_size: REMEMBER_WINDOW_SIZE,
+            remember_settings_category: REMEMBER_SETTINGS_CATEGORY,
             presence: Presence::OFF,
             template_given: false,
             inbox_given: false,
@@ -135,6 +144,11 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
         Group::Tabs => standing.tabs != TABS,
+        Group::WindowState => {
+            standing.remember_tab != REMEMBER_TAB
+                || standing.remember_window_size != REMEMBER_WINDOW_SIZE
+                || standing.remember_settings_category != REMEMBER_SETTINGS_CATEGORY
+        }
         Group::Bands
         | Group::Measured
         | Group::Folders
@@ -193,6 +207,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::VolumeWheel
         | Group::Scrollbars
         | Group::Tabs
+        | Group::WindowState
         | Group::Folders
         | Group::Scanning
         | Group::Refreshing

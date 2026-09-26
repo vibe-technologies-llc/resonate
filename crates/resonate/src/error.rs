@@ -52,6 +52,12 @@ pub enum ConfigKey {
     SuggestionsTab,
     MissingTab,
     TabCounts,
+    RememberTab,
+    LastTab,
+    RememberWindowSize,
+    WindowSize,
+    RememberSettingsCategory,
+    LastSettingsCategory,
     Inbox,
     AcoustidKey,
     AuddToken,
@@ -68,7 +74,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 55] = [
+    pub const ALL: [Self; 61] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -111,6 +117,12 @@ impl ConfigKey {
         Self::SuggestionsTab,
         Self::MissingTab,
         Self::TabCounts,
+        Self::RememberTab,
+        Self::LastTab,
+        Self::RememberWindowSize,
+        Self::WindowSize,
+        Self::RememberSettingsCategory,
+        Self::LastSettingsCategory,
         Self::Inbox,
         Self::AcoustidKey,
         Self::AuddToken,
@@ -170,6 +182,12 @@ impl ConfigKey {
             Self::SuggestionsTab => "suggestions-tab",
             Self::MissingTab => "missing-tab",
             Self::TabCounts => "tab-counts",
+            Self::RememberTab => "remember-tab",
+            Self::LastTab => "last-tab",
+            Self::RememberWindowSize => "remember-window-size",
+            Self::WindowSize => "window-size",
+            Self::RememberSettingsCategory => "remember-settings-category",
+            Self::LastSettingsCategory => "last-settings-category",
             Self::Inbox => "inbox",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",

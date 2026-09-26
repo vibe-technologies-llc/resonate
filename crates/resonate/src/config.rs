@@ -132,6 +132,12 @@ pub struct Config {
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
     pub tab_counts: Option<bool>,
+    pub remember_tab: Option<bool>,
+    pub last_tab: Option<String>,
+    pub remember_window_size: Option<bool>,
+    pub window_size: Option<(u32, u32)>,
+    pub remember_settings_category: Option<bool>,
+    pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
@@ -262,6 +268,40 @@ impl Config {
             missing: self.missing_tab.unwrap_or(built.missing),
             counts: self.tab_counts.unwrap_or(built.counts),
         }
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn remembered_tab(&self) -> Option<resonate_ui::Pane> {
+        self.last_tab.as_deref().and_then(resonate_ui::Pane::parse)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn remembers_tab(&self) -> bool {
+        self.remember_tab.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn remembers_window_size(&self) -> bool {
+        self.remember_window_size.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn window_size(&self) -> Option<resonate_ui::WindowSize> {
+        let (width, height) = self.window_size?;
+        resonate_ui::WindowSize::new(width, height)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn remembers_settings_category(&self) -> bool {
+        self.remember_settings_category.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn remembered_settings_category(&self) -> resonate_ui::SettingsCategory {
+        self.last_settings_category
+            .as_deref()
+            .and_then(resonate_ui::SettingsCategory::parse)
+            .unwrap_or_default()
     }
 
     pub fn presence(&self) -> Presence {
@@ -441,6 +481,19 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
             ConfigKey::MissingTab => config.missing_tab = Some(at.boolean(value)?),
             ConfigKey::TabCounts => config.tab_counts = Some(at.boolean(value)?),
+            ConfigKey::RememberTab => config.remember_tab = Some(at.boolean(value)?),
+            ConfigKey::LastTab => config.last_tab = Some(at.one_of(value, tab)?.to_owned()),
+            ConfigKey::RememberWindowSize => {
+                config.remember_window_size = Some(at.boolean(value)?);
+            }
+            ConfigKey::WindowSize => config.window_size = Some(at.one_of(value, window_size)?),
+            ConfigKey::RememberSettingsCategory => {
+                config.remember_settings_category = Some(at.boolean(value)?);
+            }
+            ConfigKey::LastSettingsCategory => {
+                config.last_settings_category =
+                    Some(at.one_of(value, settings_category)?.to_owned());
+            }
             ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
             ConfigKey::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
@@ -717,6 +770,49 @@ fn given(text: &str) -> Option<String> {
 
 fn layout(text: &str) -> Option<Layout> {
     Layout::read(text).ok()
+}
+
+fn tab(text: &str) -> Option<&'static str> {
+    match text {
+        "albums" => Some("albums"),
+        "artists" => Some("artists"),
+        "tracks" => Some("tracks"),
+        "statistics" => Some("statistics"),
+        "queue" => Some("queue"),
+        "playlists" => Some("playlists"),
+        "favourites" => Some("favourites"),
+        "suggestions" => Some("suggestions"),
+        "missing" => Some("missing"),
+        "lyrics" => Some("lyrics"),
+        "inspector" => Some("inspector"),
+        "visualiser" => Some("visualiser"),
+        "analysis" => Some("analysis"),
+        "settings" => Some("settings"),
+        _ => None,
+    }
+}
+
+fn window_size(text: &str) -> Option<(u32, u32)> {
+    let (width, height) = text.split_once('x')?;
+    if height.contains('x') {
+        return None;
+    }
+    let (width, height) = (width.parse::<u32>().ok()?, height.parse::<u32>().ok()?);
+    (width >= 720 && height >= 520 && width <= 8192 && height <= 8192).then_some((width, height))
+}
+
+fn settings_category(text: &str) -> Option<&'static str> {
+    match text {
+        "output" => Some("output"),
+        "processing" => Some("processing"),
+        "equaliser" => Some("equaliser"),
+        "library" => Some("library"),
+        "online" => Some("online"),
+        "desktop" => Some("desktop"),
+        "appearance" => Some("appearance"),
+        "about" => Some("about"),
+        _ => None,
+    }
 }
 
 fn quality(text: &str) -> Option<Quality> {

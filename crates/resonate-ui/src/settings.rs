@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use gpui::{Pixels, Size, px, size};
 use resonate_core::{
     Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
 };
@@ -16,6 +17,116 @@ use resonate_listen::Listening;
 use resonate_providers::Providers;
 
 use crate::{Launcher, Result, equaliser::Curve};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SettingsCategory {
+    #[default]
+    Output,
+    Processing,
+    Equaliser,
+    Library,
+    Online,
+    Desktop,
+    Appearance,
+    About,
+}
+
+impl SettingsCategory {
+    pub const ALL: [Self; 8] = [
+        Self::Output,
+        Self::Processing,
+        Self::Equaliser,
+        Self::Library,
+        Self::Online,
+        Self::Desktop,
+        Self::Appearance,
+        Self::About,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Output => "output",
+            Self::Processing => "processing",
+            Self::Equaliser => "equaliser",
+            Self::Library => "library",
+            Self::Online => "online",
+            Self::Desktop => "desktop",
+            Self::Appearance => "appearance",
+            Self::About => "about",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|category| category.as_str() == text)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowSize {
+    width: u32,
+    height: u32,
+}
+
+impl WindowSize {
+    pub const MIN_WIDTH: u32 = 720;
+    pub const MIN_HEIGHT: u32 = 520;
+    pub const MAX_DIMENSION: u32 = 8192;
+
+    pub const fn new(width: u32, height: u32) -> Option<Self> {
+        if width < Self::MIN_WIDTH
+            || height < Self::MIN_HEIGHT
+            || width > Self::MAX_DIMENSION
+            || height > Self::MAX_DIMENSION
+        {
+            return None;
+        }
+
+        Some(Self { width, height })
+    }
+
+    pub const fn width(self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(self) -> u32 {
+        self.height
+    }
+
+    pub fn pixels(self) -> Size<Pixels> {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "window dimensions are bounded to values exactly represented by f32"
+        )]
+        let (width, height) = (self.width as f32, self.height as f32);
+
+        size(px(width), px(height))
+    }
+
+    pub fn from_pixels(size: Size<Pixels>) -> Option<Self> {
+        let width = f64::from(f32::from(size.width).round());
+        let height = f64::from(f32::from(size.height).round());
+        if !width.is_finite()
+            || !height.is_finite()
+            || width < f64::from(Self::MIN_WIDTH)
+            || height < f64::from(Self::MIN_HEIGHT)
+            || width > f64::from(Self::MAX_DIMENSION)
+            || height > f64::from(Self::MAX_DIMENSION)
+        {
+            return None;
+        }
+
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "window dimensions are rounded and bounded above zero"
+        )]
+        let (width, height) = (width as u32, height as u32);
+
+        Self::new(width, height)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SettingKey {
@@ -64,6 +175,12 @@ pub enum SettingKey {
     SuggestionsTab,
     MissingTab,
     TabCounts,
+    RememberTab,
+    LastTab,
+    RememberWindowSize,
+    WindowSize,
+    RememberSettingsCategory,
+    LastSettingsCategory,
     Inbox,
     Discord,
     DiscordApp,
@@ -75,7 +192,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 53] = [
+    pub const ALL: [Self; 59] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -121,6 +238,12 @@ impl SettingKey {
         Self::SuggestionsTab,
         Self::MissingTab,
         Self::TabCounts,
+        Self::RememberTab,
+        Self::LastTab,
+        Self::RememberWindowSize,
+        Self::WindowSize,
+        Self::RememberSettingsCategory,
+        Self::LastSettingsCategory,
         Self::Inbox,
         Self::Discord,
         Self::DiscordApp,
@@ -182,6 +305,12 @@ pub enum Setting {
     SuggestionsTab(bool),
     MissingTab(bool),
     TabCounts(bool),
+    RememberTab(bool),
+    LastTab(crate::Pane),
+    RememberWindowSize(bool),
+    WindowSize(WindowSize),
+    RememberSettingsCategory(bool),
+    LastSettingsCategory(SettingsCategory),
     Inbox(PathBuf),
     Discord(bool),
     DiscordApp(Option<AppId>),
@@ -240,6 +369,12 @@ impl Setting {
             Self::SuggestionsTab(_) => SettingKey::SuggestionsTab,
             Self::MissingTab(_) => SettingKey::MissingTab,
             Self::TabCounts(_) => SettingKey::TabCounts,
+            Self::RememberTab(_) => SettingKey::RememberTab,
+            Self::LastTab(_) => SettingKey::LastTab,
+            Self::RememberWindowSize(_) => SettingKey::RememberWindowSize,
+            Self::WindowSize(_) => SettingKey::WindowSize,
+            Self::RememberSettingsCategory(_) => SettingKey::RememberSettingsCategory,
+            Self::LastSettingsCategory(_) => SettingKey::LastSettingsCategory,
             Self::Inbox(_) => SettingKey::Inbox,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
@@ -386,6 +521,12 @@ pub struct Stored {
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
+    pub remember_tab: bool,
+    pub last_tab: Option<crate::Pane>,
+    pub remember_window_size: bool,
+    pub window_size: Option<WindowSize>,
+    pub remember_settings_category: bool,
+    pub last_settings_category: SettingsCategory,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
     pub launcher: Arc<dyn Launcher>,

@@ -227,6 +227,23 @@ impl Sprung {
     }
 }
 
+#[derive(Clone, Copy)]
+struct FadingBreath {
+    line: usize,
+    started: Instant,
+}
+
+impl FadingBreath {
+    fn through(self, now: Instant) -> f32 {
+        1.0 - (now.saturating_duration_since(self.started).as_secs_f32() / TURN.as_secs_f32())
+            .clamp(0.0, 1.0)
+    }
+
+    fn settled(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= TURN
+    }
+}
+
 fn natural_frequency() -> f32 {
     TAU / GLIDE_RESPONSE_SECS
 }
@@ -363,6 +380,8 @@ pub struct LyricsModel {
     spread: Turn<Falloff>,
     glide: Option<Glide>,
     hand_at: Option<Instant>,
+    breathing_for: Option<usize>,
+    fading_breath: Option<FadingBreath>,
     _find: Task<()>,
 }
 
@@ -387,6 +406,8 @@ impl LyricsModel {
             spread: Turn::still(Falloff::Around),
             glide: None,
             hand_at: None,
+            breathing_for: None,
+            fading_breath: None,
             _find: Task::ready(()),
         }
     }
@@ -425,6 +446,21 @@ impl LyricsModel {
 
     pub fn waiting_at(&self, position: Duration) -> Option<Waiting> {
         self.found()?.waiting_at(position)
+    }
+
+    pub fn breath_at(
+        &self,
+        waiting: Option<Waiting>,
+        index: usize,
+        now: Instant,
+    ) -> Option<(f32, f32)> {
+        if let Some(waiting) = waiting.filter(|waiting| waiting.next == index) {
+            return Some((waiting.through, 1.0));
+        }
+
+        self.fading_breath
+            .filter(|breath| breath.line == index && !breath.settled(now))
+            .map(|breath| (1.0, breath.through(now)))
     }
 
     pub fn is_synced(&self) -> bool {
@@ -486,12 +522,31 @@ impl LyricsModel {
             self.light.onto([None; 2], now);
             return;
         };
+        let waiting = lyrics.waiting_at(position);
         let lit = lyrics.voices_in_play(position);
-        let read_at = lyrics
-            .waiting_at(position)
+        let read_at = waiting
             .map(|waiting| waiting.next)
             .or_else(|| lyrics.line_at(position));
-        let reads = if lyrics.timing() == Timing::Unsynced {
+        let timing = lyrics.timing();
+        match waiting {
+            Some(waiting) => {
+                self.breathing_for = Some(waiting.next);
+                self.fading_breath = None;
+            }
+            None => {
+                self.fading_breath = self
+                    .breathing_for
+                    .take()
+                    .filter(|line| lit.contains(&Some(*line)))
+                    .map(|line| FadingBreath { line, started: now })
+                    .or_else(|| {
+                        self.fading_breath.filter(|breath| {
+                            !breath.settled(now) && lit.contains(&Some(breath.line))
+                        })
+                    });
+            }
+        }
+        let reads = if timing == Timing::Unsynced {
             Reads::Evenly
         } else {
             lit.into_iter()
@@ -798,6 +853,8 @@ impl LyricsModel {
         self.light = Turn::still([None; 2]);
         self.glide = None;
         self.hand_at = None;
+        self.breathing_for = None;
+        self.fading_breath = None;
         self.opened_out = false;
         self.spread = Turn::still(self.falloff(Instant::now()));
         self.sheet = Sheet::default();

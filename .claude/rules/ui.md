@@ -1130,7 +1130,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   dots sit in a row of the *fully swollen* height with the padding outside it, so the row holds
   still while they breathe: sized to the dots themselves, the gap grew and shrank and shifted every
   line under it by a pixel or two, which is the one thing left in the column whose height moved
-  while it was drawn. It
+  while it was drawn. When a wait ends on its next line, `FadingBreath` holds the dots at that
+  height and fades them over `TURN` while the line grows; removing them on the cue frame changed
+  the row bounds at the same time as the text size and made the lyric flash for one frame. It
   lives in `resonate-lyrics` beside `LIT_AT_MOST` rather than in the window, so the ten seconds is
   one constant and not two. Nothing draws progress *through* a line: the set has no word timing, so
   a rail under the lit line would be a line's whole span pretending to be a karaoke sweep, and the
@@ -1311,6 +1313,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   what it turns on writes to the catalog and reaches no network. Turning it off is
   `Library::forget_resumption` at once rather than merely ceasing to write, because a queue left
   behind by a setting that is now off would come back the next time it was turned on.
+- **The window's tab, restore size and Settings category each have their own memory switch.**
+  `remember-tab`, `remember-window-size` and `remember-settings-category` default on and ride into
+  `ResonateApp` through `Stored`. The tab is the pane `in_front` names, so a scoped album is
+  remembered as Albums; a tab hidden by `Tabs` is ignored on the next open. The size is the
+  windowed restore size, written after `WINDOW_SIZE_SETTLE` so a drag edits the config once rather
+  than once per compositor resize event, and the window opens centered at that size. The last
+  Settings category is restored independently. Turning a switch off removes its saved value, so
+  turning it on later starts from the current tab, size or category rather than an old one.
 - **The window is handed its lookups and owns none of them.** `Lookups` is what `run` takes
   beside the player, the library and the settings: the `Lyricists`, an `Option<Arc<dyn
   Reference>>` and the `Online` setting — `enabled` and the `contact` as saved — and `ResonateApp`

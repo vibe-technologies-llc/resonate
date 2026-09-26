@@ -32,8 +32,8 @@ pub use crate::{
         Planned, Portrayed, Previewed, Selection, Tone,
     },
     settings::{
-        Bindings, Ephemeral, Online, Places, Present, Setting, SettingKey, Settings, Sourcing,
-        Stored, Tabs, WindowButtons,
+        Bindings, Ephemeral, Online, Places, Present, Setting, SettingKey, Settings,
+        SettingsCategory, Sourcing, Stored, Tabs, WindowButtons, WindowSize,
     },
     views::{Pane, RootView},
 };

@@ -1,30 +1,7 @@
+pub(crate) use crate::SettingsCategory as Category;
 use crate::{SettingKey, icons::Icon};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) enum Category {
-    #[default]
-    Output,
-    Processing,
-    Equaliser,
-    Library,
-    Online,
-    Desktop,
-    Appearance,
-    About,
-}
-
 impl Category {
-    pub(crate) const ALL: [Self; 8] = [
-        Self::Output,
-        Self::Processing,
-        Self::Equaliser,
-        Self::Library,
-        Self::Online,
-        Self::Desktop,
-        Self::Appearance,
-        Self::About,
-    ];
-
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Output => "Output",
@@ -127,13 +104,14 @@ pub(crate) enum Group {
     VolumeWheel,
     Scrollbars,
     Tabs,
+    WindowState,
     Build,
     Places,
     Everything,
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 46] = [
+    pub(crate) const ALL: [Self; 47] = [
         Self::Device,
         Self::SampleRate,
         Self::GraphRate,
@@ -177,6 +155,7 @@ impl Group {
         Self::VolumeWheel,
         Self::Scrollbars,
         Self::Tabs,
+        Self::WindowState,
         Self::Build,
         Self::Places,
         Self::Everything,
@@ -221,7 +200,8 @@ impl Group {
             | Self::WindowButtons
             | Self::VolumeWheel
             | Self::Scrollbars
-            | Self::Tabs => Category::Appearance,
+            | Self::Tabs
+            | Self::WindowState => Category::Appearance,
             Self::Build | Self::Places | Self::Everything => Category::About,
         }
     }
@@ -275,6 +255,7 @@ impl Group {
             Self::VolumeWheel => "The volume wheel",
             Self::Scrollbars => "Scrollbars",
             Self::Tabs => "Sidebar tabs",
+            Self::WindowState => "Window state",
             Self::Build => "This build",
             Self::Places => "Where things are kept",
             Self::Everything => "Start again",
@@ -326,6 +307,7 @@ impl Group {
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
             Self::Scrollbars => SCROLLBARS_HINT,
             Self::Tabs => TABS_HINT,
+            Self::WindowState => WINDOW_STATE_HINT,
             Self::Build => BUILD_HINT,
             Self::Places => PLACES_HINT,
             Self::Everything => EVERYTHING_HINT,
@@ -438,6 +420,7 @@ impl Group {
                 "sidebar panes suggestions missing wanted hide show collection counts numbers \
                  totals badges"
             }
+            Self::WindowState => "remember restore last tab pane window size settings category",
             Self::Build => "version typeface font features sinks",
             Self::Places => "config.toml library database path xdg",
             Self::Everything => "reset defaults factory put back",
@@ -499,6 +482,11 @@ impl Group {
                 SettingKey::SuggestionsTab,
                 SettingKey::MissingTab,
                 SettingKey::TabCounts,
+            ],
+            Self::WindowState => &[
+                SettingKey::RememberTab,
+                SettingKey::RememberWindowSize,
+                SettingKey::RememberSettingsCategory,
             ],
             Self::Bands
             | Self::Measured
@@ -853,6 +841,10 @@ pub(crate) const TABS_HINT: &str = "Which of the collection's panes the sidebar 
      pane that is hidden is left out of the sidebar and of the keys that step through it, and \
      nothing else leads to it. The counts are the figures drawn beside a tab — how many albums, \
      artists, tracks and plays — and off, the tabs carry their names alone.";
+
+pub(crate) const WINDOW_STATE_HINT: &str = "Whether the window comes back to the tab, size and \
+     settings category it last had. Each can be remembered on its own, and turning one off takes \
+     its saved value out of the settings file.";
 
 pub(crate) const BUILD_HINT: &str = "What this copy of Resonate is: its version, the faces it \
                                      settled on out of the families this machine has installed, \

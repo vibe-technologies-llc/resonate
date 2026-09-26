@@ -28,7 +28,10 @@ use crate::{
     listening::Listens,
     models::{Art, Drawn, FirstRead, Forget, Magnifying, held, whole_of},
     recent::Recent,
-    settings::{Online, Places, Present, Sourcing, Stored, Tabs, WindowButtons},
+    settings::{
+        Online, Places, Present, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons,
+        WindowSize,
+    },
     theme, toast,
     views::field,
 };
@@ -129,6 +132,12 @@ pub struct ResonateApp {
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
+    pub remember_tab: bool,
+    pub last_tab: Option<crate::Pane>,
+    pub remember_window_size: bool,
+    pub window_size: Option<WindowSize>,
+    pub remember_settings_category: bool,
+    pub last_settings_category: SettingsCategory,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
     pub launcher: Arc<dyn Launcher>,
@@ -753,6 +762,12 @@ pub fn run(
             scroll_volume: stored.scroll_volume,
             scrollbars: stored.scrollbars,
             tabs: stored.tabs,
+            remember_tab: stored.remember_tab,
+            last_tab: stored.last_tab,
+            remember_window_size: stored.remember_window_size,
+            window_size: stored.window_size,
+            remember_settings_category: stored.remember_settings_category,
+            last_settings_category: stored.last_settings_category,
             presence: stored.presence.clone(),
             present: Arc::clone(&stored.present),
             launcher: Arc::clone(&stored.launcher),
@@ -766,7 +781,12 @@ pub fn run(
         raise_when_asked(bus.raise, cx);
         quit_once_the_last_window_closes(cx);
 
-        let bounds = Bounds::centered(None, size(px(1_280.0), px(820.0)), cx);
+        let opening_size = stored
+            .window_size
+            .filter(|_| stored.remember_window_size)
+            .map(WindowSize::pixels)
+            .unwrap_or_else(|| size(px(1_280.0), px(820.0)));
+        let bounds = Bounds::centered(None, opening_size, cx);
         let options = WindowOptions {
             app_id: Some(APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(bounds)),

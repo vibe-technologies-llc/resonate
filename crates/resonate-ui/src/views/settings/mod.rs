@@ -404,6 +404,7 @@ impl RootView {
             Group::VolumeWheel => self.volume_wheel_group(cx),
             Group::Scrollbars => self.scrollbars_group(cx),
             Group::Tabs => self.tabs_group(cx),
+            Group::WindowState => self.window_state_group(cx),
             Group::Build => self.build_group(cx),
             Group::Places => self.places_group(cx),
             Group::Everything => self.everything_group(cx),
@@ -521,6 +522,7 @@ impl RootView {
             Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
+            Group::WindowState => self.put_window_state_back(cx),
             _ => {}
         }
 
@@ -543,6 +545,9 @@ impl RootView {
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let tabs = cx.global::<ResonateApp>().tabs;
+        let remember_tab = cx.global::<ResonateApp>().remember_tab;
+        let remember_window_size = cx.global::<ResonateApp>().remember_window_size;
+        let remember_settings_category = cx.global::<ResonateApp>().remember_settings_category;
         let presence = cx.global::<ResonateApp>().presence.clone();
         let contact_given = !self.contact.read(cx).text().trim().is_empty();
         let key_given = !self.acoustid.read(cx).text().trim().is_empty();
@@ -574,6 +579,9 @@ impl RootView {
             scroll_volume,
             scrollbars,
             tabs,
+            remember_tab,
+            remember_window_size,
+            remember_settings_category,
             presence,
             template_given,
             inbox_given,

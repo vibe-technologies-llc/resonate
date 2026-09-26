@@ -5,7 +5,7 @@ use gpui::{
     SharedString, canvas, div, linear_color_stop, linear_gradient, prelude::*, px, rgb,
 };
 use resonate_engine::{PlayerState, StreamDigest};
-use resonate_lyrics::{Credits, Timing, Voice, Waiting, Wanted};
+use resonate_lyrics::{Credits, Timing, Voice, Wanted};
 
 use crate::{
     Selection, clipboard,
@@ -102,6 +102,7 @@ struct Line {
 struct Breath {
     through: f32,
     swell: f32,
+    opacity: f32,
 }
 
 impl RootView {
@@ -285,7 +286,13 @@ impl RootView {
 
             let drawn: Vec<Line> = (0..text.len())
                 .map(|index| {
-                    let breath = breath_of(waiting, index).map(|through| Breath { through, swell });
+                    let breath = model
+                        .breath_at(waiting, index, now)
+                        .map(|(through, opacity)| Breath {
+                            through,
+                            swell,
+                            opacity,
+                        });
                     let standing = model.standing(index, now);
 
                     Line {
@@ -563,12 +570,6 @@ impl RootView {
     }
 }
 
-fn breath_of(waiting: Option<Waiting>, index: usize) -> Option<f32> {
-    waiting
-        .filter(|waiting| waiting.next == index)
-        .map(|waiting| waiting.through)
-}
-
 fn mixed(from: u32, to: u32, share: f32) -> u32 {
     let channel = |shift: u32| {
         let one = ((from >> shift) & 0xff) as f32;
@@ -662,7 +663,13 @@ fn breather(breath: Breath) -> Div {
         );
     }
 
-    div().flex().justify_center().px_4().py_2().child(dots)
+    div()
+        .flex()
+        .justify_center()
+        .px_4()
+        .py_2()
+        .opacity(breath.opacity)
+        .child(dots)
 }
 
 fn dissolving(from_the_top: bool) -> Div {

@@ -1036,13 +1036,15 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-fifty-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other forty-seven have none, so the
+sixty-one have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-three have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `bluetooth-wake`,
 `bluetooth-lead-ms`, `bluetooth-awake-s`, `volume` and `buffer-ms`; the window's `theme`, `accent`, `text-size`, `minimise-button`,
-`maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab` and `tab-counts`, which every headless subcommand has no use for; and the standing decisions
+`maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab`, `tab-counts`,
+`remember-tab`, `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category`
+and `last-settings-category`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
 `listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
@@ -1078,6 +1080,11 @@ same way onto `ResonateApp::tabs`, written by the Appearance category's *Sidebar
 a tab that is off is left out of the sidebar and of the pane keys, `RootView::set_pane` lands on
 the tracks rather than on it wherever it is asked for, and the artist page's *not held* button
 into Missing is not drawn; with `tab-counts` off no tab draws the figure beside its name.
+`remember-tab`, `remember-window-size` and `remember-settings-category` each default to true and
+have their own switch in Appearance's *Window state* group. `last-tab` keeps the pane, `window-size`
+keeps its windowed restore dimensions as `widthxheight`, and `last-settings-category` keeps the
+category to reopen; a window size is written after resizing settles, and turning one switch off
+takes only that saved value out of the file.
 `vault` has a flag —
 `--vault` outranks it the way `--library` outranks `library` — and it defaults to
 `$XDG_DATA_HOME/resonate/vault`. A run that does not name one opens the vault only where that

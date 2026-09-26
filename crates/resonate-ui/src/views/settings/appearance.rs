@@ -1,13 +1,13 @@
-use gpui::{Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb};
+use gpui::{Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb};
 use resonate_core::{Accent, Appearance, ScrollbarMode, TextSize, Theme};
 
 use crate::{
-    ResonateApp, Setting, Tabs, WindowButtons, theme,
+    ResonateApp, Setting, SettingKey, Tabs, WindowButtons, WindowSize, theme,
     views::{
         hint::Names,
         kit,
         root::{Pane, RootView},
-        settings::{Choice, note, switch_row},
+        settings::{Choice, find::Category, note, switch_row},
     },
 };
 
@@ -28,6 +28,12 @@ const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
 const MISSING_TAB_ID: &str = "show-the-missing-tab";
 
 const TAB_COUNTS_ID: &str = "show-the-tab-counts";
+
+const REMEMBER_TAB_ID: &str = "remember-the-last-tab";
+
+const REMEMBER_WINDOW_SIZE_ID: &str = "remember-the-window-size";
+
+const REMEMBER_SETTINGS_CATEGORY_ID: &str = "remember-the-settings-category";
 
 const WINDOW_BUTTONS_NOTE: &str = "A button the compositor does not offer is left out whatever \
                                    this says, and a window the compositor draws a titlebar for \
@@ -364,5 +370,155 @@ impl RootView {
     pub(crate) fn show_window_buttons(&self, shown: WindowButtons, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.window_buttons = shown);
         cx.notify();
+    }
+
+    pub(super) fn window_state_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let global = cx.global::<ResonateApp>();
+        let remember_tab = global.remember_tab;
+        let remember_window_size = global.remember_window_size;
+        let remember_settings_category = global.remember_settings_category;
+
+        kit::section_body()
+            .child(self.in_the_ring(
+                REMEMBER_TAB_ID,
+                switch_row(
+                    "Remember the last tab",
+                    "Off, the window opens on Tracks",
+                    remember_tab,
+                    REMEMBER_TAB_ID,
+                ),
+                move |this, window, cx| this.remember_tab(!remember_tab, window, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                REMEMBER_WINDOW_SIZE_ID,
+                switch_row(
+                    "Remember the window size",
+                    "Off, the window opens at its built-in size",
+                    remember_window_size,
+                    REMEMBER_WINDOW_SIZE_ID,
+                ),
+                move |this, window, cx| {
+                    this.remember_window_size(!remember_window_size, window, cx);
+                },
+                cx,
+            ))
+            .child(self.in_the_ring(
+                REMEMBER_SETTINGS_CATEGORY_ID,
+                switch_row(
+                    "Remember the Settings category",
+                    "Off, Settings opens on Output",
+                    remember_settings_category,
+                    REMEMBER_SETTINGS_CATEGORY_ID,
+                ),
+                move |this, _, cx| {
+                    this.remember_settings_category(!remember_settings_category, cx);
+                },
+                cx,
+            ))
+    }
+
+    pub(crate) fn remember_tab(
+        &mut self,
+        remember: bool,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.remember_tab = remember;
+        cx.update_global::<ResonateApp, _>(|global, _| global.remember_tab = remember);
+        self.store(&Setting::RememberTab(remember), cx);
+
+        if remember {
+            self.remember_current_tab(cx);
+        } else {
+            self.forget(SettingKey::LastTab, cx);
+            cx.update_global::<ResonateApp, _>(|global, _| global.last_tab = None);
+        }
+    }
+
+    pub(crate) fn remember_window_size(
+        &mut self,
+        remember: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.remember_window_size = remember;
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.remember_window_size = remember;
+        });
+        self.store(&Setting::RememberWindowSize(remember), cx);
+
+        if remember {
+            self.remember_current_window_size(window, cx);
+        } else {
+            self.forget(SettingKey::WindowSize, cx);
+            self.last_window_size = None;
+            cx.update_global::<ResonateApp, _>(|global, _| global.window_size = None);
+        }
+    }
+
+    pub(crate) fn remember_settings_category(&mut self, remember: bool, cx: &mut Context<Self>) {
+        self.remember_settings_category = remember;
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.remember_settings_category = remember;
+        });
+        self.store(&Setting::RememberSettingsCategory(remember), cx);
+
+        if remember {
+            self.remember_current_settings_category(cx);
+        } else {
+            self.forget(SettingKey::LastSettingsCategory, cx);
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global.last_settings_category = Category::default();
+            });
+        }
+    }
+
+    pub(crate) fn put_window_state_back(&mut self, cx: &mut Context<Self>) {
+        self.remember_tab = true;
+        self.remember_window_size = true;
+        self.remember_settings_category = true;
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.remember_tab = true;
+            global.remember_window_size = true;
+            global.remember_settings_category = true;
+        });
+    }
+
+    pub(crate) fn remember_current_tab(&self, cx: &mut Context<Self>) {
+        if !self.remember_tab {
+            return;
+        }
+        let tab = self.in_front(cx);
+        if cx.global::<ResonateApp>().last_tab == Some(tab) {
+            return;
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| global.last_tab = Some(tab));
+        self.store(&Setting::LastTab(tab), cx);
+    }
+
+    pub(crate) fn remember_current_settings_category(&self, cx: &mut Context<Self>) {
+        if !self.remember_settings_category
+            || cx.global::<ResonateApp>().last_settings_category == self.settings_category
+        {
+            return;
+        }
+        let category = self.settings_category;
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.last_settings_category = category;
+        });
+        self.store(&Setting::LastSettingsCategory(category), cx);
+    }
+
+    pub(crate) fn remember_current_window_size(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if !self.remember_window_size {
+            return;
+        }
+        let Some(size) = WindowSize::from_pixels(window.window_bounds().get_bounds().size) else {
+            return;
+        };
+        self.last_window_size = Some(size);
+        cx.update_global::<ResonateApp, _>(|global, _| global.window_size = Some(size));
+        self.store(&Setting::WindowSize(size), cx);
     }
 }
