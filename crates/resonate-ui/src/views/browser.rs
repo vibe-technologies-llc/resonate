@@ -54,6 +54,8 @@ const QUEUE_ALL_HINT: &str = "Queue every track listed here after what is alread
 
 const PLAY_ALL_HINT: &str = "Play every track listed here, in place of the queue";
 
+const SHUFFLE_ALL_HINT: &str = "Play every track listed here, shuffled";
+
 pub(crate) const OPEN_ALBUM_HINT: &str = "See the tracks on this album";
 
 pub(crate) const OPEN_ARTIST_HINT: &str = "See every track by this artist";
@@ -1407,7 +1409,7 @@ impl RootView {
             })
             .child(kit::subtitle(under))
             .child(
-                self.page_actions(Favoured::Album(id), favourite, true, cx)
+                self.page_actions(Favoured::Album(id), favourite, true, true, cx)
                     .when_some(record, |row, _| {
                         row.child(
                             kit::icon_button("album-record", Icon::Info, RECORD_HINT).on_click(
@@ -1483,6 +1485,7 @@ impl RootView {
                     Favoured::Artist(id),
                     favourite,
                     shows == ArtistShows::Tracks,
+                    false,
                     cx,
                 )
                 .when(!genres.is_empty(), |row| {
@@ -1567,6 +1570,7 @@ impl RootView {
         what: Favoured,
         already: bool,
         sortable: bool,
+        shuffleable: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         kit::action_row()
@@ -1574,6 +1578,7 @@ impl RootView {
             .w_full()
             .pt_2()
             .child(self.play_all(cx))
+            .when(shuffleable, |row| row.child(self.shuffle_all(cx)))
             .child(self.favour_mark("scope-favourite", what, already, cx))
             .when(sortable, |row| {
                 row.child(self.orders_a_listing("order-tracks", cx))
@@ -1679,6 +1684,21 @@ impl RootView {
         .on_click(cx.listener(|this, _, window, cx| {
             this.with_everything_listed(window, cx, |this, listing, _, cx| {
                 this.play(&listing, 0, cx);
+            });
+        }))
+    }
+
+    fn shuffle_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        kit::button(
+            "shuffle-all",
+            Some(Icon::Shuffle),
+            "Shuffle",
+            SHUFFLE_ALL_HINT,
+            Tone::Outlined,
+        )
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.with_everything_listed(window, cx, |this, listing, _, cx| {
+                this.play_shuffled(&listing, cx);
             });
         }))
     }

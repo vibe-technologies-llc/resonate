@@ -2,7 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -61,6 +61,15 @@ use crate::{
 };
 
 const VOLUME_SETTLE: Duration = Duration::from_millis(400);
+
+pub(crate) fn somewhere_in(rows: usize) -> usize {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| since.subsec_nanos() as usize)
+        .unwrap_or_default();
+
+    now.checked_rem(rows).unwrap_or_default()
+}
 
 const WORDMARK_CAPITALS_CENTRED_BY: f32 = 1.0;
 
@@ -786,6 +795,11 @@ impl RootView {
 
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {
         toast::tell(notice, cx);
+    }
+
+    pub(crate) fn play_shuffled(&mut self, tracks: &[Track], cx: &mut Context<Self>) {
+        self.play(tracks, somewhere_in(tracks.len()), cx);
+        self.send(Command::SetShuffle(true), cx);
     }
 
     pub(crate) fn store(&self, setting: &Setting, cx: &mut Context<Self>) {

@@ -1,15 +1,11 @@
-use std::{
-    ops::Range,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{ops::Range, sync::Arc};
 
 use gpui::{
     AnyElement, Background, Context, Div, FontWeight, ObjectFit, SharedString, Stateful, div, img,
     linear_color_stop, linear_gradient, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{Accent, AlbumId};
-use resonate_engine::{Command, Placement};
+use resonate_engine::Placement;
 use resonate_library::{
     PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion, SuggestionKind, Track,
 };
@@ -445,20 +441,10 @@ impl RootView {
         )
         .on_click(cx.listener(move |this, _, window, cx| {
             this.with_the_rows_of(&shuffling, window, cx, |this, rows, _, cx| {
-                this.play(&rows, somewhere_in(rows.len()), cx);
-                this.send(Command::SetShuffle(true), cx);
+                this.play_shuffled(&rows, cx);
             });
         }))
     }
-}
-
-fn somewhere_in(rows: usize) -> usize {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.subsec_nanos() as usize)
-        .unwrap_or_default();
-
-    now.checked_rem(rows).unwrap_or_default()
 }
 
 fn measured(suggestion: &Suggestion) -> String {
@@ -661,8 +647,8 @@ mod tests {
     #[test]
     fn a_shuffle_starts_somewhere_inside_the_list() {
         for rows in [1, 2, 7, 500] {
-            assert!(somewhere_in(rows) < rows);
+            assert!(crate::views::root::somewhere_in(rows) < rows);
         }
-        assert_eq!(somewhere_in(0), 0);
+        assert_eq!(crate::views::root::somewhere_in(0), 0);
     }
 }

@@ -410,7 +410,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   line taller than the column and left the band above the eyebrow. Until that height has been
   measured the cover uses `scope_cover`.
   The action row is the last child of that column, so it sits under the text and clear of the
-  cover: Play, the favourite and a sort icon where the listing can be sorted. An album adds the
+  cover: Play, Shuffle on an album, the favourite and a sort icon where the listing can be sorted.
+  Shuffle reads the same scoped listing as Play, begins at a time-chosen row and enables queue
+  shuffle through `RootView::play_shuffled`, which the suggestions page uses too. An album adds the
   info mark. An artist adds one where it has genres, and where it holds albums the Albums and
   Tracks choice sits at the right of that same row, so the listing follows the title with no band
   between them. The releases it does not hold stay on the row too. Play next, Add to queue and
