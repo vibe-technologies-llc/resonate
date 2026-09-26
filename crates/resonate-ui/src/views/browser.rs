@@ -6,8 +6,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, Context, Div, ElementId, FontWeight, Image, ObjectFit, Pixels, Point, SharedString,
-    Stateful, div, img, prelude::*, px, rgb, uniform_list,
+    AnyElement, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, Image, MouseButton,
+    MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
+    hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId};
 use resonate_engine::Placement;
@@ -73,6 +74,10 @@ const WANTING_HINT: &str = "Adding its release to the catalog";
 const UNHELD_COVER: f32 = 0.45;
 
 const UNHELD_HINT: &str = "See what this artist has released that the library does not hold";
+
+const RECORD_HINT: &str = "About this record";
+
+const RECORD_LABEL: f32 = 112.0;
 
 pub(crate) const FAVOUR_HINT: &str = "Keep this among your favourites";
 
@@ -1337,20 +1342,13 @@ impl RootView {
                 .zip(album.artist.clone().map(SharedString::from))
         });
         let under = summary(library.listed(), album.and_then(|album| album.year));
-        let released = library.release().and_then(release_line);
-        let disambiguation = library
-            .release()
-            .and_then(|release| release.disambiguation.clone());
-        let services = library
-            .release()
-            .map(|release| service_names(&release.links))
-            .unwrap_or_default();
+        let record = library.release().and_then(record_of);
         let favourite = library.favoured_album(id);
 
         let cover = self
             .cover_sized(
                 Pictured::Album(id),
-                Drawn::InAGrid,
+                Drawn::OnThePage,
                 theme::scope_cover(),
                 cx,
             )
@@ -1409,22 +1407,23 @@ impl RootView {
                         ),
                 )
             })
-            .child(kit::subtitle(under))
-            .when_some(released, |column, released| {
-                column.child(kit::subtitle(released))
-            })
-            .when_some(disambiguation, |column, disambiguation| {
-                column.child(kit::subtitle(disambiguation).text_color(rgb(theme::faint())))
-            })
-            .when_some(
-                heard_on("album-heard-on", services, self.hero_width.get()),
-                Div::child,
-            )
-            .child(self.hero_actions(Favoured::Album(id), favourite, true, cx));
+            .child(kit::subtitle(under));
 
         kit::heading()
             .child(self.way_back(cx))
             .child(kit::hero().child(cover).child(about))
+            .child(
+                self.page_actions(Favoured::Album(id), favourite, true, cx)
+                    .when_some(record, |row, _| {
+                        row.child(
+                            kit::icon_button("album-record", Icon::Info, RECORD_HINT).on_click(
+                                cx.listener(move |this, event: &ClickEvent, _, cx| {
+                                    this.show_the_record(id, event.position(), cx);
+                                }),
+                            ),
+                        )
+                    }),
+            )
     }
 
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
@@ -1449,7 +1448,7 @@ impl RootView {
         let shows = self.artist_shows.within(records);
 
         let portrait = match self.library.update(cx, |library, cx| {
-            library.portrait(id, Portrayed::InAGrid, cx)
+            library.portrait(id, Portrayed::OnThePage, cx)
         }) {
             Some(art) => portrait_frame(art, theme::scope_cover()).into_any_element(),
             None => kit::avatar(&name, true)
@@ -1486,9 +1485,13 @@ impl RootView {
             .when_some(
                 heard_on("artist-heard-on", services, self.hero_width.get()),
                 Div::child,
-            )
+            );
+
+        kit::heading()
+            .child(self.way_back(cx))
+            .child(kit::hero().child(portrait).child(about))
             .child(
-                self.hero_actions(
+                self.page_actions(
                     Favoured::Artist(id),
                     favourite,
                     shows == ArtistShows::Tracks,
@@ -1512,11 +1515,7 @@ impl RootView {
                         })),
                     )
                 }),
-            );
-
-        kit::heading()
-            .child(self.way_back(cx))
-            .child(kit::hero().child(portrait).child(about))
+            )
             .when(records > 0, |heading| {
                 heading.child(self.artist_tabs(shows, records, tracks, cx))
             })
@@ -1563,22 +1562,119 @@ impl RootView {
         )
     }
 
-    fn hero_actions(
+    fn page_actions(
         &self,
         what: Favoured,
         already: bool,
         sortable: bool,
         cx: &mut Context<Self>,
     ) -> Div {
-        kit::hero_actions(self.hero_width.get())
+        kit::action_row()
             .child(self.play_all(cx))
-            .child(self.queue_all(Placement::Queued, cx))
             .child(self.queue_all(Placement::Next, cx))
+            .child(self.queue_all(Placement::Queued, cx))
             .child(self.add_all_to_a_playlist(cx))
             .child(self.favour_mark("scope-favourite", what, already, cx))
             .when(sortable, |row| {
                 row.child(self.orders_a_listing("order-tracks", cx))
             })
+    }
+
+    fn show_the_record(&mut self, album: AlbumId, at: Point<Pixels>, cx: &mut Context<Self>) {
+        if self
+            .record
+            .as_ref()
+            .is_some_and(|opened| opened.album == album)
+        {
+            self.record = None;
+        } else {
+            self.close_the_menu(cx);
+            self.record = Some(OpenedRecord { album, at });
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn record_over_the_app(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (at, record) = {
+            let opened = self.record.as_ref()?;
+            let library = self.library.read(cx);
+            if library.selection() != Selection::Album(opened.album) {
+                return None;
+            }
+            (opened.at, library.release().and_then(record_of)?)
+        };
+
+        let mut card = div()
+            .id("record")
+            .flex()
+            .flex_col()
+            .w(px(theme::record_width()))
+            .p_3()
+            .gap_2()
+            .rounded_lg()
+            .bg(rgb(theme::raised()))
+            .border_1()
+            .border_color(rgb(theme::outline()))
+            .shadow(vec![BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.5),
+                offset: point(px(0.0), px(6.0)),
+                blur_radius: px(24.0),
+                spread_radius: px(0.0),
+            }])
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .child(
+                div()
+                    .text_size(px(theme::text_sm()))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text()))
+                    .child("About this record"),
+            );
+        for fact in &record.facts {
+            card = card.child(fact_row(fact));
+        }
+        if let Some(note) = &record.note {
+            card = card.child(
+                div()
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::faint()))
+                    .child(note.clone()),
+            );
+        }
+        if !record.on.is_empty() {
+            card = card.child(record_services(&record.on));
+        }
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .occlude()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                        this.record = None;
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                        this.record = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    deferred(
+                        anchored()
+                            .position(at)
+                            .snap_to_window_with_margin(px(8.0))
+                            .child(card),
+                    )
+                    .with_priority(1),
+                )
+                .into_any_element(),
+        )
     }
 
     fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -2190,26 +2286,86 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
     })
 }
 
-fn release_line(release: &ReleaseDetail) -> Option<String> {
-    let pressed = pressings(&release.media);
-    let parts: format::Parts<&str> = [
-        release.date.as_deref(),
-        pressed.as_deref(),
-        release.label.as_deref(),
-        release.catalog_number.as_deref(),
-        release.country.as_deref(),
-        release.kind.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+fn record_of(release: &ReleaseDetail) -> Option<Record> {
+    let mut facts = Vec::new();
+    if let Some(date) = release.date.clone() {
+        facts.push(Fact {
+            label: "Released",
+            value: date,
+        });
+    }
+    if let Some(format) = pressings(&release.media) {
+        facts.push(Fact {
+            label: "Format",
+            value: format,
+        });
+    }
+    if let Some(label) = release.label.clone() {
+        facts.push(Fact {
+            label: "Label",
+            value: label,
+        });
+    }
+    if let Some(number) = release.catalog_number.clone() {
+        facts.push(Fact {
+            label: "Catalogue number",
+            value: number,
+        });
+    }
+    if let Some(barcode) = release.barcode.clone() {
+        facts.push(Fact {
+            label: "Barcode",
+            value: barcode,
+        });
+    }
+    if let Some(country) = release.country.clone() {
+        facts.push(Fact {
+            label: "Country",
+            value: country,
+        });
+    }
+    if let Some(kind) = release.kind.clone() {
+        facts.push(Fact {
+            label: "Kind",
+            value: kind,
+        });
+    }
+    let note = release
+        .disambiguation
+        .clone()
+        .filter(|note| !note.trim().is_empty());
+    let on = service_names(&release.links);
+    let record = Record { facts, note, on };
 
-    (!parts.is_empty()).then(|| parts.join(" · "))
+    (!record.is_empty()).then_some(record)
 }
 
+#[derive(Clone)]
 struct HeardOn {
     name: &'static str,
     url: SharedString,
+}
+
+struct Fact {
+    label: &'static str,
+    value: String,
+}
+
+struct Record {
+    facts: Vec<Fact>,
+    note: Option<String>,
+    on: Vec<HeardOn>,
+}
+
+impl Record {
+    fn is_empty(&self) -> bool {
+        self.facts.is_empty() && self.note.is_none() && self.on.is_empty()
+    }
+}
+
+pub(crate) struct OpenedRecord {
+    pub(crate) album: AlbumId,
+    pub(crate) at: Point<Pixels>,
 }
 
 fn service_names(links: &[Link]) -> Vec<HeardOn> {
@@ -2246,26 +2402,85 @@ fn heard_on(id: &'static str, services: Vec<HeardOn>, room: Pixels) -> Option<Di
         if at > 0 {
             line = line.child(div().px_1().child("·"));
         }
-        let element = ElementId::NamedInteger(id.into(), at as u64);
-        let url = heard.url;
-        line = line.child(
-            div()
-                .id(element.clone())
-                .cursor_pointer()
-                .lit_under_the_pointer(element, |link| {
-                    link.text_color(rgb(theme::accent()))
-                        .text_decoration_1()
-                        .text_decoration_color(rgb(theme::accent()))
-                })
-                .names(format!("Open on {}", heard.name))
-                .on_click(move |_, _, cx| {
-                    cx.stop_propagation();
-                    cx.open_url(&url);
-                })
-                .child(heard.name),
-        );
+        line = line.child(service_link(
+            ElementId::NamedInteger(id.into(), at as u64),
+            heard,
+        ));
     }
     Some(line)
+}
+
+fn fact_row(fact: &Fact) -> Div {
+    div()
+        .flex()
+        .items_baseline()
+        .gap_3()
+        .child(
+            div()
+                .w(px(RECORD_LABEL))
+                .flex_none()
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::faint()))
+                .child(fact.label),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::text()))
+                .child(fact.value.clone()),
+        )
+}
+
+fn record_services(services: &[HeardOn]) -> Div {
+    let mut links = div()
+        .flex()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex_wrap()
+        .items_center()
+        .gap_x_2()
+        .gap_y_1();
+    for (at, heard) in services.iter().cloned().enumerate() {
+        links = links.child(service_link(
+            ElementId::NamedInteger("record-service".into(), at as u64),
+            heard,
+        ));
+    }
+
+    div()
+        .flex()
+        .items_baseline()
+        .gap_3()
+        .child(
+            div()
+                .w(px(RECORD_LABEL))
+                .flex_none()
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::faint()))
+                .child("On"),
+        )
+        .child(links)
+}
+
+fn service_link(id: ElementId, heard: HeardOn) -> Stateful<Div> {
+    let url = heard.url;
+
+    div()
+        .id(id.clone())
+        .cursor_pointer()
+        .lit_under_the_pointer(id, |link| {
+            link.text_color(rgb(theme::accent()))
+                .text_decoration_1()
+                .text_decoration_color(rgb(theme::accent()))
+        })
+        .names(format!("Open on {}", heard.name))
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            cx.open_url(&url);
+        })
+        .child(heard.name)
 }
 
 fn profile_line(detail: &ArtistDetail) -> Option<String> {
@@ -2442,3 +2657,80 @@ fn reached_ring() -> Div {
 const REACHED_ROUNDING: f32 = 10.0;
 
 const REACHED_RING: f32 = 2.0;
+
+#[cfg(test)]
+mod tests {
+    use resonate_library::{CoverSource, HeldMedium, Link, ReleaseDetail};
+
+    use super::record_of;
+
+    fn unreleased() -> ReleaseDetail {
+        ReleaseDetail {
+            mbid: None,
+            group: None,
+            date: None,
+            country: None,
+            label: None,
+            catalog_number: None,
+            barcode: None,
+            kind: None,
+            disambiguation: None,
+            cover_source: CoverSource::File,
+            asked: None,
+            answered: None,
+            links: Vec::new(),
+            media: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_record_names_every_fact_the_release_holds_and_an_empty_one_names_nothing() {
+        assert!(record_of(&unreleased()).is_none());
+
+        let mut release = unreleased();
+        release.date = Some("1973-03-01".to_owned());
+        release.country = Some("GB".to_owned());
+        release.label = Some("Harvest".to_owned());
+        release.catalog_number = Some("SHVL 804".to_owned());
+        release.barcode = Some("077774638220".to_owned());
+        release.kind = Some("Album".to_owned());
+        release.disambiguation = Some("remaster".to_owned());
+        release.media = vec![HeldMedium {
+            position: 1,
+            format: Some("CD".to_owned()),
+            title: None,
+        }];
+        release.links = vec![
+            Link::new(
+                "free streaming",
+                "https://music.apple.com/us/album/1".to_owned(),
+            ),
+            Link::new("free streaming", "https://bandcamp.com/album/1".to_owned()),
+        ];
+
+        let record = record_of(&release).expect("a full release is a record");
+        let facts: Vec<(&str, &str)> = record
+            .facts
+            .iter()
+            .map(|fact| (fact.label, fact.value.as_str()))
+            .collect();
+
+        assert_eq!(
+            facts,
+            [
+                ("Released", "1973-03-01"),
+                ("Format", "CD"),
+                ("Label", "Harvest"),
+                ("Catalogue number", "SHVL 804"),
+                ("Barcode", "077774638220"),
+                ("Country", "GB"),
+                ("Kind", "Album"),
+            ]
+        );
+        assert_eq!(record.note.as_deref(), Some("remaster"));
+        assert_eq!(
+            record.on.iter().map(|heard| heard.name).collect::<Vec<_>>(),
+            ["Apple Music", "Bandcamp"]
+        );
+    }
+}

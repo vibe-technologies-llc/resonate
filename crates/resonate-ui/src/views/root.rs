@@ -39,7 +39,7 @@ use crate::{
     theme,
     toast::{self, Toaster},
     views::{
-        browser::{ArtistShows, ArtistsDrawn},
+        browser::{ArtistShows, ArtistsDrawn, OpenedRecord},
         chrome,
         field::{Field, Submitted},
         focus::Controls,
@@ -387,6 +387,7 @@ pub struct RootView {
     pub(crate) missing_shows: MissingShows,
     landing_on: Option<usize>,
     pub(crate) menu: Option<Menu>,
+    pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
     pub(crate) creeping: Option<Creeping>,
@@ -703,6 +704,7 @@ impl RootView {
             missing_shows: MissingShows::default(),
             landing_on: None,
             menu: None,
+            record: None,
             left_at: AHashMap::new(),
             reach: None,
             creeping: None,
@@ -1289,6 +1291,7 @@ impl RootView {
             Pane::default()
         };
         pointed::forget();
+        self.record = None;
         self.stop_typing(cx);
         if self.pane != pane {
             self.ordering = false;
@@ -1794,6 +1797,7 @@ impl RootView {
             && self.held_band.is_none()
             && self.adding.is_none()
             && self.magnified.is_none()
+            && self.record.is_none()
             && !cx.has_active_drag()
     }
 
@@ -2068,6 +2072,10 @@ impl RootView {
             }
             "escape" if self.listening_open => self.close_the_listener(cx),
             "escape" if self.magnified.is_some() => self.shrink_cover(cx),
+            "escape" if self.record.is_some() => {
+                self.record = None;
+                cx.notify();
+            }
             "escape" if Self::noticed(cx) => toast::dismiss(cx),
             "escape" => {
                 if !self.stop_typing(cx) {
@@ -3076,6 +3084,7 @@ impl Render for RootView {
             )
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.menu_over_the_app(cx), ParentElement::child)
+            .when_some(self.record_over_the_app(cx), ParentElement::child)
             .when_some(self.adding.clone(), |app, holding| {
                 app.child(self.playlist_picker(&holding, cx))
             })

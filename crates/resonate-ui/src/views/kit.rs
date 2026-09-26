@@ -764,8 +764,8 @@ pub(crate) fn measures_its_width(measured: Rc<Cell<Pixels>>) -> impl IntoElement
     .inset_0()
 }
 
-pub(crate) fn hero_actions(room: Pixels) -> Div {
-    wraps_within(room).items_center().gap_1p5().pt_3()
+pub(crate) fn action_row() -> Div {
+    div().flex().flex_wrap().items_center().gap_1p5()
 }
 
 pub(crate) fn wraps_within(room: Pixels) -> Div {

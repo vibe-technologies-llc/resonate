@@ -165,6 +165,7 @@ impl RootView {
         }
         self.naming = None;
         self.adding = None;
+        self.record = None;
         self.menu = Some(menu);
         cx.notify();
     }

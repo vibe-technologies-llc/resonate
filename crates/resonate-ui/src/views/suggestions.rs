@@ -51,8 +51,6 @@ const SEARCH_HINT: &str = "Put this list's search in the search box and see it i
 
 const BACK_HINT: &str = "Back to every suggestion";
 
-const CARD_GROUP: &str = "suggestion-card";
-
 const TILES_A_SIDE: usize = 2;
 
 const NAME_ON_THE_ART: f32 = 0.11;
@@ -146,37 +144,31 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let opening = suggestion.query.clone();
-        let side = theme::suggestion_card() - 2.0 * CARD_PADDING;
-        let art = self.suggestion_art(suggestion, side, cx);
+        let side = theme::suggestion_card();
+        let art = self.suggestion_art(suggestion, side, Drawn::InAGrid, true, cx);
 
         kit::card()
             .flex_none()
-            .w(px(theme::suggestion_card()))
-            .p(px(CARD_PADDING))
-            .gap_3()
-            .justify_between()
+            .w(px(side))
+            .p_0()
+            .gap_0()
+            .overflow_hidden()
+            .hover(|card| card.border_color(rgb(theme::outline())))
             .child(
                 div()
                     .id(("suggestion-open", index))
-                    .group(CARD_GROUP)
                     .flex()
                     .flex_col()
-                    .gap_2()
                     .cursor_pointer()
                     .names(OPEN_HINT)
-                    .child(
-                        div()
-                            .rounded(px(ART_ROUNDING))
-                            .border_1()
-                            .border_color(theme::tinted(theme::text(), 0x0c))
-                            .group_hover(CARD_GROUP, |art| art.border_color(rgb(theme::outline())))
-                            .child(art),
-                    )
+                    .child(art)
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
+                            .px(px(CARD_PADDING))
+                            .pt(px(CARD_PADDING))
                             .child(
                                 kit::card_title(SharedString::from(suggestion.name.clone()))
                                     .truncate()
@@ -197,19 +189,13 @@ impl RootView {
                     })),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_1p5()
-                    .child(self.save_suggestion(("suggestion-save", index), suggestion, cx))
-                    .child(self.queue_suggestion(
-                        ("suggestion-queue", index),
-                        &suggestion.query,
-                        Placement::Queued,
-                        cx,
-                    ))
-                    .child(self.play_suggestion(("suggestion-play", index), &suggestion.query, cx)),
+                kit::action_row()
+                    .px(px(CARD_PADDING))
+                    .pt_2()
+                    .pb(px(CARD_PADDING))
+                    .child(self.play_suggestion(("suggestion-play", index), &suggestion.query, cx))
+                    .child(self.queue_mark(("suggestion-queue", index), &suggestion.query, cx))
+                    .child(self.save_mark(("suggestion-save", index), suggestion, cx)),
             )
     }
 
@@ -220,7 +206,13 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let playing = self.playing_now(cx).track;
-        let art = self.suggestion_art(suggestion, theme::scope_cover(), cx);
+        let art = self.suggestion_art(
+            suggestion,
+            theme::scope_cover(),
+            Drawn::OnThePage,
+            false,
+            cx,
+        );
         let reads = suggestion
             .query
             .text
@@ -231,21 +223,9 @@ impl RootView {
         let shown = tracks.len();
         let rows = Arc::clone(tracks);
 
-        let actions = kit::actions()
-            .child(
-                kit::button(
-                    "opened-suggestion-search",
-                    Some(Icon::Search),
-                    "Search for these",
-                    SEARCH_HINT,
-                    Tone::Ghost,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.search_instead(searched.clone(), window, cx);
-                    this.choose_pane(Pane::Tracks, cx);
-                })),
-            )
-            .child(self.save_suggestion("opened-suggestion-save", suggestion, cx))
+        let actions = kit::action_row()
+            .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx))
+            .child(self.shuffle_suggestion(&suggestion.query, cx))
             .child(self.queue_suggestion(
                 "opened-suggestion-next",
                 &suggestion.query,
@@ -258,8 +238,20 @@ impl RootView {
                 Placement::Queued,
                 cx,
             ))
-            .child(self.shuffle_suggestion(&suggestion.query, cx))
-            .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx));
+            .child(self.save_suggestion("opened-suggestion-save", suggestion, cx))
+            .child(
+                kit::button(
+                    "opened-suggestion-search",
+                    Some(Icon::Search),
+                    "Search for these",
+                    SEARCH_HINT,
+                    Tone::Ghost,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.search_instead(searched.clone(), window, cx);
+                    this.choose_pane(Pane::Tracks, cx);
+                })),
+            );
 
         let heading = kit::heading()
             .child(
@@ -287,10 +279,10 @@ impl RootView {
                         .child(kit::figure(measured_shown(suggestion, shown)))
                         .when(!reads.is_empty(), |column| {
                             column.child(div().pt_1().child(listing::reads(&reads)))
-                        })
-                        .child(div().pt_2().child(actions)),
+                        }),
                 ),
-            );
+            )
+            .child(actions);
 
         div()
             .flex()
@@ -336,41 +328,61 @@ impl RootView {
         &mut self,
         suggestion: &Suggestion,
         side: f32,
+        drawn_at: Drawn,
+        on_a_card: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         let drawn: Vec<Arc<gpui::Image>> = suggestion
             .pictured_by
             .iter()
             .take(PICTURED_BY_AT_MOST)
-            .filter_map(|album| self.drawn_album(*album, cx))
+            .filter_map(|album| self.drawn_album(*album, drawn_at, cx))
             .collect();
         let (from, to) = ground_of(suggestion);
         let side = side.round();
+        let rounding = px(ART_ROUNDING);
 
-        let frame = div()
-            .relative()
-            .flex_none()
-            .size(px(side))
-            .rounded(px(ART_ROUNDING))
-            .overflow_hidden();
+        let frame = div().relative().flex_none().overflow_hidden();
+        let frame = if on_a_card {
+            frame
+                .w_full()
+                .h(px(side))
+                .rounded_tl(rounding)
+                .rounded_tr(rounding)
+        } else {
+            frame
+                .size(px(side))
+                .rounded(rounding)
+                .border_1()
+                .border_color(theme::tinted(theme::text(), 0x0c))
+        };
 
         match drawn.as_slice() {
             [] => frame
                 .bg(ground(from, to))
                 .child(lettered(suggestion, side, from)),
-            [only] => frame.child(
-                img(Arc::clone(only))
+            [only] => frame.child({
+                let image = img(Arc::clone(only))
                     .size(px(side))
-                    .rounded(px(ART_ROUNDING))
-                    .object_fit(ObjectFit::Cover),
-            ),
-            several => frame.child(tiled(several, side, suggestion)),
+                    .object_fit(ObjectFit::Cover);
+                if on_a_card {
+                    image.rounded_tl(rounding).rounded_tr(rounding)
+                } else {
+                    image.rounded(rounding)
+                }
+            }),
+            several => frame.child(tiled(several, side, suggestion, on_a_card)),
         }
     }
 
-    fn drawn_album(&mut self, album: AlbumId, cx: &mut Context<Self>) -> Option<Arc<gpui::Image>> {
+    fn drawn_album(
+        &mut self,
+        album: AlbumId,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<gpui::Image>> {
         self.library
-            .update(cx, |library, cx| library.cover(album, Drawn::InAGrid, cx))
+            .update(cx, |library, cx| library.cover(album, drawn, cx))
     }
 
     fn save_suggestion(
@@ -404,6 +416,56 @@ impl RootView {
                 let name = named.clone();
                 this.library.update(cx, |library, cx| {
                     library.save_query(name, saved, cx);
+                });
+            },
+        ))
+    }
+
+    fn save_mark(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        suggestion: &Suggestion,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let saved = self
+            .library
+            .read(cx)
+            .saved_playlists()
+            .iter()
+            .any(|playlist| playlist.query.as_ref() == Some(&suggestion.query));
+        if saved {
+            return kit::mark_when(
+                Press::Greyed,
+                id,
+                Icon::Check,
+                SAVED_HINT,
+                "suggestion-card",
+            );
+        }
+        let saving = suggestion.query.clone();
+        let named = suggestion.name.clone();
+
+        kit::icon_button(id, Icon::Plus, SAVE_HINT).on_click(cx.listener(move |this, _, _, cx| {
+            let saved = saving.clone();
+            let name = named.clone();
+            this.library.update(cx, |library, cx| {
+                library.save_query(name, saved, cx);
+            });
+        }))
+    }
+
+    fn queue_mark(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        query: &SavedQuery,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let queueing = query.clone();
+
+        kit::icon_button(id, Icon::QueueLast, QUEUE_HINT).on_click(cx.listener(
+            move |this, _, window, cx| {
+                this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
+                    this.queue(&listed(&rows), Placement::Queued, cx);
                 });
             },
         ))
@@ -578,7 +640,7 @@ fn ground(from: u32, to: u32) -> Background {
     )
 }
 
-fn tiled(drawn: &[Arc<gpui::Image>], side: f32, suggestion: &Suggestion) -> Div {
+fn tiled(drawn: &[Arc<gpui::Image>], side: f32, suggestion: &Suggestion, on_a_card: bool) -> Div {
     let tile = (side / TILES_A_SIDE as f32).floor();
     let tiles = TILES_A_SIDE * TILES_A_SIDE;
     let (from, to) = ground_of(suggestion);
@@ -588,7 +650,7 @@ fn tiled(drawn: &[Arc<gpui::Image>], side: f32, suggestion: &Suggestion) -> Div 
         .flex_wrap()
         .size(px(tile * TILES_A_SIDE as f32));
     for at in 0..tiles {
-        let corner = Corner::of_tile(at);
+        let corner = Corner::of_tile(at, on_a_card);
         let cell = corner.round(div().size(px(tile)).overflow_hidden());
         grid = grid.child(match drawn.get(at) {
             Some(art) => cell.child(
@@ -611,15 +673,17 @@ enum Corner {
     TopRight,
     BottomLeft,
     BottomRight,
+    Square,
 }
 
 impl Corner {
-    const fn of_tile(at: usize) -> Self {
+    const fn of_tile(at: usize, on_a_card: bool) -> Self {
         let right = at % TILES_A_SIDE == TILES_A_SIDE - 1;
         let bottom = at / TILES_A_SIDE == TILES_A_SIDE - 1;
         match (bottom, right) {
             (false, false) => Self::TopLeft,
             (false, true) => Self::TopRight,
+            (true, _) if on_a_card => Self::Square,
             (true, false) => Self::BottomLeft,
             (true, true) => Self::BottomRight,
         }
@@ -632,6 +696,7 @@ impl Corner {
             Self::TopRight => element.rounded_tr(rounding),
             Self::BottomLeft => element.rounded_bl(rounding),
             Self::BottomRight => element.rounded_br(rounding),
+            Self::Square => element,
         }
     }
 }

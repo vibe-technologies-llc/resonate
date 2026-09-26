@@ -400,18 +400,21 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   which is what keeps a long playlist name from being ground down to a letter by thirteen
   controls. **An album or an artist is not a pane heading with a picture bolted on**: it is
   `album_page_heading` and `artist_page_heading`, a `kit::way_back` at the top left and a
-  `kit::hero` under it — the cover or the portrait at `theme::scope_cover()`, then a column of the
-  eyebrow, a `kit::hero_title` at `text_title`, the lines about it and `kit::hero_actions` *under*
-  the text rather than beside it. The actions used to sit on the right of the row and took the
-  room the name needed, so an album title was clipped to a few words at `text_xl` while six
-  buttons stood beside it; under the text the title has the whole width and wraps rather than
-  clipping. **The hero's column is measured, because what wraps in it has to be told its width.**
-  `kit::measures_its_width` is a canvas writing `RootView::hero_width` a frame behind — the shape
-  the album grid's `grid_width` takes, and that grid now uses the same builder — and the title,
-  the action row and the genre tags take it through `kit::hero_title` and `kit::wraps_within`. A
-  flex item whose height depends on how its text or its children wrap is measured by taffy at
-  the column's *min-content* width, so without a pixel the action row was measured one button to
-  a line and the heading stood some 150 px taller than what it drew. Until the first frame has
+  `kit::hero` under it — the cover or the portrait at `theme::scope_cover()`, 240 and decoded at
+  `Drawn::OnThePage` so a page hero is larger than a grid cell and still sharp at a scale factor
+  of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it.
+  The action row is `kit::action_row` under the whole hero, full width and left aligned, Play
+  first, then Play next, Add to queue, Add to playlist, the favourite and Sort where the listing
+  can be sorted. A narrow window wraps the later buttons and leaves Play on the first line. It
+  used to be `kit::hero_actions` inside the text column, measured to that column, which wrapped
+  one button to a line and put the row in a different order from a suggestion. The title has the
+  whole column and wraps rather than clipping. **The hero's column is measured, because what
+  wraps in it has to be told its width.** `kit::measures_its_width` is a canvas writing
+  `RootView::hero_width` a frame behind — the shape the album grid's `grid_width` takes, and that
+  grid now uses the same builder — and the title and the genre tags take it through
+  `kit::hero_title` and `kit::wraps_within`. The action row does not: measuring it to the column
+  was what wrapped a button onto a line of its own, and taffy measures a flex item whose height
+  depends on how its children wrap at the column's *min-content* width. Until the first frame has
   measured, the title is one line ending in an ellipsis. The opened playlist's heading carries
   the same `kit::way_back`, reading *Playlists*, above an eyebrow of *PLAYLIST* or *SAVED SEARCH*.
   **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics,
@@ -1208,10 +1211,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   art or its name is `LibraryModel::open_suggestion`, which keeps the `SavedQuery` it opened in a
   `Previewed` and reads the first `PREVIEWED_AT_MOST` rows on the background executor; while the
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
-  a way back, the art at `scope_cover`, the kind, the name, the reason, the count and length, the
-  search as *Reads* chips, and *Search for these*, *Save*, *Play next*, *Add to queue*, *Shuffle*
-  and *Play* over an ordinary unsorted track listing, each row playing the list from itself. A
-  suggestion the catalog stops offering takes the pane back to the shelves on its own. *Search
+  a way back, the art at `scope_cover` through `Drawn::OnThePage`, the kind, the name, the reason,
+  the count and length, the search as *Reads* chips, and under the hero the same action row as an
+  album: Play, Shuffle, Play next, Add to queue, Save and Search for these, over an ordinary
+  unsorted track listing, each row playing the list from itself. A card on the shelf is the art
+  at the full card width, still the grid's texture, with the name under it and Play, then the
+  queue and save marks, on one row. Play leads; a labeled Add to queue used to wrap it onto the
+  bottom of a card stretched to the tallest in the shelf. A suggestion the catalog stops offering
+  takes the pane back to the shelves on its own. *Search
   for these* is `search_instead` and `choose_pane(Pane::Tracks)`, so the list can be narrowed
   further and saved under a name of its own. *Shuffle* loads the rows from a place picked off the
   clock's nanoseconds, there being no random crate in the tree, and then turns the transport's
@@ -1224,13 +1231,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   genre's or an artist's are picked by an FNV hash of the name, so one name is the same two
   colours every run and two names differ. With no cover at all the ground carries the reason's
   icon and the name in bold, in `theme::ink_over` the first accent. A cover is asked for through
-  `LibraryModel::cover` at the grid's size like any album cell, so the cards fill in as the
-  decodes land rather than holding the pane. **The gradient is painted only where no cover is.**
+  `LibraryModel::cover` at the grid's size on a card and at `Drawn::OnThePage` once it is opened,
+  so the cards fill in as the decodes land rather than holding the pane. **The gradient is painted only where no cover is.**
   It used to lie under the whole frame, and gpui clips a child to its parent's rectangle rather
   than its rounding, so the square covers stood over the rounded ground and a hairline of it showed
   along the frame's edge and wherever two half-pixel tiles met. The side is a whole pixel, a tile
   is the floor of half of it, each tile and its cover are rounded on the one corner they stand in —
-  `Corner::of_tile` — and a single cover is rounded itself; an empty tile is its accent, solid.
+  `Corner::of_tile` — and a single cover is rounded itself. On a card the bottom edge stays
+  square, so the art meets the text under it; an empty tile is its accent, solid.
 - **The playlists index row carries a context menu beside its controls, and neither answers the
   other's press.** gpui 0.2.2 starts a click only on a left press, so a right press on play, next,
   last, copy or discard opens the row's menu and fires none of them. A pinned row wears a
@@ -1404,22 +1412,25 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Neither the grid's caption nor the scoped heading counts what an album is short of any more:
   the Missing pane, the inline `unheld_row`s, the sidebar figure and the artist heading's
   *N releases not held* each say it once where it is the subject, rather than on every cell in a
-  library. Under the subtitle ride `release_line` — date, label, catalogue number, country and kind,
-  whichever the release has — the disambiguation in the faint colour, and `heard_on`, one faint
-  line naming the services out of `service_names`, which leaves `Service::Other` out; an artist
-  hero draws `profile_line`, up to `GENRES_SHOWN` genres as `kit::tag` pills and the same
-  services line, and at the end of its actions, where `ArtistDetail::releases_unheld` is above
-  nothing, a `Tone::Ghost` button reading *N releases not held* under `UNHELD_HINT` that opens
-  `Pane::Missing`. **The services are capped at `SERVICES_SHOWN`, because an artist has a
-  directory of them.** A release names a handful of shops; an artist named nineteen — every
-  streaming service, both encyclopaedias and four social networks. Four is what is drawn, the way
-  three genres are, and as one line of words rather than a cloud of mono figures. **Each service
-  on the line is the link it was named from.** `service_names` keeps the first URL a service is
-  linked by beside its `Service::title` — *Apple Music*, *SoundCloud*, not the lowercase key the
-  catalog stores — and `heard_on` draws one pressable name per service, lit under the pointer the
-  way an `opens` is, naming *Open on …* and handing that exact release's or artist's URL to
-  `cx.open_url`, which is the desktop's browser. It stops its press and ignores a right one, like
-  every link in a heading.
+  library. The pressing is not drawn there. An info mark at the end of the action row, and only
+  where `record_of` has something to say, opens a card anchored at the press: Released, Format,
+  Label, Catalogue number, Barcode, Country and Kind, then the disambiguation, then every service
+  link. Escape closes it after a magnified cover and before a toast, a second press on the mark
+  closes it, and leaving the album — `set_pane` — closes it too. The scrim occludes, the way a
+  menu's does. An artist hero still draws `profile_line`, up to `GENRES_SHOWN` genres as
+  `kit::tag` pills and `heard_on`, and at the end of its actions, where
+  `ArtistDetail::releases_unheld` is above nothing, a `Tone::Ghost` button reading *N releases not
+  held* under `UNHELD_HINT` that opens `Pane::Missing`. **The services on an artist are capped at
+  `SERVICES_SHOWN`, because an artist has a directory of them.** A release's own card is not: the
+  cap was for a line in the heading, and the card has the room. An artist named nineteen — every
+  streaming service, both encyclopaedias and four social networks. Four is what the heading
+  draws, the way three genres are, and as one line of words rather than a cloud of mono figures.
+  **Each service on the line is the link it was named from.** `service_names` keeps the first URL
+  a service is linked by beside its `Service::title` — *Apple Music*, *SoundCloud*, not the
+  lowercase key the catalog stores — and leaves `Service::Other` out. `heard_on` and the record
+  card draw one pressable name per service, lit under the pointer the way an `opens` is, naming
+  *Open on …* and handing that exact release's or artist's URL to `cx.open_url`, which is the
+  desktop's browser. It stops its press and ignores a right one, like every link in a heading.
 - **The artists pane is a list or a grid, and the heading chooses.** `ArtistsDrawn` is `List` —
   the rows it always was, a small portrait beside each name — or `Grid`, the albums pane's shape
   with the artist's portrait in place of a sleeve: `artist_grid` measures the same `grid_width`,

@@ -4065,6 +4065,7 @@ pub enum Drawn {
     InARow,
     NowPlaying,
     InAGrid,
+    OnThePage,
 }
 
 impl Drawn {
@@ -4075,6 +4076,7 @@ impl Drawn {
             Self::InARow => twice(theme::row_cover()),
             Self::NowPlaying => twice(theme::now_playing_cover()),
             Self::InAGrid => twice(theme::grid_cover()),
+            Self::OnThePage => twice(theme::scope_cover()),
         }
     }
 }
@@ -4083,6 +4085,7 @@ impl Drawn {
 pub enum Portrayed {
     InARow,
     InAGrid,
+    OnThePage,
 }
 
 impl Portrayed {
@@ -4090,6 +4093,7 @@ impl Portrayed {
         match self {
             Self::InARow => Drawn::InARow,
             Self::InAGrid => Drawn::InAGrid,
+            Self::OnThePage => Drawn::OnThePage,
         }
     }
 }
@@ -4128,6 +4132,7 @@ pub(crate) struct Art {
     in_a_row: Arc<Image>,
     now_playing: Arc<Image>,
     in_a_grid: Arc<Image>,
+    on_the_page: Arc<Image>,
 }
 
 impl Art {
@@ -4138,6 +4143,7 @@ impl Art {
             in_a_row: sizing.at(Drawn::InARow),
             now_playing: sizing.at(Drawn::NowPlaying),
             in_a_grid: sizing.at(Drawn::InAGrid),
+            on_the_page: sizing.at(Drawn::OnThePage),
         }
     }
 
@@ -4146,6 +4152,7 @@ impl Art {
             Drawn::InARow => Arc::clone(&self.in_a_row),
             Drawn::NowPlaying => Arc::clone(&self.now_playing),
             Drawn::InAGrid => Arc::clone(&self.in_a_grid),
+            Drawn::OnThePage => Arc::clone(&self.on_the_page),
         }
     }
 }
@@ -4154,6 +4161,7 @@ impl Art {
 pub(crate) struct Portrait {
     in_a_row: Arc<Image>,
     in_a_grid: Arc<Image>,
+    on_the_page: Arc<Image>,
 }
 
 impl Portrait {
@@ -4163,6 +4171,7 @@ impl Portrait {
         Self {
             in_a_row: sizing.at(Portrayed::InARow.drawn()),
             in_a_grid: sizing.at(Portrayed::InAGrid.drawn()),
+            on_the_page: sizing.at(Portrayed::OnThePage.drawn()),
         }
     }
 
@@ -4170,6 +4179,7 @@ impl Portrait {
         match portrayed {
             Portrayed::InARow => Arc::clone(&self.in_a_row),
             Portrayed::InAGrid => Arc::clone(&self.in_a_grid),
+            Portrayed::OnThePage => Arc::clone(&self.on_the_page),
         }
     }
 }
