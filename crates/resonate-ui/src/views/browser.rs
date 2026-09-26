@@ -1521,7 +1521,6 @@ impl RootView {
             );
 
         kit::heading()
-            .pb_0()
             .child(self.way_back(cx))
             .child(kit::hero().child(portrait).child(about))
     }

@@ -1451,7 +1451,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   right of the action row rather than in a band under the hero — that band was the gap between
   the title and the listing — and `RootView::artist_shows` is the `ArtistShows` it chose, kept
   for the run and put back to `Records` whenever `RootView::opened` opens an artist. The heading
-  itself keeps no bottom padding, so the listing follows the portrait. *Albums* is `artist_records`: every album
+  keeps its bottom padding, so the rule under the title is not sitting on the buttons. *Albums* is `artist_records`: every album
   the artist owns or plays on as a wrapping grid of `album_cell_captioned` cells at the grid's
   own `theme::grid_cover()`, scrolling under an id keyed by the artist so the next artist opens
   at its top. `Caption::Beside` is what the cells are captioned with — the year and the track
