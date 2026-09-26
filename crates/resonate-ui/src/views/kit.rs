@@ -764,6 +764,20 @@ pub(crate) fn measures_its_width(measured: Rc<Cell<Pixels>>) -> impl IntoElement
     .inset_0()
 }
 
+pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElement {
+    canvas(
+        move |bounds, window, _| {
+            if measured.get() != bounds.size.height {
+                measured.set(bounds.size.height);
+                window.request_animation_frame();
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
 pub(crate) fn action_row() -> Div {
     div().flex().flex_wrap().items_center().gap_1p5()
 }

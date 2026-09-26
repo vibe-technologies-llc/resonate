@@ -400,10 +400,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   which is what keeps a long playlist name from being ground down to a letter by thirteen
   controls. **An album or an artist is not a pane heading with a picture bolted on**: it is
   `album_page_heading` and `artist_page_heading`, a `kit::way_back` at the top left and a
-  `kit::hero` under it — the cover or the portrait at `theme::scope_cover()`, 224 and decoded at
-  `Drawn::OnThePage` so a page hero is larger than a grid cell and still sharp at a scale factor
-  of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it,
-  aligned to the bottom of the cover.
+  `kit::hero` under it — the portrait at `theme::scope_cover()`, 224, and the album cover a
+  square of the text column's own height, both decoded at `Drawn::OnThePage` so a page hero stays
+  sharp at a scale factor of 2. The column is the eyebrow, a `kit::hero_title` at `text_title`
+  and the lines about it, aligned to the bottom of the picture. The album cover is that height
+  so it meets the text and leaves no empty band beside it. The height is that column's own,
+  read a frame behind by an absolute canvas that fills it, so the inset resolves against the
+  height the text has already taken. A zero-width sibling stretched beside the text came out a
+  line taller than the column and left the band above the eyebrow. Until that height has been
+  measured the cover uses `scope_cover`.
   The action row is the last child of that column, so it sits under the text and clear of the
   cover: Play, the favourite and a sort icon where the listing can be sorted. An album adds the
   info mark. An artist adds one where it has genres, and where it holds albums the Albums and

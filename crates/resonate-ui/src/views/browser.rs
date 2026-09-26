@@ -1347,13 +1347,14 @@ impl RootView {
         let record = library.release().and_then(record_of);
         let favourite = library.favoured_album(id);
 
+        let measured = self.hero_height.get();
+        let side = if measured > px(0.0) {
+            measured / px(1.0)
+        } else {
+            theme::scope_cover()
+        };
         let cover = self
-            .cover_sized(
-                Pictured::Album(id),
-                Drawn::OnThePage,
-                theme::scope_cover(),
-                cx,
-            )
+            .cover_sized(Pictured::Album(id), Drawn::OnThePage, side, cx)
             .id("magnify-scoped-cover")
             .cursor_pointer()
             .hover(|cover| cover.opacity(kit::LIT))
@@ -1387,6 +1388,7 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
+            .child(kit::measures_its_height(self.hero_height.clone()))
             .child(kit::eyebrow("ALBUM"))
             .child(kit::hero_title(title, self.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
