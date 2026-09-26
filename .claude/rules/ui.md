@@ -410,7 +410,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   line taller than the column and left the band above the eyebrow. Until that height has been
   measured the cover uses `scope_cover`.
   The action row is the last child of that column, so it sits under the text and clear of the
-  cover: Play, Shuffle on an album, the favourite and a sort icon where the listing can be sorted.
+  cover: Play, Shuffle on an album or artist, the favourite and a sort icon where the listing can be sorted.
   Shuffle reads the same scoped listing as Play, begins at a time-chosen row and enables queue
   shuffle through `RootView::play_shuffled`, which the suggestions page uses too. An album adds the
   info mark. An artist adds one where it has genres, and where it holds albums the Albums and
@@ -1574,9 +1574,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   rather than at its top. `set_query` puts a fresh handle in whenever a keystroke narrows the rows
   differently, because the rows under the old offset are no longer the ones it was left on, and
   `forget_what_has_gone` drops the handle once the listing stops naming its playlist — passing over
-  a listing a search has narrowed, because what that leaves out is still there. None of it survives
-  the run, and neither does the settings pane's category, the listing's order or the pane the
-  sidebar was on.
+  a listing a search has narrowed, because what that leaves out is still there. The index puts its
+  sort icon with Import and New playlist in the heading's right actions; pressing it reveals the
+  ORDER and READS choices under the heading, and pressing it again tucks them away. None of it
+  survives the run, and neither does the settings pane's category, the listing's order or the pane
+  the sidebar was on.
 - **One `Field` names every playlist.** `RootView::name` is shared by the pane's new-and-rename row
   and the picker's *or a new one*, so only one of the two can be open: `name_a_playlist` closes the
   picker and `hold_for_a_playlist` closes the naming row. The field emits `Submitted` on enter and

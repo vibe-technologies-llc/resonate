@@ -1485,7 +1485,7 @@ impl RootView {
                     Favoured::Artist(id),
                     favourite,
                     shows == ArtistShows::Tracks,
-                    false,
+                    true,
                     cx,
                 )
                 .when(!genres.is_empty(), |row| {

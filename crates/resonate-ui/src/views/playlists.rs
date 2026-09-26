@@ -360,6 +360,9 @@ impl RootView {
             .when_some(redoable, |bar, redoable| {
                 bar.child(self.redoing(&redoable, cx))
             })
+            .when(any_saved, |bar| {
+                bar.child(self.orders_a_listing("playlists-sort", cx))
+            })
             .child(
                 kit::button(
                     "import-playlists",
@@ -406,7 +409,9 @@ impl RootView {
                     .child(actions),
             )
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
-            .when(any_saved, |pane| pane.child(self.playlists_order(cx)))
+            .when(any_saved && self.ordering, |pane| {
+                pane.child(self.playlists_order(cx))
+            })
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
             })
