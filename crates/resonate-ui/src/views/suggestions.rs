@@ -22,7 +22,7 @@ use crate::{
         browser::Plays,
         hint::Names,
         kit::{self, EndsInAnEllipsis, Press, Tone},
-        listing, menu,
+        listing,
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
         sorting,
@@ -36,8 +36,6 @@ const SCAN_MORE: &str = "Scan more music and lists it can fill itself will appea
 const PLAY_HINT: &str = "Play what this list would hold";
 
 const SHUFFLE_HINT: &str = "Play what this list would hold, shuffled";
-
-const NEXT_HINT: &str = "Hear what this list would hold straight after the track playing";
 
 const QUEUE_HINT: &str = "Queue what this list would hold after what is already queued, ahead of the rest of what is playing";
 
@@ -226,20 +224,10 @@ impl RootView {
         let rows = Arc::clone(tracks);
 
         let actions = kit::action_row()
+            .flex_nowrap()
+            .pt_2()
             .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx))
             .child(self.shuffle_suggestion(&suggestion.query, cx))
-            .child(self.queue_suggestion(
-                "opened-suggestion-next",
-                &suggestion.query,
-                Placement::Next,
-                cx,
-            ))
-            .child(self.queue_suggestion(
-                "opened-suggestion-last",
-                &suggestion.query,
-                Placement::Queued,
-                cx,
-            ))
             .child(self.save_suggestion("opened-suggestion-save", suggestion, cx))
             .child(
                 kit::button(
@@ -281,10 +269,10 @@ impl RootView {
                         .child(kit::figure(measured_shown(suggestion, shown)))
                         .when(!reads.is_empty(), |column| {
                             column.child(div().pt_1().child(listing::reads(&reads)))
-                        }),
+                        })
+                        .child(actions),
                 ),
-            )
-            .child(actions);
+            );
 
         div()
             .flex()
@@ -468,30 +456,6 @@ impl RootView {
             move |this, _, window, cx| {
                 this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
                     this.queue(&listed(&rows), Placement::Queued, cx);
-                });
-            },
-        ))
-    }
-
-    fn queue_suggestion(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        query: &SavedQuery,
-        at: Placement,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let queueing = query.clone();
-        let (icon, label, hint) = match at {
-            Placement::Next => (Icon::QueueNext, menu::PLAY_NEXT, NEXT_HINT),
-            Placement::Queued | Placement::At(_) => {
-                (Icon::QueueLast, menu::ADD_TO_QUEUE, QUEUE_HINT)
-            }
-        };
-
-        kit::button(id, Some(icon), label, hint, Tone::Outlined).on_click(cx.listener(
-            move |this, _, window, cx| {
-                this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
-                    this.queue(&listed(&rows), at, cx);
                 });
             },
         ))

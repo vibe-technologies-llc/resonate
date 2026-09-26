@@ -1407,11 +1407,7 @@ impl RootView {
                         ),
                 )
             })
-            .child(kit::subtitle(under));
-
-        kit::heading()
-            .child(self.way_back(cx))
-            .child(kit::hero().child(cover).child(about))
+            .child(kit::subtitle(under))
             .child(
                 self.page_actions(Favoured::Album(id), favourite, true, cx)
                     .when_some(record, |row, _| {
@@ -1423,7 +1419,11 @@ impl RootView {
                             ),
                         )
                     }),
-            )
+            );
+
+        kit::heading()
+            .child(self.way_back(cx))
+            .child(kit::hero().child(cover).child(about))
     }
 
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
@@ -1485,11 +1485,7 @@ impl RootView {
             .when_some(
                 heard_on("artist-heard-on", services, self.hero_width.get()),
                 Div::child,
-            );
-
-        kit::heading()
-            .child(self.way_back(cx))
-            .child(kit::hero().child(portrait).child(about))
+            )
             .child(
                 self.page_actions(
                     Favoured::Artist(id),
@@ -1515,7 +1511,11 @@ impl RootView {
                         })),
                     )
                 }),
-            )
+            );
+
+        kit::heading()
+            .child(self.way_back(cx))
+            .child(kit::hero().child(portrait).child(about))
             .when(records > 0, |heading| {
                 heading.child(self.artist_tabs(shows, records, tracks, cx))
             })
@@ -1570,10 +1570,9 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         kit::action_row()
+            .flex_nowrap()
+            .pt_2()
             .child(self.play_all(cx))
-            .child(self.queue_all(Placement::Next, cx))
-            .child(self.queue_all(Placement::Queued, cx))
-            .child(self.add_all_to_a_playlist(cx))
             .child(self.favour_mark("scope-favourite", what, already, cx))
             .when(sortable, |row| {
                 row.child(self.orders_a_listing("order-tracks", cx))

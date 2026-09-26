@@ -404,19 +404,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Drawn::OnThePage` so a page hero is larger than a grid cell and still sharp at a scale factor
   of 2, then a column of the eyebrow, a `kit::hero_title` at `text_title` and the lines about it,
   aligned to the bottom of the cover.
-  The action row is `kit::action_row` under the whole hero, full width and left aligned, Play
-  first, then Play next, Add to queue, Add to playlist, the favourite and Sort where the listing
-  can be sorted. A narrow window wraps the later buttons and leaves Play on the first line. It
-  used to be `kit::hero_actions` inside the text column, measured to that column, which wrapped
-  one button to a line and put the row in a different order from a suggestion. The title has the
-  whole column and wraps rather than clipping. **The hero's column is measured, because what
-  wraps in it has to be told its width.** `kit::measures_its_width` is a canvas writing
-  `RootView::hero_width` a frame behind — the shape the album grid's `grid_width` takes, and that
-  grid now uses the same builder — and the title and the genre tags take it through
-  `kit::hero_title` and `kit::wraps_within`. The action row does not: measuring it to the column
-  was what wrapped a button onto a line of its own, and taffy measures a flex item whose height
-  depends on how its children wrap at the column's *min-content* width. Until the first frame has
-  measured, the title is one line ending in an ellipsis. The opened playlist's heading carries
+  The action row is the last child of that column, so it sits under the text and clear of the
+  cover: Play, the favourite and Sort where the listing can be sorted. An album adds the info
+  mark and an artist adds the releases it does not hold. Play next, Add to queue and Add to
+  playlist are not on the page. The row does not wrap. A wrapping row measured to the column laid
+  each button on a line of its own, because taffy sizes a wrapping flex item at the column's
+  min-content width. The title has the whole column and wraps rather than clipping. **The hero's
+  column is measured, because what wraps in it has to be told its width.** `kit::measures_its_width`
+  is a canvas writing `RootView::hero_width` a frame behind — the shape the album grid's
+  `grid_width` takes, and that grid now uses the same builder — and the title and the genre tags
+  take it through `kit::hero_title` and `kit::wraps_within`. Until the first frame has measured,
+  the title is one line ending in an ellipsis. The opened playlist's heading carries
   the same `kit::way_back`, reading *Playlists*, above an eyebrow of *PLAYLIST* or *SAVED SEARCH*.
   **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics,
   inspector, visualiser and analysis headings name the playing track through `opens`, and under
@@ -1214,8 +1212,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
   a way back, the art at `scope_cover` through `Drawn::OnThePage`, and beside it, on the bottom of
   the art, the kind, the name, the reason, the count and length and the search as *Reads* chips,
-  and under the hero the same action row as an
-  album: Play, Shuffle, Play next, Add to queue, Save and Search for these, over an ordinary
+  and under that text Play, Shuffle, Save and Search for these, over an ordinary
   unsorted track listing, each row playing the list from itself. A card on the shelf is the art
   at the full card width, still the grid's texture, with the name under it and Play, then the
   queue and save marks, on one row at the bottom of the card, so a wrapped title does not leave
@@ -1415,7 +1412,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Neither the grid's caption nor the scoped heading counts what an album is short of any more:
   the Missing pane, the inline `unheld_row`s, the sidebar figure and the artist heading's
   *N releases not held* each say it once where it is the subject, rather than on every cell in a
-  library. The pressing is not drawn there. An info mark at the end of the action row, and only
+  library. The pressing is not drawn there. An info mark at the end of the row under the text, and only
   where `record_of` has something to say, opens a card anchored at the press: Released, Format,
   Label, Catalogue number, Barcode, Country and Kind, then the disambiguation, then every service
   link. Escape closes it after a magnified cover and before a toast, a second press on the mark
@@ -2053,8 +2050,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the only queueing gestures there are, each named once in `menu::PLAY_NEXT` and
   `menu::ADD_TO_QUEUE`: *Play next* is `Placement::Next`, straight after the track playing, and
   *Add to queue* is `Placement::Queued`, after whatever is already queued and ahead of the rest
-  of the album or playlist playing — a suggestion's card says the same words rather than a
-  shorter *Queue*. The queue pane marks a row waiting to play next with the *queue next* icon
+  of the album or playlist playing. An album page, an artist page and an opened suggestion do not
+  carry the pair: their row is under the text. A suggestion's card queues with a mark. The queue
+  pane marks a row waiting to play next with the *queue next* icon
   where its number would be, off `Queued::next`, and its heading counts them.
 - **The queue is drawn in the four parts the engine keeps it in, each under a heading of its
   own.** The published list is `order[..after] ++ next ++ order[after..]`, so where it stands
