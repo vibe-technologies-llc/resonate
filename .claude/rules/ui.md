@@ -1205,7 +1205,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   and Add to queue read it on the background executor before they act. *Save* is
   `Library::save_query` through `LibraryModel::edit`, so a name the catalog already holds comes
   back as a `Notice::Trouble` rather than as a panic, and a card whose search a playlist already
-  fills itself from says *Saved* under `kit::Press::Greyed` rather than offering a second copy.
+  fills itself from greys a check under `kit::Press::Greyed` rather than offering a second copy.
 - **The Suggestions pane is shelves by kind, and a card opens onto what it would hold.**
   `SuggestionKind` groups the cards under *From your listening*, *Eras*, *Genres*, *Artists* and
   *Sound*, in `SuggestionKind::ALL`'s order, each an eyebrow over a wrapping row. Pressing a card's
@@ -1214,14 +1214,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
   a way back, the art at `scope_cover` through `Drawn::OnThePage`, and beside it, on the bottom of
   the art, the kind, the name, the reason, the count and length and the search as *Reads* chips,
-  and under that text Play, Shuffle, Save and Search for these, over an ordinary
+  and under that text Play, Shuffle, a save mark and a search mark, over an ordinary
   unsorted track listing, each row playing the list from itself. A card on the shelf is the art
   at the full card width, still the grid's texture, with the name under it and Play, then the
   queue and save marks, on one row at the bottom of the card, so a wrapped title does not leave
   the row beside it short. Play leads; a labeled Add to queue used to wrap it onto the
   bottom of a card stretched to the tallest in the shelf. A suggestion the catalog stops offering
-  takes the pane back to the shelves on its own. *Search
-  for these* is `search_instead` and `choose_pane(Pane::Tracks)`, so the list can be narrowed
+  takes the pane back to the shelves on its own. The search mark is `search_instead` and
+  `choose_pane(Pane::Tracks)`, so the list can be narrowed
   further and saved under a name of its own. *Shuffle* loads the rows from a place picked off the
   clock's nanoseconds, there being no random crate in the tree, and then turns the transport's
   shuffle on.

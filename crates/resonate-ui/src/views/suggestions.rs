@@ -228,19 +228,14 @@ impl RootView {
             .pt_2()
             .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx))
             .child(self.shuffle_suggestion(&suggestion.query, cx))
-            .child(self.save_suggestion("opened-suggestion-save", suggestion, cx))
+            .child(self.save_mark("opened-suggestion-save", suggestion, cx))
             .child(
-                kit::button(
-                    "opened-suggestion-search",
-                    Some(Icon::Search),
-                    "Search for these",
-                    SEARCH_HINT,
-                    Tone::Ghost,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.search_instead(searched.clone(), window, cx);
-                    this.choose_pane(Pane::Tracks, cx);
-                })),
+                kit::icon_button("opened-suggestion-search", Icon::Search, SEARCH_HINT).on_click(
+                    cx.listener(move |this, _, window, cx| {
+                        this.search_instead(searched.clone(), window, cx);
+                        this.choose_pane(Pane::Tracks, cx);
+                    }),
+                ),
             );
 
         let heading = kit::heading()
@@ -373,42 +368,6 @@ impl RootView {
     ) -> Option<Arc<gpui::Image>> {
         self.library
             .update(cx, |library, cx| library.cover(album, drawn, cx))
-    }
-
-    fn save_suggestion(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        suggestion: &Suggestion,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let saved = self
-            .library
-            .read(cx)
-            .saved_playlists()
-            .iter()
-            .any(|playlist| playlist.query.as_ref() == Some(&suggestion.query));
-        if saved {
-            return kit::button_when(
-                Press::Greyed,
-                id,
-                Some(Icon::Check),
-                "Saved",
-                SAVED_HINT,
-                Tone::Ghost,
-            );
-        }
-        let saving = suggestion.query.clone();
-        let named = suggestion.name.clone();
-
-        kit::button(id, Some(Icon::Plus), "Save", SAVE_HINT, Tone::Ghost).on_click(cx.listener(
-            move |this, _, _, cx| {
-                let saved = saving.clone();
-                let name = named.clone();
-                this.library.update(cx, |library, cx| {
-                    library.save_query(name, saved, cx);
-                });
-            },
-        ))
     }
 
     fn save_mark(
