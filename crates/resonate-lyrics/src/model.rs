@@ -6,6 +6,14 @@ use crate::{Error, Result};
 
 const LIT_AT_MOST: Duration = Duration::from_secs(10);
 
+const SUNG_AT_LEAST: Duration = Duration::from_secs(3);
+
+const SUNG_BEFORE_THE_WORDS: Duration = Duration::from_millis(1_500);
+
+const SUNG_PER_LETTER: Duration = Duration::from_millis(110);
+
+const A_BREATH_AT_LEAST: Duration = Duration::from_secs(3);
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Waiting {
     pub next: usize,
@@ -177,9 +185,7 @@ impl Lyrics {
             return active;
         }
 
-        let passed = self
-            .lines
-            .partition_point(|line| line.at.is_some_and(|at| at <= position));
+        let passed = self.passed(position);
         let mut seen = [false; 2];
         for index in (0..passed).rev() {
             let line = &self.lines[index];
@@ -189,7 +195,7 @@ impl Lyrics {
             }
             seen[voice] = true;
             let (_, until) = self.span_of(index).expect("a synced line has a span");
-            if position < until {
+            if position < until && !line.is_blank() {
                 active[voice] = Some(index);
             }
             if seen.into_iter().all(|found| found) {
@@ -205,39 +211,73 @@ impl Lyrics {
             return None;
         }
 
-        let Some(sung) = self.line_at(position) else {
-            let arrives = self.lines.first()?.at?;
-
+        let passed = self.passed(position);
+        let next = passed
+            + self.lines[passed..]
+                .iter()
+                .position(|line| !line.is_blank())?;
+        let arrives = self.lines[next].at?;
+        let Some(sung) = self.lines[..passed]
+            .iter()
+            .rposition(|line| !line.is_blank())
+        else {
             return Some(Waiting {
-                next: 0,
+                next,
                 through: share(position, arrives),
             });
         };
         let (_, until) = self.span_of(sung)?;
-        let next = sung + 1;
-        let arrives = self.lines.get(next)?.at?;
+        let wait = arrives.saturating_sub(until);
+        if wait < A_BREATH_AT_LEAST {
+            return None;
+        }
 
         Some(Waiting {
             next,
-            through: share(
-                position.saturating_sub(until),
-                arrives.saturating_sub(until),
-            ),
+            through: share(position.saturating_sub(until), wait),
         })
     }
 
+    pub fn has_ended(&self, position: Duration) -> bool {
+        if self.timing == Timing::Unsynced || self.is_empty() {
+            return false;
+        }
+        let passed = self.passed(position);
+
+        self.lines[passed..].iter().all(LyricLine::is_blank)
+            && self.line_in_play(position).is_none()
+    }
+
+    fn passed(&self, position: Duration) -> usize {
+        self.lines
+            .partition_point(|line| line.at.is_some_and(|at| at <= position))
+    }
+
     fn span_of(&self, line: usize) -> Option<(Duration, Duration)> {
-        let at = self.lines.get(line)?.at?;
-        let next = self.lines[line + 1..]
+        let this = self.lines.get(line)?;
+        let at = this.at?;
+        let held = self.lines[line + 1..]
             .iter()
-            .find(|next| next.voice == self.lines[line].voice)
-            .and_then(|line| line.at);
-        let until = next
-            .unwrap_or(Duration::MAX)
-            .min(at.saturating_add(LIT_AT_MOST));
+            .find(|next| next.voice == this.voice)
+            .and_then(|next| next.at)
+            .unwrap_or(Duration::MAX);
+        let sung = at.saturating_add(sung_for(&this.text));
+        let until = if held.saturating_sub(sung) >= A_BREATH_AT_LEAST {
+            sung
+        } else {
+            held.min(at.saturating_add(LIT_AT_MOST))
+        };
 
         Some((at, until))
     }
+}
+
+fn sung_for(text: &str) -> Duration {
+    let letters = u32::try_from(text.trim().chars().count()).unwrap_or(u32::MAX);
+
+    SUNG_BEFORE_THE_WORDS
+        .saturating_add(SUNG_PER_LETTER.saturating_mul(letters))
+        .clamp(SUNG_AT_LEAST, LIT_AT_MOST)
 }
 
 fn share(elapsed: Duration, whole: Duration) -> f32 {
@@ -329,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn two_voices_stay_in_play_until_their_own_next_lines() {
+    fn two_voices_stay_in_play_until_their_own_next_lines_or_until_they_have_been_sung() {
         let lyrics = Lyrics::synced(
             source(),
             vec![
@@ -342,7 +382,8 @@ mod tests {
         .expect("every line is timed");
 
         assert_eq!(lyrics.voices_in_play(at(3)), [Some(0), Some(1)]);
-        assert_eq!(lyrics.voices_in_play(at(6)), [Some(2), Some(1)]);
+        assert_eq!(lyrics.voices_in_play(at(4)), [Some(0), Some(1)]);
+        assert_eq!(lyrics.voices_in_play(at(6)), [Some(2), None]);
         assert_eq!(lyrics.voices_in_play(at(8)), [Some(2), Some(3)]);
         assert_eq!(lyrics.line_in_play(at(8)), Some(3));
         assert_eq!(lyrics.voices_in_play(at(20)), [None, None]);
@@ -373,8 +414,8 @@ mod tests {
         )
         .expect("every line is timed");
 
-        assert_eq!(lyrics.line_in_play(at(9)), Some(0));
-        assert_eq!(lyrics.line_in_play(at(10)), None);
+        assert_eq!(lyrics.line_in_play(at(3)), Some(0));
+        assert_eq!(lyrics.line_in_play(at(4)), None);
         assert_eq!(lyrics.line_in_play(at(119)), None);
         assert_eq!(lyrics.line_at(at(119)), Some(0));
         assert_eq!(lyrics.line_in_play(at(120)), Some(1));
@@ -384,8 +425,18 @@ mod tests {
     fn the_last_line_goes_out_once_it_has_had_its_time() {
         let lyrics = synced();
 
-        assert_eq!(lyrics.line_in_play(at(19)), Some(2));
-        assert_eq!(lyrics.line_in_play(at(20)), None);
+        assert_eq!(lyrics.line_in_play(at(15)), Some(2));
+        assert_eq!(lyrics.line_in_play(at(16)), None);
+        assert!(!lyrics.has_ended(at(15)));
+        assert!(lyrics.has_ended(at(16)));
+        assert!(lyrics.has_ended(at(600)));
+    }
+
+    #[test]
+    fn a_longer_line_is_held_lit_for_longer() {
+        assert_eq!(sung_for("oh"), SUNG_AT_LEAST);
+        assert!(sung_for("and everything under the sun is in tune") > sung_for("all that you see"));
+        assert_eq!(sung_for(&"la ".repeat(200)), LIT_AT_MOST);
     }
 
     #[test]
@@ -402,28 +453,76 @@ mod tests {
         let lyrics = Lyrics::synced(
             source(),
             vec![
-                LyricLine::sung(at(0), "all that you touch"),
-                LyricLine::sung(at(30), "all that you see"),
+                LyricLine::sung(at(0), "touch"),
+                LyricLine::sung(at(33), "all that you see"),
             ],
         )
         .expect("every line is timed");
 
-        assert_eq!(lyrics.waiting_at(at(9)), None);
+        assert_eq!(lyrics.waiting_at(at(2)), None);
         assert_eq!(
-            lyrics.waiting_at(at(10)),
+            lyrics.waiting_at(at(3)),
             Some(Waiting {
                 next: 1,
                 through: 0.0
             })
         );
         assert_eq!(
-            lyrics.waiting_at(at(20)),
+            lyrics.waiting_at(at(18)),
             Some(Waiting {
                 next: 1,
                 through: 0.5
             })
         );
-        assert_eq!(lyrics.waiting_at(at(30)), None);
+        assert_eq!(lyrics.waiting_at(at(33)), None);
+    }
+
+    #[test]
+    fn a_pause_mid_song_breathes_where_a_short_one_does_not() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "touch"),
+                LyricLine::sung(at(5), "see"),
+                LyricLine::sung(at(60), "taste"),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert_eq!(lyrics.line_in_play(at(4)), Some(0));
+        assert_eq!(lyrics.waiting_at(at(4)), None);
+        assert_eq!(lyrics.line_in_play(at(7)), Some(1));
+        assert_eq!(lyrics.line_in_play(at(9)), None);
+        assert_eq!(
+            lyrics.waiting_at(at(9)).map(|waiting| waiting.next),
+            Some(2),
+            "a long pause between two verses did not breathe"
+        );
+    }
+
+    #[test]
+    fn a_blank_line_between_verses_is_a_pause_rather_than_a_line_in_play() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "and everything under the sun is in tune"),
+                LyricLine::sung(at(4), ""),
+                LyricLine::sung(at(20), "but the sun is eclipsed by the moon"),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert_eq!(lyrics.line_in_play(at(3)), Some(0));
+        assert_eq!(lyrics.line_in_play(at(5)), None);
+        assert_eq!(
+            lyrics.waiting_at(at(12)),
+            Some(Waiting {
+                next: 2,
+                through: 0.5
+            }),
+            "the pause a blank line marks did not count down to the verse after it"
+        );
+        assert!(!lyrics.has_ended(at(12)));
     }
 
     #[test]
@@ -448,7 +547,7 @@ mod tests {
     fn nothing_is_waited_on_once_the_last_line_has_had_its_time() {
         let lyrics = synced();
 
-        assert_eq!(lyrics.waiting_at(at(19)), None);
+        assert_eq!(lyrics.waiting_at(at(15)), None);
         assert_eq!(lyrics.waiting_at(at(20)), None);
         assert_eq!(lyrics.waiting_at(at(600)), None);
     }
@@ -461,6 +560,7 @@ mod tests {
         assert_eq!(lyrics.line_at(at(30)), None);
         assert_eq!(lyrics.line_in_play(at(30)), None);
         assert_eq!(lyrics.waiting_at(at(30)), None);
+        assert!(!lyrics.has_ended(at(30)));
         assert!(!lyrics.is_empty());
     }
 

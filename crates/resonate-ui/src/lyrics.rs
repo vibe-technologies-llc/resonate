@@ -13,28 +13,15 @@ use resonate_lyrics::{Lyricists, Lyrics, Timing, Voice, Waiting, Wanted};
 
 use crate::theme;
 
-pub(crate) fn near_the_words(
-    pointer: Point<Pixels>,
-    pane: Bounds<Pixels>,
-    column: Pixels,
-    read: Option<Bounds<Pixels>>,
-) -> bool {
+pub(crate) fn near_the_words(pointer: Point<Pixels>, pane: Bounds<Pixels>, column: Pixels) -> bool {
     if pane.size.height <= px(0.0) || !pane.contains(&pointer) {
         return false;
     }
 
     let middle = pane.left() + pane.size.width / 2.0;
     let slack = theme::width(theme::lyric_pad());
-    if (pointer.x - middle).abs() > column / 2.0 + slack {
-        return false;
-    }
 
-    let Some(read) = read else {
-        return true;
-    };
-    let reach = theme::width(theme::lyric_reach());
-
-    pointer.y >= read.top() - reach && pointer.y <= read.bottom() + reach
+    (pointer.x - middle).abs() <= column / 2.0 + slack
 }
 
 const TURN: Duration = Duration::from_millis(420);
@@ -524,8 +511,10 @@ impl LyricsModel {
         };
         let waiting = lyrics.waiting_at(position);
         let lit = lyrics.voices_in_play(position);
+        let ended = lyrics.has_ended(position).then(|| self.end_of_the_sheet());
         let read_at = waiting
             .map(|waiting| waiting.next)
+            .or(ended)
             .or_else(|| lyrics.line_at(position));
         let timing = lyrics.timing();
         match waiting {
@@ -552,6 +541,7 @@ impl LyricsModel {
             lit.into_iter()
                 .flatten()
                 .max()
+                .or(ended)
                 .map_or(Reads::Spent(read_at), Reads::At)
         };
 
@@ -626,6 +616,15 @@ impl LyricsModel {
         (phase * TAU).sin().mul_add(0.5, 0.5)
     }
 
+    pub fn end_of_the_sheet(&self) -> usize {
+        self.sheet.text.len()
+    }
+
+    pub fn has_ended(&self, position: Duration) -> bool {
+        self.found()
+            .is_some_and(|lyrics| lyrics.has_ended(position))
+    }
+
     fn ordinal(&self, index: usize) -> usize {
         self.sheet.written.get(index).copied().unwrap_or(index)
     }
@@ -655,15 +654,8 @@ impl LyricsModel {
         self.pane_height() / 2.0
     }
 
-    pub fn opened_by(&self, pointer: Point<Pixels>, now: Instant) -> bool {
-        near_the_words(
-            pointer,
-            self.scroll.bounds(),
-            self.column_width(),
-            self.read_at
-                .filter(|_| self.following(now))
-                .and_then(|line| self.scroll.bounds_for_item(line)),
-        )
+    pub fn opened_by(&self, pointer: Point<Pixels>) -> bool {
+        near_the_words(pointer, self.scroll.bounds(), self.column_width())
     }
 
     pub const fn is_placed(&self) -> bool {
@@ -882,7 +874,7 @@ impl Sheet {
         let moments = lyrics.lines().iter().map(|line| line.at).collect();
         let voices = lyrics.lines().iter().map(|line| line.voice).collect();
         let mut standing = 0;
-        let written = lyrics
+        let mut written: Vec<usize> = lyrics
             .lines()
             .iter()
             .map(|line| {
@@ -894,12 +886,13 @@ impl Sheet {
                 ordinal
             })
             .collect();
+        written.push(standing);
 
         Self {
             text,
             moments,
             voices,
-            written,
+            written: written.into(),
         }
     }
 }
@@ -1215,9 +1208,13 @@ mod tests {
 
         let over = now + TURN;
         model.follow_the_track(at(60), over);
-        assert_eq!(model.read_at(), Some(3));
+        assert_eq!(model.read_at(), Some(model.end_of_the_sheet()));
         assert!(model.standing(3, over + TURN).abs() < f32::EPSILON);
         assert!(model.lead(3, over + TURN).abs() < f32::EPSILON);
+        assert!(
+            (model.standing(model.end_of_the_sheet(), over + TURN) - LIT).abs() < f32::EPSILON,
+            "the end of the sheet was not lit once the last line had had its word"
+        );
     }
 
     #[test]
@@ -1231,8 +1228,8 @@ mod tests {
         let settled = now + TURN;
 
         assert!((model.standing(5, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
-        assert!((model.standing(4, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
-        assert!((model.standing(2, settled) - Falloff::Across.ahead(3)).abs() < f32::EPSILON);
+        assert!((model.standing(4, settled) - Falloff::Across.ahead(2)).abs() < f32::EPSILON);
+        assert!((model.standing(2, settled) - Falloff::Across.ahead(4)).abs() < f32::EPSILON);
         assert!(model.standing(5, settled) < LIT);
         assert!(model.lead(5, settled).abs() < f32::EPSILON);
     }
@@ -1247,7 +1244,7 @@ mod tests {
 
         model.led_by_hand(over);
         assert!(model.shows_every_line(over));
-        assert!((model.standing(1, over + TURN) - Falloff::Across.ahead(4)).abs() < f32::EPSILON);
+        assert!((model.standing(1, over + TURN) - Falloff::Across.ahead(5)).abs() < f32::EPSILON);
 
         let let_go = over + HANDS_OFF;
         model.follow_the_track(at(61), let_go);
@@ -1266,7 +1263,7 @@ mod tests {
         model.open_out(true);
         spread_settled(&mut model);
         assert!(model.standing(3, over) >= Falloff::Across.ahead(1));
-        assert!(model.standing(0, over) >= Falloff::Across.ahead(3));
+        assert!(model.standing(0, over) >= Falloff::Across.ahead(4));
     }
 
     #[test]
@@ -1425,55 +1422,29 @@ mod tests {
         }
     }
 
-    fn line_at(top: f32) -> Bounds<Pixels> {
-        Bounds {
-            origin: point(px(440.0), px(top)),
-            size: Size {
-                width: px(720.0),
-                height: px(48.0),
-            },
-        }
-    }
-
     #[test]
-    fn the_sheet_opens_out_only_where_the_pointer_is_on_the_words() {
+    fn the_sheet_opens_out_anywhere_down_its_column_the_lines_already_sung_included() {
         let column = px(720.0);
-        let read = Some(line_at(380.0));
-        let middle = point(px(800.0), px(400.0));
 
         assert!(
-            near_the_words(middle, pane(), column, read),
+            near_the_words(point(px(800.0), px(400.0)), pane(), column),
             "the pointer on the line being sung did not open the sheet out"
         );
         assert!(
-            !near_the_words(point(px(340.0), px(400.0)), pane(), column, read),
+            near_the_words(point(px(800.0), px(90.0)), pane(), column),
+            "the pointer over the lines already sung did not open the sheet out"
+        );
+        assert!(
+            near_the_words(point(px(800.0), px(740.0)), pane(), column),
+            "the pointer over the lines still to come did not open the sheet out"
+        );
+        assert!(
+            !near_the_words(point(px(340.0), px(400.0)), pane(), column),
             "the gutter beside the column opened the sheet out"
         );
         assert!(
-            !near_the_words(point(px(800.0), px(90.0)), pane(), column, read),
-            "the top of the pane, far from the read line, opened the sheet out"
-        );
-        assert!(
-            !near_the_words(point(px(800.0), px(740.0)), pane(), column, read),
-            "the foot of the pane, far from the read line, opened the sheet out"
-        );
-        assert!(
-            !near_the_words(point(px(100.0), px(400.0)), pane(), column, read),
+            !near_the_words(point(px(100.0), px(400.0)), pane(), column),
             "a pointer outside the pane altogether opened the sheet out"
-        );
-    }
-
-    #[test]
-    fn a_sheet_with_no_line_in_play_opens_out_anywhere_down_its_column() {
-        let column = px(720.0);
-
-        assert!(
-            near_the_words(point(px(800.0), px(100.0)), pane(), column, None),
-            "a sheet reading no line refused the column's top"
-        );
-        assert!(
-            !near_the_words(point(px(1_290.0), px(100.0)), pane(), column, None),
-            "a sheet reading no line still answered outside its column"
         );
     }
 
@@ -1490,8 +1461,7 @@ mod tests {
         assert!(!near_the_words(
             point(px(0.0), px(0.0)),
             unmeasured,
-            px(0.0),
-            None
+            px(0.0)
         ));
     }
 }

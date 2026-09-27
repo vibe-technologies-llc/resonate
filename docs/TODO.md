@@ -163,6 +163,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   1 024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
+- When a line goes out is guessed from how long its text is, because a line-synced sheet names
+  when a line starts and never when it ends, so a held note can be put out under the dots early
 - `Lyrics` is a flat list of lines: no word timing, no translation beside the original, and no
   source says which singer owns a line
 - A sidecar's `[ti:]`, `[ar:]` and `[length:]` check reads a differently transliterated title as a

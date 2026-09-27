@@ -61,6 +61,8 @@ const LAID_DOWN_WITH: &str = "Laid down with";
 
 const FROM_THE_RECORD: &str = "From";
 
+const END_OF_LYRICS: &str = "END OF LYRICS";
+
 const BREATH_DOTS: usize = 3;
 
 const DIM_DOT: f32 = 0.22;
@@ -96,6 +98,13 @@ struct Line {
     offset: Pixels,
     width: Pixels,
     breath: Option<Breath>,
+}
+
+#[derive(Clone, Copy)]
+struct Ending {
+    standing: f32,
+    offset: Pixels,
+    width: Pixels,
 }
 
 #[derive(Clone, Copy)]
@@ -274,7 +283,7 @@ impl RootView {
         moving: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (scroll, edge, shown, drawn, moved_by_hand) = {
+        let (scroll, edge, shown, drawn, ending, moved_by_hand) = {
             let model = self.lyrics.read(cx);
             let text = model.text();
             let moments = model.moments();
@@ -317,6 +326,14 @@ impl RootView {
                     }
                 })
                 .collect();
+            let ending = synced.then(|| {
+                let end = model.end_of_the_sheet();
+                Ending {
+                    standing: model.standing(end, now),
+                    offset: model.lag(end, now) + model.rise(end, now),
+                    width,
+                }
+            });
             let shown = if model.is_placed() {
                 model.arrival(now)
             } else {
@@ -328,6 +345,7 @@ impl RootView {
                 model.edge(),
                 shown,
                 drawn,
+                ending,
                 model.moved_by_hand_lately(now),
             )
         };
@@ -353,6 +371,9 @@ impl RootView {
             .when(synced, |sheet| sheet.pt(edge))
             .when(!synced, |sheet| sheet.py_12())
             .children(lines)
+            .when_some(ending, |sheet, ending| {
+                sheet.child(end_of_the_words(ending))
+            })
             .when(synced, |sheet| sheet.child(reaches_the_middle(edge)));
 
         div()
@@ -382,7 +403,7 @@ impl RootView {
                 window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| {
                     let at = event.position;
                     moved.update(cx, |this, cx| {
-                        let near = this.lyrics.read(cx).opened_by(at, Instant::now());
+                        let near = this.lyrics.read(cx).opened_by(at);
                         if this.lyrics.update(cx, |model, _| model.open_out(near)) {
                             cx.notify();
                         }
@@ -642,6 +663,42 @@ fn laid_down_with(credits: &Credits) -> Option<String> {
 
 fn reaches_the_middle(edge: Pixels) -> Div {
     div().flex_none().w_full().h(edge)
+}
+
+fn end_of_the_words(ending: Ending) -> Div {
+    let rule = || {
+        div()
+            .h(px(1.0))
+            .w(theme::width(theme::lyric_end_rule()))
+            .bg(rgb(theme::faint()))
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .flex_none()
+        .w(ending.width)
+        .child(
+            div()
+                .relative()
+                .top(ending.offset)
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap_3()
+                .py_4()
+                .opacity(ending.standing)
+                .child(rule())
+                .child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(theme::muted()))
+                        .child(END_OF_LYRICS),
+                )
+                .child(rule()),
+        )
 }
 
 fn breather(breath: Breath) -> Div {

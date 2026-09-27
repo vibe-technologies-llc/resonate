@@ -785,7 +785,7 @@ const SETTINGS_COLUMN: f32 = 680.0;
 const SETTINGS_RAIL: f32 = 188.0;
 const LYRIC_COLUMN: f32 = 720.0;
 const LYRIC_GUTTER: f32 = 32.0;
-const LYRIC_REACH: f32 = 180.0;
+const LYRIC_END_RULE: f32 = 36.0;
 const LYRIC_PAD: f32 = 16.0;
 const LYRIC_BREAK: f32 = 18.0;
 const LYRIC_EDGE: f32 = 88.0;
@@ -927,7 +927,7 @@ measures! {
     settings_rail => SETTINGS_RAIL,
     lyric_column => LYRIC_COLUMN,
     lyric_gutter => LYRIC_GUTTER,
-    lyric_reach => LYRIC_REACH,
+    lyric_end_rule => LYRIC_END_RULE,
     lyric_pad => LYRIC_PAD,
     lyric_break => LYRIC_BREAK,
     lyric_edge => LYRIC_EDGE,

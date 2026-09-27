@@ -34,6 +34,16 @@ window.
   it is, which is why an embedded set carries its credits although it is checked against nothing:
   the text came out of the file, so who transcribed it and what laid it down are still the sheet's
   own word on itself.
+- **A line goes out once it has been sung, and a blank line is a pause.** A synced set carries when
+  a line starts and nothing about when it ends, so `span_of` guesses: `sung_for` is
+  `SUNG_BEFORE_THE_WORDS` plus `SUNG_PER_LETTER` a letter, held between `SUNG_AT_LEAST` and
+  `LIT_AT_MOST`, and a line goes out there only where the next line of its voice is at least
+  `A_BREATH_AT_LEAST` further on — otherwise it stays lit until that line, as it always did, so a
+  verse never flickers between its lines. A timed blank line, which is how an `.lrc` marks the
+  break between verses, ends the line before it and is never in play itself, so the pause after a
+  verse counts down to the next written line instead of lighting nothing. Before this a line held
+  for up to ten seconds whatever it said and a blank one counted as sung, so the dots were only
+  ever seen before the first line. `has_ended` is the reading past the last written line.
 - **`waiting_at` is what a flat set can say about a gap.** It answers only where nothing is in play:
   which line the wait is for and how far through it the transport is, counting from the start of the
   track before the first line and from the moment the last line went out after it. It lives here

@@ -964,12 +964,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   already ride — so a track change searches whatever pane is in front and the pane opens on a set
   rather than on *Looking for lyrics…*. It costs nothing idle: `Asked` is `Copy`,
   `worth_looking_again` refuses a repeat, and the look already runs on the background executor.
-- **The whole sheet opens out only where the pointer is on the words.** `near_the_words` is the
-  decision — inside the centred column band, and within `lyric_reach` of the line being read —
-  and it takes bounds and answers a `bool`, so it is tested without a window. While a scroll of
-  your own holds the pane, `opened_by` hands it no read line, so the pointer opens the sheet out
-  anywhere down the column: the line being read has been scrolled away from, and weighing the
-  pointer against it left a sheet scrolled back through dark under the pointer. The view reaches it
+- **The whole sheet opens out wherever the pointer is on the column.** `near_the_words` is the
+  decision — inside the centred column band, anywhere from the top of the pane to its foot — and
+  it takes bounds and answers a `bool`, so it is tested without a window. It used to answer only
+  within a reach of the line being read, which left the lines already sung dark under a pointer
+  held over them: the one place somebody points to read back is exactly where it refused. The view reaches it
   through the `pointer_watch` idiom: a zero-size `canvas` registering a `MouseMoveEvent` window
   listener from *paint*, which is the one phase `Window::on_mouse_event` may be called in. An
   `on_hover` on the pane opened the sheet out from the empty gutters and from either far end.
@@ -1103,6 +1102,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `glide_to` moves `lands` in place while a glide is in flight and a drift is under `RESETTLE`, and
   starts a fresh one only for a jump. Restarting on every drift was what froze the scroll near its
   start and then let it snap.
+- **The end of the words is a row of its own, so an outro is not an empty pane.** Once
+  `Lyrics::has_ended` — nothing in play and nothing but blank lines still to come — the read line
+  is `LyricsModel::end_of_the_sheet`, one past the last line, and the turn reads `At` it, so the
+  sheet glides to an *END OF LYRICS* mark between two short rules that `end_of_the_words` draws as
+  the last child before the trailing spacer, lit while everything sung falls away the way a line
+  behind the sung one does. `Sheet::written` carries one more ordinal for it, so it rises, lags
+  and stands like any line: faint two lines ahead of the last word and lit once it has gone out.
+  An unsynced set draws no mark, having no clock to end on.
 - **A pane is drawn nowhere until it has been placed, and a row is as wide as the pane says.**
   The sheet's spacers are measured off `ScrollHandle::bounds`, which is a frame behind, so the first
   frame lays out with no padding at offset zero and the second lays out with the padding but centres
@@ -1133,9 +1140,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   clears. A wheel over the pane marks it `led_by_hand` and the pane stops following for `HANDS_OFF`;
   the heading grows a *Follow* button while it is held off, and that press, a press on a line or a
   track change is what resumes it.
-- **A gap breathes, and nothing else marks the moment.** `Lyrics::waiting_at` answers only where no
-  line is in play: which line the gap is waiting on and how far through the wait the transport is,
-  counting from the start of the track before the first line. The pane draws it as three dots
+- **A gap breathes, mid-song as well as before the first line.** `Lyrics::waiting_at` answers only
+  where no line is in play: which line the gap is waiting on and how far through the wait the
+  transport is, counting from the start of the track before the first line and from the moment
+  the last line went out after it — `lyrics.md` has when a line goes out and why a blank line is a
+  pause rather than a line. The pane draws it as three dots
   standing where that line will be, filling in turn and swelling on `LyricsModel::breath` by
   `DOT_SWELL` over `LYRIC_DOT`, with the line itself rising towards lit as the count runs out. The
   dots sit in a row of the *fully swollen* height with the padding outside it, so the row holds
