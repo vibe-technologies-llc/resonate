@@ -572,6 +572,7 @@ mod tests {
             is_hardware: true,
             port: None,
             profile: None,
+            profiles: Vec::new(),
             formats: formats
                 .iter()
                 .map(|format| SinkFormats {

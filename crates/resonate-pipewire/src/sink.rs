@@ -23,6 +23,25 @@ impl fmt::Display for SinkId {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProfileIndex(u32);
+
+impl ProfileIndex {
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for ProfileIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeName(Box<str>);
 
@@ -119,6 +138,22 @@ pub struct SinkPort {
     pub muted: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardProfile {
+    pub index: ProfileIndex,
+    pub name: String,
+    pub description: String,
+    pub priority: u32,
+    pub plugged: Plugged,
+    pub sinks: u32,
+}
+
+impl CardProfile {
+    pub const fn plays(&self) -> bool {
+        self.sinks > 0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SinkInfo {
     pub id: SinkId,
@@ -127,7 +162,8 @@ pub struct SinkInfo {
     pub is_default: bool,
     pub is_hardware: bool,
     pub port: Option<SinkPort>,
-    pub profile: Option<String>,
+    pub profile: Option<CardProfile>,
+    pub profiles: Vec<CardProfile>,
     pub formats: Vec<SinkFormats>,
     pub allowed_rates: Vec<SampleRate>,
     pub current_rate: Option<SampleRate>,
@@ -307,6 +343,7 @@ pub enum SinkChange {
     Removed(SinkId),
     DefaultChanged,
     Turned(SinkId),
+    Switched(SinkId),
 }
 
 #[cfg(test)]
@@ -337,6 +374,7 @@ mod tests {
             is_hardware: true,
             port: None,
             profile: None,
+            profiles: Vec::new(),
             formats,
             allowed_rates: allowed.to_vec(),
             current_rate: allowed.first().copied(),

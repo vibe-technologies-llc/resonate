@@ -24,8 +24,8 @@ use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Command, DitherKind, EngineConfig,
     Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting, Media,
     MediaProvider, NodeName, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
-    PreviousRestarts, Profile, Q, QueueItem, Reading, RepeatMode, ReplayGainMode, Result,
-    Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult,
+    PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading, RepeatMode, ReplayGainMode,
+    Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult,
     SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand, StreamEvent, StreamRequest,
     Surveyor, Tapped, Until, Words, stamp_of,
 };
@@ -158,6 +158,7 @@ struct Graph {
     enumerations: usize,
     announce: Option<Sender<SinkChange>>,
     turned: Vec<(SinkId, Gain)>,
+    switched: Vec<(SinkId, ProfileIndex)>,
 }
 
 impl Graph {
@@ -287,6 +288,11 @@ impl Backend for FakeSink {
         Ok(())
     }
 
+    fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> SinkResult<()> {
+        self.graph.lock().switched.push((sink, profile));
+        Ok(())
+    }
+
     fn shutdown(self: Box<Self>) -> SinkResult<()> {
         Ok(())
     }
@@ -301,6 +307,7 @@ fn sink(rates: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
         is_hardware: true,
         port: None,
         profile: None,
+        profiles: Vec::new(),
         formats: formats
             .iter()
             .map(|format| SinkFormats {
@@ -5343,5 +5350,22 @@ fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()
         "the stream to take the volume back",
     );
     assert!(heard_near(&player, 0.5));
+    Ok(())
+}
+
+#[test]
+fn switching_a_cards_profile_is_asked_of_the_card_under_the_sink() -> Result<()> {
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    answered(
+        &player,
+        Command::SwitchProfile {
+            sink: SinkId::new(1),
+            profile: ProfileIndex::new(4),
+        },
+    )?;
+    assert_eq!(
+        graph.lock().switched,
+        vec![(SinkId::new(1), ProfileIndex::new(4))]
+    );
     Ok(())
 }

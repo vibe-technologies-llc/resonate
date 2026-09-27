@@ -12,8 +12,8 @@ pub use crate::{
     client::{PipeWire, Survey},
     error::{Error, PodParam, PwOp, Result},
     sink::{
-        HardwareVolume, NodeName, Plugged, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
-        Words,
+        CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats,
+        SinkId, SinkInfo, SinkPort, Words,
     },
     source::AudioSource,
     stream::{

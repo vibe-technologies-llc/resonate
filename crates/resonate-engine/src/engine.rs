@@ -930,6 +930,9 @@ impl Engine {
                 self.config.dop = marked;
                 self.reopen_where_the_stream_moves()
             }
+            Command::SwitchProfile { sink, profile } => {
+                Ok(self.backend.set_card_profile(sink, profile)?)
+            }
             Command::SetDeviceVolume(handed) => {
                 self.config.device_volume = handed;
                 self.retune()

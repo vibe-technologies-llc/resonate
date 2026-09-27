@@ -321,7 +321,7 @@ impl Group {
 
     pub(crate) const fn also_called(self) -> &'static str {
         match self {
-            Self::Device => "sink output card dac headphones speakers pipewire",
+            Self::Device => "sink output card dac headphones speakers pipewire profile pro audio",
             Self::DeviceVolume => {
                 "hardware mixer amplifier alsa route loudness slider system volume bit perfect \
                  attenuation"

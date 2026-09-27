@@ -1602,9 +1602,20 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Device` subscribes to `Profile` beside its two route params, and `parse_profile` reads the one
   the card currently holds into `Discovered::profiles` — keyed by device id, looked up through
   `SinkRecord::device` exactly as `port_of` looks up the port — so `SinkInfo::profile` is drawn as
-  *Analog Stereo Output* rather than being a thing only `pw-dump` could answer. It is a single
-  current profile rather than the `EnumProfile` catalogue, because what is worth drawing is what
-  the card is doing and not what it could do. `route.hw-volume` needed no new subscription: it is
+  *Analog Stereo Output* rather than being a thing only `pw-dump` could answer. **What the card
+  could switch to is read beside it.** The `Device` subscribes to `EnumProfile` too, and
+  `parse_profile` reads each into a `CardProfile` — its `ProfileIndex`, name, description,
+  priority, whether what it plays through is plugged in, and how many sinks its `classes` open —
+  kept per device under `Discovered::offered_profiles`. `SinkInfo::profiles` is the card's
+  profiles that open a sink, most preferred first, so *Off* and an input-only profile are never
+  offered from a device list they would take the device out of. `Command::SwitchProfile` names
+  the sink and the index, `Backend::set_card_profile` is the seam, and `PipeWire` sets `Profile` on
+  the `Device` with `save`, as a desktop's sound settings do; the card then tears its nodes down
+  and makes new ones, which the engine follows like any device leaving and arriving. A current
+  profile that moved announces `SinkChange::Switched` for the sinks on the card. The settings
+  pane draws the profiles of the device in use, or the one chosen, as chips under the device list.
+  `a_card_offers_the_profile_it_plays_through_among_those_it_could_switch_to` holds a real
+  daemon's card to it. `route.hw-volume` needed no new subscription: it is
   a string pair inside `SPA_PARAM_ROUTE_info`, a `Value::Struct` of a count followed by
   alternating keys and values, which `parse_route` was already handed and was throwing away.
   `HardwareVolume` is the reading — `Yes`, `No`, or `Unsaid` where the route says nothing, which

@@ -18,7 +18,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
   the same one; a per-device rate is the driver node's own clock, which the registry publishes
   nowhere
-- Only a card's current `Profile` is read. `EnumProfile` is not, so nothing can offer to switch one
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
 - Nothing has proved a forced graph rate change against hardware — the only card here offers 48 kHz

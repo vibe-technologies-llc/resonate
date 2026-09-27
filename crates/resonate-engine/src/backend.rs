@@ -3,8 +3,8 @@ use std::{result, sync::Arc, time::Duration};
 use crossbeam_channel::Receiver;
 use resonate_core::Gain;
 use resonate_pipewire::{
-    AudioSource, Error as SinkError, PipeWire, SinkChange, SinkId, SinkInfo, SinkStream,
-    StreamRequest, Survey,
+    AudioSource, Error as SinkError, PipeWire, ProfileIndex, SinkChange, SinkId, SinkInfo,
+    SinkStream, StreamRequest, Survey,
 };
 
 pub type SinkResult<T> = result::Result<T, SinkError>;
@@ -19,6 +19,7 @@ pub trait Backend: Send + 'static {
     fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>)
     -> SinkResult<SinkStream>;
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()>;
+    fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> SinkResult<()>;
     fn shutdown(self: Box<Self>) -> SinkResult<()>;
 }
 
@@ -47,6 +48,10 @@ impl Backend for PipeWire {
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
         Self::set_device_volume(self, sink, gain)
+    }
+
+    fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> SinkResult<()> {
+        Self::set_card_profile(self, sink, profile)
     }
 
     fn shutdown(self: Box<Self>) -> SinkResult<()> {

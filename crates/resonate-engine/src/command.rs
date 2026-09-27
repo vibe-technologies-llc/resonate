@@ -3,7 +3,7 @@ use std::{fmt, sync::Arc, time::Duration};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
 use resonate_core::{Frames, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration};
-use resonate_pipewire::NodeName;
+use resonate_pipewire::{NodeName, ProfileIndex, SinkId};
 
 use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
 
@@ -96,6 +96,10 @@ pub enum Command {
     SetBitPerfect(bool),
     SetDop(bool),
     SetDeviceVolume(bool),
+    SwitchProfile {
+        sink: SinkId,
+        profile: ProfileIndex,
+    },
     SetForceGraphRate(bool),
     SetBluetoothWake(BluetoothWake),
     SetBuffer(Duration),
@@ -137,6 +141,7 @@ pub enum CommandKind {
     SetBitPerfect,
     SetDop,
     SetDeviceVolume,
+    SwitchProfile,
     SetForceGraphRate,
     SetBluetoothWake,
     SetBuffer,
@@ -178,6 +183,7 @@ impl CommandKind {
             Self::SetBitPerfect => "the sample rate",
             Self::SetDop => "DSD over PCM",
             Self::SetDeviceVolume => "whose volume the slider turns",
+            Self::SwitchProfile => "the device's profile",
             Self::SetForceGraphRate => "the graph rate",
             Self::SetBluetoothWake => "keeping Bluetooth awake",
             Self::SetBuffer => "the buffer",
@@ -228,6 +234,7 @@ impl Command {
             Self::SetBitPerfect(_) => CommandKind::SetBitPerfect,
             Self::SetDop(_) => CommandKind::SetDop,
             Self::SetDeviceVolume(_) => CommandKind::SetDeviceVolume,
+            Self::SwitchProfile { .. } => CommandKind::SwitchProfile,
             Self::SetForceGraphRate(_) => CommandKind::SetForceGraphRate,
             Self::SetBluetoothWake(_) => CommandKind::SetBluetoothWake,
             Self::SetBuffer(_) => CommandKind::SetBuffer,

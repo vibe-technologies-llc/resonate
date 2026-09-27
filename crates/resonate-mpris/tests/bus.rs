@@ -21,9 +21,9 @@ use resonate_core::{
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
-    PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest, Surveyor, Until,
-    Words,
+    PlaybackState, Player, ProfileIndex, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats,
+    SinkId, SinkInfo, SinkResult, SinkStream, Sources, Span, StreamCommand, StreamRequest,
+    Surveyor, Until, Words,
 };
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
@@ -221,6 +221,7 @@ impl RealtimeSink {
                 is_hardware: true,
                 port: None,
                 profile: None,
+                profiles: Vec::new(),
                 formats: vec![SinkFormats {
                     format: SampleFormat::S16,
                     words: Words::Whole,
@@ -305,6 +306,10 @@ impl Backend for RealtimeSink {
     }
 
     fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {
+        Ok(())
+    }
+
+    fn set_card_profile(&self, _sink: SinkId, _profile: ProfileIndex) -> SinkResult<()> {
         Ok(())
     }
 

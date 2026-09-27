@@ -13,7 +13,7 @@ use libspa::{
 use resonate_core::{ChannelCount, ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 use smallvec::{SmallVec, smallvec};
 
-use crate::{HardwareVolume, Plugged, SinkPort, StreamEvent, Words};
+use crate::{CardProfile, HardwareVolume, Plugged, ProfileIndex, SinkPort, StreamEvent, Words};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum WireWord {
@@ -497,7 +497,7 @@ fn hardware_volume_of(items: &[Value]) -> HardwareVolume {
     HardwareVolume::Unsaid
 }
 
-pub(crate) fn parse_profile(value: &Value) -> Option<String> {
+pub(crate) fn parse_profile(value: &Value) -> Option<CardProfile> {
     let Value::Object(object) = value else {
         return None;
     };
@@ -505,20 +505,75 @@ pub(crate) fn parse_profile(value: &Value) -> Option<String> {
         return None;
     }
 
+    let mut index = None;
     let mut description = None;
     let mut name = None;
+    let mut priority = 0;
+    let mut plugged = Plugged::Unsaid;
+    let mut sinks = 0;
 
     for property in &object.properties {
         match (property.key, &property.value) {
+            (sys::SPA_PARAM_PROFILE_index, Value::Int(held)) => {
+                index = u32::try_from(*held).ok().map(ProfileIndex::new);
+            }
             (sys::SPA_PARAM_PROFILE_description, Value::String(drawn)) => {
                 description = Some(drawn.clone());
             }
             (sys::SPA_PARAM_PROFILE_name, Value::String(named)) => name = Some(named.clone()),
+            (sys::SPA_PARAM_PROFILE_priority, Value::Int(weighed)) => {
+                priority = u32::try_from(*weighed).unwrap_or(0);
+            }
+            (sys::SPA_PARAM_PROFILE_available, value) => {
+                plugged = first_id(value).map_or(Plugged::Unsaid, plugged_as);
+            }
+            (sys::SPA_PARAM_PROFILE_classes, Value::Struct(classes)) => {
+                sinks = sinks_among(classes);
+            }
             _ => {}
         }
     }
 
-    description.or(name)
+    let name = name?;
+    Some(CardProfile {
+        index: index?,
+        description: description.unwrap_or_else(|| name.clone()),
+        name,
+        priority,
+        plugged,
+        sinks,
+    })
+}
+
+const SINK_CLASS: &str = "Audio/Sink";
+
+fn sinks_among(classes: &[Value]) -> u32 {
+    classes
+        .iter()
+        .filter_map(|class| match class {
+            Value::Struct(said) => match said.as_slice() {
+                [Value::String(named), Value::Int(count), ..] if named == SINK_CLASS => {
+                    u32::try_from(*count).ok()
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .sum()
+}
+
+pub(crate) fn profile_switch(profile: ProfileIndex) -> Value {
+    Value::Object(Object {
+        type_: sys::SPA_TYPE_OBJECT_ParamProfile,
+        id: sys::SPA_PARAM_Profile,
+        properties: vec![
+            Property::new(
+                sys::SPA_PARAM_PROFILE_index,
+                Value::Int(i32::try_from(profile.get()).unwrap_or(i32::MAX)),
+            ),
+            Property::new(sys::SPA_PARAM_PROFILE_save, Value::Bool(true)),
+        ],
+    })
 }
 
 const fn plugged_as(availability: u32) -> Plugged {
@@ -762,37 +817,96 @@ mod tests {
         assert_eq!(quiet.port.hardware_volume, HardwareVolume::Unsaid);
     }
 
+    fn a_profile(properties: Vec<Property>) -> Value {
+        Value::Object(Object {
+            type_: sys::SPA_TYPE_OBJECT_ParamProfile,
+            id: sys::SPA_PARAM_Profile,
+            properties,
+        })
+    }
+
+    fn classes(sinks: i32, sources: i32) -> Property {
+        let mut said = vec![Value::Int(2)];
+        said.push(Value::Struct(vec![
+            Value::String("Audio/Source".to_owned()),
+            Value::Int(sources),
+            Value::String("card.profile.devices".to_owned()),
+            Value::ValueArray(ValueArray::Int(vec![0])),
+        ]));
+        said.push(Value::Struct(vec![
+            Value::String("Audio/Sink".to_owned()),
+            Value::Int(sinks),
+            Value::String("card.profile.devices".to_owned()),
+            Value::ValueArray(ValueArray::Int(vec![4])),
+        ]));
+        Property::new(sys::SPA_PARAM_PROFILE_classes, Value::Struct(said))
+    }
+
     #[test]
     fn a_profile_is_drawn_by_what_it_calls_itself_and_named_where_it_describes_nothing() {
-        let described = Value::Object(Object {
-            type_: sys::SPA_TYPE_OBJECT_ParamProfile,
-            id: sys::SPA_PARAM_Profile,
-            properties: vec![
-                Property::new(sys::SPA_PARAM_PROFILE_index, Value::Int(1)),
-                Property::new(
-                    sys::SPA_PARAM_PROFILE_name,
-                    Value::String("output:analog-stereo".to_owned()),
-                ),
-                Property::new(
-                    sys::SPA_PARAM_PROFILE_description,
-                    Value::String("Analog Stereo Output".to_owned()),
-                ),
-            ],
-        });
+        let described = a_profile(vec![
+            Property::new(sys::SPA_PARAM_PROFILE_index, Value::Int(1)),
+            Property::new(
+                sys::SPA_PARAM_PROFILE_name,
+                Value::String("output:analog-stereo+input:analog-stereo".to_owned()),
+            ),
+            Property::new(
+                sys::SPA_PARAM_PROFILE_description,
+                Value::String("Analog Stereo Duplex".to_owned()),
+            ),
+            Property::new(sys::SPA_PARAM_PROFILE_priority, Value::Int(6565)),
+            Property::new(
+                sys::SPA_PARAM_PROFILE_available,
+                Value::Id(Id(sys::SPA_PARAM_AVAILABILITY_no)),
+            ),
+            classes(1, 1),
+        ]);
         assert_eq!(
-            parse_profile(&described).as_deref(),
-            Some("Analog Stereo Output")
+            parse_profile(&described),
+            Some(CardProfile {
+                index: ProfileIndex::new(1),
+                name: "output:analog-stereo+input:analog-stereo".to_owned(),
+                description: "Analog Stereo Duplex".to_owned(),
+                priority: 6565,
+                plugged: Plugged::No,
+                sinks: 1,
+            })
         );
 
-        let bare = Value::Object(Object {
-            type_: sys::SPA_TYPE_OBJECT_ParamProfile,
-            id: sys::SPA_PARAM_Profile,
-            properties: vec![Property::new(
-                sys::SPA_PARAM_PROFILE_name,
-                Value::String("off".to_owned()),
-            )],
-        });
-        assert_eq!(parse_profile(&bare).as_deref(), Some("off"));
+        let bare = a_profile(vec![
+            Property::new(sys::SPA_PARAM_PROFILE_index, Value::Int(0)),
+            Property::new(sys::SPA_PARAM_PROFILE_name, Value::String("off".to_owned())),
+            Property::new(
+                sys::SPA_PARAM_PROFILE_classes,
+                Value::Struct(vec![Value::Int(0)]),
+            ),
+        ]);
+        let off = parse_profile(&bare).expect("a profile");
+        assert_eq!(off.description, "off");
+        assert!(
+            !off.plays(),
+            "a profile that opens no sink was offered as one that plays"
+        );
+
+        let unnumbered = a_profile(vec![Property::new(
+            sys::SPA_PARAM_PROFILE_name,
+            Value::String("off".to_owned()),
+        )]);
+        assert_eq!(parse_profile(&unnumbered), None);
+    }
+
+    #[test]
+    fn a_profile_is_switched_to_by_its_index_and_asked_to_be_remembered() {
+        let Value::Object(object) = profile_switch(ProfileIndex::new(4)) else {
+            panic!("a profile switch is an object");
+        };
+        assert_eq!(object.type_, sys::SPA_TYPE_OBJECT_ParamProfile);
+        assert!(object.properties.iter().any(|property| {
+            property.key == sys::SPA_PARAM_PROFILE_index && property.value == Value::Int(4)
+        }));
+        assert!(object.properties.iter().any(|property| {
+            property.key == sys::SPA_PARAM_PROFILE_save && property.value == Value::Bool(true)
+        }));
     }
 
     #[test]

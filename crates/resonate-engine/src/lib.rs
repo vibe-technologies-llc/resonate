@@ -37,9 +37,9 @@ pub use resonate_dsp::{
     DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration, SincParams, Tuning,
 };
 pub use resonate_pipewire::{
-    AudioSource, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, NodeName, Plugged,
-    SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent,
-    StreamRequest, StreamState, Words,
+    AudioSource, CardProfile, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole,
+    NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
+    SinkStream, StreamCommand, StreamEvent, StreamRequest, StreamState, Words,
 };
 
 pub use crate::{

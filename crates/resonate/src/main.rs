@@ -444,7 +444,9 @@ fn list_sinks() -> Result<()> {
             sink.description.clone(),
             sink.name.to_string(),
             driven_by(sink).to_owned(),
-            sink.profile.clone().unwrap_or_else(|| "none".to_owned()),
+            sink.profile
+                .as_ref()
+                .map_or_else(|| "none".to_owned(), |profile| profile.description.clone()),
             comes_out_of(sink),
             first.map_or_else(|| "none".to_owned(), SinkFormats::spelled),
             first.map_or_else(|| "none".to_owned(), |entry| rates(&entry.rates)),

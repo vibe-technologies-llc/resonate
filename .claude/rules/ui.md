@@ -1756,6 +1756,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   The node name is still what the settings file holds, so it is what the row `names` itself, and
   `SinkInfo::is_hardware` is drawn nowhere because it reads `device.api` off the node, which an
   ordinary ALSA sink does not carry.
+- **The card's profiles are chips under the device list, for the device in use.** Where the sink
+  playing — or else the one chosen, or the default where none is — hangs off a card offering more than one profile that plays,
+  `profiles` draws a `kit::field` naming the device over a wrapping row of `kit::chip`s, one per
+  `SinkInfo::profiles` entry, the current one lit, and a profile whose ports are unplugged names
+  itself so on hover. A press sends `Command::SwitchProfile`, and nothing is stored: the card
+  saves its own profile, which is what every other application on the desktop reads too, and the
+  note under the chips says so.
 - **A section holds a subject rather than a control.** The theme shelf and the accent swatches are
   one *Colour* section with a `kit::field` label over each half, because six sections of one control
   each read as a list of switches rather than as a page. A group's hint is written once, in the
