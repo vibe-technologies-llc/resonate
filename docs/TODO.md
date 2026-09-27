@@ -65,8 +65,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A file moved by hand is followed only where a vanished row and a new one agree in size, length,
   codec and tagged names, so a file retagged as it moved and a cue-cut file start again at nothing.
   A file no scan has seen counts nothing — a queue of unscanned files plays and is forgotten
-- A root that is itself one album folder has no sleeve above it, so a various-artists album filed
-  that way splits per track artist
 - Nothing writes a favourite or a play count back into the file, so both stay with this catalog.
   lofty's `ItemKey::Popularimeter` maps to `POPM`, Vorbis `RATING`, MP4 `rate` and RIFF `IRTD` and
   carries a counter, so the seam `resonate tag` already is could write them

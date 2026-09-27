@@ -876,6 +876,87 @@ fn two_albums_loose_in_a_root_sharing_a_title_stay_apart_under_their_own_artists
     Ok(())
 }
 
+fn a_compilation_loose_in_a_root(tree: &Tree) {
+    for (index, artist) in ["Ada", "Ben", "Cleo"].into_iter().enumerate() {
+        tree.write(
+            &format!("{index}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("track {index}"))
+                .text(ARTIST, artist)
+                .text(ALBUM, "Now That's What I Call Music 42")
+                .text(TRACK, &format!("{}/3", index + 1))
+                .text(YEAR, "1999")
+                .build(),
+        );
+    }
+}
+
+#[test]
+fn a_compilation_loose_in_a_root_is_one_album_whatever_its_artists() -> Result<()> {
+    let tree = Tree::new();
+    a_compilation_loose_in_a_root(&tree);
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let album = only_album(&library)?;
+    assert_eq!(album.track_count, 3);
+    assert_eq!(
+        album.artist_id, None,
+        "a record three artists share kept one of them"
+    );
+    assert_eq!(album.year, Some(1999));
+    Ok(())
+}
+
+#[test]
+fn a_compilation_gathered_out_of_a_root_stays_one_album_when_a_file_is_read_again() -> Result<()> {
+    let tree = Tree::new();
+    a_compilation_loose_in_a_root(&tree);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let gathered = only_album(&library)?;
+
+    tree.write(
+        "1.wav",
+        &Wav::new()
+            .text(TITLE, "track 1, retitled")
+            .text(ARTIST, "Ben")
+            .text(ALBUM, "Now That's What I Call Music 42")
+            .text(TRACK, "2/3")
+            .text(YEAR, "1999")
+            .build(),
+    );
+    scan(&library, &options(&tree))?;
+
+    let album = only_album(&library)?;
+    assert_eq!(album.id, gathered.id);
+    assert_eq!(album.track_count, 3);
+    Ok(())
+}
+
+#[test]
+fn two_albums_loose_in_a_root_numbered_from_one_each_stay_apart() -> Result<()> {
+    let tree = Tree::new();
+    for (index, artist) in ["Ada", "Ada", "Ben", "Ben"].into_iter().enumerate() {
+        tree.write(
+            &format!("{index}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("track {index}"))
+                .text(ARTIST, artist)
+                .text(ALBUM, "Greatest Hits")
+                .text(TRACK, &format!("{}", index % 2 + 1))
+                .build(),
+        );
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
+    Ok(())
+}
+
 #[test]
 fn a_folder_whose_files_name_different_album_artists_is_still_one_album() -> Result<()> {
     let tree = Tree::new();

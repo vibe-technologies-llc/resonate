@@ -9,6 +9,7 @@ mod fingerprint;
 mod hinted;
 mod import;
 mod likeness;
+mod loose;
 mod m3u;
 mod model;
 mod moves;

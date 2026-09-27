@@ -500,7 +500,18 @@ through `Player::media` like any other unscanned row.
 - **A sleeve is a folder that was made to hold an album, which is why it is not simply the parent.**
   `scan::sleeve` answers `None` for a track sitting directly in a root, because a root holding loose
   files is a dumping ground rather than an album and two albums sharing a title in one are still two
-  — the third tier then falls back to the track artist, as it always did. A folder named `CD2`,
+  — the third tier then falls back to the track artist, as it always did. **A record filed loose in
+  a root is gathered back once the scan has written it.** A compilation with no `ALBUMARTIST` and
+  no `COMPILATION` flag, filed with the root as its folder, would otherwise stand as one album per
+  track artist. `loose::gather_the_loose` runs after the prune on every root the scan walked: it
+  takes the albums whose tracks all sit in that root and whose keys are all the fallback tier —
+  none a folder's or a release's — groups them by their lowercased title, and gathers a group
+  through `enriched::gather` only where `one_record` says the numbering makes one: every track
+  numbered, no disc and number taken twice, the years and the declared `TRACKTOTAL`s agreeing where
+  stated, and no more tracks than a declared total. Two *Greatest Hits* each numbered from one,
+  or files carrying no numbers, stay apart, which is the reading the rule above protects. The
+  loser's keys name the survivor, so a file read again joins it rather than splitting it off.
+  A folder named `CD2`,
   `Disc 3` or `disk-01` is read as one disc of a set and answers with its parent, so a set filed
   that way is one album without an `ALBUMARTIST` to say so.
 - **The word a disc is filed under is read in ten spellings, and the longest match is the one

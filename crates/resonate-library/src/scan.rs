@@ -24,7 +24,7 @@ use crate::{
     Error, Result, StoreOp, alternatives,
     db::Inner,
     enriched::stripped_title,
-    moves,
+    loose, moves,
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
@@ -488,6 +488,13 @@ fn run(
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
         let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
         progress.removed.store(removed + tidied, Ordering::Relaxed);
+        let gathered = inner.write(|transaction| loose::gather_the_loose(transaction, &ids))?;
+        if gathered > 0 {
+            tracing::debug!(
+                gathered,
+                "albums loose in a root and split by their artists were gathered into one"
+            );
+        }
     }
     inner.write(alternatives::settle)?;
     if !cancelled {
