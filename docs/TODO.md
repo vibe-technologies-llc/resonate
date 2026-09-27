@@ -102,7 +102,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - The MusicBrainz search for a song not held shares the enrichment's paced client, so a running
   lookup holds it behind its queue, and nothing says why *Asking MusicBrainz…* stands so long
 - A found song draws no cover, because art is fetched only for releases the catalog holds
-- An opened suggestion lists only its first `PREVIEWED_AT_MOST` rows
 
 ## UI
 - The playback bar keeps its controls centred by clipping its side columns, so a narrow window

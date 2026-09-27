@@ -167,6 +167,7 @@ pub enum Beyond {
 pub struct Previewed {
     pub query: SavedQuery,
     pub tracks: Arc<[Track]>,
+    asked: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1062,12 +1063,26 @@ impl LibraryModel {
         self.opened_suggestion = Some(Previewed {
             query: query.clone(),
             tracks: Arc::default(),
+            asked: PREVIEWED_AT_MOST,
         });
         cx.notify();
-        self.read_the_preview(query, cx);
+        self.read_the_preview(query, PREVIEWED_AT_MOST, cx);
     }
 
-    fn read_the_preview(&mut self, query: SavedQuery, cx: &mut Context<Self>) {
+    pub(crate) fn preview_further(&mut self, drawn_to: usize, cx: &mut Context<Self>) {
+        let Some(previewed) = self.opened_suggestion.as_mut() else {
+            return;
+        };
+        let held = previewed.tracks.len();
+        if held < previewed.asked || drawn_to + LOOK_AHEAD < held {
+            return;
+        }
+        previewed.asked = previewed.asked.saturating_add(PREVIEWED_AT_MOST);
+        let (query, asked) = (previewed.query.clone(), previewed.asked);
+        self.read_the_preview(query, asked, cx);
+    }
+
+    fn read_the_preview(&mut self, query: SavedQuery, asked_for: usize, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
         self._previewing = cx.spawn(async move |this, cx| {
             let asked = query.clone();
@@ -1075,7 +1090,7 @@ impl LibraryModel {
                 .background_executor()
                 .spawn(async move {
                     library.tracks(&TrackQuery {
-                        limit: Some(PREVIEWED_AT_MOST),
+                        limit: Some(asked_for),
                         ..TrackQuery::from(&asked)
                     })
                 })

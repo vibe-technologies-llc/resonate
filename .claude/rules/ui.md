@@ -1268,7 +1268,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `SuggestionKind` groups the cards under *From your listening*, *Eras*, *Genres*, *Artists* and
   *Sound*, in `SuggestionKind::ALL`'s order, each an eyebrow over a wrapping row. Pressing a card's
   art or its name is `LibraryModel::open_suggestion`, which keeps the `SavedQuery` it opened in a
-  `Previewed` and reads the first `PREVIEWED_AT_MOST` rows on the background executor; while the
+  `Previewed` and reads the first `PREVIEWED_AT_MOST` rows on the background executor, and
+  `preview_further` grows that window by as many again whenever the list is drawn to within
+  `LOOK_AHEAD` of a full one — a larger prefix of the same ordered read, the way `reach_further`
+  grows a browse pane's, so a suggestion of the whole library scrolls to its last row; while the
   opened query is still among the offered suggestions the pane draws it instead of the shelves —
   a way back, the art at the text column's height through `Drawn::OnThePage`, the same square an
   album cover takes, and beside it, on the bottom of the art, the kind, the name, the reason, the

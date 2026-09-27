@@ -309,6 +309,9 @@ impl RootView {
                         "suggestion-tracks",
                         shown,
                         cx.processor(move |this, range: Range<usize>, _, cx| {
+                            this.library.update(cx, |library, cx| {
+                                library.preview_further(range.end, cx);
+                            });
                             let mut drawn = Vec::new();
                             for index in range {
                                 let Some(track) = rows.get(index) else {
