@@ -34,12 +34,31 @@ window.
   it is, which is why an embedded set carries its credits although it is checked against nothing:
   the text came out of the file, so who transcribed it and what laid it down are still the sheet's
   own word on itself.
+- **A line may carry its words, each with its own moment, and the end the sheet gave it.**
+  `LyricLine::worded` takes `SungWord`s and makes the line's text their joining, so a word is a
+  byte range of the line and no second copy of the text can disagree with the first;
+  `LyricLine::ending` sets `until`, refused where it falls before the line starts, and
+  `SungWord::ending` the same for a word. `Lyrics::detail` is `Unsynced`, `Lines` or `Words`, the
+  order `Lyricists::find` ranks by and the badge the pane draws. `LyricLine::sweep_at` is what the
+  pane lights a word-timed line by: a `Sweep` of how many bytes are sung and the `Singing` word
+  with how far through it the transport is, a word lasting to its own end, else to the next
+  word, else to the line's end — and one with none of the three counted sung once it starts.
+  `Lyrics::within` shifts a line's end and its words onto a cue row's clock with the line.
+- **The pane sweeps a word-timed line word by word.** Only a line `voices_in_play` names is
+  swept: its unsung words are drawn at `UNSUNG_SHARE` of the lit colour, the sung ones at all of
+  it and the word being sung mixed between the two by how far through it the transport is, as
+  highlight runs over one `StyledText`, so the line wraps exactly as it would unswept. While a
+  word is being sung the pane asks for a frame each frame, the position being read afresh every
+  16 ms poll, so the sweep moves at the display's rate rather than the transport rail's step. The
+  heading's badge says `WORD-SYNCED` for such a set.
 - **A line goes out once it has been sung, and a blank line is a pause.** A synced set carries when
   a line starts and nothing about when it ends, so `span_of` guesses: `sung_for` is
   `SUNG_BEFORE_THE_WORDS` plus `SUNG_PER_LETTER` a letter, held between `SUNG_AT_LEAST` and
   `LIT_AT_MOST`, and a line goes out there only where the next line of its voice is at least
   `A_BREATH_AT_LEAST` further on — otherwise it stays lit until that line, as it always did, so a
-  verse never flickers between its lines. A timed blank line, which is how an `.lrc` marks the
+  verse never flickers between its lines. **A line whose sheet gave it an end goes out exactly
+  there** — its own `until`, or its last word's — and the guess is only for a line with neither.
+  A timed blank line, which is how an `.lrc` marks the
   break between verses, ends the line before it and is never in play itself, so the pause after a
   verse counts down to the next written line instead of lighting nothing. Before this a line held
   for up to ten seconds whatever it said and a blank one counted as sung, so the dots were only
@@ -76,12 +95,18 @@ window.
   keyed by `(path, span_start)` the way `tracks` is, so a `Wanted` carries the `Option<FrameSpan>`
   the window fills from the queue item and a provider that keeps nothing ignores it. The kept row
   is read before any request and a miss is remembered for a week, so a track the service has no
-  words for costs one request a week rather than one per play.
+  words for costs one request a week rather than one per play. The Lyricsfile reader is the online
+  crate's too, because it is YAML and serde is that crate's; it builds its sets through the
+  constructors here, so what it reads is the same vocabulary everything else is.
 - **`Lyricists` walks the providers and a refusal is not an answer.** `Lyricists::local` registers
   the two behind `Unsourced`, which answers with nothing and is the one source `has_a_source`
   discounts, so a build with neither says a source is not configured rather than that the track has
   no words. A provider that refuses is logged and the walk continues; a refusal is reported only
-  where nothing else answered.
+  where nothing else answered. **The walk hands over the most finely timed set, not the first**:
+  every provider is asked and an answer replaces the one held only where its `Detail` is higher,
+  so order breaks a tie — a sidecar still outranks the tags where both are line-synced — and a
+  file's own plain words give way to a synced set fetched for it. A set timed word by word ends
+  the walk, there being nothing finer to find.
 - **A sidecar is checked against the track it sits beside; an embedded set never is.** `lrc::read`
   answers with a `Sheet` — the `Lyrics`, credits and all, and a `Declared` of what the file's own
   `[ti:]`, `[ar:]` and `[length:]` say it is about. `Sidecar` passes over a sheet declaring another

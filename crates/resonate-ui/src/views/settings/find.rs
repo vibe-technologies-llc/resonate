@@ -91,6 +91,7 @@ pub(crate) enum Group {
     Lookups,
     AfterScan,
     Studies,
+    Lyrics,
     Contact,
     Recognition,
     Listening,
@@ -112,7 +113,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 48] = [
+    pub(crate) const ALL: [Self; 49] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -143,6 +144,7 @@ impl Group {
         Self::Lookups,
         Self::AfterScan,
         Self::Studies,
+        Self::Lyrics,
         Self::Contact,
         Self::Recognition,
         Self::Listening,
@@ -192,6 +194,7 @@ impl Group {
             Self::Lookups
             | Self::AfterScan
             | Self::Studies
+            | Self::Lyrics
             | Self::Contact
             | Self::Recognition
             | Self::Listening
@@ -245,6 +248,7 @@ impl Group {
             Self::Lookups => "Reference lookups",
             Self::AfterScan => "After a scan",
             Self::Studies => "Studying tracks",
+            Self::Lyrics => "Fetching lyrics",
             Self::Contact => "Contact",
             Self::Recognition => "Recognition",
             Self::Listening => "Listening",
@@ -298,6 +302,7 @@ impl Group {
             Self::Lookups => ONLINE_HINT,
             Self::AfterScan => AFTER_SCAN_HINT,
             Self::Studies => STUDIES_HINT,
+            Self::Lyrics => LYRICS_HINT,
             Self::Contact => CONTACT_HINT,
             Self::Recognition => RECOGNITION_HINT,
             Self::Listening => LISTENING_HINT,
@@ -392,6 +397,7 @@ impl Group {
                 "analyse analysis decode fake lossless transcode verdict loudness true peak \
                  fingerprint cpu cores"
             }
+            Self::Lyrics => "lyrics lrclib lyricsfile synced karaoke words voices cache upgrade",
             Self::Contact => "user-agent email identity request",
             Self::Recognition => {
                 "acoustid audd key token fingerprint chromaprint identify recognise unnamed \
@@ -470,6 +476,7 @@ impl Group {
             Self::Lookups => &[SettingKey::Online],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
             Self::Studies => &[SettingKey::Study],
+            Self::Lyrics => &[SettingKey::FetchLyrics],
             Self::Contact => &[SettingKey::Contact],
             Self::Recognition => &[SettingKey::AcoustidKey, SettingKey::AuddToken],
             Self::Listening => &[SettingKey::ListenFrom, SettingKey::ListenFor],
@@ -779,6 +786,14 @@ pub(crate) const STUDIES_HINT: &str = "Whether a lookup also decodes every track
                                        print. Off, a lookup asks the reference alone, and a track \
                                        is studied only when the Analysis pane plays it or when \
                                        its print is wanted to name it.";
+
+pub(crate) const LYRICS_HINT: &str = "Whether a lookup also asks LRCLIB for the words of every \
+                                      track and keeps what it answers, so the Lyrics pane opens on \
+                                      them without asking and a search reaches them. Plain words \
+                                      and line-synced sets are asked about again after a month in \
+                                      case a better set has been written since, and a set timed \
+                                      word by word is kept for good. Off, words are asked for \
+                                      only when a track is played.";
 
 pub(crate) const RECOGNITION_HINT: &str = "An AcoustID client key, which lets the lookup and the \
                                            Analysis pane send a fingerprint of the audio and hear \

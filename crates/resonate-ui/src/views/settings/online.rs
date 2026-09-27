@@ -178,6 +178,22 @@ impl RootView {
         ))
     }
 
+    pub(super) fn lyrics_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let lyrics = self.library.read(cx).fetches_lyrics();
+
+        kit::section_body().child(self.in_the_ring(
+            "fetching-lyrics",
+            switch_row(
+                "Fetch lyrics for every track as a lookup runs",
+                "Off, words are asked for only as a track plays",
+                lyrics,
+                "fetching-lyrics",
+            ),
+            move |this, _, cx| this.set_lyrics(!lyrics, cx),
+            cx,
+        ))
+    }
+
     pub(super) fn contact_group(&mut self, cx: &mut Context<Self>) -> Div {
         kit::section_body()
             .child(self.contact_field(cx))
@@ -408,18 +424,26 @@ impl RootView {
             .update(cx, |library, cx| library.set_studies(studies, cx));
         self.store(&Setting::Study(studies), cx);
     }
+
+    pub(crate) fn set_lyrics(&self, lyrics: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.lyrics = lyrics);
+        self.library
+            .update(cx, |library, cx| library.set_lyrics(lyrics, cx));
+        self.store(&Setting::FetchLyrics(lyrics), cx);
+    }
 }
 
 fn asked_so_far(stats: EnrichStats) -> String {
     format!(
-        "albums {} · covers {} · tracks {} · named {} · artists {} · portraits {} · releases \
-         found {} · refused {}",
+        "albums {} · covers {} · tracks {} · named {} · artists {} · portraits {} · lyrics {} · \
+         releases found {} · refused {}",
         stats.albums,
         stats.covers,
         stats.tracks,
         stats.named,
         stats.artists,
         stats.portraits,
+        stats.lyrics,
         stats.releases_found,
         stats.refused
     )

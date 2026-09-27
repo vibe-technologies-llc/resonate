@@ -1,0 +1,160 @@
+version: '1.0'
+metadata:
+  title: Echoes
+  artist: Pink Floyd
+  album: Meddle
+  duration_ms: 1412000
+  instrumental: false
+lines:
+- text: ''
+  start_ms: 410
+  end_ms: 177650
+- text: Overhead, the albatross
+  start_ms: 177650
+  end_ms: 180980
+- text: Hangs motionless upon the air
+  start_ms: 180980
+  end_ms: 185340
+- text: And deep beneath the rolling waves
+  start_ms: 185340
+  end_ms: 189140
+- text: In labyrinths of coral caves
+  start_ms: 189140
+  end_ms: 193180
+- text: The echo of a distant time
+  start_ms: 193180
+  end_ms: 196490
+- text: Comes willowing across the sand
+  start_ms: 196490
+  end_ms: 200780
+- text: And everything is green and submarine
+  start_ms: 200780
+  end_ms: 209220
+- text: And no one showed us to the land
+  start_ms: 209220
+  end_ms: 211420
+- text: And no one knows the where's or why's
+  start_ms: 211420
+  end_ms: 214980
+- text: But something stirs and something tries
+  start_ms: 214980
+  end_ms: 218830
+- text: And starts to climb towards the light
+  start_ms: 218830
+  end_ms: 224300
+- text: ''
+  start_ms: 224300
+  end_ms: 252250
+- text: Strangers passing in the street
+  start_ms: 252250
+  end_ms: 255410
+- text: By chance, two separate glances meet
+  start_ms: 255410
+  end_ms: 258860
+- text: And I am you and what I see is me
+  start_ms: 258860
+  end_ms: 265810
+- text: And do I take you by the hand
+  start_ms: 265810
+  end_ms: 269910
+- text: And lead you through the land
+  start_ms: 269910
+  end_ms: 273900
+- text: And help me understand the best I can?
+  start_ms: 273900
+  end_ms: 281260
+- text: ''
+  start_ms: 281260
+  end_ms: 283140
+- text: And no one calls us to move on
+  start_ms: 283140
+  end_ms: 284890
+- text: And no one forces down our eyes
+  start_ms: 284890
+  end_ms: 288020
+- text: No one speaks and no one tries
+  start_ms: 288020
+  end_ms: 292460
+- text: No one flies around the Sun
+  start_ms: 292460
+  end_ms: 301020
+- text: ''
+  start_ms: 301020
+  end_ms: 1150520
+- text: ''
+  start_ms: 1150520
+  end_ms: 1151670
+- text: Cloudless, every day you fall
+  start_ms: 1151670
+  end_ms: 1155080
+- text: Upon my waking eyes
+  start_ms: 1155080
+  end_ms: 1158680
+- text: Inviting and inciting me to rise
+  start_ms: 1158680
+  end_ms: 1166280
+- text: And through the window in the wall
+  start_ms: 1166280
+  end_ms: 1170320
+- text: Come streaming in on sunlight wings
+  start_ms: 1170320
+  end_ms: 1175040
+- text: A million bright ambassadors of morning
+  start_ms: 1175040
+  end_ms: 1179120
+- text: ''
+  start_ms: 1179120
+  end_ms: 1181280
+- text: And no one sings me lullabies
+  start_ms: 1181280
+  end_ms: 1185080
+- text: And no one makes me close my eyes
+  start_ms: 1185080
+  end_ms: 1187480
+- text: So I throw the windows wide
+  start_ms: 1187480
+  end_ms: 1193280
+- text: Call to you across the sky
+  start_ms: 1193280
+  end_ms: 1197520
+- text: ''
+  start_ms: 1197520
+plain: |2
+
+  Overhead, the albatross
+  Hangs motionless upon the air
+  And deep beneath the rolling waves
+  In labyrinths of coral caves
+  The echo of a distant time
+  Comes willowing across the sand
+  And everything is green and submarine
+
+  And no one showed us to the land
+  And no one knows the where's or why's
+  But something stirs and something tries
+  And starts to climb towards the light
+
+  Strangers passing in the street
+  By chance, two separate glances meet
+  And I am you and what I see is me
+  And do I take you by the hand
+  And lead you through the land
+  And help me understand the best I can?
+
+  And no one calls us to move on
+  And no one forces down our eyes
+  No one speaks and no one tries
+  No one flies around the Sun
+
+
+  Cloudless, every day you fall
+  Upon my waking eyes
+  Inviting and inciting me to rise
+  And through the window in the wall
+  Come streaming in on sunlight wings
+  A million bright ambassadors of morning
+
+  And no one sings me lullabies
+  And no one makes me close my eyes
+  So I throw the windows wide
+  Call to you across the sky

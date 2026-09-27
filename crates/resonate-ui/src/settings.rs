@@ -155,6 +155,7 @@ pub enum SettingKey {
     Online,
     EnrichAfterScan,
     Study,
+    FetchLyrics,
     Contact,
     AcoustidKey,
     AuddToken,
@@ -193,7 +194,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 60] = [
+    pub const ALL: [Self; 61] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -219,6 +220,7 @@ impl SettingKey {
         Self::Online,
         Self::EnrichAfterScan,
         Self::Study,
+        Self::FetchLyrics,
         Self::Contact,
         Self::AcoustidKey,
         Self::AuddToken,
@@ -284,6 +286,7 @@ pub enum Setting {
     Online(bool),
     EnrichAfterScan(bool),
     Study(bool),
+    FetchLyrics(bool),
     Contact(String),
     AcoustidKey(String),
     AuddToken(String),
@@ -352,6 +355,7 @@ impl Setting {
             Self::Online(_) => SettingKey::Online,
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
             Self::Study(_) => SettingKey::Study,
+            Self::FetchLyrics(_) => SettingKey::FetchLyrics,
             Self::Contact(_) => SettingKey::Contact,
             Self::AcoustidKey(_) => SettingKey::AcoustidKey,
             Self::AuddToken(_) => SettingKey::AuddToken,
@@ -396,6 +400,7 @@ pub struct Online {
     pub enabled: bool,
     pub after_scan: bool,
     pub studies: bool,
+    pub lyrics: bool,
     pub contact: String,
     pub acoustid_key: String,
     pub audd_token: String,

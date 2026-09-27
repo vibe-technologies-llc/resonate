@@ -508,6 +508,7 @@ pub struct LibraryModel {
     online: bool,
     after_scan: bool,
     studies: bool,
+    lyrics: bool,
     resume: bool,
     albums: Arc<[Album]>,
     artists: Arc<[Artist]>,
@@ -646,6 +647,7 @@ impl LibraryModel {
             online: online.enabled,
             after_scan: online.after_scan,
             studies: online.studies,
+            lyrics: online.lyrics,
             resume,
             albums: Arc::default(),
             artists: Arc::default(),
@@ -2975,6 +2977,18 @@ impl LibraryModel {
         cx.notify();
     }
 
+    pub const fn fetches_lyrics(&self) -> bool {
+        self.lyrics
+    }
+
+    pub fn set_lyrics(&mut self, lyrics: bool, cx: &mut Context<Self>) {
+        if self.lyrics == lyrics {
+            return;
+        }
+        self.lyrics = lyrics;
+        cx.notify();
+    }
+
     pub fn set_after_scan(&mut self, after_scan: bool, cx: &mut Context<Self>) {
         if self.after_scan == after_scan {
             return;
@@ -3017,6 +3031,7 @@ impl LibraryModel {
             at_most: None,
             sought: Arc::clone(&self.sought),
             studies: self.studies,
+            lyrics: self.lyrics,
         };
         let handle = match self
             .library

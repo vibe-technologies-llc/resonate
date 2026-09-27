@@ -77,6 +77,7 @@ pub struct EnrichOptions {
     pub at_most: Option<NonZeroUsize>,
     pub sought: Arc<Sought>,
     pub studies: bool,
+    pub lyrics: bool,
 }
 
 impl Default for EnrichOptions {
@@ -86,6 +87,7 @@ impl Default for EnrichOptions {
             at_most: None,
             sought: Arc::default(),
             studies: true,
+            lyrics: true,
         }
     }
 }
@@ -165,6 +167,7 @@ pub struct EnrichStats {
     pub fakes: u64,
     pub recognised: u64,
     pub misnamed: u64,
+    pub lyrics: u64,
 }
 
 #[derive(Debug, Default)]
@@ -183,6 +186,7 @@ pub struct EnrichProgress {
     fakes: AtomicU64,
     recognised: AtomicU64,
     misnamed: AtomicU64,
+    lyrics: AtomicU64,
     cancelled: AtomicBool,
 }
 
@@ -203,6 +207,7 @@ impl EnrichProgress {
             fakes: self.fakes.load(Ordering::Relaxed),
             recognised: self.recognised.load(Ordering::Relaxed),
             misnamed: self.misnamed.load(Ordering::Relaxed),
+            lyrics: self.lyrics.load(Ordering::Relaxed),
         }
     }
 
@@ -280,6 +285,7 @@ fn run(
         &claims,
         to_be_studied(library, options),
     );
+    let verses = Verses::start(library, reference, progress, to_be_sung(library, options));
     let pass = Pass {
         library,
         reference: reference.as_ref(),
@@ -305,6 +311,7 @@ fn run(
     };
     pictures.rest();
     studies.rest();
+    verses.rest();
     if stopped_by.is_none() {
         note_finished(library);
     }
@@ -331,6 +338,121 @@ fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
         asked.truncate(at_most.get());
     }
     asked
+}
+
+fn to_be_sung(library: &Library, options: &EnrichOptions) -> Vec<TrackId> {
+    if !options.lyrics {
+        return Vec::new();
+    }
+    let mut asked = match library.lyrics_to_ask(options.refresh) {
+        Ok(asked) => asked,
+        Err(error) => {
+            tracing::warn!(%error, "the tracks to fetch lyrics for could not be read, and none are fetched");
+            Vec::new()
+        }
+    };
+    if let Some(at_most) = options.at_most {
+        asked.truncate(at_most.get());
+    }
+    asked
+}
+
+struct Verses {
+    reader: Option<JoinHandle<()>>,
+}
+
+impl Verses {
+    fn start(
+        library: &Library,
+        reference: &Arc<dyn Reference>,
+        progress: &Arc<EnrichProgress>,
+        asked: Vec<TrackId>,
+    ) -> Self {
+        if asked.is_empty() {
+            return Self { reader: None };
+        }
+        let library = library.shared();
+        let reference = Arc::clone(reference);
+        let progress = Arc::clone(progress);
+        let reader = thread::Builder::new()
+            .name("resonate-lyrics".to_owned())
+            .spawn(move || {
+                for track in asked {
+                    if progress.is_cancelled() {
+                        return;
+                    }
+                    if let Sang::Unreachable = sing(&library, reference.as_ref(), &progress, track)
+                    {
+                        return;
+                    }
+                }
+            })
+            .map_err(|error| {
+                tracing::warn!(%error, "the lyric reader did not start");
+            })
+            .ok();
+
+        Self { reader }
+    }
+
+    fn rest(self) {
+        if let Some(reader) = self.reader {
+            let _ = reader.join();
+        }
+    }
+}
+
+enum Sang {
+    Asked,
+    Unreachable,
+}
+
+fn sing(
+    library: &Library,
+    reference: &dyn Reference,
+    progress: &EnrichProgress,
+    track: TrackId,
+) -> Sang {
+    let asking = match library.lyrics_asking(track) {
+        Ok(Some(asking)) => asking,
+        Ok(None) => return Sang::Asked,
+        Err(error) => {
+            tracing::warn!(%error, %track, "the track could not be read to ask for its lyrics");
+            return Sang::Asked;
+        }
+    };
+    let told = match reference.lyrics(&asking.asked) {
+        Ok(told) => told,
+        Err(Error::Unreachable { op, source }) => {
+            tracing::warn!(error = %source, ?op, "the lyric service could not be reached, and no more lyrics are asked for");
+            return Sang::Unreachable;
+        }
+        Err(Error::Refused { op, status }) => {
+            tracing::warn!(?op, status, %track, "the lyric service refused");
+            progress.refuse();
+            return Sang::Asked;
+        }
+        Err(Error::Unreadable { op }) => {
+            tracing::warn!(?op, %track, "the lyric service answered with something this build cannot read");
+            progress.refuse();
+            return Sang::Asked;
+        }
+        Err(error) => {
+            tracing::warn!(%error, %track, "no lyrics arrived");
+            return Sang::Asked;
+        }
+    };
+    match library.keep_lyrics_of(&asking, told.as_ref()) {
+        Ok(true) => {
+            progress.lyrics.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(%error, %track, "the lyrics the service answered with were dropped");
+        }
+    }
+
+    Sang::Asked
 }
 
 const PICTURES_ASKED: usize = 64;

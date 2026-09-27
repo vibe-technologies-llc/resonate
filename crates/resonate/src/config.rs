@@ -112,6 +112,7 @@ pub struct Config {
     pub online: Option<bool>,
     pub enrich_after_scan: Option<bool>,
     pub study: Option<bool>,
+    pub fetch_lyrics: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
     pub previous_restarts: Option<bool>,
     pub contact: Option<String>,
@@ -212,6 +213,10 @@ impl Config {
 
     pub fn studies(&self) -> bool {
         self.study.unwrap_or(true)
+    }
+
+    pub fn fetches_lyrics(&self) -> bool {
+        self.fetch_lyrics.unwrap_or(true)
     }
 
     pub fn skip_under_repeat(&self) -> SkipUnderRepeat {
@@ -447,6 +452,7 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::Online => config.online = Some(at.boolean(value)?),
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
             ConfigKey::Study => config.study = Some(at.boolean(value)?),
+            ConfigKey::FetchLyrics => config.fetch_lyrics = Some(at.boolean(value)?),
             ConfigKey::SkipRepeatsQueue => {
                 config.skip_repeats_queue = Some(at.boolean(value)?);
             }
@@ -1095,14 +1101,16 @@ mod tests {
     }
 
     #[test]
-    fn studies_and_a_skip_under_repeat_default_on_and_are_turned_off_by_their_keys() {
+    fn studies_lyrics_and_a_skip_under_repeat_default_on_and_are_turned_off_by_their_keys() {
         let config = read("").expect("empty is valid");
         assert!(config.studies());
+        assert!(config.fetches_lyrics());
         assert_eq!(config.skip_under_repeat(), SkipUnderRepeat::RepeatsTheQueue);
 
-        let config =
-            read("study = false\nskip-repeats-queue = false").expect("a well formed document");
+        let config = read("study = false\nskip-repeats-queue = false\nfetch-lyrics = false")
+            .expect("a well formed document");
         assert!(!config.studies());
+        assert!(!config.fetches_lyrics());
         assert_eq!(
             config.skip_under_repeat(),
             SkipUnderRepeat::KeepsRepeatingTheTrack

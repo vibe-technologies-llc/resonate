@@ -12,6 +12,7 @@ use crate::{Tabs, WindowButtons, views::settings::find::Group};
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
 pub(crate) const STUDY: bool = true;
+pub(crate) const FETCH_LYRICS: bool = true;
 pub(crate) const RESUME: bool = true;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
@@ -29,6 +30,7 @@ pub(crate) struct Standing {
     pub(crate) online: bool,
     pub(crate) after_scan: bool,
     pub(crate) studies: bool,
+    pub(crate) lyrics: bool,
     pub(crate) contact_given: bool,
     pub(crate) key_given: bool,
     pub(crate) token_given: bool,
@@ -59,6 +61,7 @@ impl Standing {
             online: ONLINE,
             after_scan: ENRICH_AFTER_SCAN,
             studies: STUDY,
+            lyrics: FETCH_LYRICS,
             contact_given: false,
             key_given: false,
             token_given: false,
@@ -111,6 +114,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Lookups => standing.online != ONLINE,
         Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
         Group::Studies => standing.studies != STUDY,
+        Group::Lyrics => standing.lyrics != FETCH_LYRICS,
         Group::Resuming => standing.resume != RESUME,
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
@@ -199,6 +203,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Lookups
         | Group::AfterScan
         | Group::Studies
+        | Group::Lyrics
         | Group::Contact
         | Group::Recognition
         | Group::Listening
@@ -393,6 +398,13 @@ mod tests {
             Group::Studies,
             &Standing {
                 studies: false,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Lyrics,
+            &Standing {
+                lyrics: false,
                 ..built.clone()
             }
         ));

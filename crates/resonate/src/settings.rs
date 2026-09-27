@@ -123,6 +123,7 @@ impl Settings for File {
                 (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
             }
             Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
+            Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
             Setting::SkipUnderRepeat(skip) => (
                 ConfigKey::SkipRepeatsQueue,
                 Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
@@ -283,6 +284,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Online => ConfigKey::Online,
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
         SettingKey::Study => ConfigKey::Study,
+        SettingKey::FetchLyrics => ConfigKey::FetchLyrics,
         SettingKey::SkipUnderRepeat => ConfigKey::SkipRepeatsQueue,
         SettingKey::PreviousRestarts => ConfigKey::PreviousRestarts,
         SettingKey::Contact => ConfigKey::Contact,

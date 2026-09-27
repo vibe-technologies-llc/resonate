@@ -21,6 +21,7 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
         fingerprinters: Arc::new(crate::online::fingerprinters(config)),
         providers: Arc::new(crate::providers::registered(config)),
         studies: config.studies(),
+        lyrics: config.fetches_lyrics(),
     });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 

@@ -9,7 +9,7 @@ use gpui::{
 };
 use resonate_core::{Frames, TrackId};
 use resonate_engine::{PlayerState, StreamDigest};
-use resonate_lyrics::{Lyricists, Lyrics, Timing, Voice, Waiting, Wanted};
+use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
 use crate::theme;
 
@@ -433,6 +433,15 @@ impl LyricsModel {
 
     pub fn waiting_at(&self, position: Duration) -> Option<Waiting> {
         self.found()?.waiting_at(position)
+    }
+
+    pub fn in_play(&self, position: Duration) -> [Option<usize>; 2] {
+        self.found()
+            .map_or([None; 2], |lyrics| lyrics.voices_in_play(position))
+    }
+
+    pub fn sweep(&self, index: usize, position: Duration) -> Option<Sweep> {
+        self.found()?.lines().get(index)?.sweep_at(position)
     }
 
     pub fn breath_at(

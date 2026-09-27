@@ -397,22 +397,42 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
 - **`Lrclib` reads what the catalog kept before it asks, and keeps what it is told.** It is a
   `LyricProvider` named `lrclib`, and it refuses a `Wanted` naming no title or no artist, because
   the service has nothing else to search on. `Library::kept_lyrics` is read first, keyed by the
-  `Wanted`'s location and `Wanted::span`: a kept text is read back through `read_lyrics` where it
-  was synced and `Lyrics::plain` where it was not, without a request, and a kept miss — a row
-  whose `text` is `NULL` — answers nothing while `still_fresh` under `ASK_AGAIN_AFTER` of seven
-  days, so a track the service has no words for costs one request a week rather than one per play.
-  A provider built with no library keeps nothing and asks every time.
-- **`/get` is exact and `/search` is weighed.** `Lrclib::ask` asks `/get` with the track name,
-  artist name and, where the `Wanted` has them, the album name and the duration in whole seconds;
-  a 404 there falls through to `/search` on the title and artist, and `pick` takes the first
-  answer that `names` the track — the title and the artist each folded to lowercase alphanumerics
-  and compared for equality — and `lasts_about` as long, within `LENGTH_MAY_DIFFER_BY` of thirty
-  seconds, the same tolerance `Sidecar` gives a `[length:]`. An answer is `Told::Synced` where it
-  carries `syncedLyrics`, `Told::Plain` where only `plainLyrics`, and `Told::Nothing` where it is
-  flagged `instrumental` or carries neither; the first two are kept with the text and the flag,
-  and the third is kept as a miss, so an instrumental is remembered rather than searched for
-  again. A failure on `/get` is a lyric error under `LyricOp::Fetch` and one on `/search` under
-  `LyricOp::Search`, through `Error::into_lyric_error`.
+  `Wanted`'s location and `Wanted::span`: a kept row that is not `KeptLyrics::is_due` answers
+  without a request — its words, or nothing for a kept miss — and a due one is asked about again,
+  the richer of the kept set and the answer is what the pane is handed, and a request that fails
+  falls back to what was kept rather than refusing. A provider built with no library keeps
+  nothing and asks every time.
+- **The window and the lookup ask one way.** `lrclib::told` is the whole of a question — a
+  `LyricsAsked` in, an `Option<LyricText>` out — and both `Lrclib` and `Online`'s
+  `Reference::lyrics` go through it, the first mapping a `Failed` into a lyric error under the
+  `LyricOp` it failed at and the second into the library's error under `LookupOp::Lyrics`.
+- **`/get` is exact and `/search` is weighed.** `ask` asks `/get` with the track name, artist
+  name and, where they are known, the album name and the duration in whole seconds; a 404 there
+  falls through to `/search` on the title and artist, and `pick` takes the first answer that
+  `names` the track — the title and the artist each folded to lowercase alphanumerics and
+  compared for equality — and `lasts_about` as long, within `LENGTH_MAY_DIFFER_BY` of thirty
+  seconds, the same tolerance `Sidecar` gives a `[length:]`. An answer flagged `instrumental`, or
+  carrying no words at all, is `None` and is kept as a miss. Otherwise it is a `LyricText` of
+  `syncedLyrics` where there is one and `plainLyrics` where not, with the answer's `lyricsfile`
+  beside it **only where that document says more than its lines**: LRCLIB writes a Lyricsfile for
+  every record, and one it wrote from an LRC ends every line where the next begins and times no
+  word, which is the LRC over again at four times the size. A document with a word timed, or a
+  line ended anywhere but where the next begins, is the one kept. A failure on `/get` is a lyric
+  error under `LyricOp::Fetch` and one on `/search` under `LyricOp::Search`.
+- **A Lyricsfile is read here, because it is YAML and YAML wants serde.** `lyricsfile::read` is
+  the reader: `serde-saphyr` with duplicate keys refused, one document, `MOST_NODES` and a depth
+  of `DEEPEST`, the text capped at `LARGEST_LYRICSFILE` before it is parsed, and `MOST_LINES` and
+  `MOST_WORDS` after. Only version `1.0` is read — the draft says an unknown version must not be
+  read as it — and `offset_ms` is ignored, because the draft has not said which way it runs. A
+  line's `words` become `SungWord`s *laid over* the line's own text, each word found in order and
+  handed the text up to the next, so a writer who left the spaces off the words still draws the
+  line as written; where a word cannot be found the words are joined as they are. A line's
+  `end_ms`, or its last word's, is its declared end. **Two voices are read off the timing**:
+  a line that starts before the voice-one line in play has ended is voice two, the Lyricsfile
+  having no word for a singer and overlapping lines being how it writes two of them. An
+  instrumental answers nothing, and a document timing no line is read as its `plain`. The kept
+  document is read back through the same reader, and one that no longer reads falls back to the
+  kept LRC text.
 
 ## Recognising a clip
 

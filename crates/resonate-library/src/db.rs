@@ -29,10 +29,10 @@ use crate::{
     Compare, Condition, Counted, CoverArt, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error,
     Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, Mbid, Measured, Missing, MissingTrack,
-    MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording,
-    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
+    KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, LyricText, Mbid, Measured, Missing,
+    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing,
+    Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned,
+    Recording, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
     RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
     SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
     Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
@@ -46,7 +46,7 @@ use crate::{
     retag::{self, Followed, TrackToTag},
     scan, schema, scrobble, search, share, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
-    suggest, supply,
+    suggest, sung, supply,
     undo::{self, Step},
     vaulted::Vaulted,
 };
@@ -2363,54 +2363,45 @@ impl Library {
         let path = playlist::local_path(location)?;
         let (start, _) = store::span_columns(span);
 
-        self.inner.read(|connection| {
-            connection
-                .query_row(
-                    "SELECT text, synced, taken FROM lyrics_kept
-                      WHERE path = ?1 AND span_start = ?2",
-                    params![path, start],
-                    |row| {
-                        Ok(KeptLyrics {
-                            text: row.get(0)?,
-                            synced: row.get(1)?,
-                            taken: store::from_nanos(row.get(2)?),
-                        })
-                    },
-                )
-                .optional()
-                .map_err(|source| Error::store(StoreOp::Query, source))
-        })
+        self.inner
+            .read(|connection| sung::kept(connection, path, start))
     }
 
     pub fn keep_lyrics(
         &self,
         location: &MediaLocation,
         span: Option<FrameSpan>,
-        text: Option<&str>,
-        synced: bool,
-    ) -> Result<()> {
+        told: Option<&LyricText>,
+    ) -> Result<bool> {
         let path = playlist::local_path(location)?;
         let (start, _) = store::span_columns(span);
 
+        self.inner
+            .write(|transaction| sung::keep(transaction, path, start, told, SystemTime::now()))
+    }
+
+    pub fn lyrics_to_ask(&self, refresh: bool) -> Result<Vec<TrackId>> {
+        self.inner
+            .read(|connection| sung::to_ask(connection, refresh, SystemTime::now()))
+    }
+
+    pub(crate) fn lyrics_asking(&self, id: TrackId) -> Result<Option<sung::Asking>> {
+        self.inner.read(|connection| sung::asking(connection, id))
+    }
+
+    pub(crate) fn keep_lyrics_of(
+        &self,
+        asking: &sung::Asking,
+        told: Option<&LyricText>,
+    ) -> Result<bool> {
         self.inner.write(|transaction| {
-            transaction
-                .execute(
-                    "INSERT INTO lyrics_kept (path, span_start, text, synced, taken)
-                     VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(path, span_start) DO UPDATE SET
-                         text   = excluded.text,
-                         synced = excluded.synced,
-                         taken  = excluded.taken",
-                    params![
-                        path,
-                        start,
-                        text,
-                        synced,
-                        store::to_nanos(SystemTime::now())
-                    ],
-                )
-                .map_err(|source| Error::store(StoreOp::Insert, source))?;
-            store::index_what_is_sung(transaction, path, start, text)
+            sung::keep(
+                transaction,
+                &asking.path,
+                asking.span_start,
+                told,
+                SystemTime::now(),
+            )
         })
     }
 

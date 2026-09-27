@@ -1,0 +1,27 @@
+version: '1.0'
+
+metadata:
+  title: 'Small Hours'
+  artist: 'Example Artist'
+  language: 'en'
+
+lines:
+  - text: 'Stay until the morning'
+    start_ms: 4200
+    end_ms: 6800
+    words:
+      - text: 'Stay '
+        start_ms: 4200
+        end_ms: 4800
+      - text: 'until '
+        start_ms: 4800
+        end_ms: 5400
+      - text: 'the '
+        start_ms: 5400
+        end_ms: 5750
+      - text: 'morning'
+        start_ms: 5750
+        end_ms: 6800
+
+plain: |
+  Stay until the morning

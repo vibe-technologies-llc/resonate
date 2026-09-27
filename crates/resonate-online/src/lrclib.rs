@@ -1,16 +1,12 @@
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::Duration};
 
 use resonate_core::SourceId;
-use resonate_library::{KeptLyrics, Library, LookupOp};
+use resonate_library::{KeptLyrics, Library, LookupOp, LyricText, LyricsAsked};
 use resonate_lyrics::{LyricOp, LyricProvider, Lyrics, Wanted, read_lyrics};
 use serde::Deserialize;
 
-use crate::{Client, Host, query::Params};
+use crate::{Client, Error, Host, lyricsfile, query::Params};
 
-pub(crate) const ASK_AGAIN_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const LENGTH_MAY_DIFFER_BY: Duration = Duration::from_secs(30);
 const LRCLIB: &str = "lrclib";
 
@@ -30,27 +26,51 @@ struct Answer {
     plain: Option<String>,
     #[serde(default, rename = "syncedLyrics")]
     synced: Option<String>,
-}
-
-enum Told {
-    Synced(String),
-    Plain(String),
-    Nothing,
+    #[serde(default)]
+    lyricsfile: Option<String>,
 }
 
 impl Answer {
-    fn told(self) -> Told {
+    fn told(self) -> Option<LyricText> {
         if self.instrumental {
-            return Told::Nothing;
+            return None;
         }
+        let read = present(self.lyricsfile).and_then(|document| {
+            lyricsfile::read(source(), &document)
+                .map_err(|unread| tracing::debug!(?unread, id = ?self.id, "lrclib answered with a lyricsfile this build cannot read"))
+                .ok()
+                .map(|read| (document, read))
+        });
+        let lyricsfile = read
+            .as_ref()
+            .and_then(|(document, read)| read.says_more_than_its_lines.then(|| document.clone()));
         if let Some(synced) = present(self.synced) {
-            return Told::Synced(synced);
+            return Some(LyricText {
+                text: synced,
+                synced: true,
+                lyricsfile,
+            });
         }
         if let Some(plain) = present(self.plain) {
-            return Told::Plain(plain);
+            return Some(LyricText {
+                text: plain,
+                synced: false,
+                lyricsfile,
+            });
         }
+        let (_, read) = read?;
+        let lines: Vec<String> = read
+            .lyrics?
+            .lines()
+            .iter()
+            .map(|line| line.text.clone())
+            .collect();
 
-        Told::Nothing
+        Some(LyricText {
+            text: lines.join("\n"),
+            synced: false,
+            lyricsfile,
+        })
     }
 
     fn names(&self, title: &str, artist: &str) -> bool {
@@ -78,6 +98,10 @@ impl Answer {
     }
 }
 
+fn source() -> SourceId {
+    SourceId::new(LRCLIB).unwrap_or_else(|_| SourceId::local())
+}
+
 fn present(text: Option<String>) -> Option<String> {
     text.filter(|text| !text.trim().is_empty())
 }
@@ -89,22 +113,108 @@ pub(crate) fn folded(text: &str) -> String {
         .collect()
 }
 
-fn pick(
-    found: Vec<Answer>,
-    title: &str,
-    artist: &str,
-    duration: Option<Duration>,
-) -> Option<Answer> {
-    found
-        .into_iter()
-        .find(|answer| answer.names(title, artist) && answer.lasts_about(duration))
+fn pick(found: Vec<Answer>, asked: &LyricsAsked) -> Option<Answer> {
+    found.into_iter().find(|answer| {
+        answer.names(&asked.title, &asked.artist) && answer.lasts_about(asked.length)
+    })
 }
 
-fn still_fresh(taken: SystemTime) -> bool {
-    SystemTime::now()
-        .duration_since(taken)
-        .is_ok_and(|age| age < ASK_AGAIN_AFTER)
-        || taken > SystemTime::now()
+pub(crate) struct Failed {
+    op: LyricOp,
+    error: Error,
+}
+
+impl Failed {
+    fn into_lyric_error(self) -> resonate_lyrics::Error {
+        self.error.into_lyric_error(source(), self.op)
+    }
+}
+
+impl From<Failed> for resonate_library::Error {
+    fn from(failed: Failed) -> Self {
+        failed.error.into()
+    }
+}
+
+fn ask(client: &Client, asked: &LyricsAsked) -> Result<Option<Answer>, Failed> {
+    let seconds = asked.length.map(|length| length.as_secs().to_string());
+    let get = Params::new()
+        .with("track_name", &asked.title)
+        .with("artist_name", &asked.artist)
+        .maybe("album_name", asked.album.as_deref())
+        .maybe("duration", seconds.as_deref())
+        .finish();
+    let got: Option<Answer> = client
+        .json(Host::Lrclib, LookupOp::Lyrics, &format!("/get{get}"))
+        .map_err(|error| Failed {
+            op: LyricOp::Fetch,
+            error,
+        })?;
+    if let Some(answer) = got {
+        return Ok(Some(answer));
+    }
+
+    let search = Params::new()
+        .with("track_name", &asked.title)
+        .with("artist_name", &asked.artist)
+        .finish();
+    let found: Vec<Answer> = client
+        .json(Host::Lrclib, LookupOp::Lyrics, &format!("/search{search}"))
+        .map_err(|error| Failed {
+            op: LyricOp::Search,
+            error,
+        })?
+        .unwrap_or_default();
+
+    Ok(pick(found, asked))
+}
+
+pub(crate) fn told(client: &Client, asked: &LyricsAsked) -> Result<Option<LyricText>, Failed> {
+    let answer = ask(client, asked)?;
+    let id = answer.as_ref().and_then(|answer| answer.id);
+    let told = answer.and_then(Answer::told);
+    tracing::debug!(
+        ?id,
+        title = asked.title,
+        artist = asked.artist,
+        synced = told.as_ref().map(|told| told.synced),
+        lyricsfile = told.as_ref().is_some_and(|told| told.lyricsfile.is_some()),
+        "lrclib answered"
+    );
+
+    Ok(told)
+}
+
+fn set_of(told: &LyricText) -> resonate_lyrics::Result<Option<Lyrics>> {
+    if let Some(document) = &told.lyricsfile {
+        match lyricsfile::read(source(), document) {
+            Ok(read) if read.lyrics.is_some() => return Ok(read.lyrics),
+            Ok(_) => {}
+            Err(unread) => {
+                tracing::debug!(
+                    ?unread,
+                    "a kept lyricsfile could not be read, and its lines are read instead"
+                );
+            }
+        }
+    }
+    if told.synced {
+        return read_lyrics(source(), &told.text);
+    }
+
+    Ok(Some(Lyrics::plain(
+        source(),
+        told.text.lines().map(str::to_owned).collect(),
+    )))
+}
+
+fn asked_of(wanted: &Wanted) -> Option<LyricsAsked> {
+    Some(LyricsAsked {
+        title: wanted.title.clone()?,
+        artist: wanted.artist.clone()?,
+        album: wanted.album.clone(),
+        length: wanted.duration,
+    })
 }
 
 pub struct Lrclib {
@@ -118,7 +228,7 @@ impl Lrclib {
         Self {
             client,
             library,
-            source: SourceId::new(LRCLIB).unwrap_or_else(|_| SourceId::local()),
+            source: source(),
         }
     }
 
@@ -133,60 +243,13 @@ impl Lrclib {
         }
     }
 
-    fn keep(&self, wanted: &Wanted, text: Option<&str>, synced: bool) {
+    fn keep(&self, wanted: &Wanted, told: Option<&LyricText>) {
         let Some(library) = self.library.as_ref() else {
             return;
         };
-        if let Err(error) = library.keep_lyrics(&wanted.location, wanted.span, text, synced) {
+        if let Err(error) = library.keep_lyrics(&wanted.location, wanted.span, told) {
             tracing::debug!(%error, location = %wanted.location, "the catalog could not keep what was told");
         }
-    }
-
-    fn set_of(&self, text: &str, synced: bool) -> resonate_lyrics::Result<Option<Lyrics>> {
-        if synced {
-            return read_lyrics(self.source.clone(), text);
-        }
-
-        Ok(Some(Lyrics::plain(
-            self.source.clone(),
-            text.lines().map(str::to_owned).collect(),
-        )))
-    }
-
-    fn ask(
-        &self,
-        wanted: &Wanted,
-        title: &str,
-        artist: &str,
-    ) -> resonate_lyrics::Result<Option<Answer>> {
-        let seconds = wanted
-            .duration
-            .map(|duration| duration.as_secs().to_string());
-        let get = Params::new()
-            .with("track_name", title)
-            .with("artist_name", artist)
-            .maybe("album_name", wanted.album.as_deref())
-            .maybe("duration", seconds.as_deref())
-            .finish();
-        let got: Option<Answer> = self
-            .client
-            .json(Host::Lrclib, LookupOp::Lyrics, &format!("/get{get}"))
-            .map_err(|error| error.into_lyric_error(self.source.clone(), LyricOp::Fetch))?;
-        if let Some(answer) = got {
-            return Ok(Some(answer));
-        }
-
-        let search = Params::new()
-            .with("track_name", title)
-            .with("artist_name", artist)
-            .finish();
-        let found: Vec<Answer> = self
-            .client
-            .json(Host::Lrclib, LookupOp::Lyrics, &format!("/search{search}"))
-            .map_err(|error| error.into_lyric_error(self.source.clone(), LyricOp::Search))?
-            .unwrap_or_default();
-
-        Ok(pick(found, title, artist, wanted.duration))
     }
 }
 
@@ -196,63 +259,56 @@ impl LyricProvider for Lrclib {
     }
 
     fn lyrics(&self, wanted: &Wanted) -> resonate_lyrics::Result<Option<Lyrics>> {
-        let (Some(title), Some(artist)) = (wanted.title.as_deref(), wanted.artist.as_deref())
-        else {
+        let Some(asked) = asked_of(wanted) else {
             return Ok(None);
         };
 
-        match self.remembered(wanted) {
-            Some(KeptLyrics {
-                text: Some(text),
-                synced,
-                ..
-            }) => return self.set_of(&text, synced),
-            Some(KeptLyrics {
-                text: None, taken, ..
-            }) if still_fresh(taken) => return Ok(None),
-            _ => {}
+        let kept = self.remembered(wanted);
+        if let Some(kept) = &kept
+            && !kept.is_due(std::time::SystemTime::now())
+        {
+            return kept.sung.as_ref().map_or(Ok(None), set_of);
         }
 
-        let answer = self.ask(wanted, title, artist)?;
-        let id = answer.as_ref().and_then(|answer| answer.id);
-        match answer.map_or(Told::Nothing, Answer::told) {
-            Told::Synced(text) => {
-                tracing::debug!(?id, title, artist, "lrclib answered with a synced set");
-                let lyrics = self.set_of(&text, true)?;
-                self.keep(wanted, Some(&text), true);
-                Ok(lyrics)
+        match told(&self.client, &asked) {
+            Ok(told) => {
+                self.keep(wanted, told.as_ref());
+                let best = match kept {
+                    Some(kept) => kept.richer_of(told),
+                    None => told,
+                };
+                best.as_ref().map_or(Ok(None), set_of)
             }
-            Told::Plain(text) => {
-                tracing::debug!(?id, title, artist, "lrclib answered with plain words");
-                let lyrics = self.set_of(&text, false)?;
-                self.keep(wanted, Some(&text), false);
-                Ok(lyrics)
-            }
-            Told::Nothing => {
-                tracing::debug!(?id, title, artist, "lrclib holds nothing for the track");
-                self.keep(wanted, None, false);
-                Ok(None)
-            }
+            Err(failed) => match kept.and_then(|kept| kept.sung) {
+                Some(held) => set_of(&held),
+                None => Err(failed.into_lyric_error()),
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use resonate_lyrics::Timing;
+    use resonate_lyrics::{Detail, Timing};
 
     use super::*;
 
     const GET: &str = include_str!("../tests/fixtures/lrclib_get.json");
     const SEARCH: &str = include_str!("../tests/fixtures/lrclib_search.json");
+    const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");
     const ECHOES_LASTS: Duration = Duration::from_secs(1412);
-
-    fn source() -> SourceId {
-        SourceId::new(LRCLIB).expect("a lowercase name")
-    }
 
     fn found() -> Vec<Answer> {
         serde_json::from_str(SEARCH).expect("the fixture parses")
+    }
+
+    fn asked(title: &str, artist: &str, length: Option<Duration>) -> LyricsAsked {
+        LyricsAsked {
+            title: title.to_owned(),
+            artist: artist.to_owned(),
+            album: None,
+            length,
+        }
     }
 
     #[test]
@@ -272,10 +328,9 @@ mod tests {
         assert!(answer.names("Echoes", "Pink Floyd"));
         assert!(answer.lasts_about(Some(ECHOES_LASTS)));
 
-        let Told::Synced(text) = answer.told() else {
-            panic!("the answer carries timestamps");
-        };
-        let lyrics = read_lyrics(source(), &text)
+        let told = answer.told().expect("the answer carries words");
+        assert!(told.synced);
+        let lyrics = set_of(&told)
             .expect("the sheet reads")
             .expect("the sheet holds lines");
         assert_eq!(lyrics.timing(), Timing::Synced);
@@ -291,10 +346,11 @@ mod tests {
             r#"{"instrumental":false,"plainLyrics":"all that you touch\nall that you see","syncedLyrics":""}"#,
         )
         .expect("the document parses");
-        let Told::Plain(text) = plain_only.told() else {
-            panic!("the answer carries words with no timestamps");
-        };
-        let lyrics = Lyrics::plain(source(), text.lines().map(str::to_owned).collect());
+        let told = plain_only.told().expect("the answer carries words");
+        assert!(!told.synced);
+        let lyrics = set_of(&told)
+            .expect("the words read")
+            .expect("the words are there");
         assert_eq!(lyrics.timing(), Timing::Unsynced);
         assert_eq!(lyrics.lines().len(), 2);
 
@@ -302,55 +358,93 @@ mod tests {
             r#"{"instrumental":true,"plainLyrics":"la la","syncedLyrics":"[00:01.00]la la"}"#,
         )
         .expect("the document parses");
-        assert!(matches!(instrumental.told(), Told::Nothing));
+        assert!(instrumental.told().is_none());
 
         let bare: Answer = serde_json::from_str(r"{}").expect("the document parses");
-        assert!(matches!(bare.told(), Told::Nothing));
+        assert!(bare.told().is_none());
+    }
+
+    #[test]
+    fn a_lyricsfile_an_lrc_was_turned_into_is_not_kept_beside_the_lrc() {
+        let answer: Answer = serde_json::from_str(GET).expect("the fixture parses");
+        assert!(answer.lyricsfile.is_some());
+
+        let told = answer.told().expect("the answer carries words");
+        assert_eq!(told.lyricsfile, None);
+    }
+
+    #[test]
+    fn a_word_synced_lyricsfile_is_kept_and_read_back_word_by_word() {
+        let answer = Answer {
+            id: Some(1),
+            track_name: Some("Small Hours".to_owned()),
+            artist_name: Some("Example Artist".to_owned()),
+            duration: Some(10.0),
+            instrumental: false,
+            plain: Some("Stay until the morning".to_owned()),
+            synced: Some("[00:04.20] Stay until the morning".to_owned()),
+            lyricsfile: Some(WORDED.to_owned()),
+        };
+
+        let told = answer.told().expect("the answer carries words");
+        assert!(told.synced);
+        assert_eq!(told.lyricsfile.as_deref(), Some(WORDED));
+        let lyrics = set_of(&told)
+            .expect("the document reads")
+            .expect("the document holds lines");
+        assert_eq!(lyrics.detail(), Detail::Words);
+
+        let unreadable = LyricText {
+            lyricsfile: Some("version: '9'".to_owned()),
+            ..told
+        };
+        let lyrics = set_of(&unreadable)
+            .expect("the lines read")
+            .expect("the lines are there");
+        assert_eq!(lyrics.detail(), Detail::Lines);
     }
 
     #[test]
     fn a_search_answer_is_taken_only_where_it_names_the_track_and_lasts_about_as_long() {
         assert_eq!(found().len(), 5);
 
-        assert!(pick(found(), "Echoes", "Pink Floyd", Some(ECHOES_LASTS)).is_none());
-        assert!(pick(found(), "Echoes", "Pink Floyd", None).is_none());
+        assert!(pick(found(), &asked("Echoes", "Pink Floyd", Some(ECHOES_LASTS))).is_none());
+        assert!(pick(found(), &asked("Echoes", "Pink Floyd", None)).is_none());
 
-        let taken =
-            pick(found(), "echoes - ECHOES", "pink floyd", None).expect("the first is named so");
+        let taken = pick(found(), &asked("echoes - ECHOES", "pink floyd", None))
+            .expect("the first is named so");
         assert_eq!(taken.id, Some(18_688_320));
 
         let taken = pick(
             found(),
-            "Echoes - Echoes",
-            "Pink Floyd",
-            Some(Duration::from_secs(1000)),
+            &asked(
+                "Echoes - Echoes",
+                "Pink Floyd",
+                Some(Duration::from_secs(1000)),
+            ),
         )
         .expect("the first lasts about as long");
         assert_eq!(taken.id, Some(18_688_320));
 
-        let taken = pick(found(), "Echoes - Echoes", "Pink Floyd", Some(ECHOES_LASTS))
-            .expect("the last folds to the same name and lasts as long");
+        let taken = pick(
+            found(),
+            &asked("Echoes - Echoes", "Pink Floyd", Some(ECHOES_LASTS)),
+        )
+        .expect("the last folds to the same name and lasts as long");
         assert_eq!(taken.id, Some(22_369_384));
 
-        assert!(pick(found(), "Echoes - Echoes", "Roger Waters", None).is_none());
+        assert!(pick(found(), &asked("Echoes - Echoes", "Roger Waters", None)).is_none());
         assert!(
             pick(
                 found(),
-                "Echoes - Echoes",
-                "Pink Floyd",
-                Some(Duration::from_secs(5000))
+                &asked(
+                    "Echoes - Echoes",
+                    "Pink Floyd",
+                    Some(Duration::from_secs(5000))
+                )
             )
             .is_none()
         );
-    }
-
-    #[test]
-    fn a_kept_miss_is_fresh_for_a_week_and_stale_after() {
-        let now = SystemTime::now();
-        assert!(still_fresh(now));
-        assert!(still_fresh(now - Duration::from_secs(60)));
-        assert!(still_fresh(now + Duration::from_secs(60)));
-        assert!(!still_fresh(now - ASK_AGAIN_AFTER - Duration::from_secs(1)));
     }
 
     #[test]

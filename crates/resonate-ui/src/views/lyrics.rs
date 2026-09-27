@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, Canvas, Context, Div, FontWeight, MouseMoveEvent, Pixels, Point, ScrollWheelEvent,
-    SharedString, canvas, div, linear_color_stop, linear_gradient, prelude::*, px, rgb,
+    AnyElement, Canvas, Context, Div, FontWeight, HighlightStyle, MouseMoveEvent, Pixels, Point,
+    ScrollWheelEvent, SharedString, StyledText, canvas, div, linear_color_stop, linear_gradient,
+    prelude::*, px, rgb,
 };
 use resonate_engine::{PlayerState, StreamDigest};
-use resonate_lyrics::{Credits, Timing, Voice, Wanted};
+use resonate_lyrics::{Credits, Detail, Sweep, Voice, Wanted};
 
 use crate::{
     Selection, clipboard,
@@ -47,6 +48,8 @@ const PRESS_HINT: &str = "Press any line to jump the transport to the moment it 
                           scroll of your own holds the pane where you leave it until Follow puts \
                           it back on the track.";
 
+const WORD_SYNCED: &str = "WORD-SYNCED";
+
 const SYNCED: &str = "SYNCED";
 
 const UNSYNCED: &str = "UNSYNCED";
@@ -75,6 +78,8 @@ const SIZE_STEPS_PER_PIXEL: f32 = 8.0;
 
 const DOWNWARDS: f32 = 180.0;
 
+const UNSUNG_SHARE: f32 = 0.45;
+
 struct Attributed {
     timed: &'static str,
     source: SharedString,
@@ -98,6 +103,7 @@ struct Line {
     offset: Pixels,
     width: Pixels,
     breath: Option<Breath>,
+    sweep: Option<Sweep>,
 }
 
 #[derive(Clone, Copy)]
@@ -290,6 +296,7 @@ impl RootView {
             let voices = model.voices();
             let has_two_voices = model.has_two_voices();
             let waiting = model.waiting_at(position);
+            let in_play = model.in_play(position);
             let swell = model.breath(now);
             let width = model.column_width();
 
@@ -323,6 +330,10 @@ impl RootView {
                         offset: model.lag(index, now) + model.rise(index, now),
                         width,
                         breath,
+                        sweep: in_play
+                            .contains(&Some(index))
+                            .then(|| model.sweep(index, position))
+                            .flatten(),
                     }
                 })
                 .collect();
@@ -350,6 +361,11 @@ impl RootView {
             )
         };
 
+        let sweeping = drawn.iter().any(|line| {
+            line.sweep
+                .as_ref()
+                .is_some_and(|sweep| sweep.singing.is_some())
+        });
         let lines: Vec<AnyElement> = drawn.into_iter().map(|line| self.lyric(line, cx)).collect();
 
         let column = div()
@@ -389,7 +405,7 @@ impl RootView {
             .child(dissolving(true))
             .child(dissolving(false))
             .child(self.follows_the_pointer(cx))
-            .child(asks_for_a_frame(moving))
+            .child(asks_for_a_frame(moving || sweeping))
             .into_any_element()
     }
 
@@ -473,16 +489,23 @@ impl RootView {
                     .text_size(px(size))
                     .line_height(px(lit * LEADING))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(mixed(
-                        theme::muted(),
-                        if second {
+                    .map(|words| {
+                        let lit = if second {
                             theme::accent()
                         } else {
                             theme::text()
-                        },
-                        line.lead,
-                    )))
-                    .child(line.text),
+                        };
+                        let sung = mixed(theme::muted(), lit, line.lead);
+                        match line.sweep {
+                            Some(sweep) => {
+                                let unsung = mixed(theme::muted(), lit, line.lead * UNSUNG_SHARE);
+                                words
+                                    .text_color(rgb(unsung))
+                                    .child(swept(line.text, &sweep, unsung, sung))
+                            }
+                            None => words.text_color(rgb(sung)).child(line.text),
+                        }
+                    }),
             )
             .when_some(line.breath, |line, breath| line.child(breather(breath)));
 
@@ -591,6 +614,27 @@ impl RootView {
     }
 }
 
+fn swept(text: SharedString, sweep: &Sweep, unsung: u32, sung: u32) -> StyledText {
+    let coloured = |colour: u32| HighlightStyle {
+        color: Some(rgb(colour).into()),
+        ..HighlightStyle::default()
+    };
+    let mut runs = Vec::with_capacity(2);
+    if sweep.sung > 0 {
+        runs.push((0..sweep.sung, coloured(sung)));
+    }
+    if let Some(singing) = &sweep.singing
+        && !singing.word.is_empty()
+    {
+        runs.push((
+            singing.word.clone(),
+            coloured(mixed(unsung, sung, singing.through)),
+        ));
+    }
+
+    StyledText::new(text).with_highlights(runs)
+}
+
 fn mixed(from: u32, to: u32, share: f32) -> u32 {
     let channel = |shift: u32| {
         let one = ((from >> shift) & 0xff) as f32;
@@ -606,9 +650,10 @@ fn attribution(look: &Look) -> Option<Attributed> {
     let Look::Found(lyrics) = look else {
         return None;
     };
-    let timed = match lyrics.timing() {
-        Timing::Synced => SYNCED,
-        Timing::Unsynced => UNSYNCED,
+    let timed = match lyrics.detail() {
+        Detail::Words => WORD_SYNCED,
+        Detail::Lines => SYNCED,
+        Detail::Unsynced => UNSYNCED,
     };
 
     Some(Attributed {

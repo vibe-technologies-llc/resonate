@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use resonate_core::{FrameSpan, MediaLocation, SampleRate, SourceId};
 
-use crate::{Embedded, Lyrics, Result, Sidecar, lrc};
+use crate::{Detail, Embedded, Lyrics, Result, Sidecar, lrc};
 
 const UNSOURCED: &str = "none";
 
@@ -116,10 +116,24 @@ impl Lyricists {
 
     pub fn find(&self, wanted: &Wanted) -> Result<Option<Lyrics>> {
         let mut refused = None;
+        let mut richest: Option<Lyrics> = None;
 
         for provider in &self.providers {
             match provider.lyrics(wanted) {
-                Ok(Some(lyrics)) if !lyrics.is_empty() => return Ok(Some(lyrics)),
+                Ok(Some(lyrics)) if !lyrics.is_empty() => {
+                    if richest
+                        .as_ref()
+                        .is_none_or(|held| lyrics.detail() > held.detail())
+                    {
+                        richest = Some(lyrics);
+                    }
+                    if richest
+                        .as_ref()
+                        .is_some_and(|held| held.detail() == Detail::Words)
+                    {
+                        break;
+                    }
+                }
                 Ok(_) => {}
                 Err(error) => {
                     tracing::debug!(%error, source = %provider.source(), "a lyric provider refused");
@@ -128,9 +142,10 @@ impl Lyricists {
             }
         }
 
-        match refused {
-            Some(error) => Err(error),
-            None => Ok(None),
+        match (richest, refused) {
+            (Some(lyrics), _) => Ok(Some(lyrics)),
+            (None, Some(error)) => Err(error),
+            (None, None) => Ok(None),
         }
     }
 }
@@ -144,7 +159,7 @@ impl Default for Lyricists {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Error, LyricLine, LyricOp};
+    use crate::{Error, LyricLine, LyricOp, SungWord};
 
     struct Held {
         source: SourceId,
@@ -233,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn the_first_provider_that_answers_is_the_one_the_pane_draws() {
+    fn the_first_provider_that_answers_as_finely_as_any_is_the_one_the_pane_draws() {
         let lyricists = Lyricists::unsourced()
             .and(holding("first", "all that you touch"))
             .and(holding("second", "all that you see"));
@@ -249,6 +264,56 @@ mod tests {
             found.lines(),
             [LyricLine::untimed("all that you touch")].as_slice()
         );
+    }
+
+    fn timing(name: &str, lines: Vec<LyricLine>) -> Arc<Held> {
+        Arc::new(Held {
+            source: named(name),
+            lyrics: Some(Lyrics::synced(named(name), lines).expect("every line is timed")),
+        })
+    }
+
+    #[test]
+    fn a_set_timed_more_finely_further_down_outranks_a_plainer_one_above_it() {
+        let lined = || {
+            vec![LyricLine::sung(
+                Duration::from_secs(1),
+                "all that you touch",
+            )]
+        };
+        let worded = || {
+            vec![LyricLine::worded(
+                Duration::from_secs(1),
+                vec![
+                    SungWord::sung(Duration::from_secs(1), "all "),
+                    SungWord::sung(Duration::from_secs(2), "that you touch"),
+                ],
+            )]
+        };
+        let lyricists = Lyricists::unsourced()
+            .and(holding("plain", "all that you touch"))
+            .and(timing("lines", lined()))
+            .and(timing("also-lines", lined()));
+
+        let found = lyricists
+            .find(&wanted())
+            .expect("nothing failed")
+            .expect("a provider answered");
+        assert_eq!(found.source(), &named("lines"));
+        assert_eq!(found.detail(), Detail::Lines);
+
+        let lyricists = Lyricists::unsourced()
+            .and(Arc::new(Refusing {
+                source: named("refusing"),
+            }))
+            .and(timing("lines", lined()))
+            .and(timing("words", worded()));
+        let found = lyricists
+            .find(&wanted())
+            .expect("an answer outranks a refusal")
+            .expect("a provider answered");
+        assert_eq!(found.source(), &named("words"));
+        assert_eq!(found.detail(), Detail::Words);
     }
 
     #[test]

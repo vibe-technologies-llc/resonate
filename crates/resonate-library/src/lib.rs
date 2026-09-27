@@ -32,6 +32,7 @@ mod stem;
 mod store;
 mod studies;
 mod suggest;
+mod sung;
 mod supply;
 mod undo;
 mod vaulted;
@@ -91,10 +92,11 @@ pub use crate::{
     },
     reference::{
         ArtistMatch, ArtistProfile, ArtistRelease, Credit, Genre, GroupAsked, GroupMatch,
-        GroupRelease, Issued, LifeSpan, LookupOp, Medium, Recording, RecordingAsked,
-        RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
-        ReleaseMatch, ReleaseTrack, StreamAsked, Wording, apple_music_urls, deezer_urls,
-        may_be_pictured, portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls,
+        GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText, LyricsAsked, Medium,
+        Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
+        ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked, Wording,
+        apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
+        spotify_urls, wikidata_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
@@ -109,6 +111,7 @@ pub use crate::{
     store::folded_letters,
     studies::{Agreement, HEARD_AT_LEAST, Heard, HeardAs, Studied, StudiedTrack, StudyFilter},
     suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
+    sung::{BETTERED_AFTER, MISSED_AGAIN_AFTER},
     supply::{ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary},
     undo::{Edit, Undoable},
     watch::RootsWatch,

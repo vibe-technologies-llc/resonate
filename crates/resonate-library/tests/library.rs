@@ -24,18 +24,19 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease, Codec,
-    CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding, EnrichOptions, EnrichSummary,
-    Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
-    HeldMedium, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
-    LifeSpan, Link, ListeningService, LookupOp, Mbid, Medium, Missing, MissingTrack,
-    OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder,
-    PollOptions, PollProgress, Pruned, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
-    Scrobble, Scrobbler, Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TagField, TagSet, TagSource, Track, TrackQuery, UnheldRelease,
-    Unwritten, Vault, Waits, Window, Wording, Written,
+    Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
+    BETTERED_AFTER, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding,
+    EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
+    GroupAsked, GroupMatch, GroupRelease, HeldMedium, ImageFormat, ImportOptions, ImportSummary,
+    Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp, LyricText,
+    LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing,
+    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Pruned, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagField,
+    TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording,
+    Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -7505,36 +7506,226 @@ fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole()
 }
 
 #[test]
+fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(Canned {
+        lyrics: vec![
+            (
+                "One of These Days",
+                timed_words("[00:01.00]One of these days"),
+            ),
+            ("A Pillow of Winds", words("A cloud of eiderdown")),
+        ],
+        ..Canned::default()
+    }));
+
+    let summary = enrich(&library, &fake, false)?;
+    assert_eq!(summary.stats.lyrics, 2);
+    let mut asked = fake.sung();
+    asked.sort_by(|one, other| one.title.cmp(&other.title));
+    assert_eq!(
+        asked
+            .iter()
+            .map(|asked| asked.title.as_str())
+            .collect::<Vec<_>>(),
+        ["A Pillow of Winds", "Fearless!", "One of These Days"]
+    );
+    assert!(asked.iter().all(|asked| asked.artist == "The Orbiters"));
+    assert!(
+        asked
+            .iter()
+            .all(|asked| asked.album.as_deref() == Some("Orbits"))
+    );
+    assert!(asked.iter().all(|asked| asked.length.is_some()));
+
+    let kept = |file: &str| -> Result<Option<LyricText>> {
+        Ok(library
+            .kept_lyrics(&orbits_file(&tree, file), None)?
+            .and_then(|kept| kept.sung))
+    };
+    assert_eq!(
+        kept("1.wav")?,
+        Some(timed_words("[00:01.00]One of these days"))
+    );
+    assert_eq!(kept("2.wav")?, Some(words("A cloud of eiderdown")));
+    assert!(
+        library
+            .kept_lyrics(&orbits_file(&tree, "3.wav"), None)?
+            .is_some_and(|kept| kept.sung.is_none()),
+        "the miss was not remembered"
+    );
+    assert_eq!(
+        matching(&library, "lyrics:eiderdown")?,
+        ["A Pillow of Winds"]
+    );
+
+    let again = Arc::new(Fake::new(Canned::default()));
+    enrich(&library, &again, false)?;
+    assert!(
+        again.sung().is_empty(),
+        "a track kept lately was asked again"
+    );
+
+    let refreshed = Arc::new(Fake::new(Canned::default()));
+    enrich(&library, &refreshed, true)?;
+    assert_eq!(refreshed.sung().len(), 3);
+    assert_eq!(
+        kept("1.wav")?,
+        Some(timed_words("[00:01.00]One of these days")),
+        "a refresh that heard nothing put out what was kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettered() -> Result<()> {
+    let (tree, library, database) = scanned_orbits_on_disk()?;
+    let plainly = Arc::new(Fake::new(Canned {
+        lyrics: vec![("One of These Days", words("One of these days"))],
+        ..Canned::default()
+    }));
+    enrich(&library, &plainly, false)?;
+
+    beside(&database)
+        .execute(
+            "UPDATE lyrics_kept SET taken = ?1",
+            [i64::try_from((BETTERED_AFTER * 2).as_nanos()).expect("fits")],
+        )
+        .expect("the kept rows age");
+    let documented = LyricText {
+        lyricsfile: Some("version: '1.0'".to_owned()),
+        ..timed_words("[00:01.00]One of these days")
+    };
+    let better = Arc::new(Fake::new(Canned {
+        lyrics: vec![("One of These Days", documented.clone())],
+        ..Canned::default()
+    }));
+    let summary = enrich(&library, &better, false)?;
+    assert_eq!(better.sung().len(), 3);
+    assert_eq!(summary.stats.lyrics, 1);
+    assert_eq!(
+        library
+            .kept_lyrics(&orbits_file(&tree, "1.wav"), None)?
+            .and_then(|kept| kept.sung),
+        Some(documented)
+    );
+
+    beside(&database)
+        .execute("UPDATE lyrics_kept SET taken = 0", [])
+        .expect("the kept rows age");
+    let settled = Arc::new(Fake::new(Canned::default()));
+    enrich(&library, &settled, false)?;
+    assert_eq!(
+        settled.sung().len(),
+        2,
+        "a track holding a lyricsfile was asked again"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_lookup_told_not_to_fetch_lyrics_asks_for_none_and_one_that_cannot_reach_the_service_stops_asking()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(Canned::default()));
+    library
+        .enrich(
+            Arc::clone(&fake) as Arc<dyn Reference>,
+            Arc::new(Fingerprinters::none()),
+            EnrichOptions {
+                lyrics: false,
+                ..EnrichOptions::default()
+            },
+        )?
+        .join()?;
+    assert!(fake.sung().is_empty());
+
+    let unreachable =
+        Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Unreachable));
+    let summary = enrich(&library, &unreachable, false)?;
+    assert_eq!(unreachable.sung().len(), 1);
+    assert_eq!(summary.stopped_by, None);
+
+    let refusing =
+        Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Refused));
+    let summary = enrich(&library, &refusing, false)?;
+    assert_eq!(refusing.sung().len(), 3);
+    assert_eq!(summary.stats.refused, 1);
+    Ok(())
+}
+
+fn words(text: &str) -> LyricText {
+    LyricText {
+        text: text.to_owned(),
+        synced: false,
+        lyricsfile: None,
+    }
+}
+
+fn timed_words(text: &str) -> LyricText {
+    LyricText {
+        synced: true,
+        ..words(text)
+    }
+}
+
+#[test]
 fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<()> {
     let library = Library::open_in_memory()?;
     let whole = MediaLocation::local("/music/Orbits/Echoes.flac");
     let cut = Some(FrameSpan::starting(Frames(44_100)));
 
     assert_eq!(library.kept_lyrics(&whole, None)?, None);
-    library.keep_lyrics(&whole, None, Some("[00:01.00]Overhead the albatross"), true)?;
-    library.keep_lyrics(&whole, cut, None, false)?;
+    assert!(library.keep_lyrics(
+        &whole,
+        None,
+        Some(&timed_words("[00:01.00]Overhead the albatross"))
+    )?);
+    assert!(!library.keep_lyrics(&whole, cut, None)?);
 
     let kept = library
         .kept_lyrics(&whole, None)?
         .expect("the lyrics were kept");
     assert_eq!(
-        kept.text.as_deref(),
-        Some("[00:01.00]Overhead the albatross")
+        kept.sung,
+        Some(timed_words("[00:01.00]Overhead the albatross"))
     );
-    assert!(kept.synced);
     let miss = library
         .kept_lyrics(&whole, cut)?
         .expect("the miss was kept");
-    assert_eq!(miss.text, None);
-    assert!(!miss.synced);
+    assert_eq!(miss.sung, None);
 
-    library.keep_lyrics(&whole, None, Some("Overhead the albatross"), false)?;
-    let replaced = library
+    assert!(!library.keep_lyrics(&whole, None, Some(&words("Overhead the albatross")))?);
+    let held = library
         .kept_lyrics(&whole, None)?
         .expect("the lyrics were kept");
-    assert_eq!(replaced.text.as_deref(), Some("Overhead the albatross"));
-    assert!(!replaced.synced);
-    assert!(replaced.taken >= kept.taken);
+    assert_eq!(
+        held.sung,
+        Some(timed_words("[00:01.00]Overhead the albatross")),
+        "a synced set was traded for plain words"
+    );
+    assert!(held.taken >= kept.taken);
+
+    assert!(!library.keep_lyrics(&whole, None, None)?);
+    assert_eq!(
+        library
+            .kept_lyrics(&whole, None)?
+            .and_then(|kept| kept.sung),
+        Some(timed_words("[00:01.00]Overhead the albatross")),
+        "a miss put out what was kept"
+    );
+
+    let documented = LyricText {
+        lyricsfile: Some("version: '1.0'".to_owned()),
+        ..timed_words("[00:01.00]Overhead the albatross")
+    };
+    assert!(library.keep_lyrics(&whole, None, Some(&documented))?);
+    assert_eq!(
+        library
+            .kept_lyrics(&whole, None)?
+            .and_then(|kept| kept.sung),
+        Some(documented)
+    );
 
     let elsewhere = MediaLocation::new(SourceId::new("tidal")?, "55391743");
     assert!(matches!(
@@ -7542,7 +7733,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
         Err(Error::NotALocalFile { .. })
     ));
     assert!(matches!(
-        library.keep_lyrics(&elsewhere, None, None, false),
+        library.keep_lyrics(&elsewhere, None, None),
         Err(Error::NotALocalFile { .. })
     ));
     Ok(())
@@ -7757,6 +7948,7 @@ struct Canned {
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
     streamed: Option<Link>,
+    lyrics: Vec<(&'static str, LyricText)>,
 }
 
 struct Gate {
@@ -7771,6 +7963,7 @@ struct Fake {
     faults: Vec<(LookupOp, usize, Fault)>,
     calls: Mutex<Vec<Called>>,
     gate: Mutex<Option<Gate>>,
+    sung: Mutex<Vec<LyricsAsked>>,
 }
 
 impl Fake {
@@ -7781,6 +7974,7 @@ impl Fake {
             faults: Vec::new(),
             calls: Mutex::new(Vec::new()),
             gate: Mutex::new(None),
+            sung: Mutex::new(Vec::new()),
         }
     }
 
@@ -7833,6 +8027,14 @@ impl Fake {
             let _ = gate.go.recv();
         }
 
+        self.fault(op, nth)
+    }
+
+    fn sung(&self) -> Vec<LyricsAsked> {
+        self.sung.lock().clone()
+    }
+
+    fn fault(&self, op: LookupOp, nth: usize) -> Result<()> {
         match self
             .faults
             .iter()
@@ -7989,6 +8191,21 @@ impl Reference for Fake {
     fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>> {
         self.note(Called::StreamedAt(asked.clone()))?;
         Ok(self.canned.streamed.clone())
+    }
+
+    fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>> {
+        let nth = {
+            let mut sung = self.sung.lock();
+            sung.push(asked.clone());
+            sung.len() - 1
+        };
+        self.fault(LookupOp::Lyrics, nth)?;
+        Ok(self
+            .canned
+            .lyrics
+            .iter()
+            .find(|(title, _)| *title == asked.title)
+            .map(|(_, told)| told.clone()))
     }
 }
 
@@ -12749,7 +12966,7 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
     let root = filed_under(&tree);
     let stood = MediaLocation::local(root.join("loose/echoes.wav"));
     let set = library.start_playlist("Set", &[Cut::whole(stood.clone())])?;
-    library.keep_lyrics(&stood, None, Some("and no one sings me lullabies"), false)?;
+    library.keep_lyrics(&stood, None, Some(&words("and no one sings me lullabies")))?;
     library.keep_resumption(&Resumption {
         rows: vec![Resumable {
             location: stood.clone(),
@@ -12776,7 +12993,7 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
     let kept = library
         .kept_lyrics(&landed, None)?
         .expect("the words kept against the file followed it");
-    assert_eq!(kept.text.as_deref(), Some("and no one sings me lullabies"));
+    assert_eq!(kept.sung, Some(words("and no one sings me lullabies")));
     assert_eq!(library.kept_lyrics(&stood, None)?, None);
 
     let resumed = library
@@ -16017,8 +16234,9 @@ fn a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for() -> 
     library.keep_lyrics(
         &orbits_file(&tree, "1.wav"),
         None,
-        Some("[00:01.00]Overhead the albatross\n[00:04.50]<00:04.50>hangs motionless"),
-        true,
+        Some(&timed_words(
+            "[00:01.00]Overhead the albatross\n[00:04.50]<00:04.50>hangs motionless",
+        )),
     )?;
 
     assert_eq!(
@@ -16047,8 +16265,9 @@ fn a_search_of_plain_words_is_offered_as_the_words_a_track_sings() -> Result<()>
     library.keep_lyrics(
         &orbits_file(&tree, "2.wav"),
         None,
-        Some("Overhead the albatross hangs motionless upon the air"),
-        false,
+        Some(&words(
+            "Overhead the albatross hangs motionless upon the air",
+        )),
     )?;
 
     let sung = library

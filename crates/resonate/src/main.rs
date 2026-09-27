@@ -214,6 +214,7 @@ fn run() -> Result<()> {
                 refresh: *refresh,
                 at_most: *albums,
                 studies: config.studies(),
+                lyrics: config.fetches_lyrics(),
                 ..EnrichOptions::default()
             },
         ),
@@ -554,6 +555,7 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
                 library,
                 EnrichOptions {
                     studies: config.studies(),
+                    lyrics: config.fetches_lyrics(),
                     ..EnrichOptions::default()
                 },
             )?,
@@ -601,7 +603,7 @@ fn enriched(summary: &EnrichSummary) -> String {
     let mut told = format!(
         "albums {} | releases {} | matched {} | covers {} | tracks {} | named {} | artists {} \
          | portraits {} | releases found {} | refused {}\n\
-         studied {} | fakes {} | recognised {} | misnamed {}\n",
+         studied {} | fakes {} | recognised {} | misnamed {} | lyrics {}\n",
         stats.albums,
         stats.releases,
         stats.matched,
@@ -615,7 +617,8 @@ fn enriched(summary: &EnrichSummary) -> String {
         stats.studied,
         stats.fakes,
         stats.recognised,
-        stats.misnamed
+        stats.misnamed,
+        stats.lyrics
     );
     if let Some(op) = summary.stopped_by {
         told.push_str(&format!(
@@ -2057,6 +2060,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),
                 studies: config.studies(),
+                lyrics: config.fetches_lyrics(),
                 contact: config.contact.clone().unwrap_or_default(),
                 acoustid_key: config.acoustid_key.clone().unwrap_or_default(),
                 audd_token: config.audd_token.clone().unwrap_or_default(),

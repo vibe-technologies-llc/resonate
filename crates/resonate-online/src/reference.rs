@@ -3,13 +3,14 @@ use std::sync::Arc;
 use resonate_codec::CoverArt;
 use resonate_core::SourceId;
 use resonate_library::{
-    ArtistMatch, ArtistProfile, ArtistRelease, GroupAsked, GroupMatch, Isrc, Link, Mbid, Recording,
-    RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    StreamAsked,
+    ArtistMatch, ArtistProfile, ArtistRelease, GroupAsked, GroupMatch, Isrc, Link, LyricText,
+    LyricsAsked, Mbid, Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked,
+    ReleaseGroup, ReleaseMatch, StreamAsked,
 };
 
 use crate::{
-    Client, Identity, apple, commons, coverart, deezer, musicbrainz, soundcloud, spotify, wikidata,
+    Client, Identity, apple, commons, coverart, deezer, lrclib, musicbrainz, soundcloud, spotify,
+    wikidata,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -102,6 +103,10 @@ impl Reference for Online {
 
     fn streamed_at(&self, asked: &StreamAsked) -> resonate_library::Result<Option<Link>> {
         Ok(deezer::streamed(&self.client, asked)?)
+    }
+
+    fn lyrics(&self, asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+        Ok(lrclib::told(&self.client, asked)?)
     }
 
     fn portrait(&self, links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {

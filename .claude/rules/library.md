@@ -1271,11 +1271,31 @@ through `Player::media` like any other unscanned row.
   what cannot be opened. `note_tried` keeps an earlier offer where the new pass found none.
 - **A lyric fetched once is kept, and so is a miss.** `lyrics_kept` is keyed by `(path,
   span_start)` the way `tracks` is, so a cue row keeps its own words apart from the file's;
-  `text` is `NULL` for a remembered miss and `taken` says when, which is what a provider weighs a
-  miss's age against. `Library::kept_lyrics` and `keep_lyrics` take the `MediaLocation` and the
+  `text` is `NULL` for a remembered miss and `taken` says when it was last asked. A kept row is a
+  `KeptLyrics` holding an `Option<LyricText>` — the text, `synced`, and the `lyricsfile` column a
+  migration step added, the Lyricsfile document kept only where it says more than its lines. Its
+  `LyricDetail` is `Plain`, `Lines` or `Lyricsfile` in that order, and `sung::keep` never trades
+  a richer set for a plainer one or for a miss: it keeps the richer of what it held and what it
+  was told, stamps `taken` either way and answers whether what it holds got better, which is the
+  enrichment's `lyrics` count. `KeptLyrics::is_due` is the one rule both askers follow: a miss is
+  due after `MISSED_AGAIN_AFTER` of a week, a set short of a Lyricsfile after `BETTERED_AFTER` of
+  a month — in case a synced or a word-timed set has been written since — and a Lyricsfile
+  never. `Library::kept_lyrics` and `keep_lyrics` take the `MediaLocation` and the
   `Option<FrameSpan>` and refuse a location that is not local through `playlist::local_path`,
-  because a row here is a path like every other. The provider that reads and writes it is the
-  online crate's, so the catalog holds words it never parses.
+  because a row here is a path like every other; the search index is written from `text`, so a
+  Lyricsfile's YAML is never what `lyrics:` reaches. The catalog holds words it never parses: the
+  reading is the online crate's.
+- **The lookup asks for every track's words beside the pass.** `Reference::lyrics` takes a
+  `LyricsAsked` — the title, the artist or the album's owner, the album and the length, read off
+  the row the moment it is asked so a name the pass has just corrected is the one sent — and
+  answers an `Option<LyricText>`, `None` for an instrumental or a song the service does not hold.
+  `Library::lyrics_to_ask` is every row with no kept row or a due one, all of them under
+  `refresh`, cut to `at_most` like the other queues, and `EnrichOptions::lyrics` turns the walk
+  off, which is the `fetch-lyrics` key. `Verses` is one thread, the way `Pictures` is two:
+  LRCLIB is paced apart from MusicBrainz, so the words cost the pass nothing but the wait at its
+  end. A refusal is counted and the row is left unkept so it is asked again; an unreachable
+  service ends the walk and not the pass. A delivered row is a row like any other here, so it
+  has its words fetched too.
 - **The panes read what landed through seven calls, and two counts ride on the listings.**
   `Library::release_of` answers a `ReleaseDetail` — the release columns, the `CoverSource`, the
   two clocks and the album's links — `release_tracks` the `HeldReleaseTrack`s with each row's links

@@ -11,7 +11,7 @@ use resonate_core::{
 };
 use resonate_vault::{Encoding, Form, VaultKey};
 
-use crate::{Genre, Isrc, Kept, LifeSpan, Link, Mbid, SavedQuery};
+use crate::{Genre, Isrc, Kept, LifeSpan, Link, LyricText, Mbid, SavedQuery};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
@@ -267,8 +267,7 @@ pub struct Want {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeptLyrics {
-    pub text: Option<String>,
-    pub synced: bool,
+    pub sung: Option<LyricText>,
     pub taken: SystemTime,
 }
 

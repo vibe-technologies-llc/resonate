@@ -391,6 +391,7 @@ impl RootView {
             Group::Lookups => self.lookups_group(cx),
             Group::AfterScan => self.after_scan_group(cx),
             Group::Studies => self.studies_group(cx),
+            Group::Lyrics => self.lyrics_group(cx),
             Group::Contact => self.contact_group(cx),
             Group::Recognition => self.recognition_group(cx),
             Group::Listening => self.listening_group(cx),
@@ -499,6 +500,7 @@ impl RootView {
             Group::Lookups => self.set_online(defaults::ONLINE, cx),
             Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
             Group::Studies => self.set_studies(defaults::STUDY, cx),
+            Group::Lyrics => self.set_lyrics(defaults::FETCH_LYRICS, cx),
             Group::Resuming => self.set_resume(defaults::RESUME, cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Discord => self.put_discord_back(cx),
@@ -538,6 +540,7 @@ impl RootView {
         let online = library.is_online();
         let after_scan = library.enriches_after_scan();
         let studies = library.studies();
+        let lyrics = library.fetches_lyrics();
         let resume = library.resumes();
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
@@ -566,6 +569,7 @@ impl RootView {
             online,
             after_scan,
             studies,
+            lyrics,
             contact_given,
             key_given,
             token_given,

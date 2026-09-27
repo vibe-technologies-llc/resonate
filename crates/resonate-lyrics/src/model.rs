@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{ops::Range, time::Duration};
 
 use resonate_core::SourceId;
 
@@ -26,6 +26,56 @@ pub enum Timing {
     Unsynced,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Detail {
+    Unsynced,
+    Lines,
+    Words,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sweep {
+    pub sung: usize,
+    pub singing: Option<Singing>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Singing {
+    pub word: Range<usize>,
+    pub through: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SungWord {
+    pub at: Duration,
+    pub until: Option<Duration>,
+    pub text: String,
+}
+
+impl SungWord {
+    pub fn sung(at: Duration, text: impl Into<String>) -> Self {
+        Self {
+            at,
+            until: None,
+            text: text.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn ending(mut self, until: Duration) -> Self {
+        self.until = (until >= self.at).then_some(until);
+        self
+    }
+
+    fn shifted_back(self, by: Duration) -> Self {
+        Self {
+            at: self.at.saturating_sub(by),
+            until: self.until.map(|until| until.saturating_sub(by)),
+            text: self.text,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Voice {
     #[default]
@@ -45,24 +95,43 @@ impl Voice {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LyricLine {
     pub at: Option<Duration>,
+    pub until: Option<Duration>,
     pub text: String,
     pub voice: Voice,
+    pub words: Vec<SungWord>,
 }
 
 impl LyricLine {
     pub fn sung(at: Duration, text: impl Into<String>) -> Self {
         Self {
             at: Some(at),
+            until: None,
             text: text.into(),
             voice: Voice::One,
+            words: Vec::new(),
         }
     }
 
     pub fn untimed(text: impl Into<String>) -> Self {
         Self {
             at: None,
+            until: None,
             text: text.into(),
             voice: Voice::One,
+            words: Vec::new(),
+        }
+    }
+
+    pub fn worded(at: Duration, mut words: Vec<SungWord>) -> Self {
+        words.sort_by_key(|word| word.at);
+        let text = words.iter().map(|word| word.text.as_str()).collect();
+
+        Self {
+            at: Some(at),
+            until: None,
+            text,
+            voice: Voice::One,
+            words,
         }
     }
 
@@ -72,8 +141,69 @@ impl LyricLine {
         self
     }
 
+    #[must_use]
+    pub fn ending(mut self, until: Duration) -> Self {
+        self.until = self.at.is_some_and(|at| until >= at).then_some(until);
+        self
+    }
+
     pub fn is_blank(&self) -> bool {
         self.text.trim().is_empty()
+    }
+
+    pub fn sweep_at(&self, position: Duration) -> Option<Sweep> {
+        if self.words.is_empty() {
+            return None;
+        }
+        let mut sung = 0;
+        let mut starts = 0;
+        for (index, word) in self.words.iter().enumerate() {
+            let ends = starts + word.text.len();
+            if position < word.at {
+                break;
+            }
+            let until = word
+                .until
+                .or_else(|| self.words.get(index + 1).map(|next| next.at))
+                .or(self.until);
+            match until {
+                Some(until) if position < until => {
+                    return Some(Sweep {
+                        sung,
+                        singing: Some(Singing {
+                            word: starts..ends,
+                            through: share(position.saturating_sub(word.at), until - word.at),
+                        }),
+                    });
+                }
+                _ => sung = ends,
+            }
+            starts = ends;
+        }
+
+        Some(Sweep {
+            sung,
+            singing: None,
+        })
+    }
+
+    fn declared_until(&self) -> Option<Duration> {
+        self.until
+            .or_else(|| self.words.iter().filter_map(|word| word.until).max())
+    }
+
+    fn shifted_back(self, by: Duration) -> Self {
+        Self {
+            at: self.at.map(|at| at.saturating_sub(by)),
+            until: self.until.map(|until| until.saturating_sub(by)),
+            text: self.text,
+            voice: self.voice,
+            words: self
+                .words
+                .into_iter()
+                .map(|word| word.shifted_back(by))
+                .collect(),
+        }
     }
 }
 
@@ -136,6 +266,14 @@ impl Lyrics {
         self.timing
     }
 
+    pub fn detail(&self) -> Detail {
+        match self.timing {
+            Timing::Unsynced => Detail::Unsynced,
+            Timing::Synced if self.lines.iter().any(|line| !line.words.is_empty()) => Detail::Words,
+            Timing::Synced => Detail::Lines,
+        }
+    }
+
     pub fn lines(&self) -> &[LyricLine] {
         &self.lines
     }
@@ -154,7 +292,7 @@ impl Lyrics {
             .filter_map(|line| {
                 let at = line.at?;
                 let inside = at >= start && end.is_none_or(|end| at < end);
-                inside.then(|| LyricLine::sung(at - start, line.text).voiced(line.voice))
+                inside.then(|| line.shifted_back(start))
             })
             .collect();
         if lines.iter().all(LyricLine::is_blank) {
@@ -256,6 +394,9 @@ impl Lyrics {
     fn span_of(&self, line: usize) -> Option<(Duration, Duration)> {
         let this = self.lines.get(line)?;
         let at = this.at?;
+        if let Some(until) = this.declared_until() {
+            return Some((at, until.max(at)));
+        }
         let held = self.lines[line + 1..]
             .iter()
             .find(|next| next.voice == this.voice)
@@ -401,6 +542,133 @@ mod tests {
 
         assert_eq!(lyrics.lines()[0].at, Some(at(2)));
         assert_eq!(lyrics.lines()[0].voice, Voice::Two);
+    }
+
+    fn millis(millis: u64) -> Duration {
+        Duration::from_millis(millis)
+    }
+
+    fn stay_until_the_morning() -> LyricLine {
+        LyricLine::worded(
+            millis(4_200),
+            vec![
+                SungWord::sung(millis(4_200), "Stay ").ending(millis(4_800)),
+                SungWord::sung(millis(4_800), "until ").ending(millis(5_400)),
+                SungWord::sung(millis(5_400), "the ").ending(millis(5_750)),
+                SungWord::sung(millis(5_750), "morning").ending(millis(6_800)),
+            ],
+        )
+        .ending(millis(6_800))
+    }
+
+    #[test]
+    fn a_worded_line_reads_as_its_words_joined_and_sweeps_through_them_as_they_are_sung() {
+        let line = stay_until_the_morning();
+        assert_eq!(line.text, "Stay until the morning");
+
+        assert_eq!(
+            line.sweep_at(millis(4_000)),
+            Some(Sweep {
+                sung: 0,
+                singing: None
+            })
+        );
+        assert_eq!(
+            line.sweep_at(millis(4_500)),
+            Some(Sweep {
+                sung: 0,
+                singing: Some(Singing {
+                    word: 0..5,
+                    through: 0.5
+                })
+            })
+        );
+        assert_eq!(
+            line.sweep_at(millis(5_400)),
+            Some(Sweep {
+                sung: 11,
+                singing: Some(Singing {
+                    word: 11..15,
+                    through: 0.0
+                })
+            })
+        );
+        assert_eq!(
+            line.sweep_at(millis(9_000)),
+            Some(Sweep {
+                sung: 22,
+                singing: None
+            })
+        );
+        assert_eq!(
+            LyricLine::sung(millis(0), "no words").sweep_at(millis(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_word_with_no_end_of_its_own_is_sung_until_the_next_word_or_the_line_ends() {
+        let line = LyricLine::worded(
+            at(0),
+            vec![SungWord::sung(at(0), "all "), SungWord::sung(at(2), "that")],
+        )
+        .ending(at(6));
+
+        let at_one = line.sweep_at(at(1)).expect("a worded line");
+        assert_eq!(at_one.sung, 0);
+        assert_eq!(
+            at_one.singing,
+            Some(Singing {
+                word: 0..4,
+                through: 0.5
+            })
+        );
+        let at_four = line.sweep_at(at(4)).expect("a worded line");
+        assert_eq!(at_four.sung, 4);
+        assert_eq!(
+            at_four.singing,
+            Some(Singing {
+                word: 4..8,
+                through: 0.5
+            })
+        );
+    }
+
+    #[test]
+    fn a_line_the_sheet_ends_is_lit_exactly_as_long_as_the_sheet_says() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "oh").ending(at(9)),
+                LyricLine::sung(at(30), "all that you touch"),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert_eq!(lyrics.line_in_play(at(8)), Some(0));
+        assert_eq!(lyrics.line_in_play(at(9)), None);
+        assert_eq!(lyrics.detail(), Detail::Lines);
+        assert_eq!(
+            LyricLine::sung(at(5), "backwards").ending(at(4)).until,
+            None,
+            "an end before the start was kept"
+        );
+    }
+
+    #[test]
+    fn cutting_a_cue_row_carries_its_words_and_its_end_onto_the_row_clock() {
+        let lyrics = Lyrics::synced(source(), vec![stay_until_the_morning()])
+            .expect("every line is timed")
+            .within(at(4), None)
+            .expect("the line is inside the cut");
+        let line = &lyrics.lines()[0];
+
+        assert_eq!(lyrics.detail(), Detail::Words);
+        assert_eq!(line.at, Some(millis(200)));
+        assert_eq!(line.until, Some(millis(2_800)));
+        assert_eq!(line.words[3].at, millis(1_750));
+        assert_eq!(line.words[3].until, Some(millis(2_800)));
+        assert_eq!(line.text, "Stay until the morning");
     }
 
     #[test]

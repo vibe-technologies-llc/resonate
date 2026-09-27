@@ -23,6 +23,7 @@ pub struct Lookups {
     pub fingerprinters: Arc<Fingerprinters>,
     pub providers: Arc<Providers>,
     pub studies: bool,
+    pub lyrics: bool,
 }
 
 impl Lookups {
@@ -32,6 +33,7 @@ impl Lookups {
             fingerprinters: Arc::new(Fingerprinters::none()),
             providers: Arc::new(Providers::none()),
             studies: EnrichOptions::default().studies,
+            lyrics: EnrichOptions::default().lyrics,
         }
     }
 }
@@ -97,6 +99,7 @@ impl Told for EnrichStats {
             "fakes": self.fakes,
             "recognised": self.recognised,
             "misnamed": self.misnamed,
+            "lyrics": self.lyrics,
         })
     }
 }
@@ -331,6 +334,7 @@ impl Passes {
             EnrichOptions {
                 refresh: refreshing,
                 studies: self.lookups.studies,
+                lyrics: self.lookups.lyrics,
                 ..EnrichOptions::default()
             },
         )?;

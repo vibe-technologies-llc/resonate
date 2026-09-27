@@ -37,6 +37,7 @@ const MIGRATIONS: &[&str] = &[
          heard INTEGER NOT NULL
      ) STRICT;
      CREATE INDEX passes_by_time ON passes(at);",
+    "ALTER TABLE lyrics_kept ADD COLUMN lyricsfile TEXT;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

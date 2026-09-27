@@ -105,6 +105,12 @@ paths:
   `serde` itself is in the `--exclude resonate-ui --no-default-features` build already, through
   `zbus`; `serde_json` is not, and `cargo tree -p resonate --no-default-features -i serde_json`
   finding nothing is the guard.
+- `serde-saphyr` is `resonate-online`'s alone, with `deserialize` and none of its default set,
+  which is its serialiser: it reads the YAML of LRCLIB's Lyricsfile and nothing writes one. It is
+  pure Rust over its own `granit-parser`, refuses a duplicated key by default — which the
+  Lyricsfile draft asks a reader to — and takes a budget of nodes, depth and documents, which is
+  what lets a document off the network be parsed at all. `serde_yaml` was archived and
+  `yaml-rust2` has no serde side, which is the whole of why this one.
 - `rusqlite` needs `hooks` beside `bundled` and `cache`. `Connection::update_hook` is what
   `db::watch_the_names` registers to know when a name in `tracks`, `albums` or `artists` could
   have moved, which is what the kept spelling vocabulary is stamped against; deriving that from

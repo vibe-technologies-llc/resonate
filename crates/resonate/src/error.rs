@@ -37,6 +37,7 @@ pub enum ConfigKey {
     Online,
     EnrichAfterScan,
     Study,
+    FetchLyrics,
     Contact,
     Equaliser,
     EqualiserFor,
@@ -75,7 +76,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 62] = [
+    pub const ALL: [Self; 63] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -103,6 +104,7 @@ impl ConfigKey {
         Self::Online,
         Self::EnrichAfterScan,
         Self::Study,
+        Self::FetchLyrics,
         Self::Contact,
         Self::Equaliser,
         Self::EqualiserFor,
@@ -169,6 +171,7 @@ impl ConfigKey {
             Self::Online => "online",
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::Study => "study",
+            Self::FetchLyrics => "fetch-lyrics",
             Self::SkipRepeatsQueue => "skip-repeats-queue",
             Self::PreviousRestarts => "previous-restarts",
             Self::Contact => "contact",

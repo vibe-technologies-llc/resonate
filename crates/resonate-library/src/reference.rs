@@ -155,6 +155,38 @@ pub struct StreamAsked {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LyricsAsked {
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub length: Option<Duration>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LyricDetail {
+    Plain,
+    Lines,
+    Lyricsfile,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LyricText {
+    pub text: String,
+    pub synced: bool,
+    pub lyricsfile: Option<String>,
+}
+
+impl LyricText {
+    pub const fn detail(&self) -> LyricDetail {
+        match (&self.lyricsfile, self.synced) {
+            (Some(_), _) => LyricDetail::Lyricsfile,
+            (None, true) => LyricDetail::Lines,
+            (None, false) => LyricDetail::Plain,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordingMatch {
     pub recording: Mbid,
     pub score: u8,
@@ -382,6 +414,8 @@ pub trait Reference: Send + Sync {
     fn portrait(&self, links: &[Link]) -> Result<Option<CoverArt>>;
 
     fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>>;
+
+    fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>>;
 }
 
 #[cfg(test)]

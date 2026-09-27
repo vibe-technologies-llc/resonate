@@ -474,6 +474,18 @@ Invariants the layering exists to protect:
   the vocabulary, the `LyricProvider` seam and the `Lyricists` registry that walks it, and takes no
   dependency on gpui, the engine or the library, so the whole of it is tested without a window.
   `lyrics.md` has the rest.
+- **The lookup fetches every track's words and keeps them, and what is kept only ever gets
+  better.** `Reference::lyrics` is the seam — `Online` answers it from LRCLIB through the same
+  `lrclib::told` the window's `Lrclib` provider asks — and the enrichment walks
+  `Library::lyrics_to_ask` on a thread of its own beside the pass, the way the pictures are
+  fetched, so LRCLIB's pace costs the MusicBrainz queue nothing. `lyrics_kept` holds a
+  `LyricText`: the text, whether it is synced and, where LRCLIB's `lyricsfile` says more than its
+  lines do, the Lyricsfile document itself, which is how a set timed word by word or sung by two
+  overlapping voices is kept. A keep never trades a richer set for a plainer one, a miss is asked
+  about again after a week and a set short of a Lyricsfile after a month, and `Lyricists::find`
+  walks every provider and hands the pane the most finely timed answer, so a file's own plain
+  words give way to a synced set fetched for it. `library.md`, `online.md` and `lyrics.md` have
+  the rest.
 - **The network is behind `Reference`, and the library owns the seam.** `resonate-library`'s
   `reference.rs` carries the vocabulary — `Release`, `Medium`, `ReleaseTrack`, `ArtistProfile`,
   `LookupOp` — and the `Reference` trait, and `Library::enrich` is the
@@ -1050,8 +1062,8 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-sixty-two have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-four have none, so the
+sixty-three have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-five have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `force-graph-rate`, `bluetooth-wake`,
@@ -1059,7 +1071,7 @@ settings pane and the file are the whole of how any of them is set: the output's
 `maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab`, `tab-counts`,
 `remember-tab`, `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category`
 and `last-settings-category`, which every headless subcommand has no use for; and the standing decisions
-rather than per-run ones — `online`, `enrich-after-scan`, `study`, `contact`, `acoustid-key`, `equaliser`,
+rather than per-run ones — `online`, `enrich-after-scan`, `study`, `fetch-lyrics`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
 `listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
 chosen with the Library category's *The inbox* group, which polls from the window as well — and
@@ -1077,7 +1089,9 @@ read by `resonate scan` and the window's scan alike; off, the reference is asked
 `resonate enrich`, the Library card's *Enrich* and the Online card's *Look up*. `study` defaults
 to true and is read by every lookup, from the command line or the window; off, no lookup starts
 the pool of studies, and a track is decoded only where the pane analyses it or the fingerprint
-route needs its print.
+route needs its print. `fetch-lyrics` defaults to true and is read the same way; off, no lookup
+asks LRCLIB for anything and a track's words are asked for only as it plays. The Online
+category's *Fetching lyrics* writes it.
 `minimise-button` and `maximise-button` both default to true and are read by the window alone:
 `Config::window_buttons` folds them into a `resonate_ui::WindowButtons` that rides into `run` on
 `Stored` and lives on `ResonateApp`, so a switch in the Appearance category hides the button on

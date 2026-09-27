@@ -71,7 +71,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   count is one date and one total with no history
 - A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS
   and XSPF have no vocabulary for a region
-- A delivered row carries no genre or lyrics, and is levelled only once studied
+- A delivered row carries no genre, and is levelled only once studied
 
 ## Identification
 - Forgetting a wrong match leaves the track-level names the match corrected as it wrote them, and
@@ -152,10 +152,14 @@ that no listener is waiting on, and is worked only once the categories above it 
   1 024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- When a line goes out is guessed from how long its text is, because a line-synced sheet names
-  when a line starts and never when it ends, so a held note can be put out under the dots early
-- `Lyrics` is a flat list of lines: no word timing, no translation beside the original, and no
-  source says which singer owns a line
+- When a line goes out is guessed from how long its text is wherever the sheet gives it no end —
+  an LRC never does, only a Lyricsfile — so a held note can be put out under the dots early
+- `Lyrics` holds no translation beside the original, and no source says which singer owns a line:
+  a second voice is read off overlapping lines alone, and a third is folded onto the two
+- A `.lyricsfile.yaml` beside a file is not read: the Lyricsfile reader is `resonate-online`'s,
+  so neither `Sidecar` nor a build without `online` has one
+- The Lyricsfile reader is not among the fuzz targets, which reach no crate that parses with serde
+- A word being sung is faded in whole rather than wiped across letter by letter
 - A sidecar's `[ti:]`, `[ar:]` and `[length:]` check reads a differently transliterated title as a
   disagreement
 
