@@ -599,6 +599,7 @@ impl RootView {
             || self.moving_the_files
             || self.writing_the_tags
             || self.keeping_the_tracks
+            || self.discarding_the_curve
     }
 
     fn lower_every_armed_press(&mut self) {
@@ -606,6 +607,7 @@ impl RootView {
         self.moving_the_files = false;
         self.writing_the_tags = false;
         self.keeping_the_tracks = false;
+        self.discarding_the_curve = false;
     }
 
     pub(crate) fn in_the_ring_at(

@@ -434,6 +434,16 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `Bindings::bound_to` answers one, so a device falling back to the fallback's own curve shows and
   edits that curve rather than a new one of its own. A profile forgotten unbinds every device
   naming it, which the store cannot do because it does not know the config.
+- **The curve shown can be kept under a name or discarded, from the pane.** *Keep as a profile*
+  is offered under an own curve and writes a copy through `Store::keep` under the device's
+  description — `unused_name` adds ` 2`, ` 3` where a kept profile already folds to it — and leaves
+  the binding on the own curve, so the copy is something to bind elsewhere rather than a move.
+  *Discard* is offered under any shown curve and takes two presses, the second under *Press again
+  to discard*, armed on `RootView::discarding_the_curve` and lowered by `disarm` like the pane's
+  other armed presses. `discard_the_curve` first unbinds, through `bind_a_curve`, every device and
+  the fallback whose binding resolves to that curve — so the config is written the way any binding
+  change is — and then `EqualiserModel::discard` takes the file away through `Store::forget` or
+  `Store::forget_own`, dropping an unsaved copy rather than writing it back.
 - **Every fetch runs on the background executor**, because reading an 851 KB index must not block
   a frame, and the file write behind an edit is debounced by `PROFILE_SETTLES` while the engine is
   told at once — the sound should follow the number, a save should not follow a keystroke.

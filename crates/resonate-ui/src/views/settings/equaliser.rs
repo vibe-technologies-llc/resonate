@@ -58,6 +58,7 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
 const FOLLOWS_THE_DEFAULT: &str = "follows the default";
 const BOUND_TO_NOTHING: &str = "nothing";
 const ITS_OWN_CURVE: &str = "own curve";
+const EVERY_OTHER_DEVICE: &str = "Every other device";
 
 impl RootView {
     pub(super) fn equalising_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -94,7 +95,7 @@ impl RootView {
         let kept = self.equaliser.read(cx).kept().to_vec();
 
         let mut listed =
-            rows().child(self.binding_row(None, "Every other device".to_owned(), &kept, cx));
+            rows().child(self.binding_row(None, EVERY_OTHER_DEVICE.to_owned(), &kept, cx));
         for (name, description) in devices {
             listed = listed.child(self.binding_row(Some(name), description, &kept, cx));
         }
@@ -483,6 +484,12 @@ impl RootView {
     }
 
     fn band_actions(&self, showing: bool, cx: &mut Context<Self>) -> Div {
+        let own = matches!(
+            self.equaliser.read(cx).shown_curve(),
+            Some(crate::equaliser::Curve::Own(_))
+        );
+        let armed = self.discarding_the_curve;
+
         div()
             .flex()
             .flex_wrap()
@@ -512,6 +519,39 @@ impl RootView {
                     Icon::Export,
                     false,
                     |this, window, cx| this.export_a_profile(window, cx),
+                    self,
+                    cx,
+                ))
+            })
+            .when(showing && own, |row| {
+                row.child(action(
+                    "keep-the-curve",
+                    "Keep as a profile",
+                    Icon::Plus,
+                    false,
+                    |this, _, cx| this.keep_the_curve(cx),
+                    self,
+                    cx,
+                ))
+            })
+            .when(showing, |row| {
+                row.child(action(
+                    "discard-the-curve",
+                    if armed {
+                        "Press again to discard"
+                    } else {
+                        "Discard"
+                    },
+                    Icon::Discard,
+                    false,
+                    move |this, _, cx| {
+                        if armed {
+                            this.discard_the_curve(cx);
+                        } else {
+                            this.discarding_the_curve = true;
+                            cx.notify();
+                        }
+                    },
                     self,
                     cx,
                 ))
@@ -1163,6 +1203,60 @@ impl RootView {
     ) {
         self.equaliser
             .update(cx, |model, cx| model.fetch(device, label, cx));
+        cx.notify();
+    }
+
+    fn keep_the_curve(&mut self, cx: &mut Context<Self>) {
+        let Some(crate::equaliser::Curve::Own(owner)) =
+            self.equaliser.read(cx).shown_curve().cloned()
+        else {
+            return;
+        };
+        let described = owner.as_ref().and_then(|owner| {
+            self.player
+                .read(cx)
+                .sinks()
+                .iter()
+                .find(|sink| sink.name == *owner)
+                .map(|sink| sink.description.clone())
+        });
+        let called = match (described, owner) {
+            (Some(description), _) => description,
+            (None, Some(owner)) => owner.as_str().to_owned(),
+            (None, None) => EVERY_OTHER_DEVICE.to_owned(),
+        };
+        self.equaliser
+            .update(cx, |model, cx| model.keep_as_a_profile(&called, cx));
+        cx.notify();
+    }
+
+    fn discard_the_curve(&mut self, cx: &mut Context<Self>) {
+        self.discarding_the_curve = false;
+        let Some(curve) = self.equaliser.read(cx).shown_curve().cloned() else {
+            return;
+        };
+        let bound: Vec<Option<NodeName>> = {
+            let bindings = self.equaliser.read(cx).bindings();
+            bindings
+                .by_sink
+                .iter()
+                .filter(|(sink, binding)| crate::equaliser::Curve::of(Some(sink), binding) == curve)
+                .map(|(sink, _)| Some(sink.clone()))
+                .chain(
+                    bindings
+                        .fallback
+                        .as_ref()
+                        .filter(|binding| crate::equaliser::Curve::of(None, binding) == curve)
+                        .map(|_| None),
+                )
+                .collect()
+        };
+        for sink in bound {
+            self.bind_a_curve(sink, None, cx);
+        }
+        self.equaliser
+            .update(cx, |model, cx| model.discard(&curve, cx));
+        self.tell_the_engine(cx);
         cx.notify();
     }
 

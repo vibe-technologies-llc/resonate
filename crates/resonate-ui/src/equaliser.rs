@@ -652,20 +652,46 @@ impl EqualiserModel {
         });
     }
 
-    pub fn forget(&mut self, name: &ProfileName, cx: &mut Context<Self>) {
-        match self.store.forget(name) {
+    pub fn keep_as_a_profile(&mut self, called: &str, cx: &mut Context<Self>) {
+        let Some((Curve::Own(_), profile)) = self.shown.clone() else {
+            return;
+        };
+        self.save_now();
+        let name = unused_name(&self.kept, called);
+        match self.store.keep(&name, &profile) {
             Ok(_) => {
-                let forgotten = Binding::Profile(name.clone());
-                self.bindings.by_sink.retain(|(_, held)| *held != forgotten);
-                if self.bindings.fallback.as_ref() == Some(&forgotten) {
-                    self.bindings.fallback = None;
-                }
                 self.reload();
-                self.replaced(name);
-                self.step();
-                self.notice = Some(Notice::Done(format!("Forgot {name}")));
+                self.notice = Some(Notice::Done(format!("Kept the curve as {name}")));
             }
-            Err(error) => self.notice = Some(toast::eq_could_not("forget that profile", &error)),
+            Err(error) => {
+                self.notice = Some(toast::eq_could_not("keep the curve as a profile", &error));
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn discard(&mut self, curve: &Curve, cx: &mut Context<Self>) {
+        let discarded = match curve {
+            Curve::Kept(name) => self.store.forget(name),
+            Curve::Own(owner) => self.store.forget_own(owner.as_ref().map(NodeName::as_str)),
+        };
+        match discarded {
+            Ok(_) => {
+                if self.shown_curve() == Some(curve) {
+                    self.unsaved = false;
+                    self._saved = Task::ready(());
+                    self.shown = None;
+                    self.forget_the_rows();
+                }
+                self.held.remove(curve);
+                self.reload();
+                self.step();
+                self.notice = Some(Notice::Done(match curve {
+                    Curve::Kept(name) => format!("Discarded {name}"),
+                    Curve::Own(_) => "Discarded the device's own curve".to_owned(),
+                }));
+            }
+            Err(error) => self.notice = Some(toast::eq_could_not("discard that curve", &error)),
         }
         cx.notify();
     }
@@ -791,6 +817,19 @@ impl EqualiserModel {
     }
 }
 
+pub fn unused_name(kept: &[ProfileName], called: &str) -> ProfileName {
+    let taken = |name: &ProfileName| kept.iter().any(|held| held.folded() == name.folded());
+    let plain = ProfileName::after(called);
+    if !taken(&plain) {
+        return plain;
+    }
+
+    (2..)
+        .map(|nth| ProfileName::after(&format!("{called} {nth}")))
+        .find(|name| !taken(name))
+        .unwrap_or(plain)
+}
+
 fn strip(typed: &str, cell: Cell) -> &str {
     let typed = typed.trim();
     let without = match cell {
@@ -846,4 +885,29 @@ fn next_frequency(bands: &[Band]) -> Frequency {
         .map_or(FIRST, |pair| (pair[0].max(1.0) * pair[1]).sqrt());
 
     Frequency::from_hertz(widest).unwrap_or(Frequency::LOWEST)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named(text: &str) -> ProfileName {
+        ProfileName::new(text).expect("a usable name")
+    }
+
+    #[test]
+    fn a_curve_kept_as_a_profile_takes_the_devices_name_or_the_next_one_free() {
+        assert_eq!(unused_name(&[], "Studio Monitors"), named("Studio Monitors"));
+        assert_eq!(
+            unused_name(&[named("studio monitors")], "Studio Monitors"),
+            named("Studio Monitors 2")
+        );
+        assert_eq!(
+            unused_name(
+                &[named("Studio Monitors"), named("Studio Monitors 2")],
+                "Studio Monitors"
+            ),
+            named("Studio Monitors 3")
+        );
+    }
 }
