@@ -874,6 +874,12 @@ through `Player::media` like any other unscanned row.
   refused, not its group, so a wrong *edition* is put right by another pressing of the same
   record. A gathering carries the loser's refusals onto the survivor.
   `a_match_the_listener_forgets_is_taken_away_and_never_landed_again` is the claim.
+  **The listener can choose the pressing too.** `Library::take_pressing` asks the reference for the
+  release named, lifts any refusal of it for that album — `enriched::forgive`, because a pressing
+  chosen by hand outranks one said to be wrong — lands it through the same `land_release` a lookup
+  uses and pairs the rows again, so a strict match on the wrong edition is put right without
+  forgetting anything. `a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took`
+  is the claim.
 - **A name agrees in one of six ways, and `Spelling`'s derived `Ord` is the whole of the
   ranking.** `same_name` answers `Marked` where the two `folded_title`s agree, marks and all,
   `Stripped` where only the `stripped_title`s do, and `Dequalified` where they agree only once

@@ -8540,6 +8540,49 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
 }
 
 #[test]
+fn a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took() -> Result<()> {
+    const THE_JAPANESE_PRESSING: &str = "2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a";
+
+    let (_tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "Bonus Track", Vec::new()));
+    let japanese = Release {
+        id: mbid(THE_JAPANESE_PRESSING),
+        country: Some("JP".to_owned()),
+        ..orbits(rows, Vec::new())
+    };
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(orbits_rows(), Vec::new()), japanese],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    let album = only_album(&library)?;
+    assert_eq!(album.mbid, Some(mbid(RELEASE)));
+
+    assert!(library.take_pressing(album.id, fake.as_ref(), &mbid(THE_JAPANESE_PRESSING))?);
+    let taken = only_album(&library)?;
+    assert_eq!(taken.mbid, Some(mbid(THE_JAPANESE_PRESSING)));
+    assert_eq!(
+        taken.missing, 1,
+        "the bonus track the pressing adds is not listed as missing"
+    );
+
+    assert!(library.forget_the_match(album.id)?);
+    assert!(library.refuses(album.id, &mbid(THE_JAPANESE_PRESSING))?);
+    assert!(library.take_pressing(album.id, fake.as_ref(), &mbid(THE_JAPANESE_PRESSING))?);
+    assert!(
+        !library.refuses(album.id, &mbid(THE_JAPANESE_PRESSING))?,
+        "a pressing chosen by hand stayed refused"
+    );
+    assert_eq!(
+        only_album(&library)?.mbid,
+        Some(mbid(THE_JAPANESE_PRESSING))
+    );
+    Ok(())
+}
+
+#[test]
 fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_asked_alone()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;

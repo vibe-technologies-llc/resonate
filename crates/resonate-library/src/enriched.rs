@@ -347,6 +347,15 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
     Ok(true)
 }
 
+pub(crate) fn forgive(tx: &Transaction<'_>, album: AlbumId, mbid: &Mbid) -> Result<()> {
+    tx.execute(
+        "DELETE FROM refused_releases WHERE album_id = ?1 AND mbid = ?2",
+        params![album.get() as i64, mbid.as_str()],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Delete, source))
+}
+
 pub(crate) fn refuses(tx: &Connection, album: AlbumId, mbid: &Mbid) -> Result<bool> {
     tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM refused_releases WHERE album_id = ?1 AND mbid = ?2)",

@@ -13,14 +13,14 @@ use gpui::{
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId};
 use resonate_engine::Placement;
 use resonate_library::{
-    Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, HeldMedium,
-    HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry, ReleaseDetail,
-    Service, Track,
+    Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, GroupRelease,
+    HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry,
+    ReleaseDetail, Service, Track,
 };
 use smallvec::smallvec;
 
 use crate::{
-    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, ResonateApp, Selection, format,
+    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection, format,
     icons::{self, Icon},
     theme,
     views::{
@@ -41,6 +41,14 @@ use crate::{
 
 const SEVERAL: &str = "Various artists";
 const FORGET_THE_MATCH: &str = "Not this record";
+const OTHER_PRESSINGS: &str = "Other pressings";
+const OTHER_PRESSINGS_HINT: &str =
+    "List every pressing of this record MusicBrainz holds, and take the one these files are";
+const ASKING_FOR_PRESSINGS: &str = "Asking MusicBrainz for the pressings…";
+const NO_PRESSINGS: &str = "MusicBrainz named no pressings";
+const TAKE_THE_PRESSING_HINT: &str = "Take this pressing for the album in place of the one in use";
+const PRESSING_IN_USE_HINT: &str = "The pressing the album is matched to now";
+const PRESSINGS_SHOWN: usize = 12;
 const FORGET_THE_MATCH_HINT: &str =
     "The lookup took the wrong release: forget it, and never take it for this album again";
 const FORGET_THE_MATCH_ARMED: &str = "Press again to forget the match";
@@ -1695,8 +1703,18 @@ impl RootView {
                     if library.selection() != Selection::Album(album) {
                         return None;
                     }
-                    let record = library.release().and_then(record_of)?;
+                    let release = library.release()?;
+                    let record = record_of(release)?;
+                    let group = release.group.clone().filter(|_| library.can_enrich());
+                    let current = release.mbid.clone();
+                    let pressings = library.pressings_of(album).cloned();
                     let card = record_card(&record);
+                    let card = match group {
+                        Some(group) => {
+                            card.child(self.other_pressings(album, (group, current), pressings, cx))
+                        }
+                        None => card,
+                    };
                     let card = match record.matched {
                         true => card.child(self.not_this_record(album, at, forgetting, cx)),
                         false => card,
@@ -1720,6 +1738,86 @@ impl RootView {
         };
 
         Some(self.detail_over(at, card, cx))
+    }
+
+    fn other_pressings(
+        &self,
+        album: AlbumId,
+        (group, current): (Mbid, Option<Mbid>),
+        pressings: Option<Pressings>,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let listed = match pressings {
+            None => {
+                return div().child(
+                    kit::button(
+                        "other-pressings",
+                        Some(Icon::Disc),
+                        OTHER_PRESSINGS,
+                        OTHER_PRESSINGS_HINT,
+                        Tone::Ghost,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let asked = group.clone();
+                        this.library.update(cx, |library, cx| {
+                            library.ask_for_pressings(album, asked, cx);
+                        });
+                    })),
+                );
+            }
+            Some(Pressings::Asking) => return pressing_note(ASKING_FOR_PRESSINGS),
+            Some(Pressings::Unanswered) => return pressing_note(NO_PRESSINGS),
+            Some(Pressings::Listed(listed)) => listed,
+        };
+
+        let mut column = div()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .child(kit::eyebrow(format!("PRESSINGS · {}", listed.len())));
+        for (at, pressing) in listed.iter().take(PRESSINGS_SHOWN).enumerate() {
+            let in_use = current.as_ref() == Some(&pressing.id);
+            let chosen = pressing.id.clone();
+            column = column.child(
+                div()
+                    .id(("pressing", at))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .px_1p5()
+                    .py_0p5()
+                    .rounded_md()
+                    .when(!in_use, |row| {
+                        row.cursor_pointer()
+                            .hover(|row| row.bg(rgb(theme::hover())))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.record = None;
+                                let taken = chosen.clone();
+                                this.library.update(cx, |library, cx| {
+                                    library.take_pressing(album, taken, cx);
+                                });
+                                cx.notify();
+                            }))
+                    })
+                    .names(if in_use {
+                        PRESSING_IN_USE_HINT
+                    } else {
+                        TAKE_THE_PRESSING_HINT
+                    })
+                    .child(kit::figure(pressing_line(pressing)).truncate())
+                    .when(in_use, |row| {
+                        row.child(kit::badge("IN USE", theme::accent()))
+                    }),
+            );
+        }
+        if listed.len() > PRESSINGS_SHOWN {
+            column = column.child(pressing_note(&format!(
+                "and {} more",
+                listed.len() - PRESSINGS_SHOWN
+            )));
+        }
+        column
     }
 
     fn not_this_record(
@@ -2254,6 +2352,30 @@ impl Unheld {
             asks: Asks::Found(Box::new(found.clone())),
         }
     }
+}
+
+fn pressing_line(pressing: &GroupRelease) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(
+        pressing
+            .date
+            .clone()
+            .unwrap_or_else(|| "undated".to_owned()),
+    );
+    if let Some(country) = &pressing.country {
+        parts.push(country.clone());
+    }
+    if let Some(tracks) = pressing.track_count {
+        parts.push(format!("{tracks} tracks"));
+    }
+    parts.join(" · ")
+}
+
+fn pressing_note(said: &str) -> Div {
+    div()
+        .text_size(px(theme::text_sm()))
+        .text_color(rgb(theme::faint()))
+        .child(SharedString::from(said.to_owned()))
 }
 
 fn beyond_heading(beyond: Beyond) -> Div {

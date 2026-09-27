@@ -75,8 +75,9 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A delivered row carries no genre or lyrics, and is levelled only once studied
 
 ## Identification
-- A strict match is written without a pane to confirm it, and forgetting a wrong one leaves the
-  track-level names the match corrected as it wrote them
+- Forgetting a wrong match leaves the track-level names the match corrected as it wrote them, and
+  only an album a lookup matched offers its other pressings — one it could not match offers no
+  releases to choose from
 - A found song or a track named by its audio is placed by a rule rather than by the listener:
   nothing offers the choice of release, and a recording read by its ISRC carries no release
   kinds to weigh
@@ -88,7 +89,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   portrait: nothing reads the page a `wikipedia` relation names
 - The discography asks for albums and EPs alone, so singles are never listed as not held, and past
   `GROUPS_AT_MOST` the rest are passed over with only a log line
-- A group's other pressings are fetched and dropped; nothing lists a release's editions
 - The verdict's thresholds were measured on one library of FLACs and LAME transcodes; no FhG, AAC,
   Opus or Vorbis transcode was weighed, and it reads only the lowpass wall, the upsampled wall and
   the padded bits — not an MP3's frame-to-frame holes, sfb21 content or pre-echo

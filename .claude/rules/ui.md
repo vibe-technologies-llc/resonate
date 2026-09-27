@@ -1543,7 +1543,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   library. The pressing is not drawn there. An info mark at the end of the row under the text, and only
   where `record_of` has something to say, opens a card anchored at the press: Released, Format,
   Label, Catalogue number, Barcode, Country and Kind, then the disambiguation, then every service
-  link. Where the album was matched it ends in *Not this record*, which takes two presses — the
+  link. Where the album carries a release group and the build can reach the reference, *Other
+  pressings* asks `Reference::release_group` on the background executor —
+  `LibraryModel::ask_for_pressings`, the answer held against the album in `pressings` — and lists
+  the group's releases in the order they came out, the first `PRESSINGS_SHOWN` of them, each as
+  its date, country and track count, the one in use badged *IN USE*; a press on another is
+  `LibraryModel::take_pressing`, which lands it through `Library::take_pressing` and closes the
+  card. Where the album was matched it ends in *Not this record*, which takes two presses — the
   second under *Press again to forget the match*, the arming held on `OpenedRecord::Album` so
   any way the card closes lowers it — and is `LibraryModel::forget_the_match`, told as a toast.
   Escape closes it after a magnified cover and before a toast, a second press on the mark

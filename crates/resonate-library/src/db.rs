@@ -2692,6 +2692,23 @@ impl Library {
             .write(|transaction| enriched::forget_the_match(transaction, album))
     }
 
+    pub fn take_pressing(
+        &self,
+        album: AlbumId,
+        reference: &dyn Reference,
+        release: &Mbid,
+    ) -> Result<bool> {
+        let Some(found) = reference.release(release)? else {
+            return Ok(false);
+        };
+        self.inner.write(|transaction| {
+            enriched::forgive(transaction, album, &found.id)?;
+            enriched::land_release(transaction, album, &found, SystemTime::now())
+        })?;
+        self.rematch(album)?;
+        Ok(true)
+    }
+
     pub fn refuses(&self, album: AlbumId, mbid: &Mbid) -> Result<bool> {
         self.inner
             .read(|connection| enriched::refuses(connection, album, mbid))

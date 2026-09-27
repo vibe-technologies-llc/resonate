@@ -21,14 +21,14 @@ use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, HeldReleaseTrack,
-    ImageFormat, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout,
-    Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
-    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Reference,
-    ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
-    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
-    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
+    HeldReleaseTrack, ImageFormat, ImportOptions, ImportProgress, ImportStats, ImportSummary,
+    Imported, Kept, Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened,
+    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
+    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
+    Reference, ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
+    Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
     UnheldRelease, Window, asks_elsewhere,
 };
 use resonate_providers::Providers;
@@ -90,6 +90,7 @@ const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
+const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
 
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
@@ -167,6 +168,13 @@ pub enum Beyond {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Pressings {
+    Asking,
+    Listed(Arc<[GroupRelease]>),
+    Unanswered,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Previewed {
     pub query: SavedQuery,
     pub tracks: Arc<[Track]>,
@@ -227,6 +235,7 @@ enum Change {
     Hide { hidden: bool },
     ForgetDelivered,
     ForgetTheMatch,
+    TakePressing,
     Undo,
     Redo,
 }
@@ -249,6 +258,7 @@ impl Change {
             Self::Hide { hidden: false } => "show that track again",
             Self::ForgetDelivered => "forget that delivery",
             Self::ForgetTheMatch => "forget that match",
+            Self::TakePressing => "take that pressing",
             Self::Undo => "put that back",
             Self::Redo => "do that again",
         }
@@ -595,6 +605,8 @@ pub struct LibraryModel {
     _counted: Task<()>,
     _settled: Task<()>,
     _shared: Task<()>,
+    pressings: Option<(AlbumId, Pressings)>,
+    _pressings: Task<()>,
     _kept: Task<()>,
     _finding: Task<()>,
     _previewing: Task<()>,
@@ -730,6 +742,8 @@ impl LibraryModel {
             _counted: Task::ready(()),
             _settled: Task::ready(()),
             _shared: Task::ready(()),
+            pressings: None,
+            _pressings: Task::ready(()),
             _kept: Task::ready(()),
             _finding: Task::ready(()),
             _previewing: Task::ready(()),
@@ -1257,6 +1271,64 @@ impl LibraryModel {
             Wanted::Everything,
             Change::Hide { hidden },
             move |library| library.hide_track(id, hidden).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn pressings_of(&self, album: AlbumId) -> Option<&Pressings> {
+        self.pressings
+            .as_ref()
+            .filter(|(held, _)| *held == album)
+            .map(|(_, pressings)| pressings)
+    }
+
+    pub fn ask_for_pressings(&mut self, album: AlbumId, group: Mbid, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        self.pressings = Some((album, Pressings::Asking));
+        cx.notify();
+
+        self._pressings = cx.spawn(async move |this, cx| {
+            let asked = cx
+                .background_executor()
+                .spawn(async move { reference.release_group(&group) })
+                .await;
+            let answered = match asked {
+                Ok(Some(group)) => Pressings::Listed(in_the_order_they_came_out(group.releases)),
+                Ok(None) => Pressings::Unanswered,
+                Err(error) => {
+                    tracing::warn!(%error, "a release group's pressings could not be read");
+                    Pressings::Unanswered
+                }
+            };
+            let landed = this.update(cx, |this, cx| {
+                if this
+                    .pressings
+                    .as_ref()
+                    .is_some_and(|(held, _)| *held == album)
+                {
+                    this.pressings = Some((album, answered));
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
+    }
+
+    pub fn take_pressing(&mut self, album: AlbumId, release: Mbid, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        self.pressings = None;
+        self.edited(
+            Wanted::Everything,
+            Change::TakePressing,
+            move |library| {
+                library
+                    .take_pressing(album, reference.as_ref(), &release)
+                    .map(|took| took.then(|| TOOK_THE_PRESSING.to_owned()))
+            },
             cx,
         );
     }
@@ -3584,6 +3656,14 @@ fn on_the_clipboard(shared: &Shared) -> String {
         Some(artist) => format!("{artist} — {} is on the clipboard", shared.title),
         None => format!("{} is on the clipboard", shared.title),
     }
+}
+
+fn in_the_order_they_came_out(mut releases: Vec<GroupRelease>) -> Arc<[GroupRelease]> {
+    releases.sort_by(|one, other| {
+        (one.date.is_none(), one.date.as_deref())
+            .cmp(&(other.date.is_none(), other.date.as_deref()))
+    });
+    releases.into()
 }
 
 fn albums_of(tracks: &[Track]) -> Vec<AlbumId> {
