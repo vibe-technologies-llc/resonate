@@ -48,7 +48,7 @@ const WAY_BACK_HINT: &str = "Back to where this was opened from — escape";
 
 const ORDER_HINT: &str = "Choose what this listing is put in order by";
 
-const PLAY_ALL_HINT: &str = "Play every track listed here, in place of the queue";
+const PLAY_ALL_HINT: &str = "Play every track listed here in order, in place of the queue";
 
 const SHUFFLE_ALL_HINT: &str = "Play every track listed here, shuffled";
 
@@ -1738,6 +1738,7 @@ impl RootView {
         )
         .on_click(cx.listener(|this, _, window, cx| {
             this.with_everything_listed(window, cx, |this, listing, _, cx| {
+                this.plays_in_order(cx);
                 this.play(&listing, 0, cx);
             });
         }))

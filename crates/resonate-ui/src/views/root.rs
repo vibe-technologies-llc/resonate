@@ -449,6 +449,7 @@ pub struct RootView {
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
+    pub(crate) queue_height: Rc<Cell<Pixels>>,
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
     listing_whole: Task<()>,
@@ -789,6 +790,7 @@ impl RootView {
             left_at: AHashMap::new(),
             reach: None,
             reached_unseen: Rc::default(),
+            queue_height: Rc::default(),
             creeping: None,
             creeping_on: Task::ready(()),
             listing_whole: Task::ready(()),
@@ -884,11 +886,22 @@ impl RootView {
 
     fn follow_the_playing_row(&mut self, player: &Entity<PlayerModel>, cx: &App) {
         let playing = player.read(cx).state().queue_position;
-        let Some(row) = self.following.follows(playing, self.pane == Pane::Queue) else {
+        if self
+            .following
+            .follows(playing, self.pane == Pane::Queue)
+            .is_none()
+        {
             return;
-        };
+        }
 
-        self.show_row(Shift::Queue, row, cx);
+        self.lift_the_playing_row(cx);
+    }
+
+    fn lift_the_playing_row(&self, cx: &App) {
+        if let Some(top) = self.queue_parts(cx).opens_at() {
+            self.queue_rows
+                .scroll_to_item_strict(top, ScrollStrategy::Top);
+        }
     }
 
     fn noticed(cx: &App) -> bool {
@@ -901,6 +914,10 @@ impl RootView {
 
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {
         toast::tell(notice, cx);
+    }
+
+    pub(crate) fn plays_in_order(&self, cx: &mut Context<Self>) {
+        self.send(Command::SetShuffle(false), cx);
     }
 
     pub(crate) fn play_shuffled(&mut self, tracks: &[Track], cx: &mut Context<Self>) {
@@ -1418,10 +1435,16 @@ impl RootView {
         pointed::forget();
         self.record = None;
         self.stop_typing(cx);
+        let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
         if self.pane != pane {
             self.ordering = false;
         }
         self.pane = pane;
+        if opens_the_queue {
+            self.following = Following::default();
+            let player = self.player.clone();
+            self.follow_the_playing_row(&player, cx);
+        }
         self.landing_on = None;
         self.remember_current_tab(cx);
         cx.notify();

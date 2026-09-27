@@ -31,7 +31,7 @@ use crate::{
 
 const NEW_HINT: &str = "Start a playlist, and name it";
 
-const PLAY_HINT: &str = "Play this playlist from the top";
+const PLAY_HINT: &str = "Play this playlist in order from the top";
 
 const SHUFFLE_HINT: &str = "Play this playlist, shuffled";
 
@@ -864,6 +864,7 @@ impl RootView {
                         Tone::Primary,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        this.plays_in_order(cx);
                         this.play_playlist(opened, &played, 0, !narrowed, cx);
                     })),
                 )
@@ -1616,6 +1617,7 @@ impl RootView {
                             cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
                                 let entries = this.library.read(cx).entries_of(id);
+                                this.plays_in_order(cx);
                                 this.play_playlist(id, &entries, 0, true, cx);
                             }),
                         ))
@@ -1842,6 +1844,7 @@ impl RootView {
             ))
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
+                this.plays_in_order(cx);
                 let entries = this.library.read(cx).entries_of(id);
                 this.play_playlist(id, &entries, 0, true, cx);
             }))

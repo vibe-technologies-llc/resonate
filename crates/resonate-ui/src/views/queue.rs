@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, sync::Arc, time::Duration};
+use std::{cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
@@ -235,6 +235,21 @@ impl QueueParts {
         None
     }
 
+    pub(crate) fn opens_at(&self) -> Option<usize> {
+        let line = self.line_of(self.playing?);
+        match self.runs.is_empty() {
+            true => Some(line),
+            false => line.checked_sub(1),
+        }
+    }
+
+    fn room_below(&self, shown: usize) -> usize {
+        match self.opens_at() {
+            Some(top) if top > 0 => shown.saturating_sub(self.lines() - top),
+            Some(_) | None => 0,
+        }
+    }
+
     pub(crate) fn line_of(&self, row: usize) -> usize {
         row + self
             .runs
@@ -391,7 +406,9 @@ impl RootView {
         let parts = self.queue_parts(cx);
         let from = self.playing_from(cx);
         let queued = queue.len();
-        let lines = parts.lines();
+        let height = self.queue_height.get();
+        let shown = (f32::from(height) / theme::row_height()) as usize;
+        let lines = parts.lines() + parts.room_below(shown);
         let heading = self.queue_heading(&queue, cx);
         let scroll = self.queue_rows.clone();
         let reaching = self
@@ -423,213 +440,226 @@ impl RootView {
                     lines,
                     cx,
                 )
-                .child(
-                    uniform_list(
-                        "queue",
-                        lines,
-                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                            let mut rows = Vec::new();
-                            for drawn in range {
-                                let index = match parts.line(drawn) {
-                                    Some(Line::Row(index)) => index,
-                                    Some(Line::Heading(run)) => {
-                                        rows.push(part_heading(drawn, run, from.clone()));
-                                        continue;
-                                    }
-                                    None => continue,
-                                };
-                                let Some(item) = queue.get(index) else {
-                                    continue;
-                                };
-                                let track =
-                                    this.library.update(cx, |library, _| library.track_of(item));
-                                let part = parts.part_of(index);
-                                let current = part == Part::Playing;
-                                let waiting = part == Part::Next;
-                                let heard = part == Part::Heard;
-                                let drawn = match track {
-                                    Some(track) => listing::scanned(track),
-                                    None => this
-                                        .player
-                                        .read(cx)
-                                        .media(&item.location, item.span)
-                                        .map_or_else(
-                                            || listing::unread(&item.location),
-                                            |info| listing::read(&info, &item.location),
-                                        ),
-                                };
-
-                                let cover = this.cover(
-                                    Pictured::Track {
-                                        album: drawn.album,
-                                        file: &item.location,
-                                    },
-                                    cx,
-                                );
-                                let reached = this.reaches(Shift::Queue, index);
-                                let acting_on = this.acting_on(Shift::Queue, index);
-                                let holding: Arc<[Cut]> =
-                                    match Reaching::acting_on(reaching.as_ref(), acting_on) {
-                                        Some(reaching) => Arc::clone(&reaching.holding),
-                                        None => Arc::from([queued_cut(item)]),
+                .child(kit::measures_its_height(Rc::clone(&self.queue_height)))
+                .when(height > px(0.0), |rows| {
+                    rows.child(
+                        uniform_list(
+                            "queue",
+                            lines,
+                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                let mut rows = Vec::new();
+                                for drawn in range {
+                                    let index = match parts.line(drawn) {
+                                        Some(Line::Row(index)) => index,
+                                        Some(Line::Heading(run)) => {
+                                            rows.push(part_heading(drawn, run, from.clone()));
+                                            continue;
+                                        }
+                                        None => {
+                                            rows.push(
+                                                div().h(px(theme::row_height())).into_any_element(),
+                                            );
+                                            continue;
+                                        }
                                     };
-                                let carried = Carried {
-                                    shift: Shift::Queue,
-                                    rows: acting_on,
-                                    title: drawn.title.clone(),
-                                };
-                                let album = drawn.album;
-                                let artist_id = drawn.artist_id;
-                                let scanned = drawn.track;
-                                let favourite = drawn.favourite;
-                                let location = item.location.clone();
-                                let span = item.span;
-                                let title = drawn.title.clone();
-                                let artist = drawn.artist.clone();
-                                let menued = Arc::clone(&holding);
-                                let listed = row(current)
-                                    .id(("queued", item.id.get()))
-                                    .group(ROW_GROUP)
-                                    .cursor_pointer()
-                                    .when(heard, |entry| entry.opacity(HEARD_FADED))
-                                    .hover(move |entry| {
-                                        let entry = entry.bg(rgb(theme::hover()));
-                                        if heard { entry.opacity(1.0) } else { entry }
-                                    })
-                                    .child(if current {
-                                        listing::playing_mark()
-                                    } else if waiting {
-                                        listing::playing_next_mark()
-                                    } else {
-                                        listing::number_cell(SharedString::from(
-                                            (index + 1).to_string(),
+                                    let Some(item) = queue.get(index) else {
+                                        continue;
+                                    };
+                                    let track = this
+                                        .library
+                                        .update(cx, |library, _| library.track_of(item));
+                                    let part = parts.part_of(index);
+                                    let current = part == Part::Playing;
+                                    let waiting = part == Part::Next;
+                                    let heard = part == Part::Heard;
+                                    let drawn = match track {
+                                        Some(track) => listing::scanned(track),
+                                        None => this
+                                            .player
+                                            .read(cx)
+                                            .media(&item.location, item.span)
+                                            .map_or_else(
+                                                || listing::unread(&item.location),
+                                                |info| listing::read(&info, &item.location),
+                                            ),
+                                    };
+
+                                    let cover = this.cover(
+                                        Pictured::Track {
+                                            album: drawn.album,
+                                            file: &item.location,
+                                        },
+                                        cx,
+                                    );
+                                    let reached = this.reaches(Shift::Queue, index);
+                                    let acting_on = this.acting_on(Shift::Queue, index);
+                                    let holding: Arc<[Cut]> =
+                                        match Reaching::acting_on(reaching.as_ref(), acting_on) {
+                                            Some(reaching) => Arc::clone(&reaching.holding),
+                                            None => Arc::from([queued_cut(item)]),
+                                        };
+                                    let carried = Carried {
+                                        shift: Shift::Queue,
+                                        rows: acting_on,
+                                        title: drawn.title.clone(),
+                                    };
+                                    let album = drawn.album;
+                                    let artist_id = drawn.artist_id;
+                                    let scanned = drawn.track;
+                                    let favourite = drawn.favourite;
+                                    let location = item.location.clone();
+                                    let span = item.span;
+                                    let title = drawn.title.clone();
+                                    let artist = drawn.artist.clone();
+                                    let menued = Arc::clone(&holding);
+                                    let listed = row(current)
+                                        .id(("queued", item.id.get()))
+                                        .group(ROW_GROUP)
+                                        .cursor_pointer()
+                                        .when(heard, |entry| entry.opacity(HEARD_FADED))
+                                        .hover(move |entry| {
+                                            let entry = entry.bg(rgb(theme::hover()));
+                                            if heard { entry.opacity(1.0) } else { entry }
+                                        })
+                                        .child(if current {
+                                            listing::playing_mark()
+                                        } else if waiting {
+                                            listing::playing_next_mark()
+                                        } else {
+                                            listing::number_cell(SharedString::from(
+                                                (index + 1).to_string(),
+                                            ))
+                                        })
+                                        .child(cover)
+                                        .child(listing::title_cell(
+                                            drawn.title,
+                                            Lit::new(),
+                                            current,
                                         ))
-                                    })
-                                    .child(cover)
-                                    .child(listing::title_cell(drawn.title, Lit::new(), current))
-                                    .child(listing::artist_cell(
-                                        this.opens(
-                                            ("queue-artist", index),
-                                            drawn.artist,
-                                            OPEN_ARTIST_HINT,
-                                            drawn.artist_id.map(Selection::Artist),
-                                            cx,
-                                        )
-                                        .flex_shrink()
-                                        .ends_in_an_ellipsis(),
-                                    ))
-                                    .child(listing::format_cell(drawn.shape))
-                                    .child(listing::heard(
-                                        drawn.plays,
-                                        drawn.played,
-                                        this.drawn_at(),
-                                    ))
-                                    .child(listing::length_cell(drawn.length))
-                                    .child(
-                                        row_controls()
-                                            .child(this.mover(
-                                                "raise",
-                                                Step::Above,
-                                                index,
-                                                queued,
-                                                Shift::Queue,
+                                        .child(listing::artist_cell(
+                                            this.opens(
+                                                ("queue-artist", index),
+                                                drawn.artist,
+                                                OPEN_ARTIST_HINT,
+                                                drawn.artist_id.map(Selection::Artist),
                                                 cx,
-                                            ))
-                                            .child(this.mover(
-                                                "lower",
-                                                Step::Below,
-                                                index,
-                                                queued,
-                                                Shift::Queue,
-                                                cx,
-                                            ))
-                                            .child(this.add_control(
-                                                ("queue-to-playlist", index),
-                                                if acting_on.is_one_row() {
-                                                    playlists::ADD_HINT
-                                                } else {
-                                                    playlists::ADD_REACHED_HINT
-                                                },
-                                                move || Held::of(Arc::clone(&holding)),
-                                                cx,
-                                            ))
-                                            .child(
-                                                kit::icon_button(
-                                                    ("remove", index),
-                                                    Icon::Close,
+                                            )
+                                            .flex_shrink()
+                                            .ends_in_an_ellipsis(),
+                                        ))
+                                        .child(listing::format_cell(drawn.shape))
+                                        .child(listing::heard(
+                                            drawn.plays,
+                                            drawn.played,
+                                            this.drawn_at(),
+                                        ))
+                                        .child(listing::length_cell(drawn.length))
+                                        .child(
+                                            row_controls()
+                                                .child(this.mover(
+                                                    "raise",
+                                                    Step::Above,
+                                                    index,
+                                                    queued,
+                                                    Shift::Queue,
+                                                    cx,
+                                                ))
+                                                .child(this.mover(
+                                                    "lower",
+                                                    Step::Below,
+                                                    index,
+                                                    queued,
+                                                    Shift::Queue,
+                                                    cx,
+                                                ))
+                                                .child(this.add_control(
+                                                    ("queue-to-playlist", index),
                                                     if acting_on.is_one_row() {
-                                                        REMOVE_HINT
+                                                        playlists::ADD_HINT
                                                     } else {
-                                                        REMOVE_REACHED_HINT
+                                                        playlists::ADD_REACHED_HINT
+                                                    },
+                                                    move || Held::of(Arc::clone(&holding)),
+                                                    cx,
+                                                ))
+                                                .child(
+                                                    kit::icon_button(
+                                                        ("remove", index),
+                                                        Icon::Close,
+                                                        if acting_on.is_one_row() {
+                                                            REMOVE_HINT
+                                                        } else {
+                                                            REMOVE_REACHED_HINT
+                                                        },
+                                                    )
+                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                        cx.stop_propagation();
+                                                        this.drop_rows(Shift::Queue, acting_on, cx);
+                                                    })),
+                                                ),
+                                        )
+                                        .on_click(cx.listener(
+                                            move |this, event: &ClickEvent, _, cx| {
+                                                let extending = event.modifiers().shift;
+                                                this.reach_at(Shift::Queue, index, extending, cx);
+                                                if !extending {
+                                                    this.send(Command::JumpTo(index), cx);
+                                                }
+                                            },
+                                        ));
+                                    let listed = menu::opens_a_menu(
+                                        listed,
+                                        move |this, at, cx| {
+                                            let taken = this.acting_on(Shift::Queue, index);
+                                            let put = Arc::clone(&menued);
+                                            let names = Called {
+                                                title: title.clone(),
+                                                artist: artist.clone(),
+                                                album: this.album_named(album, &location, span, cx),
+                                            };
+
+                                            Menu::at(at)
+                                                .under(
+                                                    Icon::Play,
+                                                    menu::PLAY,
+                                                    "enter",
+                                                    move |this, _, cx| {
+                                                        this.send(Command::JumpTo(index), cx);
                                                     },
                                                 )
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    cx.stop_propagation();
-                                                    this.drop_rows(Shift::Queue, acting_on, cx);
-                                                })),
-                                            ),
-                                    )
-                                    .on_click(cx.listener(
-                                        move |this, event: &ClickEvent, _, cx| {
-                                            let extending = event.modifiers().shift;
-                                            this.reach_at(Shift::Queue, index, extending, cx);
-                                            if !extending {
-                                                this.send(Command::JumpTo(index), cx);
-                                            }
+                                                .holds(move || Held::of(Arc::clone(&put)))
+                                                .reaches(album, artist_id)
+                                                .when_some(scanned, |menu, track| {
+                                                    menu.favours(Favoured::Track(track), favourite)
+                                                })
+                                                .offers_the_file(&location, names)
+                                                .when_some(scanned, Menu::shares)
+                                                .apart()
+                                                .under(
+                                                    Icon::Discard,
+                                                    menu::TAKE_OUT,
+                                                    "delete",
+                                                    move |this, _, cx| {
+                                                        this.drop_rows(Shift::Queue, taken, cx);
+                                                    },
+                                                )
                                         },
-                                    ));
-                                let listed = menu::opens_a_menu(
-                                    listed,
-                                    move |this, at, cx| {
-                                        let taken = this.acting_on(Shift::Queue, index);
-                                        let put = Arc::clone(&menued);
-                                        let names = Called {
-                                            title: title.clone(),
-                                            artist: artist.clone(),
-                                            album: this.album_named(album, &location, span, cx),
-                                        };
+                                        cx,
+                                    );
 
-                                        Menu::at(at)
-                                            .under(
-                                                Icon::Play,
-                                                menu::PLAY,
-                                                "enter",
-                                                move |this, _, cx| {
-                                                    this.send(Command::JumpTo(index), cx);
-                                                },
-                                            )
-                                            .holds(move || Held::of(Arc::clone(&put)))
-                                            .reaches(album, artist_id)
-                                            .when_some(scanned, |menu, track| {
-                                                menu.favours(Favoured::Track(track), favourite)
-                                            })
-                                            .offers_the_file(&location, names)
-                                            .when_some(scanned, Menu::shares)
-                                            .apart()
-                                            .under(
-                                                Icon::Discard,
-                                                menu::TAKE_OUT,
-                                                "delete",
-                                                move |this, _, cx| {
-                                                    this.drop_rows(Shift::Queue, taken, cx);
-                                                },
-                                            )
-                                    },
-                                    cx,
-                                );
-
-                                rows.push(
-                                    reorder::movable(listed, index, carried, reached, cx)
-                                        .into_any_element(),
-                                );
-                            }
-                            rows
-                        }),
+                                    rows.push(
+                                        reorder::movable(listed, index, carried, reached, cx)
+                                            .into_any_element(),
+                                    );
+                                }
+                                rows
+                            }),
+                        )
+                        .track_scroll(scroll)
+                        .h_full()
+                        .w_full(),
                     )
-                    .track_scroll(scroll)
-                    .h_full()
-                    .w_full(),
-                )
+                })
                 .child(Scrollbars::of(cx).vertical("queue-scrollbar", self.queue_rows.clone())),
             )
             .into_any_element()
@@ -1082,6 +1112,29 @@ mod tests {
         assert_eq!(parts.lines(), 5);
         assert_eq!(parts.line(0), Some(run(Part::Playing, 0, 0)));
         assert_eq!(parts.line(2), Some(run(Part::Rest, 1, 2)));
+    }
+
+    #[test]
+    fn the_queue_opens_on_the_now_playing_heading_with_room_to_lift_it_to_the_top() {
+        let playing_in_the_middle = QueueParts::of(8, Some(3), None);
+        assert_eq!(playing_in_the_middle.opens_at(), Some(4));
+        assert_eq!(
+            playing_in_the_middle.line(4),
+            Some(Line::Heading(Run {
+                part: Part::Playing,
+                rows: Span::one(3),
+            }))
+        );
+        assert_eq!(playing_in_the_middle.room_below(20), 20 - (11 - 4));
+        assert_eq!(playing_in_the_middle.room_below(3), 0);
+
+        let nothing_heard = QueueParts::of(8, Some(0), None);
+        assert_eq!(nothing_heard.opens_at(), Some(0));
+        assert_eq!(nothing_heard.room_below(20), 0);
+
+        let nothing_playing = QueueParts::of(8, None, None);
+        assert_eq!(nothing_playing.opens_at(), None);
+        assert_eq!(nothing_playing.room_below(20), 0);
     }
 
     #[test]

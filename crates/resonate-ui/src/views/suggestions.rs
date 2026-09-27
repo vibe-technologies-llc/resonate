@@ -30,7 +30,7 @@ const NOTHING_OFFERED: &str = "The catalog has nothing to suggest yet.";
 
 const SCAN_MORE: &str = "Scan more music and lists it can fill itself will appear here.";
 
-const PLAY_HINT: &str = "Play what this list would hold";
+const PLAY_HINT: &str = "Play what this list would hold, in order";
 
 const SHUFFLE_HINT: &str = "Play what this list would hold, shuffled";
 
@@ -439,6 +439,7 @@ impl RootView {
         kit::button(id, Some(Icon::Play), "Play", PLAY_HINT, Tone::Primary).on_click(cx.listener(
             move |this, _, window, cx| {
                 this.with_the_rows_of(&playing, window, cx, |this, rows, _, cx| {
+                    this.plays_in_order(cx);
                     this.play(&rows, 0, cx);
                 });
             },

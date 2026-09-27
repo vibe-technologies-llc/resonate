@@ -430,7 +430,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   The action row is the last child of that column, so it sits under the text and clear of the
   cover: Play, Shuffle on an album or artist, the favourite and a sort icon where the listing can be sorted.
   Shuffle reads the same scoped listing as Play, begins at a time-chosen row and enables queue
-  shuffle through `RootView::play_shuffled`, which the suggestions page uses too. An album adds the
+  shuffle through `RootView::play_shuffled`, which the suggestions page uses too. **Play beside
+  it plays in order**: every whole-list Play — the tracks, album and artist headings, an opened
+  playlist, a playlist's index row and card, and a suggestion — sends `SetShuffle(false)` through
+  `RootView::plays_in_order` before it loads, so a shuffle left on from before does not scramble
+  the album a listener pressed Play on. A row pressed to play from leaves shuffle as it is. An album adds the
   info mark. An artist adds one where it has genres, and where it holds albums the Albums and
   Tracks choice sits at the right of that same row, so the listing follows the title with no band
   between them. The releases it does not hold stay on the row too. Play next, Add to queue and
@@ -1345,8 +1349,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Following::follows` is the whole of the decision: the row `PlayerState::queue_position` names, or
   nothing where the row has not moved since the last scroll, where `self.pane` is not `Pane::Queue`,
   or where nothing is playing. It rides the `cx.observe(&player, …)` that `count_a_play` already
-  rides, and it scrolls through `show_row`, the same `ScrollStrategy::Center` move the reach keys
-  make, rather than a second call to `scroll_to_item`. Holding the row is what keeps the 200 ms poll
+  rides, and it lifts the *NOW PLAYING* heading to the top of the pane — `QueueParts::opens_at`
+  is that line, and `lift_the_playing_row` scrolls to it strictly, because gpui's plain
+  `scroll_to_item` does nothing for a line already in view — so what was heard is above the fold
+  and reached by scrolling up. Opening the queue pane forgets the row last shown, so the pane
+  always opens that way. A heading near the end of the queue could not reach the top of a list
+  that ends under it, so `QueueParts::room_below` adds as many blank lines as the pane's measured
+  height leaves unfilled below it, and the list is not built until `queue_height` has been
+  measured, the album grid's rule, so the first scroll is taken against the room it needs. The
+  reach keys still centre the row they land on. Holding the row is what keeps the 200 ms poll
   from fighting the listener: a redraw that leaves the playing row where it was scrolls nothing, so
   a queue scrolled away from by hand stays where it was put until the track changes. A row that
   moved while another pane was in front is not recorded as shown, so the first poll after the queue
