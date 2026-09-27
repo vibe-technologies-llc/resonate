@@ -604,6 +604,7 @@ pub struct LibraryModel {
     _edit: Task<()>,
     _counted: Task<()>,
     _settled: Task<()>,
+    _passed: Task<()>,
     _shared: Task<()>,
     pressings: Option<(AlbumId, Pressings)>,
     _pressings: Task<()>,
@@ -741,6 +742,7 @@ impl LibraryModel {
             _edit: Task::ready(()),
             _counted: Task::ready(()),
             _settled: Task::ready(()),
+            _passed: Task::ready(()),
             _shared: Task::ready(()),
             pressings: None,
             _pressings: Task::ready(()),
@@ -2059,6 +2061,16 @@ impl LibraryModel {
         self._settled = cx.background_executor().spawn(async move {
             if let Err(error) = library.listened(listen, heard) {
                 tracing::warn!(%error, "how long a play has been heard for was not kept");
+            }
+        });
+    }
+
+    pub fn track_passed(&mut self, heard: Duration, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+
+        self._passed = cx.background_executor().spawn(async move {
+            if let Err(error) = library.passed(heard) {
+                tracing::warn!(%error, "how long a passing listen lasted was not kept");
             }
         });
     }

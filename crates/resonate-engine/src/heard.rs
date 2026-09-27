@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_core::{FrameSpan, Frames, MediaLocation, TrackId};
+use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TrackId};
 
 use crate::{PlaybackState, PlayerState, QueueItem, TrackState};
 
@@ -10,9 +10,12 @@ pub const A_SEEK: Duration = Duration::from_secs(5);
 
 pub const TOLD_EVERY: Duration = Duration::from_secs(30);
 
+pub const PASSES_AT_LEAST: Duration = Duration::from_secs(1);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Listened {
     track: TrackId,
+    rate: SampleRate,
     at: Frames,
     heard: Frames,
     told: Frames,
@@ -23,6 +26,7 @@ impl Listened {
     const fn starting(track: &TrackState) -> Self {
         Self {
             track: track.id,
+            rate: track.source.rate,
             at: track.position,
             heard: Frames::ZERO,
             told: Frames::ZERO,
@@ -47,6 +51,7 @@ pub enum Counting {
     Counts(Played),
     Hears(Played),
     Settles(Played),
+    Passes(Duration),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -104,7 +109,13 @@ impl Listening {
     }
 
     fn ends(&mut self) -> Option<Counting> {
-        self.held.take()?.counted.map(Counting::Settles)
+        let held = self.held.take()?;
+        match held.counted {
+            Some(played) => Some(Counting::Settles(played)),
+            None => Some(held.heard.to_duration(held.rate))
+                .filter(|heard| *heard >= PASSES_AT_LEAST)
+                .map(Counting::Passes),
+        }
     }
 }
 
@@ -335,7 +346,10 @@ mod tests {
         }
 
         let stopped = PlayerState::default();
-        assert_eq!(listening.heard(&stopped, &queue), None);
+        assert_eq!(
+            listening.heard(&stopped, &queue),
+            Some(Counting::Passes(Duration::from_secs(99)))
+        );
 
         for second in 100..=101 {
             let state = playing_at(1, seconds(second), whole);
@@ -358,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn a_visit_that_never_counted_settles_nothing() {
+    fn a_visit_that_never_counted_passes_with_the_time_it_was_heard_and_settles_nothing() {
         let mut listening = Listening::default();
         let queue = queued(1);
         let whole = Some(seconds(200));
@@ -366,7 +380,22 @@ mod tests {
         assert_eq!(walked(&mut listening, 1, whole, 50), 0);
 
         let stopped = PlayerState::default();
+        assert_eq!(
+            listening.heard(&stopped, &queue),
+            Some(Counting::Passes(Duration::from_secs(50)))
+        );
         assert_eq!(listening.heard(&stopped, &queue), None);
+    }
+
+    #[test]
+    fn a_visit_heard_for_less_than_a_second_passes_nothing() {
+        let mut listening = Listening::default();
+        let queue = queued(1);
+        let whole = Some(seconds(200));
+
+        assert_eq!(walked(&mut listening, 1, whole, 0), 0);
+
+        assert_eq!(listening.heard(&PlayerState::default(), &queue), None);
     }
 
     #[test]
@@ -395,7 +424,7 @@ mod tests {
                 match listening.heard(&playing_at(1, seconds(second), whole), &queue) {
                     Some(Counting::Counts(_)) => counts += 1,
                     Some(Counting::Settles(played)) => settles.push(played.heard),
-                    Some(Counting::Hears(_)) | None => {}
+                    Some(Counting::Hears(_) | Counting::Passes(_)) | None => {}
                 }
             }
         }

@@ -1875,6 +1875,11 @@ fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Op
                 tracing::warn!(%error, "how long a play was heard for was not kept");
             }
         }
+        Counting::Passes(heard) => {
+            if let Err(error) = library.passed(heard) {
+                tracing::warn!(%error, "how long a passing listen lasted was not kept");
+            }
+        }
     }
 }
 

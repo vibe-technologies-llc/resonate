@@ -893,6 +893,7 @@ impl RootView {
             Counting::Counts(played) => library.track_heard(played, cx),
             Counting::Hears(played) => library.track_hearing(played.heard, cx),
             Counting::Settles(played) => library.track_settled(played.heard, cx),
+            Counting::Passes(heard) => library.track_passed(heard, cx),
         });
     }
 

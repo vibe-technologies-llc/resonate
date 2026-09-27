@@ -1016,6 +1016,20 @@ impl Library {
         })
     }
 
+    pub fn passed(&self, heard: Duration) -> Result<()> {
+        let nanos = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
+
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO passes (at, heard) VALUES (?1, ?2)",
+                    params![store::to_nanos(SystemTime::now()), nanos],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+    }
+
     pub fn listened(&self, listen: ListenId, heard: Duration) -> Result<()> {
         let nanos = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
 

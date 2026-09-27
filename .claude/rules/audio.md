@@ -918,8 +918,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Settles(Played)` once when a visit that counted ends — the track changed, the transport
   stopped, or the position went back far enough to begin another. `Played` carries `heard`, which
   is what had been listened to at that moment and, on the settle, the whole of it. A visit that
-  never counted answers neither, so what is recorded is the time inside plays that counted and a
-  skip is not billed as listening; `docs/TODO.md` records what that leaves out. The pair is
+  never counted answers `Passes` as it ends, with the time it was heard where that reached
+  `PASSES_AT_LEAST`, a second, so a flick through the queue is not recorded as listening and
+  twenty seconds of each of forty songs is; the window hands it to `LibraryModel::track_passed`
+  and `resonate play` to `Library::passed`. `Listened` keeps the stream's rate from the visit's
+  start, because the heard frames are counted in it and the transport has moved on by the end. The pair is
   joined by an id rather than by a location: `Library::track_played` answers the `ListenId` it
   wrote, the caller keeps it beside its `Listening`, and `Library::listened` spends it — so a
   write that failed keeps nothing and a settle can never be attributed to the wrong row. The

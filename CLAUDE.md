@@ -293,8 +293,9 @@ Invariants the layering exists to protect:
 - **A play is still what was heard, and now it says how much.** `Listening` answers a `Counting`:
   `Counts` once a visit has earned its play, exactly where it always answered, and `Settles` once
   when a counted visit ends, carrying the whole time it was listened to. A visit that never
-  counted answers neither, so listening time is the time inside plays that counted and a skip is
-  not silently billed as one. `Library::track_played` hands back the `ListenId` it wrote and
+  counted answers `Passes` with the time it was heard, at least `PASSES_AT_LEAST` of it, and
+  `Library::passed` keeps that in `passes` apart from the plays: listening time counts it, so a
+  session spent skipping is not quiet, and a skip is still not billed as a play. `Library::track_played` hands back the `ListenId` it wrote and
   `Library::listened` spends it, so the two halves of one visit are the same row; a write that
   failed keeps no id, which is what stops a settle being attributed to the wrong track. The
   ending visit's row cannot be read off the queue, which has moved on by then, so `Listened`

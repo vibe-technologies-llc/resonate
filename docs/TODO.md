@@ -66,7 +66,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - Nothing writes a favourite or a play count back into the file, so both stay with this catalog.
   lofty's `ItemKey::Popularimeter` maps to `POPM`, Vorbis `RATING`, MP4 `rate` and RIFF `IRTD` and
   carries a counter, so the seam `resonate tag` already is could write them
-- Listening time counts only plays that counted, so a session spent skipping reads as quiet
 - Nothing ages or bounds the play history
 - No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
   count is one date and one total with no history

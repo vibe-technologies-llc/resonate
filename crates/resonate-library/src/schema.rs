@@ -32,6 +32,11 @@ const MIGRATIONS: &[&str] = &[
          mbid     TEXT NOT NULL,
          PRIMARY KEY (album_id, mbid)
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE passes (
+         at    INTEGER NOT NULL,
+         heard INTEGER NOT NULL
+     ) STRICT;
+     CREATE INDEX passes_by_time ON passes(at);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

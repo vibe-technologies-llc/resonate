@@ -100,9 +100,13 @@ through `Player::media` like any other unscanned row.
   `READ_BACKWARDS` was 8 against exactly eight orders — so `SortOrder::Favourited` at code 8 would
   have read back as *Relevance, descending*. It is 16 now, which re-encodes every descending saved
   query and is therefore only safe because the fingerprint was breaking in the same pass.
-- **What was listened to is three reads over `listens`, and nothing else is stored.**
+- **What was listened to is three reads over `listens` and `passes`.**
   `listens.heard` is the nanoseconds of that visit actually listened to and `listens_by_time` is
-  what every window reads off; `Library::statistics`, `most_listened` and `listening_by_day` are
+  what every window reads off; `passes` — the ninth step in `MIGRATIONS`, a stamp and a heard
+  time, indexed by `passes_by_time` — is the time spent on visits that never earned a play, and
+  `statistics` adds it to what was listened to and `listening_by_day` adds it to each day's
+  listening, while the plays, the tracks heard and the three most-heard lists read `listens`
+  alone, because a pass is time and not a play; `Library::statistics`, `most_listened` and `listening_by_day` are
   bounded by `listens.at >= ?` so the index serves each, and `most_listened` answers the three
   lists from one `read` so a pane costs one connection rather than three. A day is bucketed by
   dividing the stamp rather than by a calendar, because there is no date crate in the tree and

@@ -19,7 +19,9 @@ const NANOS_PER_DAY: i64 = SECONDS_PER_DAY as i64 * NANOS_PER_SECOND;
 
 const SINCE_THE_BEGINNING: i64 = i64::MIN;
 
-const WHAT_WAS_HEARD: &str = "SELECT count(*), coalesce(sum(l.heard), 0),
+const WHAT_WAS_HEARD: &str = "SELECT count(*),
+            coalesce(sum(l.heard), 0)
+              + (SELECT coalesce(sum(p.heard), 0) FROM passes p WHERE p.at >= ?1),
             count(DISTINCT l.track_id), count(DISTINCT t.album_id), count(DISTINCT t.artist_id)
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE l.at >= ?1";
@@ -52,10 +54,17 @@ const THE_ARTISTS_MOST_LISTENED_TO: &str =
       ORDER BY listened DESC, count(*) DESC, r.name COLLATE NOCASE
       LIMIT ?2";
 
-const WHAT_WAS_HEARD_EACH_DAY: &str = "SELECT l.at / ?1 AS day, count(*),
-            coalesce(sum(l.heard), 0)
-       FROM listens l
-      WHERE l.at >= ?2
+const WHAT_WAS_HEARD_EACH_DAY: &str = "SELECT day, sum(plays), sum(listened) FROM (
+         SELECT l.at / ?1 AS day, count(*) AS plays, coalesce(sum(l.heard), 0) AS listened
+           FROM listens l
+          WHERE l.at >= ?2
+          GROUP BY day
+         UNION ALL
+         SELECT p.at / ?1 AS day, 0 AS plays, coalesce(sum(p.heard), 0) AS listened
+           FROM passes p
+          WHERE p.at >= ?2
+          GROUP BY day
+      )
       GROUP BY day
       ORDER BY day";
 
@@ -387,6 +396,39 @@ mod tests {
         assert_eq!(everything.plays, 2);
         assert_eq!(everything.tracks, 2);
         assert_eq!(everything.listened, A_MINUTE * 2);
+    }
+
+    #[test]
+    fn time_spent_passing_through_tracks_is_listening_time_and_no_play() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
+        library
+            .passed(Duration::from_secs(40))
+            .expect("the catalog keeps a passing listen");
+        library
+            .passed(Duration::from_secs(20))
+            .expect("the catalog keeps a passing listen");
+
+        let week = library
+            .statistics(Window::Week)
+            .expect("the catalog answers for a week");
+        assert_eq!(week.plays, 1, "a passing listen was counted as a play");
+        assert_eq!(week.listened, A_MINUTE * 2);
+
+        let today = library
+            .listening_by_day(Window::Week)
+            .expect("the catalog answers for a week")
+            .last()
+            .copied()
+            .expect("the chart draws today");
+        assert_eq!(today.plays, 1);
+        assert_eq!(today.listened, A_MINUTE * 2);
+
+        let most = library
+            .most_listened(Window::Week, 10)
+            .expect("the catalog answers for a week");
+        assert_eq!(most.tracks.len(), 1);
+        assert_eq!(most.tracks[0].listened, A_MINUTE);
     }
 
     #[test]
