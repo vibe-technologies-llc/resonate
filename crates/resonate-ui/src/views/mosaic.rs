@@ -61,14 +61,10 @@ impl Mosaic<'_> {
                 .h(px(side))
                 .rounded_tl(rounding)
                 .rounded_tr(rounding),
-            Framed::Alone => frame
-                .size(px(side))
-                .rounded(rounding)
-                .border_1()
-                .border_color(theme::tinted(theme::text(), HAIRLINE_ALPHA)),
+            Framed::Alone => frame.size(px(side)).rounded(rounding),
         };
 
-        match self.drawn {
+        let art = match self.drawn {
             [] => frame
                 .bg(ground(from, to))
                 .child(lettered(self.mark, self.name, side, from)),
@@ -82,8 +78,22 @@ impl Mosaic<'_> {
                 }
             }),
             several => frame.child(tiled(several, side, (from, to), framed)),
+        };
+
+        match framed {
+            Framed::OnACard => art,
+            Framed::Alone => art.child(hairline()),
         }
     }
+}
+
+fn hairline() -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .rounded(px(ART_ROUNDING))
+        .border_1()
+        .border_color(theme::tinted(theme::text(), HAIRLINE_ALPHA))
 }
 
 pub(crate) fn named_accents(name: &str) -> (Accent, Accent) {
@@ -131,20 +141,20 @@ fn ground(from: u32, to: u32) -> Background {
 }
 
 fn tiled(drawn: &[Arc<Image>], side: f32, (from, to): (u32, u32), framed: Framed) -> Div {
-    let tile = (side / TILES_A_SIDE as f32).floor();
-
-    let mut grid = div()
-        .flex()
-        .flex_wrap()
-        .size(px(tile * TILES_A_SIDE as f32));
+    let mut grid = div().flex().flex_wrap().size(px(side));
     for at in 0..TILES {
         let corner = Corner::of_tile(at, framed);
-        let cell = corner.round(div().size(px(tile)).overflow_hidden());
+        let (wide, high) = (
+            tile_span(side, at % TILES_A_SIDE),
+            tile_span(side, at / TILES_A_SIDE),
+        );
+        let cell = corner.round(div().w(px(wide)).h(px(high)).overflow_hidden());
         grid = grid.child(match drawn.get(at) {
             Some(art) => cell.child(
                 corner.round(
                     img(Arc::clone(art))
-                        .size(px(tile))
+                        .w(px(wide))
+                        .h(px(high))
                         .object_fit(ObjectFit::Cover),
                 ),
             ),
@@ -153,6 +163,15 @@ fn tiled(drawn: &[Arc<Image>], side: f32, (from, to): (u32, u32), framed: Framed
     }
 
     grid
+}
+
+fn tile_span(side: f32, place: usize) -> f32 {
+    let near = (side / TILES_A_SIDE as f32).floor();
+    if place + 1 < TILES_A_SIDE {
+        near
+    } else {
+        side - near * (TILES_A_SIDE - 1) as f32
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,7 +210,16 @@ impl Corner {
 
 #[cfg(test)]
 mod tests {
-    use super::{Corner, Framed, TILES, named_accents};
+    use super::{Corner, Framed, TILES, TILES_A_SIDE, named_accents, tile_span};
+
+    #[test]
+    fn the_tiles_of_a_side_fill_it_to_the_pixel_whether_it_is_odd_or_even() {
+        for side in [120.0_f32, 121.0, 163.0, 164.0] {
+            let filled: f32 = (0..TILES_A_SIDE).map(|place| tile_span(side, place)).sum();
+
+            assert_eq!(filled, side, "a side of {side} was left short");
+        }
+    }
 
     #[test]
     fn a_name_is_grounded_in_two_different_accents_and_the_same_two_every_time() {

@@ -1295,9 +1295,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   so the cards fill in as the decodes land rather than holding the pane. **The gradient is painted only where no cover is.**
   It used to lie under the whole frame, and gpui clips a child to its parent's rectangle rather
   than its rounding, so the square covers stood over the rounded ground and a hairline of it showed
-  along the frame's edge and wherever two half-pixel tiles met. The side is a whole pixel, a tile
-  is the floor of half of it, each tile and its cover are rounded on the one corner they stand in —
-  `Corner::of_tile` — and a single cover is rounded itself. On a card the bottom edge stays
+  along the frame's edge and wherever two half-pixel tiles met. The side is a whole pixel, the near
+  tile is the floor of half of it and the far tile the rest — `tile_span` — so the far tiles reach
+  the frame's edge on an odd side too, each tile and its cover are rounded on the one corner they
+  stand in — `Corner::of_tile` — and a single cover is rounded itself. **A frame standing alone
+  draws its hairline over the art, never as its own border**: a `border_1` on the frame took two
+  pixels off the box the tiles are laid out in, so the right and bottom tiles ran past it and the
+  frame's rectangular clip squared off every corner but the top-left, and a single cover lost its
+  right and bottom rounding the same way. `hairline` is an absolute, rounded, bordered child laid
+  last, so the art fills the whole side. On a card the bottom edge stays
   square, so the art meets the text under it; an empty tile is its accent, solid.
 - **The playlists index is a grid of covers or a list, and the heading chooses.** `PlaylistsDrawn`
   is `Grid`, the default, or `List`, a `kit::segmented` beside the sort icon kept for the run the
