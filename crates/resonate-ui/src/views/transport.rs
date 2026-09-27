@@ -24,6 +24,7 @@ use crate::{
     views::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
+        gives_way::{SignalWidths, StatusWidths, signal_kept, status_kept},
         hint::Names,
         kit::{self, KeepsItsWidth},
         listing::Pictured,
@@ -55,6 +56,10 @@ const VOLUME_HINT_WHEELED: &str = "Mute — click. Volume — the wheel, ctrl-up
 const VOLUME_ICON_GROUP: &str = "volume-icon";
 
 const TITLE_GAP: f32 = 4.0;
+
+const BADGE_PADDING: f32 = 12.0;
+
+const MODE_DOT: f32 = 7.0;
 
 const BY_LINE_SEPARATOR: &str = "·";
 
@@ -287,9 +292,20 @@ impl RootView {
             RepeatMode::Queue => RepeatMode::Track,
             RepeatMode::Track => RepeatMode::Off,
         };
+        let kept = status_kept(
+            f32::from(self.status_room.get()),
+            StatusWidths {
+                toggle: theme::toggle_control(),
+                icon: theme::toggle_icon(),
+                sleep_reading: state.sleeping.map(|_| theme::sleep_reading()),
+                rail: theme::volume_width() + theme::RAIL_THUMB,
+                reading: theme::volume_reading(),
+            },
+        );
 
         div()
             .flex()
+            .relative()
             .flex_1()
             .flex_basis(px(0.0))
             .min_w(px(0.0))
@@ -297,26 +313,33 @@ impl RootView {
             .items_center()
             .justify_end()
             .gap_1()
+            .child(kit::measures_its_width(self.status_room.clone()))
             .child(self.queue_button(cx))
-            .child(
-                self.toggle("shuffle", Icon::Shuffle, shuffling(shuffle), shuffle)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.send(Command::SetShuffle(!shuffle), cx);
-                    })),
-            )
-            .child(
-                self.toggle(
-                    "repeat",
-                    repeat,
-                    repeating(state.repeat),
-                    state.repeat != RepeatMode::Off,
+            .when(kept.shuffle, |cluster| {
+                cluster.child(
+                    self.toggle("shuffle", Icon::Shuffle, shuffling(shuffle), shuffle)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.send(Command::SetShuffle(!shuffle), cx);
+                        })),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.send(Command::SetRepeat(cycled), cx);
-                })),
-            )
-            .child(self.sleep_button(state.sleeping, cx))
-            .child(self.volume_bar(state.volume.get(), cx))
+            })
+            .when(kept.repeat, |cluster| {
+                cluster.child(
+                    self.toggle(
+                        "repeat",
+                        repeat,
+                        repeating(state.repeat),
+                        state.repeat != RepeatMode::Off,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.send(Command::SetRepeat(cycled), cx);
+                    })),
+                )
+            })
+            .when(kept.sleep, |cluster| {
+                cluster.child(self.sleep_button(state.sleeping, cx))
+            })
+            .child(self.volume_bar(state.volume.get(), kept.rail, kept.reading, cx))
     }
 
     fn sleep_button(&self, sleeping: Option<Asleep>, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -529,19 +552,49 @@ impl RootView {
             .names(inspects(sink.as_ref().map(SharedString::as_ref)))
             .on_click(cx.listener(|this, _, _, cx| this.set_pane(Pane::Inspector, cx)));
 
-        if let (Some(codec), Some(source)) = (playing.codec, source) {
-            path = path.child(kit::format_badge(codec, source));
-        } else if let Some(source) = source {
-            path = path.child(kit::figure(format::quality(source)));
+        let quality = source.map(format::quality);
+        let output = state.output.map(|output| format::mode(output.mode));
+        let size = px(theme::text_xs());
+        let measured = |text: &str, weight: FontWeight| {
+            f32::from(kit::width_of(text, &theme::mono(weight), size, cx))
+        };
+        let (lead, quality_width) = match (playing.codec, quality.as_deref()) {
+            (Some(codec), quality) => (
+                measured(codec.as_str(), FontWeight::MEDIUM) + BADGE_PADDING,
+                quality.map(|quality| measured(quality, FontWeight::NORMAL)),
+            ),
+            (None, Some(quality)) => (measured(quality, FontWeight::NORMAL), None),
+            (None, None) => (0.0, None),
+        };
+        let kept = signal_kept(
+            f32::from(self.playing_room.get()),
+            SignalWidths {
+                lead,
+                quality: quality_width,
+                dot: MODE_DOT,
+                label: output.map(|(label, _)| measured(label, FontWeight::NORMAL)),
+            },
+        );
+
+        match (playing.codec, quality) {
+            (Some(codec), quality) => {
+                path = path.child(kit::codec_badge(codec));
+                if let Some(quality) = quality.filter(|_| kept.quality) {
+                    path = path.child(kit::figure(quality));
+                }
+            }
+            (None, Some(quality)) => path = path.child(kit::figure(quality)),
+            (None, None) => {}
         }
 
-        let Some(output) = state.output else {
+        let Some((label, colour)) = output else {
             return path;
         };
-        let (label, colour) = format::mode(output.mode);
 
-        path.child(kit::mode_dot(colour))
-            .child(kit::figure(label).text_color(rgb(colour)))
+        path.when(kept.dot, |path| path.child(kit::mode_dot(colour)))
+            .when(kept.label, |path| {
+                path.child(kit::figure(label).text_color(rgb(colour)))
+            })
     }
 
     fn now_playing_cover(&self, cover: &Cover, cx: &mut Context<Self>) -> AnyElement {
@@ -727,7 +780,13 @@ impl RootView {
         }
     }
 
-    fn volume_bar(&self, level: f32, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn volume_bar(
+        &self,
+        level: f32,
+        rail: bool,
+        reading: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let level = self.grabbed_fraction(Handle::Volume).unwrap_or(level);
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
         let muted = self.is_muted(cx);
@@ -775,16 +834,18 @@ impl RootView {
                         this.toggle_mute(cx);
                     })),
             )
-            .child(self.rail(Handle::Volume, level, cx))
-            .child(
-                kit::readout(if muted {
-                    "muted".to_owned()
-                } else {
-                    format!("{:.0}%", level * 100.0)
-                })
-                .w(px(theme::volume_reading()))
-                .text_right(),
-            )
+            .when(rail, |bar| bar.child(self.rail(Handle::Volume, level, cx)))
+            .when(reading, |bar| {
+                bar.child(
+                    kit::readout(if muted {
+                        "muted".to_owned()
+                    } else {
+                        format!("{:.0}%", level * 100.0)
+                    })
+                    .w(px(theme::volume_reading()))
+                    .text_right(),
+                )
+            })
     }
 
     fn seek_bar(

@@ -919,7 +919,18 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   holding the step and play buttons over the seek rail with the elapsed and total clocks at its
   ends; the rail is the one that fills its row, which is what `Handle::fills_its_row` names. Both
   sides carry `overflow_hidden`, because a badge or a notice wider than its half would otherwise
-  paint over the controls rather than be clipped. The now-playing panel is the cover at
+  paint over the controls rather than be clipped. **What does not fit is left out whole, never
+  clipped.** `views/gives_way.rs` is the arithmetic, over the theme's own measures and with no
+  gpui in it: the status cluster is measured into `RootView::status_room` a frame behind, the way
+  `playing_room` is, and `status_kept` drops the volume reading, then the sleep control, then
+  repeat, then shuffle, then the volume rail, until what is left fits — a running timer weighed at
+  the width its countdown takes — and never the queue button, the one way to the queue pane, or
+  the speaker, which still mutes and takes the wheel. `signal_kept` does the same for the signal
+  path against `playing_room`, the widths read off the font through `kit::width_of`: the mode's
+  name goes first, then the depth and rate, then the mode's dot, and the codec badge stays. A
+  column not yet measured keeps everything. At 960 pixels the cluster had been clipping from its
+  left edge — the queue, shuffle and repeat buttons gone and the moon cut in half — and the path
+  was cut mid-figure. The now-playing panel is the cover at
   `theme::now_playing_cover()`, the title, the artist and album, and under them the signal path: the
   format badge of what is decoding with its depth and rate, then the output's mode dot and its
   name in the mode's colour — *bit-perfect*, *converted* — and nothing after it. It carried a link

@@ -4,6 +4,7 @@ mod chrome;
 mod favourites;
 pub(crate) mod field;
 mod focus;
+mod gives_way;
 mod hint;
 mod inspector;
 pub(crate) mod kit;

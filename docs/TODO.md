@@ -105,8 +105,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A found song draws no cover, because art is fetched only for releases the catalog holds
 
 ## UI
-- The playback bar keeps its controls centred by clipping its side columns, so a narrow window
-  loses the end of the signal path or the notice; nothing drops an item before it is clipped
 - A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks
   a second settings edit until it finishes
 - A band on the equaliser's curve has no key to nudge it and its handles are not in the focus ring

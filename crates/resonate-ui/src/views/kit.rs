@@ -370,19 +370,23 @@ pub(crate) fn badge(text: impl Into<SharedString>, colour: u32) -> Div {
         .child(text.into())
 }
 
-pub(crate) fn format_badge(codec: Codec, spec: StreamSpec) -> Div {
+pub(crate) fn codec_badge(codec: Codec) -> Div {
     let colour = if codec.is_lossless() {
         theme::lossless()
     } else {
         theme::lossy()
     };
 
+    badge(codec.as_str(), colour)
+}
+
+pub(crate) fn format_badge(codec: Codec, spec: StreamSpec) -> Div {
     div()
         .flex()
         .flex_none()
         .items_center()
         .gap_2()
-        .child(badge(codec.as_str(), colour))
+        .child(codec_badge(codec))
         .child(figure(format::quality(spec)))
 }
 
