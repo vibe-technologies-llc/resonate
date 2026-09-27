@@ -1270,6 +1270,10 @@ impl LibraryModel {
         self.favoured.get(&what).copied().unwrap_or(as_read)
     }
 
+    pub fn favours_track(&self, track: &Track) -> bool {
+        self.favours(Favoured::Track(track.id), track.favourite.is_some())
+    }
+
     pub fn favoured_album(&self, id: AlbumId) -> bool {
         self.favours(Favoured::Album(id), self.favourite_album_ids.contains(&id))
     }

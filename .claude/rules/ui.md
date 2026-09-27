@@ -1231,7 +1231,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `favoured`, a map from `Favoured` to the answer, puts the answer into the `named` row where the
   track is cached, and notifies before the write has run; `LibraryModel::favours` is what every
   star, every cell and every menu asks, with what its own row read as the fallback, and
-  `favoured_album` and `favoured_artist` go through it too. The map lives as long as the run and
+  `favoured_album` and `favoured_artist` go through it too, and `favours_track` is the reading of
+  a `Track` a row resolved. **The playback bar, the queue and an opened playlist ask it as well**,
+  because the row they draw comes out of `named`, which is keyed by the *queue's* id: a resumed
+  queue, an unscanned playlist row and a doubled row all carry an id minted apart from the
+  catalog's, so `favour` patching `named` by the catalog's id missed the very row the bar was
+  drawing, and the star stayed empty until the next run read the favourite back. `listing::scanned`
+  takes the answer rather than reading `Track::favourite` itself. The map lives as long as the run and
   is never wrong within it, because every favour this window makes goes through `favour` — and a
   write that fails takes its entry out again: `edited_then` hands its closure `Edited::Failed`,
   and `unfavour_what_did_not_save` drops the key and puts back the `named` row it replaced before

@@ -473,7 +473,11 @@ impl RootView {
                                     let waiting = part == Part::Next;
                                     let heard = part == Part::Heard;
                                     let drawn = match track {
-                                        Some(track) => listing::scanned(track),
+                                        Some(track) => {
+                                            let favourite =
+                                                this.library.read(cx).favours_track(&track);
+                                            listing::scanned(track, favourite)
+                                        }
                                         None => this
                                             .player
                                             .read(cx)

@@ -1118,7 +1118,10 @@ impl RootView {
         } = placing;
         let current = playing == Some(index);
         let drawn = match entry.track.clone() {
-            Some(track) => listing::scanned(track),
+            Some(track) => {
+                let favourite = self.library.read(cx).favours_track(&track);
+                listing::scanned(track, favourite)
+            }
             None => self
                 .player
                 .read(cx)

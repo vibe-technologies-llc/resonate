@@ -686,7 +686,7 @@ impl RootView {
             });
             return Playing {
                 track: Some(track.id),
-                favourite: track.favourite.is_some(),
+                favourite: self.library.read(cx).favours_track(&track),
                 title: SharedString::from(track.title),
                 artist: SharedString::from(
                     track.artist.unwrap_or_else(|| "Unknown artist".to_owned()),

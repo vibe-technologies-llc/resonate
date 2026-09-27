@@ -71,10 +71,10 @@ pub(crate) struct Row {
     pub(crate) shape: Option<(Codec, StreamSpec)>,
 }
 
-pub(crate) fn scanned(track: Track) -> Row {
+pub(crate) fn scanned(track: Track, favourite: bool) -> Row {
     Row {
         track: Some(track.id),
-        favourite: track.favourite.is_some(),
+        favourite,
         title: SharedString::from(track.title),
         artist: SharedString::from(track.artist.unwrap_or_default()),
         artist_id: track.artist_id,
