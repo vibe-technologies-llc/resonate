@@ -791,6 +791,7 @@ const LYRIC_BREAK: f32 = 18.0;
 const LYRIC_EDGE: f32 = 88.0;
 const LYRIC_DOT: f32 = 7.0;
 const LYRIC_DOT_GAP: f32 = 10.0;
+const LYRIC_BREATH: f32 = 28.0;
 const VOLUME_WIDTH: f32 = 88.0;
 const AVATAR: f32 = 34.0;
 const STAGE_WIDTH: f32 = 200.0;
@@ -933,6 +934,7 @@ measures! {
     lyric_edge => LYRIC_EDGE,
     lyric_dot => LYRIC_DOT,
     lyric_dot_gap => LYRIC_DOT_GAP,
+    lyric_breath => LYRIC_BREATH,
     volume_width => VOLUME_WIDTH,
     avatar => AVATAR,
     stage_width => STAGE_WIDTH,

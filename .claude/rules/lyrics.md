@@ -63,6 +63,10 @@ window.
   verse counts down to the next written line instead of lighting nothing. Before this a line held
   for up to ten seconds whatever it said and a blank one counted as sung, so the dots were only
   ever seen before the first line. `has_ended` is the reading past the last written line.
+- **`breathes_before` is `waiting_at` read ahead of time.** It answers whether any position could
+  ever wait on a line, by the same arithmetic — the first written line always, and any other
+  where the written line before it goes out `A_BREATH_AT_LEAST` or more ahead of it — so the pane
+  can give that line its room once, when the sheet is laid out, rather than as the wait begins.
 - **`waiting_at` is what a flat set can say about a gap.** It answers only where nothing is in play:
   which line the wait is for and how far through it the transport is, counting from the start of the
   track before the first line and from the moment the last line went out after it. It lives here

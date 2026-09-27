@@ -46,8 +46,6 @@ const LOOKS_QUIETLY_FOR: Duration = Duration::from_millis(450);
 
 const BREATH: Duration = Duration::from_millis(2400);
 
-const BREATH_FOLDS: Duration = Duration::from_millis(700);
-
 const HANDS_OFF: Duration = Duration::from_secs(6);
 
 const BAR_LINGERS: Duration = Duration::from_millis(1_500);
@@ -228,12 +226,8 @@ impl FadingBreath {
             .clamp(0.0, 1.0)
     }
 
-    fn room(self, now: Instant) -> f32 {
-        1.0 - folded_since(self.started, now)
-    }
-
     fn settled(self, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= BREATH_FOLDS
+        now.saturating_duration_since(self.started) >= TURN
     }
 }
 
@@ -244,26 +238,21 @@ struct Breathing {
 }
 
 impl Breathing {
-    fn room(self, now: Instant) -> f32 {
-        folded_since(self.started, now)
+    fn opacity(self, now: Instant) -> f32 {
+        let elapsed = now.saturating_duration_since(self.started).as_secs_f32();
+
+        ease_in_out((elapsed / TURN.as_secs_f32()).clamp(0.0, 1.0))
     }
 
     fn settled(self, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= BREATH_FOLDS
+        now.saturating_duration_since(self.started) >= TURN
     }
-}
-
-fn folded_since(started: Instant, now: Instant) -> f32 {
-    let elapsed = now.saturating_duration_since(started).as_secs_f32();
-
-    ease_in_out((elapsed / BREATH_FOLDS.as_secs_f32()).clamp(0.0, 1.0))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Breath {
     pub through: f32,
     pub opacity: f32,
-    pub room: f32,
 }
 
 fn natural_frequency() -> f32 {
@@ -337,6 +326,7 @@ struct Sheet {
     text: Arc<[SharedString]>,
     moments: Arc<[Option<Duration>]>,
     voices: Arc<[Voice]>,
+    breathes: Arc<[bool]>,
     written: Arc<[usize]>,
 }
 
@@ -346,6 +336,7 @@ impl Default for Sheet {
             text: Arc::from([] as [SharedString; 0]),
             moments: Arc::from([] as [Option<Duration>; 0]),
             voices: Arc::from([] as [Voice; 0]),
+            breathes: Arc::from([] as [bool; 0]),
             written: Arc::from([] as [usize; 0]),
         }
     }
@@ -458,6 +449,10 @@ impl LyricsModel {
         Arc::clone(&self.sheet.voices)
     }
 
+    pub fn breathes(&self) -> Arc<[bool]> {
+        Arc::clone(&self.sheet.breathes)
+    }
+
     pub fn has_two_voices(&self) -> bool {
         self.sheet.voices.contains(&Voice::Two)
     }
@@ -486,14 +481,13 @@ impl LyricsModel {
         now: Instant,
     ) -> Option<Breath> {
         if let Some(waiting) = waiting.filter(|waiting| waiting.next == index) {
-            let room = self
+            let opacity = self
                 .breathing_for
                 .filter(|breathing| breathing.line == index)
-                .map_or(1.0, |breathing| breathing.room(now));
+                .map_or(1.0, |breathing| breathing.opacity(now));
             return Some(Breath {
                 through: waiting.through,
-                opacity: 1.0,
-                room,
+                opacity,
             });
         }
 
@@ -502,7 +496,6 @@ impl LyricsModel {
             .map(|breath| Breath {
                 through: 1.0,
                 opacity: breath.through(now),
-                room: breath.room(now),
             })
     }
 
@@ -756,7 +749,14 @@ impl LyricsModel {
 
     pub fn landing(&self) -> Option<Pixels> {
         match self.read_at {
-            Some(line) => self.centre_of(line),
+            Some(line) => {
+                let room = if self.sheet.breathes.get(line).copied().unwrap_or(false) {
+                    theme::width(theme::lyric_breath())
+                } else {
+                    px(0.0)
+                };
+                Some(self.centre_of(line)? - room / 2.0)
+            }
             None => Some(px(0.0)),
         }
     }
@@ -945,6 +945,9 @@ impl Sheet {
             .collect();
         let moments = lyrics.lines().iter().map(|line| line.at).collect();
         let voices = lyrics.lines().iter().map(|line| line.voice).collect();
+        let breathes = (0..lyrics.lines().len())
+            .map(|line| lyrics.breathes_before(line))
+            .collect();
         let mut standing = 0;
         let mut written: Vec<usize> = lyrics
             .lines()
@@ -964,6 +967,7 @@ impl Sheet {
             text,
             moments,
             voices,
+            breathes,
             written: written.into(),
         }
     }
@@ -1262,7 +1266,7 @@ mod tests {
     }
 
     #[test]
-    fn the_dots_of_a_pause_open_and_fold_their_room_a_frame_at_a_time_rather_than_at_once() {
+    fn the_dots_of_a_pause_fade_in_and_out_in_a_room_of_their_own_that_never_moves() {
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
         let mut model = model();
         model.look = Look::Found(Arc::new(
@@ -1276,42 +1280,44 @@ mod tests {
             .expect("every line is timed"),
         ));
         model.hold();
+        assert_eq!(model.breathes().as_ref(), [true, true]);
         let frame = Duration::from_millis(16);
+        let frames = u32::try_from(TURN.as_millis() / 16 + 1).expect("few frames");
 
         let began = Instant::now();
         model.follow_the_track(at(20), began);
         let mut was = 0.0;
-        for step in 0..=u32::try_from(BREATH_FOLDS.as_millis() / 16 + 1).expect("few frames") {
+        for step in 0..=frames {
             let now = began + frame * step;
             model.follow_the_track(at(20), now);
-            let room = a_pause(&model, at(20), now)
+            let shown = a_pause(&model, at(20), now)
                 .expect("the pause breathes")
-                .room;
+                .opacity;
             assert!(
-                room >= was && room - was < 0.1,
-                "the dots jumped open by {}",
-                room - was
+                shown >= was && shown - was < 0.1,
+                "the dots popped in by {}",
+                shown - was
             );
-            was = room;
+            was = shown;
         }
         assert!((was - 1.0).abs() < f32::EPSILON);
 
-        let sung = began + BREATH_FOLDS * 3;
+        let sung = began + TURN * 3;
         model.follow_the_track(at(60), sung);
         let mut was = 1.0;
-        for step in 0..=u32::try_from(BREATH_FOLDS.as_millis() / 16).expect("few frames") {
+        for step in 0..=frames {
             let now = sung + frame * step;
             model.follow_the_track(at(60), now);
-            let room = a_pause(&model, at(60), now).map_or(0.0, |breath| breath.room);
+            let shown = a_pause(&model, at(60), now).map_or(0.0, |breath| breath.opacity);
             assert!(
-                room <= was && was - room < 0.1,
-                "the dots snapped shut by {}",
-                was - room
+                shown <= was && was - shown < 0.1,
+                "the dots popped out by {}",
+                was - shown
             );
-            was = room;
+            was = shown;
         }
-        assert!(model.is_turning(sung + BREATH_FOLDS / 2));
-        assert_eq!(a_pause(&model, at(60), sung + BREATH_FOLDS), None);
+        assert_eq!(a_pause(&model, at(60), sung + TURN), None);
+        assert_eq!(model.breathes().as_ref(), [true, true]);
     }
 
     #[test]

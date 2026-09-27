@@ -376,6 +376,29 @@ impl Lyrics {
         })
     }
 
+    pub fn breathes_before(&self, line: usize) -> bool {
+        if self.timing == Timing::Unsynced {
+            return false;
+        }
+        let Some(arrives) = self
+            .lines
+            .get(line)
+            .filter(|next| !next.is_blank())
+            .and_then(|next| next.at)
+        else {
+            return false;
+        };
+        let Some(sung) = self.lines[..line]
+            .iter()
+            .rposition(|earlier| !earlier.is_blank())
+        else {
+            return true;
+        };
+
+        self.span_of(sung)
+            .is_some_and(|(_, until)| arrives.saturating_sub(until) >= A_BREATH_AT_LEAST)
+    }
+
     pub fn has_ended(&self, position: Duration) -> bool {
         if self.timing == Timing::Unsynced || self.is_empty() {
             return false;
@@ -809,6 +832,36 @@ mod tests {
             })
         );
         assert_eq!(lyrics.waiting_at(at(20)), None);
+    }
+
+    #[test]
+    fn a_line_breathes_before_it_exactly_where_a_wait_would_count_down_to_it() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(20), "touch"),
+                LyricLine::sung(at(24), "see"),
+                LyricLine::sung(at(40), ""),
+                LyricLine::sung(at(60), "taste"),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert!(lyrics.breathes_before(0));
+        assert!(!lyrics.breathes_before(1));
+        assert!(!lyrics.breathes_before(2));
+        assert!(lyrics.breathes_before(3));
+        assert!(!lyrics.breathes_before(9));
+        for (position, line) in [(at(5), 0), (at(50), 3)] {
+            assert_eq!(
+                lyrics.waiting_at(position).map(|waiting| waiting.next),
+                Some(line)
+            );
+        }
+        assert!(
+            !Lyrics::plain(source(), vec!["touch".to_owned()]).breathes_before(0),
+            "an unsynced set breathed"
+        );
     }
 
     #[test]

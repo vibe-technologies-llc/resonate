@@ -80,10 +80,6 @@ const DOWNWARDS: f32 = 180.0;
 
 const UNSUNG_SHARE: f32 = 0.45;
 
-const LINE_GAP: f32 = 8.0;
-
-const BREATH_PAD: f32 = 8.0;
-
 struct Attributed {
     timed: &'static str,
     source: SharedString,
@@ -106,6 +102,7 @@ struct Line {
     lead: f32,
     offset: Pixels,
     width: Pixels,
+    breathes: bool,
     breath: Option<Breath>,
     sweep: Option<Sweep>,
 }
@@ -122,7 +119,6 @@ struct Breath {
     through: f32,
     swell: f32,
     opacity: f32,
-    room: f32,
 }
 
 impl RootView {
@@ -299,6 +295,7 @@ impl RootView {
             let text = model.text();
             let moments = model.moments();
             let voices = model.voices();
+            let breathes = model.breathes();
             let has_two_voices = model.has_two_voices();
             let waiting = model.waiting_at(position);
             let in_play = model.in_play(position);
@@ -311,7 +308,6 @@ impl RootView {
                         through: breath.through,
                         swell,
                         opacity: breath.opacity,
-                        room: breath.room,
                     });
                     let standing = model.standing(index, now);
 
@@ -333,6 +329,7 @@ impl RootView {
                         lead: model.lead(index, now),
                         offset: model.lag(index, now) + model.rise(index, now),
                         width,
+                        breathes: breathes.get(index).copied().unwrap_or(false),
                         breath,
                         sweep: in_play
                             .contains(&Some(index))
@@ -445,17 +442,18 @@ impl RootView {
             .when(second, |row| row.items_end())
             .when(line.two_voices && !second, |row| row.items_start())
             .when(!line.two_voices, |row| row.items_center());
-        let carried = div().relative().top(line.offset).w_full();
-
         if line.text.is_empty() {
-            return match line.breath {
-                Some(breath) => row
-                    .min_h(theme::width(theme::lyric_break()))
-                    .child(carried.child(breather(breath)))
-                    .into_any_element(),
-                None => row.h(theme::width(theme::lyric_break())).into_any_element(),
-            };
+            return row.h(theme::width(theme::lyric_break())).into_any_element();
         }
+        let carried = div()
+            .relative()
+            .top(line.offset)
+            .w_full()
+            .flex()
+            .flex_col()
+            .when(line.breathes, |carried| {
+                carried.child(breath_room(line.breath, second, line.two_voices))
+            });
 
         let words = line.text.clone();
         let lit = theme::text_lyric_lead();
@@ -463,13 +461,14 @@ impl RootView {
         let size = (lit - theme::text_lyric()).mul_add(line.lead, theme::text_lyric());
         let size = (size * SIZE_STEPS_PER_PIXEL).round() / SIZE_STEPS_PER_PIXEL;
         let inside = (f32::from(line.width) - pad * 2.0).max(0.0);
-        let drawn = carried
+        let drawn = div()
+            .w_full()
             .flex()
             .flex_col()
             .when(second, |line| line.items_end())
             .when(line.two_voices && !second, |line| line.items_start())
             .when(!line.two_voices, |line| line.items_center())
-            .gap(px(LINE_GAP))
+            .gap_2()
             .px(theme::width(pad))
             .py_2()
             .rounded_xl()
@@ -511,16 +510,15 @@ impl RootView {
                             None => words.text_color(rgb(sung)).child(line.text),
                         }
                     }),
-            )
-            .when_some(line.breath, |line, breath| line.child(breather(breath)));
+            );
 
         let Some(at) = line.at else {
             return row
-                .child(menu::opens_a_menu(
+                .child(carried.child(menu::opens_a_menu(
                     drawn.id(("lyric", line.index)),
                     move |this, where_at, cx| this.copies_a_lyric(where_at, &words, cx),
                     cx,
-                ))
+                )))
                 .into_any_element();
         };
 
@@ -546,7 +544,7 @@ impl RootView {
             cx,
         );
 
-        row.child(sung).into_any_element()
+        row.child(carried.child(sung)).into_any_element()
     }
 
     fn copies_a_lyric(&self, at: Point<Pixels>, line: &SharedString, cx: &Context<Self>) -> Menu {
@@ -770,20 +768,20 @@ fn breather(breath: Breath) -> Div {
         );
     }
 
-    let room = breath.room.clamp(0.0, 1.0);
-    let whole = theme::lyric_dot() + DOT_SWELL + BREATH_PAD * 2.0;
+    div().opacity(breath.opacity).child(dots)
+}
 
+fn breath_room(breath: Option<Breath>, second: bool, two_voices: bool) -> Div {
     div()
         .flex()
-        .items_center()
-        .justify_center()
         .flex_none()
-        .overflow_hidden()
-        .h(px(whole * room))
-        .mt(px(-LINE_GAP * (1.0 - room)))
-        .px_4()
-        .opacity(breath.opacity * room)
-        .child(dots)
+        .items_center()
+        .h(theme::width(theme::lyric_breath()))
+        .px(theme::width(theme::lyric_pad()))
+        .when(second, |room| room.justify_end())
+        .when(two_voices && !second, |room| room.justify_start())
+        .when(!two_voices, |room| room.justify_center())
+        .when_some(breath, |room, breath| room.child(breather(breath)))
 }
 
 fn dissolving(from_the_top: bool) -> Div {

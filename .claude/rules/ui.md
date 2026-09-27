@@ -1175,13 +1175,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   dots sit in a row of the *fully swollen* height with the padding outside it, so the row holds
   still while they breathe: sized to the dots themselves, the gap grew and shrank and shifted every
   line under it by a pixel or two, which is the one thing left in the column whose height moved
-  while it was drawn. **The dots' room opens and folds rather than appearing and going**: a
-  `Breathing` stamps when a wait began and a `FadingBreath` when it ended on its line, and each
-  eases the row's height — the gap above it folded in through a negative margin — between nothing
-  and all of it over `BREATH_FOLDS`, while the opacity goes out over the shorter `TURN` as the
-  line grows. Removing the dots on the cue frame made the lyric flash, and removing them once the
-  fade had run dropped their room in one frame, which jumped every line under them and lurched
-  the glide re-centring the line; the model asks for frames until the fold has settled.
+  while it was drawn. **The dots never change the layout: their room is the sheet's, not the
+  wait's.** `Lyrics::breathes_before` answers, from the timing alone, which lines a wait would
+  ever count down to — the first written line, and any the last written line before it goes out
+  `A_BREATH_AT_LEAST` ahead of — and every such line is drawn with `lyric_breath` of room above its
+  text for the whole life of the sheet, which reads as the space between two verses. The dots are
+  drawn in that room and only fade: a `Breathing` fades them in over `TURN` when a wait begins and
+  a `FadingBreath` out over `TURN` when it ends on its line. `landing` centres a line's text
+  rather than its row, taking half the room off, so a line with room and one without read at the
+  same height. Adding and removing the dots as a child of the line made every line under them
+  jump, and easing their height instead let them collide with the line below while the rest slid
+  apart and the glide chased the moving centre; room that is always there moves nothing.
   `waiting_at` lives in `resonate-lyrics` beside `LIT_AT_MOST` rather than in the window, so the
   ten seconds is one constant and not two. Progress *through* a line is drawn only where the set
   times its words — `lyrics.md` has the sweep — because a rail under a line timed as a whole would
