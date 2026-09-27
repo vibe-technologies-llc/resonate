@@ -2286,6 +2286,19 @@ impl LibraryModel {
         })
     }
 
+    pub fn standing_of(
+        &self,
+        track: Option<TrackId>,
+    ) -> Option<(Option<AlbumId>, Option<ArtistId>)> {
+        match self.library.track(track?) {
+            Ok(held) => held.map(|held| (held.album_id, held.artist_id)),
+            Err(error) => {
+                tracing::warn!(%error, "where a track stands now could not be read");
+                None
+            }
+        }
+    }
+
     pub fn held_tracks(&self, ids: &[TrackId]) -> Vec<Track> {
         ids.iter()
             .filter_map(|id| match self.library.track(*id) {

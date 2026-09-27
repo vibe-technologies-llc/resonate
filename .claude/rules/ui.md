@@ -1916,6 +1916,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   A track row plays, queues either way, holds for a playlist, reaches the artist and the album,
   shows its file in the file manager and copies the path, the title, the artist and the album —
   *Go to album* being the gesture with nowhere else to live, a track row having no album column.
+  **Where a row goes is read when the entry is pressed, not when the menu opened**: `Menu::reaches`
+  takes the row's catalog id beside the album and artist it drew, and the press asks
+  `LibraryModel::standing_of` for the track as the catalog holds it now, so a menu left open across
+  a scan that gathered the album away opens the album the track was gathered into. A row no scan
+  has seen, or one the catalog has since dropped, goes where the menu said.
   `Menu::offers_the_file` is that last group, written once for the tracks, queue and playlist rows
   alike and handed the row's `Called`, whose album `RootView::album_named` reads off the catalog's
   album or, for a row no scan has seen, off the tags the player read; a name with nothing in it is

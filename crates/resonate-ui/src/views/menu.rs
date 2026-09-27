@@ -379,7 +379,12 @@ impl Menu {
         })
     }
 
-    pub(crate) fn reaches(self, album: Option<AlbumId>, artist: Option<ArtistId>) -> Self {
+    pub(crate) fn reaches(
+        self,
+        track: Option<TrackId>,
+        album: Option<AlbumId>,
+        artist: Option<ArtistId>,
+    ) -> Self {
         if album.is_none() && artist.is_none() {
             return self;
         }
@@ -387,12 +392,20 @@ impl Menu {
         let mut menu = self.apart();
         if let Some(artist) = artist {
             menu = menu.does(Icon::Artists, GO_TO_ARTIST, move |this, _, cx| {
-                this.opened(Selection::Artist(artist), cx);
+                let now = this.library.read(cx).standing_of(track);
+                let artist = now.map_or(Some(artist), |(_, artist)| artist);
+                if let Some(artist) = artist {
+                    this.opened(Selection::Artist(artist), cx);
+                }
             });
         }
         if let Some(album) = album {
             menu = menu.does(Icon::Albums, GO_TO_ALBUM, move |this, _, cx| {
-                this.opened(Selection::Album(album), cx);
+                let now = this.library.read(cx).standing_of(track);
+                let album = now.map_or(Some(album), |(album, _)| album);
+                if let Some(album) = album {
+                    this.opened(Selection::Album(album), cx);
+                }
             });
         }
 

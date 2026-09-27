@@ -632,7 +632,7 @@ impl RootView {
                                                     },
                                                 )
                                                 .holds(move || Held::of(Arc::clone(&put)))
-                                                .reaches(album, artist_id)
+                                                .reaches(scanned, album, artist_id)
                                                 .when_some(scanned, |menu, track| {
                                                     menu.favours(Favoured::Track(track), favourite)
                                                 })

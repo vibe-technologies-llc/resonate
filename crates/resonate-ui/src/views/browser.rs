@@ -962,7 +962,7 @@ impl RootView {
                     .queues(move || Arc::clone(&queued))
                     .holds(move || Held::of(Arc::from([held.clone()])))
                     .when_some(others, Menu::offers_the_other_copies)
-                    .reaches(track.album_id, track.artist_id)
+                    .reaches(Some(track.id), track.album_id, track.artist_id)
                     .favours(Favoured::Track(track.id), favourite)
                     .offers_the_file(&track.location, names)
                     .shares(track.id)

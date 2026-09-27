@@ -596,7 +596,7 @@ impl RootView {
                     .does(Icon::Inspector, menu::INSPECT, |this, _, cx| {
                         this.set_pane(Pane::Inspector, cx);
                     })
-                    .reaches(playing.album, playing.artist)
+                    .reaches(playing.track, playing.album, playing.artist)
                     .when_some(playing.track, |menu, track| {
                         menu.favours(Favoured::Track(track), playing.favourite)
                             .shares(track)
