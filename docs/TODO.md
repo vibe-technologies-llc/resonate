@@ -107,7 +107,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - An opened suggestion lists only its first `PREVIEWED_AT_MOST` rows
 
 ## UI
-- The Statistics pane and the Suggestions pane's cards answer no keyboard reach
 - The playback bar keeps its controls centred by clipping its side columns, so a narrow window
   loses the end of the signal path or the notice; nothing drops an item before it is clipped
 - A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks

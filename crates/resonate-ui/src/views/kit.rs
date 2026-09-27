@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, SharedString, Stateful, Svg, canvas,
-    div, prelude::*, px, relative, rgb,
+    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, ScrollHandle, SharedString,
+    Stateful, Svg, canvas, div, point, prelude::*, px, relative, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -771,6 +771,30 @@ pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElemen
                 measured.set(bounds.size.height);
                 window.request_animation_frame();
             }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+pub(crate) fn brought_into_view(scroll: ScrollHandle, asked: Rc<Cell<bool>>) -> impl IntoElement {
+    canvas(
+        move |bounds, window, _| {
+            if !asked.replace(false) {
+                return;
+            }
+            let seen = scroll.bounds();
+            let moved = if bounds.top() < seen.top() {
+                seen.top() - bounds.top()
+            } else if bounds.bottom() > seen.bottom() {
+                (seen.bottom() - bounds.bottom()).max(seen.top() - bounds.top())
+            } else {
+                return;
+            };
+            let offset = scroll.offset();
+            scroll.set_offset(point(offset.x, offset.y + moved));
+            window.refresh();
         },
         |_, _, _, _| {},
     )

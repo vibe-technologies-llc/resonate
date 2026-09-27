@@ -1,7 +1,7 @@
-use std::{ops::Range, sync::Arc};
+use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{Accent, AlbumId};
 use resonate_engine::Placement;
@@ -48,6 +48,10 @@ const BACK_HINT: &str = "Back to every suggestion";
 
 const CARD_PADDING: f32 = 12.0;
 
+const CARD_GAP: f32 = 12.0;
+
+const SHELF_PADDING: f32 = 24.0;
+
 impl RootView {
     pub(crate) fn suggestions_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let library = self.library.read(cx);
@@ -69,17 +73,20 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_6()
-            .px_6()
+            .px(px(SHELF_PADDING))
             .py_5()
             .overflow_y_scroll()
             .track_scroll(&self.suggestions_scroll);
+        let shelved = in_shelf_order(&offered);
         for kind in SuggestionKind::ALL {
-            let cards: Vec<AnyElement> = offered
+            let cards: Vec<AnyElement> = shelved
                 .iter()
                 .enumerate()
-                .filter(|(_, suggestion)| suggestion.reason.kind() == kind)
-                .map(|(index, suggestion)| {
-                    self.suggestion_card(index, suggestion, cx)
+                .filter_map(|(place, index)| Some((place, *index, offered.get(*index)?)))
+                .filter(|(_, _, suggestion)| suggestion.reason.kind() == kind)
+                .map(|(place, index, suggestion)| {
+                    let reached = self.reaches(Shift::Listing(Listed::Offered), place);
+                    self.suggestion_card(index, suggestion, reached, cx)
                         .into_any_element()
                 })
                 .collect();
@@ -97,7 +104,7 @@ impl RootView {
                             .flex()
                             .flex_wrap()
                             .content_start()
-                            .gap_3()
+                            .gap(px(CARD_GAP))
                             .children(cards),
                     ),
             );
@@ -126,6 +133,7 @@ impl RootView {
         &mut self,
         index: usize,
         suggestion: &Suggestion,
+        reached: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         let opening = suggestion.query.clone();
@@ -170,9 +178,7 @@ impl RootView {
                             .child(kit::figure(measured(suggestion))),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        let opened = opening.clone();
-                        this.library
-                            .update(cx, |library, cx| library.open_suggestion(Some(opened), cx));
+                        this.open_offered(opening.clone(), cx);
                     })),
             )
             .child(
@@ -184,6 +190,36 @@ impl RootView {
                     .child(self.queue_mark(("suggestion-queue", index), &suggestion.query, cx))
                     .child(self.save_mark(("suggestion-save", index), suggestion, cx)),
             )
+            .when(reached, |card| {
+                card.child(reached_edge()).child(kit::brought_into_view(
+                    self.suggestions_scroll.clone(),
+                    Rc::clone(&self.reached_unseen),
+                ))
+            })
+    }
+
+    pub(crate) fn offered_in_shelf_order(&self, cx: &App) -> Vec<SavedQuery> {
+        let offered = self.library.read(cx).suggestions();
+
+        in_shelf_order(&offered)
+            .into_iter()
+            .filter_map(|index| offered.get(index).map(|held| held.query.clone()))
+            .collect()
+    }
+
+    pub(crate) fn open_offered(&mut self, query: SavedQuery, cx: &mut Context<Self>) {
+        self.let_go_of_the_reach_in(Shift::Listing(Listed::Offered));
+        self.library
+            .update(cx, |library, cx| library.open_suggestion(Some(query), cx));
+    }
+
+    pub(crate) fn cards_a_page(&self) -> usize {
+        let seen = self.suggestions_scroll.bounds().size;
+        let taken = theme::suggestion_card() + CARD_GAP;
+        let across = (f32::from(seen.width) - 2.0 * SHELF_PADDING + CARD_GAP) / taken;
+        let down = f32::from(seen.height) / taken;
+
+        (across.max(1.0) as usize) * (down.max(1.0) as usize)
     }
 
     fn opened_suggestion(
@@ -427,6 +463,28 @@ impl RootView {
     }
 }
 
+fn in_shelf_order(offered: &[Suggestion]) -> Vec<usize> {
+    SuggestionKind::ALL
+        .into_iter()
+        .flat_map(|kind| {
+            offered
+                .iter()
+                .enumerate()
+                .filter(move |(_, suggestion)| suggestion.reason.kind() == kind)
+                .map(|(index, _)| index)
+        })
+        .collect()
+}
+
+fn reached_edge() -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .rounded_lg()
+        .border_2()
+        .border_color(rgb(theme::accent()))
+}
+
 fn measured(suggestion: &Suggestion) -> String {
     let mut parts = vec![format::counted(suggestion.rows as usize, "track", "tracks")];
     if let Some(length) = suggestion.length {
@@ -489,6 +547,40 @@ fn suggestions_heading(offered: usize) -> Div {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn offered(name: &str, reason: Reason) -> Suggestion {
+        Suggestion {
+            name: name.to_owned(),
+            reason,
+            query: SavedQuery::default(),
+            rows: 1,
+            length: None,
+            pictured_by: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_card_is_reached_in_the_order_the_shelves_draw_it() {
+        let offered = [
+            offered("Rock", Reason::Genre),
+            offered("Never heard", Reason::NeverHeard),
+            offered("The 1970s", Reason::Decade(1970)),
+            offered("Most played", Reason::MostPlayed),
+            offered("Hi-res", Reason::HiRes),
+        ];
+
+        let reached: Vec<&str> = in_shelf_order(&offered)
+            .into_iter()
+            .map(|index| offered[index].name.as_str())
+            .collect();
+
+        assert_eq!(
+            reached,
+            ["Never heard", "Most played", "The 1970s", "Rock", "Hi-res"]
+        );
+    }
+
     #[test]
     fn a_shuffle_starts_somewhere_inside_the_list() {
         for rows in [1, 2, 7, 500] {

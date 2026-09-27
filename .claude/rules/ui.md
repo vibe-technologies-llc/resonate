@@ -157,6 +157,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `let_go_of_the_reach_in` — rather than leaving it on a row of the other. `reorder::marked` is
   generic over what it marks, because a Missing row is a plain `Div` inside its card. All three
   are narrowed by the search, so typing at them searches rather than jumping.
+  `Listed::Offered` and `Listed::Heard` reach the two panes that are no `uniform_list`: the
+  Suggestions pane's cards, in the order the shelves draw them — `in_shelf_order`, kind by kind —
+  where `enter` opens the card, and the Statistics pane's three tables read as one run, tracks
+  then albums then artists, where `enter` plays the most-heard tracks from the one reached or
+  opens the album or artist. Neither has a list's `scroll_to_item`, so `show_row` sets
+  `RootView::reached_unseen` and the reached element carries `kit::brought_into_view`, a canvas
+  that on its next prepaint moves the pane's `ScrollHandle` just far enough to hold it and spends
+  the flag, so a wheel turned afterwards is not fought. A page is what the viewport holds —
+  whole rows of cards, or `row_height` rows — and choosing another statistics window, like
+  opening a card, lets go of the reach.
 - **The window binds the media keys too, as a fallback rather than as the feature.** A desktop that
   grabs the transport keys consumes them and calls MPRIS, which is how they are meant to work and
   what makes them work with the window behind everything else; where a session grabs none, the key

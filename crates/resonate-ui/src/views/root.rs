@@ -448,6 +448,7 @@ pub struct RootView {
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
+    pub(crate) reached_unseen: Rc<Cell<bool>>,
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
     listing_whole: Task<()>,
@@ -787,6 +788,7 @@ impl RootView {
             record: None,
             left_at: AHashMap::new(),
             reach: None,
+            reached_unseen: Rc::default(),
             creeping: None,
             creeping_on: Task::ready(()),
             listing_whole: Task::ready(()),
@@ -1583,6 +1585,8 @@ impl RootView {
             Shift::Listing(Listed::Favourites) => &self.favourite_rows,
             Shift::Listing(Listed::Missing) => &self.missing_rows,
             Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
+            Shift::Listing(Listed::Offered) => return self.cards_a_page(),
+            Shift::Listing(Listed::Heard) => return self.heard_a_page(),
         };
         let shown = listing
             .0
@@ -1706,6 +1710,13 @@ impl RootView {
                 };
                 self.play(&tracks, row, cx);
             }
+            Shift::Listing(Listed::Offered) => {
+                let Some(query) = self.offered_in_shelf_order(cx).into_iter().nth(row) else {
+                    return;
+                };
+                self.open_offered(query, cx);
+            }
+            Shift::Listing(Listed::Heard) => self.open_what_was_heard_at(row, cx),
         }
     }
 
@@ -1875,20 +1886,27 @@ impl RootView {
                 (rows > 0).then_some((Shift::Listing(Listed::Missing), rows))
             }
             Pane::Suggestions => {
-                let rows = self
-                    .library
-                    .read(cx)
+                let library = self.library.read(cx);
+                let offered = library.suggestions();
+                let Some(opened) = library
                     .opened_suggestion()
-                    .map_or(0, |opened| opened.tracks.len());
+                    .filter(|opened| offered.iter().any(|held| held.query == opened.query))
+                else {
+                    let rows = offered.len();
+                    return (rows > 0).then_some((Shift::Listing(Listed::Offered), rows));
+                };
+                let rows = opened.tracks.len();
 
                 (rows > 0).then_some((Shift::Listing(Listed::Suggested), rows))
             }
-            Pane::Statistics
-            | Pane::Lyrics
-            | Pane::Inspector
-            | Pane::Visualiser
-            | Pane::Analysis
-            | Pane::Settings => None,
+            Pane::Statistics => {
+                let rows = self.heard_rows(cx);
+
+                (rows > 0).then_some((Shift::Listing(Listed::Heard), rows))
+            }
+            Pane::Lyrics | Pane::Inspector | Pane::Visualiser | Pane::Analysis | Pane::Settings => {
+                None
+            }
         }
     }
 
@@ -1953,6 +1971,7 @@ impl RootView {
                 self.suggestion_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
+            Shift::Listing(Listed::Offered | Listed::Heard) => self.reached_unseen.set(true),
         }
     }
 

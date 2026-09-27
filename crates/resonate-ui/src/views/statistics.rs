@@ -1,6 +1,11 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    rc::Rc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use gpui::{AnyElement, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb};
+use gpui::{
+    AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb,
+};
 use resonate_core::{AlbumId, ArtistId};
 use resonate_library::{Day, Listened, Lit, MostListened, Statistics, Window};
 
@@ -11,6 +16,7 @@ use crate::{
     views::{
         hint::Names,
         kit, listing,
+        reorder::{self, Listed, Shift},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting,
@@ -239,6 +245,7 @@ impl RootView {
                 )
                 .names(WINDOW_HINT)
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    this.let_go_of_the_reach_in(Shift::Listing(Listed::Heard));
                     this.library
                         .update(cx, |library, cx| library.read_over(offered, cx));
                 })),
@@ -286,16 +293,18 @@ impl RootView {
             .track_scroll(&self.statistics_scroll)
             .child(tiles(counts))
             .child(charted(chart))
-            .child(self.most_listened_to(MOST_LISTENED_TRACKS, &listened.tracks, |_| None, cx))
+            .child(self.most_listened_to(MOST_LISTENED_TRACKS, &listened.tracks, 0, |_| None, cx))
             .child(self.most_listened_to(
                 MOST_LISTENED_ALBUMS,
                 &listened.albums,
+                listened.tracks.len(),
                 |album: AlbumId| Some((Selection::Album(album), OPEN_ALBUM_HINT)),
                 cx,
             ))
             .child(self.most_listened_to(
                 MOST_LISTENED_ARTISTS,
                 &listened.artists,
+                listened.tracks.len() + listened.albums.len(),
                 |artist: ArtistId| Some((Selection::Artist(artist), OPEN_ARTIST_HINT)),
                 cx,
             ))
@@ -305,17 +314,69 @@ impl RootView {
         &self,
         kind: Kind,
         rows: &[Listened<Id>],
+        reached_from: usize,
         opens: impl Fn(Id) -> Option<(Selection, &'static str)>,
         cx: &mut Context<Self>,
     ) -> Div {
         let mut listed = div().flex().flex_col().py_1();
         for (rank, held) in rows.iter().enumerate() {
-            listed = listed.child(self.listened_row(kind, rank, held, opens(held.id), cx));
+            let reached = self.reaches(Shift::Listing(Listed::Heard), reached_from + rank);
+            let drawn = self.listened_row(kind, rank, held, opens(held.id), cx);
+            listed = listed.child(reorder::marked(drawn, reached).when(reached, |row| {
+                row.child(kit::brought_into_view(
+                    self.statistics_scroll.clone(),
+                    Rc::clone(&self.reached_unseen),
+                ))
+            }));
         }
 
         kit::section()
             .child(kit::section_header().child(kit::section_name(kind.named)))
             .child(listed)
+    }
+
+    pub(crate) fn heard_rows(&self, cx: &App) -> usize {
+        let library = self.library.read(cx);
+        if library.statistics().plays == 0 {
+            return 0;
+        }
+        let listened = library.most_listened();
+
+        listened.tracks.len() + listened.albums.len() + listened.artists.len()
+    }
+
+    pub(crate) fn heard_a_page(&self) -> usize {
+        let seen = f32::from(self.statistics_scroll.bounds().size.height);
+
+        ((seen / theme::row_height()) as usize).max(1)
+    }
+
+    pub(crate) fn open_what_was_heard_at(&mut self, row: usize, cx: &mut Context<Self>) {
+        let listened = self.library.read(cx).most_listened();
+        let tracks = listened.tracks.len();
+        let albums = tracks + listened.albums.len();
+        if let Some(heard) = listened.tracks.get(row) {
+            let ids: Vec<_> = listened.tracks.iter().map(|held| held.id).collect();
+            let found = self.library.read(cx).held_tracks(&ids);
+            let Some(start) = found.iter().position(|track| track.id == heard.id) else {
+                return;
+            };
+            self.play(&found, start, cx);
+            return;
+        }
+        let opened = match row.checked_sub(albums) {
+            Some(at) => listened
+                .artists
+                .get(at)
+                .map(|held| Selection::Artist(held.id)),
+            None => listened
+                .albums
+                .get(row - tracks)
+                .map(|held| Selection::Album(held.id)),
+        };
+        if let Some(opened) = opened {
+            self.opened(opened, cx);
+        }
     }
 
     fn listened_row<Id>(

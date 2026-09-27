@@ -2274,6 +2274,18 @@ impl LibraryModel {
         })
     }
 
+    pub fn held_tracks(&self, ids: &[TrackId]) -> Vec<Track> {
+        ids.iter()
+            .filter_map(|id| match self.library.track(*id) {
+                Ok(held) => held,
+                Err(error) => {
+                    tracing::warn!(%error, "a track could not be read by id");
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
         if let Some(held) = self.named.get(&item.id)
             && held.names(item)
