@@ -104,7 +104,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## UI
 - A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks
   a second settings edit until it finishes
-- A band on the equaliser's curve has no key to nudge it and its handles are not in the focus ring
 - What the queue was cleared of can be put back only while nothing has been queued since, and the
   queue has no redo
 - A name clipped by a fixed-width cell is sliced through a glyph rather than elided wherever an

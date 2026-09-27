@@ -57,6 +57,8 @@ pub(crate) const WINDOW_CONTEXT: &str = "Resonate";
 pub(crate) const SEARCH_CONTEXT: &str = "Search";
 pub(crate) const CONTROL_CONTEXT: &str = "Control";
 
+pub(crate) const BAND_CONTEXT: &str = "Band";
+
 actions!(
     resonate,
     [
@@ -99,6 +101,12 @@ actions!(
         TabOnward,
         Listen,
         Quit,
+        BandHigher,
+        BandLower,
+        BandLouder,
+        BandQuieter,
+        BandNarrower,
+        BandWider,
     ]
 );
 
@@ -645,12 +653,24 @@ fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
     ]
 }
 
+fn answering_on_a_band(on_a_band: Option<&str>) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("right", BandHigher, on_a_band),
+        KeyBinding::new("left", BandLower, on_a_band),
+        KeyBinding::new("up", BandLouder, on_a_band),
+        KeyBinding::new("down", BandQuieter, on_a_band),
+        KeyBinding::new("shift-up", BandNarrower, on_a_band),
+        KeyBinding::new("shift-down", BandWider, on_a_band),
+    ]
+}
+
 fn bindings() -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
     let mut bindings = answering_anywhere();
     bindings.extend(answering_away_from_a_field(Some(&away_from_search)));
     bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT)));
+    bindings.extend(answering_on_a_band(Some(BAND_CONTEXT)));
     bindings.extend(field::bindings());
     bindings
 }

@@ -434,6 +434,17 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `Bindings::bound_to` answers one, so a device falling back to the fallback's own curve shows and
   edits that curve rather than a new one of its own. A profile forgotten unbinds every device
   naming it, which the store cannot do because it does not know the config.
+- **A band is moved from the keyboard through its number.** The band's number in the list is
+  already a tab stop in the pane's ring; it carries a second key context, `BAND_CONTEXT`, beside
+  the control's, and `app::answering_on_a_band` binds the arrows under it: left and right move the
+  band a semitone — `2^(1/12)` of its frequency, held inside `Frequency::LOWEST` and `HIGHEST` —
+  up and down half a decibel, held inside `BandGain::WIDEST_MILLIBELS`, and shift-up and
+  shift-down one notch of Q, the notch the wheel turns. `equaliser::nudged` is that arithmetic,
+  pure and tested; `EqualiserModel::nudge` chooses the band and writes it through the same `put`
+  a drag does, so the engine is told at once and the file after `PROFILE_SETTLES`. The handles on
+  the curve are not tab stops of their own; the number is how the keyboard reaches one, and its
+  hint says which keys it answers. Nothing here has been driven by a key, KWin offering no
+  synthetic input to this shell.
 - **The curve shown can be kept under a name or discarded, from the pane.** *Keep as a profile*
   is offered under an own curve and writes a copy through `Store::keep` under the device's
   description — `unused_name` adds ` 2`, ` 3` where a kept profile already folds to it — and leaves

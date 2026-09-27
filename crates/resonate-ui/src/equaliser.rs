@@ -20,6 +20,9 @@ const FOUND_SHOWN: usize = 12;
 const Q_PER_NOTCH: f64 = 1.122_462_048_309_373;
 const Q_STEPS_PER_UNIT: f64 = 100.0;
 const MILLI_PER_UNIT: f64 = 1_000.0;
+const SEMITONES_AN_OCTAVE: f64 = 12.0;
+const MILLIBELS_A_NUDGE: i32 = 500;
+const NOTCHES_A_NUDGE: f64 = 1.0;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Curve {
@@ -100,6 +103,46 @@ pub fn narrowed(q: Q, notches: f64) -> Q {
         steps_turned.min(steps_held.ceil() - 1.0)
     };
     Q::from_units((steps / Q_STEPS_PER_UNIT).clamp(lowest, highest)).unwrap_or(q)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Nudge {
+    Higher,
+    Lower,
+    Louder,
+    Quieter,
+    Narrower,
+    Wider,
+}
+
+pub fn nudged(band: Band, nudge: Nudge) -> Band {
+    let placed = |frequency: Frequency, gain: BandGain| moved(band, Placed { frequency, gain });
+    let semitone = |up: bool| {
+        let step = if up { 1.0 } else { -1.0 } / SEMITONES_AN_OCTAVE;
+        let hertz = (band.frequency.hertz() * 2_f64.powf(step))
+            .clamp(Frequency::LOWEST.hertz(), Frequency::HIGHEST.hertz());
+        Frequency::from_hertz(hertz).unwrap_or(band.frequency)
+    };
+    let louder = |by: i32| {
+        let millibels = (band.gain.millibels() + by)
+            .clamp(-BandGain::WIDEST_MILLIBELS, BandGain::WIDEST_MILLIBELS);
+        BandGain::from_millibels(millibels).unwrap_or(band.gain)
+    };
+
+    match nudge {
+        Nudge::Higher => placed(semitone(true), band.gain),
+        Nudge::Lower => placed(semitone(false), band.gain),
+        Nudge::Louder => placed(band.frequency, louder(MILLIBELS_A_NUDGE)),
+        Nudge::Quieter => placed(band.frequency, louder(-MILLIBELS_A_NUDGE)),
+        Nudge::Narrower => Band {
+            q: narrowed(band.q, NOTCHES_A_NUDGE),
+            ..band
+        },
+        Nudge::Wider => Band {
+            q: narrowed(band.q, -NOTCHES_A_NUDGE),
+            ..band
+        },
+    }
 }
 
 pub const fn chosen_after_dropping(chosen: Option<usize>, dropped: usize) -> Option<usize> {
@@ -480,6 +523,19 @@ impl EqualiserModel {
             return false;
         }
         self.put(row, landed, cx);
+        true
+    }
+
+    pub fn nudge(&mut self, row: usize, nudge: Nudge, cx: &mut Context<Self>) -> bool {
+        let Some(band) = self.band(row) else {
+            return false;
+        };
+        let next = nudged(band, nudge);
+        if next == band {
+            return false;
+        }
+        self.chosen = Some(row);
+        self.put(row, next, cx);
         true
     }
 
@@ -893,6 +949,49 @@ mod tests {
 
     fn named(text: &str) -> ProfileName {
         ProfileName::new(text).expect("a usable name")
+    }
+
+    fn a_band() -> Band {
+        Band::peaking(
+            Frequency::from_hertz(1_000.0).expect("a frequency"),
+            BandGain::from_decibels(3.0).expect("a gain"),
+            Q::BUTTERWORTH,
+        )
+    }
+
+    #[test]
+    fn a_nudge_moves_a_band_a_semitone_half_a_decibel_or_a_notch_of_q_and_nothing_else() {
+        let band = a_band();
+
+        let higher = nudged(band, Nudge::Higher);
+        assert!((higher.frequency.hertz() - 1_059.46).abs() < 0.01);
+        assert_eq!(
+            (higher.gain, higher.q, higher.kind),
+            (band.gain, band.q, band.kind)
+        );
+        let back = nudged(higher, Nudge::Lower);
+        assert!((back.frequency.hertz() - 1_000.0).abs() < 0.02);
+
+        assert_eq!(nudged(band, Nudge::Louder).gain.millibels(), 3_500);
+        assert_eq!(nudged(band, Nudge::Quieter).gain.millibels(), 2_500);
+        assert!(nudged(band, Nudge::Narrower).q > band.q);
+        assert!(nudged(band, Nudge::Wider).q < band.q);
+        assert_eq!(nudged(band, Nudge::Narrower).frequency, band.frequency);
+    }
+
+    #[test]
+    fn a_nudge_past_the_ends_of_a_band_stays_at_the_end() {
+        let top = Band {
+            frequency: Frequency::HIGHEST,
+            gain: BandGain::from_millibels(BandGain::WIDEST_MILLIBELS).expect("the widest gain"),
+            ..a_band()
+        };
+
+        assert_eq!(nudged(top, Nudge::Higher).frequency, Frequency::HIGHEST);
+        assert_eq!(
+            nudged(top, Nudge::Louder).gain.millibels(),
+            BandGain::WIDEST_MILLIBELS
+        );
     }
 
     #[test]

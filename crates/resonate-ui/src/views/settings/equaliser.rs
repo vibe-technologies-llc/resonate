@@ -14,7 +14,11 @@ use resonate_eq::{Binding, Device, ProfileName};
 
 use crate::{
     Notice, Setting,
-    equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing},
+    app::{
+        BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
+        CONTROL_CONTEXT,
+    },
+    equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, Nudge},
     icons::Icon,
     theme, toast,
     views::{
@@ -58,6 +62,8 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
 const FOLLOWS_THE_DEFAULT: &str = "follows the default";
 const BOUND_TO_NOTHING: &str = "nothing";
 const ITS_OWN_CURVE: &str = "own curve";
+const BAND_KEYS_HINT: &str = "Choose this band on the curve. Once reached: left and right move it a \
+     semitone, up and down half a decibel, shift-up and shift-down narrow and widen it";
 const EVERY_OTHER_DEVICE: &str = "Every other device";
 
 impl RootView {
@@ -372,10 +378,32 @@ impl RootView {
                     kit::figure(format!("{}", row + 1))
                         .when(chosen, |figure| figure.text_color(rgb(theme::accent()))),
                 )
-                .names("Choose this band on the curve"),
+                .names(BAND_KEYS_HINT),
             move |this, _, cx| this.choose_a_band(row, cx),
             cx,
         )
+        .key_context(
+            gpui::KeyContext::parse(&format!("{CONTROL_CONTEXT} {BAND_CONTEXT}"))
+                .unwrap_or_default(),
+        )
+        .on_action(cx.listener(move |this, _: &BandHigher, _, cx| {
+            this.nudge_a_band(row, Nudge::Higher, cx);
+        }))
+        .on_action(cx.listener(move |this, _: &BandLower, _, cx| {
+            this.nudge_a_band(row, Nudge::Lower, cx);
+        }))
+        .on_action(cx.listener(move |this, _: &BandLouder, _, cx| {
+            this.nudge_a_band(row, Nudge::Louder, cx);
+        }))
+        .on_action(cx.listener(move |this, _: &BandQuieter, _, cx| {
+            this.nudge_a_band(row, Nudge::Quieter, cx);
+        }))
+        .on_action(cx.listener(move |this, _: &BandNarrower, _, cx| {
+            this.nudge_a_band(row, Nudge::Narrower, cx);
+        }))
+        .on_action(cx.listener(move |this, _: &BandWider, _, cx| {
+            this.nudge_a_band(row, Nudge::Wider, cx);
+        }))
     }
 
     fn kind_cell(&self, row: usize, kind: BandKind, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1010,6 +1038,16 @@ impl RootView {
             cx.notify();
         }
         true
+    }
+
+    fn nudge_a_band(&mut self, row: usize, nudge: Nudge, cx: &mut Context<Self>) {
+        let moved = self
+            .equaliser
+            .update(cx, |model, cx| model.nudge(row, nudge, cx));
+        if moved {
+            self.tell_the_engine(cx);
+            cx.notify();
+        }
     }
 
     fn choose_a_band(&mut self, row: usize, cx: &mut Context<Self>) {
