@@ -622,7 +622,17 @@ through `Player::media` like any other unscanned row.
   each is the other's one best and that best shares at least the file name: `vinyl/echoes.wav`
   and `tape/echoes.wav` filed under `filed/` are each followed to their own folder, while the
   same two moved to `c/` and `d/` share the file name alone with both and are left to be
-  forgotten and found rather than guessed between. A pair is
+  forgotten and found rather than guessed between. **What the first pass leaves is weighed again
+  by how it sounds.** A tagger that files as it tags changes the size and the tagged names in the
+  same stroke, so `pairs_by_sound` takes what is left on both sides and pairs a gone row with a new
+  one only where they share a `Sound` — the exact decoded length in frames, the codec, the rate and
+  the channels — where each is the *only* row on its side with that sound, and where they still
+  agree on the tagged title, the tagged artist or the file's own name. The frame count is what
+  makes the pairing safe and the uniqueness what keeps two rips of one length from being guessed
+  between; the agreement is what keeps a file deleted and an unrelated one of the same length
+  added from being taken for one moved file.
+  `a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like` and
+  `a_file_taken_away_and_another_of_its_length_added_are_not_one_file` are the claims. A pair is
   followed through `organise::files_moved`, so the new row is dropped and the old one takes its
   path, its root and the generation, keeping its id, plays, listens, favourite, enrichment, vault
   object, playlist rows, kept lyric and queue row. The album is `settle_the_album`'s: where the

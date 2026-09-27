@@ -60,9 +60,9 @@ that no listener is waiting on, and is worked only once the categories above it 
   file a second time
 
 ## Library
-- A file moved by hand is followed only where a vanished row and a new one agree in size, length,
-  codec and tagged names, so a file retagged as it moved and a cue-cut file start again at nothing.
-  A file no scan has seen counts nothing — a queue of unscanned files plays and is forgotten
+- A file moved by hand and retagged past every name it had, or a cue-cut file, starts again at
+  nothing. A file no scan has seen counts nothing — a queue of unscanned files plays and is
+  forgotten
 - Nothing writes a favourite or a play count back into the file, so both stay with this catalog.
   lofty's `ItemKey::Popularimeter` maps to `POPM`, Vorbis `RATING`, MP4 `rate` and RIFF `IRTD` and
   carries a counter, so the seam `resonate tag` already is could write them

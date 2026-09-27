@@ -16520,6 +16520,69 @@ fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() 
 }
 
 #[test]
+fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()> {
+    let tree = Tree::new();
+    let before = tree.write(
+        "incoming/track01.wav",
+        &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
+    );
+    tree.write(
+        "incoming/track02.wav",
+        &Wav::new().frames(7_907).text(TITLE, "Seamus").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let heard = library
+        .track_played(&MediaLocation::local(&before), None)?
+        .expect("a counted play")
+        .track;
+
+    fs::remove_file(&before).expect("the file is taken away");
+    let after = tree.write(
+        "Pink Floyd/Meddle/06 Echoes.wav",
+        &Wav::new()
+            .frames(7_919)
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .text(ALBUM, "Meddle")
+            .build(),
+    );
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(stats.added, 0);
+    let row = library
+        .track_at(&after, None)?
+        .expect("the row followed the file");
+    assert_eq!(row.id, heard.id);
+    assert_eq!(row.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Result<()> {
+    let tree = Tree::new();
+    let gone = tree.write(
+        "old.wav",
+        &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    fs::remove_file(&gone).expect("the file is taken away");
+    tree.write(
+        "new.wav",
+        &Wav::new().frames(7_919).text(TITLE, "Seamus").build(),
+    );
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 0);
+    assert_eq!(stats.added, 1);
+    assert_eq!(stats.removed, 1);
+    Ok(())
+}
+
+#[test]
 fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
     let tree = Tree::new();
     let source = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
