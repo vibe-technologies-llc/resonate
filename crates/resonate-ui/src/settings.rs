@@ -504,7 +504,7 @@ impl Tabs {
     pub const AS_BUILT: Self = Self {
         suggestions: true,
         missing: false,
-        counts: true,
+        counts: false,
     };
 }
 

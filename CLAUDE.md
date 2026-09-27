@@ -1075,7 +1075,7 @@ volume a notch — five per cent — at a time. `scrollbars` is a `resonate_core
 `ResonateApp::scrollbars`, written by the Appearance category's *Scrollbars* choice; hidden, no
 pane draws a bar and every region still scrolls. A file written when the key was a switch still
 reads, `true` as `shown` and `false` as `hidden`. `suggestions-tab` defaults to true and
-`missing-tab` to false, `tab-counts` to true, and `Config::tabs` folds the three into a `resonate_ui::Tabs` that rides the
+`missing-tab` and `tab-counts` to false, and `Config::tabs` folds the three into a `resonate_ui::Tabs` that rides the
 same way onto `ResonateApp::tabs`, written by the Appearance category's *Sidebar tabs* switches:
 a tab that is off is left out of the sidebar and of the pane keys, `RootView::set_pane` lands on
 the tracks rather than on it wherever it is asked for, and the artist page's *not held* button

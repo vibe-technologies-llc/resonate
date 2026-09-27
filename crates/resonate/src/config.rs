@@ -1231,11 +1231,11 @@ mod tests {
 
     #[cfg(feature = "ui")]
     #[test]
-    fn suggestions_are_listed_and_missing_is_not_until_the_file_says_otherwise() {
+    fn suggestions_are_listed_and_missing_and_the_counts_are_not_until_the_file_says_otherwise() {
         let built = resonate_ui::Tabs {
             suggestions: true,
             missing: false,
-            counts: true,
+            counts: false,
         };
 
         assert_eq!(read("").expect("empty is valid").tabs(), built);
@@ -1250,11 +1250,11 @@ mod tests {
             }
         );
         assert_eq!(
-            read("tab-counts = false")
+            read("tab-counts = true")
                 .expect("a boolean is valid")
                 .tabs(),
             resonate_ui::Tabs {
-                counts: false,
+                counts: true,
                 ..built
             }
         );
