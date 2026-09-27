@@ -324,6 +324,19 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   name: a link MusicBrainz holds names the artist, and a name alone would be a guess. Deezer
   is last because its picture CDN answers 403 to every request from some networks — this
   machine's among them — whatever the request carries, and there it is only ever a miss.
+- **Where a track streams is asked of Deezer too, for a share the catalog holds no link for.**
+  `Reference::streamed_at` is `deezer::streamed`: `/track/isrc:<code>` where the `StreamAsked`
+  carries an ISRC, which is exact, and otherwise — or where Deezer holds nothing under the code,
+  which answers the same `DataException` document an unknown artist does — `/search` on the
+  artist and the title run together, capped at `SEARCHED_AT_MOST` of ten. A search hit is taken
+  only where its `title` or its `title_short` folds to the asked title, its artist folds to the
+  asked artist — both through `folded_letters` with everything but letters and digits dropped —
+  and its length is within `LENGTHS_AGREE_WITHIN` of three seconds where both are known, so an
+  edit or a live take is passed over for the take the file holds. Only a link on
+  `https://www.deezer.com/` is answered, as `Relation::Streaming` under `Service::Deezer`.
+  Deezer's own field syntax — `artist:"…" track:"…"` — answers an empty list for every query
+  now, which is why the search is the plain words. `deezer_track_isrc.json` and
+  `deezer_search.json` are the fixtures, and the live test asks for both routes.
 
 ## ListenBrainz
 

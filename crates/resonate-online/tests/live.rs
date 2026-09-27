@@ -7,7 +7,8 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    Error, LookupOp, Mbid, Reference, ReleaseAsked, Scrobble, Scrobbler, Wording,
+    Error, Isrc, LookupOp, Mbid, Reference, ReleaseAsked, Scrobble, Scrobbler, Service,
+    StreamAsked, Wording,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -35,6 +36,37 @@ fn reached() -> Option<Arc<Client>> {
 
 fn mbid(text: &str) -> Mbid {
     Mbid::new(text).expect("a well-formed mbid")
+}
+
+#[test]
+fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    let by_code = online
+        .streamed_at(&StreamAsked {
+            title: "Easier to Run".to_owned(),
+            artist: Some("Linkin Park".to_owned()),
+            isrc: Some(Isrc::new("USWB10301869").expect("a well-formed isrc")),
+            length: None,
+        })
+        .expect("deezer answered")
+        .expect("deezer holds the track under its isrc");
+    assert_eq!(by_code.service, Service::Deezer);
+    assert_eq!(by_code.url, "https://www.deezer.com/track/677241");
+
+    let by_name = online
+        .streamed_at(&StreamAsked {
+            title: "Echoes".to_owned(),
+            artist: Some("Pink Floyd".to_owned()),
+            isrc: None,
+            length: Some(ECHOES_LASTS),
+        })
+        .expect("deezer answered")
+        .expect("deezer holds echoes");
+    assert!(by_name.url.starts_with("https://www.deezer.com/track/"));
 }
 
 #[test]

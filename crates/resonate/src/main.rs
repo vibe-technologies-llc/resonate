@@ -270,7 +270,11 @@ fn run() -> Result<()> {
         Some(Sub::Suggest { save }) => {
             suggest::print(&open_library(&cli, &config)?, save.as_deref())
         }
-        Some(Sub::Share { file }) => share::print(&open_library(&cli, &config)?, file.as_deref()),
+        Some(Sub::Share { file }) => share::print(
+            &open_library(&cli, &config)?,
+            online::reference(&config).as_deref(),
+            file.as_deref(),
+        ),
         Some(Sub::Mcp { player }) => mcp::serve(&cli, &config, player.as_deref()),
         None => {
             let library = Arc::new(open_library(&cli, &config)?);
@@ -644,6 +648,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
         LookupOp::Submit => "a submission of what was heard",
+        LookupOp::StreamLink => "a look for where a track streams",
     }
 }
 

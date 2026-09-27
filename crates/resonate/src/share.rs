@@ -1,16 +1,24 @@
 use std::path::Path;
 
 use resonate_core::{FrameSpan, MediaLocation};
-use resonate_library::Library;
+use resonate_library::{Library, Reference};
 
 use crate::{Error, Result, from_here, reached};
 
-pub fn print(library: &Library, file: Option<&Path>) -> Result<()> {
+pub fn print(
+    library: &Library,
+    reference: Option<&dyn Reference>,
+    file: Option<&Path>,
+) -> Result<()> {
     let (location, span) = match file {
         Some(path) => (MediaLocation::local(from_here(path)), None),
         None => playing()?,
     };
-    let shared = held(library, &location, span)?;
+    let held = held(library, &location, span)?;
+    let shared = match reference {
+        Some(reference) => held.streamed_where_asked(reference),
+        None => held,
+    };
     let Some(link) = shared.written() else {
         return Err(Error::NothingToShare);
     };

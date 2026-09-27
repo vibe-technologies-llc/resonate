@@ -16,7 +16,8 @@ use resonate_library::{
     EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
     Library, Link, Mbid, Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference,
     Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions,
-    SortOrder, Sounded, Sources, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
+    SortOrder, Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict,
+    WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -272,6 +273,10 @@ impl Reference for Silent {
     }
 
     fn portrait(&self, _links: &[Link]) -> Result<Option<CoverArt>> {
+        Ok(None)
+    }
+
+    fn streamed_at(&self, _asked: &StreamAsked) -> Result<Option<Link>> {
         Ok(None)
     }
 }

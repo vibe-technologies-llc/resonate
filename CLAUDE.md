@@ -665,8 +665,10 @@ Invariants the layering exists to protect:
   `https:/…` and reads a `?` as its own query — and the URL comes from the
   `release_track_links` and `album_links` MusicBrainz enrichment already wrote, a recording's
   preferred over its release's and the providers weighed in a declared order so one track shares
-  the same way twice running. Where no service is linked it is the MusicBrainz recording, and
-  where there is neither there is nothing to copy.
+  the same way twice running. Where no service is linked the reference is asked where the track
+  streams — Deezer, by its ISRC and then by a search its title, artist and length must all agree
+  with — and what it finds goes to song.link like a held link; failing that it is the MusicBrainz
+  recording, and where there is neither there is nothing to copy.
 - **Every major listing has an order, and no index was added to give it one.** `SortOrder` grew a
   `Direction` beside it and `AlbumOrder` and `ArtistOrder` joined `PlaylistOrder` and `RowOrder`,
   so the tracks, albums and artists panes each sort and reverse where only the playlists pane

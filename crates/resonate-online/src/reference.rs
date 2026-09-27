@@ -5,6 +5,7 @@ use resonate_core::SourceId;
 use resonate_library::{
     ArtistMatch, ArtistProfile, ArtistRelease, GroupAsked, GroupMatch, Isrc, Link, Mbid, Recording,
     RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    StreamAsked,
 };
 
 use crate::{Client, Identity, apple, commons, coverart, deezer, musicbrainz, wikidata};
@@ -95,6 +96,10 @@ impl Reference for Online {
 
     fn group_cover(&self, group: &Mbid) -> resonate_library::Result<Option<CoverArt>> {
         Ok(coverart::group_cover(&self.client, group)?)
+    }
+
+    fn streamed_at(&self, asked: &StreamAsked) -> resonate_library::Result<Option<Link>> {
+        Ok(deezer::streamed(&self.client, asked)?)
     }
 
     fn portrait(&self, links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {

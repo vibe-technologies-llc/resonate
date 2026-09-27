@@ -1331,11 +1331,19 @@ impl LibraryModel {
 
     pub fn share(&mut self, track: TrackId, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+        let reference = self.reference.clone().filter(|_| self.online);
 
         self._shared = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
-                .spawn(async move { library.shareable(track) })
+                .spawn(async move {
+                    library.shareable(track).map(|shared| {
+                        shared.map(|shared| match &reference {
+                            Some(reference) => shared.streamed_where_asked(reference.as_ref()),
+                            None => shared,
+                        })
+                    })
+                })
                 .await;
 
             let outcome = this.update(cx, |_, cx| {
@@ -3471,6 +3479,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
         LookupOp::Submit => "a submission of what was heard",
+        LookupOp::StreamLink => "a look for where a track streams",
     }
 }
 

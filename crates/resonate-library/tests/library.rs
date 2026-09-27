@@ -33,9 +33,9 @@ use resonate_library::{
     Pruned, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
     Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
     RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, Suggestion, TagField,
-    TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording,
-    Written,
+    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TagField, TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -7626,6 +7626,7 @@ enum Called {
     Cover(Mbid, Option<Mbid>),
     GroupCover(Mbid),
     Portrait(String),
+    StreamedAt(StreamAsked),
 }
 
 impl Called {
@@ -7644,6 +7645,7 @@ impl Called {
             Self::Cover(..) => LookupOp::Cover,
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
+            Self::StreamedAt(_) => LookupOp::StreamLink,
         }
     }
 }
@@ -7673,6 +7675,7 @@ struct Canned {
     covers: Vec<(Mbid, CoverArt)>,
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
+    streamed: Option<Link>,
 }
 
 struct Gate {
@@ -7900,6 +7903,11 @@ impl Reference for Fake {
         }
 
         Ok(None)
+    }
+
+    fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>> {
+        self.note(Called::StreamedAt(asked.clone()))?;
+        Ok(self.canned.streamed.clone())
     }
 }
 
@@ -14464,6 +14472,104 @@ fn a_share_of_a_track_nothing_knows_about_has_no_link() -> Result<()> {
     assert_eq!(shared.recording, None);
     assert!(shared.links.is_empty());
     assert_eq!(shared.written(), None);
+    Ok(())
+}
+
+const A_DEEZER_LINK: &str = "https://www.deezer.com/track/677241";
+
+fn a_track_with_no_service_linked(tree: &Tree) -> Result<(Library, Track)> {
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "The Orbiters")
+            .text(ISRC, "GBAYE7100195")
+            .identified(MUSICBRAINZ, RECORDING)
+            .build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(tree))?;
+    let track = all(&library)?.remove(0);
+
+    Ok((library, track))
+}
+
+#[test]
+fn a_share_with_no_service_linked_asks_where_the_track_streams_and_hands_that_to_song_link()
+-> Result<()> {
+    let tree = Tree::new();
+    let (library, track) = a_track_with_no_service_linked(&tree)?;
+    let fake = Fake::new(Canned {
+        streamed: Some(Link {
+            relation: Relation::Streaming,
+            service: Service::Deezer,
+            url: A_DEEZER_LINK.to_owned(),
+        }),
+        ..Canned::default()
+    });
+
+    let shared = library
+        .shareable(track.id)?
+        .expect("the catalog holds the track it just scanned")
+        .streamed_where_asked(&fake);
+
+    let calls = fake.calls();
+    let [Called::StreamedAt(asked)] = calls.as_slice() else {
+        panic!("the share asked {calls:?}");
+    };
+    assert_eq!(asked.title, "Echoes");
+    assert_eq!(asked.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(asked.isrc.as_ref().map(Isrc::as_str), Some("GBAYE7100195"));
+    assert!(asked.length.is_some(), "the share asked with no length");
+    assert_eq!(
+        shared.written().as_deref(),
+        Some("https://song.link/https%3A%2F%2Fwww.deezer.com%2Ftrack%2F677241")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_share_already_linked_to_a_service_asks_nothing() -> Result<()> {
+    let tree = Tree::new();
+    let (library, track) = a_track_with_no_service_linked(&tree)?;
+    let fake = Fake::new(Canned::default());
+    let mut shared = library
+        .shareable(track.id)?
+        .expect("the catalog holds the track it just scanned");
+    shared
+        .links
+        .push(Link::new("streaming", A_STREAMING_LINK.to_owned()));
+
+    let shared = shared.streamed_where_asked(&fake);
+
+    assert!(
+        fake.calls().is_empty(),
+        "the share asked {:?}",
+        fake.calls()
+    );
+    assert_eq!(
+        shared.written().as_deref(),
+        Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c4d5e")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_share_the_service_could_not_answer_for_falls_back_to_musicbrainz() -> Result<()> {
+    let tree = Tree::new();
+    let (library, track) = a_track_with_no_service_linked(&tree)?;
+    let fake = Fake::new(Canned::default()).faulting(LookupOp::StreamLink, 0, Fault::Unreachable);
+
+    let shared = library
+        .shareable(track.id)?
+        .expect("the catalog holds the track it just scanned")
+        .streamed_where_asked(&fake);
+
+    assert_eq!(fake.called(LookupOp::StreamLink), 1);
+    assert_eq!(
+        shared.written().as_deref(),
+        Some("https://musicbrainz.org/recording/b1a9c0de-1111-4222-8333-444455556666")
+    );
     Ok(())
 }
 

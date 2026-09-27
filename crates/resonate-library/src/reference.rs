@@ -139,6 +139,14 @@ pub struct RecordingAsked {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StreamAsked {
+    pub title: String,
+    pub artist: Option<String>,
+    pub isrc: Option<Isrc>,
+    pub length: Option<Duration>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordingMatch {
     pub recording: Mbid,
     pub score: u8,
@@ -321,6 +329,7 @@ pub enum LookupOp {
     Correction,
     Recognise,
     Submit,
+    StreamLink,
 }
 
 pub trait Reference: Send + Sync {
@@ -353,6 +362,8 @@ pub trait Reference: Send + Sync {
     fn cover(&self, release: &Mbid, group: Option<&Mbid>) -> Result<Option<CoverArt>>;
 
     fn portrait(&self, links: &[Link]) -> Result<Option<CoverArt>>;
+
+    fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>>;
 }
 
 #[cfg(test)]

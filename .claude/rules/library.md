@@ -179,7 +179,14 @@ through `Player::media` like any other unscanned row.
   The candidates are the `Relation`s `RELATIONS_SONG_LINK_TAKES` names crossed with
   `SERVICES_SONG_LINK_RESOLVES`, a recording's own links ahead of its release's and the
   providers weighed in the order they are declared, so one track shares identically twice
-  running. Failing that it is the MusicBrainz recording, and failing that there is nothing to
+  running. **Where the catalog holds nothing song.link opens, the reference is asked where the
+  track streams**: `Shared::streamed_where_asked` hands `Reference::streamed_at` a `StreamAsked` —
+  the title, the artist, the ISRC and the length, which `Shared` now carries — and puts what it
+  answers ahead of the rest, so it is written like any held link; a track already linked asks
+  nothing, and a reference that fails is a warning and the share goes on as it would have. The
+  window's *Share* asks only while `online` is on and `resonate share` only where
+  `online::reference` answers, and what is found is not stored, a share being a gesture made
+  once. Failing all that it is the MusicBrainz recording, and failing that there is nothing to
   copy. It is not in the window because `resonate share` and anything else that shares must say
   the same thing.
 - **Every order a pane offers is read off an index, and what the planner knows about the table is

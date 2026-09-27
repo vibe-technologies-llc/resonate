@@ -1,13 +1,21 @@
+use std::time::Duration;
+
 use resonate_codec::{CoverArt, ImageFormat};
-use resonate_library::LookupOp;
+use resonate_library::{Link, LookupOp, Relation, Service, StreamAsked, folded_letters};
 use serde::Deserialize;
 
 use crate::{
     Client, Host, Result,
     client::{LARGEST_PICTURE, passed_over_when_refused},
+    query::Params,
 };
 
 const ARTIST: &str = "/artist/";
+const TRACK_BY_ISRC: &str = "/track/isrc:";
+const SEARCH: &str = "/search";
+const SEARCHED_AT_MOST: &str = "10";
+const TRACK_PAGES: &str = "https://www.deezer.com/";
+const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
 const SECURE: &str = "https://";
 const PICTURES_SERVED_BY: &str = ".dzcdn.net";
 const NOTHING_HASHED: &str = "/d41d8cd98f00b204e9800998ecf8427e/";
@@ -43,6 +51,49 @@ pub(crate) fn portrait(client: &Client, url: &str) -> Result<Option<CoverArt>> {
     }))
 }
 
+pub(crate) fn streamed(client: &Client, asked: &StreamAsked) -> Result<Option<Link>> {
+    if let Some(isrc) = &asked.isrc {
+        let by_code = format!("{TRACK_BY_ISRC}{}", isrc.as_str());
+        let held = passed_over_when_refused(client.json::<TrackDoc>(
+            Host::Deezer,
+            LookupOp::StreamLink,
+            &by_code,
+        ))?;
+        if let Some(link) = held.and_then(TrackDoc::linked) {
+            return Ok(Some(link));
+        }
+    }
+
+    let Some(artist) = asked
+        .artist
+        .as_deref()
+        .filter(|artist| !artist.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let words = format!("{artist} {}", asked.title);
+    let searched = format!(
+        "{SEARCH}{}",
+        Params::new()
+            .with("q", &words)
+            .with("limit", SEARCHED_AT_MOST)
+            .finish()
+    );
+    let found = passed_over_when_refused(client.json::<Found>(
+        Host::Deezer,
+        LookupOp::StreamLink,
+        &searched,
+    ))?;
+
+    Ok(found.and_then(|found| {
+        found
+            .data
+            .into_iter()
+            .find(|track| track.answers(asked))
+            .and_then(TrackDoc::linked)
+    }))
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -54,6 +105,66 @@ pub(crate) fn artist(url: &str) -> Option<u64> {
     let mut segments = path.split(['/', '?', '#']);
     segments.find(|segment| *segment == "artist")?;
     segments.next()?.parse().ok()
+}
+
+#[derive(Debug, Deserialize)]
+struct Found {
+    #[serde(default)]
+    data: Vec<TrackDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TrackDoc {
+    link: Option<String>,
+    title: Option<String>,
+    title_short: Option<String>,
+    duration: Option<u64>,
+    artist: Option<Credited>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Credited {
+    name: String,
+}
+
+impl TrackDoc {
+    fn linked(self) -> Option<Link> {
+        let url = self.link.filter(|url| url.starts_with(TRACK_PAGES))?;
+
+        Some(Link {
+            relation: Relation::Streaming,
+            service: Service::Deezer,
+            url,
+        })
+    }
+
+    fn answers(&self, asked: &StreamAsked) -> bool {
+        let title = stripped(&asked.title);
+        let titled = [&self.title, &self.title_short]
+            .into_iter()
+            .flatten()
+            .any(|named| stripped(named) == title);
+        let credited = self
+            .artist
+            .as_ref()
+            .zip(asked.artist.as_deref())
+            .is_some_and(|(credited, artist)| stripped(&credited.name) == stripped(artist));
+        let as_long = match (self.duration, asked.length) {
+            (Some(seconds), Some(length)) if seconds > 0 => {
+                Duration::from_secs(seconds).abs_diff(length) <= LENGTHS_AGREE_WITHIN
+            }
+            _ => true,
+        };
+
+        !title.is_empty() && titled && credited && as_long
+    }
+}
+
+fn stripped(name: &str) -> String {
+    folded_letters(name)
+        .chars()
+        .filter(|glyph| glyph.is_alphanumeric())
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +193,96 @@ mod tests {
 
     fn read(document: &str) -> ArtistDoc {
         serde_json::from_str(document).expect("the captured answer reads back")
+    }
+
+    fn echoes(length: Option<u64>) -> StreamAsked {
+        StreamAsked {
+            title: "Echoes".to_owned(),
+            artist: Some("Pink Floyd".to_owned()),
+            isrc: None,
+            length: length.map(Duration::from_secs),
+        }
+    }
+
+    fn searched() -> Found {
+        serde_json::from_str(include_str!("../tests/fixtures/deezer_search.json"))
+            .expect("the captured search reads back")
+    }
+
+    fn first_answering(asked: &StreamAsked) -> Option<Link> {
+        searched()
+            .data
+            .into_iter()
+            .find(|track| track.answers(asked))
+            .and_then(TrackDoc::linked)
+    }
+
+    #[test]
+    fn a_track_deezer_holds_under_an_isrc_is_the_track_page_it_links() {
+        let held: TrackDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_track_isrc.json"))
+                .expect("the captured answer reads back");
+
+        assert_eq!(
+            held.linked(),
+            Some(Link {
+                relation: Relation::Streaming,
+                service: Service::Deezer,
+                url: "https://www.deezer.com/track/677241".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn an_isrc_deezer_does_not_hold_links_nothing() {
+        let held: TrackDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_no_data.json"))
+                .expect("the captured answer reads back");
+
+        assert_eq!(held.linked(), None);
+    }
+
+    #[test]
+    fn a_search_is_taken_only_where_the_title_the_artist_and_the_length_agree() {
+        assert_eq!(
+            first_answering(&echoes(Some(1_413))).map(|link| link.url),
+            Some("https://www.deezer.com/track/116913994".to_owned())
+        );
+        assert_eq!(
+            first_answering(&echoes(None)).map(|link| link.url),
+            Some("https://www.deezer.com/track/116913994".to_owned())
+        );
+        assert_eq!(first_answering(&echoes(Some(600))), None);
+
+        let elsewhere = StreamAsked {
+            artist: Some("The Orbiters".to_owned()),
+            ..echoes(None)
+        };
+        assert_eq!(first_answering(&elsewhere), None);
+    }
+
+    #[test]
+    fn a_title_is_weighed_whatever_its_case_marks_and_punctuation() {
+        let marked = StreamAsked {
+            title: "ÉCHOES!".to_owned(),
+            artist: Some("pink floyd".to_owned()),
+            ..echoes(Some(1_412))
+        };
+
+        assert!(first_answering(&marked).is_some());
+    }
+
+    #[test]
+    fn a_link_off_deezers_own_pages_is_not_taken() {
+        let elsewhere = TrackDoc {
+            link: Some("https://example.com/track/1".to_owned()),
+            title: Some("Echoes".to_owned()),
+            title_short: None,
+            duration: None,
+            artist: None,
+        };
+
+        assert_eq!(elsewhere.linked(), None);
     }
 
     #[test]

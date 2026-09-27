@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use resonate_core::TrackId;
 use rusqlite::{Connection, OptionalExtension as _, params};
 
-use crate::{Error, Link, Mbid, Relation, Result, Service, StoreOp, db::Inner, store};
+use crate::{
+    Error, Isrc, Link, Mbid, Reference, Relation, Result, Service, StoreOp, StreamAsked, db::Inner,
+    store,
+};
 
 const SONG_LINK: &str = "https://song.link/";
 const MUSICBRAINZ_RECORDING: &str = "https://musicbrainz.org/recording/";
@@ -28,7 +33,8 @@ const SERVICES_SONG_LINK_RESOLVES: [Service; 10] = [
     Service::Qobuz,
 ];
 
-const WHAT_A_SHARE_SAYS: &str = "SELECT t.title, t.artist, t.mbid, a.title, a.year
+const WHAT_A_SHARE_SAYS: &str = "SELECT t.title, t.artist, t.mbid, a.title, a.year,
+            t.isrc, t.duration, t.sample_rate
        FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
       WHERE t.id = ?1";
 
@@ -49,20 +55,58 @@ pub struct Shared {
     pub album: Option<String>,
     pub year: Option<i32>,
     pub recording: Option<Mbid>,
+    pub isrc: Option<Isrc>,
+    pub length: Option<Duration>,
     pub links: Vec<Link>,
 }
 
 impl Shared {
     pub fn written(&self) -> Option<String> {
-        self.links
-            .iter()
-            .find(|link| resolved_by_song_link(link).is_some())
+        self.through_song_link()
             .map(|link| format!("{SONG_LINK}{}", escaped_for_a_path(&link.url)))
             .or_else(|| {
                 self.recording
                     .as_ref()
                     .map(|recording| format!("{MUSICBRAINZ_RECORDING}{recording}"))
             })
+    }
+
+    pub fn goes_through_song_link(&self) -> bool {
+        self.through_song_link().is_some()
+    }
+
+    pub fn asked(&self) -> StreamAsked {
+        StreamAsked {
+            title: self.title.clone(),
+            artist: self.artist.clone(),
+            isrc: self.isrc.clone(),
+            length: self.length,
+        }
+    }
+
+    pub fn streamed_where_asked(mut self, reference: &dyn Reference) -> Self {
+        if self.goes_through_song_link() {
+            return self;
+        }
+        match reference.streamed_at(&self.asked()) {
+            Ok(Some(found)) if resolved_by_song_link(&found).is_some() => {
+                self.links.insert(0, found);
+            }
+            Ok(_) => tracing::debug!(
+                title = self.title,
+                "no service song.link opens holds the shared track"
+            ),
+            Err(error) => {
+                tracing::warn!(%error, "the service a share would open could not be asked");
+            }
+        }
+        self
+    }
+
+    fn through_song_link(&self) -> Option<&Link> {
+        self.links
+            .iter()
+            .find(|link| resolved_by_song_link(link).is_some())
     }
 }
 
@@ -95,6 +139,9 @@ pub(crate) fn shareable(inner: &Inner, track: TrackId) -> Result<Option<Shared>>
                     recording: row.get(2)?,
                     album: row.get(3)?,
                     year: row.get(4)?,
+                    isrc: row.get(5)?,
+                    frames: row.get(6)?,
+                    rate: row.get(7)?,
                 })
             })
             .optional()
@@ -117,6 +164,8 @@ pub(crate) fn shareable(inner: &Inner, track: TrackId) -> Result<Option<Shared>>
             album: row.album,
             year: row.year.and_then(|year| i32::try_from(year).ok()),
             recording: row.recording.as_deref().map(Mbid::new).transpose()?,
+            isrc: store::isrc_in(row.isrc.as_deref()),
+            length: length_of(row.frames, row.rate),
             links,
         }))
     })
@@ -128,6 +177,16 @@ struct Named {
     recording: Option<String>,
     album: Option<String>,
     year: Option<i64>,
+    isrc: Option<String>,
+    frames: Option<i64>,
+    rate: i64,
+}
+
+fn length_of(frames: Option<i64>, rate: i64) -> Option<Duration> {
+    let frames = u64::try_from(frames?).ok()?;
+    let rate = u64::try_from(rate).ok().filter(|rate| *rate > 0)?;
+
+    Some(Duration::from_secs_f64(frames as f64 / rate as f64))
 }
 
 fn linked(connection: &Connection, sql: &str, track: i64) -> Result<Vec<Link>> {
@@ -186,6 +245,8 @@ mod tests {
             album: Some("Meddle".to_owned()),
             year: Some(1971),
             recording: None,
+            isrc: None,
+            length: None,
             links: Vec::new(),
         }
     }
