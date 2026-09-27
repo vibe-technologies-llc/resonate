@@ -239,7 +239,7 @@ pub(crate) fn coded_info(
         duration: playable.and_then(FrameSpan::frames).or_else(|| {
             prescan
                 .segment
-                .flac_frames_of(track.id)
+                .counted_frames_of(track.id)
                 .or_else(|| duration(track, spec.rate))
                 .filter(|declared| *declared != Frames::ZERO)
                 .or_else(|| prescan.boxes.fragmented_length(spec.rate))

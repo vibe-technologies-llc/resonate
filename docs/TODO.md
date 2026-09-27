@@ -31,8 +31,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A source that cannot seek is prescanned only through its first `MAX_PRESCAN_HEAD` bytes, so over
   a pipe an `.m4a` with a trailing `moov` plays its priming, a WAV with `LIST INFO` after `data`
   loses those tags, and an Opus or FLAC track in Matroska falls back to millisecond timestamps
-- A Matroska `Duration` longer than the file's clusters is caught only for Opus and FLAC; Vorbis
-  would need its block sizes out of the setup header
 - A file embedding a huge picture still costs one materialisation, because symphonia reads it into
   a buffer of its own before `probe_cover_art` can weigh it
 - Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader

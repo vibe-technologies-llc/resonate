@@ -18,6 +18,7 @@ mod sylt;
 mod tags;
 mod text;
 mod timeline;
+mod vorbis;
 mod writing;
 
 pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};

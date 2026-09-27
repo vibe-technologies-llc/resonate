@@ -125,11 +125,24 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   declaration wherever the clusters stay within it, because the declaration is exact and the count
   is not, and prefers the count only where blocks exist past the declared end — the one case the
   writer is provably wrong. A declaration that is too *long* is not detectable this way and is
-  left alone, except for Opus, whose packets are counted exactly — see below — and FLAC, whose
-  every frame header names its block size: the walk counts the first track whose `CodecID` is
-  `A_OPUS` or `A_FLAC`, and `Segment::flac_frames_of` answers the FLAC count as the length —
-  ahead of any declaration, because it is exact — only where that track is the one symphonia
-  decodes, its `Track::id` being the Matroska track number. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
+  left alone, except for Opus, whose packets are counted exactly — see below — FLAC, whose
+  every frame header names its block size, and Vorbis: the walk counts the first track whose
+  `CodecID` is `A_OPUS`, `A_FLAC` or `A_VORBIS`, and `Segment::counted_frames_of` answers the
+  FLAC or Vorbis count as the length — ahead of any declaration, because it is exact — only
+  where that track is the one symphonia decodes, its `Track::id` being the Matroska track number.
+  **A Vorbis packet's length is named by the packet before it.** `vorbis::Windows` reads the two
+  block sizes out of the identification header in the track's `CodecPrivate` — Xiph-laced, three
+  headers — and which modes are long out of the setup header, walked *backwards* from its
+  framing bit the way ffmpeg's `vorbis_parser` does, because the modes are the last thing
+  written and everything before them is codebooks nobody wants to decode here: each candidate
+  mode is forty bits whose window and transform types must be zero and whose mapping must be
+  under 64, and the mode count is the last run whose six-bit count agrees with it. A packet's
+  mode is the bits after its type bit, and it renders a quarter of the window before it and a
+  quarter of its own; the first renders half its own, which is what symphonia answers with
+  gapless trimming off, as this build asks, so the count is what the player decodes rather than
+  what libvorbis would. The previous window rides in the tally from block to block and from lace
+  to lace. `a_vorbis_in_matroska_is_as_long_as_its_packets_whatever_the_segment_declares`
+  overstates a file's `Duration` threefold and holds the length to what the packets decode to. The walk is what `Prescan::buffered` paid for: over an hour-long `.mka` of about
   10^5 blocks it costs 440 ms a probe read four bytes at a time and 15 ms read through the window,
   so the case the writer is provably wrong stays caught for about a millisecond on a track-length
   file rather than being traded away for speed.
