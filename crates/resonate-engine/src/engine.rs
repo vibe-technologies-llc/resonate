@@ -924,13 +924,11 @@ impl Engine {
             }
             Command::SetBitPerfect(prefer) => {
                 self.config.prefer_bit_perfect = prefer;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.reopen_where_the_stream_moves()
             }
             Command::SetDop(marked) => {
                 self.config.dop = marked;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.reopen_where_the_stream_moves()
             }
             Command::SetDeviceVolume(handed) => {
                 self.config.device_volume = handed;
@@ -948,8 +946,7 @@ impl Engine {
             }
             Command::SetBuffer(buffer) => {
                 self.config.buffer = buffer;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.reopen_where_the_stream_moves()
             }
             Command::SleepUntil(until) => {
                 self.sleep = until.map(Sleeping::set);
@@ -1260,6 +1257,35 @@ impl Engine {
         self.renegotiations = 0;
         self.emit(Event::TrackStarted(item.id));
         Ok(())
+    }
+
+    fn reopen_where_the_stream_moves(&mut self) -> Result<()> {
+        if self.keeps_its_stream() {
+            return Ok(());
+        }
+        let at = self.position();
+        self.rebind(Some(at), None)
+    }
+
+    fn keeps_its_stream(&self) -> bool {
+        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
+            return false;
+        };
+        if output.plan.stream != output.status.negotiated {
+            return false;
+        }
+        let Some(sink) = self.bound_sink() else {
+            return false;
+        };
+        let wanted = plan_output(track.decoded(), &sink, &self.config, track.replay_gain);
+        let capacity = ring_capacity(
+            self.config.buffer,
+            wanted.stream,
+            output.chain.max_output_frames(),
+        );
+        wanted.stream == output.plan.stream
+            && wanted.packing == output.plan.packing
+            && capacity.get() as usize == output.capacity
     }
 
     fn rebind(&mut self, at: Option<Frames>, target: Option<StreamSpec>) -> Result<()> {

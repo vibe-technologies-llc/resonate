@@ -1964,6 +1964,38 @@ fn following_the_graph_rate_resamples_where_matching_the_file_would_not() -> Res
 }
 
 #[test]
+fn a_setting_that_leaves_the_stream_as_it_was_does_not_reopen_it() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetDop(!config().dop))?;
+    answered(&player, Command::SetBitPerfect(false))?;
+    answered(&player, Command::SetBuffer(Duration::from_millis(1)))?;
+    answered(&player, Command::SetBuffer(Duration::from_millis(2)))?;
+
+    assert_eq!(
+        graph.lock().opens,
+        1,
+        "a setting that asked for the same stream reopened it"
+    );
+    assert!(playing(&player));
+    assert_eq!(
+        player.state().output.map(|output| output.mode),
+        Some(OutputMode::BitPerfect)
+    );
+    Ok(())
+}
+
+#[test]
 fn leaving_the_graph_rate_to_the_daemon_stops_the_stream_asking_for_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

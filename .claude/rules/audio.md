@@ -609,6 +609,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   restoration switched on or off under a resampler still rebinds, because it stands in front of it.
   A volume or ReplayGain change under a resampler never does, because a
   converting plan always carries a gain stage — see DSP — and is retuned rather than reshaped.
+- **A setting that asks for the stream already open does not reopen it.** The rate policy, DoP
+  and the buffer each used to rebind, so switching DoP on under a PCM file, following the graph's
+  rate where the file already runs at it, or nudging a buffer the ring's floor absorbs cost the
+  gap a sink switch does for nothing. `Engine::keeps_its_stream` asks `plan_output` what the bound
+  sink would be opened at now and weighs it against the open plan's stream and packing and
+  against `ring_capacity` for the depth, and `reopen_where_the_stream_moves` rebinds only where
+  one of the three moved. The graph rate is not weighed that way: `node.force-rate` pins the
+  graph for as long as the stream stands, whatever rate it is at, so switching it still reopens.
+  `a_setting_that_leaves_the_stream_as_it_was_does_not_reopen_it` is the claim.
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the spec the graph settled on, and `downgrade` hands it to
   `plan_for` as the target, which writes it into `OutputPlan::stream` whole — the rate, the format

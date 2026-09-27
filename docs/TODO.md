@@ -6,8 +6,9 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Playback and output
 - A device with no volume of its own is still turned by the stream, so anything under 100 % leaves
   bit-perfect there
-- Changing the rate policy, the graph rate, the buffer or DoP mid-track reopens the stream and
-  costs the gap a sink switch does
+- Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and
+  so does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
+  ring's depth
 - A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
   with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
   of a file that is itself over full scale reaches the device as the file has it
