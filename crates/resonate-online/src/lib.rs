@@ -12,7 +12,10 @@ mod lrclib;
 mod musicbrainz;
 mod query;
 mod reference;
+mod shared;
 mod shazam;
+mod soundcloud;
+mod spotify;
 mod wikidata;
 
 pub use crate::{

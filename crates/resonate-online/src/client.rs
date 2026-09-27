@@ -206,6 +206,10 @@ impl Host {
             | Self::AppleMusic
             | Self::Deezer
             | Self::DeezerPictures
+            | Self::Spotify
+            | Self::SpotifyPictures
+            | Self::SoundCloud
+            | Self::SoundCloudPictures
             | Self::CoverArtArchive
             | Self::Commons
             | Self::Wikidata

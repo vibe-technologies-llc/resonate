@@ -8,7 +8,9 @@ use resonate_library::{
     StreamAsked,
 };
 
-use crate::{Client, Identity, apple, commons, coverart, deezer, musicbrainz, wikidata};
+use crate::{
+    Client, Identity, apple, commons, coverart, deezer, musicbrainz, soundcloud, spotify, wikidata,
+};
 
 const MUSICBRAINZ: &str = "musicbrainz";
 
@@ -124,8 +126,20 @@ impl Reference for Online {
             }
         }
 
+        for url in resonate_library::spotify_urls(links) {
+            if let Some(held) = spotify::portrait(&self.client, url)? {
+                return Ok(Some(held));
+            }
+        }
+
         for url in resonate_library::deezer_urls(links) {
             if let Some(held) = deezer::portrait(&self.client, url)? {
+                return Ok(Some(held));
+            }
+        }
+
+        for url in resonate_library::soundcloud_urls(links) {
+            if let Some(held) = soundcloud::portrait(&self.client, url)? {
                 return Ok(Some(held));
             }
         }

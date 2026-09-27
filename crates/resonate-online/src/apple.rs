@@ -4,12 +4,12 @@ use resonate_library::LookupOp;
 use crate::{
     Client, Host, Result,
     client::{LARGEST_DOCUMENT, LARGEST_PICTURE, passed_over_when_refused},
+    shared::shared_picture,
 };
 
 const SECURE: &str = "https://";
 const PICTURES_SERVED_BY: &str = ".mzstatic.com";
 const THUMBNAIL: &str = "/image/thumb/";
-const SHARED_AS: &str = "property=\"og:image\" content=\"";
 const SQUARE: &str = "600x600cc.jpg";
 const ARTIST_BUCKETS: [&str; 2] = ["AMCArtistImages", "Features"];
 const PRESS_PICTURE: &str = "pr_source";
@@ -72,12 +72,6 @@ pub(crate) fn artist_page(url: &str) -> Option<String> {
     }
 
     Some(format!("{}/{store}/artist/{id}", Host::AppleMusic.base()))
-}
-
-fn shared_picture(page: &str) -> Option<&str> {
-    let from = page.find(SHARED_AS)? + SHARED_AS.len();
-    let rest = &page[from..];
-    Some(&rest[..rest.find('"')?])
 }
 
 fn squared(picture: &str) -> Option<String> {

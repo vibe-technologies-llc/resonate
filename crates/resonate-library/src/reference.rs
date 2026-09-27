@@ -278,6 +278,14 @@ pub fn deezer_urls(links: &[Link]) -> impl Iterator<Item = &str> {
     urls_on(links, Service::Deezer)
 }
 
+pub fn spotify_urls(links: &[Link]) -> impl Iterator<Item = &str> {
+    urls_on(links, Service::Spotify)
+}
+
+pub fn soundcloud_urls(links: &[Link]) -> impl Iterator<Item = &str> {
+    urls_on(links, Service::Soundcloud)
+}
+
 fn urls_on(links: &[Link], service: Service) -> impl Iterator<Item = &str> {
     links
         .iter()
@@ -290,6 +298,8 @@ pub fn may_be_pictured(links: &[Link]) -> bool {
         || wikidata_urls(links).next().is_some()
         || apple_music_urls(links).next().is_some()
         || deezer_urls(links).next().is_some()
+        || spotify_urls(links).next().is_some()
+        || soundcloud_urls(links).next().is_some()
 }
 
 fn urls_of(links: &[Link], relation: Relation) -> impl Iterator<Item = &str> {

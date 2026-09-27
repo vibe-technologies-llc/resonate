@@ -7,8 +7,8 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    Error, Isrc, LookupOp, Mbid, Reference, ReleaseAsked, Scrobble, Scrobbler, Service,
-    StreamAsked, Wording,
+    Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble, Scrobbler,
+    Service, StreamAsked, Wording,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -173,6 +173,30 @@ fn the_reference_answers_pink_floyd_with_a_profile_and_a_portrait() {
         .find_artist("Pink Floyd")
         .expect("musicbrainz answered");
     assert!(found.iter().any(|found| found.mbid.as_str() == PINK_FLOYD));
+}
+
+#[test]
+fn an_artist_linked_only_to_spotify_or_soundcloud_is_pictured_by_the_page_it_is_linked_to() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    for url in [
+        "https://open.spotify.com/artist/47RTV4mRN9dDNbqxB1IMXF",
+        "https://soundcloud.com/wierza",
+    ] {
+        let links = [Link {
+            relation: Relation::Other,
+            service: Service::of_url(url),
+            url: url.to_owned(),
+        }];
+        let portrait = online
+            .portrait(&links)
+            .expect("the page answered")
+            .unwrap_or_else(|| panic!("{url} named no picture of the artist"));
+        assert!(portrait.bytes.len() > 1024);
+    }
 }
 
 #[test]

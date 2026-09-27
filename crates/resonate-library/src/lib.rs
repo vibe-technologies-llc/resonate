@@ -94,7 +94,7 @@ pub use crate::{
         GroupRelease, Issued, LifeSpan, LookupOp, Medium, Recording, RecordingAsked,
         RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
         ReleaseMatch, ReleaseTrack, StreamAsked, Wording, apple_music_urls, deezer_urls,
-        may_be_pictured, portrait_urls, wikidata_urls,
+        may_be_pictured, portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,

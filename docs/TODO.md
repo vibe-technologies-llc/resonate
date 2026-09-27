@@ -84,8 +84,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or recording id
 - A stem-named row renamed and edited together is asked again from its new name, overwriting what
   the last lookup wrote
-- Half the artists of a real library have no portrait: nothing falls back to the release group's
-  cover or reads the page a `wikipedia` relation names
+- An artist linked to none of Commons, Wikidata, Apple Music, Spotify, Deezer or SoundCloud has no
+  portrait: nothing reads the page a `wikipedia` relation names
 - The discography asks for albums and EPs alone, so singles are never listed as not held, and past
   `GROUPS_AT_MOST` the rest are passed over with only a log line
 - A group's other pressings are fetched and dropped; nothing lists a release's editions

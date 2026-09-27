@@ -342,6 +342,28 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   now, which is why the search is the plain words. `deezer_track_isrc.json` and
   `deezer_search.json` are the fixtures, and the live test asks for both routes.
 
+## Spotify and SoundCloud
+
+- **An artist no encyclopaedia pictures is pictured by the page it keeps on a service.**
+  Composers and small acts MusicBrainz links to no Commons file, no `P18` and no Apple Music page
+  are often linked to Spotify, SoundCloud or both, and each public artist page shares the picture
+  the artist chose as its `og:image`. `Reference::portrait` walks them after Apple Music —
+  Spotify before Deezer and SoundCloud last — through `shared.rs`, which is the `og:image` cutter
+  `apple.rs` used to keep to itself, the page read under `LARGEST_DOCUMENT` and the picture under
+  `LARGEST_PICTURE`, sniffed as every picture is. `spotify::artist` reads the twenty-two letter id
+  out of an `open.spotify.com/[intl-xx/]artist/<id>` link and asks `Host::Spotify` for that page,
+  and the picture is fetched from `Host::SpotifyPictures` only where it is an *artist* image —
+  `i.scdn.co/image/ab676161…`, where an album's sleeve is `ab67616d…` — the rule `squared` keeps
+  for Apple. `soundcloud::user` takes a `soundcloud.com/<account>` link with nothing under it, and
+  the picture is taken only where it is an `avatars-…` file on `sndcdn.com`, which is what an
+  account's own upload is called; the default avatar lives elsewhere and is a miss. Both hosts are
+  paced at `OTHERS_INTERVAL`, a refusal under 500 is a miss the walk goes past, and a link on
+  either counts towards `may_be_pictured`, so an artist enriched before this is asked again by
+  `look_again_for_portraits`. Measured on this library it took the artists MusicBrainz had
+  identified and none of the other sources pictured from seven to three.
+  `an_artist_linked_only_to_spotify_or_soundcloud_is_pictured_by_the_page_it_is_linked_to` is
+  the live test.
+
 ## ListenBrainz
 
 - **What was heard is posted as JSON under the listener's token, and nothing else about them.**

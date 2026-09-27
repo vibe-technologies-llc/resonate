@@ -21,6 +21,10 @@ pub enum Host {
     Audd,
     Deezer,
     DeezerPictures,
+    Spotify,
+    SpotifyPictures,
+    SoundCloud,
+    SoundCloudPictures,
     ListenBrainz,
 }
 
@@ -40,6 +44,10 @@ impl Host {
             Self::Audd => "https://api.audd.io",
             Self::Deezer => "https://api.deezer.com",
             Self::DeezerPictures => "https://cdn-images.dzcdn.net",
+            Self::Spotify => "https://open.spotify.com",
+            Self::SpotifyPictures => "https://i.scdn.co",
+            Self::SoundCloud => "https://soundcloud.com",
+            Self::SoundCloudPictures => "https://i1.sndcdn.com",
             Self::ListenBrainz => "https://api.listenbrainz.org",
         }
     }
