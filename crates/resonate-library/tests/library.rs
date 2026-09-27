@@ -16253,3 +16253,223 @@ fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
     assert_eq!(all(&library)?.len(), 2);
     Ok(())
 }
+
+#[test]
+fn a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name() -> Result<()> {
+    let (tree, library) = scanned_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let evening =
+        library.start_playlist("Evening", &[file("b.wav"), file("a.wav"), file("b.wav")])?;
+
+    let copy = library.duplicate_playlist(evening)?;
+    let second = library.duplicate_playlist(evening)?;
+
+    let copied = library.playlist(copy)?.expect("the copy is there");
+    assert_eq!(copied.name, "Evening (copy)");
+    assert_eq!(
+        library
+            .playlist(second)?
+            .expect("the second copy is there")
+            .name,
+        "Evening (copy 2)"
+    );
+    assert_eq!(
+        library.playlist_cuts(copy)?,
+        library.playlist_cuts(evening)?,
+        "the copy holds other rows than the source, or in another order"
+    );
+    assert_eq!(
+        library
+            .playlist(evening)?
+            .expect("the source is there")
+            .entries,
+        3,
+        "duplicating took rows out of the source"
+    );
+
+    library
+        .undo()?
+        .expect("the second copy is there to take back");
+    assert!(
+        library.playlist(second)?.is_none(),
+        "undo left the copy standing"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had() -> Result<()> {
+    let (tree, library) = scanned_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let kept = Kept {
+        order: RowOrder::Title,
+        reading: Direction::Ascending,
+    };
+    let evening = library.start_playlist("Evening", &[file("a.wav"), file("c.wav")])?;
+    library.keep_playlist_in_order(evening, Some(kept))?;
+    let wanted = SavedQuery {
+        text: Some("dogs".to_owned()),
+        sort: SortOrder::Title,
+        reading: SortOrder::Title.reads(),
+        limit: Some(10),
+    };
+    let dogs = library.save_query("Dogs", &wanted)?;
+
+    let kept_copy = library.duplicate_playlist(evening)?;
+    let query_copy = library.duplicate_playlist(dogs)?;
+
+    assert_eq!(
+        library
+            .playlist(kept_copy)?
+            .expect("the copy is there")
+            .kept,
+        Some(kept),
+        "the copy was left in hand"
+    );
+    library.add_to_playlist(kept_copy, &[file("b.wav")])?;
+    let titles: Vec<String> = library
+        .playlist_entries(kept_copy, None)?
+        .into_iter()
+        .filter_map(|entry| entry.track.map(|track| track.title))
+        .collect();
+    assert_eq!(titles, ["Dogs", "Echoes", "Sheep"]);
+
+    let searched = library.playlist(query_copy)?.expect("the copy is there");
+    assert_eq!(
+        searched.query,
+        Some(wanted),
+        "the copy fills itself from another search"
+    );
+    assert!(matches!(
+        library.add_to_playlist(query_copy, &[file("a.wav")]),
+        Err(Error::NotAList { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn duplicating_a_playlist_nothing_holds_is_refused() {
+    let (_tree, library) = scanned_playlist_tree();
+    let gone = PlaylistId::new(99).expect("an id above zero");
+
+    assert!(matches!(
+        library.duplicate_playlist(gone),
+        Err(Error::UnknownPlaylist(id)) if id == gone
+    ));
+}
+
+fn four_albums_three_of_them_covered() -> (Tree, Library) {
+    let tree = Tree::new();
+    for (album, art) in [
+        ("Alpha", Some(64)),
+        ("Beta", Some(65)),
+        ("Gamma", Some(66)),
+        ("Delta", None),
+    ] {
+        for index in 0..2 {
+            let mut file = Wav::new()
+                .text(TITLE, &format!("{album} {index}"))
+                .text(ALBUM, album)
+                .text(ALBUM_ARTIST, "Someone");
+            if let Some(size) = art {
+                file = file.picture(&png(size));
+            }
+            tree.write(&format!("{album}-{index}.wav"), &file.build());
+        }
+    }
+
+    let library = Library::open_in_memory().expect("an in-memory library");
+    scan(&library, &options(&tree)).expect("a scan of eight files");
+    (tree, library)
+}
+
+fn album_named(library: &Library, title: &str) -> AlbumId {
+    library
+        .albums(&AlbumQuery::default())
+        .expect("the albums read back")
+        .into_iter()
+        .find(|album| album.title == title)
+        .expect("the album was grouped")
+        .id
+}
+
+#[test]
+fn a_playlist_is_pictured_by_the_covered_albums_its_rows_reach_first() -> Result<()> {
+    let (tree, library) = four_albums_three_of_them_covered();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let evening = library.start_playlist(
+        "Evening",
+        &[
+            file("Gamma-0.wav"),
+            file("Delta-0.wav"),
+            file("Alpha-0.wav"),
+            file("Gamma-1.wav"),
+            file("Beta-0.wav"),
+        ],
+    )?;
+    let (alpha, beta, gamma) = (
+        album_named(&library, "Alpha"),
+        album_named(&library, "Beta"),
+        album_named(&library, "Gamma"),
+    );
+
+    assert_eq!(
+        library.playlist_pictures(evening, 4)?,
+        vec![gamma, alpha, beta]
+    );
+    assert_eq!(library.playlist_pictures(evening, 2)?, vec![gamma, alpha]);
+
+    let empty = library.start_playlist("Nothing yet", &[])?;
+    assert!(library.playlist_pictures(empty, 4)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_capped_search_is_pictured_by_the_rows_it_holds_and_no_others() -> Result<()> {
+    let (_tree, library) = four_albums_three_of_them_covered();
+    let first = library.save_query(
+        "First",
+        &SavedQuery {
+            text: None,
+            sort: SortOrder::Title,
+            reading: SortOrder::Title.reads(),
+            limit: Some(2),
+        },
+    )?;
+    let every = library.save_query("Every", &SavedQuery::default())?;
+
+    assert_eq!(
+        library.playlist_pictures(first, 4)?,
+        vec![album_named(&library, "Alpha")],
+        "the cap did not bound what pictures a search"
+    );
+    assert_eq!(library.playlist_pictures(every, 4)?.len(), 3);
+    Ok(())
+}
+
+#[test]
+fn the_pinned_playlists_are_listed_most_lately_pinned_first() -> Result<()> {
+    let (_tree, library) = scanned_playlist_tree();
+    let morning = library.create_playlist("Morning")?;
+    let evening = library.create_playlist("Evening")?;
+    library.create_playlist("Unpinned")?;
+
+    assert!(library.pinned_playlists(8)?.is_empty());
+    library.pin_playlist(morning, true)?;
+    thread::sleep(Duration::from_millis(2));
+    library.pin_playlist(evening, true)?;
+
+    let named = |most| -> Result<Vec<String>> {
+        Ok(library
+            .pinned_playlists(most)?
+            .into_iter()
+            .map(|pinned| pinned.name)
+            .collect())
+    };
+    assert_eq!(named(8)?, ["Evening", "Morning"]);
+    assert_eq!(named(1)?, ["Evening"]);
+
+    library.pin_playlist(evening, false)?;
+    assert_eq!(named(8)?, ["Morning"]);
+    Ok(())
+}

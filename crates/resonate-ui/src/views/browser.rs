@@ -2712,7 +2712,7 @@ fn shelf(
         )
 }
 
-fn reached_ring() -> Div {
+pub(crate) fn reached_ring() -> Div {
     div()
         .absolute()
         .inset(px(-REACHED_RING - 1.0))

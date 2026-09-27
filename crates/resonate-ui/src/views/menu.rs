@@ -353,6 +353,7 @@ pub(crate) const SHARE: &str = "Share";
 pub(crate) const PIN: &str = "Pin to the top";
 pub(crate) const UNPIN: &str = "Stop pinning";
 pub(crate) const RENAME: &str = "Rename";
+pub(crate) const DUPLICATE: &str = "Duplicate";
 pub(crate) const EXPORT: &str = "Export";
 pub(crate) const DISCARD: &str = "Discard";
 

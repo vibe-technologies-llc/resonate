@@ -1393,6 +1393,10 @@ impl Library {
         playlist::lists(&self.inner, order, direction)
     }
 
+    pub fn pinned_playlists(&self, most: usize) -> Result<Vec<NamedPlaylist>> {
+        playlist::pinned(&self.inner, most)
+    }
+
     pub fn playlist_names(
         &self,
         order: PlaylistOrder,
@@ -1445,6 +1449,14 @@ impl Library {
 
     pub fn rename_playlist(&self, id: PlaylistId, name: &str) -> Result<()> {
         playlist::rename(&self.inner, id, name)
+    }
+
+    pub fn duplicate_playlist(&self, id: PlaylistId) -> Result<PlaylistId> {
+        playlist::duplicate(&self.inner, id)
+    }
+
+    pub fn playlist_pictures(&self, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
+        playlist::pictures(&self.inner, id, at_most)
     }
 
     pub fn remove_playlist(&self, id: PlaylistId) -> Result<bool> {
@@ -2991,7 +3003,7 @@ const PICTURE_OF_THE_ALBUM: &str = concat!(
     " FROM albums a WHERE a.id = tracks.album_id)"
 );
 
-const PICTURES_WEIGHED_PER_TILE: usize = 4;
+pub(crate) const PICTURES_WEIGHED_PER_TILE: usize = 4;
 
 pub(crate) fn pictured_by(
     inner: &Inner,
@@ -3025,6 +3037,52 @@ pub(crate) fn pictured_by(
             )))
         })
     })?;
+    distinct_pictures(inner, weighed, at_most)
+}
+
+pub(crate) fn pictures_of_albums(
+    inner: &Inner,
+    albums: &[AlbumId],
+) -> Result<Vec<(i64, Option<String>)>> {
+    if albums.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT a.id, {} FROM albums a
+          WHERE (a.cover_art IS NOT NULL OR a.cover_path IS NOT NULL) AND a.id IN ({})",
+        store::the_picture_of!("a"),
+        vec!["?"; albums.len()].join(", ")
+    );
+    let binds: Vec<Value> = albums
+        .iter()
+        .map(|album| Value::Integer(album.get() as i64))
+        .collect();
+    let held: AHashMap<i64, Option<String>> = inner
+        .read(|connection| {
+            rows(connection, &sql, binds, |row| {
+                Ok(Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                )))
+            })
+        })?
+        .into_iter()
+        .collect();
+
+    Ok(albums
+        .iter()
+        .filter_map(|album| {
+            let id = album.get() as i64;
+            held.get(&id).map(|picture| (id, picture.clone()))
+        })
+        .collect())
+}
+
+pub(crate) fn distinct_pictures(
+    inner: &Inner,
+    weighed: Vec<(i64, Option<String>)>,
+    at_most: usize,
+) -> Result<Vec<AlbumId>> {
     let mut seen = AHashSet::new();
     let mut looked_like: Vec<Likeness> = Vec::with_capacity(at_most);
     let mut pictured = Vec::with_capacity(at_most);

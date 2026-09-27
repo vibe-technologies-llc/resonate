@@ -48,7 +48,7 @@ use crate::{
         listing::Pictured,
         menu::{self, Menu},
         missing::MissingShows,
-        playlists::{self, Held, Naming, Rows},
+        playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
         pointed::{self, LitUnderThePointer},
         queue::{QueueLength, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
@@ -105,6 +105,12 @@ const JUMPED_TO: &str = "JUMP TO";
 const JUMPED_NOWHERE: &str = "NO MATCH";
 
 const CLEAR_SEARCH_HINT: &str = "Clear the search — escape";
+
+const PINNED_HINT: &str = "Open this pinned playlist";
+
+const PINNED_ROW: f32 = 26.0;
+
+const PINNED_INSET: f32 = 22.0;
 
 const ENRICHING_HINT: &str =
     "The reference is being asked about the library; opens the Online settings";
@@ -436,8 +442,7 @@ pub struct RootView {
     pub(crate) artist_shows: ArtistShows,
     pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
-    pub(crate) playlist_art_albums: AHashMap<PlaylistId, Arc<[AlbumId]>>,
-    pub(crate) playlist_art_revision: u64,
+    pub(crate) playlists_drawn: PlaylistsDrawn,
     landing_on: Option<usize>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
@@ -776,8 +781,7 @@ impl RootView {
             artist_shows: ArtistShows::default(),
             artists_drawn: ArtistsDrawn::default(),
             missing_shows: MissingShows::default(),
-            playlist_art_albums: AHashMap::new(),
-            playlist_art_revision: 0,
+            playlists_drawn: PlaylistsDrawn::default(),
             landing_on: None,
             menu: None,
             record: None,
@@ -1575,6 +1579,7 @@ impl RootView {
             Shift::Listing(Listed::Tracks) => &self.track_rows,
             Shift::Listing(Listed::Albums) => &self.album_rows,
             Shift::Listing(Listed::Artists) => &self.artist_rows,
+            Shift::Listing(Listed::Playlists) => &self.all_playlist_rows,
         };
         let shown = listing
             .0
@@ -1584,7 +1589,9 @@ impl RootView {
 
         let in_a_grid = shift == Shift::Listing(Listed::Albums)
             || (shift == Shift::Listing(Listed::Artists)
-                && self.artists_drawn == ArtistsDrawn::Grid);
+                && self.artists_drawn == ArtistsDrawn::Grid)
+            || (shift == Shift::Listing(Listed::Playlists)
+                && self.playlists_drawn == PlaylistsDrawn::Grid);
         if in_a_grid {
             return ((shown / theme::grid_row()) as usize).max(1) * self.grid_columns();
         }
@@ -1667,6 +1674,18 @@ impl RootView {
                     return;
                 };
                 self.opened(Selection::Artist(artist), cx);
+            }
+            Shift::Listing(Listed::Playlists) => {
+                let Some(playlist) = self
+                    .library
+                    .read(cx)
+                    .playlists()
+                    .get(row)
+                    .map(|held| held.id)
+                else {
+                    return;
+                };
+                self.show_playlist(Some(playlist), cx);
             }
         }
     }
@@ -1802,7 +1821,10 @@ impl RootView {
             }
             Pane::Playlists => {
                 let library = self.library.read(cx);
-                let opened = library.opened()?;
+                let Some(opened) = library.opened() else {
+                    let rows = library.playlists().len();
+                    return (rows > 0).then_some((Shift::Listing(Listed::Playlists), rows));
+                };
                 let rows = library.entries().len();
 
                 (self.opened_rows(cx).are_reached() && rows > 0)
@@ -1875,6 +1897,14 @@ impl RootView {
                     ArtistsDrawn::Grid => row / self.grid_columns(),
                 };
                 self.artist_rows.scroll_to_item(at, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Playlists) => {
+                let at = match self.playlists_drawn {
+                    PlaylistsDrawn::List => row,
+                    PlaylistsDrawn::Grid => row / self.grid_columns(),
+                };
+                self.all_playlist_rows
+                    .scroll_to_item(at, ScrollStrategy::Center);
             }
         }
     }
@@ -2812,6 +2842,9 @@ impl RootView {
                     | Pane::Settings => None,
                 };
                 listed = listed.child(self.pane_row(pane, count.filter(|_| tabs.counts), cx));
+                if pane == Pane::Playlists {
+                    listed = listed.children(self.pinned_rows(cx));
+                }
             }
             browse = browse.child(listed);
         }
@@ -2838,6 +2871,58 @@ impl RootView {
                     })
                     .child(self.pane_row(Pane::Settings, None, cx)),
             )
+    }
+
+    fn pinned_rows(&self, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
+        let library = self.library.read(cx);
+        let pinned = library.pinned();
+        let opened = (self.pane == Pane::Playlists)
+            .then(|| library.opened())
+            .flatten();
+        let playing = self.playing_playlist(cx);
+
+        pinned
+            .iter()
+            .map(|playlist| {
+                let id = playlist.id;
+                let colour = if playing == Some(id) {
+                    theme::accent()
+                } else if opened == Some(id) {
+                    theme::text()
+                } else {
+                    theme::muted()
+                };
+
+                div()
+                    .id(("pinned-playlist", id.get() as usize))
+                    .flex()
+                    .items_center()
+                    .h(px(PINNED_ROW))
+                    .pl(px(PINNED_INSET + theme::pane_icon()))
+                    .pr_3()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .text_size(px(theme::text_xs()))
+                    .text_color(rgb(colour))
+                    .when(opened == Some(id), |row| {
+                        row.font_weight(gpui::FontWeight::MEDIUM)
+                    })
+                    .hover(|row| row.bg(rgb(theme::hover())))
+                    .names(PINNED_HINT)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(SharedString::from(playlist.name.clone())),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.set_pane(Pane::Playlists, cx);
+                        this.show_playlist(Some(id), cx);
+                    }))
+            })
+            .collect()
     }
 
     fn enrichment_status(&self, stats: EnrichStats, cx: &mut Context<Self>) -> Stateful<Div> {

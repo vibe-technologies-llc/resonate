@@ -23,13 +23,13 @@ use resonate_library::{
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, HeldReleaseTrack,
     ImageFormat, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout,
-    Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, OrganiseOptions,
-    OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Reference, ReleaseDetail,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder,
-    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
-    Window, asks_elsewhere,
+    Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
+    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Reference,
+    ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
+    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
+    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Window, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -76,6 +76,10 @@ const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
 const INBOX_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
 const INBOX_QUIET_FOR: Duration = Duration::from_secs(2);
 const GONE_QUIET_FOR: Duration = Duration::from_millis(250);
+
+pub const PICTURED_AT_MOST: usize = 4;
+
+pub const PINNED_IN_THE_SIDEBAR: usize = 5;
 
 const TAKEN_BACK: &str = " · ctrl-z puts it back";
 
@@ -132,6 +136,8 @@ struct Loaded {
     browsed: Option<Browsed>,
     playlists: Vec<Playlist>,
     lists: Vec<Playlist>,
+    pictured: AHashMap<PlaylistId, Arc<[AlbumId]>>,
+    pinned: Vec<NamedPlaylist>,
     held: Option<Playlist>,
     entries: Vec<PlaylistEntry>,
     wanted: AHashMap<ReleaseTrackId, WantId>,
@@ -522,6 +528,8 @@ pub struct LibraryModel {
     roots: Vec<PathBuf>,
     playlists: Arc<[Playlist]>,
     lists: Arc<[Playlist]>,
+    pictured: AHashMap<PlaylistId, Arc<[AlbumId]>>,
+    pinned: Arc<[NamedPlaylist]>,
     held: Option<Playlist>,
     entries: Arc<[PlaylistEntry]>,
     opened: Option<PlaylistId>,
@@ -653,6 +661,8 @@ impl LibraryModel {
             roots: Vec::new(),
             playlists: Arc::default(),
             lists: Arc::default(),
+            pictured: AHashMap::new(),
+            pinned: Arc::default(),
             held: None,
             entries: Arc::default(),
             opened: None,
@@ -1487,6 +1497,14 @@ impl LibraryModel {
         Arc::clone(&self.playlists)
     }
 
+    pub fn pinned(&self) -> Arc<[NamedPlaylist]> {
+        Arc::clone(&self.pinned)
+    }
+
+    pub fn pictured(&self, id: PlaylistId) -> Arc<[AlbumId]> {
+        self.pictured.get(&id).map_or_else(Arc::default, Arc::clone)
+    }
+
     pub fn lists(&self) -> Arc<[Playlist]> {
         Arc::clone(&self.lists)
     }
@@ -1700,7 +1718,29 @@ impl LibraryModel {
         }
         self.edit(
             Change::Playlist,
-            move |library| library.remove_playlist(id).map(|_| None),
+            move |library| {
+                let name = library.playlist(id)?.map(|found| found.name);
+                let dropped = library.remove_playlist(id)?;
+
+                Ok(name
+                    .filter(|_| dropped)
+                    .map(|name| format!("Discarded {name}{TAKEN_BACK}")))
+            },
+            cx,
+        );
+    }
+
+    pub fn duplicate_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
+        self.edit(
+            Change::Playlist,
+            move |library| {
+                let copy = library.duplicate_playlist(id)?;
+                let name = library
+                    .playlist(copy)?
+                    .map_or_else(|| format!("playlist {copy}"), |found| found.name);
+
+                Ok(Some(format!("Made {name}{TAKEN_BACK}")))
+            },
             cx,
         );
     }
@@ -2467,6 +2507,8 @@ impl LibraryModel {
         }
         self.playlists = loaded.playlists.into();
         self.lists = loaded.lists.into();
+        self.pictured = loaded.pictured;
+        self.pinned = loaded.pinned.into();
         self.held = loaded.held;
         self.entries = loaded.entries.into();
         if self.held.is_none() {
@@ -3869,10 +3911,15 @@ fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Re
         .map(|want| (want.release_track, want.id))
         .collect();
 
+    let playlists = library.playlists(order, reading, narrowing)?;
+    let pictured = pictures_of(library, playlists.iter().chain(held.as_ref()))?;
+
     Ok(Loaded {
         browsed,
-        playlists: library.playlists(order, reading, narrowing)?,
+        playlists,
         lists: library.playlist_lists(order, reading)?,
+        pictured,
+        pinned: library.pinned_playlists(PINNED_IN_THE_SIDEBAR)?,
         held,
         entries,
         wanted,
@@ -3880,6 +3927,21 @@ fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Re
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,
         missing: library.missing_counted(narrowing)?,
     })
+}
+
+fn pictures_of<'a>(
+    library: &Library,
+    playlists: impl Iterator<Item = &'a Playlist>,
+) -> resonate_library::Result<AHashMap<PlaylistId, Arc<[AlbumId]>>> {
+    let mut pictured = AHashMap::new();
+    for playlist in playlists {
+        if pictured.contains_key(&playlist.id) {
+            continue;
+        }
+        let albums = library.playlist_pictures(playlist.id, PICTURED_AT_MOST)?;
+        pictured.insert(playlist.id, Arc::from(albums));
+    }
+    Ok(pictured)
 }
 
 fn decoded_cover(library: &Library, id: AlbumId) -> Option<Art> {

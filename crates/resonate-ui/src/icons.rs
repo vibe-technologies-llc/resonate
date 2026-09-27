@@ -92,6 +92,7 @@ icons! {
     Share => "share",
     WindowClose => "window-close",
     Listen => "listen",
+    More => "more",
 }
 
 pub(crate) struct Embedded;

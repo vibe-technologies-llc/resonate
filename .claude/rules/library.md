@@ -1928,11 +1928,26 @@ the pass.
   refuses both sides being the same playlist, because that would only double it. Copying out of a
   query is what freezes a search into a list; the command line remains the way to copy one. The
   playlist index and opened playlist use + to enter a track-browsing mode for the chosen target,
-  while row-level + actions that already hold tracks still open `hold_for_a_playlist`. The picker's
-  *or a new one* is therefore what duplicates a playlist, and
-  `resonate playlist <NAME> --into <OTHER>` is the same gesture on the command line, creating OTHER
-  where nothing is named that. What it costs is the whole source read into memory as locations and a
+  while row-level + actions that already hold tracks still open `hold_for_a_playlist`. `resonate playlist <NAME> --into <OTHER>` copies on the
+  command line, creating OTHER where nothing is named that. What it costs is the whole source read into memory as locations and a
   write per row, plus the order re-read where the target is kept in one.
+- **A playlist is duplicated whole, and a duplicate is one step to walk back.**
+  `Library::duplicate_playlist` makes a playlist under the first of *NAME (copy)*, *NAME (copy 2)*
+  and on that nothing already holds, in one `undo::started` step: a list's rows are copied as the
+  stored rows they are, spans and all, and its kept order with them, and a saved query is given
+  the same search, order and cap rather than frozen into the rows it matches now — that is what
+  `copy_playlist` out of a query is for. The pin, the plays and when it was played stay with the
+  source. The window offers it as *Duplicate* in the menu of a playlist card, a playlist row and
+  the opened playlist's more mark.
+  `a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name` and
+  `a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had` are the claims.
+- **What pictures a playlist is the covered albums its rows reach first.** `Library::playlist_pictures`
+  answers at most the covers asked for, one per distinct picture through the same identity and
+  likeness `pictured_by` weighs a suggestion's by. A list is read in its own order, so the mosaic
+  is the opening of the playlist; a saved query with no cap is `pictured_by` over its search, and
+  one with a cap reads the rows the cap leaves, so *Top 25* is pictured by those twenty-five and no
+  others. `Library::pinned_playlists` is the other read the sidebar takes: the pinned playlists'
+  ids and names, most lately pinned first, with no join and no narrowing.
 - **A search narrows a playlist, and what is shown is what plays.** `Library::playlists` takes the
   words a search holds and matches each against the name, because a playlist has only a name to
   answer with: a term is passed over, and a search holding no standalone word leaves the index

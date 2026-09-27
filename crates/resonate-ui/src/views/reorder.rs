@@ -34,6 +34,7 @@ pub(crate) enum Listed {
     Tracks,
     Albums,
     Artists,
+    Playlists,
 }
 
 impl Shift {

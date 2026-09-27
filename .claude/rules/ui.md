@@ -424,9 +424,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the album grid's `grid_width` takes, and that grid now uses the same builder — and the title
   and the services line take it through `kit::hero_title` and `kit::wraps_within`. Until the first
   frame has measured, the title is one line ending in an ellipsis. The opened playlist uses the same
-  hero: its cover tiles up to four distinct album covers from its entries, and where none have art
-  it draws a stable name-based gradient, a playlist or search mark and the playlist name. Its text
-  and left-aligned Play and Shuffle row sit beside the cover. The title opens the shared rename
+  hero: its cover is the `views/mosaic.rs` art described under the suggestion bullet below. Its
+  text, a faint line saying when it was made and last played, and a left-aligned Play and Shuffle
+  row sit beside the cover. After them come *Add songs*, *Sort* and *Tidy* for a list, the pin as
+  a mark lit while pinned, and `Icon::More`, which opens the same menu a right press on an index
+  card does — queueing, pin, rename, *Duplicate*, export and discard — at the press, so the page
+  can do everything the index can without a trip back to it. The title opens the shared rename
   field, with a rename selector revealed while hovered; there is no separate rename button in the
   action row. The heading carries the same `kit::way_back`, reading *Playlists*, above an eyebrow of
   *PLAYLIST* or *SAVED SEARCH*.
@@ -1244,7 +1247,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   further and saved under a name of its own. *Shuffle* loads the rows from a place picked off the
   clock's nanoseconds, there being no random crate in the tree, and then turns the transport's
   shuffle on.
-- **A suggestion's art is drawn, never stored.** `suggestion_art` draws the covers the library
+- **A suggestion's art is drawn, never stored, and a playlist's is the same drawing.**
+  `views/mosaic.rs` is the one builder: a `Mosaic` is the covers drawn, two accents, a mark and a
+  name, and `Framed` says whether it stands alone, bordered and rounded all round, or heads a card
+  with its foot square. The suggestions and the playlists each used to carry a copy of it, and
+  only the suggestions' copy rounded the tiles, so a playlist's mosaic showed square corners over
+  its rounded frame. `suggestion_art` draws the covers the library
   answered in `Suggestion::pictured_by` — one whole, or two to four as a 2×2 mosaic whose empty
   tiles are the ground tinted — over a 135° gradient between two accents of the worn palette,
   read through `theme::hue` so the art follows the theme. The accents are the reason's where it
@@ -1260,11 +1268,37 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   is the floor of half of it, each tile and its cover are rounded on the one corner they stand in —
   `Corner::of_tile` — and a single cover is rounded itself. On a card the bottom edge stays
   square, so the art meets the text under it; an empty tile is its accent, solid.
-- **The playlists index row carries a context menu beside its controls, and neither answers the
-  other's press.** gpui 0.2.2 starts a click only on a left press, so a right press on play, next,
-  last, shuffle, add songs or discard opens the row's menu and fires none of them. A pinned row wears a
-  `kit::badge` beside the `SEARCH` and `KEPT` ones; the catalog already sorts pinned rows first,
-  so the pane does no ordering of its own.
+- **The playlists index is a grid of covers or a list, and the heading chooses.** `PlaylistsDrawn`
+  is `Grid`, the default, or `List`, a `kit::segmented` beside the sort icon kept for the run the
+  way `ArtistsDrawn` is. The grid is the albums pane's shape — the same measured `grid_width`,
+  `grid_columns` and `grid_row` — with a card per playlist: the mosaic at `theme::grid_cover()`,
+  the name, lit in the accent under the pointer or while it is the playlist in play and led by a
+  search mark where it fills itself, and under it the count and when it was last played, or its
+  length where it never was. The pin stands in the card's corner the way a favourite's star does,
+  hidden until hovered unless the playlist is pinned, and a round Play in the accent rises in the
+  other corner under the pointer. The list is the rows it always was, each carrying a context
+  menu beside its controls that neither answers the other's press: gpui 0.2.2 starts a click only
+  on a left press, so a right press on play, next, last, shuffle, add songs or discard opens the
+  row's menu and fires none of them. A pinned row wears a `kit::badge` beside the `SEARCH` and
+  `KEPT` ones; the catalog already sorts pinned rows first, so the pane does no ordering of its
+  own. `Listed::Playlists` makes either shape a listing the reach keys answer, as the albums grid
+  is: a page is whole rows of the grid, `show_row` scrolls the grid row holding the playlist and
+  `enter` opens it. An empty index offers *New playlist* and *Import* under its sentence.
+- **What pictures a playlist is read with the listing, never on the frame.** Each index row used to
+  read its playlist's whole entries from SQLite on the render thread to find its covers, and threw
+  what it read away on every library revision — every counted play and every scan poll. The load
+  now asks `Library::playlist_pictures` for every playlist it lists and for the opened one,
+  `PICTURED_AT_MOST` covers each, and `LibraryModel::pictured` hands them out by reference count.
+- **Pinned playlists stand in the sidebar under Playlists.** `Library::pinned_playlists` rides in the
+  same load, at most `PINNED_IN_THE_SIDEBAR` of them, most lately pinned first and unnarrowed by the
+  search, and `RootView::pinned_rows` draws each as a short indented name under the *Playlists* row
+  that opens it — the one open drawn in the text colour, the one in play in the accent. The index
+  still lists every pinned playlist first, so five is a bound on the sidebar and not on pinning.
+- **An opened playlist with nothing in it says why, and offers the way out.** A list offers *Add
+  songs*, which is the heading's + track-browsing mode; a saved query that matches nothing says the
+  library holds nothing it matches yet and offers *Edit search*; a narrowed playlist says only that
+  the search matched nothing in it. Discarding one is told in a toast naming it and `ctrl-z`, the
+  way starting one always was.
 - **The sleep control draws no clock of its own.** It sits between repeat and the volume in the
   playback bar and opens a `Menu` rather than cycling, because there are eight choices and a
   toggle would have to be pressed through them. The accent wash and the countdown are both inside
@@ -1596,9 +1630,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   rather than at its top. `set_query` puts a fresh handle in whenever a keystroke narrows the rows
   differently, because the rows under the old offset are no longer the ones it was left on, and
   `forget_what_has_gone` drops the handle once the listing stops naming its playlist — passing over
-  a listing a search has narrowed, because what that leaves out is still there. Index rows use up
-  to four distinct album covers from their entries and the same generated fallback as the opened
-  hero. Their + starts the target playlist's track-browsing mode rather than copying it. The index
+  a listing a search has narrowed, because what that leaves out is still there. Index cards and rows use the
+  same mosaic as the opened hero. Their + starts the target playlist's track-browsing mode rather than copying it. The index
   puts its sort icon with the icon-only Import and New playlist in the heading's right actions; pressing it
   reveals the ORDER and READS choices under the heading, and pressing it again tucks them away.
   None of it survives the run, and neither does the settings pane's category, the listing's order

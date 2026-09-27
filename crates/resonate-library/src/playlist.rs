@@ -5,7 +5,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_core::{MediaLocation, PlaylistId, Span};
+use resonate_core::{AlbumId, MediaLocation, PlaylistId, Span};
 use rusqlite::{
     Connection, OptionalExtension as _, Row as SqlRow, Transaction, params, params_from_iter,
     types::Value,
@@ -130,6 +130,23 @@ pub fn names(
                 params![taking, i64::try_from(from).unwrap_or(i64::MAX)],
                 named_row,
             )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        found.into_iter().collect()
+    })
+}
+
+pub fn pinned(inner: &Inner, most: usize) -> Result<Vec<NamedPlaylist>> {
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT p.id, p.name FROM playlists p WHERE p.pinned IS NOT NULL
+                 ORDER BY p.pinned DESC, p.folded LIMIT ?1",
+            )
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let found = statement
+            .query_map(params![i64::try_from(most).unwrap_or(i64::MAX)], named_row)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
 
@@ -324,6 +341,51 @@ pub fn remove(inner: &Inner, id: PlaylistId) -> Result<bool> {
     Ok(true)
 }
 
+pub fn duplicate(inner: &Inner, id: PlaylistId) -> Result<PlaylistId> {
+    let source = one(inner, id)?.ok_or(Error::UnknownPlaylist(id))?;
+    let name = inner.read(|connection| a_free_copy_of(connection, &source.name))?;
+
+    let copy = undo::started(inner, Edit::Started, &name, |transaction| {
+        let copy = created(transaction, &name)?;
+        match asked_in(transaction, id)? {
+            Some(query) => write_query(transaction, copy, &query)?,
+            None => {
+                if let Some(kept) = kept_in(transaction, id)? {
+                    kept_as(transaction, copy, Some(kept))?;
+                }
+                append(transaction, copy, &rows(transaction, id)?)?;
+            }
+        }
+        Ok((copy, copy))
+    })?;
+
+    inner.playlists_changed();
+    Ok(copy)
+}
+
+fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
+    let mut asked = 1_usize;
+    loop {
+        let wanted = match asked {
+            1 => format!("{name} (copy)"),
+            nth => format!("{name} (copy {nth})"),
+        };
+        let taken = connection
+            .query_row(
+                "SELECT 1 FROM playlists WHERE folded = ?1",
+                params![folded(&wanted)],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?
+            .is_some();
+        if !taken {
+            return Ok(PlaylistName::new(wanted));
+        }
+        asked += 1;
+    }
+}
+
 pub fn played_now(inner: &Inner, id: PlaylistId) -> Result<()> {
     let played = inner.write(|transaction| {
         transaction
@@ -480,6 +542,56 @@ pub fn entries(
             })
         })
         .collect()
+}
+
+pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
+    let Some(query) = inner.read(|connection| asked_in(connection, id))? else {
+        let sql = format!(
+            "SELECT tracks.album_id, (SELECT {} FROM albums a WHERE a.id = tracks.album_id)
+               FROM playlist_entries e JOIN tracks ON {ON_THE_SAME_CUT}
+              WHERE e.playlist_id = ?1
+                AND tracks.album_id IN (SELECT id FROM albums
+                                         WHERE cover_art IS NOT NULL OR cover_path IS NOT NULL)
+              GROUP BY tracks.album_id
+              ORDER BY min(e.position)
+              LIMIT ?2",
+            store::the_picture_of!("a")
+        );
+        let weighed = inner.read(|connection| {
+            let mut statement = connection
+                .prepare_cached(&sql)
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let found = statement
+                .query_map(
+                    params![
+                        id.get() as i64,
+                        at_most.saturating_mul(db::PICTURES_WEIGHED_PER_TILE) as i64
+                    ],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            found
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+        return db::distinct_pictures(inner, weighed, at_most);
+    };
+
+    let asked = TrackQuery::from(&query);
+    if asked.limit.is_none() {
+        return db::pictured_by(inner, &asked, at_most);
+    }
+    let mut albums = Vec::new();
+    for album in db::tracks(inner, &asked, None)?
+        .into_iter()
+        .filter_map(|track| track.album_id)
+    {
+        if !albums.contains(&album) {
+            albums.push(album);
+        }
+    }
+    let weighed = db::pictures_of_albums(inner, &albums)?;
+    db::distinct_pictures(inner, weighed, at_most)
 }
 
 pub fn cuts(inner: &Inner, id: PlaylistId) -> Result<Vec<Cut>> {
@@ -651,16 +763,7 @@ pub fn keep(inner: &Inner, id: PlaylistId, kept: Option<Kept>) -> Result<usize> 
             return Ok(Change::Nothing(None));
         }
 
-        transaction
-            .execute(
-                "UPDATE playlists SET kept_order = ?2, kept_reading = ?3 WHERE id = ?1",
-                params![
-                    id.get() as i64,
-                    kept.map(|kept| store::row_order_code(kept.order)),
-                    kept.map(|kept| store::direction_code(kept.reading))
-                ],
-            )
-            .map_err(|source| Error::store(StoreOp::Update, source))?;
+        kept_as(transaction, id, kept)?;
         touch(transaction, id)?;
         Ok(Change::Made(Some(moved)))
     })?;
@@ -669,6 +772,20 @@ pub fn keep(inner: &Inner, id: PlaylistId, kept: Option<Kept>) -> Result<usize> 
         inner.playlists_changed();
     }
     Ok(moved.unwrap_or_default())
+}
+
+fn kept_as(transaction: &Transaction<'_>, id: PlaylistId, kept: Option<Kept>) -> Result<()> {
+    transaction
+        .execute(
+            "UPDATE playlists SET kept_order = ?2, kept_reading = ?3 WHERE id = ?1",
+            params![
+                id.get() as i64,
+                kept.map(|kept| store::row_order_code(kept.order)),
+                kept.map(|kept| store::direction_code(kept.reading))
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(())
 }
 
 fn in_order(transaction: &Transaction<'_>, id: PlaylistId, kept: Kept) -> Result<usize> {
