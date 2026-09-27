@@ -1947,6 +1947,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   playing album out does not blank the playback bar, the magnifier's caption or the queue's album
   order. `queue_heading`'s total is measured once per queue revision and library revision into
   `RootView::queue_length` rather than by reading every queued row sixty times a second.
+- **A row is keyed by what it holds, not by where it stands.** gpui keeps a tooltip, a hover and
+  a drag in element state under the element's id path, so a row keyed by its index handed row
+  N's tooltip — a favourite's *Take out of favourites* among them — to whatever row an edit moved
+  into place N. A queue row is keyed by its queue id, a track row by its `TrackId`, an artist row
+  by its `ArtistId`, a missing row's want mark by its release track or the found recording, and a
+  playlist entry — which may hold one cut twice — by `listing::keyed_by` over the cut and its
+  place, so a row that now holds something else is a new element with nothing carried over.
 - **A row gesture reads the row the pane drew, not the row the list holds at that index.** A
   playlist narrowed by a search is not reached, so its row menu's *Take out of the playlist* drops
   `Span::one(entry.position)`, the row's place in the list, the way its ✕ already did — `index` is

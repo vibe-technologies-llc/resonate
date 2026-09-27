@@ -1,7 +1,10 @@
-use std::time::SystemTime;
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    time::SystemTime,
+};
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, HighlightStyle, SharedString, StyledText, div,
+    AnyElement, Context, Div, ElementId, FontWeight, HighlightStyle, SharedString, StyledText, div,
     prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, MediaLocation, StreamSpec, TrackId};
@@ -21,6 +24,13 @@ use crate::{
         root::RootView,
     },
 };
+
+pub(crate) fn keyed_by(name: &'static str, held: &impl Hash) -> ElementId {
+    let mut hasher = DefaultHasher::new();
+    held.hash(&mut hasher);
+
+    ElementId::from((name, hasher.finish()))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sortable {

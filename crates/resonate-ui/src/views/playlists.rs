@@ -1176,7 +1176,7 @@ impl RootView {
         let title = drawn.title.clone();
         let artist = drawn.artist.clone();
         let listed = row(current)
-            .id(index)
+            .id(listing::keyed_by("entry", &(&entry.cut, index)))
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))

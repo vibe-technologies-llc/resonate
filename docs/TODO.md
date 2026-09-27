@@ -119,7 +119,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   ancestor, not the text, is the box that runs out of room
 - A menu's entries are decided when it opens, so one left open across a scan can offer a *Go to
   album* for an album since gathered away
-- A row's controls are keyed by index, so editing a list can hand row N's tooltip to the new row N
 
 ## Testing
 - Nothing drives `resonate-ui`'s panes: KWin offers no synthetic input without the remote-desktop

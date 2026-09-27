@@ -553,7 +553,7 @@ impl RootView {
 
                                     let listed = reorder::marked(
                                         tall_row(chosen)
-                                            .id(index)
+                                            .id(("artist", id.get()))
                                             .group(ROW_GROUP)
                                             .cursor_pointer()
                                             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -814,7 +814,7 @@ impl RootView {
         };
 
         let row = row(playing)
-            .id(index)
+            .id(("track", id.get()))
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -993,7 +993,7 @@ impl RootView {
             length,
             beside,
         } = unheld;
-        let mark = self.want_mark(index, asks, cx);
+        let mark = self.want_mark(asks, cx);
         let (title, lit_title, lit_artist) = match &beside {
             Beside::AnAlbum | Beside::ARun => (title, Lit::new(), Lit::new()),
             Beside::ASearch { .. } => {
@@ -1047,38 +1047,42 @@ impl RootView {
             .child(controls_place().child(mark))
     }
 
-    fn want_mark(&self, index: usize, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
         match asks {
             Asks::Row(release_track) => match self.library.read(cx).wanted(release_track) {
-                Some(want) => kit::icon_button(("unwant", index), Icon::Wanted, UNWANT_HINT)
+                Some(want) => {
+                    kit::icon_button(("unwant", release_track.get()), Icon::Wanted, UNWANT_HINT)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.library
+                                .update(cx, |library, cx| library.unwant(want, cx));
+                        }))
+                }
+                None => kit::icon_button(("want", release_track.get()), Icon::Want, WANT_HINT)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.library
-                            .update(cx, |library, cx| library.unwant(want, cx));
-                    })),
-                None => kit::icon_button(("want", index), Icon::Want, WANT_HINT).on_click(
-                    cx.listener(move |this, _, _, cx| {
-                        this.library
                             .update(cx, |library, cx| library.want(release_track, cx));
-                    }),
-                ),
+                    })),
             },
             Asks::Found(found) => {
                 if self.library.read(cx).is_wanting(&found) {
                     return kit::mark_when(
                         Press::Greyed,
-                        ("wanting-found", index),
+                        listing::keyed_by("wanting-found", &found.recording),
                         Icon::Wanted,
                         WANTING_HINT,
                         ROW_GROUP,
                     );
                 }
-                kit::icon_button(("want-found", index), Icon::Want, WANT_FOUND_HINT).on_click(
-                    cx.listener(move |this, _, _, cx| {
-                        let wanted = found.clone();
-                        this.library
-                            .update(cx, |library, cx| library.want_found(wanted, cx));
-                    }),
+                kit::icon_button(
+                    listing::keyed_by("want-found", &found.recording),
+                    Icon::Want,
+                    WANT_FOUND_HINT,
                 )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let wanted = found.clone();
+                    this.library
+                        .update(cx, |library, cx| library.want_found(wanted, cx));
+                }))
             }
         }
     }
