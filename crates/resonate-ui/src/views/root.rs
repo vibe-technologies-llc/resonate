@@ -1580,6 +1580,9 @@ impl RootView {
             Shift::Listing(Listed::Albums) => &self.album_rows,
             Shift::Listing(Listed::Artists) => &self.artist_rows,
             Shift::Listing(Listed::Playlists) => &self.all_playlist_rows,
+            Shift::Listing(Listed::Favourites) => &self.favourite_rows,
+            Shift::Listing(Listed::Missing) => &self.missing_rows,
+            Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
         };
         let shown = listing
             .0
@@ -1686,6 +1689,22 @@ impl RootView {
                     return;
                 };
                 self.show_playlist(Some(playlist), cx);
+            }
+            Shift::Listing(Listed::Favourites) => {
+                let tracks = self.library.read(cx).favourite_tracks();
+                self.play(&tracks, row, cx);
+            }
+            Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
+            Shift::Listing(Listed::Suggested) => {
+                let Some(tracks) = self
+                    .library
+                    .read(cx)
+                    .opened_suggestion()
+                    .map(|opened| Arc::clone(&opened.tracks))
+                else {
+                    return;
+                };
+                self.play(&tracks, row, cx);
             }
         }
     }
@@ -1845,10 +1864,26 @@ impl RootView {
 
                 (rows > 0).then_some((Shift::Listing(Listed::Albums), rows))
             }
+            Pane::Favourites => {
+                let rows = self.library.read(cx).favourite_tracks().len();
+
+                (rows > 0).then_some((Shift::Listing(Listed::Favourites), rows))
+            }
+            Pane::Missing => {
+                let rows = self.missing_rows_shown(cx).len();
+
+                (rows > 0).then_some((Shift::Listing(Listed::Missing), rows))
+            }
+            Pane::Suggestions => {
+                let rows = self
+                    .library
+                    .read(cx)
+                    .opened_suggestion()
+                    .map_or(0, |opened| opened.tracks.len());
+
+                (rows > 0).then_some((Shift::Listing(Listed::Suggested), rows))
+            }
             Pane::Statistics
-            | Pane::Favourites
-            | Pane::Suggestions
-            | Pane::Missing
             | Pane::Lyrics
             | Pane::Inspector
             | Pane::Visualiser
@@ -1905,6 +1940,18 @@ impl RootView {
                 };
                 self.all_playlist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Favourites) => {
+                self.favourite_rows
+                    .scroll_to_item(row, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Missing) => {
+                self.missing_rows
+                    .scroll_to_item(row, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Suggested) => {
+                self.suggestion_rows
+                    .scroll_to_item(row, ScrollStrategy::Center);
             }
         }
     }
@@ -2510,6 +2557,12 @@ impl RootView {
             search.take_focus(window);
             search.set_text(instead, cx);
         });
+    }
+
+    pub(crate) fn let_go_of_the_reach_in(&mut self, shift: Shift) {
+        if self.reach.is_some_and(|reach| reach.shift == shift) {
+            self.reach = None;
+        }
     }
 
     fn set_query(&mut self, query: String, cx: &mut Context<Self>) {

@@ -1,7 +1,7 @@
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, SharedString, div, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, Context, Div, FontWeight, SharedString, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_library::{MissingTrack, UnheldRelease};
 
@@ -15,6 +15,7 @@ use crate::{
         },
         kit::{self, KeepsItsWidth},
         listing::{self, Pictured},
+        reorder::{self, Listed, Shift},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
     },
@@ -185,9 +186,14 @@ impl RootView {
                                         None => None,
                                     };
                                     if let Some(listed) = listed {
+                                        let reached =
+                                            this.reaches(Shift::Listing(Listed::Missing), index);
                                         drawn.push(
-                                            in_a_card(listed, Place::of(&rows, index))
-                                                .into_any_element(),
+                                            in_a_card(
+                                                reorder::marked(listed, reached),
+                                                Place::of(&rows, index),
+                                            )
+                                            .into_any_element(),
                                         );
                                     }
                                 }
@@ -206,8 +212,40 @@ impl RootView {
     }
 
     pub(crate) fn show_what_is_missing(&mut self, shows: MissingShows, cx: &mut Context<Self>) {
+        if self.missing_shows != shows {
+            self.let_go_of_the_reach_in(Shift::Listing(Listed::Missing));
+        }
         self.missing_shows = shows;
         cx.notify();
+    }
+
+    pub(crate) fn missing_rows_shown(&self, cx: &App) -> Arc<[MissingRow]> {
+        let library = self.library.read(cx);
+        match self.missing_shows.within(
+            library.missing_tracks().len(),
+            library.unheld_releases().len(),
+        ) {
+            MissingShows::Tracks => library.missing_track_rows(),
+            MissingShows::Releases => library.unheld_release_rows(),
+        }
+    }
+
+    pub(crate) fn open_what_is_missing_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        let library = self.library.read(cx);
+        let opened = match self.missing_rows_shown(cx).get(index).copied() {
+            Some(MissingRow::Album(at) | MissingRow::Track(at)) => library
+                .missing_tracks()
+                .get(at)
+                .map(|track| Selection::Album(track.album)),
+            Some(MissingRow::Artist(at) | MissingRow::Release(at)) => library
+                .unheld_releases()
+                .get(at)
+                .map(|release| Selection::Artist(release.artist)),
+            Some(MissingRow::Disc(_)) | None => None,
+        };
+        if let Some(opened) = opened {
+            self.opened(opened, cx);
+        }
     }
 
     fn missing_tabs(

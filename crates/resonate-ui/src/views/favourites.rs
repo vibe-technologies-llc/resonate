@@ -10,6 +10,7 @@ use crate::{
     views::{
         browser::{Plays, TRACK_CONTROLS},
         kit, listing,
+        reorder::{self, Listed, Shift},
         root::{RootView, empty},
         scrollbar::Scrollbars,
         sorting,
@@ -117,13 +118,18 @@ impl RootView {
                                 let Some(track) = rows.get(index) else {
                                     continue;
                                 };
-                                drawn.push(this.track_row(
-                                    &rows,
-                                    index,
-                                    track,
-                                    playing == Some(track.id),
-                                    Plays::TheseRows,
-                                    cx,
+                                let reached =
+                                    this.reaches(Shift::Listing(Listed::Favourites), index);
+                                drawn.push(reorder::marked(
+                                    this.track_row(
+                                        &rows,
+                                        index,
+                                        track,
+                                        playing == Some(track.id),
+                                        Plays::TheseRows,
+                                        cx,
+                                    ),
+                                    reached,
                                 ));
                             }
                             drawn

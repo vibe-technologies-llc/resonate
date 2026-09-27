@@ -35,6 +35,9 @@ pub(crate) enum Listed {
     Albums,
     Artists,
     Playlists,
+    Favourites,
+    Missing,
+    Suggested,
 }
 
 impl Shift {
@@ -189,7 +192,7 @@ pub(crate) fn beside(rows: Span) -> Option<SharedString> {
     }
 }
 
-pub(crate) fn marked(listed: Stateful<Div>, reached: bool) -> Stateful<Div> {
+pub(crate) fn marked<E: Styled + FluentBuilder>(listed: E, reached: bool) -> E {
     let edge = if reached {
         rgb(theme::accent())
     } else {

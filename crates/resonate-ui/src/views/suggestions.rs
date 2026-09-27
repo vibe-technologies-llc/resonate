@@ -19,6 +19,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis, Press, Tone},
         listing,
         mosaic::{self, Framed, Mosaic},
+        reorder::{self, Listed, Shift},
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
         sorting,
@@ -277,13 +278,18 @@ impl RootView {
                                 let Some(track) = rows.get(index) else {
                                     continue;
                                 };
-                                drawn.push(this.track_row(
-                                    &rows,
-                                    index,
-                                    track,
-                                    playing == Some(track.id),
-                                    Plays::TheseRows,
-                                    cx,
+                                let reached =
+                                    this.reaches(Shift::Listing(Listed::Suggested), index);
+                                drawn.push(reorder::marked(
+                                    this.track_row(
+                                        &rows,
+                                        index,
+                                        track,
+                                        playing == Some(track.id),
+                                        Plays::TheseRows,
+                                        cx,
+                                    ),
+                                    reached,
                                 ));
                             }
                             drawn

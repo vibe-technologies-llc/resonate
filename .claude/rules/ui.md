@@ -149,6 +149,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   shows, `show_row` scrolls the grid row holding the album, `enter` opens it, and the reached
   cell wears `reached_ring` — an accent border laid over its cover, which costs the grid no room.
   `down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows` pins the two bindings.
+  `Listed::Favourites`, `Listed::Missing` and `Listed::Suggested` carry the same reach into the
+  favourite tracks, the Missing pane's rows and an opened suggestion's rows: `enter` plays a
+  favourite or a suggested track from there, and on a Missing row opens the album it is short of
+  or the artist whose release it is, a disc heading answering nothing. The Missing pane's two tabs
+  are two listings under one `Listed`, so switching them lets go of the reach —
+  `let_go_of_the_reach_in` — rather than leaving it on a row of the other. `reorder::marked` is
+  generic over what it marks, because a Missing row is a plain `Div` inside its card. All three
+  are narrowed by the search, so typing at them searches rather than jumping.
 - **The window binds the media keys too, as a fallback rather than as the feature.** A desktop that
   grabs the transport keys consumes them and calls MPRIS, which is how they are meant to work and
   what makes them work with the window behind everything else; where a session grabs none, the key
