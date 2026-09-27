@@ -1579,7 +1579,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   as *Headphones* or *HDMI / DisplayPort 2* rather than only by the description its node carries.
   The seat is read off the node's `info` event rather than its registry global, because the global
   carries `device.id` and nothing about the profile; the same event is what follows a card
-  switched to another profile. Both route params are read and kept apart: `Route` is the port the
+  switched to another profile. Only an event whose change mask says `PROPS` is read for it: a
+  node's volume moving raises an `info` carrying no props, and reading that as *no seat* lost the
+  sink its port — and its route — the first time anything turned it. Both route params are read and kept apart: `Route` is the port the
   card is *switched to* and outranks the rest, `EnumRoute` is every port it offers — and the
   enumeration is the only place an unplugged port appears at all, because a card publishes no
   current route for one. That is exactly the case worth drawing, so `Plugged` is the reading —
@@ -1599,8 +1601,38 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `HardwareVolume` is the reading — `Yes`, `No`, or `Unsaid` where the route says nothing, which
   is a different answer from `No` and must not be drawn as one, because a driver that is silent
   is not a driver claiming the volume is software's. `resonate sinks` gives the profile a column
-  of its own and appends the volume to the port cell; the settings pane chains both onto
+  of its own and appends the volume to the port cell, with the level the route is at where it
+  says; the settings pane chains both onto
   `advertised`, so a device line says what it is switched to and where its volume is applied.
+- **A device that turns its own volume can be handed the slider, and then the stream stays
+  bit-perfect at any volume.** `device-volume`, off by default, is `EngineConfig::device_volume`,
+  `Command::SetDeviceVolume`, `OutputSettings::device_volume` and the Output category's *Hardware
+  volume* group. `Attenuator::of` weighs it against `SinkInfo::turns_its_own_volume` — the route
+  saying `route.hw-volume` is `Yes`, never `Unsaid` — and `Attenuator::leaves` is the volume the
+  stream still applies: `Volume::MAX` where the device takes it, so `gain_config` and `gain_of`
+  see full volume and the plan keeps no gain stage for it, while a ReplayGain adjustment is still
+  the stream's own. `Output::attenuator` is decided at open and weighed again in `retune`, so the
+  switch reshapes the chain in place like any other gain change. What the device is turned to is
+  the route: `parse_route` reads the route's `index`, its channel count and its `props` —
+  `SinkPort::volume` is the loudest channel, or silence where it is muted — and
+  `PipeWire::set_device_volume` sets `Route` on the `Device` with every channel at `Volume::to_gain`,
+  unmuted and `save`d, which is what pipewire-pulse writes for a desktop slider; setting the node's
+  `Props` instead would be the adapter's software volume. **The slider starts where the device
+  already is** — a bind, or the switch turned on, takes `Volume::heard_at` of the route's reading
+  into `EngineConfig::volume` rather than pushing the stored volume at it, so handing the slider
+  over cannot jump a pair of headphones to full — and it follows a device turned from the desktop:
+  a subscribed `Route` is not re-sent when its volume moves, so the device's `info` event saying
+  `PARAMS` changed enumerates `Route` again, `DevicePorts::keep` answers the seats of a current
+  route whose volume moved, `SinkChange::Turned` names the sinks on them, and the survey that
+  follows ends in `follow_the_devices_volume`. What the engine itself sent comes back the same way,
+  so `Engine::turned` remembers the last `TURNS_REMEMBERED` gains and a reading within
+  `ONE_LEVEL_WITHIN` of any of them is an echo, which is what keeps a drag from being pulled back
+  to where it was a moment ago. Turning the switch off leaves the device where it was and puts the
+  gain stage back on top of it, which is quieter rather than louder.
+  `a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect`,
+  `a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not` and
+  `handing_the_volume_back_to_the_stream_puts_the_gain_stage_back` are the claims; everything
+  else playing through the device is turned with it, which is what the group's hint says.
 - **The latency a stream reports is counted in the stream's own frames, and the conversion happens
   where the graph's tick rate is known.** `pw_time.delay` is the delay to the device expressed in
   `pw_time.rate` — the graph's clock, not the stream's — so a graph running at 48 kHz under a

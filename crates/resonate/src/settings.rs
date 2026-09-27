@@ -93,6 +93,7 @@ impl Settings for File {
             ),
             Setting::BitPerfect(wanted) => (ConfigKey::BitPerfect, Some((*wanted).into())),
             Setting::Dop(marked) => (ConfigKey::Dop, Some((*marked).into())),
+            Setting::DeviceVolume(handed) => (ConfigKey::DeviceVolume, Some((*handed).into())),
             Setting::ForceGraphRate(forced) => (ConfigKey::ForceGraphRate, Some((*forced).into())),
             Setting::BluetoothWake(on) => (ConfigKey::BluetoothWake, Some((*on).into())),
             Setting::BluetoothLead(lead) => {
@@ -269,6 +270,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Untagged => ConfigKey::ReplayGainUntagged,
         SettingKey::BitPerfect => ConfigKey::BitPerfect,
         SettingKey::Dop => ConfigKey::Dop,
+        SettingKey::DeviceVolume => ConfigKey::DeviceVolume,
         SettingKey::ForceGraphRate => ConfigKey::ForceGraphRate,
         SettingKey::BluetoothWake => ConfigKey::BluetoothWake,
         SettingKey::BluetoothLead => ConfigKey::BluetoothLeadMs,

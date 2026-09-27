@@ -26,25 +26,25 @@ use pipewire::{
     channel::Sender as LoopSender,
     context::ContextRc,
     core::CoreRc,
-    device::{Device, DeviceListener},
+    device::{Device, DeviceChangeMask, DeviceListener},
     keys,
     main_loop::MainLoopRc,
     metadata::{Metadata, MetadataListener},
-    node::{Node, NodeListener},
+    node::{Node, NodeChangeMask, NodeListener},
     registry::{GlobalObject, RegistryRc},
     stream::{StreamFlags, StreamListener, StreamRc},
     types::ObjectType,
 };
-use resonate_core::{SampleRate, StreamSpec};
+use resonate_core::{Gain, SampleRate, StreamSpec};
 
 use crate::{
     AudioSink, AudioSource, CaptureRequest, CaptureStream, Capturing, Error, LatencyRequest,
     MediaRole, Microphone, NodeName, PodParam, PwOp, Result, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent, StreamRequest, StreamState,
     format::{
-        AdvertisedFormat, AdvertisedRoute, WireWord, negotiated, packs_narrower,
+        AdvertisedFormat, AdvertisedRoute, RouteVolume, WireWord, negotiated, packs_narrower,
         parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile, parse_rate,
-        parse_route, spa_format, spa_position,
+        parse_route, route_volume, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
 };
@@ -94,6 +94,7 @@ enum Request {
     Capture(Box<CaptureOpen>),
     StopCapture,
     SetActive(bool),
+    Turn { sink: SinkId, gain: Gain },
     Drain,
     Close,
     Lost,
@@ -108,11 +109,23 @@ struct DevicePorts {
 }
 
 impl DevicePorts {
-    fn keep(&mut self, held: Held, index: u32, route: AdvertisedRoute) {
-        match held {
-            Held::Current => self.current.insert(index, route),
-            Held::Offered => self.offered.insert(index, route),
+    fn keep(&mut self, held: Held, index: u32, route: AdvertisedRoute) -> Option<Vec<i32>> {
+        let kept = match held {
+            Held::Current => &mut self.current,
+            Held::Offered => &mut self.offered,
         };
+        let seats = route.seats.clone();
+        let volume = route.port.volume;
+        let was = kept.insert(index, route);
+        let turned =
+            matches!(held, Held::Current) && was.is_some_and(|was| was.port.volume != volume);
+        turned.then_some(seats)
+    }
+
+    fn turning(&self, seat: i32) -> Option<&AdvertisedRoute> {
+        self.current
+            .values()
+            .find(|route| route.seats.contains(&seat))
     }
 
     fn serving(&self, seat: i32) -> Option<SinkPort> {
@@ -238,6 +251,31 @@ impl Discovered {
 
     fn profile_of(&self, record: &SinkRecord) -> Option<String> {
         self.profiles.get(&record.device?).cloned()
+    }
+
+    fn route_turning(&self, sink: SinkId, gain: Gain) -> Option<(u32, RouteVolume)> {
+        let record = self.sinks.get(&sink.get())?;
+        let above = record.device?;
+        let seat = record.seat?;
+        let route = self.ports.get(&above)?.turning(seat)?;
+        let turned = RouteVolume {
+            index: route.index?,
+            seat,
+            channels: route.channels,
+            gain,
+        };
+        (turned.channels > 0).then_some((above, turned))
+    }
+
+    fn sinks_seated_on(&self, device: u32, seats: &[i32]) -> Vec<SinkId> {
+        self.sinks
+            .iter()
+            .filter(|(_, record)| {
+                record.device == Some(device)
+                    && record.seat.is_some_and(|seat| seats.contains(&seat))
+            })
+            .map(|(id, _)| SinkId::new(*id))
+            .collect()
     }
 }
 
@@ -380,6 +418,13 @@ impl PipeWire {
 
     pub fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         self.changes.clone()
+    }
+
+    pub fn set_device_volume(&self, sink: SinkId, gain: Gain) -> Result<()> {
+        self.survey
+            .commands
+            .send(Request::Turn { sink, gain })
+            .map_err(|_| Error::LoopStopped)
     }
 
     fn node_name(&self, node: SinkId) -> Result<NodeName> {
@@ -574,6 +619,21 @@ fn run(
             Request::SetActive(wanted) => {
                 if let Some((stream, _)) = active.borrow().as_ref() {
                     let _ = stream.set_active(wanted);
+                }
+            }
+            Request::Turn { sink, gain } => {
+                let turning = reaching.shared.lock().route_turning(sink, gain);
+                let Some((device, turned)) = turning else {
+                    tracing::warn!(%sink, "the device under this sink names no route whose volume could be turned");
+                    return;
+                };
+                let held = graph.borrow();
+                let Some(devices) = held.as_ref().map(|held| held.devices.borrow()) else {
+                    return;
+                };
+                match devices.get(&device) {
+                    Some((proxy, _)) => turn_the_route(proxy, turned),
+                    None => tracing::warn!(%sink, device, "the device under this sink has left the graph"),
                 }
             }
             Request::Drain => {
@@ -813,6 +873,9 @@ fn watch_the_registry(
                             let shared = Arc::clone(&shared);
                             let id = global.id;
                             move |info| {
+                                if !info.change_mask().contains(NodeChangeMask::PROPS) {
+                                    return;
+                                }
                                 let seat = info
                                     .props()
                                     .and_then(|props| props.get(CARD_PROFILE_DEVICE))
@@ -880,8 +943,21 @@ fn watch_the_registry(
                     };
                     let listener = device
                         .add_listener_local()
+                        .info({
+                            let devices = Rc::clone(&devices);
+                            let id = global.id;
+                            move |info| {
+                                if !info.change_mask().contains(DeviceChangeMask::PARAMS) {
+                                    return;
+                                }
+                                if let Some((device, _)) = devices.borrow().get(&id) {
+                                    device.enum_params(0, Some(ParamType::Route), 0, u32::MAX);
+                                }
+                            }
+                        })
                         .param({
                             let shared = Arc::clone(&shared);
+                            let announce = announce.clone();
                             let id = global.id;
                             move |_seq, param_type, index, _next, param| {
                                 let Some(param) = param else { return };
@@ -902,12 +978,15 @@ fn watch_the_registry(
                                 let Some(route) = parse_route(&value) else {
                                     return;
                                 };
-                                shared
-                                    .lock()
-                                    .ports
-                                    .entry(id)
-                                    .or_default()
-                                    .keep(held, index, route);
+                                let mut state = shared.lock();
+                                let turned =
+                                    state.ports.entry(id).or_default().keep(held, index, route);
+                                let Some(seats) = turned else {
+                                    return;
+                                };
+                                for sink in state.sinks_seated_on(id, &seats) {
+                                    let _ = announce.try_send(SinkChange::Turned(sink));
+                                }
                             }
                         })
                         .register();
@@ -985,6 +1064,22 @@ fn watch_the_registry(
             }
         })
         .register()
+}
+
+fn turn_the_route(device: &Device, turned: RouteVolume) {
+    let serialized =
+        PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &route_volume(turned));
+    let bytes = match serialized {
+        Ok((cursor, _)) => cursor.into_inner(),
+        Err(error) => {
+            tracing::warn!(%error, "the route's volume could not be written as a POD");
+            return;
+        }
+    };
+    let Some(pod) = Pod::from_bytes(&bytes) else {
+        return;
+    };
+    device.set_param(ParamType::Route, 0, pod);
 }
 
 fn format_pod(spec: StreamSpec, word: WireWord, id: u32) -> Result<Vec<u8>> {
@@ -1247,6 +1342,7 @@ mod tests {
             description: "Headphones".to_owned(),
             plugged,
             hardware_volume: HardwareVolume::Unsaid,
+            volume: None,
         }
     }
 
@@ -1266,8 +1362,18 @@ mod tests {
 
     fn serving(seats: &[i32], port: SinkPort) -> AdvertisedRoute {
         AdvertisedRoute {
+            index: Some(0),
             seats: seats.to_vec(),
+            channels: 2,
             port,
+        }
+    }
+
+    fn heard_at(volume: f32) -> SinkPort {
+        SinkPort {
+            hardware_volume: HardwareVolume::Yes,
+            volume: Gain::new(volume).ok(),
+            ..headphones(Plugged::Yes)
         }
     }
 
@@ -1285,6 +1391,7 @@ mod tests {
                     description: "Digital Output (S/PDIF)".to_owned(),
                     plugged: Plugged::Unsaid,
                     hardware_volume: HardwareVolume::Unsaid,
+                    volume: None,
                 },
             ),
         );
@@ -1335,6 +1442,7 @@ mod tests {
                     description: "HDMI / DisplayPort 2".to_owned(),
                     plugged: Plugged::No,
                     hardware_volume: HardwareVolume::Unsaid,
+                    volume: None,
                 },
             ),
         );
@@ -1362,5 +1470,65 @@ mod tests {
 
         graph.driven.remove(&49);
         assert!(!graph.snapshot()[0].is_hardware);
+    }
+
+    #[test]
+    fn a_route_the_card_is_switched_to_says_which_seats_it_turned_when_its_volume_moves() {
+        let mut ports = DevicePorts::default();
+        assert_eq!(
+            ports.keep(Held::Current, 0, serving(&[1], heard_at(0.125))),
+            None,
+            "a route read for the first time was announced as turned"
+        );
+        assert_eq!(
+            ports.keep(Held::Current, 0, serving(&[1], heard_at(0.125))),
+            None
+        );
+        assert_eq!(
+            ports.keep(Held::Current, 0, serving(&[1], heard_at(0.5))),
+            Some(vec![1])
+        );
+        assert_eq!(
+            ports.keep(Held::Offered, 0, serving(&[1], heard_at(0.125))),
+            None,
+            "a port the card only offers was announced as turned"
+        );
+    }
+
+    #[test]
+    fn a_sink_turns_the_route_its_card_is_switched_to_and_no_other() {
+        let mut graph = Discovered::default();
+        graph.sinks.insert(59, sink(false, Some(49)));
+        let mut ports = DevicePorts::default();
+        ports.keep(Held::Offered, 3, serving(&[1], heard_at(0.125)));
+        graph.ports.insert(49, ports);
+        let half = Gain::new(0.5).expect("in range");
+
+        assert_eq!(
+            graph.route_turning(SinkId::new(59), half),
+            None,
+            "a route the card is not switched to was turned"
+        );
+
+        graph
+            .ports
+            .entry(49)
+            .or_default()
+            .keep(Held::Current, 3, serving(&[1], heard_at(0.125)));
+        assert_eq!(
+            graph.route_turning(SinkId::new(59), half),
+            Some((
+                49,
+                RouteVolume {
+                    index: 0,
+                    seat: 1,
+                    channels: 2,
+                    gain: half,
+                }
+            ))
+        );
+        assert_eq!(graph.route_turning(SinkId::new(60), half), None);
+        assert_eq!(graph.sinks_seated_on(49, &[1]), vec![SinkId::new(59)]);
+        assert!(graph.sinks_seated_on(49, &[2]).is_empty());
     }
 }

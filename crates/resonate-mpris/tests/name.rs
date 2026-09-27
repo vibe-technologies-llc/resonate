@@ -5,9 +5,10 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, unbounded};
+use resonate_core::Gain;
 use resonate_engine::{
-    AudioSource, Backend, EngineConfig, Player, SinkChange, SinkError, SinkInfo, SinkResult,
-    SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, EngineConfig, Player, SinkChange, SinkError, SinkId, SinkInfo,
+    SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_mpris::{Host, Mpris};
 use zbus::{
@@ -48,6 +49,10 @@ impl Backend for NoSinks {
         _request: &StreamRequest,
         _source: Box<dyn AudioSource>,
     ) -> SinkResult<SinkStream> {
+        Err(SinkError::NoSink)
+    }
+
+    fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {
         Err(SinkError::NoSink)
     }
 

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 
 use crate::format::WireWord;
 
@@ -110,14 +110,15 @@ pub enum HardwareVolume {
     Yes,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SinkPort {
     pub description: String,
     pub plugged: Plugged,
     pub hardware_volume: HardwareVolume,
+    pub volume: Option<Gain>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SinkInfo {
     pub id: SinkId,
     pub name: NodeName,
@@ -145,6 +146,12 @@ impl SinkInfo {
             .iter()
             .find(|entry| entry.format == format)
             .map(|entry| entry.words)
+    }
+
+    pub fn turns_its_own_volume(&self) -> bool {
+        self.port
+            .as_ref()
+            .is_some_and(|port| port.hardware_volume == HardwareVolume::Yes)
     }
 
     pub fn is_bluetooth(&self) -> bool {
@@ -298,6 +305,7 @@ pub enum SinkChange {
     Added(SinkId),
     Removed(SinkId),
     DefaultChanged,
+    Turned(SinkId),
 }
 
 #[cfg(test)]

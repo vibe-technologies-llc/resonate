@@ -186,6 +186,10 @@ impl Volume {
     pub fn to_gain(self) -> Gain {
         Gain(self.0 * self.0 * self.0)
     }
+
+    pub fn heard_at(gain: Gain) -> Self {
+        Self(gain.0.cbrt().clamp(0.0, 1.0))
+    }
 }
 
 impl Default for Volume {
@@ -231,6 +235,19 @@ mod tests {
                 "{db} dB round-tripped to {round_tripped}"
             );
         }
+    }
+
+    #[test]
+    fn a_volume_read_back_from_the_gain_it_turns_to_is_the_same_volume() {
+        for position in [0.0, 0.2, 0.5, 0.8, 1.0] {
+            let volume = Volume::new(position).expect("in range");
+            let heard = Volume::heard_at(volume.to_gain());
+            assert!(
+                (heard.get() - position).abs() < 1e-6,
+                "{position} read back as {heard}"
+            );
+        }
+        assert_eq!(Volume::heard_at(Gain(1.5)), Volume::MAX);
     }
 
     #[test]

@@ -90,6 +90,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
 
     match group {
         Group::Device => worn.sink != built.sink,
+        Group::DeviceVolume => worn.device_volume != built.device_volume,
         Group::SampleRate => worn.prefer_bit_perfect != built.prefer_bit_perfect,
         Group::GraphRate => worn.force_graph_rate != built.force_graph_rate,
         Group::Buffer => worn.buffer != built.buffer,
@@ -168,6 +169,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
 
     match group {
         Group::Device => vec![Command::SetSink(built.sink)],
+        Group::DeviceVolume => vec![Command::SetDeviceVolume(built.device_volume)],
         Group::SampleRate => vec![Command::SetBitPerfect(built.prefer_bit_perfect)],
         Group::GraphRate => vec![Command::SetForceGraphRate(built.force_graph_rate)],
         Group::Buffer => vec![Command::SetBuffer(built.buffer)],
@@ -271,6 +273,7 @@ mod tests {
             let engine = matches!(
                 group,
                 Group::Device
+                    | Group::DeviceVolume
                     | Group::SampleRate
                     | Group::GraphRate
                     | Group::Buffer

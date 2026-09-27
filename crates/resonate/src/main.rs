@@ -488,10 +488,14 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         Plugged::No => format!("{} (nothing plugged in)", port.description),
         Plugged::Yes => format!("{} (plugged in)", port.description),
     };
-    match port.hardware_volume {
+    let volume = match port.hardware_volume {
         HardwareVolume::Unsaid => plugged,
         HardwareVolume::No => format!("{plugged}, volume in software"),
         HardwareVolume::Yes => format!("{plugged}, volume on the hardware"),
+    };
+    match port.volume {
+        Some(gain) => format!("{volume} at {}", Volume::heard_at(gain)),
+        None => volume,
     }
 }
 
@@ -1964,6 +1968,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         prefer_bit_perfect: !cli.no_bit_perfect
             && config.bit_perfect.unwrap_or(defaults.prefer_bit_perfect),
         dop: config.dop.unwrap_or(defaults.dop),
+        device_volume: config.device_volume.unwrap_or(defaults.device_volume),
         true_peak: config.true_peak.unwrap_or(defaults.true_peak),
         restoration: config.restoration.unwrap_or(defaults.restoration),
         force_graph_rate: config.force_graph_rate.unwrap_or(defaults.force_graph_rate),

@@ -1,4 +1,6 @@
 use std::{
+    collections::VecDeque,
+    iter,
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
@@ -10,7 +12,7 @@ use resonate_codec::{
 };
 use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault, Span,
-    StreamSpec, TrackHints, TrackId,
+    StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_dsp::{Chain, Easing};
 use resonate_pipewire::{
@@ -25,7 +27,7 @@ use crate::{
     ReplayGainMode, Reply, Request, Result, Seeks, SkipUnderRepeat, Sleeping, StreamDigest, Tapped,
     Tapping, TrackState, TransportState,
     backend::Surveyor,
-    pipeline::{Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
+    pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{Queue, Queued, Removal},
     ring::{RingConsumer, RingMonitor, RingProducer, ring},
     surveying::{Surveyed, Surveying},
@@ -40,6 +42,8 @@ const EVENTS_A_PASS_HELD_INLINE: usize = 4;
 
 type Drained = SmallVec<[StreamEvent; EVENTS_A_PASS_HELD_INLINE]>;
 const CHAIN_BLOCK: usize = 1024;
+const TURNS_REMEMBERED: usize = 8;
+const ONE_LEVEL_WITHIN: f32 = 1e-5;
 const MIN_RING_FRAMES: u64 = 8_192;
 const BLOCKS_A_RING_HOLDS: u64 = 2;
 const LARGEST_RING: u64 = 64 * 1024 * 1024;
@@ -169,6 +173,7 @@ fn carried_samples(chain: &Chain, stream: StreamSpec) -> usize {
 struct Output {
     sink: SinkId,
     bound: NodeName,
+    attenuator: Attenuator,
     over_bluetooth: bool,
     awake_since: Option<Instant>,
     plan: OutputPlan,
@@ -210,8 +215,16 @@ impl Output {
     ) -> Result<Self> {
         let source = track.source();
         let decoded = track.decoded();
+        let attenuator = Attenuator::of(config, sink);
         let plan = match target {
-            Some(target) => plan_for(decoded, &sink.name, target, config, track.replay_gain),
+            Some(target) => plan_for(
+                decoded,
+                &sink.name,
+                target,
+                config,
+                track.replay_gain,
+                attenuator,
+            ),
             None => plan_output(decoded, sink, config, track.replay_gain),
         };
 
@@ -242,6 +255,7 @@ impl Output {
         Ok(Self {
             sink: sink.id,
             bound: sink.name.clone(),
+            attenuator,
             over_bluetooth: sink.is_bluetooth(),
             awake_since: None,
             status: OutputStatus {
@@ -429,6 +443,7 @@ pub struct Engine {
     failures: usize,
     renegotiations: u8,
     sounded: Option<(SinkId, Instant)>,
+    turned: VecDeque<Gain>,
     answers: Vec<Answer>,
 }
 
@@ -526,6 +541,7 @@ impl Engine {
             failures: 0,
             renegotiations: 0,
             sounded: None,
+            turned: VecDeque::with_capacity(TURNS_REMEMBERED),
             answers: Vec::new(),
         }
     }
@@ -835,6 +851,7 @@ impl Engine {
             Command::JumpTo(item) => self.hear(item),
             Command::SetVolume(volume) => {
                 self.config.volume = volume;
+                self.turn_the_device();
                 self.retune()
             }
             Command::SetRepeat(repeat) => {
@@ -913,6 +930,10 @@ impl Engine {
                 self.config.dop = marked;
                 let at = self.position();
                 self.rebind(Some(at), None)
+            }
+            Command::SetDeviceVolume(handed) => {
+                self.config.device_volume = handed;
+                self.retune()
             }
             Command::SetBluetoothWake(wake) => {
                 self.config.bluetooth = wake;
@@ -1294,6 +1315,9 @@ impl Engine {
             track.restart_profile();
         }
 
+        if output.attenuator == Attenuator::Device {
+            self.take_the_devices_volume(&sink);
+        }
         let status = output.status;
         self.output = Some(output);
         self.transport = TransportState::Loading;
@@ -1302,6 +1326,7 @@ impl Engine {
     }
 
     fn retune(&mut self) -> Result<()> {
+        self.weigh_whose_volume_it_is();
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_mut()) else {
             return Ok(());
         };
@@ -1332,10 +1357,13 @@ impl Engine {
             output.plan.stream,
             &self.config,
             replay_gain,
+            output.attenuator,
         );
 
         if wanted.same_shape_as(&output.plan) {
-            output.chain.set_gain(self.config.volume, replay_gain);
+            output
+                .chain
+                .set_gain(output.attenuator.leaves(self.config.volume), replay_gain);
             if let Some(profile) = wanted.equalisation.as_ref() {
                 output.chain.set_equalisation(profile);
                 output.chain.ease_equalisation(Easing::Returning);
@@ -1356,7 +1384,10 @@ impl Engine {
         };
         let drops_a_gain_stage = wanted.gain.is_none() && output.chain.gain_amplitude().is_some();
         if drops_a_gain_stage {
-            output.chain.set_gain(self.config.volume, track.replay_gain);
+            output.chain.set_gain(
+                output.attenuator.leaves(self.config.volume),
+                track.replay_gain,
+            );
         }
         let drops_the_equaliser =
             wanted.equalisation.is_none() && output.plan.equalisation.is_some();
@@ -1467,10 +1498,89 @@ impl Engine {
         match found {
             Ok(found) => {
                 *self.published.sinks.write() = found.into();
+                self.follow_the_devices_volume();
                 self.follow_the_sink_it_would_choose();
             }
             Err(error) => tracing::warn!(%error, "the sink list could not be refreshed"),
         }
+    }
+
+    fn bound_sink(&self) -> Option<SinkInfo> {
+        let bound = self.output.as_ref()?.sink;
+        self.published
+            .sinks
+            .read()
+            .iter()
+            .find(|sink| sink.id == bound)
+            .cloned()
+    }
+
+    fn weigh_whose_volume_it_is(&mut self) {
+        let Some(sink) = self.bound_sink() else {
+            return;
+        };
+        let attenuator = Attenuator::of(&self.config, &sink);
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        if output.attenuator == attenuator {
+            return;
+        }
+        output.attenuator = attenuator;
+        if attenuator == Attenuator::Device {
+            self.take_the_devices_volume(&sink);
+        }
+    }
+
+    fn take_the_devices_volume(&mut self, sink: &SinkInfo) {
+        let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
+            return;
+        };
+        self.config.volume = Volume::heard_at(heard);
+    }
+
+    fn follow_the_devices_volume(&mut self) {
+        let turned_here = self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.attenuator == Attenuator::Device);
+        if !turned_here {
+            return;
+        }
+        let Some(sink) = self.bound_sink() else {
+            return;
+        };
+        let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
+            return;
+        };
+        let ours = self.config.volume.to_gain();
+        let echoed = iter::once(&ours)
+            .chain(&self.turned)
+            .any(|turned| (turned.get() - heard.get()).abs() < ONE_LEVEL_WITHIN);
+        if echoed {
+            return;
+        }
+        tracing::debug!(%heard, "the device's volume was turned from elsewhere; the slider follows it");
+        self.config.volume = Volume::heard_at(heard);
+    }
+
+    fn turn_the_device(&mut self) {
+        let Some(output) = self
+            .output
+            .as_ref()
+            .filter(|output| output.attenuator == Attenuator::Device)
+        else {
+            return;
+        };
+        let gain = self.config.volume.to_gain();
+        if let Err(error) = self.backend.set_device_volume(output.sink, gain) {
+            tracing::warn!(%error, "the device's volume could not be turned");
+            return;
+        }
+        if self.turned.len() == TURNS_REMEMBERED {
+            self.turned.pop_front();
+        }
+        self.turned.push_back(gain);
     }
 
     fn follow_the_sink_it_would_choose(&mut self) {

@@ -595,6 +595,43 @@ impl RootView {
             })
     }
 
+    pub(super) fn device_volume_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let player = self.player.read(cx);
+        let handed = player.output_settings().device_volume;
+        let bound = player.state().output.map(|output| output.sink);
+        let turns_its_own = bound.and_then(|bound| {
+            player
+                .sinks()
+                .iter()
+                .find(|sink| sink.id == bound)
+                .map(SinkInfo::turns_its_own_volume)
+        });
+
+        kit::section_body()
+            .child(self.in_the_ring(
+                "device-volume",
+                switch_row(
+                    "Turn the device's own volume",
+                    "Scale the samples when this is off",
+                    handed,
+                    "device-volume",
+                ),
+                move |this, _, cx| {
+                    this.send(Command::SetDeviceVolume(!handed), cx);
+                    this.store(&Setting::DeviceVolume(!handed), cx);
+                },
+                cx,
+            ))
+            .when_some(turns_its_own, |body, turns_its_own| {
+                body.child(div().child(note(if turns_its_own {
+                    "The device playing now has a volume of its own."
+                } else {
+                    "The device playing now has no volume of its own, so the stream still turns \
+                     it."
+                })))
+            })
+    }
+
     pub(super) fn dop_group(&mut self, cx: &mut Context<Self>) -> Div {
         let marked = self.player.read(cx).output_settings().dop;
 

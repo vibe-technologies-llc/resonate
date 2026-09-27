@@ -62,6 +62,7 @@ impl Category {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Group {
     Device,
+    DeviceVolume,
     SampleRate,
     GraphRate,
     Buffer,
@@ -111,8 +112,9 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 47] = [
+    pub(crate) const ALL: [Self; 48] = [
         Self::Device,
+        Self::DeviceVolume,
         Self::SampleRate,
         Self::GraphRate,
         Self::Buffer,
@@ -164,6 +166,7 @@ impl Group {
     pub(crate) const fn category(self) -> Category {
         match self {
             Self::Device
+            | Self::DeviceVolume
             | Self::SampleRate
             | Self::GraphRate
             | Self::Buffer
@@ -213,6 +216,7 @@ impl Group {
     pub(crate) const fn title(self) -> &'static str {
         match self {
             Self::Device => "Playback device",
+            Self::DeviceVolume => "Hardware volume",
             Self::SampleRate => "Sample rate",
             Self::GraphRate => "Graph rate",
             Self::Buffer => "Buffer",
@@ -265,6 +269,7 @@ impl Group {
     pub(crate) const fn hint(self) -> &'static str {
         match self {
             Self::Device => DEVICE_HINT,
+            Self::DeviceVolume => DEVICE_VOLUME_HINT,
             Self::SampleRate => SAMPLE_RATE_HINT,
             Self::GraphRate => GRAPH_RATE_HINT,
             Self::Buffer => BUFFER_HINT,
@@ -317,6 +322,10 @@ impl Group {
     pub(crate) const fn also_called(self) -> &'static str {
         match self {
             Self::Device => "sink output card dac headphones speakers pipewire",
+            Self::DeviceVolume => {
+                "hardware mixer amplifier alsa route loudness slider system volume bit perfect \
+                 attenuation"
+            }
             Self::SampleRate => "bit perfect khz hz resample untouched",
             Self::GraphRate => "pipewire daemon switch rate",
             Self::Buffer => "latency milliseconds ms depth ring underrun",
@@ -430,6 +439,7 @@ impl Group {
     pub(crate) const fn keys(self) -> &'static [SettingKey] {
         match self {
             Self::Device => &[SettingKey::Sink],
+            Self::DeviceVolume => &[SettingKey::DeviceVolume],
             Self::SampleRate => &[SettingKey::BitPerfect],
             Self::GraphRate => &[SettingKey::ForceGraphRate],
             Self::Buffer => &[SettingKey::Buffer],
@@ -624,6 +634,13 @@ pub(crate) const BLUETOOTH_HINT: &str = "Wireless headphones power their radio d
      before the track, with the clock held at the start until the music is really heard. \
      Experimental: it keeps the headphones' radio busy through a pause, which costs them \
      battery.";
+
+pub(crate) const DEVICE_VOLUME_HINT: &str = "Turns the device's own volume, where its driver says \
+     it has one, rather than scaling the samples, so the stream stays bit-perfect at any volume. \
+     The slider then is the device's volume: it starts where the device already is, and follows \
+     the desktop when the device is turned from there. Everything else playing through that \
+     device is turned with it, and a device with no volume of its own is still turned by the \
+     stream.";
 
 pub(crate) const DOP_HINT: &str = "Hands a DSD file to the device as DSD carried inside PCM words rather than decimating it to \
      PCM first. Nothing in ALSA or SPA advertises whether a device decodes DoP — only the DAC's \

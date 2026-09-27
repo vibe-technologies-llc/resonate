@@ -362,6 +362,7 @@ impl RootView {
     fn group(&mut self, group: Group, standing: &Standing, cx: &mut Context<Self>) -> Div {
         let body = match group {
             Group::Device => self.device_group(cx),
+            Group::DeviceVolume => self.device_volume_group(cx),
             Group::SampleRate => self.sample_rate_group(cx),
             Group::GraphRate => self.graph_rate_group(cx),
             Group::Buffer => self.buffer_group(cx),

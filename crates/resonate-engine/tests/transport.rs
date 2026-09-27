@@ -22,11 +22,12 @@ use resonate_core::{
 };
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Command, DitherKind, EngineConfig,
-    Equalisation, Error as EngineError, Event, Frequency, Hinting, Media, MediaProvider, NodeName,
-    OutputMode, Placement, PlaybackState, Player, Preamp, PreviousRestarts, Profile, Q, QueueItem,
-    Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats,
-    SinkId, SinkInfo, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, Surveyor, Tapped, Until, Words, stamp_of,
+    Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting, Media,
+    MediaProvider, NodeName, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
+    PreviousRestarts, Profile, Q, QueueItem, Reading, RepeatMode, ReplayGainMode, Result,
+    Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult,
+    SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand, StreamEvent, StreamRequest,
+    Surveyor, Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -156,6 +157,7 @@ struct Graph {
     sinks: Vec<SinkInfo>,
     enumerations: usize,
     announce: Option<Sender<SinkChange>>,
+    turned: Vec<(SinkId, Gain)>,
 }
 
 impl Graph {
@@ -278,6 +280,11 @@ impl Backend for FakeSink {
                 Ok(())
             }),
         ))
+    }
+
+    fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
+        self.graph.lock().turned.push((sink, gain));
+        Ok(())
     }
 
     fn shutdown(self: Box<Self>) -> SinkResult<()> {
@@ -5066,5 +5073,187 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
             "heeding the true peak: {heeded}, the track played at {level}"
         );
     }
+    Ok(())
+}
+
+fn turning_its_own_volume(at: f32) -> SinkInfo {
+    SinkInfo {
+        port: Some(SinkPort {
+            description: "Headphones".to_owned(),
+            plugged: Plugged::Yes,
+            hardware_volume: HardwareVolume::Yes,
+            volume: Gain::new(at).ok(),
+        }),
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+    }
+}
+
+fn handing_the_volume_over(handed: bool) -> EngineConfig {
+    EngineConfig {
+        device_volume: handed,
+        ..config()
+    }
+}
+
+fn answered(player: &Player, command: Command) -> Result<()> {
+    player
+        .request(command)
+        .and_then(|outcome| outcome.wait_for(PATIENCE))
+}
+
+fn heard_near(player: &Player, volume: f32) -> bool {
+    (player.state().volume.get() - volume).abs() < 1e-4
+}
+
+#[test]
+fn a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let half = Volume::new(0.5).expect("in range");
+
+    let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(half.to_gain().get())]);
+    let player = Player::with_backend(handing_the_volume_over(true), move |_| {
+        Ok(Box::new(backend))
+    })?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    wait_for(
+        &player,
+        |player| heard_near(player, 0.5),
+        "the slider to take the level the device was already at",
+    );
+    assert!(
+        graph.lock().turned.is_empty(),
+        "the device was turned before the listener moved anything"
+    );
+
+    let louder = Volume::new(0.8).expect("in range");
+    answered(&player, Command::SetVolume(louder))?;
+    assert_eq!(
+        graph.lock().turned.last(),
+        Some(&(SinkId::new(1), louder.to_gain()))
+    );
+
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * usize::from(CHANNELS) * 2,
+        |_, graph| graph.played.len() >= wanted,
+        "the whole track to reach the graph",
+    );
+    let status = player.state().output.expect("an output status");
+    assert_eq!(status.mode, OutputMode::BitPerfect);
+    assert_eq!(
+        graph.lock().played,
+        source.stream,
+        "a volume the device turns reached the samples"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -> Result<()> {
+    let (player, graph) = {
+        let tree = Tree::new();
+        let source = pcm(16, FRAMES);
+        let path = tree.write("track.wav", &source.file);
+        let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
+        let player = Player::with_backend(handing_the_volume_over(true), move |_| {
+            Ok(Box::new(backend))
+        })?;
+        player.send(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?;
+        wait_for(&player, playing, "the stream to open");
+        (player, graph)
+    };
+
+    let first = Volume::new(0.3).expect("in range");
+    let second = Volume::new(0.6).expect("in range");
+    answered(&player, Command::SetVolume(first))?;
+    answered(&player, Command::SetVolume(second))?;
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(first.to_gain().get());
+    });
+    let enumerated = graph.lock().enumerations;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > enumerated,
+        "the engine to read the device again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+    assert!(
+        heard_near(&player, 0.6),
+        "an echo of the engine's own earlier turn moved the slider back"
+    );
+
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = turning_its_own_volume(Volume::new(0.4).expect("in range").to_gain().get());
+    });
+    wait_for(
+        &player,
+        |player| heard_near(player, 0.4),
+        "the slider to follow the device turned from the desktop",
+    );
+    Ok(())
+}
+
+#[test]
+fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, RATE as usize * 10);
+    let path = tree.write("track.wav", &source.file);
+
+    let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(0.125)]);
+    let player = Player::with_backend(handing_the_volume_over(false), move |_| {
+        Ok(Box::new(backend))
+    })?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    answered(
+        &player,
+        Command::SetVolume(Volume::new(0.9).expect("in range")),
+    )?;
+    let mode = |player: &Player| player.state().output.map(|output| output.mode);
+    let pulled = BLOCK_FRAMES * usize::from(CHANNELS) * 2;
+    play_until(
+        &player,
+        &graph,
+        pulled,
+        |player, _| mode(player) == Some(OutputMode::Converted),
+        "the stream's own volume to leave the bit-perfect path",
+    );
+    assert!(graph.lock().turned.is_empty());
+
+    answered(&player, Command::SetDeviceVolume(true))?;
+    play_until(
+        &player,
+        &graph,
+        pulled,
+        |player, _| mode(player) == Some(OutputMode::BitPerfect) && heard_near(player, 0.5),
+        "the device to take the volume, at the level it was already at",
+    );
+
+    answered(&player, Command::SetDeviceVolume(false))?;
+    play_until(
+        &player,
+        &graph,
+        pulled,
+        |player, _| mode(player) == Some(OutputMode::Converted),
+        "the stream to take the volume back",
+    );
+    assert!(heard_near(&player, 0.5));
     Ok(())
 }

@@ -6,11 +6,11 @@ use libspa::{
         format::{MediaSubtype, MediaType},
         format_utils,
     },
-    pod::{ChoiceValue, Pod, Value, ValueArray},
+    pod::{ChoiceValue, Object, Pod, Property, Value, ValueArray},
     sys,
     utils::{ChoiceEnum, Direction, Id},
 };
-use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{ChannelCount, ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{HardwareVolume, Plugged, SinkPort, StreamEvent, Words};
@@ -337,10 +337,58 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
     Some(advertised)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AdvertisedRoute {
+    pub(crate) index: Option<i32>,
     pub(crate) seats: Vec<i32>,
+    pub(crate) channels: usize,
     pub(crate) port: SinkPort,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct RouteVolume {
+    pub(crate) index: i32,
+    pub(crate) seat: i32,
+    pub(crate) channels: usize,
+    pub(crate) gain: Gain,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Levels {
+    channels: usize,
+    loudest: Option<Gain>,
+    muted: bool,
+}
+
+impl Levels {
+    fn of(value: &Value) -> Self {
+        let Value::Object(object) = value else {
+            return Self::default();
+        };
+        let mut levels = Self::default();
+        for property in &object.properties {
+            match (property.key, &property.value) {
+                (sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(volumes))) => {
+                    levels.channels = volumes.len();
+                    levels.loudest = volumes
+                        .iter()
+                        .copied()
+                        .filter_map(|volume| Gain::new(volume).ok())
+                        .reduce(|loudest, volume| if volume > loudest { volume } else { loudest });
+                }
+                (sys::SPA_PROP_mute, Value::Bool(muted)) => levels.muted = *muted,
+                _ => {}
+            }
+        }
+        levels
+    }
+
+    fn heard(&self) -> Option<Gain> {
+        if self.muted {
+            return Some(Gain::SILENT);
+        }
+        self.loudest
+    }
 }
 
 pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
@@ -351,17 +399,20 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
         return None;
     }
 
+    let mut index = None;
     let mut seat = None;
     let mut seats = Vec::new();
     let mut description = None;
     let mut name = None;
     let mut plugged = Plugged::Unsaid;
     let mut hardware_volume = HardwareVolume::Unsaid;
+    let mut levels = Levels::default();
     let mut direction = None;
 
     for property in &object.properties {
         match (property.key, &property.value) {
             (sys::SPA_PARAM_ROUTE_direction, value) => direction = first_id(value),
+            (sys::SPA_PARAM_ROUTE_index, Value::Int(held)) => index = Some(*held),
             (sys::SPA_PARAM_ROUTE_device, Value::Int(index)) => seat = Some(*index),
             (sys::SPA_PARAM_ROUTE_devices, Value::ValueArray(ValueArray::Int(indexes))) => {
                 seats = indexes.clone();
@@ -376,6 +427,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
             (sys::SPA_PARAM_ROUTE_info, Value::Struct(items)) => {
                 hardware_volume = hardware_volume_of(items);
             }
+            (sys::SPA_PARAM_ROUTE_props, value) => levels = Levels::of(value),
             _ => {}
         }
     }
@@ -389,12 +441,42 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
     }
 
     Some(AdvertisedRoute {
+        index,
         seats,
+        channels: levels.channels,
         port: SinkPort {
             description: description.or(name)?,
             plugged,
             hardware_volume,
+            volume: levels.heard(),
         },
+    })
+}
+
+pub(crate) fn route_volume(turned: RouteVolume) -> Value {
+    let volumes = vec![turned.gain.get(); turned.channels];
+    Value::Object(Object {
+        type_: sys::SPA_TYPE_OBJECT_ParamRoute,
+        id: sys::SPA_PARAM_Route,
+        properties: vec![
+            Property::new(sys::SPA_PARAM_ROUTE_index, Value::Int(turned.index)),
+            Property::new(sys::SPA_PARAM_ROUTE_device, Value::Int(turned.seat)),
+            Property::new(
+                sys::SPA_PARAM_ROUTE_props,
+                Value::Object(Object {
+                    type_: sys::SPA_TYPE_OBJECT_Props,
+                    id: sys::SPA_PARAM_Route,
+                    properties: vec![
+                        Property::new(
+                            sys::SPA_PROP_channelVolumes,
+                            Value::ValueArray(ValueArray::Float(volumes)),
+                        ),
+                        Property::new(sys::SPA_PROP_mute, Value::Bool(false)),
+                    ],
+                }),
+            ),
+            Property::new(sys::SPA_PARAM_ROUTE_save, Value::Bool(true)),
+        ],
     })
 }
 
@@ -478,10 +560,7 @@ pub(crate) fn parse_default_sink(json: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use libspa::{
-        pod::{Object, Property},
-        utils::{Choice, ChoiceFlags},
-    };
+    use libspa::utils::{Choice, ChoiceFlags};
 
     use super::*;
 
@@ -593,6 +672,82 @@ mod tests {
                 .expect("an output route");
             assert_eq!(route.port.hardware_volume, read_as, "reading {said}");
         }
+    }
+
+    fn at_levels(volumes: &[f32], muted: bool) -> Property {
+        Property::new(
+            sys::SPA_PARAM_ROUTE_props,
+            Value::Object(Object {
+                type_: sys::SPA_TYPE_OBJECT_Props,
+                id: sys::SPA_PARAM_Route,
+                properties: vec![
+                    Property::new(
+                        sys::SPA_PROP_channelVolumes,
+                        Value::ValueArray(ValueArray::Float(volumes.to_vec())),
+                    ),
+                    Property::new(sys::SPA_PROP_mute, Value::Bool(muted)),
+                ],
+            }),
+        )
+    }
+
+    #[test]
+    fn a_route_reads_its_loudest_channel_as_its_volume_and_a_mute_as_silence() {
+        let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+        properties.push(Property::new(sys::SPA_PARAM_ROUTE_index, Value::Int(4)));
+        properties.push(at_levels(&[0.125, 0.25], false));
+        let route =
+            parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
+        assert_eq!(route.index, Some(4));
+        assert_eq!(route.channels, 2);
+        assert_eq!(route.port.volume, Gain::new(0.25).ok());
+
+        let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+        properties.push(at_levels(&[0.125, 0.25], true));
+        let muted =
+            parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
+        assert_eq!(muted.port.volume, Some(Gain::SILENT));
+
+        let bare = parse_route(&routed(
+            Direction::Output.as_raw(),
+            a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes),
+        ))
+        .expect("an output route");
+        assert_eq!(bare.port.volume, None);
+        assert_eq!(bare.channels, 0);
+    }
+
+    #[test]
+    fn a_turned_route_sets_every_channel_unmuted_and_asks_to_be_remembered() {
+        let turned = route_volume(RouteVolume {
+            index: 4,
+            seat: 1,
+            channels: 3,
+            gain: Gain::new(0.125).expect("in range"),
+        });
+        let Value::Object(object) = &turned else {
+            panic!("a route is an object");
+        };
+        let said = |key| {
+            object
+                .properties
+                .iter()
+                .find(|property| property.key == key)
+                .map(|property| property.value.clone())
+        };
+
+        assert_eq!(said(sys::SPA_PARAM_ROUTE_index), Some(Value::Int(4)));
+        assert_eq!(said(sys::SPA_PARAM_ROUTE_device), Some(Value::Int(1)));
+        assert_eq!(said(sys::SPA_PARAM_ROUTE_save), Some(Value::Bool(true)));
+        let levels = Levels::of(&said(sys::SPA_PARAM_ROUTE_props).expect("the route's props"));
+        assert_eq!(
+            levels,
+            Levels {
+                channels: 3,
+                loudest: Gain::new(0.125).ok(),
+                muted: false,
+            }
+        );
     }
 
     #[test]

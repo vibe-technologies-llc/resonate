@@ -50,6 +50,7 @@ pub struct EngineConfig {
     pub levelling: Levelling,
     pub prefer_bit_perfect: bool,
     pub dop: bool,
+    pub device_volume: bool,
     pub force_graph_rate: bool,
     pub bluetooth: BluetoothWake,
     pub volume: Volume,
@@ -81,6 +82,30 @@ impl Default for BluetoothWake {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Attenuator {
+    #[default]
+    Stream,
+    Device,
+}
+
+impl Attenuator {
+    pub fn of(config: &EngineConfig, sink: &SinkInfo) -> Self {
+        if config.device_volume && sink.turns_its_own_volume() {
+            Self::Device
+        } else {
+            Self::Stream
+        }
+    }
+
+    pub const fn leaves(self, volume: Volume) -> Volume {
+        match self {
+            Self::Stream => volume,
+            Self::Device => Volume::MAX,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Levelling {
     pub pre_amp: Trim,
     pub untagged: Trim,
@@ -102,6 +127,7 @@ impl Default for EngineConfig {
             levelling: Levelling::default(),
             prefer_bit_perfect: true,
             dop: false,
+            device_volume: false,
             force_graph_rate: true,
             bluetooth: BluetoothWake::default(),
             volume: Volume::MAX,
@@ -323,7 +349,8 @@ pub fn plan_output(
     }
     .unwrap_or(source);
 
-    plan_for(decoded, &sink.name, target, config, replay_gain)
+    let attenuator = Attenuator::of(config, sink);
+    plan_for(decoded, &sink.name, target, config, replay_gain, attenuator)
 }
 
 pub fn packs_again(
@@ -347,7 +374,7 @@ fn dop_survives(
 ) -> bool {
     config.dop
         && sink.supports(source)
-        && gain_config(config, replay_gain).is_none()
+        && gain_config(config, Attenuator::of(config, sink), replay_gain).is_none()
         && eq_config(config, &sink.name, source.rate).is_none()
 }
 
@@ -375,6 +402,7 @@ pub fn plan_for(
     target: StreamSpec,
     config: &EngineConfig,
     replay_gain: AppliedGain,
+    attenuator: Attenuator,
 ) -> OutputPlan {
     let decimates = matches!(source.packing, Packing::DopMarked(_));
     let restoration = source
@@ -393,8 +421,8 @@ pub fn plan_for(
     let equalisation = eq_config(config, sink, stream.rate);
     let converts =
         resample.is_some() || remix.is_some() || equalisation.is_some() || restoration.is_some();
-    let gain =
-        gain_config(config, replay_gain).or_else(|| converts.then(|| gain_of(config, replay_gain)));
+    let gain = gain_config(config, attenuator, replay_gain)
+        .or_else(|| converts.then(|| gain_of(config, attenuator, replay_gain)));
 
     let stages = converts || gain.is_some();
     let narrows = stream != source && !stream.losslessly_holds(source);
@@ -478,14 +506,18 @@ fn eq_config(config: &EngineConfig, sink: &NodeName, rate: SampleRate) -> Option
         .filter(|profile| !profile.is_transparent())
 }
 
-fn gain_config(config: &EngineConfig, replay_gain: AppliedGain) -> Option<GainConfig> {
-    let attenuated = config.volume != Volume::MAX;
-    (attenuated || replay_gain.adjusts()).then(|| gain_of(config, replay_gain))
+fn gain_config(
+    config: &EngineConfig,
+    attenuator: Attenuator,
+    replay_gain: AppliedGain,
+) -> Option<GainConfig> {
+    let attenuated = attenuator.leaves(config.volume) != Volume::MAX;
+    (attenuated || replay_gain.adjusts()).then(|| gain_of(config, attenuator, replay_gain))
 }
 
-fn gain_of(config: &EngineConfig, replay_gain: AppliedGain) -> GainConfig {
+fn gain_of(config: &EngineConfig, attenuator: Attenuator, replay_gain: AppliedGain) -> GainConfig {
     GainConfig {
-        volume: config.volume,
+        volume: attenuator.leaves(config.volume),
         replay_gain,
         prevent_clipping: true,
         ..GainConfig::default()
@@ -498,7 +530,7 @@ mod tests {
         ChannelLayout, Decibels, SampleFormat,
         eq::{Band, BandGain, BandKind, Frequency, Preamp, Q, Target, TargetPoint},
     };
-    use resonate_pipewire::{SinkFormats, SinkId, Words};
+    use resonate_pipewire::{HardwareVolume, Plugged, SinkFormats, SinkId, SinkPort, Words};
 
     use super::*;
 
@@ -698,6 +730,85 @@ mod tests {
         assert_eq!(plan.mode, OutputMode::Converted);
         assert!(plan.gain.is_some());
         assert!(plan.resample.is_none());
+    }
+
+    fn turning_its_own(volume: HardwareVolume, sink: SinkInfo) -> SinkInfo {
+        SinkInfo {
+            port: Some(SinkPort {
+                description: "Headphones".to_owned(),
+                plugged: Plugged::Yes,
+                hardware_volume: volume,
+                volume: None,
+            }),
+            ..sink
+        }
+    }
+
+    #[test]
+    fn a_device_that_turns_its_own_volume_takes_the_attenuation_and_leaves_the_stream_bit_perfect()
+    {
+        let cd = spec(SampleRate::HZ_44100, SampleFormat::S16);
+        let exact = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+        let handing_over = EngineConfig {
+            device_volume: true,
+            ..half_volume()
+        };
+
+        let hardware = turning_its_own(HardwareVolume::Yes, exact.clone());
+        let handed = plan(cd, &hardware, &handing_over);
+        assert_eq!(handed.mode, OutputMode::BitPerfect);
+        assert!(handed.gain.is_none());
+
+        for (said, heard) in [
+            (
+                "a device whose volume is software's",
+                turning_its_own(HardwareVolume::No, exact.clone()),
+            ),
+            (
+                "a device that says nothing",
+                turning_its_own(HardwareVolume::Unsaid, exact.clone()),
+            ),
+            ("a node with no port", exact),
+        ] {
+            let kept = plan(cd, &heard, &handing_over);
+            assert_eq!(
+                kept.mode,
+                OutputMode::Converted,
+                "{said} was handed the volume"
+            );
+            assert!(kept.gain.is_some(), "{said} was handed the volume");
+        }
+
+        let kept = plan(cd, &hardware, &half_volume());
+        assert_eq!(
+            kept.mode,
+            OutputMode::Converted,
+            "the device was handed the volume with the setting off"
+        );
+    }
+
+    #[test]
+    fn a_device_turning_the_volume_still_leaves_replay_gain_to_the_stream() {
+        let cd = spec(SampleRate::HZ_44100, SampleFormat::S16);
+        let hardware = turning_its_own(
+            HardwareVolume::Yes,
+            sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]),
+        );
+        let handing_over = EngineConfig {
+            device_volume: true,
+            ..half_volume()
+        };
+        let levelled = AppliedGain {
+            gain: Some(Decibels::new(-6.0).expect("finite")),
+            peak: None,
+        };
+
+        let plan = plan_output(Decoded::samples(cd), &hardware, &handing_over, levelled);
+        let gain = plan
+            .gain
+            .expect("a ReplayGain adjustment is the stream's own");
+        assert_eq!(gain.volume, Volume::MAX);
+        assert_eq!(gain.replay_gain, levelled);
     }
 
     #[test]
@@ -1217,6 +1328,7 @@ mod tests {
             target,
             &EngineConfig::default(),
             AppliedGain::default(),
+            Attenuator::Stream,
         );
 
         assert_eq!(plan.stream, target);
@@ -1242,6 +1354,7 @@ mod tests {
             negotiated,
             &EngineConfig::default(),
             AppliedGain::default(),
+            Attenuator::Stream,
         );
         let second = plan_for(
             Decoded::samples(source),
@@ -1249,6 +1362,7 @@ mod tests {
             first.stream,
             &EngineConfig::default(),
             AppliedGain::default(),
+            Attenuator::Stream,
         );
 
         assert_eq!(first.stream, negotiated);
@@ -2140,6 +2254,7 @@ mod tests {
             spec(SampleRate::HZ_44100, SampleFormat::S32),
             &plain,
             AppliedGain::default(),
+            Attenuator::Stream,
         );
         assert!(!plan(cd, &exact, &plain).becomes_on_the_same_stream(&renegotiated));
 

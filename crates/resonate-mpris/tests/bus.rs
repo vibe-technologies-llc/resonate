@@ -16,7 +16,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_codec::{Error as CodecError, Result as CodecResult};
 use resonate_core::{
-    ChannelLayout, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat, SampleRate,
+    ChannelLayout, FrameSpan, Frames, Gain, MediaLocation, PlaylistId, SampleFormat, SampleRate,
     SourceId, TrackId, Volume,
 };
 use resonate_engine::{
@@ -302,6 +302,10 @@ impl Backend for RealtimeSink {
                 Ok(())
             }),
         ))
+    }
+
+    fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {
+        Ok(())
     }
 
     fn shutdown(self: Box<Self>) -> SinkResult<()> {
