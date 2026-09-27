@@ -27,15 +27,15 @@ use resonate_library::{
     Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease, Codec,
     CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding, EnrichOptions, EnrichSummary,
     Error, Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
-    HeldMedium, ImageFormat, ImportOptions, ImportSummary, Isrc, Kept, Layout, Library, LifeSpan,
-    Link, ListeningService, LookupOp, Mbid, Medium, Missing, MissingTrack, OrganiseOptions,
-    OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress,
-    Pruned, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
-    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TagField, TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    HeldMedium, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
+    LifeSpan, Link, ListeningService, LookupOp, Mbid, Medium, Missing, MissingTrack,
+    OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder,
+    PollOptions, PollProgress, Pruned, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
+    Scrobble, Scrobbler, Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TagField, TagSet, TagSource, Track, TrackQuery, UnheldRelease,
+    Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -10218,6 +10218,7 @@ fn on_orbits(position: u32) -> Vec<RecordingRelease> {
         date: Some("1971-10-30".to_owned()),
         disc: Some(1),
         position: Some(position),
+        issued: Issued::default(),
     }]
 }
 
@@ -16086,6 +16087,7 @@ fn echoes_found() -> RecordingMatch {
                 date: Some("2001-11-05".to_owned()),
                 disc: None,
                 position: None,
+                issued: Issued::default(),
             },
             RecordingRelease {
                 id: mbid(MEDDLE),
@@ -16093,6 +16095,7 @@ fn echoes_found() -> RecordingMatch {
                 date: Some("1971-10-30".to_owned()),
                 disc: None,
                 position: None,
+                issued: Issued::default(),
             },
         ],
     }
@@ -16197,6 +16200,7 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
         date: None,
         disc: None,
         position: None,
+        issued: Issued::default(),
     });
     assert!(matches!(
         library.want_found(&fake, &lost),

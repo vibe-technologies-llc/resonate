@@ -79,8 +79,9 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Identification
 - A strict match is written without a pane to confirm it, and forgetting a wrong one leaves the
   track-level names the match corrected as it wrote them
-- A found song or a track named by its audio is placed on the earliest-dated release its recording
-  sits on, often a single or compilation rather than the album meant. Nothing offers the choice
+- A found song or a track named by its audio is placed by a rule rather than by the listener:
+  nothing offers the choice of release, and a recording read by its ISRC carries no release
+  kinds to weigh
 - A file with no title tag and a stem that is neither numbered nor separated gives the search
   nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or recording id
 - A stem-named row renamed and edited together is asked again from its new name, overwriting what

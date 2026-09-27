@@ -18,6 +18,8 @@ const GATE: &str = "RESONATE_ONLINE_TESTS";
 const MEDDLE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
 const PINK_FLOYD: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_LASTS: Duration = Duration::from_secs(1412);
+const ONE_OF_THESE_DAYS: &str = "8a313f74-75fe-40ff-a1a9-0b000216c555";
+const ECHOES_ISRC: &str = "GBN9Y1100065";
 
 static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
 
@@ -67,6 +69,32 @@ fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
         .expect("deezer answered")
         .expect("deezer holds echoes");
     assert!(by_name.url.starts_with("https://www.deezer.com/track/"));
+}
+
+#[test]
+fn a_recording_says_what_kind_of_release_each_of_its_releases_is_and_an_isrc_is_answered() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    let recording = online
+        .recording(&mbid(ONE_OF_THESE_DAYS))
+        .expect("musicbrainz answered")
+        .expect("the recording is one it holds");
+    assert!(
+        recording
+            .releases
+            .iter()
+            .any(|release| release.issued.kind.as_deref() == Some("Album")
+                && release.issued.status.as_deref() == Some("Official")),
+        "no release of the recording was read as an official album"
+    );
+
+    let takes = online
+        .recordings_of_isrc(&Isrc::new(ECHOES_ISRC).expect("a well-formed isrc"))
+        .expect("musicbrainz answered the isrc");
+    assert!(!takes.is_empty());
 }
 
 #[test]

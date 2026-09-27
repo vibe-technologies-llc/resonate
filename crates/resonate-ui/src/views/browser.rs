@@ -1085,7 +1085,7 @@ impl RootView {
                     WANT_FOUND_HINT,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    let wanted = found.clone();
+                    let wanted = Found::clone(&found);
                     this.library
                         .update(cx, |library, cx| library.want_found(wanted, cx));
                 }))
@@ -2144,7 +2144,7 @@ fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
 
 pub(crate) enum Asks {
     Row(ReleaseTrackId),
-    Found(Found),
+    Found(Box<Found>),
 }
 
 pub(crate) enum Beside {
@@ -2235,7 +2235,7 @@ impl Unheld {
                         .unwrap_or_default(),
                 ),
             },
-            asks: Asks::Found(found.clone()),
+            asks: Asks::Found(Box::new(found.clone())),
         }
     }
 }

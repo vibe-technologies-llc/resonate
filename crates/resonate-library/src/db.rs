@@ -2253,7 +2253,7 @@ impl Library {
             None => reference
                 .recording(&found.recording)?
                 .and_then(|recording| {
-                    elsewhere::first_released(&recording.releases).map(|release| release.id.clone())
+                    elsewhere::meant_release(&recording.releases).map(|release| release.id.clone())
                 })
                 .ok_or_else(|| Error::Unreleased {
                     recording: found.recording.clone(),

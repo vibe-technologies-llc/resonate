@@ -19,7 +19,7 @@ use crate::{
     AlbumToAsk, ArtistMatch, ArtistProfile, ArtistRelease, ArtistToAsk, CoverArt, Credit, Error,
     Fingerprinters, GroupAsked, GroupMatch, GroupRelease, Library, Link, LookupOp, Mbid, Recording,
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording, credits,
+    ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording, credits, elsewhere,
     enriched::{folded_title, stripped_title},
     model::CoverFrom,
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
@@ -1067,11 +1067,7 @@ fn best_release<'a>(
         })
     });
 
-    the_albums_own.or_else(|| {
-        releases().min_by(|one, other| {
-            earliest(one.date.as_deref()).cmp(&earliest(other.date.as_deref()))
-        })
-    })
+    the_albums_own.or_else(|| elsewhere::meant_release(&recording.releases))
 }
 
 fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
@@ -2633,6 +2629,7 @@ mod tests {
             date: date.map(str::to_owned),
             disc: Some(1),
             position: Some(4),
+            issued: crate::Issued::default(),
         }
     }
 

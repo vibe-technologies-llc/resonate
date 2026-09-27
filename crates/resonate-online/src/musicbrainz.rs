@@ -2,8 +2,9 @@ use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
     ArtistMatch, ArtistProfile, ArtistRelease, Credit, Genre, GroupAsked, GroupMatch, GroupRelease,
-    Isrc, LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
-    RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Wording,
+    Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked,
+    RecordingMatch, RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Wording,
 };
 use serde::Deserialize;
 
@@ -22,7 +23,8 @@ const DISCOGRAPHY_KINDS: &str = "album|ep";
 const RELEASE_INCLUDES: &str =
     "recordings+artist-credits+media+release-groups+isrcs+labels+url-rels+recording-level-rels";
 const ARTIST_INCLUDES: &str = "url-rels+tags+aliases";
-const RECORDING_INCLUDES: &str = "artist-credits+releases+isrcs+media";
+const RECORDING_INCLUDES: &str = "artist-credits+releases+isrcs+media+release-groups";
+const ISRC_INCLUDES: &str = "artist-credits+releases+isrcs+media";
 const RELEASE_GROUP_INCLUDES: &str = "artist-credits+releases+media+url-rels";
 const LENGTH_MAY_DIFFER_BY_MS: u64 = 10_000;
 
@@ -205,7 +207,19 @@ struct ReleaseOfRecordingDoc {
     #[serde(default)]
     date: Option<String>,
     #[serde(default)]
+    status: Option<String>,
+    #[serde(default, rename = "release-group")]
+    group: Option<GroupKindDoc>,
+    #[serde(default)]
     media: Vec<TrackedMediumDoc>,
+}
+
+#[derive(Deserialize)]
+struct GroupKindDoc {
+    #[serde(default, rename = "primary-type")]
+    primary_type: Option<String>,
+    #[serde(default, rename = "secondary-types")]
+    secondary_types: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -522,7 +536,7 @@ pub(crate) fn recording(client: &Client, id: &Mbid) -> Result<Option<Recording>>
 
 pub(crate) fn recordings_of_isrc(client: &Client, isrc: &Isrc) -> Result<Vec<Recording>> {
     let op = LookupOp::Isrc;
-    let path = format!("/isrc/{isrc}?inc={RECORDING_INCLUDES}&fmt=json");
+    let path = format!("/isrc/{isrc}?inc={ISRC_INCLUDES}&fmt=json");
     client
         .json::<IsrcDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.recordings)
@@ -953,12 +967,21 @@ impl ReleaseOfRecordingDoc {
         let id = mbid(Some(&self.id))?;
         let placing = placed(&self.media);
 
+        let (kind, secondary) = self.group.map_or((None, Vec::new()), |group| {
+            (present(group.primary_type), group.secondary_types)
+        });
+
         Some(RecordingRelease {
             id,
             title: self.title,
             date: present(self.date),
             disc: placing.disc,
             position: placing.position,
+            issued: Issued {
+                kind,
+                secondary,
+                status: present(self.status),
+            },
         })
     }
 }
@@ -1561,6 +1584,30 @@ mod tests {
         assert!(
             found[1..].iter().all(|found| found.isrcs.is_empty()),
             "a take registered under no code answers with none rather than with an empty one"
+        );
+    }
+
+    #[test]
+    fn a_release_a_recording_sits_on_says_what_kind_of_release_it_is_and_how_it_was_issued() {
+        let found: Vec<RecordingMatch> =
+            serde_json::from_str::<RecordingSearchDoc>(RECORDING_SEARCH)
+                .expect("the fixture parses")
+                .recordings
+                .into_iter()
+                .filter_map(RecordingFoundDoc::into_match)
+                .collect();
+
+        assert_eq!(
+            found[0].releases[0].issued,
+            Issued {
+                kind: Some("Album".to_owned()),
+                secondary: vec!["Live".to_owned()],
+                status: Some("Withdrawn".to_owned()),
+            }
+        );
+        assert_eq!(
+            found[1].releases[0].issued.status.as_deref(),
+            Some("Bootleg")
         );
     }
 

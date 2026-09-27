@@ -1104,7 +1104,7 @@ through `Player::media` like any other unscanned row.
   `tracks_fts` from, so a corrected title is searchable at once rather than at the next scan.
 - **A track that names its release lands the album its own pass never reached.** `best_release` is
   which of a recording's releases the row is filed under: the album's `albums.mbid` where it has
-  one, then a release whose `folded_title` is the album's, then the earliest dated by `earliest`.
+  one, then a release whose `folded_title` is the album's, then `elsewhere::meant_release`.
   Where the album has never been answered — `TrackToAsk::album_answered` is false —
   `take_recording` goes on to `land_release` on that id, so identifying one track of an untagged
   album lands the whole release and pairs every row of it in the same turn. Where the album *has*
@@ -1663,10 +1663,21 @@ the pass.
   `SHORT_OF_WHAT_IS_HELD_OR_WANTED` rule: a release row is missing where its album holds a track
   or where the row itself is wanted, so a release landed for one song does not list the eleven
   nobody asked for. `a_search_reaches_the_rows_the_catalog_knows_it_is_short_of` is the claim.
+- **A song is placed on the album it was meant for, not on whatever came out first.** A hit
+  single is dated before the album it was cut from, and a compilation often before both, so the
+  earliest release was the wrong answer for most songs. `elsewhere::meant_release` weighs each
+  release's `Issued` first — `Standing` puts an official release before one whose status is not
+  stated and both before a bootleg, a promotion or a withdrawn one, and `Meant` puts an album
+  (a soundtrack counts) before an EP, an EP before a single, and any of them before a release
+  whose kind is not stated and before a compilation, a live album or anything else with
+  secondary types — and only then the date, an undated release last. It is what `best_release`
+  falls back to and what a found song is wanted from.
+  `a_song_is_placed_on_its_album_before_a_single_or_a_compilation_that_came_out_first` is the
+  claim.
 - **A song the catalog has never heard of is found elsewhere and wanted by landing its release.**
   `Library::found_elsewhere` sends the words a search asks by name to `Reference::find_songs`
   and answers `Found`s: a recording, its title, its credit, its length and the release it first
-  came out on — `elsewhere::first_released`, the earliest dated — with every recording the
+  was meant for — `elsewhere::meant_release` — with every recording the
   catalog already names in `tracks.mbid` or `release_tracks.recording_mbid` left out and a second
   recording of the same folded title by the same folded credit dropped, up to
   `FOUND_ELSEWHERE_AT_MOST`. `asks_elsewhere` is the guard a caller weighs first: a search whose

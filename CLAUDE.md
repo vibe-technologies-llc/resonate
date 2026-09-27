@@ -653,7 +653,8 @@ Invariants the layering exists to protect:
 - **A search reaches what the library does not hold, greyed and wantable like any missing row.**
   After the held rows the tracks pane lists the release rows the catalog knows it lacks, read off
   `release_tracks.folded`, and then the songs `Reference::find_songs` found on MusicBrainz that
-  the catalog names nowhere. Wanting a found song lands its first release as an album stamped
+  the catalog names nowhere. Wanting a found song lands the release it was meant for — an
+  official album before a single or a compilation, and only then the earliest — as an album stamped
   `found_elsewhere`, which the orphan sweep spares only while a want stands on it, so the want is
   an ordinary one the providers fill. What a track *sings* is the fifth `tracks_fts` column —
   the file's lyrics or the fetched ones, timestamps stripped — reached by `lyrics:` and never by a

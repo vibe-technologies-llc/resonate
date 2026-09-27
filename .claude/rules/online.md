@@ -150,7 +150,11 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   byte.
 - **A recording is asked for three ways and every one of them maps through the same document.**
   `musicbrainz::recording` asks `/recording/<mbid>` with `RECORDING_INCLUDES` — artist-credits,
-  releases, isrcs and media; `recordings_of_isrc` asks `/isrc/<code>` with the same includes and
+  releases, isrcs, media and release-groups, the last of which puts each release's group, with
+  its primary and secondary types, beside the release's own status, so `RecordingRelease::issued`
+  says whether a release is an official album or a single, a compilation or a bootleg;
+  `recordings_of_isrc` asks `/isrc/<code>` with `ISRC_INCLUDES`, the same less release-groups,
+  which that endpoint answers with a 400, so a release read there carries its status alone; and it
   answers the whole `recordings` list, because one ISRC names every take released under it and
   telling them apart is the caller's; and `find_recording` writes `recording:"…"` with
   `credited_to` — `AND arid:<mbid>` or `AND artist:"…"` — `AND release:"…"` and

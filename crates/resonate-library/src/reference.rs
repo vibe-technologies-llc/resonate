@@ -110,6 +110,14 @@ pub struct RecordingRelease {
     pub date: Option<String>,
     pub disc: Option<u32>,
     pub position: Option<u32>,
+    pub issued: Issued,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Issued {
+    pub kind: Option<String>,
+    pub secondary: Vec<String>,
+    pub status: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

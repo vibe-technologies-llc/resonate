@@ -5,8 +5,8 @@ use resonate_core::{AlbumId, ReleaseTrackId, WantId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
-    Column, Error, Mbid, RecordingMatch, RecordingRelease, Release, Result, Search, StoreOp,
-    enriched, store,
+    Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release, Result, Search,
+    StoreOp, enriched, store,
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
@@ -71,7 +71,7 @@ pub(crate) fn found_among(
             continue;
         }
         found.push(Found {
-            release: first_released(&matched.releases).cloned(),
+            release: meant_release(&matched.releases).cloned(),
             recording: matched.recording,
             title: matched.title,
             artist,
@@ -85,15 +85,56 @@ pub(crate) fn found_among(
     found
 }
 
-pub(crate) fn first_released(releases: &[RecordingRelease]) -> Option<&RecordingRelease> {
-    releases
-        .iter()
-        .min_by(|one, other| match (&one.date, &other.date) {
-            (Some(one), Some(other)) => one.cmp(other),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        })
+const AN_ALBUM: &str = "Album";
+const AN_EP: &str = "EP";
+const A_SINGLE: &str = "Single";
+const A_SOUNDTRACK: &str = "Soundtrack";
+const OFFICIAL: &str = "Official";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Standing {
+    Official,
+    Unstated,
+    Otherwise,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Meant {
+    Album,
+    Ep,
+    Single,
+    Unstated,
+    Otherwise,
+}
+
+fn standing_of(issued: &Issued) -> Standing {
+    match issued.status.as_deref() {
+        Some(OFFICIAL) => Standing::Official,
+        None => Standing::Unstated,
+        Some(_) => Standing::Otherwise,
+    }
+}
+
+fn meant_as(issued: &Issued) -> Meant {
+    let plain = issued.secondary.iter().all(|kind| kind == A_SOUNDTRACK);
+    match issued.kind.as_deref() {
+        None => Meant::Unstated,
+        Some(AN_ALBUM) if plain => Meant::Album,
+        Some(AN_EP) if plain => Meant::Ep,
+        Some(A_SINGLE) if plain => Meant::Single,
+        Some(_) => Meant::Otherwise,
+    }
+}
+
+pub(crate) fn meant_release(releases: &[RecordingRelease]) -> Option<&RecordingRelease> {
+    releases.iter().min_by_key(|release| {
+        (
+            standing_of(&release.issued),
+            meant_as(&release.issued),
+            release.date.is_none(),
+            release.date.as_deref().unwrap_or_default(),
+        )
+    })
 }
 
 pub(crate) fn album_of_release(
@@ -219,6 +260,7 @@ mod tests {
             date: date.map(str::to_owned),
             disc: None,
             position: None,
+            issued: Issued::default(),
         }
     }
 
@@ -279,6 +321,71 @@ mod tests {
         assert_eq!(found[0].artist, "Pink Floyd");
     }
 
+    fn issued(
+        id: &str,
+        date: &str,
+        kind: &str,
+        secondary: &[&str],
+        status: &str,
+    ) -> RecordingRelease {
+        RecordingRelease {
+            issued: Issued {
+                kind: Some(kind.to_owned()),
+                secondary: secondary.iter().map(|&kind| kind.to_owned()).collect(),
+                status: Some(status.to_owned()),
+            },
+            ..released(id, Some(date))
+        }
+    }
+
+    #[test]
+    fn a_song_is_placed_on_its_album_before_a_single_or_a_compilation_that_came_out_first() {
+        let releases = vec![
+            issued(ONE, "1971-01-01", "Single", &[], "Official"),
+            issued(TWO, "1970-06-01", "Album", &["Compilation"], "Official"),
+            issued(THREE, "1971-10-30", "Album", &[], "Official"),
+        ];
+
+        assert_eq!(
+            meant_release(&releases).map(|release| release.id.as_str()),
+            Some(THREE)
+        );
+    }
+
+    #[test]
+    fn an_official_release_is_placed_before_a_bootleg_of_the_same_album() {
+        let releases = vec![
+            issued(ONE, "1970-01-01", "Album", &[], "Bootleg"),
+            issued(TWO, "1972-01-01", "Album", &[], "Official"),
+        ];
+
+        assert_eq!(
+            meant_release(&releases).map(|release| release.id.as_str()),
+            Some(TWO)
+        );
+    }
+
+    #[test]
+    fn a_soundtrack_is_an_album_and_an_ep_comes_before_a_single() {
+        let soundtrack = vec![
+            issued(ONE, "2001-01-01", "Single", &[], "Official"),
+            issued(TWO, "2002-01-01", "Album", &["Soundtrack"], "Official"),
+        ];
+        let smaller = vec![
+            issued(ONE, "2001-01-01", "Single", &[], "Official"),
+            issued(THREE, "2002-01-01", "EP", &[], "Official"),
+        ];
+
+        assert_eq!(
+            meant_release(&soundtrack).map(|release| release.id.as_str()),
+            Some(TWO)
+        );
+        assert_eq!(
+            meant_release(&smaller).map(|release| release.id.as_str()),
+            Some(THREE)
+        );
+    }
+
     #[test]
     fn a_song_is_wanted_from_the_release_it_first_came_out_on() {
         let releases = vec![
@@ -288,13 +395,13 @@ mod tests {
         ];
 
         assert_eq!(
-            first_released(&releases).map(|release| release.id.as_str()),
+            meant_release(&releases).map(|release| release.id.as_str()),
             Some(THREE)
         );
         assert_eq!(
-            first_released(&[released(TWO, None)]).map(|release| release.id.as_str()),
+            meant_release(&[released(TWO, None)]).map(|release| release.id.as_str()),
             Some(TWO)
         );
-        assert!(first_released(&[]).is_none());
+        assert!(meant_release(&[]).is_none());
     }
 }
