@@ -15,8 +15,8 @@ window.
 - **A `Lyrics` is a flat list of `LyricLine`s that is `Synced` or `Unsynced`.** A line carries an
   optional moment and a `Voice`: one by default, two where a timed LRC line names it. Two voices
   can overlap, and each line remains lit until the next line of its own voice or ten seconds,
-  whichever comes first. A karaoke-timed word and a translation beside the original still have no
-  representation. `Wanted` is the other half of the vocabulary — the track a provider is
+  whichever comes first. A line may also carry its words, timed one by one — below — and a
+  translation beside the original still has no representation. `Wanted` is the other half of the vocabulary — the track a provider is
   asked about — carrying the title, artist, album and length a provider would search on and the
   text the file itself holds as `Wanted::carried`.
 - **`Lyrics::line_at` is what the pane reads at and `voices_in_play` is what it lights, and they
@@ -80,7 +80,8 @@ window.
   `StreamDigest` like every other tag. ID3's `SYLT` reaches symphonia as a raw frame, and
   `resonate-codec`'s `sylt.rs` writes it out as LRC text — a line per entry, or, where entries open
   with a newline, the syllables between two newlines gathered into one line at the first one's
-  moment — so it is read by the same reader as everything else and outranks an unsynchronised frame
+  moment with each syllable written after an inline `<mm:ss.xxx>` stamp of its own, so a frame
+  timed syllable by syllable is a line timed word by word — so it is read by the same reader as everything else and outranks an unsynchronised frame
   beside it. A frame timed in MPEG frames rather than milliseconds is left unread, because nothing
   there says how long a frame is. Both parse through the same `lrc` reader, so a tag written
   with timestamps is a synced set exactly as a file would be, and a sidecar outranks what the file
@@ -200,6 +201,16 @@ window.
   `Error::Unreadable { op: Parse }`. The bound lives in the reader because `Embedded` is handed a
   tag out of an untrusted file and `Sidecar` has already cut its read to the same length, so what
   reaches `LARGEST_SHEET` from a sidecar is only ever text a lossy decode expanded.
+- **A stamp inside a line times the word after it — enhanced LRC.** `Stamped::read` splits a
+  line's text on every `<…>` that reads as a moment, and whatever does not — `I <3 you`, `<b>` —
+  stays text. Each stamp opens a word that runs to the next; text before the first stamp is folded
+  into the first word, a stamp with nothing after it is the line's end, and a space written on
+  both sides of a stamp is kept once, so the words always join to the line as it reads. A line of
+  stamps with no `[mm:ss]` of its own is sung from its first word. The words go through `[offset:]`
+  with the line, and a stamped line given several moments carries its words to each by the
+  distance from the first. It lives in the one reader, so a sidecar, a tag, LRCLIB's synced text
+  and the catalog's kept text all yield word timing alike; the search index already strips the
+  stamps, so `lyrics:` never reaches one.
 - **A timed line may name one of two voices with `[v1: words]` or `[v2: words]` after its
   timestamp.** The marker is removed from the text and stays with each repeated timestamp and
   with a cue row's shifted line. A line without one belongs to voice one, and an unrecognised

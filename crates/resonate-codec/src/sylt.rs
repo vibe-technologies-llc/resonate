@@ -131,23 +131,37 @@ fn written(syllables: &[Syllable]) -> Option<String> {
     for syllable in syllables {
         match lines.last_mut() {
             Some((_, line)) if marked && !starts_a_line(&syllable.text) => {
-                line.push_str(&syllable.text);
+                let _ = write!(line, "<{}>{}", stamp(syllable.at), syllable.text);
             }
+            _ if marked => lines.push((
+                syllable.at,
+                format!(
+                    "<{}>{}",
+                    stamp(syllable.at),
+                    syllable.text.trim_start_matches(['\n', '\r'])
+                ),
+            )),
             _ => lines.push((syllable.at, syllable.text.clone())),
         }
     }
 
     let mut sheet = String::new();
     for (at, line) in &lines {
-        let line = line.trim();
-        let minutes = at / MILLISECONDS_PER_MINUTE;
-        let seconds = at % MILLISECONDS_PER_MINUTE / MILLISECONDS_PER_SECOND;
-        let milliseconds = at % MILLISECONDS_PER_SECOND;
-        let _ = writeln!(sheet, "[{minutes:02}:{seconds:02}.{milliseconds:03}]{line}");
+        let _ = writeln!(sheet, "[{}]{}", stamp(*at), line.trim());
     }
 
-    let holds_words = lines.iter().any(|(_, line)| !line.trim().is_empty());
+    let holds_words = syllables
+        .iter()
+        .any(|syllable| !syllable.text.trim().is_empty());
     holds_words.then_some(sheet)
+}
+
+fn stamp(at: u32) -> String {
+    let minutes = at / MILLISECONDS_PER_MINUTE;
+    let seconds = at % MILLISECONDS_PER_MINUTE / MILLISECONDS_PER_SECOND;
+    let milliseconds = at % MILLISECONDS_PER_SECOND;
+
+    format!("{minutes:02}:{seconds:02}.{milliseconds:03}")
 }
 
 #[cfg(test)]
@@ -207,7 +221,10 @@ mod tests {
 
         assert_eq!(
             as_lrc(&bytes).as_deref(),
-            Some("[00:01.000]Overhead the albatross\n[00:05.000]Hangs motionless\n"),
+            Some(
+                "[00:01.000]<00:01.000>Over<00:01.400>head <00:01.900>the albatross\n\
+                 [00:05.000]<00:05.000>Hangs<00:05.600> motionless\n"
+            ),
         );
     }
 

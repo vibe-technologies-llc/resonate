@@ -3103,8 +3103,8 @@ impl RootView {
                             .truncate()
                             .ends_in_an_ellipsis()
                             .child(format!(
-                                "albums {} · tracks {} · artists {}",
-                                stats.albums, stats.tracks, stats.artists
+                                "albums {} · tracks {} · artists {} · lyrics {}",
+                                stats.albums, stats.tracks, stats.artists, stats.lyrics
                             )),
                     ),
             )

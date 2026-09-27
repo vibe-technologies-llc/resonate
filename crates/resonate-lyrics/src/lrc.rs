@@ -2,7 +2,7 @@ use std::{iter, time::Duration};
 
 use resonate_core::SourceId;
 
-use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, Voice, Wanted};
+use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -114,9 +114,96 @@ fn beyond_what_a_sheet_holds(provider: SourceId) -> Error {
     }
 }
 
+struct Stamped {
+    text: String,
+    words: Vec<(Duration, String)>,
+    ends: Option<Duration>,
+}
+
+impl Stamped {
+    fn read(line: &str) -> Option<Self> {
+        let mut words: Vec<(Duration, String)> = Vec::new();
+        let mut lead = String::new();
+        let mut gathering = String::new();
+        let mut sung_from: Option<Duration> = None;
+        let mut stamped = false;
+        let mut rest = line;
+        while let Some(opens) = rest.find('<') {
+            let (before, after) = rest.split_at(opens);
+            gathering.push_str(before);
+            let stamp = after[1..]
+                .split_once('>')
+                .and_then(|(inside, tail)| Some((moment(inside).or_else(|| span(inside))?, tail)));
+            let Some((at, tail)) = stamp else {
+                gathering.push('<');
+                rest = &after[1..];
+                continue;
+            };
+            stamped = true;
+            let word = std::mem::take(&mut gathering);
+            match sung_from {
+                Some(from) if !word.is_empty() => words.push((from, word)),
+                Some(_) => {}
+                None => lead.push_str(&word),
+            }
+            sung_from = Some(at);
+            rest = tail;
+        }
+        if !stamped {
+            return None;
+        }
+        gathering.push_str(rest);
+        let mut ends = None;
+        match sung_from {
+            Some(from) if !gathering.trim().is_empty() => words.push((from, gathering)),
+            Some(at) => ends = Some(at),
+            None => {}
+        }
+        if let Some((_, first)) = words.first_mut() {
+            *first = format!("{lead}{first}").trim_start().to_owned();
+        }
+        for at in 1..words.len() {
+            if words[at - 1].1.ends_with(char::is_whitespace) {
+                let spaced = words[at].1.trim_start().to_owned();
+                words[at].1 = spaced;
+            }
+        }
+        if let Some((_, last)) = words.last_mut() {
+            last.truncate(last.trim_end().len());
+        }
+        let text = if words.is_empty() {
+            lead.trim().to_owned()
+        } else {
+            words.iter().map(|(_, word)| word.as_str()).collect()
+        };
+
+        Some(Self { text, words, ends })
+    }
+
+    fn first_sung(&self) -> Option<Duration> {
+        self.words.first().map(|(at, _)| *at)
+    }
+}
+
+struct Timed {
+    at: Duration,
+    text: String,
+    voice: Voice,
+    words: Vec<(Duration, String)>,
+    ends: Option<Duration>,
+}
+
+fn moved(at: Duration, from: Duration, to: Duration) -> Duration {
+    if to >= from {
+        at.saturating_add(to - from)
+    } else {
+        at.saturating_sub(from - to)
+    }
+}
+
 struct Reading {
     source: SourceId,
-    timed: Vec<(Duration, String, Voice)>,
+    timed: Vec<Timed>,
     plain: Vec<String>,
     declared: Declared,
     credits: Credits,
@@ -165,14 +252,42 @@ impl Reading {
         }
 
         let text = rest.trim();
+        let (voice, text) = voiced_text(text);
+        let stamped = Stamped::read(text);
+        if moments.is_empty()
+            && let Some(first) = stamped.as_ref().and_then(Stamped::first_sung)
+        {
+            moments.push(first);
+        }
         if !moments.is_empty() {
-            let (voice, text) = voiced_text(text);
+            let first = moments[0];
+            let text = stamped
+                .as_ref()
+                .map_or(text, |stamped| stamped.text.as_str());
             for at in moments {
                 self.hold(text)?;
-                self.timed.push((at, text.to_owned(), voice));
+                let (words, ends) = match &stamped {
+                    Some(stamped) => (
+                        stamped
+                            .words
+                            .iter()
+                            .map(|(sung, word)| (moved(*sung, first, at), word.clone()))
+                            .collect(),
+                        stamped.ends.map(|ends| moved(ends, first, at)),
+                    ),
+                    None => (Vec::new(), None),
+                };
+                self.timed.push(Timed {
+                    at,
+                    text: text.to_owned(),
+                    voice,
+                    words,
+                    ends,
+                });
             }
             return Ok(());
         }
+        let text = rest.trim();
         if !identified && !text.is_empty() {
             self.hold(text)?;
             self.plain.push(text.to_owned());
@@ -226,7 +341,27 @@ impl Reading {
         }
         let lines = timed
             .into_iter()
-            .map(|(at, text, voice)| LyricLine::sung(shifted(at, shift), text).voiced(voice))
+            .map(|timed| {
+                let at = shifted(timed.at, shift);
+                let line = if timed.words.is_empty() {
+                    LyricLine::sung(at, timed.text)
+                } else {
+                    LyricLine::worded(
+                        at,
+                        timed
+                            .words
+                            .into_iter()
+                            .map(|(sung, word)| SungWord::sung(shifted(sung, shift), word))
+                            .collect(),
+                    )
+                };
+                let line = match timed.ends {
+                    Some(ends) => line.ending(shifted(ends, shift)),
+                    None => line,
+                };
+
+                line.voiced(timed.voice)
+            })
             .collect();
 
         Ok(Sheet {
@@ -398,6 +533,117 @@ mod tests {
 
     fn refused(text: &str) -> bool {
         matches!(read(source(), text), Err(Error::Unreadable { .. }))
+    }
+
+    fn millis(millis: u64) -> Duration {
+        Duration::from_millis(millis)
+    }
+
+    fn spelled(line: &LyricLine) -> Vec<(&str, Duration)> {
+        line.words
+            .iter()
+            .map(|word| (word.text.as_str(), word.at))
+            .collect()
+    }
+
+    #[test]
+    fn a_line_stamped_word_by_word_is_read_as_its_words_and_ends_where_the_last_stamp_says() {
+        let lyrics = lyrics(
+            "[00:12.00]<00:12.00>Overhead, <00:12.60>the <00:12.90>albatross<00:14.10>\n\
+             [00:15.00]Hangs motionless",
+        )
+        .expect("the sheet holds lines");
+        let line = &lyrics.lines()[0];
+
+        assert_eq!(lyrics.detail(), crate::Detail::Words);
+        assert_eq!(line.text, "Overhead, the albatross");
+        assert_eq!(
+            spelled(line),
+            [
+                ("Overhead, ", millis(12_000)),
+                ("the ", millis(12_600)),
+                ("albatross", millis(12_900))
+            ]
+        );
+        assert_eq!(line.until, Some(millis(14_100)));
+        assert!(lyrics.lines()[1].words.is_empty());
+        assert_eq!(lyrics.lines()[1].text, "Hangs motionless");
+    }
+
+    #[test]
+    fn stamps_written_with_spaces_around_them_and_no_closing_stamp_still_read_as_words() {
+        let lyrics = lyrics("[00:01.00] <00:01.00> all <00:01.50> that you touch")
+            .expect("the sheet holds lines");
+        let line = &lyrics.lines()[0];
+
+        assert_eq!(line.text, "all that you touch");
+        assert_eq!(
+            spelled(line),
+            [("all ", millis(1_000)), ("that you touch", millis(1_500))]
+        );
+        assert_eq!(line.until, None);
+    }
+
+    #[test]
+    fn a_line_of_stamps_with_no_moment_of_its_own_is_sung_from_its_first_word() {
+        let lyrics = lyrics("<00:03.00>all <00:03.40>that\n<00:05.00>you <00:05.30>see")
+            .expect("the sheet holds lines");
+
+        assert_eq!(lyrics.timing(), Timing::Synced);
+        assert_eq!(lyrics.lines()[0].at, Some(millis(3_000)));
+        assert_eq!(lyrics.lines()[1].at, Some(millis(5_000)));
+        assert_eq!(lyrics.lines()[1].text, "you see");
+    }
+
+    #[test]
+    fn a_stamped_line_sung_twice_carries_its_words_to_the_second_moment_and_the_offset_moves_both()
+    {
+        let lyrics =
+            lyrics("[offset:500]\n[00:10.00][01:10.00]<00:10.00>la <00:10.50>la<00:11.00>")
+                .expect("the sheet holds lines");
+
+        assert_eq!(
+            spelled(&lyrics.lines()[0]),
+            [("la ", millis(9_500)), ("la", millis(10_000))]
+        );
+        assert_eq!(
+            spelled(&lyrics.lines()[1]),
+            [("la ", millis(69_500)), ("la", millis(70_000))]
+        );
+        assert_eq!(lyrics.lines()[1].until, Some(millis(70_500)));
+    }
+
+    #[test]
+    fn syllables_an_id3_sylt_frame_times_are_read_as_the_words_of_their_line() {
+        let lyrics = lyrics(
+            "[00:01.000]<00:01.000>Over<00:01.400>head <00:01.900>the albatross\n\
+             [00:05.000]<00:05.000>Hangs<00:05.600> motionless\n",
+        )
+        .expect("the sheet holds lines");
+
+        assert_eq!(lyrics.lines()[0].text, "Overhead the albatross");
+        assert_eq!(
+            spelled(&lyrics.lines()[0]),
+            [
+                ("Over", millis(1_000)),
+                ("head ", millis(1_400)),
+                ("the albatross", millis(1_900))
+            ]
+        );
+        assert_eq!(lyrics.lines()[1].text, "Hangs motionless");
+    }
+
+    #[test]
+    fn a_voiced_line_carries_its_stamps_and_an_angle_that_is_no_stamp_is_text() {
+        let lyrics =
+            lyrics("[00:02.00][v2: <00:02.00>second <00:02.40>singer]\n[00:05.00]I <3 you <b>")
+                .expect("the sheet holds lines");
+
+        assert_eq!(lyrics.lines()[0].voice, Voice::Two);
+        assert_eq!(lyrics.lines()[0].text, "second singer");
+        assert_eq!(lyrics.lines()[0].words.len(), 2);
+        assert_eq!(lyrics.lines()[1].text, "I <3 you <b>");
+        assert!(lyrics.lines()[1].words.is_empty());
     }
 
     #[test]

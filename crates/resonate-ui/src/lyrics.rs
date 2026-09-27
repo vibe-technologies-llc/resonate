@@ -46,6 +46,8 @@ const LOOKS_QUIETLY_FOR: Duration = Duration::from_millis(450);
 
 const BREATH: Duration = Duration::from_millis(2400);
 
+const BREATH_FOLDS: Duration = Duration::from_millis(700);
+
 const HANDS_OFF: Duration = Duration::from_secs(6);
 
 const BAR_LINGERS: Duration = Duration::from_millis(1_500);
@@ -226,9 +228,42 @@ impl FadingBreath {
             .clamp(0.0, 1.0)
     }
 
-    fn settled(self, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= TURN
+    fn room(self, now: Instant) -> f32 {
+        1.0 - folded_since(self.started, now)
     }
+
+    fn settled(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= BREATH_FOLDS
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Breathing {
+    line: usize,
+    started: Instant,
+}
+
+impl Breathing {
+    fn room(self, now: Instant) -> f32 {
+        folded_since(self.started, now)
+    }
+
+    fn settled(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= BREATH_FOLDS
+    }
+}
+
+fn folded_since(started: Instant, now: Instant) -> f32 {
+    let elapsed = now.saturating_duration_since(started).as_secs_f32();
+
+    ease_in_out((elapsed / BREATH_FOLDS.as_secs_f32()).clamp(0.0, 1.0))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Breath {
+    pub through: f32,
+    pub opacity: f32,
+    pub room: f32,
 }
 
 fn natural_frequency() -> f32 {
@@ -367,7 +402,7 @@ pub struct LyricsModel {
     spread: Turn<Falloff>,
     glide: Option<Glide>,
     hand_at: Option<Instant>,
-    breathing_for: Option<usize>,
+    breathing_for: Option<Breathing>,
     fading_breath: Option<FadingBreath>,
     _find: Task<()>,
 }
@@ -449,14 +484,34 @@ impl LyricsModel {
         waiting: Option<Waiting>,
         index: usize,
         now: Instant,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<Breath> {
         if let Some(waiting) = waiting.filter(|waiting| waiting.next == index) {
-            return Some((waiting.through, 1.0));
+            let room = self
+                .breathing_for
+                .filter(|breathing| breathing.line == index)
+                .map_or(1.0, |breathing| breathing.room(now));
+            return Some(Breath {
+                through: waiting.through,
+                opacity: 1.0,
+                room,
+            });
         }
 
         self.fading_breath
             .filter(|breath| breath.line == index && !breath.settled(now))
-            .map(|breath| (1.0, breath.through(now)))
+            .map(|breath| Breath {
+                through: 1.0,
+                opacity: breath.through(now),
+                room: breath.room(now),
+            })
+    }
+
+    fn is_breathing_in_or_out(&self, now: Instant) -> bool {
+        self.breathing_for
+            .is_some_and(|breathing| !breathing.settled(now))
+            || self
+                .fading_breath
+                .is_some_and(|breath| !breath.settled(now))
     }
 
     pub fn is_synced(&self) -> bool {
@@ -528,20 +583,27 @@ impl LyricsModel {
         let timing = lyrics.timing();
         match waiting {
             Some(waiting) => {
-                self.breathing_for = Some(waiting.next);
+                if self
+                    .breathing_for
+                    .is_none_or(|breathing| breathing.line != waiting.next)
+                {
+                    self.breathing_for = Some(Breathing {
+                        line: waiting.next,
+                        started: now,
+                    });
+                }
                 self.fading_breath = None;
             }
             None => {
                 self.fading_breath = self
                     .breathing_for
                     .take()
-                    .filter(|line| lit.contains(&Some(*line)))
-                    .map(|line| FadingBreath { line, started: now })
-                    .or_else(|| {
-                        self.fading_breath.filter(|breath| {
-                            !breath.settled(now) && lit.contains(&Some(breath.line))
-                        })
-                    });
+                    .filter(|breathing| lit.contains(&Some(breathing.line)))
+                    .map(|breathing| FadingBreath {
+                        line: breathing.line,
+                        started: now,
+                    })
+                    .or_else(|| self.fading_breath.filter(|breath| !breath.settled(now)));
             }
         }
         let reads = if timing == Timing::Unsynced {
@@ -741,6 +803,7 @@ impl LyricsModel {
             || self.is_arriving(now)
             || self.looks_quietly(now)
             || self.moved_by_hand_lately(now)
+            || self.is_breathing_in_or_out(now)
     }
 
     fn is_arriving(&self, now: Instant) -> bool {
@@ -1192,6 +1255,63 @@ mod tests {
 
         model.look = Look::Missing;
         assert!(!model.looks_quietly(now));
+    }
+
+    fn a_pause(model: &LyricsModel, position: Duration, now: Instant) -> Option<Breath> {
+        model.breath_at(model.waiting_at(position), 1, now)
+    }
+
+    #[test]
+    fn the_dots_of_a_pause_open_and_fold_their_room_a_frame_at_a_time_rather_than_at_once() {
+        let source = resonate_core::SourceId::new("held").expect("a lowercase name");
+        let mut model = model();
+        model.look = Look::Found(Arc::new(
+            Lyrics::synced(
+                source,
+                vec![
+                    LyricLine::sung(at(0), "touch"),
+                    LyricLine::sung(at(60), "see"),
+                ],
+            )
+            .expect("every line is timed"),
+        ));
+        model.hold();
+        let frame = Duration::from_millis(16);
+
+        let began = Instant::now();
+        model.follow_the_track(at(20), began);
+        let mut was = 0.0;
+        for step in 0..=u32::try_from(BREATH_FOLDS.as_millis() / 16 + 1).expect("few frames") {
+            let now = began + frame * step;
+            model.follow_the_track(at(20), now);
+            let room = a_pause(&model, at(20), now)
+                .expect("the pause breathes")
+                .room;
+            assert!(
+                room >= was && room - was < 0.1,
+                "the dots jumped open by {}",
+                room - was
+            );
+            was = room;
+        }
+        assert!((was - 1.0).abs() < f32::EPSILON);
+
+        let sung = began + BREATH_FOLDS * 3;
+        model.follow_the_track(at(60), sung);
+        let mut was = 1.0;
+        for step in 0..=u32::try_from(BREATH_FOLDS.as_millis() / 16).expect("few frames") {
+            let now = sung + frame * step;
+            model.follow_the_track(at(60), now);
+            let room = a_pause(&model, at(60), now).map_or(0.0, |breath| breath.room);
+            assert!(
+                room <= was && was - room < 0.1,
+                "the dots snapped shut by {}",
+                was - room
+            );
+            was = room;
+        }
+        assert!(model.is_turning(sung + BREATH_FOLDS / 2));
+        assert_eq!(a_pause(&model, at(60), sung + BREATH_FOLDS), None);
     }
 
     #[test]

@@ -3642,6 +3642,12 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
         format::counted(stats.releases as usize, "album", "albums"),
         format::counted(stats.artists as usize, "artist", "artists"),
     );
+    if stats.lyrics > 0 {
+        said.push_str(&format!(
+            " · lyrics for {}",
+            format::counted(stats.lyrics as usize, "track", "tracks")
+        ));
+    }
     if summary.cancelled {
         said.push_str(", stopped early");
     }
@@ -4575,6 +4581,31 @@ mod tests {
         Shared, arranged, beyond_the_listing, headed_by_disc, held_at, held_in, landed_since,
         missing_track_rows, on_the_clipboard, unheld_release_rows,
     };
+
+    #[test]
+    fn a_lookup_that_kept_lyrics_says_how_many_tracks_it_kept_them_for() {
+        let summary = |lyrics| resonate_library::EnrichSummary {
+            stats: resonate_library::EnrichStats {
+                releases: 2,
+                artists: 1,
+                lyrics,
+                ..resonate_library::EnrichStats::default()
+            },
+            cancelled: false,
+            stopped_by: None,
+        };
+
+        assert_eq!(
+            super::looked_up(&summary(0)),
+            super::Notice::Noted("2 albums and 1 artist answered".to_owned())
+        );
+        assert_eq!(
+            super::looked_up(&summary(12)),
+            super::Notice::Noted(
+                "2 albums and 1 artist answered · lyrics for 12 tracks".to_owned()
+            )
+        );
+    }
 
     #[test]
     fn only_a_playlist_edit_is_told_as_one_when_it_fails() {

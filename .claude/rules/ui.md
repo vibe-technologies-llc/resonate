@@ -1175,13 +1175,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   dots sit in a row of the *fully swollen* height with the padding outside it, so the row holds
   still while they breathe: sized to the dots themselves, the gap grew and shrank and shifted every
   line under it by a pixel or two, which is the one thing left in the column whose height moved
-  while it was drawn. When a wait ends on its next line, `FadingBreath` holds the dots at that
-  height and fades them over `TURN` while the line grows; removing them on the cue frame changed
-  the row bounds at the same time as the text size and made the lyric flash for one frame. It
-  lives in `resonate-lyrics` beside `LIT_AT_MOST` rather than in the window, so the ten seconds is
-  one constant and not two. Nothing draws progress *through* a line: the set has no word timing, so
-  a rail under the lit line would be a line's whole span pretending to be a karaoke sweep, and the
-  seek bar already says where the track is.
+  while it was drawn. **The dots' room opens and folds rather than appearing and going**: a
+  `Breathing` stamps when a wait began and a `FadingBreath` when it ended on its line, and each
+  eases the row's height — the gap above it folded in through a negative margin — between nothing
+  and all of it over `BREATH_FOLDS`, while the opacity goes out over the shorter `TURN` as the
+  line grows. Removing the dots on the cue frame made the lyric flash, and removing them once the
+  fade had run dropped their room in one frame, which jumped every line under them and lurched
+  the glide re-centring the line; the model asks for frames until the fold has settled.
+  `waiting_at` lives in `resonate-lyrics` beside `LIT_AT_MOST` rather than in the window, so the
+  ten seconds is one constant and not two. Progress *through* a line is drawn only where the set
+  times its words — `lyrics.md` has the sweep — because a rail under a line timed as a whole would
+  be its span pretending to be a karaoke sweep.
 - **A name that names something the window can open is an `opens`, and the id it opens is what
   decides.** `RootView::opens` takes an `Option<Selection>`: `Some` draws the name as a link — the
   accent and an underline under the pointer, the cursor, the hint and a listener that selects and

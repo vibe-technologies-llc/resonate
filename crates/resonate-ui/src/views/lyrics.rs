@@ -80,6 +80,10 @@ const DOWNWARDS: f32 = 180.0;
 
 const UNSUNG_SHARE: f32 = 0.45;
 
+const LINE_GAP: f32 = 8.0;
+
+const BREATH_PAD: f32 = 8.0;
+
 struct Attributed {
     timed: &'static str,
     source: SharedString,
@@ -118,6 +122,7 @@ struct Breath {
     through: f32,
     swell: f32,
     opacity: f32,
+    room: f32,
 }
 
 impl RootView {
@@ -302,13 +307,12 @@ impl RootView {
 
             let drawn: Vec<Line> = (0..text.len())
                 .map(|index| {
-                    let breath = model
-                        .breath_at(waiting, index, now)
-                        .map(|(through, opacity)| Breath {
-                            through,
-                            swell,
-                            opacity,
-                        });
+                    let breath = model.breath_at(waiting, index, now).map(|breath| Breath {
+                        through: breath.through,
+                        swell,
+                        opacity: breath.opacity,
+                        room: breath.room,
+                    });
                     let standing = model.standing(index, now);
 
                     Line {
@@ -446,6 +450,7 @@ impl RootView {
         if line.text.is_empty() {
             return match line.breath {
                 Some(breath) => row
+                    .min_h(theme::width(theme::lyric_break()))
                     .child(carried.child(breather(breath)))
                     .into_any_element(),
                 None => row.h(theme::width(theme::lyric_break())).into_any_element(),
@@ -464,7 +469,7 @@ impl RootView {
             .when(second, |line| line.items_end())
             .when(line.two_voices && !second, |line| line.items_start())
             .when(!line.two_voices, |line| line.items_center())
-            .gap_2()
+            .gap(px(LINE_GAP))
             .px(theme::width(pad))
             .py_2()
             .rounded_xl()
@@ -765,12 +770,19 @@ fn breather(breath: Breath) -> Div {
         );
     }
 
+    let room = breath.room.clamp(0.0, 1.0);
+    let whole = theme::lyric_dot() + DOT_SWELL + BREATH_PAD * 2.0;
+
     div()
         .flex()
+        .items_center()
         .justify_center()
+        .flex_none()
+        .overflow_hidden()
+        .h(px(whole * room))
+        .mt(px(-LINE_GAP * (1.0 - room)))
         .px_4()
-        .py_2()
-        .opacity(breath.opacity)
+        .opacity(breath.opacity * room)
         .child(dots)
 }
 
