@@ -139,6 +139,8 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::NoDecoder { .. }
         | Read::RateNotRepresentable { .. }
         | Read::LayoutNotRepresentable { .. }
+        | Read::TooManyChannels { .. }
+        | Read::ChannelMaskNotRepresentable { .. }
         | Read::SampleFormatNotRepresentable { .. }
         | Read::DsdCompressed { .. } => Cause::Unsupported,
         Read::SeekOutOfRange { .. }

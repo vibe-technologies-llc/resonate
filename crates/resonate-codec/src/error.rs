@@ -60,6 +60,19 @@ pub enum Error {
     #[error("{location} contains no audio track")]
     NoAudioTrack { location: MediaLocation },
 
+    #[error("{location} declares {channels} channels, more than a WAVE layout can name")]
+    TooManyChannels {
+        location: MediaLocation,
+        channels: u16,
+    },
+
+    #[error("{location} declares {channels} channels over a channel mask of {mask:#x}")]
+    ChannelMaskNotRepresentable {
+        location: MediaLocation,
+        channels: u16,
+        mask: u32,
+    },
+
     #[error("{location} track {track} uses codec {codec}, for which no decoder is registered")]
     NoDecoder {
         location: MediaLocation,
@@ -184,6 +197,8 @@ impl Error {
             Self::Io { location, .. }
             | Self::UnrecognisedContainer { location }
             | Self::NoAudioTrack { location }
+            | Self::TooManyChannels { location, .. }
+            | Self::ChannelMaskNotRepresentable { location, .. }
             | Self::NoDecoder { location, .. }
             | Self::TrackPropertyMissing { location, .. }
             | Self::RateNotRepresentable { location, .. }

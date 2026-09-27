@@ -808,11 +808,21 @@ The corpus a run grows is not kept — `.gitignore` has it — but a seed corpus
 second corpus folder so what the run grows lands in the ignored `corpus/` and the seeds stay as
 they were. `probe` has one of every container the scan takes — a 50 ms 8 kHz tone ffmpeg writes as
 WAVE, a three-channel 24-bit WAVE, FLAC carrying a Vorbis `CUESHEET`, MP3, ADTS, AAC and ALAC in
-MP4, FLAC in Matroska, Vorbis, Opus in stereo and in 5.1, AIFF and CAF — beside a DSF, a DSDIFF and an MP3 whose ID3v2 carries
+MP4, FLAC and Vorbis in Matroska, Vorbis, Opus in stereo and in 5.1, AIFF and CAF — beside a DSF, a DSDIFF and an MP3 whose ID3v2 carries
 `SYLT`, `USLT` and a MusicBrainz `UFID`, written by hand to the formats' own layouts; seeded, a run
 starts at 11 733 edges where an empty one starts at 343. `boxes` takes the two MP4s, and `cue`,
 `lrc` and `playlist` a sheet each. A seed is added by hand when a run finds something worth
-starting from, and nothing runs the targets but a person.
+starting from, and nothing runs the targets but a person. **What a run finds inside symphonia is
+guarded against where the prescan can see it.** The fuzz build carries overflow checks, as the
+optimised debug build does, and symphonia's WAVE reader multiplies a `fmt ` chunk's channel count
+into a `u16` block alignment and widens a short channel mask by a shift past 32 bits; a release
+build wraps both and only logs, but a debug build panicked and stopped a whole scan on one such
+file. `riff.rs` reads the first `fmt ` chunk's channels and extensible mask — the first, because
+that is the one symphonia reads — and `container::open` refuses a WAVE naming more channels than
+a WAVE layout holds as `Error::TooManyChannels`, and one whose mask
+`riff::a_mask_the_decoder_cannot_widen` as `Error::ChannelMaskNotRepresentable`, before
+symphonia sees either. symphonia also finds a `RIFF` header behind junk or behind an ID3 tag
+this prescan cannot skip, which `docs/TODO.md` keeps.
 
 **A cost is measured rather than guessed, and neither measure is a check.**
 `cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,

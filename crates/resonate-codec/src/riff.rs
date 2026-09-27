@@ -20,9 +20,13 @@ const MAX_ID3_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
 
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 const FMT_FORMAT_TAG_AT: usize = 0;
+const FMT_CHANNELS_AT: usize = 2;
 const FMT_BITS_PER_SAMPLE_AT: usize = 14;
+const FMT_PLAIN_BYTES: u64 = 16;
 const FMT_VALID_BITS_AT: usize = 18;
+const FMT_CHANNEL_MASK_AT: usize = 20;
 const FMT_EXTENSIBLE_BYTES: u64 = 20;
+const FMT_MASKED_BYTES: u64 = 24;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct InfoTag {
@@ -34,6 +38,8 @@ pub(crate) struct InfoTag {
 pub(crate) struct Riff {
     pub(crate) info: Vec<InfoTag>,
     pub(crate) valid_bits: Option<u32>,
+    pub(crate) channels: Option<u16>,
+    pub(crate) mask: Option<u32>,
     pub(crate) id3: Option<Vec<u8>>,
 }
 
@@ -71,8 +77,11 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
         if header.starts_with(LIST) && size >= FORM_BYTES {
             read_info_list(source, size - FORM_BYTES, &mut found.info);
         }
-        if header.starts_with(FMT) && size >= FMT_EXTENSIBLE_BYTES {
-            found.valid_bits = read_valid_bits(source);
+        if header.starts_with(FMT) && size >= FMT_PLAIN_BYTES && found.channels.is_none() {
+            let fmt = read_fmt(source, size);
+            found.channels = fmt.channels;
+            found.mask = fmt.mask;
+            found.valid_bits = fmt.valid_bits;
         }
         if ID3_CHUNKS.iter().any(|id| header.starts_with(*id)) {
             found.id3 = read_id3_chunk(source, size).or(found.id3);
@@ -100,14 +109,61 @@ fn read_id3_chunk<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<Vec<u8>
     (bytes.len() as u64 == size && bytes.starts_with(ID3)).then_some(bytes)
 }
 
-fn read_valid_bits<S: Read + ?Sized>(source: &mut S) -> Option<u32> {
-    let fields = read_exact::<{ FMT_EXTENSIBLE_BYTES as usize }, S>(source)?;
-    if field(&fields, FMT_FORMAT_TAG_AT)? != WAVE_FORMAT_EXTENSIBLE {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Fmt {
+    channels: Option<u16>,
+    mask: Option<u32>,
+    valid_bits: Option<u32>,
+}
+
+fn read_fmt<S: Read + ?Sized>(source: &mut S, size: u64) -> Fmt {
+    let wanted = if size >= FMT_MASKED_BYTES {
+        FMT_MASKED_BYTES
+    } else if size >= FMT_EXTENSIBLE_BYTES {
+        FMT_EXTENSIBLE_BYTES
+    } else {
+        FMT_PLAIN_BYTES
+    };
+    let mut fields = [0_u8; FMT_MASKED_BYTES as usize];
+    let Some(fields) = fields.get_mut(..wanted as usize) else {
+        return Fmt::default();
+    };
+    if source.read_exact(fields).is_err() {
+        return Fmt::default();
+    }
+
+    Fmt {
+        channels: field(fields, FMT_CHANNELS_AT),
+        mask: channel_mask(fields),
+        valid_bits: valid_bits(fields),
+    }
+}
+
+fn channel_mask(fields: &[u8]) -> Option<u32> {
+    if field(fields, FMT_FORMAT_TAG_AT)? != WAVE_FORMAT_EXTENSIBLE {
+        return None;
+    }
+    let bytes: [u8; 4] = fields
+        .get(FMT_CHANNEL_MASK_AT..FMT_CHANNEL_MASK_AT + 4)?
+        .try_into()
+        .ok()?;
+
+    Some(u32::from_le_bytes(bytes))
+}
+
+pub(crate) fn a_mask_the_decoder_cannot_widen(mask: u32, channels: u16) -> bool {
+    let short = u32::from(channels).saturating_sub(mask.count_ones());
+
+    short > 0 && (short >= u32::BITS || mask.leading_zeros() == 0)
+}
+
+fn valid_bits(fields: &[u8]) -> Option<u32> {
+    if field(fields, FMT_FORMAT_TAG_AT)? != WAVE_FORMAT_EXTENSIBLE {
         return None;
     }
 
-    let container = u32::from(field(&fields, FMT_BITS_PER_SAMPLE_AT)?);
-    let valid = u32::from(field(&fields, FMT_VALID_BITS_AT)?);
+    let container = u32::from(field(fields, FMT_BITS_PER_SAMPLE_AT)?);
+    let valid = u32::from(field(fields, FMT_VALID_BITS_AT)?);
     (valid > 0 && valid <= container).then_some(valid)
 }
 
@@ -258,6 +314,57 @@ mod tests {
             .iter()
             .map(|tag| (tag.name.as_str(), tag.value.as_str()))
             .collect()
+    }
+
+    fn fmt(channels: u16) -> Vec<u8> {
+        let mut fields = vec![0_u8; FMT_PLAIN_BYTES as usize];
+        fields[FMT_FORMAT_TAG_AT] = 1;
+        fields[FMT_CHANNELS_AT..FMT_CHANNELS_AT + 2].copy_from_slice(&channels.to_le_bytes());
+        fields[FMT_BITS_PER_SAMPLE_AT] = 16;
+        fields
+    }
+
+    #[test]
+    fn an_extensible_fmt_chunk_names_its_channel_mask() {
+        let mut fields = vec![0_u8; FMT_MASKED_BYTES as usize];
+        fields[..2].copy_from_slice(&WAVE_FORMAT_EXTENSIBLE.to_le_bytes());
+        fields[FMT_CHANNELS_AT] = 6;
+        fields[FMT_CHANNEL_MASK_AT..FMT_CHANNEL_MASK_AT + 4]
+            .copy_from_slice(&0x3F_u32.to_le_bytes());
+        let found = read(&mut Cursor::new(wave(&[(b"fmt ", fields)])));
+
+        assert_eq!(found.channels, Some(6));
+        assert_eq!(found.mask, Some(0x3F));
+    }
+
+    #[test]
+    fn a_mask_short_of_positions_is_refused_only_where_widening_it_would_run_off_the_top() {
+        assert!(!a_mask_the_decoder_cannot_widen(0x3F, 6));
+        assert!(!a_mask_the_decoder_cannot_widen(0, 9));
+        assert!(!a_mask_the_decoder_cannot_widen(0b10_1000, 5));
+        assert!(!a_mask_the_decoder_cannot_widen(0x8000_0003, 2));
+        assert!(a_mask_the_decoder_cannot_widen(0x8000_0000, 3));
+        assert!(a_mask_the_decoder_cannot_widen(0, 40));
+    }
+
+    #[test]
+    fn a_second_fmt_chunk_is_passed_over_as_the_decoder_passes_it_over() {
+        let found = read(&mut Cursor::new(wave(&[
+            (b"fmt ", fmt(20_000)),
+            (b"fmt ", fmt(2)),
+        ])));
+
+        assert_eq!(found.channels, Some(20_000));
+    }
+
+    #[test]
+    fn the_channels_a_plain_fmt_chunk_declares_are_read_whatever_they_number() {
+        for channels in [2_u16, 6, 20_000] {
+            let found = read(&mut Cursor::new(wave(&[(b"fmt ", fmt(channels))])));
+
+            assert_eq!(found.channels, Some(channels));
+            assert_eq!(found.valid_bits, None);
+        }
     }
 
     #[test]

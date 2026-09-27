@@ -103,6 +103,8 @@ impl Failure {
             | Codec::TrackPropertyMissing { .. }
             | Codec::RateNotRepresentable { .. }
             | Codec::LayoutNotRepresentable { .. }
+            | Codec::TooManyChannels { .. }
+            | Codec::ChannelMaskNotRepresentable { .. }
             | Codec::SampleFormatNotRepresentable { .. }
             | Codec::DsdChunkMissing { .. }
             | Codec::DsdFieldNotUsable { .. } => Self::Undecodable,

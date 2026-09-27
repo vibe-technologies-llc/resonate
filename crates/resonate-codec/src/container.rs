@@ -35,6 +35,7 @@ use crate::{
     dsd::{self, Packing},
     opus,
     prescan::Prescan,
+    riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Replaying, Sources},
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
@@ -47,6 +48,7 @@ const ALAC_BIT_DEPTH_AT: usize = 5;
 const ALAC_MAX_BIT_DEPTH: u32 = 32;
 
 const MAX_PRESCAN_HEAD: u64 = 1 << 20;
+const NAMEABLE_WAVE_CHANNELS: u32 = Position::all().bits().count_ones();
 
 const STREAMINFO_BYTES: usize = 34;
 const STREAMINFO_BIT_DEPTH_AT: usize = 103;
@@ -152,6 +154,8 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
         })));
     }
 
+    refuse_what_the_wave_reader_would_overflow_on(&prescan.riff, location)?;
+
     let mut hint = Hint::new();
     match named {
         Some(FormatHint::Extension(extension)) => {
@@ -189,6 +193,31 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
         revisions,
         chunk_pictures: chunk.map(|held| held.media.visuals).unwrap_or_default(),
     })))
+}
+
+fn refuse_what_the_wave_reader_would_overflow_on(
+    riff: &Riff,
+    location: &MediaLocation,
+) -> Result<()> {
+    let Some(channels) = riff.channels else {
+        return Ok(());
+    };
+    if u32::from(channels) > NAMEABLE_WAVE_CHANNELS {
+        return Err(Error::TooManyChannels {
+            location: location.clone(),
+            channels,
+        });
+    }
+    match riff.mask {
+        Some(mask) if riff::a_mask_the_decoder_cannot_widen(mask, channels) => {
+            Err(Error::ChannelMaskNotRepresentable {
+                location: location.clone(),
+                channels,
+                mask,
+            })
+        }
+        Some(_) | None => Ok(()),
+    }
 }
 
 fn read_head(bytes: &mut dyn MediaStream) -> Vec<u8> {
@@ -606,7 +635,47 @@ fn duration(track: &Track, rate: SampleRate) -> Option<Frames> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+    use crate::source::Reading;
+
+    fn wave_of(channels: u16) -> Vec<u8> {
+        let mut fmt = vec![0_u8; 16];
+        fmt[0] = 1;
+        fmt[2..4].copy_from_slice(&channels.to_le_bytes());
+        fmt[14] = 32;
+        let mut body = b"WAVE".to_vec();
+        body.extend_from_slice(b"fmt ");
+        body.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
+        body.extend_from_slice(&fmt);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(&0_u32.to_le_bytes());
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        file.extend_from_slice(&body);
+        file
+    }
+
+    #[test]
+    fn a_wave_naming_more_channels_than_a_layout_holds_is_refused_before_symphonia_reads_it() {
+        let location = MediaLocation::local("wide.wav");
+        let opened = open(
+            Media {
+                stream: Box::new(Reading::new(Cursor::new(wave_of(20_000)))),
+                hint: None,
+            },
+            &location,
+        );
+
+        assert!(matches!(
+            opened,
+            Err(Error::TooManyChannels {
+                channels: 20_000,
+                ..
+            })
+        ));
+    }
 
     fn params(codec: AudioCodecId) -> AudioCodecParameters {
         let mut params = AudioCodecParameters::new();
