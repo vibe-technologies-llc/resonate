@@ -115,10 +115,10 @@ impl DevicePorts {
             Held::Offered => &mut self.offered,
         };
         let seats = route.seats.clone();
-        let volume = route.port.volume;
+        let heard = (route.port.volume, route.port.muted);
         let was = kept.insert(index, route);
-        let turned =
-            matches!(held, Held::Current) && was.is_some_and(|was| was.port.volume != volume);
+        let turned = matches!(held, Held::Current)
+            && was.is_some_and(|was| (was.port.volume, was.port.muted) != heard);
         turned.then_some(seats)
     }
 
@@ -1343,6 +1343,7 @@ mod tests {
             plugged,
             hardware_volume: HardwareVolume::Unsaid,
             volume: None,
+            muted: false,
         }
     }
 
@@ -1392,6 +1393,7 @@ mod tests {
                     plugged: Plugged::Unsaid,
                     hardware_volume: HardwareVolume::Unsaid,
                     volume: None,
+                    muted: false,
                 },
             ),
         );
@@ -1443,6 +1445,7 @@ mod tests {
                     plugged: Plugged::No,
                     hardware_volume: HardwareVolume::Unsaid,
                     volume: None,
+                    muted: false,
                 },
             ),
         );
@@ -1487,6 +1490,21 @@ mod tests {
         assert_eq!(
             ports.keep(Held::Current, 0, serving(&[1], heard_at(0.5))),
             Some(vec![1])
+        );
+        assert_eq!(
+            ports.keep(
+                Held::Current,
+                0,
+                serving(
+                    &[1],
+                    SinkPort {
+                        muted: true,
+                        ..heard_at(0.5)
+                    }
+                )
+            ),
+            Some(vec![1]),
+            "a route muted at the level it was at was not announced as turned"
         );
         assert_eq!(
             ports.keep(Held::Offered, 0, serving(&[1], heard_at(0.125))),

@@ -493,9 +493,14 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         HardwareVolume::No => format!("{plugged}, volume in software"),
         HardwareVolume::Yes => format!("{plugged}, volume on the hardware"),
     };
-    match port.volume {
+    let level = match port.volume {
         Some(gain) => format!("{volume} at {}", Volume::heard_at(gain)),
         None => volume,
+    };
+    if port.muted {
+        format!("{level}, muted")
+    } else {
+        level
     }
 }
 

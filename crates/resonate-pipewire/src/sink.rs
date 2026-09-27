@@ -116,6 +116,7 @@ pub struct SinkPort {
     pub plugged: Plugged,
     pub hardware_volume: HardwareVolume,
     pub volume: Option<Gain>,
+    pub muted: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

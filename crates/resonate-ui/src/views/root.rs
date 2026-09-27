@@ -2575,9 +2575,25 @@ impl RootView {
             .filter(|_| self.player.read(cx).state().volume == Volume::MUTE)
     }
 
+    pub(crate) fn is_muted(&self, cx: &App) -> bool {
+        self.muted_at(cx).is_some() || self.device_is_muted(cx)
+    }
+
+    fn device_is_muted(&self, cx: &App) -> bool {
+        self.player
+            .read(cx)
+            .state()
+            .output
+            .is_some_and(|output| output.device_muted)
+    }
+
     pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         if let Some(muted_from) = self.muted_at(cx) {
             self.set_volume(muted_from.get(), cx);
+            return;
+        }
+        if self.device_is_muted(cx) {
+            self.set_volume(self.volume_now(cx), cx);
             return;
         }
         let Ok(heard_at) = Volume::new(self.volume_now(cx).clamp(0.0, 1.0)) else {

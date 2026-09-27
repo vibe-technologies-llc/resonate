@@ -730,7 +730,7 @@ impl RootView {
     fn volume_bar(&self, level: f32, cx: &mut Context<Self>) -> Stateful<Div> {
         let level = self.grabbed_fraction(Handle::Volume).unwrap_or(level);
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
-        let muted = self.muted_at(cx).is_some();
+        let muted = self.is_muted(cx);
         let hint = if wheeled {
             VOLUME_HINT_WHEELED
         } else {

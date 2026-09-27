@@ -382,13 +382,6 @@ impl Levels {
         }
         levels
     }
-
-    fn heard(&self) -> Option<Gain> {
-        if self.muted {
-            return Some(Gain::SILENT);
-        }
-        self.loudest
-    }
 }
 
 pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
@@ -448,7 +441,8 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
             description: description.or(name)?,
             plugged,
             hardware_volume,
-            volume: levels.heard(),
+            volume: levels.loudest,
+            muted: levels.muted,
         },
     })
 }
@@ -692,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn a_route_reads_its_loudest_channel_as_its_volume_and_a_mute_as_silence() {
+    fn a_route_reads_its_loudest_channel_as_its_volume_and_its_mute_apart_from_it() {
         let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
         properties.push(Property::new(sys::SPA_PARAM_ROUTE_index, Value::Int(4)));
         properties.push(at_levels(&[0.125, 0.25], false));
@@ -706,7 +700,9 @@ mod tests {
         properties.push(at_levels(&[0.125, 0.25], true));
         let muted =
             parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
-        assert_eq!(muted.port.volume, Some(Gain::SILENT));
+        assert_eq!(muted.port.volume, Gain::new(0.25).ok());
+        assert!(muted.port.muted);
+        assert!(!route.port.muted);
 
         let bare = parse_route(&routed(
             Direction::Output.as_raw(),

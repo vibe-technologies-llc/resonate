@@ -5,8 +5,7 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Playback and output
 - A device with no volume of its own is still turned by the stream, so anything under 100 % leaves
-  bit-perfect there, and a device's own mute is read as a volume of nothing rather than kept apart
-  from the level the slider returns to
+  bit-perfect there
 - Changing the rate policy, the graph rate, the buffer or DoP mid-track reopens the stream and
   costs the gap a sink switch does
 - A track the lookup has not studied is turned down only by the peak its tags declare, so a boost

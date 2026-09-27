@@ -5083,6 +5083,7 @@ fn turning_its_own_volume(at: f32) -> SinkInfo {
             plugged: Plugged::Yes,
             hardware_volume: HardwareVolume::Yes,
             volume: Gain::new(at).ok(),
+            muted: false,
         }),
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
     }
@@ -5203,6 +5204,61 @@ fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -
         |player| heard_near(player, 0.4),
         "the slider to follow the device turned from the desktop",
     );
+    Ok(())
+}
+
+#[test]
+fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
+    let player = Player::with_backend(handing_the_volume_over(true), move |_| {
+        Ok(Box::new(backend))
+    })?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let level = Volume::new(0.5).expect("in range");
+    answered(&player, Command::SetVolume(level))?;
+
+    let device_muted = |player: &Player| {
+        player
+            .state()
+            .output
+            .is_some_and(|output| output.device_muted)
+    };
+    let muted_at = |muted: bool| SinkInfo {
+        port: turning_its_own_volume(level.to_gain().get())
+            .port
+            .map(|port| SinkPort { muted, ..port }),
+        ..turning_its_own_volume(1.0)
+    };
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = muted_at(true);
+    });
+    wait_for(
+        &player,
+        device_muted,
+        "the engine to read the device's mute",
+    );
+    assert!(
+        heard_near(&player, 0.5),
+        "a device muted from the desktop pulled the slider to nothing"
+    );
+
+    change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
+        sinks[0] = muted_at(false);
+    });
+    wait_for(
+        &player,
+        |player| !device_muted(player),
+        "the engine to read the device unmuted",
+    );
+    assert!(heard_near(&player, 0.5));
     Ok(())
 }
 

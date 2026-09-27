@@ -103,6 +103,10 @@ impl Attenuator {
             Self::Device => Volume::MAX,
         }
     }
+
+    pub fn hears_the_mute_of(self, sink: &SinkInfo) -> bool {
+        self == Self::Device && sink.port.as_ref().is_some_and(|port| port.muted)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -739,6 +743,7 @@ mod tests {
                 plugged: Plugged::Yes,
                 hardware_volume: volume,
                 volume: None,
+                muted: false,
             }),
             ..sink
         }

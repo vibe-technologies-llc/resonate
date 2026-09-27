@@ -1614,7 +1614,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the stream's own. `Output::attenuator` is decided at open and weighed again in `retune`, so the
   switch reshapes the chain in place like any other gain change. What the device is turned to is
   the route: `parse_route` reads the route's `index`, its channel count and its `props` —
-  `SinkPort::volume` is the loudest channel, or silence where it is muted — and
+  `SinkPort::volume` is the loudest channel whether or not the route is muted, and
+  `SinkPort::muted` is the mute apart from it — and
   `PipeWire::set_device_volume` sets `Route` on the `Device` with every channel at `Volume::to_gain`,
   unmuted and `save`d, which is what pipewire-pulse writes for a desktop slider; setting the node's
   `Props` instead would be the adapter's software volume. **The slider starts where the device
@@ -1627,8 +1628,17 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   follows ends in `follow_the_devices_volume`. What the engine itself sent comes back the same way,
   so `Engine::turned` remembers the last `TURNS_REMEMBERED` gains and a reading within
   `ONE_LEVEL_WITHIN` of any of them is an echo, which is what keeps a drag from being pulled back
-  to where it was a moment ago. Turning the switch off leaves the device where it was and puts the
-  gain stage back on top of it, which is quieter rather than louder.
+  to where it was a moment ago. **A device muted from the desktop is kept apart from its level.**
+  A mute used to be read as a volume of nothing, so the slider dropped to 0 % and the window's
+  mute mark, which remembers the level it muted from only when it did the muting, had nothing to
+  return to. `OutputStatus::device_muted` is `Attenuator::hears_the_mute_of` the bound sink,
+  weighed at open, whenever the attenuator is weighed again and on every survey; `DevicePorts::keep`
+  counts a mute that moved as a turn, so muting at an unchanged level is still read. The slider
+  stays at the level, the window lights its mute mark and says *muted*, and pressing it sends the
+  level again — which `route_volume` writes unmuted, as any turn of the slider does.
+  `a_device_muted_from_elsewhere_keeps_the_slider_where_it_was` is the claim. Turning the switch
+  off leaves the device where it was and puts the gain stage back on top of it, which is quieter
+  rather than louder.
   `a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect`,
   `a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not` and
   `handing_the_volume_back_to_the_stream_puts_the_gain_stage_back` are the claims; everything

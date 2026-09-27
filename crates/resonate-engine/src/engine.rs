@@ -266,6 +266,7 @@ impl Output {
                 latency: Frames::ZERO,
                 underruns: 0,
                 went_without: Frames::ZERO,
+                device_muted: attenuator.hears_the_mute_of(sink),
             },
             plan,
             chain,
@@ -1523,6 +1524,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+        output.status.device_muted = attenuator.hears_the_mute_of(&sink);
         if output.attenuator == attenuator {
             return;
         }
@@ -1550,6 +1552,9 @@ impl Engine {
         let Some(sink) = self.bound_sink() else {
             return;
         };
+        if let Some(output) = self.output.as_mut() {
+            output.status.device_muted = output.attenuator.hears_the_mute_of(&sink);
+        }
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };

@@ -63,6 +63,7 @@ pub struct OutputStatus {
     pub latency: Frames,
     pub underruns: u64,
     pub went_without: Frames,
+    pub device_muted: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
