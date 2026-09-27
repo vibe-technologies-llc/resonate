@@ -289,6 +289,73 @@ pub(crate) fn land_release(
     want_again(tx, id, held)
 }
 
+pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<bool> {
+    let id = album.get() as i64;
+    let matched: Option<(Option<String>, Option<String>)> = tx
+        .query_row(
+            "SELECT mbid, release_group FROM albums WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((release, group)) = matched else {
+        return Err(Error::UnknownAlbum(album));
+    };
+    let Some(refused) = release.or(group) else {
+        return Ok(false);
+    };
+
+    tx.execute(
+        "INSERT OR IGNORE INTO refused_releases (album_id, mbid) VALUES (?1, ?2)",
+        params![id, refused],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    tx.execute(
+        "UPDATE albums SET
+             mbid           = NULL,
+             release_group  = NULL,
+             release_title  = NULL,
+             date           = NULL,
+             country        = NULL,
+             kind           = NULL,
+             disambiguation = NULL,
+             cover_art      = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_art END,
+             cover_format   = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_format END,
+             cover_source   = CASE WHEN cover_source = ?2 THEN ?3 ELSE cover_source END,
+             asks           = 0,
+             refusals       = 0,
+             asked          = NULL,
+             answered       = NULL
+         WHERE id = ?1",
+        params![
+            id,
+            store::cover_source_code(CoverSource::Archive),
+            store::cover_source_code(CoverSource::File),
+        ],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    for taken in [
+        "DELETE FROM release_tracks WHERE album_id = ?1",
+        "DELETE FROM release_media WHERE album_id = ?1",
+        "DELETE FROM album_links WHERE album_id = ?1",
+    ] {
+        tx.execute(taken, params![id])
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
+
+    Ok(true)
+}
+
+pub(crate) fn refuses(tx: &Connection, album: AlbumId, mbid: &Mbid) -> Result<bool> {
+    tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM refused_releases WHERE album_id = ?1 AND mbid = ?2)",
+        params![album.get() as i64, mbid.as_str()],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
 fn release_track_haystack(release: &Release, track: &ReleaseTrack) -> String {
     let credited = release.credited_as();
     let artist = track.artist.as_deref().unwrap_or(&credited);
@@ -396,6 +463,7 @@ pub(crate) fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> 
         "UPDATE tracks SET album_id = ?1 WHERE album_id = ?2",
         "UPDATE release_tracks SET album_id = ?1 WHERE album_id = ?2",
         "UPDATE album_keys SET album_id = ?1 WHERE album_id = ?2",
+        "UPDATE OR IGNORE refused_releases SET album_id = ?1 WHERE album_id = ?2",
     ] {
         tx.execute(moving, params![into, other])
             .map_err(|source| Error::store(StoreOp::Update, source))?;

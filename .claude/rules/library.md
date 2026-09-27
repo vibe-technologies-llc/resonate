@@ -861,6 +861,19 @@ through `Player::media` like any other unscanned row.
   because a name has nothing but itself to be checked against. A hit that falls short is a debug
   record naming what it was and how it fell, and the album or artist is stamped `asked` alone,
   so nothing a person did not tag is ever written on a guess.
+- **A match the listener says is wrong is taken away and never landed again.**
+  `Library::forget_the_match` is the gesture: it records the album's release — or its release
+  group, where the album was landed as a group alone — in `refused_releases`, the eighth step in
+  `MIGRATIONS`, clears what the landing wrote (the ids, the release's title, date, country, kind
+  and disambiguation, a cover the archive gave), takes away the release's rows, its media and its
+  links, and puts `asked` back to nothing so the next lookup asks at once. The label, the
+  catalogue number and the barcode stay, because the tags may have given them. `take_release`
+  and `take_group` are where every route lands, a tagged id and a search alike, and both ask
+  `Library::refuses` first and pass a refused id over as `nothing_landed`, so the next lookup
+  settles on another pressing or on nothing rather than on the same wrong one. Only the release is
+  refused, not its group, so a wrong *edition* is put right by another pressing of the same
+  record. A gathering carries the loser's refusals onto the survivor.
+  `a_match_the_listener_forgets_is_taken_away_and_never_landed_again` is the claim.
 - **A name agrees in one of six ways, and `Spelling`'s derived `Ord` is the whole of the
   ranking.** `same_name` answers `Marked` where the two `folded_title`s agree, marks and all,
   `Stripped` where only the `stripped_title`s do, and `Dequalified` where they agree only once

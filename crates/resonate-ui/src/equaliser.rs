@@ -897,7 +897,10 @@ mod tests {
 
     #[test]
     fn a_curve_kept_as_a_profile_takes_the_devices_name_or_the_next_one_free() {
-        assert_eq!(unused_name(&[], "Studio Monitors"), named("Studio Monitors"));
+        assert_eq!(
+            unused_name(&[], "Studio Monitors"),
+            named("Studio Monitors")
+        );
         assert_eq!(
             unused_name(&[named("studio monitors")], "Studio Monitors"),
             named("Studio Monitors 2")

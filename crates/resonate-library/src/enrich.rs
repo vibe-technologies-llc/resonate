@@ -1261,7 +1261,7 @@ impl Pass<'_> {
         let since = self.refusals();
         if let Some(mbid) = &album.mbid {
             match self.heard(self.reference.release(mbid))? {
-                Heard::Answered(Some(release)) => return self.take_release(album, release),
+                Heard::Answered(Some(release)) => return self.take_release(album, release, since),
                 Heard::Answered(None) => tracing::debug!(
                     album = %album.id,
                     %mbid,
@@ -1358,7 +1358,7 @@ impl Pass<'_> {
 
     fn land_release(&self, album: &AlbumToAsk, mbid: &Mbid, since: Refusals) -> Result<()> {
         match self.heard(self.reference.release(mbid))? {
-            Heard::Answered(Some(release)) => self.take_release(album, release),
+            Heard::Answered(Some(release)) => self.take_release(album, release, since),
             Heard::Answered(None) => {
                 tracing::debug!(album = %album.id, %mbid, "the reference holds no release under this id");
                 self.nothing_landed(album, since)
@@ -1367,7 +1367,15 @@ impl Pass<'_> {
         }
     }
 
-    fn take_release(&self, album: &AlbumToAsk, release: Release) -> Result<()> {
+    fn take_release(&self, album: &AlbumToAsk, release: Release, since: Refusals) -> Result<()> {
+        if self.library.refuses(album.id, &release.id)? {
+            tracing::debug!(
+                album = %album.id,
+                release = %release.id,
+                "the listener said this release is not the album, so it is not landed again"
+            );
+            return self.nothing_landed(album, since);
+        }
         self.library.land_release(album.id, &release)?;
         self.progress.releases.fetch_add(1, Ordering::Relaxed);
         self.rematch(album.id)?;
@@ -1406,11 +1414,19 @@ impl Pass<'_> {
                 );
                 self.land_release(album, &release.id, since)
             }
-            None => self.take_group(album, found),
+            None => self.take_group(album, found, since),
         }
     }
 
-    fn take_group(&self, album: &AlbumToAsk, group: &ReleaseGroup) -> Result<()> {
+    fn take_group(&self, album: &AlbumToAsk, group: &ReleaseGroup, since: Refusals) -> Result<()> {
+        if self.library.refuses(album.id, &group.id)? {
+            tracing::debug!(
+                album = %album.id,
+                group = %group.id,
+                "the listener said this release group is not the album, so it is not landed again"
+            );
+            return self.nothing_landed(album, since);
+        }
         self.library.land_release_group(album.id, group)?;
         if album.has_release_rows {
             self.rematch(album.id)?;

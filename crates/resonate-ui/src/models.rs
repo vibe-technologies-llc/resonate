@@ -87,6 +87,7 @@ const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
+const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
 
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
@@ -223,6 +224,7 @@ enum Change {
     Favour { favourite: bool },
     Hide { hidden: bool },
     ForgetDelivered,
+    ForgetTheMatch,
     Undo,
     Redo,
 }
@@ -244,6 +246,7 @@ impl Change {
             Self::Hide { hidden: true } => "hide that track",
             Self::Hide { hidden: false } => "show that track again",
             Self::ForgetDelivered => "forget that delivery",
+            Self::ForgetTheMatch => "forget that match",
             Self::Undo => "put that back",
             Self::Redo => "do that again",
         }
@@ -1248,6 +1251,19 @@ impl LibraryModel {
             Wanted::Everything,
             Change::Hide { hidden },
             move |library| library.hide_track(id, hidden).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn forget_the_match(&mut self, album: AlbumId, cx: &mut Context<Self>) {
+        self.edited(
+            Wanted::Everything,
+            Change::ForgetTheMatch,
+            move |library| {
+                library
+                    .forget_the_match(album)
+                    .map(|forgot| forgot.then(|| FORGOT_THE_MATCH.to_owned()))
+            },
             cx,
         );
     }

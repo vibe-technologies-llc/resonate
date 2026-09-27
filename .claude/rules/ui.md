@@ -1532,7 +1532,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   library. The pressing is not drawn there. An info mark at the end of the row under the text, and only
   where `record_of` has something to say, opens a card anchored at the press: Released, Format,
   Label, Catalogue number, Barcode, Country and Kind, then the disambiguation, then every service
-  link. Escape closes it after a magnified cover and before a toast, a second press on the mark
+  link. Where the album was matched it ends in *Not this record*, which takes two presses — the
+  second under *Press again to forget the match*, the arming held on `OpenedRecord::Album` so
+  any way the card closes lowers it — and is `LibraryModel::forget_the_match`, told as a toast.
+  Escape closes it after a magnified cover and before a toast, a second press on the mark
   closes it, and leaving the album — `set_pane` — closes it too. The scrim occludes, the way a
   menu's does. An artist hero draws `profile_line` and `heard_on`, and its genres open from the
   info mark — every one, as `kit::tag` pills, and the mark is drawn only where there is one.

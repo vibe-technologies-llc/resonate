@@ -8492,6 +8492,54 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
 }
 
 #[test]
+fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(
+            rows,
+            vec![Link::new(
+                "streaming",
+                "https://tidal.com/album/55391740".to_owned(),
+            )],
+        )],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    let album = only_album(&library)?;
+    assert_eq!(album.mbid, Some(mbid(RELEASE)));
+
+    assert!(library.forget_the_match(album.id)?);
+
+    let forgotten = only_album(&library)?;
+    assert_eq!(forgotten.mbid, None);
+    assert_eq!(forgotten.missing, 0);
+    assert!(library.release_tracks(album.id)?.is_empty());
+    let release = library.release_of(album.id)?.expect("the album is known");
+    assert!(release.links.is_empty());
+    assert!(
+        release.asked.is_none(),
+        "the album is not due to be asked again"
+    );
+    assert!(library.refuses(album.id, &mbid(RELEASE))?);
+
+    enrich(&library, &fake, false)?;
+    assert_eq!(
+        only_album(&library)?.mbid,
+        None,
+        "the release the listener refused was landed again"
+    );
+    assert!(library.release_tracks(album.id)?.is_empty());
+    assert!(
+        !library.forget_the_match(album.id)?,
+        "an album matched to nothing forgot a match"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_asked_alone()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;

@@ -2687,6 +2687,16 @@ impl Library {
         })
     }
 
+    pub fn forget_the_match(&self, album: AlbumId) -> Result<bool> {
+        self.inner
+            .write(|transaction| enriched::forget_the_match(transaction, album))
+    }
+
+    pub fn refuses(&self, album: AlbumId, mbid: &Mbid) -> Result<bool> {
+        self.inner
+            .read(|connection| enriched::refuses(connection, album, mbid))
+    }
+
     pub fn land_release(&self, album: AlbumId, release: &Release) -> Result<()> {
         self.inner.write(|transaction| {
             enriched::land_release(transaction, album, release, SystemTime::now())

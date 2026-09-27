@@ -27,6 +27,11 @@ const MIGRATIONS: &[&str] = &[
      ) STRICT, WITHOUT ROWID;",
     "ALTER TABLE resume ADD COLUMN next_first INTEGER;
      ALTER TABLE resume ADD COLUMN next_last INTEGER;",
+    "CREATE TABLE refused_releases (
+         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+         mbid     TEXT NOT NULL,
+         PRIMARY KEY (album_id, mbid)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

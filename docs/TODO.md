@@ -77,8 +77,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A delivered row carries no genre or lyrics, and is levelled only once studied
 
 ## Identification
-- A strict match is written without a pane to confirm it or a gesture to undo it: an album taken
-  wrongly is put right only by clearing `albums.mbid` and its rows by hand
+- A strict match is written without a pane to confirm it, and forgetting a wrong one leaves the
+  track-level names the match corrected as it wrote them
 - A found song or a track named by its audio is placed on the earliest-dated release its recording
   sits on, often a single or compilation rather than the album meant. Nothing offers the choice
 - A file with no title tag and a stem that is neither numbered nor separated gives the search

@@ -40,6 +40,12 @@ use crate::{
 };
 
 const SEVERAL: &str = "Various artists";
+const FORGET_THE_MATCH: &str = "Not this record";
+const FORGET_THE_MATCH_HINT: &str =
+    "The lookup took the wrong release: forget it, and never take it for this album again";
+const FORGET_THE_MATCH_ARMED: &str = "Press again to forget the match";
+const FORGET_THE_MATCH_ARMED_HINT: &str = "Takes away the release, its rows and what it linked, \
+     and the next lookup asks again without it";
 
 const OTHER_COPIES_HINT: &str =
     "Also held in other formats; this is the best of them, and the row's menu plays the others";
@@ -1645,7 +1651,11 @@ impl RootView {
             self.record = None;
         } else {
             self.close_the_menu(cx);
-            self.record = Some(OpenedRecord::Album { album, at });
+            self.record = Some(OpenedRecord::Album {
+                album,
+                at,
+                forgetting: false,
+            });
         }
         cx.notify();
     }
@@ -1666,12 +1676,21 @@ impl RootView {
             let opened = *self.record.as_ref()?;
             let library = self.library.read(cx);
             match opened {
-                OpenedRecord::Album { album, at } => {
+                OpenedRecord::Album {
+                    album,
+                    at,
+                    forgetting,
+                } => {
                     if library.selection() != Selection::Album(album) {
                         return None;
                     }
                     let record = library.release().and_then(record_of)?;
-                    (at, record_card(&record))
+                    let card = record_card(&record);
+                    let card = match record.matched {
+                        true => card.child(self.not_this_record(album, at, forgetting, cx)),
+                        false => card,
+                    };
+                    (at, card)
                 }
                 OpenedRecord::Artist { artist, at } => {
                     if library.selection() != Selection::Artist(artist) {
@@ -1690,6 +1709,41 @@ impl RootView {
         };
 
         Some(self.detail_over(at, card, cx))
+    }
+
+    fn not_this_record(
+        &self,
+        album: AlbumId,
+        at: Point<Pixels>,
+        forgetting: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let (label, hint) = match forgetting {
+            true => (FORGET_THE_MATCH_ARMED, FORGET_THE_MATCH_ARMED_HINT),
+            false => (FORGET_THE_MATCH, FORGET_THE_MATCH_HINT),
+        };
+
+        kit::button(
+            "not-this-record",
+            Some(Icon::Discard),
+            label,
+            hint,
+            Tone::Ghost,
+        )
+        .on_click(cx.listener(move |this, _, _, cx| {
+            if forgetting {
+                this.record = None;
+                this.library
+                    .update(cx, |library, cx| library.forget_the_match(album, cx));
+            } else {
+                this.record = Some(OpenedRecord::Album {
+                    album,
+                    at,
+                    forgetting: true,
+                });
+            }
+            cx.notify();
+        }))
     }
 
     fn detail_over(
@@ -2361,7 +2415,12 @@ fn record_of(release: &ReleaseDetail) -> Option<Record> {
         .clone()
         .filter(|note| !note.trim().is_empty());
     let on = service_names(&release.links);
-    let record = Record { facts, note, on };
+    let record = Record {
+        facts,
+        note,
+        on,
+        matched: release.mbid.is_some() || release.group.is_some(),
+    };
 
     (!record.is_empty()).then_some(record)
 }
@@ -2381,6 +2440,7 @@ struct Record {
     facts: Vec<Fact>,
     note: Option<String>,
     on: Vec<HeardOn>,
+    matched: bool,
 }
 
 impl Record {
@@ -2391,8 +2451,15 @@ impl Record {
 
 #[derive(Clone, Copy)]
 pub(crate) enum OpenedRecord {
-    Album { album: AlbumId, at: Point<Pixels> },
-    Artist { artist: ArtistId, at: Point<Pixels> },
+    Album {
+        album: AlbumId,
+        at: Point<Pixels>,
+        forgetting: bool,
+    },
+    Artist {
+        artist: ArtistId,
+        at: Point<Pixels>,
+    },
 }
 
 fn detail_card(title: &'static str) -> Stateful<Div> {
