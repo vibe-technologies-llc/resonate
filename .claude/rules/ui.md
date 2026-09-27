@@ -1648,7 +1648,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   under the sections, and an empty `rows` still means the listing drawn one row per track, which is
   what `played_from` and `listed_rows` read. Both kinds of row are `unheld_row` with a
   `Beside::ASearch` — a cover column, the album cover faded to `UNHELD_COVER` or a dashed
-  `Icon::Missing` frame where there is none, the matched runs lit, the release in the format
+  `Icon::Missing` frame where there is none; a found song's column is its release's front,
+  `Sleeve::Released`, which `LibraryModel::released_cover` asks the reference for on the
+  background executor while Online is on — `FETCHES_AT_ONCE` at a time, decoded on the `Drawer`
+  and held under the release's id in `released_covers` for the run, a release the archive holds
+  nothing for held as nothing so it is not asked again — the matched runs lit, the release in the format
   column — and the want mark is `want_mark` over an `Asks`: a catalog row wants its
   `ReleaseTrackId` as ever, a found song calls `LibraryModel::want_found`, which lands its release
   and wants the row on the background executor, greys the mark while it does, then asks the

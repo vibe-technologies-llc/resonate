@@ -63,6 +63,8 @@ const NAMES_HELD: NonZeroUsize = held(4_096);
 const ALBUMS_HELD: NonZeroUsize = held(256);
 const PORTRAITS_HELD: NonZeroUsize = held(256);
 const DECODES_AT_ONCE: usize = 4;
+const RELEASED_COVERS_HELD: NonZeroUsize = held(64);
+const FETCHES_AT_ONCE: usize = 2;
 
 const SCAN_POLL: Duration = Duration::from_millis(100);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
@@ -567,6 +569,8 @@ pub struct LibraryModel {
     charted: Arc<Chart>,
     covers: Recent<AlbumId, Option<Art>>,
     decoding: AHashSet<AlbumId>,
+    released_covers: Recent<Mbid, Option<Art>>,
+    fetching_covers: AHashSet<Mbid>,
     magnified: Option<Magnifying<AlbumId>>,
     portraits: Recent<ArtistId, Option<Portrait>>,
     decoding_portraits: AHashSet<ArtistId>,
@@ -700,6 +704,8 @@ impl LibraryModel {
             charted: Arc::default(),
             covers: Recent::new(COVERS_HELD),
             decoding: AHashSet::new(),
+            released_covers: Recent::new(RELEASED_COVERS_HELD),
+            fetching_covers: AHashSet::new(),
             magnified: None,
             portraits: Recent::new(PORTRAITS_HELD),
             decoding_portraits: AHashSet::new(),
@@ -2233,6 +2239,52 @@ impl LibraryModel {
                         .forget(cx);
                     cx.notify();
                 }
+            });
+            let _ = landed;
+        })
+        .detach();
+        None
+    }
+
+    pub fn released_cover(
+        &mut self,
+        release: &Mbid,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<Image>> {
+        if let Some(held) = self.released_covers.get(release) {
+            return held.as_ref().map(|art| art.drawn(drawn));
+        }
+        let reference = self.reference.clone().filter(|_| self.online)?;
+        if self.fetching_covers.contains(release) || self.fetching_covers.len() >= FETCHES_AT_ONCE {
+            return None;
+        }
+        self.fetching_covers.insert(release.clone());
+
+        let asked = release.clone();
+        let fetched = cx
+            .background_executor()
+            .spawn(async move { reference.cover(&asked, None) });
+        let landing = release.clone();
+        cx.spawn(async move |this, cx| {
+            let art = fetched.await.unwrap_or_else(|error| {
+                tracing::warn!(%error, "a found song's cover could not be fetched");
+                None
+            });
+            let drawing = this.update(cx, |_, cx| {
+                cx.global::<Drawer>()
+                    .draw(move || art.as_ref().map(Art::of))
+            });
+            let Ok(drawing) = drawing else {
+                return;
+            };
+            let decoded = drawing.await.flatten();
+            let landed = this.update(cx, |this, cx| {
+                this.released_covers
+                    .insert(landing.clone(), decoded)
+                    .forget(cx);
+                this.fetching_covers.remove(&landing);
+                cx.notify();
             });
             let _ = landed;
         })

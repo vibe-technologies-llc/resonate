@@ -14,8 +14,8 @@ use resonate_core::{AlbumId, ArtistId, ReleaseTrackId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, HeldMedium,
-    HeldReleaseTrack, Link, Lit, Measured, MissingTrack, PlaylistEntry, ReleaseDetail, Service,
-    Track,
+    HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry, ReleaseDetail,
+    Service, Track,
 };
 use smallvec::smallvec;
 
@@ -32,7 +32,7 @@ use crate::{
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
-        root::{Magnified, Pane, RootView, empty, listed, row, tall_row},
+        root::{Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
         scrollbar::Scrollbars,
         sorting,
         transport::COVER_HINT,
@@ -1015,12 +1015,23 @@ impl RootView {
 
         row(false)
             .child(listing::number_cell(number))
-            .when_some(beside.pictured(), |row, pictured| {
-                row.child(match pictured {
-                    Some(album) => self
-                        .cover(listing::Pictured::Album(album), cx)
+            .when_some(beside.pictured(), |row, sleeve| {
+                row.child(match sleeve {
+                    Sleeve::Held(album) => self
+                        .cover(listing::Pictured::Album(*album), cx)
                         .opacity(UNHELD_COVER),
-                    None => unheld_cover(),
+                    Sleeve::Released(release) => {
+                        let art = self.library.update(cx, |library, cx| {
+                            library.released_cover(release, Drawn::InARow, cx)
+                        });
+                        match art {
+                            Some(art) => {
+                                framed_cover(Some(art), theme::row_cover()).opacity(UNHELD_COVER)
+                            }
+                            None => unheld_cover(),
+                        }
+                    }
+                    Sleeve::Unknown => unheld_cover(),
                 })
             })
             .child(listing::title_cell(title, lit_title, false).text_color(rgb(theme::faint())))
@@ -2150,17 +2161,20 @@ pub(crate) enum Asks {
 pub(crate) enum Beside {
     AnAlbum,
     ARun,
-    ASearch {
-        pictured: Option<AlbumId>,
-        on: SharedString,
-    },
+    ASearch { pictured: Sleeve, on: SharedString },
+}
+
+pub(crate) enum Sleeve {
+    Held(AlbumId),
+    Released(Mbid),
+    Unknown,
 }
 
 impl Beside {
-    const fn pictured(&self) -> Option<Option<AlbumId>> {
+    const fn pictured(&self) -> Option<&Sleeve> {
         match self {
             Self::AnAlbum | Self::ARun => None,
-            Self::ASearch { pictured, .. } => Some(*pictured),
+            Self::ASearch { pictured, .. } => Some(pictured),
         }
     }
 }
@@ -2212,7 +2226,7 @@ impl Unheld {
                     .unwrap_or_default(),
             ),
             beside: Beside::ASearch {
-                pictured: Some(row.album),
+                pictured: Sleeve::Held(row.album),
                 on: SharedString::from(row.album_title.clone()),
             },
             ..Self::from(row)
@@ -2226,7 +2240,9 @@ impl Unheld {
             artist: SharedString::from(found.artist.clone()),
             length: SharedString::from(found.length.map(format::spanned).unwrap_or_default()),
             beside: Beside::ASearch {
-                pictured: None,
+                pictured: found.release.as_ref().map_or(Sleeve::Unknown, |release| {
+                    Sleeve::Released(release.id.clone())
+                }),
                 on: SharedString::from(
                     found
                         .release

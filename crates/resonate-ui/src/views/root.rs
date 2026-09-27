@@ -482,6 +482,30 @@ pub struct RootView {
     window_size_settled: Task<()>,
 }
 
+pub(crate) fn framed_cover(art: Option<Arc<Image>>, side: f32) -> Div {
+    let frame = div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(side))
+        .rounded(px(cover_rounding(side)))
+        .overflow_hidden()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(theme::tinted(theme::text(), 0x0c));
+
+    match art {
+        Some(art) => frame.child(
+            img(art)
+                .size(px(side))
+                .object_fit(ObjectFit::Cover)
+                .rounded(px(cover_rounding(side))),
+        ),
+        None => frame.child(icons::icon(Icon::Disc, side * 0.42, theme::faint())),
+    }
+}
+
 impl RootView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let global = cx.global::<ResonateApp>();
@@ -3218,27 +3242,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let art = self.drawn_cover(pictured, drawn, cx).map(|(art, _)| art);
-        let frame = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .size(px(side))
-            .rounded(px(cover_rounding(side)))
-            .overflow_hidden()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(theme::tinted(theme::text(), 0x0c));
-
-        match art {
-            Some(art) => frame.child(
-                img(art)
-                    .size(px(side))
-                    .object_fit(ObjectFit::Cover)
-                    .rounded(px(cover_rounding(side))),
-            ),
-            None => frame.child(icons::icon(Icon::Disc, side * 0.42, theme::faint())),
-        }
+        framed_cover(art, side)
     }
 
     fn content(&mut self, cx: &mut Context<Self>) -> AnyElement {
