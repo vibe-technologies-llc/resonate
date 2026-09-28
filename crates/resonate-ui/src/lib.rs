@@ -29,7 +29,7 @@ pub use crate::{
     lyrics::{Look, LyricsModel},
     models::{
         Beyond, Consulted, Drawn, Favourited, LibraryModel, ListedRow, MissingRow, Notice, Pass,
-        Planned, Portrayed, Pressings, Previewed, Selection, Tone,
+        Planned, Portrayed, Pressings, Previewed, RootWaiting, Selection, Tone,
     },
     settings::{
         Bindings, Ephemeral, Online, Places, Present, Setting, SettingKey, Settings,

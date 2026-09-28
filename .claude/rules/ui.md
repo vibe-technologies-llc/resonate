@@ -401,10 +401,14 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   it — it takes the builder and the press *together*, hands the builder a `Press` and attaches the
   listener and the focus ring only on the `Takes` branch, so `action` (*Add folder…*, *Rescan folders*, *Stop*) and
   the folder row's forget mark all give it their listener and no call site can hang a press on a
-  control the pane has greyed out. What greys them is `LibraryModel::is_busy`, the same answer
-  `LibraryModel::scan` refuses on, and not `is_scanning`, which is false throughout a forget:
-  *Add folder…* used to be pressable there, open the XDG portal, and have the folder it came back
-  with dropped without a word. A forget mark is keyed by the root it stands for — an
+  control the pane has greyed out. *Rescan folders* is greyed by `LibraryModel::is_busy`, the same
+  answer `LibraryModel::scan` refuses on. **Adding and forgetting a folder are not greyed: they
+  wait.** `LibraryModel::add_roots` and `forget_root` put what they are asked for into
+  `roots_waiting` — a `RootWaiting::ToAdd` or `ToForget` — wherever a `Work` is under way, the
+  Folders group says what is waiting under its rows, and `take_up_what_waited` runs wherever a
+  pass hands its `Work` back: a forget first, one at a time, and then every folder waiting to be
+  added in one scan. Before, a scan greyed both for as long as it ran, so the second of two
+  folders could not be added until the first had been read. A forget mark is keyed by the root it stands for — an
   `ElementId::Path` under a `"forget"` child — rather than by the one id every row shared. An
   enrichment is deliberately not a `Work`: `LibraryModel::enriching` is a slot of its own beside
   it, so a lookup running greys the Online card's *Look up* and *Refresh all* and the Library
@@ -2159,9 +2163,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   then asks the archive for every album that has a release and no picture. It is greyed with the
   scan's `is_busy`, the covers button with `can_enrich` as well. What MusicBrainz answered is
   Online's *Refresh all*, which the group's note points at rather than repeating.
-- **The library's roots are edited through the desktop's file picker.** gpui ships no text input, so
-  `App::prompt_for_paths` with `directories: true` is how a folder is named — it is the XDG portal,
-  so a machine without one reports through the pane's own notice rather than doing nothing. Adding
+- **The library's roots are edited through the desktop's file picker, or typed.**
+  `App::prompt_for_paths` with `directories: true` is the XDG portal, and a machine without one
+  says so and points at the field beneath: `RootView::typed_root` is a `Field` like the organising
+  template's, *Or type a folder, then press enter*, and `root_typed` reads a leading `~` as `$HOME`,
+  refuses what is not a directory in the pane's own notice and hands a directory to the same
+  `add_roots` the picker does — so a session with no portal adds a folder from the window rather
+  than only through `resonate scan`. Adding
   scans just the folders named, which is what registers them; *Rescan* walks the roots already
   registered, and dropping one goes through `Library::remove_root` and forgets every track that came
   from it. The roots are read back with the albums, artists and tracks in one `Loaded` snapshot, so

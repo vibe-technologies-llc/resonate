@@ -416,6 +416,12 @@ enum Reading {
     Everything,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RootWaiting {
+    ToAdd(PathBuf),
+    ToForget(PathBuf),
+}
+
 #[derive(Clone, Default)]
 enum Work {
     #[default]
@@ -608,6 +614,7 @@ pub struct LibraryModel {
     _passed: Task<()>,
     _shared: Task<()>,
     pressings: Option<(AlbumId, Pressings)>,
+    roots_waiting: Vec<RootWaiting>,
     _pressings: Task<()>,
     _kept: Task<()>,
     _aged: Task<()>,
@@ -749,6 +756,7 @@ impl LibraryModel {
             _passed: Task::ready(()),
             _shared: Task::ready(()),
             pressings: None,
+            roots_waiting: Vec::new(),
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
             _aged: Task::ready(()),
@@ -2902,7 +2910,47 @@ impl LibraryModel {
         if roots.is_empty() {
             return;
         }
+        if self.work.is_busy() {
+            for root in roots {
+                let waiting = RootWaiting::ToAdd(root);
+                if !self.roots_waiting.contains(&waiting) {
+                    self.roots_waiting.push(waiting);
+                }
+            }
+            cx.notify();
+            return;
+        }
         self.scan(roots, cx);
+    }
+
+    pub fn roots_waiting(&self) -> &[RootWaiting] {
+        &self.roots_waiting
+    }
+
+    fn take_up_what_waited(&mut self, cx: &mut Context<Self>) {
+        if self.work.is_busy() || self.roots_waiting.is_empty() {
+            return;
+        }
+        let forgotten = self
+            .roots_waiting
+            .iter()
+            .position(|waiting| matches!(waiting, RootWaiting::ToForget(_)));
+        if let Some(at) = forgotten {
+            let RootWaiting::ToForget(root) = self.roots_waiting.remove(at) else {
+                return;
+            };
+            self.forget_root(root, cx);
+            return;
+        }
+        let added: Vec<PathBuf> = self
+            .roots_waiting
+            .drain(..)
+            .filter_map(|waiting| match waiting {
+                RootWaiting::ToAdd(root) => Some(root),
+                RootWaiting::ToForget(_) => None,
+            })
+            .collect();
+        self.scan(added, cx);
     }
 
     fn scan(&mut self, roots: Vec<PathBuf>, cx: &mut Context<Self>) {
@@ -2957,6 +3005,7 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
                         if let Some(notice) = scanned(&summary, prompted) {
@@ -3276,6 +3325,7 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed_import = Planned::after(pass, summary.cancelled, read_at);
@@ -3365,6 +3415,7 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
                         if let Some(notice) = polled(&summary, prompted) {
@@ -3470,6 +3521,7 @@ impl LibraryModel {
 
                 let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed_tags = Planned::after(pass, summary.cancelled, read_at);
@@ -3525,6 +3577,7 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
                         this.previewed = Planned::after(pass, summary.cancelled, read_at);
@@ -3546,6 +3599,11 @@ impl LibraryModel {
 
     pub fn forget_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         if self.work.is_busy() {
+            let waiting = RootWaiting::ToForget(root);
+            if !self.roots_waiting.contains(&waiting) {
+                self.roots_waiting.push(waiting);
+            }
+            cx.notify();
             return;
         }
         self.work = Work::Forgetting;
@@ -3560,6 +3618,7 @@ impl LibraryModel {
 
             let outcome = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
                 if let Err(error) = dropped {
                     tracing::error!(%error, "a library folder could not be dropped");
                     toast::tell(toast::could_not("drop that library folder", &error), cx);

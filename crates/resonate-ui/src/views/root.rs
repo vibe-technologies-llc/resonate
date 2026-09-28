@@ -134,6 +134,8 @@ const FIGURE_PLACEHOLDER: &str = "A number, then press enter";
 const LOOKING_PLACEHOLDER: &str = "Which headphones, then press enter";
 const ORGANISING_PLACEHOLDER: &str = "How the files are filed, then press enter";
 
+const TYPED_ROOT_PLACEHOLDER: &str = "Or type a folder, then press enter";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Magnified {
     Album(AlbumId),
@@ -418,6 +420,7 @@ pub struct RootView {
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
+    pub(crate) typed_root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
     pub(crate) figure: Entity<Field>,
     pub(crate) looking: Entity<Field>,
@@ -718,6 +721,12 @@ impl RootView {
         })
         .detach();
 
+        let typed_root = cx.new(|cx| Field::new(TYPED_ROOT_PLACEHOLDER, window, cx));
+        cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
+            this.root_typed(window, cx);
+        })
+        .detach();
+
         let finding = cx.new(|cx| Field::new(FILTER_PLACEHOLDER, window, cx));
         cx.subscribe_in(&finding, window, |this, _, _: &Submitted, window, cx| {
             this.leave_filter(window, cx);
@@ -789,6 +798,7 @@ impl RootView {
             discord_app,
             discord_icon,
             organising,
+            typed_root,
             finding,
             figure,
             looking,
@@ -1405,6 +1415,14 @@ impl RootView {
 
     pub(crate) fn leave_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.contact.read(cx).is_focused(window) {
+            return;
+        }
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    pub(crate) fn leave_typed_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.typed_root.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus);
@@ -2520,6 +2538,7 @@ impl RootView {
             || self.discord_app.read(cx).is_focused(window)
             || self.discord_icon.read(cx).is_focused(window)
             || self.organising.read(cx).is_focused(window)
+            || self.typed_root.read(cx).is_focused(window)
             || self.finding.read(cx).is_focused(window)
             || self.figure.read(cx).is_focused(window)
             || self.looking.read(cx).is_focused(window)
@@ -2592,6 +2611,10 @@ impl RootView {
         }
         if self.organising.read(cx).is_focused(window) {
             self.leave_organising(window, cx);
+            return;
+        }
+        if self.typed_root.read(cx).is_focused(window) {
+            self.leave_typed_root(window, cx);
             return;
         }
         if self.figure.read(cx).is_focused(window) {

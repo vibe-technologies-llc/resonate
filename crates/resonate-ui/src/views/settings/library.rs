@@ -27,7 +27,7 @@ use crate::{
 
 const FOLDER_GROUP: &str = "folder";
 
-const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker";
+const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker; type the folder instead";
 
 const FORGET_HINT: &str = "Forget this folder and every track scanned from it. The files are left \
                            alone.";
@@ -114,21 +114,72 @@ impl RootView {
     pub(super) fn folders_group(&mut self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let roots = library.roots().to_vec();
-        let busy = library.is_busy();
+        let waiting = library.roots_waiting().to_vec();
 
         let mut listed = rows();
         for root in &roots {
-            listed = listed.child(self.folder(root, busy, cx));
+            listed = listed.child(self.folder(root, cx));
         }
 
         kit::section_body()
             .when(roots.is_empty(), |body| body.child(note(NO_FOLDERS)))
             .when(!roots.is_empty(), |body| body.child(listed))
-            .child(hugging(self.add_folder(busy, cx)))
+            .child(hugging(self.add_folder(cx)))
+            .child(self.typed_root_field(cx))
+            .when(!waiting.is_empty(), |body| {
+                body.child(note(SharedString::from(waiting_line(&waiting))))
+            })
             .when(!roots.is_empty(), |body| body.child(note(FOLDERS_NOTE)))
     }
 
-    fn folder(&self, root: &Path, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn typed_root_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        div()
+            .id("typed-root")
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(theme::width(theme::search_height()))
+            .px_3()
+            .rounded_lg()
+            .bg(rgb(theme::background()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .text_size(px(theme::text_sm()))
+            .cursor_text()
+            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
+            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_typed_root(window, cx)))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.typed_root
+                    .update(cx, |typed, _| typed.take_focus(window));
+                cx.notify();
+            }))
+            .child(self.typed_root.clone())
+            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+    }
+
+    pub(crate) fn root_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self.typed_root.read(cx).text().trim().to_owned();
+        if typed.is_empty() {
+            self.leave_typed_root(window, cx);
+            return;
+        }
+        let folder = spelt_out_from_home(&typed);
+        if !folder.is_dir() {
+            self.report(
+                Notice::Trouble(format!("{} is not a folder", folder.display())),
+                cx,
+            );
+            return;
+        }
+        self.typed_root
+            .update(cx, |typed, cx| typed.hold(String::new(), cx));
+        self.library
+            .update(cx, |library, cx| library.add_roots(vec![folder], cx));
+        self.leave_typed_root(window, cx);
+        cx.notify();
+    }
+
+    fn folder(&self, root: &Path, cx: &mut Context<Self>) -> Stateful<Div> {
         let path = root.to_path_buf();
         let shown = SharedString::from(root.display().to_string());
 
@@ -157,16 +208,12 @@ impl RootView {
                     .text_size(px(theme::text_sm()))
                     .child(shown),
             )
-            .child(self.forget_root(path, busy, cx))
+            .child(self.forget_root(path, cx))
     }
 
-    fn forget_root(&self, root: PathBuf, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Stateful<Div> {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
         let named = format!("forget {}", root.display());
-
-        if busy {
-            return kit::mark_when(Press::Greyed, id, Icon::Discard, FORGET_HINT, FOLDER_GROUP);
-        }
 
         self.root_in_the_ring(
             named,
@@ -205,12 +252,12 @@ impl RootView {
             }))
     }
 
-    fn add_folder(&self, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn add_folder(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "add-folder",
             "Add folder…",
             Icon::Plus,
-            busy,
+            false,
             |this, _, cx| this.choose_music_folder(cx),
             self,
             cx,
@@ -367,6 +414,30 @@ impl RootView {
         })
         .detach();
     }
+}
+
+fn spelt_out_from_home(typed: &str) -> PathBuf {
+    let home = std::env::var_os("HOME").filter(|home| !home.is_empty());
+    match (typed.strip_prefix('~'), home) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
+            PathBuf::from(home).join(rest.trim_start_matches('/'))
+        }
+        _ => PathBuf::from(typed),
+    }
+}
+
+fn waiting_line(waiting: &[crate::RootWaiting]) -> String {
+    let named: Vec<String> = waiting
+        .iter()
+        .map(|waiting| match waiting {
+            crate::RootWaiting::ToAdd(root) => format!("{} to add", root.display()),
+            crate::RootWaiting::ToForget(root) => format!("{} to forget", root.display()),
+        })
+        .collect();
+    format!(
+        "Waiting for the pass under way to finish: {}",
+        named.join(", ")
+    )
 }
 
 fn read_so_far(stats: ScanStats) -> f32 {
