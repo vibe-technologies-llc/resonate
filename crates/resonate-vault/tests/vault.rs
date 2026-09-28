@@ -763,6 +763,47 @@ fn a_wave_that_would_come_out_no_smaller_is_given_up_on_and_the_source_kept() {
 }
 
 #[test]
+fn a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample() {
+    const HIGH_RATE: u32 = 192_000;
+    const RATE_AT: std::ops::Range<usize> = 24..28;
+    const BYTES_A_SECOND_AT: std::ops::Range<usize> = 28..32;
+    const RIFF_SIZE_AT: std::ops::Range<usize> = 4..8;
+
+    let tree = Tree::new();
+    let mut state = 0x2545_f491_u32;
+    let noise: Vec<i32> = (0..FRAMES * usize::from(CHANNELS))
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            i32::from(state as i16)
+        })
+        .collect();
+    let mut file = sixteen_bit(&noise, None);
+    file[RATE_AT].copy_from_slice(&HIGH_RATE.to_le_bytes());
+    file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * u32::from(CHANNELS) * 2).to_le_bytes());
+    let bare = file.clone();
+    let info = b"INFOINAM\x07\0\0\0Echoes\0";
+    file.extend_from_slice(b"LIST");
+    file.extend_from_slice(&(info.len() as u32).to_le_bytes());
+    file.extend_from_slice(info);
+    let declared = (file.len() - 8) as u32;
+    file[RIFF_SIZE_AT].copy_from_slice(&declared.to_le_bytes());
+    let path = tree.write("tagged.wav", &file);
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    assert_eq!(held.form, Form::Kept);
+    assert_eq!(fs::read(&held.path).expect("an object"), bare);
+    assert_eq!(fs::read(&path).expect("the tagged file"), file);
+    assert_eq!(
+        decoded(&held.path, SampleFormat::S16),
+        decoded(&path, SampleFormat::S16)
+    );
+}
+
+#[test]
 fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
     const ID3V1_BYTES: usize = 128;
 

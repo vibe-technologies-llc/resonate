@@ -1,4 +1,5 @@
 mod bare;
+mod chunks;
 mod cover;
 mod drawn;
 mod encoding;

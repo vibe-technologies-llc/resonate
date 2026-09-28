@@ -1,11 +1,13 @@
 use std::{
     io::{Read, Seek, SeekFrom},
+    ops::Range,
     path::Path,
 };
 
 use resonate_codec::{Container, MediaStream};
 
 use crate::{
+    chunks::{self, Layout},
     error::{Error, Result, VaultOp},
     ogg::{self, Renumbering},
 };
@@ -48,6 +50,7 @@ pub(crate) struct Bare {
     pub(crate) head: Vec<u8>,
     pub(crate) until: Option<u64>,
     pub(crate) renumbering: Option<Renumbering>,
+    pub(crate) left_out: Vec<Range<u64>>,
 }
 
 pub(crate) fn bare(
@@ -69,14 +72,13 @@ pub(crate) fn bare(
             head: bared.head,
             until: None,
             renumbering: bared.renumbering,
+            left_out: Vec::new(),
         }),
-        Container::Wave
-        | Container::Aiff
-        | Container::Caf
-        | Container::Dff
-        | Container::IsoMp4
-        | Container::Matroska
-        | Container::Unknown => None,
+        Container::Wave => shed_chunks(stream, Layout::Riff),
+        Container::Aiff => shed_chunks(stream, Layout::Aiff),
+        Container::Caf => shed_chunks(stream, Layout::Caf),
+        Container::Dff => shed_chunks(stream, Layout::Dsdiff),
+        Container::IsoMp4 | Container::Matroska | Container::Unknown => None,
     };
 
     if found.is_none() {
@@ -133,6 +135,20 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         head,
         until: None,
         renumbering: None,
+        left_out: Vec::new(),
+    })
+}
+
+fn shed_chunks(stream: &mut Box<dyn MediaStream>, layout: Layout) -> Option<Bare> {
+    let length = stream.seek(SeekFrom::End(0)).ok()?;
+    let at = past_leading_tags(stream, length)?;
+    let shed = chunks::shed(stream, layout, at, length)?;
+    stream.seek(SeekFrom::Start(shed.from)).ok()?;
+    Some(Bare {
+        head: shed.head,
+        until: None,
+        renumbering: None,
+        left_out: shed.left_out,
     })
 }
 
@@ -152,6 +168,7 @@ fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         head: Vec::new(),
         until: Some(until),
         renumbering: None,
+        left_out: Vec::new(),
     })
 }
 
@@ -271,6 +288,7 @@ fn bare_dsf(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         head: bared,
         until: Some(metadata),
         renumbering: None,
+        left_out: Vec::new(),
     })
 }
 

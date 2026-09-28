@@ -89,8 +89,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz rip is weighed as a `Wave`
   first — which pays most of a single-threaded zstd level-19 pass, about 50 s of a core for five
   minutes of 24/192, before it is kept anyway
-- A kept object whose container holds tags inside its structure — MP4, DSDIFF, Matroska, WAVE,
-  AIFF and CAF — keeps them
+- A kept object in MP4 or Matroska keeps the tags its container holds inside its structure
 
 ## Later: Tagging and organising
 - Nothing undoes a `resonate tag` or `resonate organise` run; the way back is another run

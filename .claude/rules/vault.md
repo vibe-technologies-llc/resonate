@@ -72,6 +72,19 @@ decoded; the size comparison may then overrule it.
   pointed, its header rewritten to that length and a pointer of nothing; and an Ogg Vorbis, Opus
   or FLAC stream is given an empty comment packet — `ogg::bare`. A tag that claims more
   than the file holds, or tags that would leave no frames at all, leave the file whole.
+  **A container that keeps its tags in chunks of its own sheds those chunks.** `chunks::shed`
+  walks a WAVE, an AIFF or AIFC, a CAF and a DSDIFF a chunk at a time — past an ID3v2 tag a
+  tagger stacked in front of the header, which goes too — and leaves out the ones that only
+  describe: a WAVE's `LIST`, `id3 `, `ID3 `, `bext`, `iXML`, `axml` and `_PMX`; an AIFF's
+  `NAME`, `AUTH`, `(c) `, `ANNO`, `COMT` and ID3; a CAF's `info`; a DSDIFF's `DIIN`, `COMT` and
+  `ID3 `. Every other chunk is copied as it stands, a chunk's pad byte goes with it, and whatever
+  follows the header's declared end — an ID3v1 a tagger appended — is left behind; the header's
+  size is written again for what is left, a CAF's having none. What the walk cannot read — a
+  chunk running past the end, a header that is not the kind — copies the file whole. The copy
+  is `chunks::Passing`, a reader that seeks over the ranges left out, and a data chunk that
+  declares more than the file holds is read to the end rather than refused, which is how a
+  streamed WAVE is written. `a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample`
+  is the claim.
 
 **Where the speakers sit is part of what is kept.** `MediaInfo::speakers` is the source's
 positions as symphonia reads them — its `Position` bits, which are the WAVE channel mask — and
@@ -138,7 +151,9 @@ nothing better can be made of it, and a row `Form::of` would keep as it stands w
 behind it — a lossy codec, DSD, more than eight channels — unless it is MP3, AAC or DSD, whose
 kept copies encoding 2 began stripping, or Vorbis or Opus, whose encoding 3 did; an MP4's AAC, a
 DSDIFF or a Vorbis in Matroska among those is copied again to the same key and stamped. Encoding 4
-began stripping an Ogg FLAC, which `Form::of` never keeps and so is walked again regardless. The
+began stripping an Ogg FLAC, which `Form::of` never keeps and so is walked again regardless. Encoding 5 began shedding the tag chunks of a WAVE, an AIFF, a CAF and a DSDIFF, whose kept
+objects are DSD, AAC or integer PCM a re-encode could not beat — the first two already among the
+codecs walked again and the third never kept by `Form::of` — so it needs no rule of its own. The
 preview marks such a row as *weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
 that would otherwise hide the new encode: an object already standing under the same key is not a
 dedup hit but a rival, and the new one replaces it — `Kept::replaced`, a rename over the standing
@@ -338,6 +353,6 @@ than through the table the vault uses.
 
 ## What it does not do
 
-- A `Form::Kept` object in a container whose tags sit *inside* its structure — MP4's `udta`,
-  DSDIFF's `ID3 ` and `DIIN` chunks, Matroska's `Tags` — keeps the tags its container was written
-  with, because stripping those means a writer per format.
+- A `Form::Kept` object in MP4 or Matroska keeps the tags its container was written with —
+  MP4's `udta` and `meta`, Matroska's `Tags` — because stripping those means rewriting the box
+  or element sizes and offsets that index the audio, a writer per format.

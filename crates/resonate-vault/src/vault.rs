@@ -14,7 +14,7 @@ use resonate_codec::{
 use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
 
 use crate::{
-    bare, cover,
+    bare, chunks, cover,
     drawn::Drawings,
     error::{Error, Result, VaultOp},
     flac,
@@ -667,9 +667,10 @@ impl Vault {
             Stripping::Whole => None,
         };
         let stripped = bared.is_some();
-        let (head, until, renumbering) = bared.map_or((Vec::new(), None, None), |bared| {
-            (bared.head, bared.until, bared.renumbering)
-        });
+        let (head, until, renumbering, left_out) = bared
+            .map_or((Vec::new(), None, None, Vec::new()), |bared| {
+                (bared.head, bared.until, bared.renumbering, bared.left_out)
+            });
         let start = media
             .stream
             .stream_position()
@@ -683,6 +684,9 @@ impl Vault {
 
         let mut rest: Box<dyn Read> = match until {
             Some(until) => Box::new((&mut media.stream).take(until.saturating_sub(start))),
+            None if !left_out.is_empty() => {
+                Box::new(chunks::Passing::over(&mut media.stream, start, left_out))
+            }
             None => Box::new(&mut media.stream),
         };
         if let Some(renumbering) = renumbering {
