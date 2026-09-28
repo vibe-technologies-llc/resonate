@@ -1137,7 +1137,14 @@ through `Player::media` like any other unscanned row.
   agreeing by some `Spelling`, a credit agreeing through `same_credit` with whatever was asked
   with, and a length inside the same five seconds. It is refused before the request where
   `tagged_title` is missing, because a title that is only the file's own name is the one thing a
-  text search must not be handed, and where no artist, no owner and no album is known, because
+  text search must not be handed on its own — **unless the file vouches for the rest**:
+  `named_enough_by_its_file` lets a plain stem be asked with where the file's own tags name an
+  artist, its length is measured and the stem `names_something` — three letters or more once its
+  digits and punctuation are taken off, and not one of `PLACEHOLDER_NAMES`, so *Track 07*,
+  *Audio_03* and *1* ask nothing while *One of These Days.wav* by a tagged artist is searched for,
+  and still has to agree on the title, the credit and the length before it lands, `Nearly`.
+  `a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_name` is the claim.
+  It is refused too where no artist, no owner and no album is known, because
   a bare title names nothing;
   `a_track_that_names_no_artist_is_never_searched_for` is the claim of both halves, and
   `a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_lands` and

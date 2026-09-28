@@ -1063,6 +1063,41 @@ fn lengths_agree(found: Option<Duration>, held: Option<Duration>) -> bool {
     }
 }
 
+const PLACEHOLDER_NAMES: [&str; 14] = [
+    "track",
+    "audio",
+    "untitled",
+    "unknown",
+    "song",
+    "sound",
+    "recording",
+    "new recording",
+    "file",
+    "output",
+    "master",
+    "mix",
+    "take",
+    "track untitled",
+];
+
+const LETTERS_A_FILE_NAME_HOLDS_AT_LEAST: usize = 3;
+
+fn named_enough_by_its_file(track: &TrackToAsk) -> bool {
+    track.tagged_artist.is_some() && track.length.is_some() && names_something(&track.title)
+}
+
+fn names_something(stem: &str) -> bool {
+    let words: String = stem
+        .chars()
+        .map(|glyph| if glyph.is_alphabetic() { glyph } else { ' ' })
+        .collect();
+    let words = words.split_whitespace().collect::<Vec<_>>().join(" ");
+    let letters = words.chars().filter(|glyph| glyph.is_alphabetic()).count();
+
+    letters >= LETTERS_A_FILE_NAME_HOLDS_AT_LEAST
+        && !PLACEHOLDER_NAMES.contains(&folded_title(&words).as_str())
+}
+
 fn asked_with(track: &TrackToAsk) -> Option<(&str, Option<&Mbid>)> {
     track
         .artist
@@ -1667,7 +1702,8 @@ impl Pass<'_> {
 
     fn by_search(&self, track: &TrackToAsk) -> Result<Option<(Recording, Certainty)>> {
         let asked_with = asked_with(track);
-        if track.tagged_title.is_none() || (asked_with.is_none() && track.album_title.is_none()) {
+        let titled = track.tagged_title.is_some() || named_enough_by_its_file(track);
+        if !titled || (asked_with.is_none() && track.album_title.is_none()) {
             return Ok(None);
         }
         let found = self.found_either_way(
@@ -2750,6 +2786,19 @@ mod tests {
             isrcs: Vec::new(),
             releases,
         }
+    }
+
+    #[test]
+    fn a_file_name_names_something_only_where_it_holds_a_word_that_is_not_a_placeholder() {
+        assert!(names_something("Echoes"));
+        assert!(names_something("San Tropez"));
+        assert!(!names_something("1"));
+        assert!(!names_something("07"));
+        assert!(!names_something("track07"));
+        assert!(!names_something("Track 7"));
+        assert!(!names_something("Audio_03"));
+        assert!(!names_something("untitled"));
+        assert!(!names_something("ab"));
     }
 
     #[test]

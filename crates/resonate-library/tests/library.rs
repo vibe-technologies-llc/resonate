@@ -10961,6 +10961,35 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
 }
 
 #[test]
+fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_name() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "One of These Days.wav",
+        &Wav::new().text(ARTIST, "The Orbiters").build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    assert_eq!(stored(&database, &file).tagged_title, None);
+    let fake = Arc::new(Fake::new(Canned {
+        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        recordings: vec![orbits_recording(
+            RECORDING,
+            "One of These Days",
+            CODE,
+            on_orbits(1),
+        )],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(fake.called(LookupOp::FindRecording), 1);
+    assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
+    assert!(stored(&database, &file).answered.is_some());
+    Ok(())
+}
+
+#[test]
 fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release() -> Result<()> {
     let (_tree, library, ..) = scanned_lone(
         Wav::new()
