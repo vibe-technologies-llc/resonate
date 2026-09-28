@@ -617,13 +617,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   one silhouette per variant, `include_bytes!` is what embeds it, and `icons::Embedded` is the
   `AssetSource` the `Application` is built with, so a path nothing answers to cannot be written and
   the error enum needs no missing-asset variant. `Icon::Resonate` is the application's own mark and
-  is the one icon drawn twice: the header's wordmark fills the accent square with it, and
-  `packaging/resonate.svg` carries the same five paths under a `translate`-and-`scale`, over the
-  rounded ground and in the gradient a launcher wants and an alpha mask cannot hold. Two files
-  because a launcher icon is colour and a UI icon is a mask, and `icons.rs`'s own test is what
-  keeps them one mark — it reads the `d` of every path out of both and refuses a difference, and
-  reads `Icon=` out of the desktop entry to hold the asset's name to it, as `app.rs` holds it to
-  `APP_ID`. gpui
+  is the one icon with no file under `assets/icons`: the header's wordmark fills the accent
+  square with it, and it is *drawn out of* `packaging/resonate.svg`, which carries the five
+  paths under a `translate`-and-`scale`, over the rounded ground and in the gradient a launcher
+  wants and an alpha mask cannot hold. `icons::masked` takes that file's `<g>` alone — the
+  strokes and their width and caps — drops its `transform`, trades the gradient for a plain
+  stroke and sets it on a 24-unit `viewBox`, once, behind a `LazyLock`, so the launcher's icon is
+  the only place the mark is written and the window cannot draw another. `icons.rs`'s own test
+  holds the mask to the packaged paths and refuses the ground, the gradient or the placing riding
+  along, and reads `Icon=` out of the desktop entry to hold the asset's name to it, as `app.rs`
+  holds it to `APP_ID`. gpui
   renders an SVG to an alpha mask and tints it with the element's `text_color`, so an icon carries
   no colour of its own and inherits nothing: every one is given a colour at the call site, and
   `icons::lit_on_hover` is what makes one follow its button's hover through a group. Every one is
