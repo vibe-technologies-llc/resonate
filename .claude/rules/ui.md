@@ -1628,7 +1628,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the group's releases in the order they came out, the first `PRESSINGS_SHOWN` of them, each as
   its date, country and track count, the one in use badged *IN USE*; a press on another is
   `LibraryModel::take_pressing`, which lands it through `Library::take_pressing` and closes the
-  card. **An album nothing matched has the card too**, wherever the reference can be reached: the
+  card. **A track is placed on a release from its own menu**: *Place on a release…*, offered
+  wherever the reference can be reached, reads the track's recording through
+  `LibraryModel::releases_it_could_sit_on` and opens a second menu where the first stood, the
+  releases listed as a found song's are — title, year and kind, `RELEASES_OFFERED` of them — and
+  a press is `LibraryModel::place_on`; a track nothing has identified says so as a toast.
+  **An album nothing matched has the card too**, wherever the reference can be reached: the
   mark is drawn for it however little `record_of` has to say, and the card offers *Find the
   record* in the place of *Other pressings* — `LibraryModel::ask_for_releases` asks
   `Reference::find_release` in words with the album's title, its artist and whatever barcode or

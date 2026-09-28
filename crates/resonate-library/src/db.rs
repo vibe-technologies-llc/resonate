@@ -2913,6 +2913,58 @@ impl Library {
         Ok(true)
     }
 
+    pub fn recording_of(
+        &self,
+        track: TrackId,
+        reference: &dyn Reference,
+    ) -> Result<Option<Recording>> {
+        let held = self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT mbid FROM tracks WHERE id = ?1",
+                    params![track.get() as i64],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+        let Some(recording) = store::mbid_in(held.flatten().as_deref()) else {
+            return Ok(None);
+        };
+        reference.recording(&recording)
+    }
+
+    pub fn place_on(
+        &self,
+        track: TrackId,
+        reference: &dyn Reference,
+        recording: &Recording,
+        release: &Mbid,
+    ) -> Result<bool> {
+        let Some(chosen) = recording
+            .releases
+            .iter()
+            .find(|offered| offered.id == *release)
+        else {
+            return Ok(false);
+        };
+        self.land_recording(track, recording, Certainty::Nearly, Some(chosen))?;
+        let album = self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT album_id FROM tracks WHERE id = ?1",
+                    params![track.get() as i64],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+        match album.flatten() {
+            Some(album) => self.take_pressing(AlbumId::new(album as u64)?, reference, release),
+            None => Ok(true),
+        }
+    }
+
     pub fn refuses(&self, album: AlbumId, mbid: &Mbid) -> Result<bool> {
         self.inner
             .read(|connection| enriched::refuses(connection, album, mbid))

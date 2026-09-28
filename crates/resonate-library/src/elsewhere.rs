@@ -38,10 +38,14 @@ impl Found {
     }
 
     pub fn in_the_order_worth_offering(&self) -> Vec<&RecordingRelease> {
-        let mut offered: Vec<&RecordingRelease> = self.releases.iter().collect();
-        offered.sort_by_key(|release| worth(release));
-        offered
+        in_the_order_worth_offering(&self.releases)
     }
+}
+
+pub fn in_the_order_worth_offering(releases: &[RecordingRelease]) -> Vec<&RecordingRelease> {
+    let mut offered: Vec<&RecordingRelease> = releases.iter().collect();
+    offered.sort_by_key(|release| worth(release));
+    offered
 }
 
 fn worth(release: &RecordingRelease) -> (Standing, Meant, bool, String) {

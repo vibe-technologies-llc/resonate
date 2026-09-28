@@ -25,11 +25,11 @@ use resonate_library::{
     Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack,
     MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
     Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
-    PollSummary, Raster, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
-    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
-    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources,
-    Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording,
-    asks_elsewhere,
+    PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
+    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder,
+    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
+    Window, Wording, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -91,6 +91,7 @@ const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no l
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
 const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
+const PLACED_ON: &str = "Placed the track on that release";
 
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
@@ -236,6 +237,7 @@ enum Change {
     ForgetDelivered,
     ForgetTheMatch,
     TakePressing,
+    PlaceOn,
     Undo,
     Redo,
 }
@@ -259,6 +261,7 @@ impl Change {
             Self::ForgetDelivered => "forget that delivery",
             Self::ForgetTheMatch => "forget that match",
             Self::TakePressing => "take that pressing",
+            Self::PlaceOn => "place the track on that release",
             Self::Undo => "put that back",
             Self::Redo => "do that again",
         }
@@ -1404,6 +1407,41 @@ impl LibraryModel {
                 library
                     .take_pressing(album, reference.as_ref(), &release)
                     .map(|took| took.then(|| TOOK_THE_PRESSING.to_owned()))
+            },
+            cx,
+        );
+    }
+
+    pub fn releases_it_could_sit_on(
+        &self,
+        track: TrackId,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<resonate_library::Result<Option<Recording>>>> {
+        let reference = self.reference.clone().filter(|_| self.online)?;
+        let library = Arc::clone(&self.library);
+        Some(
+            cx.background_executor()
+                .spawn(async move { library.recording_of(track, reference.as_ref()) }),
+        )
+    }
+
+    pub fn place_on(
+        &mut self,
+        track: TrackId,
+        recording: Arc<Recording>,
+        release: Mbid,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        self.edited(
+            Wanted::Everything,
+            Change::PlaceOn,
+            move |library| {
+                library
+                    .place_on(track, reference.as_ref(), &recording, &release)
+                    .map(|placed| placed.then(|| PLACED_ON.to_owned()))
             },
             cx,
         );

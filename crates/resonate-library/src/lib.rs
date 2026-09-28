@@ -60,7 +60,9 @@ pub fn read_a_playlist_sheet(text: &str) {
 
 pub use crate::{
     db::{CatalogStamp, Library, WrittenElsewhere},
-    elsewhere::{FOUND_ELSEWHERE_AT_MOST, Found, Sung, asks_elsewhere},
+    elsewhere::{
+        FOUND_ELSEWHERE_AT_MOST, Found, Sung, asks_elsewhere, in_the_order_worth_offering,
+    },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,
         REFRESH_AFTER, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS, Waits,

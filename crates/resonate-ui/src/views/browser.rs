@@ -10,20 +10,20 @@ use gpui::{
     MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
     hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
-use resonate_core::{AlbumId, ArtistId, ReleaseTrackId};
+use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, GroupRelease,
     HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry,
-    RecordingRelease, ReleaseDetail, Service, Track,
+    Recording, RecordingRelease, ReleaseDetail, Service, Track, in_the_order_worth_offering,
 };
 use smallvec::smallvec;
 
 use crate::{
     Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection, format,
     icons::{self, Icon},
-    models::Picture,
-    theme,
+    models::{Notice, Picture},
+    theme, toast,
     views::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
@@ -90,6 +90,8 @@ const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to th
                                providers are asked for it. Right-click to choose the release";
 
 const RELEASES_OFFERED: usize = 10;
+const PLACE_ON: &str = "Place on a release…";
+const NOTHING_PLACES_IT: &str = "Nothing has identified this track, so it is on no release yet";
 
 const WANTING_HINT: &str = "Adding its release to the catalog";
 
@@ -987,6 +989,8 @@ impl RootView {
                     )
                 });
 
+                let placeable = this.library.read(cx).can_enrich().then_some(track_id);
+
                 Menu::at(at)
                     .queues(move || Arc::clone(&queued))
                     .holds(move || Held::of(Arc::from([held.clone()])))
@@ -995,6 +999,11 @@ impl RootView {
                     .favours(Favoured::Track(track.id), favourite)
                     .offers_the_file(&track.location, names)
                     .shares(track.id)
+                    .when_some(placeable, |menu, track| {
+                        menu.does(Icon::Disc, PLACE_ON, move |this, _, cx| {
+                            this.offer_releases_to_place_on(track, at, cx);
+                        })
+                    })
                     .apart()
                     .does(icon, hiding, move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
@@ -2592,6 +2601,55 @@ fn releases_to_want(at: Point<Pixels>, found: &Found) -> Menu {
         });
     }
     menu
+}
+
+fn releases_to_place_on(at: Point<Pixels>, track: TrackId, recording: Recording) -> Menu {
+    let recording = Arc::new(recording);
+    let mut menu = Menu::at(at);
+    for release in in_the_order_worth_offering(&recording.releases)
+        .into_iter()
+        .take(RELEASES_OFFERED)
+    {
+        let placed = release.id.clone();
+        let placing = Arc::clone(&recording);
+        menu = menu.does(Icon::Disc, release_line(release), move |this, _, cx| {
+            let placing = Arc::clone(&placing);
+            let placed = placed.clone();
+            this.library.update(cx, |library, cx| {
+                library.place_on(track, placing, placed, cx)
+            });
+        });
+    }
+    menu
+}
+
+impl RootView {
+    fn offer_releases_to_place_on(
+        &mut self,
+        track: TrackId,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(asking) = self.library.update(cx, |library, cx| {
+            library.releases_it_could_sit_on(track, cx)
+        }) else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let asked = asking.await;
+            let _ = this.update(cx, |this, cx| match asked {
+                Ok(Some(recording)) if !recording.releases.is_empty() => {
+                    this.open_a_menu(releases_to_place_on(at, track, recording), cx);
+                }
+                Ok(_) => this.report(Notice::Trouble(NOTHING_PLACES_IT.to_owned()), cx),
+                Err(error) => {
+                    tracing::warn!(%error, "the releases a track is on could not be read");
+                    this.report(toast::could_not("find the releases it is on", &error), cx);
+                }
+            });
+        })
+        .detach();
+    }
 }
 
 fn release_line(release: &RecordingRelease) -> String {

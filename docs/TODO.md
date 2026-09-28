@@ -49,8 +49,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
-- A track named by its audio is placed by a rule rather than by the listener: nothing offers the
-  choice of release for a track already held
 - A file with no title tag and no artist tag, whose stem is neither numbered nor separated, gives
   the search nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or
   recording id

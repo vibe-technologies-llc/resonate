@@ -9170,6 +9170,80 @@ fn a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took
 }
 
 #[test]
+fn a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_one_a_rule_would()
+-> Result<()> {
+    const THE_JAPANESE_PRESSING: &str = "2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a";
+    const THE_RECORDING: &str = "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d";
+
+    let (_tree, library) = scanned_orbits()?;
+    let japanese = Release {
+        id: mbid(THE_JAPANESE_PRESSING),
+        title: "Orbits (Japan)".to_owned(),
+        country: Some("JP".to_owned()),
+        ..orbits(orbits_rows(), Vec::new())
+    };
+    let on = |id: &str, title: &str, kind: Option<&str>| RecordingRelease {
+        id: mbid(id),
+        title: title.to_owned(),
+        date: Some("1971-10-30".to_owned()),
+        disc: Some(1),
+        position: Some(1),
+        issued: Issued {
+            kind: kind.map(str::to_owned),
+            secondary: Vec::new(),
+            status: Some("Official".to_owned()),
+        },
+    };
+    let recording = Recording {
+        id: mbid(THE_RECORDING),
+        title: "Launch".to_owned(),
+        credit: Vec::new(),
+        length: None,
+        isrcs: Vec::new(),
+        releases: vec![
+            on(THE_JAPANESE_PRESSING, "Orbits (Japan)", Some("Single")),
+            on(RELEASE, "Orbits", Some("Album")),
+        ],
+    };
+    let fake = Fake::new(Canned {
+        recordings: vec![recording.clone()],
+        releases: vec![orbits(orbits_rows(), Vec::new()), japanese],
+        ..Canned::default()
+    });
+    let track = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .next()
+        .expect("a scanned track");
+    assert!(
+        library.recording_of(track.id, &fake)?.is_none(),
+        "a track nothing identified offered releases"
+    );
+    library.land_recording(track.id, &recording, Certainty::Nearly, None)?;
+
+    let offered = library
+        .recording_of(track.id, &fake)?
+        .expect("the recording the track is identified as");
+    let order: Vec<&str> = resonate_library::in_the_order_worth_offering(&offered.releases)
+        .into_iter()
+        .map(|release| release.title.as_str())
+        .collect();
+    assert_eq!(order, ["Orbits", "Orbits (Japan)"]);
+
+    assert!(library.place_on(track.id, &fake, &offered, &mbid(THE_JAPANESE_PRESSING))?);
+    assert_eq!(
+        only_album(&library)?.mbid,
+        Some(mbid(THE_JAPANESE_PRESSING)),
+        "the album was not placed on the release chosen"
+    );
+    assert!(
+        !library.place_on(track.id, &fake, &offered, &mbid(ADA))?,
+        "a release the recording is not on was taken"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_asked_alone()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;

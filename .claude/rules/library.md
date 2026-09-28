@@ -1230,6 +1230,20 @@ through `Player::media` like any other unscanned row.
   album lands the whole release and pairs every row of it in the same turn. Where the album *has*
   answered, the track stops at its own row, because the album's identification was the more
   considered of the two and a recording's idea of which pressing it belongs to is not.
+- **Which release a held track is on is the listener's to say, over whatever the rule chose.**
+  `Library::recording_of` reads the recording a track is identified as — its `tracks.mbid`, from
+  the tags, a lookup or a name taken from its audio — and asks the reference for it whole, so its
+  releases arrive with their kinds; `in_the_order_worth_offering` lists them the way
+  `meant_release` weighs them, the order a found song's releases are offered in. `Library::place_on`
+  lands the recording with the release chosen, under `Certainty::Nearly`, so the release's title
+  and a position the file never gave are written and no name the file carried is touched; where
+  the track is under an album, the album is then given that release through `take_pressing`, the
+  gesture the album card makes, because a folder's tracks are on the release the folder is, and
+  what the rule seated is replaced rather than weighed against. A release the recording is not on
+  answers `false` and writes nothing. The track's menu offers it as *Place on a release…*
+  wherever the reference can be reached.
+  `a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_one_a_rule_would`
+  is the claim.
 - **`fingerprint.rs` is the seam a recogniser fills.** `Fingerprints` answers
   a `Printed` — `Nothing`, or `Recognised` with `RecordingMatch`es — for a `Sounded`, which is the
   location, the span, the length, what the *file* said its title and artist were rather than
