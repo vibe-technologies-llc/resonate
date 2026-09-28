@@ -500,6 +500,7 @@ fn kept(path: &Path) -> Resumable {
     Resumable {
         location: MediaLocation::local(path),
         span: None,
+        held: None,
     }
 }
 

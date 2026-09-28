@@ -103,6 +103,7 @@ fn resumable(item: &QueueItem) -> Resumable {
     Resumable {
         location: item.location.clone(),
         span: item.span,
+        held: None,
     }
 }
 

@@ -2578,6 +2578,9 @@ impl Library {
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
 
+            let mut held = connection
+                .prepare("SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2")
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
             let mut rows = Vec::with_capacity(kept.len());
             for (uri, span) in kept {
                 let Some(location) = MediaLocation::from_uri(&uri) else {
@@ -2587,7 +2590,21 @@ impl Library {
                     );
                     return Ok(None);
                 };
-                rows.push(Resumable { location, span });
+                let held = match location.as_path().map(store::path_text) {
+                    Some(Ok(path)) => held
+                        .query_row(params![path, store::span_columns(span).0], |read| {
+                            read.get::<_, i64>(0)
+                        })
+                        .optional()
+                        .map_err(|source| Error::store(StoreOp::Query, source))?
+                        .and_then(|id| TrackId::new(id as u64).ok()),
+                    _ => None,
+                };
+                rows.push(Resumable {
+                    location,
+                    span,
+                    held,
+                });
             }
 
             let mut statement = connection

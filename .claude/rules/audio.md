@@ -892,7 +892,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `OpenUri` ask it before they mint; the binary's `mpris::claimed_by` does the same for the files
   `resonate play` and the window are handed, so a file queued by path is the row it is in the
   library rather than an id counted down from the top —
-  `a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id`.
+  `a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id`. A resumed row is the same:
+  `Resumable::held` is the row `Library::resumption` finds at that path and span as it reads
+  the queue back, and `Queue::restore` claims it before it mints.
 - **A queue row's id names that row and no other, and the queue is where that is made true.**
   `one_id_each` runs over everything `Queue::load` and `Queue::insert` are handed: a row whose id
   is already claimed — by the queue it is joining or by an earlier row of the same batch — is

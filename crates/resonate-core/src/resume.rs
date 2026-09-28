@@ -1,9 +1,10 @@
-use crate::{FrameSpan, Frames, MediaLocation, Span};
+use crate::{FrameSpan, Frames, MediaLocation, Span, TrackId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Resumable {
     pub location: MediaLocation,
     pub span: Option<FrameSpan>,
+    pub held: Option<TrackId>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -64,6 +65,7 @@ mod tests {
         Resumable {
             location: MediaLocation::local(format!("/music/{number}.flac")),
             span: None,
+            held: None,
         }
     }
 

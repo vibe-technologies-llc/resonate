@@ -227,7 +227,10 @@ impl Queue {
             .rows
             .into_iter()
             .map(|row| QueueItem {
-                id: minting.mint(),
+                id: row
+                    .held
+                    .and_then(|held| minting.claim(held))
+                    .unwrap_or_else(|| minting.mint()),
                 location: row.location,
                 span: row.span,
             })
@@ -865,6 +868,7 @@ mod tests {
         Resumable {
             location: MediaLocation::local(format!("/music/{number}.flac")),
             span: None,
+            held: None,
         }
     }
 
@@ -1746,6 +1750,7 @@ mod tests {
             .map(|item| Resumable {
                 location: item.location.clone(),
                 span: item.span,
+                held: None,
             })
             .collect();
         let cursor = queue.cursor().expect("sixteen rows outlast one advance");

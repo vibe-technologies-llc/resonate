@@ -317,6 +317,7 @@ fn resumable(path: &str) -> Resumable {
     Resumable {
         location: MediaLocation::local(path),
         span: None,
+        held: None,
     }
 }
 
@@ -12125,6 +12126,7 @@ fn a_kept_queue_comes_back_as_it_was_left() -> Result<()> {
             Resumable {
                 location: MediaLocation::local("/music/whole.flac"),
                 span: Some(cut),
+                held: None,
             },
         ],
         order: vec![0, 1],
@@ -12199,6 +12201,7 @@ fn a_row_from_a_source_that_is_not_the_filesystem_is_kept_by_its_uri() -> Result
         rows: vec![Resumable {
             location: elsewhere.clone(),
             span: None,
+            held: None,
         }],
         order: vec![0],
         row: 0,
@@ -12213,6 +12216,7 @@ fn a_row_from_a_source_that_is_not_the_filesystem_is_kept_by_its_uri() -> Result
         Some(vec![Resumable {
             location: elsewhere,
             span: None,
+            held: None,
         }])
     );
     Ok(())
@@ -13338,6 +13342,7 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
         rows: vec![Resumable {
             location: stood.clone(),
             span: None,
+            held: None,
         }],
         order: vec![0],
         row: 0,
@@ -13368,6 +13373,14 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
         .expect("the queue kept for the next run is still there");
     assert_eq!(resumed.rows.len(), 1);
     assert_eq!(resumed.rows[0].location, landed);
+    assert_eq!(
+        resumed.rows[0].held,
+        library
+            .track_at(landed.as_path().expect("a local file"), None)?
+            .map(|track| track.id),
+        "the resumed row does not name the library row it is"
+    );
+    assert!(resumed.rows[0].held.is_some());
     assert_eq!(resumed.at, Frames(4_410));
     Ok(())
 }
