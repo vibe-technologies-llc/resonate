@@ -1,5 +1,6 @@
 mod artwork;
 mod boxes;
+mod caf;
 mod container;
 mod cue;
 mod decoder;

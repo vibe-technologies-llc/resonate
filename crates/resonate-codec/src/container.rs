@@ -31,6 +31,7 @@ use symphonia::core::{
 use crate::{
     CodecOp, Container, Error, MediaInfo, Result, Speakers, StreamTrackId, TrackProperty,
     boxes::Priming,
+    caf,
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
     opus,
@@ -155,6 +156,7 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
     }
 
     refuse_what_the_wave_reader_would_overflow_on(&prescan.riff, location)?;
+    refuse_what_the_caf_reader_would_overflow_on(prescan.caf, location)?;
 
     let mut hint = Hint::new();
     match named {
@@ -217,6 +219,31 @@ fn refuse_what_the_wave_reader_would_overflow_on(
             })
         }
         Some(_) | None => Ok(()),
+    }
+}
+
+fn refuse_what_the_caf_reader_would_overflow_on(
+    overflow: Option<caf::Overflow>,
+    location: &MediaLocation,
+) -> Result<()> {
+    let location = location.clone();
+    match overflow {
+        None => Ok(()),
+        Some(caf::Overflow::PacketBits { bytes_per_packet }) => Err(Error::PacketTooLarge {
+            location,
+            bytes_per_packet,
+        }),
+        Some(caf::Overflow::FrameCount {
+            packets,
+            frames_per_packet,
+        }) => Err(Error::FrameCountNotRepresentable {
+            location,
+            packets,
+            frames_per_packet,
+        }),
+        Some(caf::Overflow::PacketOffset { packets }) => {
+            Err(Error::PacketOffsetNotRepresentable { location, packets })
+        }
     }
 }
 
@@ -672,6 +699,55 @@ mod tests {
             opened,
             Err(Error::TooManyChannels {
                 channels: 20_000,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_wave_behind_bytes_that_are_not_one_is_refused_as_one_at_the_start_is() {
+        let location = MediaLocation::local("junk.wav");
+        let mut file = b"ft".to_vec();
+        file.extend_from_slice(&wave_of(20_000));
+        let opened = open(
+            Media {
+                stream: Box::new(Reading::new(Cursor::new(file))),
+                hint: None,
+            },
+            &location,
+        );
+
+        assert!(matches!(
+            opened,
+            Err(Error::TooManyChannels {
+                channels: 20_000,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_caf_whose_packets_overflow_the_reader_is_refused_before_symphonia_reads_it() {
+        let location = MediaLocation::local("wide.caf");
+        let mut file = b"caff\x00\x01\x00\x00desc".to_vec();
+        file.extend_from_slice(&32_i64.to_be_bytes());
+        file.extend_from_slice(&8_000.0_f64.to_be_bytes());
+        file.extend_from_slice(b"lpcm");
+        for word in [2_u32, 0xd400_0000, 0, 6, 16] {
+            file.extend_from_slice(&word.to_be_bytes());
+        }
+        let opened = open(
+            Media {
+                stream: Box::new(Reading::new(Cursor::new(file))),
+                hint: None,
+            },
+            &location,
+        );
+
+        assert!(matches!(
+            opened,
+            Err(Error::PacketTooLarge {
+                bytes_per_packet: 0xd400_0000,
                 ..
             })
         ));

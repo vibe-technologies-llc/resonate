@@ -73,6 +73,29 @@ pub enum Error {
         mask: u32,
     },
 
+    #[error(
+        "{location} declares packets of {bytes_per_packet} bytes, more than their bits can be counted in"
+    )]
+    PacketTooLarge {
+        location: MediaLocation,
+        bytes_per_packet: u32,
+    },
+
+    #[error(
+        "{location} declares {packets} packets of {frames_per_packet} frames, more than a frame count holds"
+    )]
+    FrameCountNotRepresentable {
+        location: MediaLocation,
+        packets: u64,
+        frames_per_packet: u32,
+    },
+
+    #[error("{location} lays out {packets} packets further than an offset reaches")]
+    PacketOffsetNotRepresentable {
+        location: MediaLocation,
+        packets: u64,
+    },
+
     #[error("{location} track {track} uses codec {codec}, for which no decoder is registered")]
     NoDecoder {
         location: MediaLocation,
@@ -199,6 +222,9 @@ impl Error {
             | Self::NoAudioTrack { location }
             | Self::TooManyChannels { location, .. }
             | Self::ChannelMaskNotRepresentable { location, .. }
+            | Self::PacketTooLarge { location, .. }
+            | Self::FrameCountNotRepresentable { location, .. }
+            | Self::PacketOffsetNotRepresentable { location, .. }
             | Self::NoDecoder { location, .. }
             | Self::TrackPropertyMissing { location, .. }
             | Self::RateNotRepresentable { location, .. }

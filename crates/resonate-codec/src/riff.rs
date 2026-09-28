@@ -1,6 +1,9 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::{TagName, prescan::read_exact};
+use crate::{
+    TagName,
+    prescan::{found_within, past_id3, read_exact},
+};
 
 const RIFF: &[u8; 4] = b"RIFF";
 const WAVE: &[u8; 4] = b"WAVE";
@@ -10,13 +13,13 @@ const INFO: &[u8; 4] = b"INFO";
 const ID3: &[u8; 3] = b"ID3";
 const ID3_CHUNKS: [&[u8; 4]; 2] = [b"id3 ", b"ID3 "];
 
-const ID3_HEADER: u64 = 10;
-const ID3_FOOTER_FLAG: u8 = 0x10;
 const FORM_BYTES: u64 = 4;
 const MAX_CHUNKS: usize = 4_096;
 const MAX_INFO_BYTES: u64 = 1 << 20;
 const MAX_VALUE_BYTES: u64 = 4_096;
 const MAX_ID3_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
+const RIFF_HEADER_BYTES: usize = 12;
+const FORM_TYPE_AT: usize = 8;
 
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 const FMT_FORMAT_TAG_AT: usize = 0;
@@ -55,12 +58,11 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Riff {
 }
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
-    skip_id3(source)?;
-
-    let header = read_exact::<12, S>(source)?;
-    if !header.starts_with(RIFF) || header.get(8..12) != Some(WAVE.as_slice()) {
-        return None;
-    }
+    let start = past_id3(source)?;
+    let header = riff_header_at(source, start)?;
+    source
+        .seek(SeekFrom::Start(header + RIFF_HEADER_BYTES as u64))
+        .ok()?;
 
     let mut found = Riff::default();
     for _ in 0..MAX_CHUNKS {
@@ -246,29 +248,9 @@ const fn padded(size: u64) -> u64 {
     size + (size & 1)
 }
 
-fn skip_id3<S: Read + Seek + ?Sized>(source: &mut S) -> Option<()> {
-    let origin = source.stream_position().ok()?;
-    let Some(header) = read_exact::<10, S>(source) else {
-        source.seek(SeekFrom::Start(origin)).ok()?;
-        return Some(());
-    };
-
-    if !header.starts_with(ID3) {
-        source.seek(SeekFrom::Start(origin)).ok()?;
-        return Some(());
-    }
-
-    let size = synchsafe(header.get(6..10)?)?;
-    let footer = u64::from(header.get(5)? & ID3_FOOTER_FLAG != 0) * ID3_HEADER;
-    source
-        .seek(SeekFrom::Start(origin + ID3_HEADER + size + footer))
-        .ok()?;
-    Some(())
-}
-
-fn synchsafe(bytes: &[u8]) -> Option<u64> {
-    bytes.iter().try_fold(0_u64, |value, byte| {
-        (byte & 0x80 == 0).then(|| (value << 7) | u64::from(*byte))
+fn riff_header_at<S: Read + Seek + ?Sized>(source: &mut S, start: u64) -> Option<u64> {
+    found_within(source, start, RIFF_HEADER_BYTES, |header| {
+        header.starts_with(RIFF) && header.get(FORM_TYPE_AT..) == Some(WAVE.as_slice())
     })
 }
 
@@ -277,6 +259,7 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+    use crate::prescan::SOUGHT_WITHIN;
 
     fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
         into.extend_from_slice(id);
@@ -436,6 +419,31 @@ mod tests {
             named(&read(&mut Cursor::new(file)).info),
             [("INAM", "Echoes")]
         );
+    }
+
+    #[test]
+    fn a_riff_header_behind_bytes_that_are_not_one_is_still_found() {
+        let mut file = b"ft".to_vec();
+        file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
+
+        assert_eq!(read(&mut Cursor::new(file)).channels, Some(3));
+    }
+
+    #[test]
+    fn a_leading_id3_tag_whose_size_cannot_be_read_does_not_hide_the_riff_header() {
+        let mut file = b"ID3\x04\x00\x00\x00\x00\x00\xff".to_vec();
+        file.extend_from_slice(&[0xff; 64]);
+        file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
+
+        assert_eq!(read(&mut Cursor::new(file)).channels, Some(3));
+    }
+
+    #[test]
+    fn a_riff_header_further_in_than_the_search_reaches_is_not_found() {
+        let mut file = vec![0_u8; SOUGHT_WITHIN];
+        file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
+
+        assert_eq!(read(&mut Cursor::new(file)), Riff::default());
     }
 
     #[test]

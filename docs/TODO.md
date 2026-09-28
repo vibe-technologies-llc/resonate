@@ -112,9 +112,10 @@ that no listener is waiting on, and is worked only once the categories above it 
   ancestor, not the text, is the box that runs out of room
 
 ## Testing
-- The `probe` fuzz target still reaches arithmetic overflows inside symphonia's WAVE reader where
-  the `RIFF` header sits behind junk or behind a broken ID3 tag the prescan does not skip, so a
-  debug build's scan stops on such a file; a release build wraps and only logs
+- The prescan guards what symphonia's WAVE and CAF readers overflow on only where the header
+  sits within `SOUGHT_WITHIN` bytes of the start or of a leading ID3 tag, and it refuses a file
+  whose header lies behind a marker symphonia would open first rather than weighing which one it
+  opens
 - Nothing drives `resonate-ui`'s panes: KWin offers no synthetic input without the remote-desktop
   portal, so a pane is seen only by making it the default and rebuilding. Everything that appears
   only under a pointer — the menus, drags, the pickers, the equaliser curve, *Take this name*, a

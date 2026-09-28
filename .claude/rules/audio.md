@@ -312,9 +312,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   rather than the allocation. A declared size is what the walk advances by; it is never what a `Vec`
   is sized to.
 - **A prescan reads the head of a source that cannot seek, rather than skipping it.** The `INFO`
-  scan and the EBML title scan both bail on the first bytes where the magic is not theirs and
-  restore the position they found, so a container that is neither pays a rejected read and nothing
-  more. A source that cannot seek cannot be restored, so `container::open` reads `MAX_PRESCAN_HEAD`
+  scan looks for its magic no further than `SOUGHT_WITHIN` bytes in, the EBML title scan bails on
+  the first bytes where the magic is not its own, and both restore the position they found, so a
+  container that is neither pays a rejected read and nothing more. A source that cannot seek cannot be restored, so `container::open` reads `MAX_PRESCAN_HEAD`
   bytes into memory with `take`, scans a `Cursor` over those, and hands symphonia a `Replaying`
   stream that serves the head before the rest — still `is_seekable() == false` and still
   `byte_len() == None`, so the reader sees the stream it always saw, from the start. Both walks
@@ -322,8 +322,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   neither `riff.rs` nor `matroska.rs` knows the difference. What this reaches is what lives near the
   front of a file — Matroska's `Info`, a WAV's leading `LIST INFO` — and not a `LIST INFO` a writer
   put after `data`.
-- **A prescan over a source that *can* seek reads through a window, because the four walks are made
-  of four-byte reads.** `riff.rs`, `matroska.rs`, `boxes.rs` and `flac.rs` each read an id or a
+- **A prescan over a source that *can* seek reads through a window, because the five walks are made
+  of four-byte reads.** `riff.rs`, `caf.rs`, `matroska.rs`, `boxes.rs` and `flac.rs` each read an id or a
   header a few bytes at a time and then seek absolutely past whatever it declared, and `Reading`
   delegates straight to the `File`, so one open cost about forty syscalls before symphonia was
   handed anything. `Prescan::buffered` is `Prescan::read` run over a `Window`: one `PRESCAN_WINDOW`

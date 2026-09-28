@@ -1,15 +1,20 @@
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
 use resonate_core::{Frames, SampleRate};
 
 use crate::{
     boxes::{self, Movie},
+    caf::{self, Overflow},
     flac::{self, Flac},
     matroska::{self, Segment},
     riff::{self, Riff},
 };
 
 const PRESCAN_WINDOW: usize = 4 * 1024;
+pub(crate) const SOUGHT_WITHIN: usize = 2 * 1024;
+const ID3: &[u8; 3] = b"ID3";
+const ID3_HEADER: u64 = 10;
+const ID3_FOOTER_FLAG: u8 = 0x10;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Prescan {
@@ -17,6 +22,7 @@ pub(crate) struct Prescan {
     pub(crate) segment: Segment,
     pub(crate) boxes: Movie,
     pub(crate) flac: Flac,
+    pub(crate) caf: Option<Overflow>,
 }
 
 impl Prescan {
@@ -26,6 +32,7 @@ impl Prescan {
             segment: matroska::read_segment(source),
             boxes: boxes::read_movie(source),
             flac: flac::read(source),
+            caf: caf::read(source),
         }
     }
 
@@ -160,6 +167,62 @@ pub(crate) fn read_exact<const N: usize, S: Read + ?Sized>(source: &mut S) -> Op
     let mut bytes = [0_u8; N];
     source.read_exact(&mut bytes).ok()?;
     Some(bytes)
+}
+
+pub(crate) fn past_id3<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
+    let origin = source.stream_position().ok()?;
+    let Some(header) = read_exact::<10, S>(source) else {
+        return Some(origin);
+    };
+    if !header.starts_with(ID3) {
+        return Some(origin);
+    }
+
+    let Some(size) = header.get(6..10).and_then(synchsafe) else {
+        return Some(origin);
+    };
+    let footer = u64::from(header.get(5)? & ID3_FOOTER_FLAG != 0) * ID3_HEADER;
+    Some(origin + ID3_HEADER + size + footer)
+}
+
+pub(crate) fn found_within<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    start: u64,
+    header_bytes: usize,
+    is_header: impl Fn(&[u8]) -> bool,
+) -> Option<u64> {
+    source.seek(SeekFrom::Start(start)).ok()?;
+    let mut held = [0_u8; SOUGHT_WITHIN];
+    let filled = filled(source, &mut held);
+    let held = held.get(..filled)?;
+
+    let at = held.windows(header_bytes).position(is_header)?;
+    if at > 0 {
+        tracing::debug!(
+            junk = at,
+            "a container header was found behind bytes that are not one"
+        );
+    }
+    Some(start + at as u64)
+}
+
+fn filled<S: Read + ?Sized>(source: &mut S, buf: &mut [u8]) -> usize {
+    let mut filled = 0;
+    while let Some(room) = buf.get_mut(filled..).filter(|room| !room.is_empty()) {
+        match source.read(room) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(source) if source.kind() == ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    filled
+}
+
+fn synchsafe(bytes: &[u8]) -> Option<u64> {
+    bytes.iter().try_fold(0_u64, |value, byte| {
+        (byte & 0x80 == 0).then(|| (value << 7) | u64::from(*byte))
+    })
 }
 
 #[cfg(test)]

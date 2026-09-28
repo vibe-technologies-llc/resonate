@@ -836,8 +836,15 @@ file. `riff.rs` reads the first `fmt ` chunk's channels and extensible mask — 
 that is the one symphonia reads — and `container::open` refuses a WAVE naming more channels than
 a WAVE layout holds as `Error::TooManyChannels`, and one whose mask
 `riff::a_mask_the_decoder_cannot_widen` as `Error::ChannelMaskNotRepresentable`, before
-symphonia sees either. symphonia also finds a `RIFF` header behind junk or behind an ID3 tag
-this prescan cannot skip, which `docs/TODO.md` keeps.
+symphonia sees either. symphonia's probe searches for a container's magic byte by byte rather than
+reading it at the start, so a `RIFF` header behind junk, or behind an ID3 tag whose size is not
+synchsafe, is still what it opens: `prescan::found_within` looks through the first
+`SOUGHT_WITHIN` bytes past a tag — or past the start where the tag's size cannot be read — for
+the header, a slice of the window the prescan already holds, so the search costs no read. The
+CAF reader overflows the same way on three declared values, and `caf.rs` reads them before
+symphonia does: packets whose size in bits a `u32` cannot hold are `Error::PacketTooLarge`, a
+`data` chunk declaring more frames than a `u64` counts is `Error::FrameCountNotRepresentable`,
+and a packet table whose offsets run past one is `Error::PacketOffsetNotRepresentable`.
 
 **A cost is measured rather than guessed, and neither measure is a check.**
 `cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,

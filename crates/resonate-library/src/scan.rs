@@ -107,7 +107,10 @@ impl Failure {
             | Codec::ChannelMaskNotRepresentable { .. }
             | Codec::SampleFormatNotRepresentable { .. }
             | Codec::DsdChunkMissing { .. }
-            | Codec::DsdFieldNotUsable { .. } => Self::Undecodable,
+            | Codec::DsdFieldNotUsable { .. }
+            | Codec::PacketTooLarge { .. }
+            | Codec::FrameCountNotRepresentable { .. }
+            | Codec::PacketOffsetNotRepresentable { .. } => Self::Undecodable,
             Codec::Io { .. }
             | Codec::Symphonia { .. }
             | Codec::SheetTooLarge { .. }
