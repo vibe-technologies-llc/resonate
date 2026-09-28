@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use parking_lot::Mutex;
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackHints};
 
 use crate::{Error, Result, TagSet};
@@ -185,10 +186,12 @@ pub struct Sources {
     stand_in: Option<Arc<dyn StandIn>>,
     hinting: Option<Arc<dyn Hinting>>,
     opened_within: Duration,
+    read_within: Duration,
 }
 
 impl Sources {
     pub const OPENED_WITHIN: Duration = Duration::from_secs(5);
+    pub const READ_WITHIN: Duration = Duration::from_secs(5);
 
     pub fn local() -> Self {
         Self {
@@ -196,12 +199,19 @@ impl Sources {
             stand_in: None,
             hinting: None,
             opened_within: Self::OPENED_WITHIN,
+            read_within: Self::READ_WITHIN,
         }
     }
 
     #[must_use]
     pub const fn opening_within(mut self, within: Duration) -> Self {
         self.opened_within = within;
+        self
+    }
+
+    #[must_use]
+    pub const fn reading_within(mut self, within: Duration) -> Self {
+        self.read_within = within;
         self
     }
 
@@ -266,7 +276,147 @@ impl Sources {
         if provider.source() == &SourceId::local() {
             return provider.open(location);
         }
-        opened_within(Arc::clone(provider), location, self.opened_within)
+        let Media { stream, hint } =
+            opened_within(Arc::clone(provider), location, self.opened_within)?;
+        Ok(Media {
+            stream: Deadlined::over(stream, self.read_within),
+            hint,
+        })
+    }
+}
+
+const LARGEST_READ_ASKED: usize = 1 << 20;
+
+enum Asked {
+    Read(usize),
+    Seek(SeekFrom),
+}
+
+enum Answered {
+    Read(io::Result<Vec<u8>>),
+    Seek(io::Result<u64>),
+}
+
+struct Deadlined {
+    asks: mpsc::Sender<Asked>,
+    answers: Mutex<mpsc::Receiver<Answered>>,
+    within: Duration,
+    seekable: bool,
+    len: Option<u64>,
+    stalled: bool,
+}
+
+impl Deadlined {
+    fn over(inner: Box<dyn MediaStream>, within: Duration) -> Box<dyn MediaStream> {
+        let seekable = inner.is_seekable();
+        let len = inner.byte_len();
+        let (asks, asked) = mpsc::channel();
+        let (answer, answers) = mpsc::channel();
+        let handed = Arc::new(Mutex::new(Some(inner)));
+        let taken = Arc::clone(&handed);
+        let spawned = thread::Builder::new()
+            .name("resonate-read".to_owned())
+            .spawn(move || {
+                let Some(mut inner) = taken.lock().take() else {
+                    return;
+                };
+                drop(taken);
+                serve_the_reads(inner.as_mut(), &asked, &answer);
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "no thread could be started to read a stream, so it is read here");
+            if let Some(inner) = handed.lock().take() {
+                return inner;
+            }
+        }
+        Box::new(Self {
+            asks,
+            answers: Mutex::new(answers),
+            within,
+            seekable,
+            len,
+            stalled: false,
+        })
+    }
+
+    fn ask(&mut self, asked: Asked) -> io::Result<Answered> {
+        if self.stalled {
+            return Err(stalled());
+        }
+        if self.asks.send(asked).is_err() {
+            self.stalled = true;
+            return Err(stalled());
+        }
+        let answered = self.answers.lock().recv_timeout(self.within);
+        answered.map_err(|_| {
+            self.stalled = true;
+            stalled()
+        })
+    }
+}
+
+fn stalled() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        "the source did not answer a read in time",
+    )
+}
+
+fn serve_the_reads(
+    inner: &mut dyn MediaStream,
+    asked: &mpsc::Receiver<Asked>,
+    answer: &mpsc::Sender<Answered>,
+) {
+    while let Ok(asked) = asked.recv() {
+        let answered = match asked {
+            Asked::Read(len) => {
+                let mut held = vec![0_u8; len];
+                Answered::Read(inner.read(&mut held).map(|read| {
+                    held.truncate(read);
+                    held
+                }))
+            }
+            Asked::Seek(to) => Answered::Seek(inner.seek(to)),
+        };
+        if answer.send(answered).is_err() {
+            return;
+        }
+    }
+}
+
+impl Read for Deadlined {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.ask(Asked::Read(buf.len().min(LARGEST_READ_ASKED)))? {
+            Answered::Read(read) => {
+                let read = read?;
+                let taken = min(read.len(), buf.len());
+                buf[..taken].copy_from_slice(&read[..taken]);
+                Ok(taken)
+            }
+            Answered::Seek(_) => Err(stalled()),
+        }
+    }
+}
+
+impl Seek for Deadlined {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        match self.ask(Asked::Seek(to))? {
+            Answered::Seek(landed) => landed,
+            Answered::Read(_) => Err(stalled()),
+        }
+    }
+}
+
+impl MediaStream for Deadlined {
+    fn is_seekable(&self) -> bool {
+        self.seekable
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        self.len
     }
 }
 
@@ -435,5 +585,79 @@ mod tests {
                 for_as_long_as: Duration::ZERO,
             }));
         assert!(quick.open(&location).is_ok());
+    }
+
+    struct StallsAfter {
+        head: Cursor<Vec<u8>>,
+        then_for: Duration,
+    }
+
+    impl Read for StallsAfter {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let read = self.head.read(buf)?;
+            if read == 0 {
+                thread::sleep(self.then_for);
+            }
+            Ok(read)
+        }
+    }
+
+    impl Seek for StallsAfter {
+        fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+            self.head.seek(to)
+        }
+    }
+
+    struct Trickles {
+        source: SourceId,
+    }
+
+    impl MediaProvider for Trickles {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn open(&self, _: &MediaLocation) -> Result<Media> {
+            Ok(Media {
+                stream: Box::new(Reading::new(StallsAfter {
+                    head: Cursor::new(b"held".to_vec()),
+                    then_for: Duration::from_secs(2),
+                })),
+                hint: None,
+            })
+        }
+    }
+
+    #[test]
+    fn a_read_that_does_not_answer_in_time_fails_and_leaves_the_stream_stalled() {
+        let source = SourceId::new("elsewhere").expect("a nameable source");
+        let location = MediaLocation::new(source.clone(), "a track");
+        let sources = Sources::local()
+            .reading_within(Duration::from_millis(50))
+            .and(Arc::new(Trickles { source }));
+
+        let mut media = sources.open(&location).expect("the provider answers");
+        assert!(media.stream.is_seekable());
+        assert_eq!(media.stream.byte_len(), Some(4));
+        let mut held = [0_u8; 4];
+        media
+            .stream
+            .read_exact(&mut held)
+            .expect("the head arrives");
+        assert_eq!(&held, b"held");
+        assert_eq!(media.stream.seek(SeekFrom::Start(1)).ok(), Some(1));
+        media
+            .stream
+            .seek(SeekFrom::End(0))
+            .expect("the end is reached");
+
+        let asked = std::time::Instant::now();
+        let stalled = media.stream.read(&mut held);
+        assert!(matches!(stalled, Err(error) if error.kind() == io::ErrorKind::TimedOut));
+        assert!(
+            asked.elapsed() < Duration::from_secs(1),
+            "the stalled read was waited on"
+        );
+        assert!(media.stream.seek(SeekFrom::Start(0)).is_err());
     }
 }

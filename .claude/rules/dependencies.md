@@ -155,6 +155,9 @@ paths:
   than one of the sizes the crate lists. symphonia, `parking_lot` and gpui already link it, so the
   lockfile gains edges and no crate. A collection that is built once, or that has no bound a
   listener could not exceed in ordinary use — a queue, a playlist, a catalog read — stays a `Vec`.
+- `parking_lot` is `resonate-codec`'s too, for the one lock a `Deadlined` stream holds its
+  answers behind, since `MediaStream` is `Sync` and `std`'s receiver is not. It was in the
+  lockfile already, so the codec gains an edge and the tree no crate.
 - `futures-channel` is `resonate-ui`'s, with `alloc` alone, for the oneshot `Drawer::draw` hands a
   cover back through from a thread gpui does not own. gpui already links it, so the lockfile gains
   an edge and no crate.

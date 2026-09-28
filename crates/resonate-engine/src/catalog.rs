@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -19,6 +19,8 @@ use resonate_core::{FrameSpan, MediaLocation};
 const ROWS_HELD: usize = 4_096;
 
 const ART_BYTES_HELD: usize = 32 * 1024 * 1024;
+
+const SPARE_ART_BYTES: usize = 8 * 1024 * 1024;
 
 const ROWS_ASKED: usize = 256;
 
@@ -375,8 +377,39 @@ impl Held {
 }
 
 #[derive(Default)]
+struct Spares {
+    held: VecDeque<(MediaLocation, CoverArt)>,
+    bytes: usize,
+}
+
+impl Spares {
+    fn keep(&mut self, location: &MediaLocation, art: CoverArt) {
+        if art.bytes.len() > SPARE_ART_BYTES {
+            return;
+        }
+        self.take(location);
+        self.bytes += art.bytes.len();
+        self.held.push_back((location.clone(), art));
+        while self.bytes > SPARE_ART_BYTES {
+            let Some((_, stale)) = self.held.pop_front() else {
+                return;
+            };
+            self.bytes -= stale.bytes.len();
+        }
+    }
+
+    fn take(&mut self, location: &MediaLocation) -> Option<CoverArt> {
+        let at = self.held.iter().position(|(held, _)| held == location)?;
+        let (_, art) = self.held.remove(at)?;
+        self.bytes -= art.bytes.len();
+        Some(art)
+    }
+}
+
+#[derive(Default)]
 struct Shelf {
     held: Mutex<Held>,
+    spares: Mutex<Spares>,
     landed: Condvar,
     revision: AtomicU64,
 }
@@ -416,28 +449,22 @@ impl Shelf {
         self.landing();
     }
 
-    fn picturing(&self, location: &MediaLocation) -> Picturing {
-        if self.held.lock().art(location).is_pending() {
-            Picturing::Copied
-        } else {
-            Picturing::Whether
-        }
-    }
-
     fn art_is_pending(&self, location: &MediaLocation) -> bool {
         self.held.lock().art(location).is_pending()
     }
 
     fn keep_what_the_tags_saw(&self, location: &MediaLocation, pictured: Pictured) {
-        let look = match pictured {
-            Pictured::Copied(art) => Look::Found(Arc::new(art)),
-            Pictured::Bare => Look::Nothing,
-            Pictured::StoodIn | Pictured::Carried => return,
-        };
         let mut held = self.held.lock();
-        if matches!(held.art(location), Look::Found(_)) {
-            return;
-        }
+        let look = match (pictured, held.art(location)) {
+            (_, Look::Found(_)) | (Pictured::StoodIn | Pictured::Carried, _) => return,
+            (Pictured::Copied(art), Look::Pending) => Look::Found(Arc::new(art)),
+            (Pictured::Copied(art), Look::Unasked | Look::Nothing) => {
+                drop(held);
+                self.spares.lock().keep(location, art);
+                return;
+            }
+            (Pictured::Bare, _) => Look::Nothing,
+        };
         held.keep_art(location, look);
         drop(held);
         self.landing();
@@ -617,6 +644,10 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                 if !shelf.art_is_pending(&location) {
                     continue;
                 }
+                if let Some(spare) = shelf.spares.lock().take(&location) {
+                    shelf.keep_art(&location, Look::Found(Arc::new(spare)));
+                    continue;
+                }
                 let look = match probe_cover_art(sources, &location) {
                     Ok(Some(art)) => Look::Found(Arc::new(art)),
                     Ok(None) => Look::Nothing,
@@ -636,7 +667,7 @@ fn whole(
     sources: &Sources,
     location: &MediaLocation,
 ) -> resonate_codec::Result<MediaInfo> {
-    let (info, pictured) = probe_pictured(sources, location, shelf.picturing(location))?;
+    let (info, pictured) = probe_pictured(sources, location, Picturing::Copied)?;
     shelf.keep_what_the_tags_saw(location, pictured);
     Ok(info)
 }
@@ -1058,16 +1089,52 @@ mod tests {
     }
 
     #[test]
-    fn a_row_whose_picture_nobody_waits_on_does_not_copy_it_with_the_tags() {
+    fn a_picture_asked_for_after_the_tags_landed_comes_off_the_open_they_came_from() {
         let picture = png(512);
         let (catalog, row, opens) = counted(wav_with_a_cover("Echoes", "Pink Floyd", &picture));
 
         assert!(catalog.media_within(&row, None, PATIENCE).is_some());
-        assert_eq!(catalog.shelf.held.lock().pictured, 0);
+        assert_eq!(
+            catalog.shelf.held.lock().pictured,
+            0,
+            "a picture nobody asked for was counted against the pictures drawn"
+        );
 
-        let art = art_within(&catalog, &row).expect("the picture is read when it is asked for");
+        let art = art_within(&catalog, &row).expect("the picture is answered when it is asked for");
         assert_eq!(art.bytes, picture);
-        assert_eq!(opens.load(Ordering::Relaxed), 2);
+        assert_eq!(opens.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn the_spare_pictures_stay_within_their_budget_and_the_newest_stay() {
+        let mut spares = Spares::default();
+        let quarter = SPARE_ART_BYTES / 4;
+        for index in 0..6 {
+            spares.keep(
+                &MediaLocation::local(format!("/music/{index}.flac")),
+                CoverArt {
+                    format: ImageFormat::Png,
+                    bytes: vec![0; quarter],
+                },
+            );
+        }
+
+        assert!(spares.bytes <= SPARE_ART_BYTES);
+        assert!(
+            spares
+                .take(&MediaLocation::local("/music/0.flac"))
+                .is_none()
+        );
+        assert!(
+            spares
+                .take(&MediaLocation::local("/music/5.flac"))
+                .is_some()
+        );
+        assert!(
+            spares
+                .take(&MediaLocation::local("/music/5.flac"))
+                .is_none()
+        );
     }
 
     #[test]

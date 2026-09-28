@@ -4985,6 +4985,7 @@ dependencies = [
  "image",
  "lofty",
  "opus-rs",
+ "parking_lot",
  "resonate-core",
  "symphonia",
  "symphonia-codec-wavpack",

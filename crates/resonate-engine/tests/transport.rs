@@ -7,7 +7,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -457,6 +457,34 @@ impl MediaProvider for ServesOnce {
             });
         }
 
+        Ok(Media {
+            stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+            hint: None,
+        })
+    }
+}
+
+struct Gated {
+    source: SourceId,
+    bytes: Vec<u8>,
+    open: Arc<AtomicBool>,
+}
+
+impl MediaProvider for Gated {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, location: &MediaLocation) -> CodecResult<Media> {
+        let deadline = Instant::now() + PATIENCE;
+        while !self.open.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        if location.locator().as_key() == Some("refused") {
+            return Err(CodecError::LocatorNotUsable {
+                location: location.clone(),
+            });
+        }
         Ok(Media {
             stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
             hint: None,
@@ -2845,6 +2873,110 @@ fn a_source_that_is_not_the_local_files_reaches_the_graph_the_same_way() -> Resu
         player.digest().map(|digest| digest.location.clone()),
         Some(location),
         "the inspector was told a different location than the one that played"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<()> {
+    const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+    let source = pcm(16, FRAMES);
+    let named = SourceId::new("slow").expect("a lowercase name");
+    let open = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Gated {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        open: Arc::clone(&open),
+    }));
+
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    let loaded = player.request(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "tracks/1.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    loaded.wait_for(ANSWERED_WITHIN)?;
+    player
+        .request(Command::SetVolume(
+            Volume::new(0.5).expect("half is a volume"),
+        ))?
+        .wait_for(ANSWERED_WITHIN)?;
+    assert_eq!(
+        player.state().playback,
+        PlaybackState::Buffering,
+        "a track still opening was not said to be loading"
+    );
+    assert_eq!(graph.lock().opens, 0);
+
+    open.store(true, Ordering::Release);
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= wanted,
+        "a track that opened slowly to reach the graph",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Result<()> {
+    let source = pcm(16, FRAMES);
+    let named = SourceId::new("slow").expect("a lowercase name");
+    let open = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Gated {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        open: Arc::clone(&open),
+    }));
+
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![
+            QueueItem {
+                id: TrackId::new(1).expect("a non-zero track id"),
+                location: MediaLocation::new(named.clone(), "refused"),
+                span: None,
+            },
+            QueueItem {
+                id: TrackId::new(2).expect("a non-zero track id"),
+                location: MediaLocation::new(named, "tracks/2.wav"),
+                span: None,
+            },
+        ],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    open.store(true, Ordering::Release);
+
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| {
+            graph.played.len() >= wanted
+                && player.state().current.map(|track| track.id.get()) == Some(2)
+        },
+        "the row after one that would not open to reach the graph",
+    );
+    assert!(
+        player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { track, .. } if track.get() == 1)),
+        "the row that would not open was not said to have failed"
     );
     Ok(())
 }

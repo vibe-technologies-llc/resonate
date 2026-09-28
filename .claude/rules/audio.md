@@ -352,12 +352,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **The engine's tag reader reads a picture on the open its tags came off wherever it can.** A
   queued row no scan has seen is asked for its name and, where the window draws it, its cover;
   the two used to be two opens of one file. `catalog::whole` probes a whole-file row under
-  `Copied` where its picture is already waited on and under `Whether` otherwise, and
-  `Shelf::keep_what_the_tags_saw` files what it learned: the bytes where it copied them, and
-  `Look::Nothing` where the file carries no picture, so a later look for one answers at once
-  rather than opening the file again. A file that carries one nobody has asked for is not copied
-  — the bytes stay out of `ART_BYTES_HELD` until something draws them — and an art ask that
-  arrives after the tags settled it is skipped rather than read again. A row cut out of a file by
+  `Copied`, and `Shelf::keep_what_the_tags_saw` files what it learned: the bytes where the
+  picture is already waited on, and `Look::Nothing` where the file carries no picture, so a later
+  look for one answers at once rather than opening the file again. A picture nobody has asked for
+  yet goes to the `Spares` beside the shelf rather than onto it — at most `SPARE_ART_BYTES`,
+  8 MiB, the oldest leaving first — so it stays out of `ART_BYTES_HELD` until something draws it,
+  and an art ask that arrives after the tags landed takes it from there rather than opening the
+  file a second time; only one pushed out of the spares by the rows read after it is read again.
+  `a_picture_asked_for_after_the_tags_landed_comes_off_the_open_they_came_from` is the claim. An
+  art ask that arrives after the tags settled it is skipped rather than read again. A row cut out of a file by
   a sheet is read through `probe_span` and says nothing about the picture, because the picture is
   the file's rather than the row's and the whole-file row will be asked on its own.
 - **A picture is weighed before it is copied.** symphonia has already read a visual into its own
@@ -650,6 +653,25 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   stopped: the thread stays with the provider until it answers and its answer is dropped, so a
   provider is still expected to put a deadline of its own on the network.
   `a_provider_that_does_not_answer_in_time_is_given_up_on_and_one_that_does_is_heard` is the claim.
+  **Its stream's reads are waited on the same way.** What such a provider opens is handed back as
+  a `Deadlined` stream: every read and seek goes to a `resonate-read` thread holding the provider's
+  own stream and is waited on for `Sources::READ_WITHIN`, five seconds, or what
+  `Sources::reading_within` says. A read that does not answer in time is an
+  `io::ErrorKind::TimedOut` and leaves the stream stalled — every later call fails at once, since
+  the answer still owed would land out of order — so the engine fails the track and passes on
+  rather than hanging on a network that has gone quiet.
+  `a_read_that_does_not_answer_in_time_fails_and_leaves_the_stream_stalled` is the claim.
+- **A track from a provider that is not the filesystem is opened off the engine thread.**
+  `Engine::start` opens a local row in line, as it always did, and hands any other to an `Opening`:
+  a `resonate-track-open` thread runs the whole `Unwrapped::open` — the decoder, the hints and the
+  box layout — and the engine parks on its answer beside its commands, publishing `Loading` while
+  it waits. Every command is answered meanwhile: a play or a pause changes only whether the track
+  plays once it lands, a seek moves where it will start, and a stop, a load or a skip drops the
+  opening, whose answer is then read by nobody. A landing that failed is passed over while playing
+  — `Engine::fail`, as a local row that will not open is — and is an `Event::Failed` with the
+  transport stopped otherwise; a thread that stopped without answering is `Error::OpenerStopped`.
+  `a_source_slow_to_open_leaves_the_engine_answering_while_it_waits` and
+  `a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row` are the claims.
 
 ## Transport
 

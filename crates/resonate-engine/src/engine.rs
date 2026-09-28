@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     iter,
     sync::{Arc, atomic::AtomicBool},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -29,7 +30,7 @@ use crate::{
     backend::Surveyor,
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
-    queue::{Queue, Queued, Removal},
+    queue::{Queue, QueueItem, Queued, Removal},
     ring::{RingConsumer, RingMonitor, RingProducer, ring},
     surveying::{Surveyed, Surveying},
 };
@@ -71,28 +72,82 @@ struct Track {
     published: Option<usize>,
 }
 
+struct Unwrapped {
+    decoder: Decoder,
+    info: MediaInfo,
+    hints: TrackHints,
+    layout: Option<BoxLayout>,
+}
+
+impl Unwrapped {
+    fn open(item: &QueueItem, sources: &Sources) -> resonate_codec::Result<Self> {
+        let (decoder, info) = match item.span {
+            Some(span) => Decoder::open_span(sources, &item.location, span)?,
+            None => Decoder::open(sources, &item.location)?,
+        };
+        Ok(Self {
+            decoder,
+            info,
+            hints: sources.hints(&item.location, item.span),
+            layout: inspected(sources, &item.location),
+        })
+    }
+}
+
+struct Opening {
+    item: QueueItem,
+    at: Frames,
+    landed: Receiver<resonate_codec::Result<Unwrapped>>,
+}
+
+impl Opening {
+    fn begin(item: QueueItem, at: Frames, sources: &Arc<Sources>) -> Self {
+        let (landing, landed) = crossbeam_channel::bounded(1);
+        let sources = Arc::clone(sources);
+        let opened = item.clone();
+        let spawned = thread::Builder::new()
+            .name("resonate-track-open".into())
+            .spawn(move || {
+                let _ = landing.send(Unwrapped::open(&opened, &sources));
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "no thread could be started to open a track");
+        }
+        Self { item, at, landed }
+    }
+
+    fn landed(&self) -> Option<Result<Unwrapped>> {
+        let track = self.item.id;
+        match self.landed.try_recv() {
+            Ok(landed) => Some(landed.map_err(|source| Error::Decode { track, source })),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Err(Error::OpenerStopped { track })),
+        }
+    }
+}
+
 impl Track {
-    fn open(
-        id: TrackId,
-        location: &MediaLocation,
-        span: Option<FrameSpan>,
+    fn of(
+        item: &QueueItem,
+        unwrapped: Unwrapped,
         sources: &Arc<Sources>,
         config: &EngineConfig,
-    ) -> resonate_codec::Result<Self> {
-        let (decoder, info) = match span {
-            Some(span) => Decoder::open_span(sources, location, span)?,
-            None => Decoder::open(sources, location)?,
-        };
-        let hints = sources.hints(location, span);
+    ) -> Self {
+        let Unwrapped {
+            decoder,
+            info,
+            hints,
+            layout,
+        } = unwrapped;
         let replay_gain = levelled(config, &info, hints);
         let mut track = Self {
-            id,
-            location: location.clone(),
-            span,
+            id: item.id,
+            location: item.location.clone(),
+            span: item.span,
             hints,
             measuring: None,
             decoded: AudioBuffer::empty(info.spec),
-            layout: inspected(sources, location).map(Arc::new),
+            layout: layout.map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
             decoder,
             info: Arc::new(info),
@@ -103,7 +158,7 @@ impl Track {
             published: None,
         };
         track.measure_where_wanted(sources, config);
-        Ok(track)
+        track
     }
 
     fn measure_where_wanted(&mut self, sources: &Arc<Sources>, config: &EngineConfig) {
@@ -455,6 +510,7 @@ pub struct Engine {
     published: Published,
     changes: Option<Receiver<SinkChange>>,
     queue: Queue,
+    opening: Option<Opening>,
     announced: Option<u64>,
     stale_sinks: bool,
     transport: TransportState,
@@ -488,6 +544,7 @@ struct Heard {
     changes: Option<Receiver<SinkChange>>,
     surveyed: Option<Receiver<Surveyed>>,
     events: Option<Receiver<StreamEvent>>,
+    opened: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
 }
 
 impl Heard {
@@ -503,6 +560,9 @@ impl Heard {
         if let Some(events) = self.events.as_ref() {
             select.recv(events);
         }
+        if let Some(opened) = self.opened.as_ref() {
+            select.recv(opened);
+        }
 
         select
     }
@@ -512,6 +572,10 @@ impl Heard {
             && is_one_channel(
                 self.events.as_ref(),
                 engine.listening().map(SinkStream::events),
+            )
+            && is_one_channel(
+                self.opened.as_ref(),
+                engine.opening.as_ref().map(|opening| &opening.landed),
             )
     }
 }
@@ -553,6 +617,7 @@ impl Engine {
             published,
             changes,
             queue: Queue::new(),
+            opening: None,
             announced: None,
             stale_sinks: false,
             transport: TransportState::Idle,
@@ -587,6 +652,7 @@ impl Engine {
                 }
 
                 self.rediscover();
+                self.land_the_opening();
                 self.watch_discard();
                 self.pump();
                 self.finish_reshaping();
@@ -626,6 +692,7 @@ impl Engine {
                 .as_ref()
                 .map(|surveying| surveying.answers().clone()),
             events: self.listening().map(|stream| stream.events().clone()),
+            opened: self.opening.as_ref().map(|opening| opening.landed.clone()),
         }
     }
 
@@ -727,7 +794,12 @@ impl Engine {
     }
 
     fn at_rest(&self) -> bool {
-        if self.playing || self.sleep.is_some() || self.graph_lost.is_some() || self.stale_sinks {
+        if self.playing
+            || self.sleep.is_some()
+            || self.graph_lost.is_some()
+            || self.stale_sinks
+            || self.opening.is_some()
+        {
             return false;
         }
         self.output.as_ref().is_none_or(|output| {
@@ -1050,6 +1122,9 @@ impl Engine {
 
     fn play(&mut self) -> Result<()> {
         self.playing = true;
+        if self.opening.is_some() {
+            return Ok(());
+        }
         if self.track.is_none() {
             let started = self.start(Frames::ZERO);
             return self.past_what_will_not_open(started);
@@ -1073,6 +1148,10 @@ impl Engine {
     }
 
     fn pause(&mut self) -> Result<()> {
+        if self.opening.is_some() {
+            self.playing = false;
+            return Ok(());
+        }
         if self.track.is_none() {
             return Err(Error::InvalidTransition {
                 state: self.transport,
@@ -1113,6 +1192,7 @@ impl Engine {
         }
         self.output = None;
         self.track = None;
+        self.opening = None;
         self.unbound = None;
         self.heard_at_least = None;
         self.transport = TransportState::Stopped;
@@ -1123,7 +1203,7 @@ impl Engine {
             rows,
             len: self.queue.len(),
         })?;
-        if removal == Removal::Queued || self.track.is_none() {
+        if removal == Removal::Queued || (self.track.is_none() && self.opening.is_none()) {
             return Ok(());
         }
         if self.queue.current().is_none() {
@@ -1184,6 +1264,10 @@ impl Engine {
     }
 
     fn seek(&mut self, to: Frames) -> Result<()> {
+        if let Some(opening) = self.opening.as_mut() {
+            opening.at = to;
+            return Ok(());
+        }
         let Some(track) = self.track.as_ref() else {
             return Err(Error::InvalidTransition {
                 state: self.transport,
@@ -1281,19 +1365,45 @@ impl Engine {
         }
         self.output = None;
         self.track = None;
+        self.opening = None;
         self.heard_at_least = None;
 
-        let track = Track::open(
-            item.id,
-            &item.location,
-            item.span,
-            &self.sources,
-            &self.config,
-        )
-        .map_err(|source| Error::Decode {
+        if !item.location.is_local() {
+            self.opening = Some(Opening::begin(item, at, &self.sources));
+            self.transport = TransportState::Loading;
+            return Ok(());
+        }
+        let unwrapped = Unwrapped::open(&item, &self.sources).map_err(|source| Error::Decode {
             track: item.id,
             source,
         })?;
+        self.started(&item, unwrapped, at)
+    }
+
+    fn land_the_opening(&mut self) {
+        let Some(landed) = self.opening.as_ref().and_then(Opening::landed) else {
+            return;
+        };
+        let Some(Opening { item, at, .. }) = self.opening.take() else {
+            return;
+        };
+        let started = landed.and_then(|unwrapped| self.started(&item, unwrapped, at));
+        let Err(error) = started else {
+            return;
+        };
+        if self.playing {
+            self.fail(error);
+            return;
+        }
+        self.transport = TransportState::Stopped;
+        self.emit(Event::Failed {
+            track: item.id,
+            error,
+        });
+    }
+
+    fn started(&mut self, item: &QueueItem, unwrapped: Unwrapped, at: Frames) -> Result<()> {
+        let track = Track::of(item, unwrapped, &self.sources, &self.config);
         let at = track
             .info
             .duration
@@ -2390,6 +2500,7 @@ mod tests {
             changes: Some(changes.clone()),
             surveyed: Some(surveyed.clone()),
             events: Some(events.clone()),
+            opened: None,
         };
         let mut parked = heard.registered(&commands);
 
@@ -2424,6 +2535,7 @@ mod tests {
             changes: None,
             surveyed: None,
             events: None,
+            opened: None,
         };
         let mut parked = heard.registered(&commands);
 
