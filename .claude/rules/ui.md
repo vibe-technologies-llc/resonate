@@ -27,7 +27,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   unfocused field draws `ctrl-f` in the mono face at its end, because the one key that takes focus
   deliberately is otherwise nowhere on screen. `views/chrome.rs`
   owns the frame around it: a `theme::RESIZE_BORDER` gutter outside the painted window carrying the
-  resize edges and the shadow, and rounded corners on whichever edges are not tiled.
+  resize edges and the shadow, and rounded corners on whichever edges are not tiled. **The shadow
+  is cast by a rim, not by the window.** gpui shades a shadow over its whole box, three blurs past
+  it, so a shadow on the window ran its blur arithmetic over every pixel of it on every frame for a
+  fringe a few pixels wide — a quarter of what a frame of the tracks pane cost the GPU.
+  `shadow_rim` casts the same `BoxShadow` from four strips laid under the content along its edges,
+  each as deep as the blur reaches, the top and bottom ones carrying the corners' rounding; a blur
+  is linear, so outside the window the four sum to the shadow the whole box cast, and a pixel
+  comparison of the two found no difference past 2 in 255. **The gutter repaints only where the
+  resize edge under the pointer changes**: the cursor a `resize_cursor` sets is read off the
+  pointer in paint, and `frame` used to `refresh` the window — every cache dropped — on every
+  pointer move anywhere over it.
   **gpui clips a child to its parent's rectangle, not to its rounding**, so the header and the
   playback bar, whose `surface` fill reaches the window's corners, painted a square of it past the
   rounded border. `chrome::rounded` is the one reading of which corners are round and
@@ -898,20 +908,38 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the album title with it. The inspector's OUTPUT stage names the device and the settings row
   keeps its node name behind the pointer; the signal path's hint says *Playing through …* before
   what it always said, which is the whole of where it went.
-- **The position is polled every 16 ms and drawn only where the drawing would change.** The
-  window is one `RootView`, so a notify from `PlayerModel` lays out and paints the whole tree, and
-  a position that moved every poll made a playing window cost 10 to 11 % of a core where
-  `resonate play` costs under one. `Grain` is what the render tells the model the moment is drawn
-  at: on the lyrics, the visualiser and the inspector every poll, because the line, the spectrum and
-  the latency follow it; everywhere else a quarter of a device pixel of the seek rail —
-  `STEPS_PER_PIXEL` over `Rail::width` times the scale factor — and never coarser than the clock's
-  second, so the elapsed time turns over when it should and `Listening` and `Keeping` never see a
-  step anywhere near the `A_SEEK` they read as a seek. `Grain::shows` lets anything but the
-  position and the sink's latency through at once — a pause, a seek, a track change, the sleep
-  timer's second — and a rail not yet painted, or a thumb held, is every poll. The model's state
-  is still refreshed every poll, so whatever else asks for a frame draws the moment as it is; what
-  it saves is the frames that would have painted the same pixels, taking a playing window on the
-  tracks pane to 2.7 %.
+- **The window is a thin root over four cached regions, so a moving clock redraws the playback
+  bar and nothing else.** gpui re-runs the window's root view on every frame it draws and reuses
+  the last frame's layout and paint only for a child drawn as a *cached* `AnyView` that nothing
+  notified. `views/part.rs` is that split: a `Part` is a view of its own for the header, the
+  sidebar, the pane or the playback bar, whose render is `RootView::region` reached through a weak
+  handle — so every pane is still a method on `RootView` taking `Context<RootView>`, and its
+  listeners bind to the root as they always did — and `RootView::render` is the shell around them:
+  the actions, the overlays, the menus and the toasts. Each `Part` observes the root, so a
+  `cx.notify()` anywhere on `RootView` redraws all four exactly as the one tree used to be redrawn,
+  while a hover, a scroll or a frame asked for inside a region notifies that region alone, gpui
+  naming the view a listener was painted under. A cached view is laid out from a style and not
+  from its content, so `Region::laid_out` is where each one's size is declared — the header and
+  the playback bar at their fixed heights, the sidebar at its width, the pane taking the rest.
+  `PlayerModel::refresh` says what a poll moved as a `Moved`: `Clock` where only the position and
+  the sink's latency changed — the `held_still` reading `Grain::shows` already makes — and `More`
+  for anything else. The root's observer notifies itself for `More` and hands a `Clock` to
+  `Parts::the_clock_moved`, which notifies the playback bar and, where `Pane::follows_the_clock` —
+  the inspector's latency and the analysis pane's playhead — the pane. Measured at a scale factor
+  of 1.5 on a 2880-by-1800 output, a playing window on the tracks pane went from 4.2 % of a core to
+  2.4 %, on the albums pane from 6.8 % to 2.4 % and on the inspector from 15.5 % to 3.2 %.
+  **How often the clock moves is the `Grain`**, what the render tells the model the moment is
+  drawn at: every poll on the visualiser, whose spectrum follows it, and while a seek thumb is
+  held; everywhere else a quarter of a device pixel of the seek rail — `STEPS_PER_PIXEL` over
+  `Rail::width` times the scale factor — and never coarser than the clock's second, so the elapsed
+  time turns over when it should and `Listening` and `Keeping` never see a step anywhere near the
+  `A_SEEK` they read as a seek. The lyrics pane is not every poll: a synced set asks for a frame at
+  the display's rate for as long as it moves, and a pane with nothing to move has nothing a poll
+  would change, so forcing one was a whole-window paint sixty times a second over an empty pane.
+  `Grain::shows` lets anything but the position and the sink's latency through at once — a pause,
+  a seek, a track change, the sleep timer's second — and a rail not yet painted is every poll. The
+  model's state is still refreshed every poll, so whatever else asks for a frame draws the moment
+  as it is.
 - **The playback bar is three columns and the transport is the middle one.** The now-playing panel
   and the status cluster are both `flex_1` with a basis of zero, so they take equal halves of what
   the centre leaves and the buttons sit on the window's centre line whatever is beside them. The
@@ -2170,9 +2198,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   span of a window twice that long, so a steady tone stands still rather than crawling.
 - **The pane repaints on the player's poll and never on the display's clock.** gpui marks every
   ancestor of a notified view dirty — `Window::mark_view_dirty` walks the view path — so a frame
-  the pane asks for re-runs `RootView::render` however much the pane is an entity of its own, and
-  `request_animation_frame` asks at the display's rate: on this machine's 240 Hz output the first
-  cut of the pane took the window from about 6.5 % of a core to 32.5 %. So `Visualiser` observes
+  the pane asks for redraws the pane's `Part` and the root's shell, and before the regions were
+  cached it re-ran the whole window; `request_animation_frame` asks at the display's rate, and on
+  this machine's 240 Hz output the first cut of the pane took the window from about 6.5 % of a
+  core to 32.5 %. So `Visualiser` observes
   `PlayerModel` and draws when the 16 ms poll notifies, which it does on every engine publish while
   anything plays — the frames the window was already drawing — and asks for none of its own; only
   bars still falling once nothing is tapped ask again, on a timer at the poll's interval, and a
@@ -2181,8 +2210,7 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `RootView`, and what lets it keep drawing if the root's observer is ever narrowed. Measured with
   a 24-bit 192 kHz FLAC resampled to a 48 kHz device over an empty scratch catalog, the window takes
   7.6 to 7.7 % of a core with the pane in front and 6.4 to 6.8 % with the tracks pane, the engine
-  thread 1.1 to 1.2 % either way: the pane's own cost is its transform and its sixty-odd quads, and
-  the whole-window render under it is the one `docs/TODO.md` already records. `RootView::render`
+  thread 1.1 to 1.2 % either way: the pane's own cost is its transform and its sixty-odd quads. `RootView::render`
   calls `PlayerModel::listen_in` with whether the pane is in front, so the engine taps nothing
   while it is not.
 - **The analysis pane draws the whole of the playing track and says whether it is what it claims.**

@@ -1,7 +1,9 @@
+use std::cell::Cell;
+
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
-    MouseButton, MouseDownEvent, Pixels, Point, ResizeEdge, Size, Stateful, Svg, Tiling, Window,
-    canvas, div, hsla, point, prelude::*, px, rgb,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Size, Stateful, Svg,
+    Tiling, Window, canvas, div, hsla, point, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -12,6 +14,14 @@ use crate::{
 };
 
 const SHADOW_ALPHA: f32 = 0.45;
+const SHADOW_DROP: f32 = 2.0;
+const SHADOW_BLUR_OF_THE_BORDER: f32 = 0.5;
+const SHADOW_REACH_IN_BLURS: f32 = 3.0;
+const RIM_BEYOND_THE_REACH: f32 = 1.0;
+
+thread_local! {
+    static EDGE_UNDER_THE_POINTER: Cell<Option<ResizeEdge>> = const { Cell::new(None) };
+}
 const CONTROL_GROUP: &str = "window-control";
 
 #[derive(Clone, Copy)]
@@ -212,11 +222,20 @@ pub(crate) fn frame(window: &mut Window, content: Div) -> Div {
     div()
         .size_full()
         .child(resize_cursor(border, held))
+        .when(!tiling.is_tiled(), |backdrop| {
+            backdrop.children(shadow_rim(border, corners))
+        })
         .when(!tiling.top, |backdrop| backdrop.pt(border))
         .when(!tiling.bottom, |backdrop| backdrop.pb(border))
         .when(!tiling.left, |backdrop| backdrop.pl(border))
         .when(!tiling.right, |backdrop| backdrop.pr(border))
-        .on_mouse_move(|_, window, _| window.refresh())
+        .on_mouse_move(move |event: &MouseMoveEvent, window, _| {
+            let size = window.window_bounds().get_bounds().size;
+            let edge = grabbed_edge(event.position, border, size, held);
+            if EDGE_UNDER_THE_POINTER.replace(edge) != edge {
+                window.refresh();
+            }
+        })
         .on_mouse_down(
             MouseButton::Left,
             move |event: &MouseDownEvent, window, _| {
@@ -236,14 +255,6 @@ pub(crate) fn frame(window: &mut Window, content: Div) -> Div {
                 .rounded_tr(corners.top_right)
                 .rounded_bl(corners.bottom_left)
                 .rounded_br(corners.bottom_right)
-                .when(!tiling.is_tiled(), |frame| {
-                    frame.shadow(vec![BoxShadow {
-                        color: hsla(0.0, 0.0, 0.0, SHADOW_ALPHA),
-                        offset: point(px(0.0), px(2.0)),
-                        blur_radius: border / 2.0,
-                        spread_radius: px(0.0),
-                    }])
-                })
                 .on_mouse_move(|_, _, cx| cx.stop_propagation()),
         )
 }
@@ -253,6 +264,36 @@ fn held_edges(window: &Window, tiling: Tiling) -> Tiling {
         return Tiling::tiled();
     }
     tiling
+}
+
+fn shadow_rim(border: Pixels, corners: Corners<Pixels>) -> [Div; 4] {
+    let blur = border * SHADOW_BLUR_OF_THE_BORDER;
+    let rim = (blur * SHADOW_REACH_IN_BLURS + px(SHADOW_DROP + RIM_BEYOND_THE_REACH))
+        .max(corners.top_left.max(corners.bottom_left))
+        .max(corners.top_right.max(corners.bottom_right));
+    let cast = || {
+        div().absolute().shadow(vec![BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, SHADOW_ALPHA),
+            offset: point(px(0.0), px(SHADOW_DROP)),
+            blur_radius: blur,
+            spread_radius: px(0.0),
+        }])
+    };
+    let across = || cast().left(border).right(border).h(rim);
+    let down = || cast().top(border + rim).bottom(border + rim).w(rim);
+
+    [
+        across()
+            .top(border)
+            .rounded_tl(corners.top_left)
+            .rounded_tr(corners.top_right),
+        across()
+            .bottom(border)
+            .rounded_bl(corners.bottom_left)
+            .rounded_br(corners.bottom_right),
+        down().left(border),
+        down().right(border),
+    ]
 }
 
 fn resize_cursor(border: Pixels, held: Tiling) -> AnyElement {

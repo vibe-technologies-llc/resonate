@@ -14,6 +14,7 @@ mod lyrics;
 pub(crate) mod menu;
 mod missing;
 mod mosaic;
+mod part;
 mod playlists;
 mod pointed;
 mod queue;

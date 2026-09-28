@@ -213,6 +213,13 @@ fn held_still(state: &PlayerState, like: &PlayerState) -> PlayerState {
     still
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Moved {
+    Clock,
+    #[default]
+    More,
+}
+
 struct Graphed {
     columns: usize,
     series: Arc<[BitRate]>,
@@ -232,6 +239,7 @@ pub struct PlayerModel {
     unsettled: AHashMap<MediaLocation, u64>,
     magnified: Option<Magnifying<MediaLocation>>,
     grain: Grain,
+    moved: Moved,
     player: Arc<Player>,
     _poll: Task<()>,
 }
@@ -261,6 +269,7 @@ impl PlayerModel {
             unsettled: AHashMap::new(),
             magnified: None,
             grain: Grain::default(),
+            moved: Moved::default(),
             player,
             _poll: poll,
         }
@@ -288,6 +297,10 @@ impl PlayerModel {
 
     pub(crate) const fn draw_at(&mut self, grain: Grain) {
         self.grain = grain;
+    }
+
+    pub(crate) const fn moved(&self) -> Moved {
+        self.moved
     }
 
     pub fn listen_in(&self, listening: bool) {
@@ -473,10 +486,10 @@ impl PlayerModel {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let mut changed = false;
+        let mut moved = None;
 
         for event in self.player.events().try_iter() {
-            changed = true;
+            moved = Some(Moved::More);
             match event {
                 Event::Failed { track, error } => {
                     tracing::error!(%error, %track, "playback failed");
@@ -506,20 +519,22 @@ impl PlayerModel {
 
         let state = read_to_the_second(self.player.state());
         if state != self.state {
-            changed |= self.grain.shows(&self.state, &state);
+            if self.grain.shows(&self.state, &state) {
+                moved = moved.max(Some(moved_by(&self.state, &state)));
+            }
             self.state = state;
         }
 
         let settings = self.player.output_settings();
         if !Arc::ptr_eq(&settings, &self.settings) {
             self.settings = settings;
-            changed = true;
+            moved = Some(Moved::More);
         }
 
         let sinks = self.player.sinks();
         if !Arc::ptr_eq(&sinks, &self.sinks) {
             self.sinks = sinks;
-            changed = true;
+            moved = Some(Moved::More);
         }
 
         let digest = self.player.digest();
@@ -527,24 +542,33 @@ impl PlayerModel {
             self.digest = digest;
             self.graphed = None;
             self.carried_lines = None;
-            changed = true;
+            moved = Some(Moved::More);
         }
 
         let queued = self.player.queued();
         if queued.revision != self.queued.revision {
             self.queued = queued;
-            changed = true;
+            moved = Some(Moved::More);
         }
 
         let reads = self.player.media_revision();
         if reads != self.reads {
             self.reads = reads;
-            changed = true;
+            moved = Some(Moved::More);
         }
 
-        if changed {
+        if let Some(moved) = moved {
+            self.moved = moved;
             cx.notify();
         }
+    }
+}
+
+fn moved_by(before: &PlayerState, after: &PlayerState) -> Moved {
+    if held_still(after, before) == *before {
+        Moved::Clock
+    } else {
+        Moved::More
     }
 }
 
@@ -1084,5 +1108,17 @@ mod tests {
 
         assert!(grain.shows(&before, &paused));
         assert!(Grain::EveryPoll.shows(&before, &playing_at(10.11)));
+    }
+
+    #[test]
+    fn only_the_moment_moving_is_told_as_the_clock() {
+        let before = playing_at(10.1);
+        let paused = PlayerState {
+            playback: PlaybackState::Paused,
+            ..playing_at(10.2)
+        };
+
+        assert_eq!(moved_by(&before, &playing_at(10.2)), Moved::Clock);
+        assert_eq!(moved_by(&before, &paused), Moved::More);
     }
 }

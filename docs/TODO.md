@@ -38,10 +38,13 @@ that no listener is waiting on, and is worked only once the categories above it 
   than the same music in PCM. Applying it would clip hot material; it is a decision to take
 
 ## Performance and scale
-- The whole window is one `Render`, so any notify lays out and paints the whole tree, and the
-  lyrics, the visualiser and the inspector rebuild it sixty times a second while playing. The answer
-  is views of their own for the playback bar and the panes, which gpui can cache — and which would
-  also let the visualiser repaint at the display's rate
+- The visualiser still repaints on the 16 ms poll rather than on the display's clock. Its pane is
+  a cached region of its own now, so following the display costs the CPU only the pane, but every
+  frame is still a whole-window paint on the GPU
+- gpui 0.2.2 rasterises every batch of vector paths — the inspector's bitrate graph, the scope, the
+  analysis plots, the equaliser curve — through a window-sized 4× MSAA texture it clears and
+  resolves each frame, which costs an integrated GPU far more than the paths themselves. Only a
+  newer gpui or drawing those plots without `paint_path` avoids it
 - A picture the caches let go of leaves its tile in gpui's sprite atlas, so GPU memory grows with
   every distinct cover drawn in a run. Freeing it means drawing covers from a `RenderImage` the
   caches own rather than from encoded bytes

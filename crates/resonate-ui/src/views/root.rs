@@ -27,11 +27,11 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
-        LeaveSearch, Listen, LowerRow, Next, NextPane, Pause, PlayReached, Previous, PreviousPane,
-        Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext,
-        ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, Stop,
-        TabOnward, TogglePlayPause, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT,
-        WidenAbove, WidenBelow, attend, seek_step,
+        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, Pause, PlayReached, Previous,
+        PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst,
+        ReachLast, ReachNext, ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit,
+        SeekBackward, SeekForward, Stop, TabOnward, TogglePlayPause, ToggleShuffle, UndoEdit,
+        VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_step,
     },
     format,
     icons::{self, Icon},
@@ -48,6 +48,7 @@ use crate::{
         listing::Pictured,
         menu::{self, Menu},
         missing::MissingShows,
+        part::{Parts, Region},
         playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
         pointed::{self, LitUnderThePointer},
         queue::{QueueLength, QueueNames, TakenBack, took_out},
@@ -245,6 +246,10 @@ impl Pane {
             | Self::Analysis
             | Self::Settings => true,
         }
+    }
+
+    pub(crate) const fn follows_the_clock(self) -> bool {
+        matches!(self, Self::Inspector | Self::Analysis)
     }
 
     pub const fn lands_where_it_was_left(self) -> bool {
@@ -480,6 +485,7 @@ pub struct RootView {
     pub(crate) remember_settings_category: bool,
     pub(crate) last_window_size: Option<WindowSize>,
     window_size_settled: Task<()>,
+    parts: Parts,
 }
 
 pub(crate) fn framed_cover(art: Option<Arc<Image>>, side: f32) -> Div {
@@ -568,7 +574,12 @@ impl RootView {
             this.keep_the_queue(&player, cx);
             this.follow_the_playing_row(&player, cx);
             this.look_for_lyrics(cx);
-            cx.notify();
+            match player.read(cx).moved() {
+                Moved::Clock => this
+                    .parts
+                    .the_clock_moved(this.pane.follows_the_clock(), cx),
+                Moved::More => cx.notify(),
+            }
         })
         .detach();
         cx.observe(&library, |this, library, cx| {
@@ -844,6 +855,7 @@ impl RootView {
             remember_settings_category,
             last_window_size,
             window_size_settled: Task::ready(()),
+            parts: Parts::of(&cx.entity(), cx),
         };
         cx.observe_window_bounds(window, |this, window, cx| {
             this.window_bounds_changed(window, cx);
@@ -3246,6 +3258,20 @@ impl RootView {
         framed_cover(art, side)
     }
 
+    pub(crate) fn region(
+        &mut self,
+        region: Region,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        match region {
+            Region::Header => self.header(window, cx).into_any_element(),
+            Region::Sidebar => self.sidebar(cx).into_any_element(),
+            Region::Pane => self.content(cx),
+            Region::Transport => self.transport(chrome::rounded_within_the_frame(window), cx),
+        }
+    }
+
     fn content(&mut self, cx: &mut Context<Self>) -> AnyElement {
         match self.pane {
             Pane::Albums => self.albums(cx),
@@ -3291,11 +3317,6 @@ impl Render for RootView {
             .listen_in(self.pane == Pane::Visualiser);
         let grain = self.grain(window, cx);
         self.player.update(cx, |player, _| player.draw_at(grain));
-
-        let header = self.header(window, cx);
-        let sidebar = self.sidebar(cx);
-        let content = self.content(cx);
-        let transport = self.transport(chrome::rounded_within_the_frame(window), cx);
 
         let app = div()
             .track_focus(&self.focus)
@@ -3405,16 +3426,16 @@ impl Render for RootView {
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.typed(event, window, cx);
             }))
-            .child(header)
+            .child(self.parts.header())
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_h(px(0.0))
-                    .child(sidebar)
-                    .child(div().flex().flex_1().min_w(px(0.0)).child(content)),
+                    .child(self.parts.sidebar())
+                    .child(self.parts.pane()),
             )
-            .child(transport)
+            .child(self.parts.transport())
             .child(self.drag_surface(cx))
             .child(self.pointer_watch(cx))
             .when_some(

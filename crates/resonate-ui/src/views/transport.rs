@@ -192,9 +192,7 @@ impl RootView {
     }
 
     pub(crate) fn grain(&self, window: &Window, cx: &App) -> Grain {
-        let follows_every_poll =
-            matches!(self.pane, Pane::Lyrics | Pane::Visualiser | Pane::Inspector);
-        if follows_every_poll || self.grabbed_fraction(Handle::Seek).is_some() {
+        if self.pane == Pane::Visualiser || self.grabbed_fraction(Handle::Seek).is_some() {
             return Grain::EveryPoll;
         }
 
