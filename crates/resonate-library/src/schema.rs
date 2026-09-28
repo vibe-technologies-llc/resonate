@@ -66,6 +66,8 @@ const MIGRATIONS: &[&str] = &[
          moved_from TEXT NOT NULL,
          moved_to   TEXT NOT NULL
      ) STRICT;",
+    "ALTER TABLE unheld_listens ADD COLUMN heard INTEGER NOT NULL DEFAULT 0;
+     CREATE INDEX unheld_listens_by_time ON unheld_listens(at);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

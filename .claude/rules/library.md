@@ -700,15 +700,19 @@ through `Player::media` like any other unscanned row.
   `tracks.played` are absent from the upsert's `DO UPDATE SET` the way `added` is, so a rescan keeps
   both; forgetting a root drops the rows and the counts with them. It is kept against the path, so a
   file no scan has seen is not counted against a row — `Library::track_played` answers `None`
-  rather than refusing, because a location that is not local has no row here — **but the play is
-  kept against the path.** `unheld_listens` holds the path, the span's start and the moment, and
+  rather than refusing where a location that is not local has no row here — **but the play is
+  kept against the path.** `unheld_listens` holds the path, the span's start, the moment and how
+  long it was heard, and
   `history::credit_the_unheld` runs after every scan's prune: a play whose path and start now
   name a row becomes a `listens` row stamped when it was heard, the row's `plays` and `played`
   follow, and the unheld play goes, so a queue of files played before the folder was ever
   scanned is counted the moment it is —
-  `a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does`. What the
-  settle of such a visit heard is not kept, having no listen to spend it on, and the history's
-  span ages the unheld plays with the rest. It answers with the row it
+  `a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does`.
+  A `Counted` carries a `Listen` — `Held` naming a `listens` row, `Unheld` the rowid of an
+  `unheld_listens` one — and `Library::listened` spends either, so the settle of such a visit
+  keeps what it heard: the statistics count an unheld play and its time beside the held ones, and
+  the credit carries `heard` onto the listen it becomes. The history's span ages the unheld plays
+  with the rest. It answers with the row it
   counted where there was one, read back inside the same transaction so the caller has the count it
   now stands at without a read of its own. `plays:` and `played:` narrow on
   the two columns and `SortOrder::Plays` and `Played` order on them, so *Top 25 most played* is a

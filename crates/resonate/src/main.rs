@@ -49,7 +49,7 @@ use resonate_codec::{CoverArt, Packing, Popularity, Sources, probe, read_cue_med
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
-    AlbumId, FrameSpan, Frames, ListenId, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
+    AlbumId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Keep, Keeping, Levelling,
@@ -58,7 +58,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
-    HistoryKept, Kept, Layout, Library, LookupOp, MissingTrack, Move, OrganiseOptions,
+    HistoryKept, Kept, Layout, Library, Listen, LookupOp, MissingTrack, Move, OrganiseOptions,
     OrganiseSummary, PassHandle, Playing, Playlist, PlaylistName, PlaylistOrder, PollOptions,
     Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, Search, SortOrder,
     StudyFilter, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
@@ -1844,7 +1844,7 @@ fn play_queue(
     };
     let sampled = tick(HEARD_SAMPLE);
     let mut listening = Listening::default();
-    let mut counted: Option<ListenId> = None;
+    let mut counted: Option<Listen> = None;
     let mut keeping = Keeping::default();
 
     loop {
@@ -1906,7 +1906,7 @@ fn count_a_play(
     player: &Player,
     library: Option<&Library>,
     listening: &mut Listening,
-    counted: &mut Option<ListenId>,
+    counted: &mut Option<Listen>,
 ) {
     let Some(library) = library else {
         return;
@@ -1918,7 +1918,7 @@ fn count_a_play(
     );
 }
 
-fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Option<ListenId>) {
+fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Option<Listen>) {
     let Some(counting) = counting else {
         return;
     };

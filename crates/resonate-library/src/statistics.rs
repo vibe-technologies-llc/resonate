@@ -19,9 +19,11 @@ const NANOS_PER_DAY: i64 = SECONDS_PER_DAY as i64 * NANOS_PER_SECOND;
 
 const SINCE_THE_BEGINNING: i64 = i64::MIN;
 
-const WHAT_WAS_HEARD: &str = "SELECT count(*),
+const WHAT_WAS_HEARD: &str = "SELECT count(*)
+              + (SELECT count(*) FROM unheld_listens u WHERE u.at >= ?1),
             coalesce(sum(l.heard), 0)
-              + (SELECT coalesce(sum(p.heard), 0) FROM passes p WHERE p.at >= ?1),
+              + (SELECT coalesce(sum(p.heard), 0) FROM passes p WHERE p.at >= ?1)
+              + (SELECT coalesce(sum(u.heard), 0) FROM unheld_listens u WHERE u.at >= ?1),
             count(DISTINCT l.track_id), count(DISTINCT t.album_id), count(DISTINCT t.artist_id)
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE l.at >= ?1";
@@ -63,6 +65,11 @@ const WHAT_WAS_HEARD_EACH_DAY: &str = "SELECT day, sum(plays), sum(listened) FRO
          SELECT p.at / ?1 AS day, 0 AS plays, coalesce(sum(p.heard), 0) AS listened
            FROM passes p
           WHERE p.at >= ?2
+          GROUP BY day
+         UNION ALL
+         SELECT u.at / ?1 AS day, count(*) AS plays, coalesce(sum(u.heard), 0) AS listened
+           FROM unheld_listens u
+          WHERE u.at >= ?2
           GROUP BY day
       )
       GROUP BY day

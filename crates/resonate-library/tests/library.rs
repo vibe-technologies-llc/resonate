@@ -1886,7 +1886,8 @@ fn a_root_takes_in_the_one_it_covers_and_the_counts_it_held() -> Result<()> {
     assert_eq!(
         library
             .track_played(&one, None, Duration::ZERO)?
-            .map(|counted| counted.track.plays),
+            .and_then(|counted| counted.track)
+            .map(|track| track.plays),
         Some(1)
     );
 
@@ -4518,21 +4519,21 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
     let once = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
-    assert_eq!(once.track.plays, 1);
-    assert_eq!(once.track.location, cold);
-    assert!(once.track.played.is_some());
+    assert_eq!(the_row_of(&once).plays, 1);
+    assert_eq!(the_row_of(&once).location, cold);
+    assert!(the_row_of(&once).played.is_some());
 
     let twice = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
-    assert_eq!(twice.track.plays, 2);
-    assert_eq!(twice.track.id, once.track.id);
+    assert_eq!(the_row_of(&twice).plays, 2);
+    assert_eq!(the_row_of(&twice).id, the_row_of(&once).id);
     assert_ne!(twice.listen, once.listen);
 
     let played = library
         .track_at(tree.path().join("cold.wav").as_path(), None)?
         .expect("the track the scan stored");
-    assert_eq!(played, twice.track);
+    assert_eq!(Some(played), twice.track);
 
     let heat = library
         .track_at(tree.path().join("heat.wav").as_path(), None)?
@@ -4543,17 +4544,22 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
 }
 
 #[test]
-fn a_play_of_something_the_catalog_does_not_hold_counts_nothing() -> Result<()> {
+fn a_play_of_something_the_catalog_does_not_hold_counts_against_no_row() -> Result<()> {
     let (tree, library) = scanned_shapes();
 
+    let unheld = library
+        .track_played(
+            &MediaLocation::local(tree.path().join("nothing.wav")),
+            None,
+            Duration::ZERO,
+        )?
+        .expect("a local file is kept against its path");
+    assert_eq!(unheld.track, None);
     assert!(
         library
-            .track_played(
-                &MediaLocation::local(tree.path().join("nothing.wav")),
-                None,
-                Duration::ZERO
-            )?
-            .is_none()
+            .tracks(&TrackQuery::default())?
+            .iter()
+            .all(|track| track.plays == 0)
     );
     assert!(
         library
@@ -6322,8 +6328,8 @@ fn a_play_counted_against_one_cue_row_is_not_counted_against_its_neighbours() ->
     let counted = library
         .track_played(&second.location, second.span, Duration::ZERO)?
         .expect("the row that was heard");
-    assert_eq!(counted.track.plays, 1);
-    assert_eq!(counted.track.id, second.id);
+    assert_eq!(the_row_of(&counted).plays, 1);
+    assert_eq!(the_row_of(&counted).id, second.id);
 
     let after = library.tracks(&TrackQuery::default())?;
     assert_eq!(
@@ -13462,7 +13468,7 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
     let returned = library
         .track_at(&stood, None)?
         .expect("the row followed its file back");
-    assert_eq!(returned.id, heard.track.id);
+    assert_eq!(returned.id, the_row_of(&heard).id);
     assert_eq!(returned.plays, 1);
 
     let again = walked(true)?;
@@ -13509,7 +13515,7 @@ fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -
     let moved = library
         .track_at(&second, None)?
         .expect("Echoes is named where it now stands");
-    assert_eq!(moved.id, heard.track.id);
+    assert_eq!(moved.id, the_row_of(&heard).id);
     assert_eq!(moved.plays, 1);
     assert_eq!(
         library.track_at(&first, None)?.map(|track| track.plays),
@@ -17321,7 +17327,8 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
     let echoes = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
-        .track;
+        .track
+        .expect("the play was counted against a row");
     library.favour(Favoured::Track(echoes.id), true)?;
     let playlist = library.create_playlist("Meddle")?;
     library.add_to_playlist(playlist, &[Cut::whole(MediaLocation::local(&before))])?;
@@ -17417,7 +17424,8 @@ fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() 
     let heard = library
         .track_played(&MediaLocation::local(&first), None, Duration::ZERO)?
         .expect("a counted play")
-        .track;
+        .track
+        .expect("the play was counted against a row");
 
     let filed_first = tree.path().join("filed/vinyl/echoes.wav");
     let filed_second = tree.path().join("filed/tape/echoes.wav");
@@ -17459,7 +17467,8 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
-        .track;
+        .track
+        .expect("the play was counted against a row");
 
     fs::remove_file(&before).expect("the file is taken away");
     let after = tree.write(
@@ -17501,7 +17510,8 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
-        .track;
+        .track
+        .expect("the play was counted against a row");
     let print = resonate_analysis::print(
         &Sources::local(),
         &MediaLocation::local(&before),
@@ -17575,7 +17585,9 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
 }
 
 #[test]
-fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does() -> Result<()> {
+fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does()
+-> Result<()> {
+    const HEARD_FOR: Duration = Duration::from_secs(90);
     let tree = Tree::new();
     let unheld = tree.write(
         "later/echoes.wav",
@@ -17595,17 +17607,23 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does(
     )?;
 
     let location = MediaLocation::local(&unheld);
-    assert!(
-        library
-            .track_played(&location, None, Duration::ZERO)?
-            .is_none()
+    let first = library
+        .track_played(&location, None, Duration::ZERO)?
+        .expect("an unheld play is still kept");
+    assert_eq!(first.track, None);
+    assert!(matches!(first.listen, resonate_library::Listen::Unheld(_)));
+    library.listened(first.listen, HEARD_FOR)?;
+    let second = library
+        .track_played(&location, None, Duration::ZERO)?
+        .expect("an unheld play is still kept");
+    assert_ne!(second.listen, first.listen);
+    let before = library.statistics(Window::Everything)?;
+    assert_eq!(before.plays, 2);
+    assert_eq!(before.tracks, 0);
+    assert_eq!(
+        before.listened, HEARD_FOR,
+        "the time an unheld play was heard for was not kept"
     );
-    assert!(
-        library
-            .track_played(&location, None, Duration::ZERO)?
-            .is_none()
-    );
-    assert_eq!(library.statistics(Window::Everything)?.plays, 0);
 
     scan(&library, &options(&tree))?;
     let row = library
@@ -17616,7 +17634,13 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does(
         "the plays heard before the scan were not credited"
     );
     assert!(row.played.is_some());
-    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+    let after = library.statistics(Window::Everything)?;
+    assert_eq!(after.plays, 2);
+    assert_eq!(after.tracks, 1);
+    assert_eq!(
+        after.listened, HEARD_FOR,
+        "the time heard was not carried onto the row"
+    );
 
     scan(&library, &options(&tree))?;
     assert_eq!(
@@ -17922,4 +17946,11 @@ fn the_pinned_playlists_are_listed_most_lately_pinned_first() -> Result<()> {
     library.pin_playlist(evening, false)?;
     assert_eq!(named(8)?, ["Morning"]);
     Ok(())
+}
+
+fn the_row_of(counted: &resonate_library::Counted) -> &Track {
+    counted
+        .track
+        .as_ref()
+        .expect("the play was counted against a row")
 }

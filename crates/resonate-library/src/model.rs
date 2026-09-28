@@ -42,8 +42,14 @@ pub struct Track {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Counted {
-    pub track: Track,
-    pub listen: ListenId,
+    pub track: Option<Track>,
+    pub listen: Listen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Listen {
+    Held(ListenId),
+    Unheld(ListenId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

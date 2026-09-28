@@ -298,7 +298,7 @@ Invariants the layering exists to protect:
   when a counted visit ends, carrying the whole time it was listened to. A visit that never
   counted answers `Passes` with the time it was heard, at least `PASSES_AT_LEAST` of it, and
   `Library::passed` keeps that in `passes` apart from the plays: listening time counts it, so a
-  session spent skipping is not quiet, and a skip is still not billed as a play. `Library::track_played` hands back the `ListenId` it wrote and
+  session spent skipping is not quiet, and a skip is still not billed as a play. `Library::track_played` hands back the `Listen` it wrote — a held row or an unheld one — and
   `Library::listened` spends it, so the two halves of one visit are the same row; a write that
   failed keeps no id, which is what stops a settle being attributed to the wrong track. The
   ending visit's row cannot be read off the queue, which has moved on by then, so `Listened`

@@ -13,8 +13,8 @@ use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
 use gpui::{App, Context, Image, RenderImage, Task};
 use resonate_core::{
-    AlbumId, ArtistId, FrameSpan, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
-    Span, TrackId, WantId,
+    AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
+    TrackId, WantId,
 };
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
@@ -22,13 +22,14 @@ use resonate_library::{
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
     HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
-    Imported, Kept, Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened,
-    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
-    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
-    Raster, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress,
-    RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions,
-    ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics,
-    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, asks_elsewhere,
+    Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack,
+    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
+    PollSummary, Raster, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
+    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
+    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources,
+    Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording,
+    asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -596,7 +597,7 @@ pub struct LibraryModel {
     warmed: bool,
     named: Recent<TrackId, Named>,
     read_albums: Recent<AlbumId, Option<Album>>,
-    counted: Option<ListenId>,
+    counted: Option<Listen>,
     _load: Task<()>,
     reading_everything: bool,
     _scan: Task<()>,
@@ -2116,11 +2117,12 @@ impl LibraryModel {
                 Err(error) => tracing::warn!(%error, "a play was not counted"),
                 Ok(None) => {}
                 Ok(Some(counted)) => {
-                    this.revision = this.revision.wrapping_add(1);
                     this.counted = Some(counted.listen);
-                    this.named
-                        .insert(counted.track.id, Named::of(&counted.track));
-                    this.reload(cx);
+                    if let Some(track) = counted.track {
+                        this.revision = this.revision.wrapping_add(1);
+                        this.named.insert(track.id, Named::of(&track));
+                        this.reload(cx);
+                    }
                 }
             });
             let _ = outcome;

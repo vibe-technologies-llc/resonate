@@ -30,7 +30,7 @@ use crate::{
     EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless,
     Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle,
     ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics,
-    LifeSpan, Link, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
+    LifeSpan, Link, Listen, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
     NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist, PlaylistEntry,
     PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording, RecordingRelease,
     Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
@@ -371,6 +371,11 @@ const UNHELD_OF_ARTIST: &str = concat!(
     "SELECT count(*) FROM artist_releases r WHERE r.artist_id = ?1 AND ",
     unheld_by_any_album!()
 );
+
+enum Visited {
+    Held(Option<Box<RawTrack>>, i64),
+    Unheld(i64),
+}
 
 enum Source {
     File(PathBuf),
@@ -1045,15 +1050,16 @@ impl Library {
         })
     }
 
-    pub fn listened(&self, listen: ListenId, heard: Duration) -> Result<()> {
+    pub fn listened(&self, listen: Listen, heard: Duration) -> Result<()> {
         let nanos = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
+        let (spending, id) = match listen {
+            Listen::Held(id) => ("UPDATE listens SET heard = ?1 WHERE id = ?2", id),
+            Listen::Unheld(id) => ("UPDATE unheld_listens SET heard = ?1 WHERE rowid = ?2", id),
+        };
 
         self.inner.write(|transaction| {
             transaction
-                .execute(
-                    "UPDATE listens SET heard = ?1 WHERE id = ?2",
-                    params![nanos, listen.get() as i64],
-                )
+                .execute(spending, params![nanos, id.get() as i64])
                 .map(drop)
                 .map_err(|source| Error::store(StoreOp::Update, source))
         })
@@ -1083,14 +1089,16 @@ impl Library {
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
             if counted == 0 {
-                transaction
-                    .execute(
+                let unheld = transaction
+                    .query_row(
                         "INSERT INTO unheld_listens (path, span_start, at, began)
-                         VALUES (?1, ?2, ?3, ?4)",
+                         VALUES (?1, ?2, ?3, ?4)
+                         RETURNING rowid",
                         params![text, start, now, began],
+                        |row| row.get::<_, i64>(0),
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
-                return Ok(None);
+                return Ok(Visited::Unheld(unheld));
             }
 
             let listen = transaction
@@ -1112,17 +1120,20 @@ impl Library {
                     RawTrack::read,
                 )
                 .optional()
-                .map(|raw| raw.map(|raw| (raw, listen)))
+                .map(|raw| Visited::Held(raw.map(Box::new), listen))
                 .map_err(|source| Error::store(StoreOp::Query, source))
         })?;
 
-        raw.map(|(raw, listen)| {
-            Ok(Counted {
-                track: raw.into_track()?,
-                listen: ListenId::new(listen as u64)?,
-            })
-        })
-        .transpose()
+        Ok(Some(match raw {
+            Visited::Unheld(unheld) => Counted {
+                track: None,
+                listen: Listen::Unheld(ListenId::new(unheld as u64)?),
+            },
+            Visited::Held(raw, listen) => Counted {
+                track: raw.map(|raw| raw.into_track()).transpose()?,
+                listen: Listen::Held(ListenId::new(listen as u64)?),
+            },
+        }))
     }
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {

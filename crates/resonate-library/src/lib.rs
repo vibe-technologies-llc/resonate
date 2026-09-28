@@ -78,7 +78,7 @@ pub use crate::{
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
         Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported, KeptCorrection, KeptIndex,
-        KeptLyrics, Measured, Missing, MissingTrack, NamedPlaylist, Playing, Playlist,
+        KeptLyrics, Listen, Measured, Missing, MissingTrack, NamedPlaylist, Playing, Playlist,
         PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned, ReleaseDetail, Released,
         SheetEncoding, Track, TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
     },

@@ -45,7 +45,7 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Library
 - A file moved by hand and retagged past every name it had starts again at nothing unless a study
-  kept its print, and a play of a file no scan has seen keeps no listening time
+  kept its print
 - A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
   popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
   rating at all
