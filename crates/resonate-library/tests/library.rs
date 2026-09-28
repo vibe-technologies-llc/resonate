@@ -14890,16 +14890,43 @@ fn a_wave_file_is_written_into_and_read_back_as_what_was_written() -> Result<()>
 }
 
 #[test]
-fn a_wave_file_tagged_ahead_of_its_riff_header_is_refused_rather_than_written() -> Result<()> {
-    let (_tree, library, database, file) = scanned_lone(Wav::new().text(TITLE, "Echos"))?;
+fn a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_and_written()
+-> Result<()> {
+    let (_tree, library, database, file) =
+        scanned_lone(Wav::new().text(TITLE, "Echos").text(ARTIST, "The Orbiters"))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
-    let held = fs::read(&file).expect("the file is there");
+    let before = decoded_samples(&file);
 
     let summary = retagged(&library, true)?;
 
-    assert_eq!(why_passed_over(&summary), vec![Unwritten::Refused]);
-    assert_eq!(fs::read(&file).expect("the file is still there"), held);
+    assert!(why_passed_over(&summary).is_empty(), "{summary:?}");
+    let written = fs::read(&file).expect("the file is still there");
+    assert!(
+        written.starts_with(b"RIFF"),
+        "a tag still stands ahead of the header"
+    );
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert_eq!(
+        tags_of(&file).artist.as_deref(),
+        Some("The Orbiters"),
+        "what the tag carried beside the title was lost as it moved"
+    );
+    assert_eq!(
+        decoded_samples(&file),
+        before,
+        "the audio did not survive the move"
+    );
     Ok(())
+}
+
+fn decoded_samples(file: &Path) -> Vec<u8> {
+    let bytes = fs::read(file).expect("the file is there");
+    let at = bytes
+        .windows(4)
+        .position(|window| window == b"data")
+        .expect("a data chunk");
+    let length = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().expect("a length")) as usize;
+    bytes[at + 8..at + 8 + length].to_vec()
 }
 
 #[test]

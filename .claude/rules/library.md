@@ -1532,9 +1532,14 @@ through `Player::media` like any other unscanned row.
   what now comes back; a field that does not read back leaves the row `Unwritten::Unconfirmed` and
   the catalog is not moved, so a format quirk shows up as a refusal rather than as a preview that
   offers the same edit for ever. It is what `FileTags::writes` refusing a format lofty cannot
-  write is the cheap half of. A WAV whose ID3v2 tag stands in front of its `RIFF` header is read
-  here and not recognised by lofty, so its write is `Unwritten::Refused` and the file is left as
-  it was.
+  write is the cheap half of. **A WAV whose ID3v2 tag stands in front of its `RIFF` header has
+  the tag moved into the RIFF on the way**: lofty does not recognise such a file, so
+  `FileTags::write` first stages a copy that is the RIFF with the leading tag's bytes appended as
+  an `id3 ` chunk and the header's size grown to hold it — whatever followed the RIFF following it
+  still — and edits and settles that copy in place of the file, so every field the tag carried
+  beside the ones written is kept and the audio is copied byte for byte.
+  `a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_and_written` is the
+  claim.
 - **`Library::retag` takes the `Walk` guard, so a scan and a write-back cannot run at once.** The
   pass rewrites the sizes and mtimes a scan's snapshot was taken against, which is the same hazard
   `organise` has, and a second caller gets `Error::AlreadyWalking`.

@@ -1,7 +1,7 @@
 use std::{
     fmt,
     fs::{self, File},
-    io,
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -252,7 +252,101 @@ impl TagSink for FileTags {
 
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()> {
         let path = self.writable(location)?;
-        let mut tagged = opened(path, location)?;
+        let rechunked = match tag_in_front_of_a_riff(path) {
+            Ok(Some(riff_at)) => {
+                let staged = staged_beside(path);
+                if let Err(source) = chunked(path, &staged, riff_at) {
+                    let _ = fs::remove_file(&staged);
+                    return Err(Error::Io {
+                        location: location.clone(),
+                        source,
+                    });
+                }
+                Some(staged)
+            }
+            Ok(None) => None,
+            Err(source) => {
+                return Err(Error::Io {
+                    location: location.clone(),
+                    source,
+                });
+            }
+        };
+        let written = self.written(path, rechunked.as_deref(), location, writing);
+        if written.is_err()
+            && let Some(staged) = rechunked
+        {
+            let _ = fs::remove_file(staged);
+        }
+        written
+    }
+
+    fn rated(&self, location: &MediaLocation) -> Result<Rated> {
+        self.rating_of(location)
+    }
+}
+
+const RIFF: &[u8; 4] = b"RIFF";
+const WAVE: &[u8; 4] = b"WAVE";
+const ID3_CHUNK: &[u8; 4] = b"id3 ";
+const RIFF_HEADER_BYTES: u64 = 12;
+const CHUNK_HEADER_BYTES: u32 = 8;
+
+fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
+    let mut file = File::open(path)?;
+    let Some(riff_at) = crate::prescan::past_id3(&mut file).filter(|at| *at > 0) else {
+        return Ok(None);
+    };
+    file.seek(SeekFrom::Start(riff_at))?;
+    let mut header = [0_u8; RIFF_HEADER_BYTES as usize];
+    if file.read_exact(&mut header).is_err() {
+        return Ok(None);
+    }
+    Ok((header.starts_with(RIFF) && header[8..] == *WAVE).then_some(riff_at))
+}
+
+fn chunked(path: &Path, staged: &Path, riff_at: u64) -> io::Result<()> {
+    let mut file = File::open(path)?;
+    let mut tag = vec![0_u8; usize::try_from(riff_at).unwrap_or(usize::MAX)];
+    file.read_exact(&mut tag)?;
+    let mut header = [0_u8; RIFF_HEADER_BYTES as usize];
+    file.read_exact(&mut header)?;
+    let declared = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+    let tag_bytes =
+        u32::try_from(tag.len()).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    let padded = tag_bytes + tag_bytes % 2;
+    let grown = declared
+        .checked_add(CHUNK_HEADER_BYTES + padded)
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+
+    let mut written = io::BufWriter::new(File::create(staged)?);
+    written.write_all(RIFF)?;
+    written.write_all(&grown.to_le_bytes())?;
+    written.write_all(WAVE)?;
+    let within = u64::from(declared).saturating_sub(WAVE.len() as u64);
+    io::copy(&mut (&mut file).take(within), &mut written)?;
+    written.write_all(ID3_CHUNK)?;
+    written.write_all(&tag_bytes.to_le_bytes())?;
+    written.write_all(&tag)?;
+    if padded > tag_bytes {
+        written.write_all(&[0])?;
+    }
+    io::copy(&mut file, &mut written)?;
+    written
+        .into_inner()
+        .map_err(io::IntoInnerError::into_error)?
+        .sync_all()
+}
+
+impl FileTags {
+    fn written(
+        &self,
+        path: &Path,
+        rechunked: Option<&Path>,
+        location: &MediaLocation,
+        writing: Writing<'_>,
+    ) -> Result<()> {
+        let mut tagged = opened(rechunked.unwrap_or(path), location)?;
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
             tagged.insert_tag(Tag::new(kind));
@@ -280,13 +374,17 @@ impl TagSink for FileTags {
             rate(tag, popularity);
         }
 
-        let staged = staged_beside(path);
-        let written = fs::copy(path, &staged)
+        let staged = rechunked.map_or_else(|| staged_beside(path), Path::to_path_buf);
+        let copied = match rechunked {
+            Some(_) => Ok(()),
+            None => fs::copy(path, &staged).map(drop),
+        };
+        let written = copied
             .map_err(|source| Error::Io {
                 location: location.clone(),
                 source,
             })
-            .and_then(|_| {
+            .and_then(|()| {
                 tag.save_to_path(&staged, WriteOptions::default())
                     .map_err(|source| Error::TagsUnwritten {
                         location: location.clone(),
@@ -305,12 +403,6 @@ impl TagSink for FileTags {
         written
     }
 
-    fn rated(&self, location: &MediaLocation) -> Result<Rated> {
-        self.rating_of(location)
-    }
-}
-
-impl FileTags {
     fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
         let path = self.writable(location)?;
         let tagged = opened(path, location)?;
