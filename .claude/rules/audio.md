@@ -205,6 +205,25 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   20 ms frame — so a decoder started cold on the target frame is still halving its error 20 ms at
   a time; RFC 7845's 80 ms leaves a sixteenth of it, and `opus::pre_roll` is what `seek_reader`
   subtracts. The frames it lands early on are decoded and discarded like any other skip.
+- **WavPack is read by `symphonia-codec-wavpack` and decoded through a wrapper of the codec crate's
+  own.** `registry.rs` holds the one `Probe` and the one `CodecRegistry` every open goes through:
+  symphonia's enabled formats and codecs, the `WavPackReader`, `opus::Opus` and `wavpack::WavPack`.
+  The crate decodes 8- to 24-bit integer blocks, hybrid blocks and every channel layout bit for bit,
+  and gets two things wrong that `WavPack` puts right before and after it: it reads the extended
+  bits a 32-bit or floating block keeps below its 24 without skipping the four-byte checksum they
+  open with, and on a floating block it drops the exponent sent for a sample too small to be
+  carried in the integers. So `wavpack.rs` rewrites each packet first — the checksum taken off an
+  integer block's extended bits, and a floating block's `FLOAT_INFO` and extended bits taken out
+  altogether and its `FLOAT_DATA` flag cleared — hands it on, and turns the integers the crate
+  answers into floats itself, a port of libwavpack's `float_values` over the stereo pair in the
+  order it was written. A Matroska packet, which carries no block headers, is given them first.
+  `wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in`,
+  `a_floating_wavpack_decodes_to_every_bit_that_went_in` — zeros, negative zeros, subnormals and
+  values a hundred binades under the peak among them — and
+  `a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it` are the claims; the first
+  two fail against the crate's decoder alone. A WavPack is lossless to the rest of the build, a
+  hybrid one included, because nothing reads the flag that says a block was coded lossy; its APEv2
+  tags are read by the crate's reader and written by lofty.
 - **This build drops every priming itself, and asks nobody else to.** `Decoder::build` makes its
   decoder with `AudioDecoderOptions::gapless(false)`, so symphonia's decoders emit whole blocks and
   the only trimming anywhere is `MediaInfo::playable`. That is one rule rather than a list, and the

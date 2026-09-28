@@ -24,9 +24,10 @@ that no listener is waiting on, and is worked only once the categories above it 
   alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- WavPack and Monkey's Audio have no decoder anywhere in the tree, so the desktop entry, the bus
-  and the scan pass them over. Closing it is a decoder beside `opus-rs` in the codec crate's
-  registry
+- Monkey's Audio has no decoder anywhere in the tree, so the desktop entry, the bus and the scan
+  pass it over. Closing it is a decoder beside `opus-rs` in the codec crate's registry
+- A hybrid WavPack is taken for lossless: nothing reads the flag that says a block was coded lossy,
+  and a `.wvc` correction file beside it is never opened
 - DST-compressed DSDIFF is refused rather than decoded
 - A source that cannot seek is prescanned only through its first `MAX_PRESCAN_HEAD` bytes, so over
   a pipe an `.m4a` with a trailing `moov` plays its priming, a WAV with `LIST INFO` after `data`

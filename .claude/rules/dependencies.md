@@ -44,10 +44,16 @@ paths:
   on, because `Container::Aiff` and `Container::Caf` are vocabulary and a variant nothing can
   produce is a defect — AIFF especially, being a mainstream uncompressed container for this
   audience. There is no flag for WavPack or Monkey's Audio at any price: symphonia has no reader for
-  either, which is why neither is in `Codec` any more, and none for DSD, which is why `dsd/` is
+  either, and none for DSD, which is why `dsd/` is
   hand-rolled. Its `id3v1` / `id3v2` / `ape` features are
   load-bearing for *demuxing*, not just tags: the probe uses metadata readers to skip leading tags,
   and without them ordinary MP3 files fail to probe.
+- `symphonia-codec-wavpack` is the WavPack reader and decoder, registered on the codec crate's own
+  probe and codec registries beside symphonia's. Its default set is nothing and nothing is wanted.
+  It is licensed GPL-3.0-or-later, which the AGPL build takes. Its decoder misreads the extended
+  bits a 32-bit or floating stream keeps its low bits in, so it is never registered on its own —
+  `wavpack.rs` wraps it — and a version bump is weighed against the WavPack tests in
+  `tests/encoded.rs`, which fail against the bare decoder.
 - `pipewire` needs `v0_3_50`. `PW_KEY_NODE_RATE` is gated behind `v0_3_33` and
   `PW_KEY_TARGET_OBJECT` behind `v0_3_44` — the keys the bit-perfect path depends on —
   `pw_buffer.requested` behind `v0_3_49` and `pw_time.buffered` behind `v0_3_50`, which are what

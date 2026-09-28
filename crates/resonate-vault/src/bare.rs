@@ -61,7 +61,7 @@ pub(crate) fn bare(
 
     let found = match container {
         Container::Flac => bare_flac(stream),
-        Container::Mpeg | Container::Adts => untagged_frames(stream),
+        Container::Mpeg | Container::Adts | Container::WavPack => untagged_frames(stream),
         Container::Dsf => bare_dsf(stream),
         Container::Ogg => ogg::bare(stream).map(|bared| Bare {
             head: bared.head,

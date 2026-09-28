@@ -52,6 +52,7 @@
     <mediatype>audio/x-caf</mediatype>
     <mediatype>audio/x-dsf</mediatype>
     <mediatype>audio/x-dff</mediatype>
+    <mediatype>audio/x-wavpack</mediatype>
   </provides>
 
   <categories>

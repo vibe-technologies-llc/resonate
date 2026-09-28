@@ -939,6 +939,7 @@ dependencies = [
  "opus-rs",
  "resonate-core",
  "symphonia",
+ "symphonia-codec-wavpack",
  "thiserror",
  "tracing",
 ]
@@ -1222,6 +1223,16 @@ checksum = "73d90b4fcf796137cc683c538282804ff9629f8ad9dbfd881fcbba331ac4e986"
 dependencies = [
  "log",
  "symphonia-common",
+ "symphonia-core",
+]
+
+[[package]]
+name = "symphonia-codec-wavpack"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8a1dd92549cb8ee579fce0578857d54dccfa8ea2f1ec638cab8b1bdca6d12ff"
+dependencies = [
+ "log",
  "symphonia-core",
 ]
 

@@ -10,6 +10,7 @@ lofty.workspace = true
 opus-rs.workspace = true
 resonate-core.workspace = true
 symphonia.workspace = true
+symphonia-codec-wavpack.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

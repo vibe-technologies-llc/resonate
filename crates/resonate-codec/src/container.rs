@@ -171,7 +171,7 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
 
     let stream =
         MediaSourceStream::new(Box::new(Probed(bytes)), MediaSourceStreamOptions::default());
-    let mut reader = symphonia::default::get_probe()
+    let mut reader = crate::registry::formats()
         .probe(
             &hint,
             stream,

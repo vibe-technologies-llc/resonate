@@ -45,6 +45,7 @@ pub enum Container {
     Dff,
     IsoMp4,
     Matroska,
+    WavPack,
     #[default]
     Unknown,
 }
@@ -54,7 +55,7 @@ impl Container {
         use symphonia::core::formats::well_known::{
             FORMAT_ID_ADTS, FORMAT_ID_AIFF, FORMAT_ID_CAF, FORMAT_ID_FLAC, FORMAT_ID_ISOMP4,
             FORMAT_ID_MKV, FORMAT_ID_MP1, FORMAT_ID_MP2, FORMAT_ID_MP3, FORMAT_ID_OGG,
-            FORMAT_ID_WAVE,
+            FORMAT_ID_WAVE, FORMAT_ID_WAVPACK,
         };
 
         if id == crate::dsd::DSF_FORMAT_ID {
@@ -74,6 +75,7 @@ impl Container {
             FORMAT_ID_FLAC => Self::Flac,
             FORMAT_ID_ISOMP4 => Self::IsoMp4,
             FORMAT_ID_MKV => Self::Matroska,
+            FORMAT_ID_WAVPACK => Self::WavPack,
             _ => Self::Unknown,
         }
     }
@@ -91,6 +93,7 @@ impl Container {
             Self::Dff => "DSDIFF",
             Self::IsoMp4 => "ISO-BMFF",
             Self::Matroska => "Matroska",
+            Self::WavPack => "WavPack",
             Self::Unknown => "Unknown",
         }
     }
@@ -112,12 +115,13 @@ pub enum Codec {
     Mp3,
     Vorbis,
     Opus,
+    WavPack,
     #[default]
     Unknown,
 }
 
 impl Codec {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Flac,
         Self::Alac,
         Self::Dsd,
@@ -126,12 +130,13 @@ impl Codec {
         Self::Mp3,
         Self::Vorbis,
         Self::Opus,
+        Self::WavPack,
         Self::Unknown,
     ];
 
     pub const fn is_lossless(self) -> bool {
         match self {
-            Self::Flac | Self::Alac | Self::Dsd | Self::Pcm => true,
+            Self::Flac | Self::Alac | Self::Dsd | Self::Pcm | Self::WavPack => true,
             Self::Aac | Self::Mp3 | Self::Vorbis | Self::Opus | Self::Unknown => false,
         }
     }
@@ -143,7 +148,7 @@ impl Codec {
             CODEC_ID_PCM_F64BE, CODEC_ID_PCM_F64LE, CODEC_ID_PCM_MULAW, CODEC_ID_PCM_S8,
             CODEC_ID_PCM_S16BE, CODEC_ID_PCM_S16LE, CODEC_ID_PCM_S24BE, CODEC_ID_PCM_S24LE,
             CODEC_ID_PCM_S32BE, CODEC_ID_PCM_S32LE, CODEC_ID_PCM_U8, CODEC_ID_PCM_U16LE,
-            CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U32LE, CODEC_ID_VORBIS,
+            CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U32LE, CODEC_ID_VORBIS, CODEC_ID_WAVPACK,
         };
 
         if id == crate::dsd::DSD_CODEC_ID {
@@ -157,6 +162,7 @@ impl Codec {
             CODEC_ID_MP1 | CODEC_ID_MP2 | CODEC_ID_MP3 => Self::Mp3,
             CODEC_ID_VORBIS => Self::Vorbis,
             CODEC_ID_OPUS => Self::Opus,
+            CODEC_ID_WAVPACK => Self::WavPack,
             CODEC_ID_PCM_S32LE | CODEC_ID_PCM_S32BE | CODEC_ID_PCM_S24LE | CODEC_ID_PCM_S24BE
             | CODEC_ID_PCM_S16LE | CODEC_ID_PCM_S16BE | CODEC_ID_PCM_S8 | CODEC_ID_PCM_U32LE
             | CODEC_ID_PCM_U24LE | CODEC_ID_PCM_U16LE | CODEC_ID_PCM_U8 | CODEC_ID_PCM_F32LE
@@ -176,6 +182,7 @@ impl Codec {
             Self::Mp3 => "MP3",
             Self::Vorbis => "Vorbis",
             Self::Opus => "Opus",
+            Self::WavPack => "WavPack",
             Self::Unknown => "Unknown",
         }
     }
@@ -397,7 +404,7 @@ impl Decoder {
                 let (track, params) = container::audio_track(coded.reader.as_ref(), location)?;
                 let id = StreamTrackId(track.id);
 
-                let decoder = crate::opus::codecs()
+                let decoder = crate::registry::codecs()
                     .make_audio_decoder(params, &untrimmed())
                     .map_err(|source| match source {
                         errors::Error::Unsupported(_) => Error::NoDecoder {

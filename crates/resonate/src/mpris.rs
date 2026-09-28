@@ -15,7 +15,7 @@ use crate::{names_a_sheet, playlists::Collection, sheet_items};
 const IDENTITY: &str = "Resonate";
 const DESKTOP_ENTRY: &str = "resonate";
 const OPENS_IN_FRONT: bool = true;
-const MIME_TYPES: [&str; 18] = [
+const MIME_TYPES: [&str; 19] = [
     "audio/flac",
     "audio/x-flac",
     "audio/mpeg",
@@ -34,6 +34,7 @@ const MIME_TYPES: [&str; 18] = [
     "audio/x-caf",
     "audio/x-dsf",
     "audio/x-dff",
+    "audio/x-wavpack",
 ];
 
 struct Attention {

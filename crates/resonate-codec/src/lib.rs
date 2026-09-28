@@ -11,6 +11,7 @@ mod matroska;
 mod opus;
 mod prescan;
 mod probe;
+mod registry;
 mod riff;
 mod source;
 mod speakers;
@@ -20,6 +21,7 @@ mod tags;
 mod text;
 mod timeline;
 mod vorbis;
+mod wavpack;
 mod writing;
 
 pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};

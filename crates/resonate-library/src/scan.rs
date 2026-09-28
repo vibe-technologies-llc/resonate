@@ -49,7 +49,7 @@ const LARGEST_SHEET_ON_DISC: u64 = 1 << 20;
 
 pub(crate) const AUDIO_EXTENSIONS: &[&str] = &[
     "aac", "aif", "aiff", "caf", "dff", "dsf", "flac", "m4a", "m4b", "mka", "mp3", "mp4", "oga",
-    "ogg", "opus", "wav", "wave",
+    "ogg", "opus", "wav", "wave", "wv",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

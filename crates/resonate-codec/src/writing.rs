@@ -294,6 +294,7 @@ const fn read_back_here(kind: FileType) -> bool {
             | FileType::Opus
             | FileType::Vorbis
             | FileType::Wav
+            | FileType::WavPack
     )
 }
 
@@ -918,16 +919,19 @@ mod tests {
     #[test]
     fn a_format_whose_tags_this_build_would_not_read_back_is_refused() {
         let folder = Folder::new();
-        let location = folder.holding("echoes.wv", b"wvpk");
+        let location = folder.holding("echoes.mpc", b"MPCK");
         let tags = FileTags::default();
 
-        assert!(!tags.writes(&location), "a WavPack was offered for writing");
+        assert!(
+            !tags.writes(&location),
+            "a Musepack was offered for writing"
+        );
         assert!(
             matches!(
                 tags.write(&location, just(&[edited(TagField::Title, "Echoes")])),
                 Err(Error::Unwritable { .. })
             ),
-            "a WavPack was written rather than refused"
+            "a Musepack was written rather than refused"
         );
     }
 
@@ -949,9 +953,9 @@ mod tests {
     #[test]
     fn a_file_whose_bytes_disagree_with_its_extension_is_refused() {
         let folder = Folder::new();
-        let mut wavpack = b"wvpk".to_vec();
-        wavpack.resize(64, 0);
-        let location = folder.holding("echoes.flac", &wavpack);
+        let mut musepack = b"MPCK".to_vec();
+        musepack.resize(64, 0);
+        let location = folder.holding("echoes.flac", &musepack);
         let tags = FileTags::default();
 
         assert!(
@@ -963,7 +967,7 @@ mod tests {
                 tags.write(&location, just(&[edited(TagField::Title, "Echoes")])),
                 Err(Error::Unwritable { .. })
             ),
-            "a WavPack named .flac was written rather than refused"
+            "a Musepack named .flac was written rather than refused"
         );
     }
 

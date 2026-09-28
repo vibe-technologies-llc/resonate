@@ -2260,3 +2260,352 @@ fn a_seek_landing_ahead_of_the_music_does_not_hear_the_priming() {
         }
     }
 }
+
+const WIDEST: Shape = Shape {
+    rate: 48_000,
+    channels: 2,
+    bits: 32,
+};
+
+const LONE: Shape = Shape {
+    rate: 44_100,
+    channels: 1,
+    bits: 16,
+};
+
+const IEEE_FLOAT: u16 = 3;
+const FLOAT_BYTES: u16 = 4;
+
+fn wavpack() -> bool {
+    tool("wavpack", "--version")
+}
+
+fn packed(source: &Path, target: &Path, modes: &[&str]) -> bool {
+    Command::new("wavpack")
+        .args(["-q", "-y"])
+        .args(modes)
+        .arg(source)
+        .arg("-o")
+        .arg(target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+        && target.exists()
+}
+
+fn float_wav(path: &Path, rate: u32, channels: u16, samples: &[f32]) {
+    let align = channels * FLOAT_BYTES;
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&IEEE_FLOAT.to_le_bytes());
+    fmt.extend_from_slice(&channels.to_le_bytes());
+    fmt.extend_from_slice(&rate.to_le_bytes());
+    fmt.extend_from_slice(&(rate * u32::from(align)).to_le_bytes());
+    fmt.extend_from_slice(&align.to_le_bytes());
+    fmt.extend_from_slice(&(FLOAT_BYTES * 8).to_le_bytes());
+
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &fmt);
+    chunk(&mut body, b"data", &data);
+
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    fs::write(path, file).expect("a writable temporary file");
+}
+
+fn awkward_floats(frames: usize) -> Vec<f32> {
+    let mut samples = Vec::with_capacity(frames * 2);
+    let mut state = 0x2545_f491_u32;
+    for frame in 0..frames {
+        for _ in 0..2 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let sample = match frame % 9 {
+                0 => 0.0,
+                1 => -0.0,
+                2 => f32::from_bits(state & 0x007f_ffff),
+                3 => f32::from_bits((state & 0x807f_ffff) | 0x0d00_0000),
+                4 => 1.0,
+                5 => -1.5,
+                _ => {
+                    let time = frame as f32 / 48_000.0;
+                    0.8 * (std::f32::consts::TAU * 440.0 * time).sin()
+                        * f32::from_bits((state >> 9) | 0x3f80_0000)
+                        / 2.0
+                }
+            };
+            samples.push(sample);
+        }
+    }
+    samples
+}
+
+fn drain_floats(decoder: &mut Decoder, spec: StreamSpec) -> Vec<u32> {
+    decoder.set_output_format(SampleFormat::F32);
+    let mut block = AudioBuffer::empty(spec);
+    let mut samples = Vec::new();
+    while decoder.next_block(&mut block).expect("a clean decode") == DecodeStatus::Decoded {
+        match block.data() {
+            resonate_core::SampleData::F32(store) => {
+                samples.extend(store.iter().map(|sample| sample.to_bits()));
+            }
+            other => panic!("the decoder ignored the requested output format: {other:?}"),
+        }
+    }
+    samples
+}
+
+#[test]
+fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
+    if !wavpack() {
+        eprintln!("skipped: no wavpack to build the fixtures");
+        return;
+    }
+    let cases: [(&str, Shape, ChannelLayout, &[&str]); 6] = [
+        ("cd.wv", CD, ChannelLayout::Stereo, &[]),
+        ("cd.hh.wv", CD, ChannelLayout::Stereo, &["-hh", "-x6"]),
+        ("studio.wv", STUDIO, ChannelLayout::Stereo, &["-f"]),
+        ("widest.wv", WIDEST, ChannelLayout::Stereo, &["-h"]),
+        ("surround.wv", SURROUND, ChannelLayout::Surround51, &[]),
+        ("lone.wv", LONE, ChannelLayout::Mono, &["-x3"]),
+    ];
+
+    for (name, shape, layout, modes) in cases {
+        let tree = Tree::new();
+        let samples = tone(shape);
+        let source = tree.at("source.wav");
+        wav(&source, shape, &samples);
+        let target = tree.at(name);
+        assert!(
+            packed(&source, &target, modes),
+            "wavpack would not write {name}"
+        );
+
+        let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
+            .expect("a WavPack file probes");
+        assert_eq!(
+            Container::from_id(report.info.container),
+            Container::WavPack
+        );
+        assert_eq!(Codec::from_id(report.info.codec), Codec::WavPack);
+
+        let decoded = decode(&target);
+        assert_eq!(
+            decoded.spec.rate.hz(),
+            shape.rate,
+            "{name} changed its rate"
+        );
+        assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
+        assert_eq!(
+            decoded.samples,
+            widened(&samples, shape.bits),
+            "{name} is lossless and did not round-trip"
+        );
+    }
+}
+
+#[test]
+fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
+    if !wavpack() {
+        eprintln!("skipped: no wavpack to build the fixtures");
+        return;
+    }
+    let tree = Tree::new();
+    let samples = awkward_floats(48_000);
+    let source = tree.at("floats.wav");
+    float_wav(&source, 48_000, 2, &samples);
+
+    for modes in [&[][..], &["-hh", "-x4"][..]] {
+        let target = tree.at("floats.wv");
+        assert!(
+            packed(&source, &target, modes),
+            "wavpack would not write floats"
+        );
+
+        let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
+            .expect("a floating WavPack file opens");
+        assert_eq!(info.spec.format, SampleFormat::F32);
+        let decoded = drain_floats(&mut decoder, info.spec);
+
+        let wanted: Vec<u32> = samples.iter().map(|sample| sample.to_bits()).collect();
+        assert_eq!(decoded.len(), wanted.len());
+        let first_apart = decoded
+            .iter()
+            .zip(&wanted)
+            .position(|(held, sent)| held != sent);
+        assert_eq!(
+            first_apart, None,
+            "a floating WavPack under {modes:?} did not decode to the bits that went in"
+        );
+    }
+}
+
+#[test]
+fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
+    if !wavpack() || !tool("wvunpack", "--version") {
+        eprintln!("skipped: no wavpack and wvunpack to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let samples = tone(CD);
+    let source = tree.at("source.wav");
+    wav(&source, CD, &samples);
+    let target = tree.at("hybrid.wv");
+    assert!(
+        packed(&source, &target, &["-b256"]),
+        "wavpack would not write a hybrid file"
+    );
+
+    let unpacked = tree.at("unpacked.wav");
+    assert!(
+        ran(
+            "wvunpack",
+            &[
+                "-q",
+                "-y",
+                target.to_str().expect("a UTF-8 path"),
+                "-o",
+                unpacked.to_str().expect("a UTF-8 path"),
+            ]
+        ),
+        "wvunpack would not decode the hybrid file"
+    );
+
+    assert_eq!(
+        decode(&target).samples,
+        decode(&unpacked).samples,
+        "a hybrid WavPack decoded to something the reference decoder does not"
+    );
+}
+
+#[test]
+fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
+    if !wavpack() {
+        eprintln!("skipped: no wavpack to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, CD, &tone(CD));
+    let target = tree.at("tagged.wv");
+    assert!(
+        packed(
+            &source,
+            &target,
+            &[
+                "-w",
+                "Title=Echoes",
+                "-w",
+                "Artist=Pink Floyd",
+                "-w",
+                "Album=Meddle",
+                "-w",
+                "Album Artist=Pink Floyd",
+                "-w",
+                "Track=2/6",
+                "-w",
+                "Year=1971",
+            ]
+        ),
+        "wavpack would not write a tagged file"
+    );
+
+    let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
+        .expect("a tagged WavPack probes");
+    let tags = &report.info.tags;
+    assert_eq!(tags.title.as_deref(), Some("Echoes"));
+    assert_eq!(tags.artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(tags.album.as_deref(), Some("Meddle"));
+    assert_eq!(tags.album_artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(tags.track_number, Some(2));
+    assert_eq!(tags.date.as_deref(), Some("1971"));
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
+        .expect("a tagged WavPack opens");
+    assert!(info.is_seekable);
+    let whole = decode(&target).samples;
+    let lanes = usize::from(CHANNELS);
+    for target in [
+        Frames(u64::from(RATE)),
+        Frames(u64::from(RATE) / 3),
+        Frames(0),
+    ] {
+        let landed = decoder.seek(target).expect("a seekable stream seeks");
+        assert_eq!(landed, target, "seek to {target} landed on {landed}");
+        let from_there = drain(&mut decoder, info.spec);
+        let skipped = target.get() as usize * lanes;
+        assert_eq!(
+            from_there,
+            whole[skipped..],
+            "a seek to {target} heard another stream"
+        );
+    }
+}
+
+#[test]
+fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alone() {
+    if !wavpack() {
+        eprintln!("skipped: no wavpack to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, CD, &tone(CD));
+    let path = tree.at("written.wv");
+    assert!(
+        packed(&source, &path, &[]),
+        "wavpack would not write the fixture"
+    );
+
+    let before = decode(&path).samples;
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::default();
+    assert!(
+        tags.writes(&location),
+        "a WavPack file was not offered for writing"
+    );
+
+    let edits: Vec<TagEdit> = TagField::ALL
+        .into_iter()
+        .map(|field| TagEdit {
+            field,
+            value: match field {
+                TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
+                TagField::DiscNumber | TagField::DiscTotal => "1".to_owned(),
+                _ => format!("{field}"),
+            },
+        })
+        .collect();
+    tags.write(
+        &location,
+        Writing {
+            edits: &edits,
+            picture: None,
+        },
+    )
+    .expect("a written WavPack file");
+
+    let read = tags
+        .read(&location, Picturing::Whether)
+        .expect("a readable WavPack file")
+        .tags;
+    for edit in &edits {
+        assert_eq!(
+            edit.field.read(&read).as_deref(),
+            Some(edit.value.as_str()),
+            "{} did not read back as it was written",
+            edit.field
+        );
+    }
+    assert_eq!(
+        decode(&path).samples,
+        before,
+        "writing the tags moved the audio"
+    );
+}

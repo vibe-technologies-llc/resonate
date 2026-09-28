@@ -183,7 +183,13 @@ pub const fn tuning_of(codec: Codec) -> Option<Tuning> {
         Codec::Mp3 => Some(Tuning::Mp3),
         Codec::Aac => Some(Tuning::Aac),
         Codec::Vorbis => Some(Tuning::Vorbis),
-        Codec::Flac | Codec::Alac | Codec::Dsd | Codec::Pcm | Codec::Opus | Codec::Unknown => None,
+        Codec::Flac
+        | Codec::Alac
+        | Codec::Dsd
+        | Codec::Pcm
+        | Codec::Opus
+        | Codec::WavPack
+        | Codec::Unknown => None,
     }
 }
 

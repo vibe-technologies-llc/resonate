@@ -58,7 +58,7 @@ const DEPTHS: [&str; 3] = ["", "bit", "bits"];
 const AGE_WITH_NO_UNIT: u64 = DAY;
 const SPAN_WITH_NO_UNIT: u64 = 1;
 
-const CODECS: [(&str, Codec); 13] = [
+const CODECS: [(&str, Codec); 15] = [
     ("flac", Codec::Flac),
     ("alac", Codec::Alac),
     ("dsd", Codec::Dsd),
@@ -71,6 +71,8 @@ const CODECS: [(&str, Codec); 13] = [
     ("vorbis", Codec::Vorbis),
     ("ogg", Codec::Vorbis),
     ("opus", Codec::Opus),
+    ("wavpack", Codec::WavPack),
+    ("wv", Codec::WavPack),
     ("unknown", Codec::Unknown),
 ];
 

@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use opus_rs::{
     OpusDecoder,
     multistream::{ChannelMappingTable, MultistreamDecoder},
@@ -13,7 +11,7 @@ use symphonia::core::{
             AudioCodecId, AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult,
             well_known::CODEC_ID_OPUS,
         },
-        registry::{CodecRegistry, RegisterableAudioDecoder, SupportedAudioCodec},
+        registry::{RegisterableAudioDecoder, SupportedAudioCodec},
     },
     errors::{Result, decode_error, unsupported_error},
     packet::PacketRef,
@@ -99,17 +97,6 @@ const VORBIS_ORDER: [&[Position]; MOST_CHANNELS] = [
         Position::LFE1,
     ],
 ];
-
-static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
-    let mut registry = CodecRegistry::new();
-    symphonia::default::register_enabled_codecs(&mut registry);
-    registry.register_audio_decoder::<Opus>();
-    registry
-});
-
-pub(crate) fn codecs() -> &'static CodecRegistry {
-    &CODECS
-}
 
 pub(crate) fn pre_roll(codec: AudioCodecId) -> Frames {
     if codec == CODEC_ID_OPUS {
