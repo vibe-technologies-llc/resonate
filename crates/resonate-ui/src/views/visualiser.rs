@@ -6,7 +6,7 @@ use gpui::{
     prelude::*, px, rgb,
 };
 use resonate_core::{Frames, SampleRate};
-use resonate_engine::{Caught, Tap, Tapped};
+use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
 use smallvec::SmallVec;
 
 use crate::{
@@ -202,6 +202,7 @@ fn spanned(rate: SampleRate) -> usize {
 
 impl Render for Visualiser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let playing = self.player.read(cx).state().playback == PlaybackState::Playing;
         let tapped = self.player.read(cx).tap();
         let tap = match &tapped {
             Tapped::Samples(tap) => Some(tap.as_ref()),
@@ -230,7 +231,10 @@ impl Render for Visualiser {
             self.settle(cx);
         }
 
-        let plot = div().relative().size_full();
+        let plot = div()
+            .relative()
+            .size_full()
+            .child(follows_the_display(playing && tap.is_some()));
         match self.showing {
             Showing::Spectrum => plot
                 .child(bars(self.spectrum.columns().collect()))
@@ -238,6 +242,19 @@ impl Render for Visualiser {
             Showing::Scope => plot.child(traced(self.trace())),
         }
     }
+}
+
+fn follows_the_display(moving: bool) -> Canvas<()> {
+    canvas(
+        move |_, window, _| {
+            if moving {
+                window.request_animation_frame();
+            }
+        },
+        |_, (), _, _| {},
+    )
+    .absolute()
+    .size_0()
 }
 
 fn bars(columns: Columns) -> Canvas<()> {

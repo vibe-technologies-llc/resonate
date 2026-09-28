@@ -2206,21 +2206,20 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   sized by the rate, about 85 ms: 4 096 points at 44.1 and 48 kHz, up to 32 768 at 384. The scope
   is 20 ms of left over right, starting on the first rising zero crossing of their mid in the first
   span of a window twice that long, so a steady tone stands still rather than crawling.
-- **The pane repaints on the player's poll and never on the display's clock.** gpui marks every
-  ancestor of a notified view dirty — `Window::mark_view_dirty` walks the view path — so a frame
-  the pane asks for redraws the pane's `Part` and the root's shell, and before the regions were
-  cached it re-ran the whole window; `request_animation_frame` asks at the display's rate, and on
-  this machine's 240 Hz output the first cut of the pane took the window from about 6.5 % of a
-  core to 32.5 %. So `Visualiser` observes
-  `PlayerModel` and draws when the 16 ms poll notifies, which it does on every engine publish while
-  anything plays — the frames the window was already drawing — and asks for none of its own; only
-  bars still falling once nothing is tapped ask again, on a timer at the poll's interval, and a
-  paused transport holds the paused moment and asks for nothing at all. Being an entity is what
-  keeps its state — the transform's tables, the bars, the three sample buffers — out of
-  `RootView`, and what lets it keep drawing if the root's observer is ever narrowed. Measured with
-  a 24-bit 192 kHz FLAC resampled to a 48 kHz device over an empty scratch catalog, the window takes
-  7.6 to 7.7 % of a core with the pane in front and 6.4 to 6.8 % with the tracks pane, the engine
-  thread 1.1 to 1.2 % either way: the pane's own cost is its transform and its sixty-odd quads. `RootView::render`
+- **The pane follows the display's clock while it has sound to draw.** A zero-size canvas asks
+  `Window::request_animation_frame` whenever the transport plays and the engine hands the pane a
+  tap, the way the lyrics pane follows a synced set, so the bars and the scope move once a
+  display frame — 120 times a second on a 120 Hz panel — rather than on the 16 ms poll, which beat
+  against it. That was refused while a frame the pane asked for re-ran the whole window — the
+  first cut took this machine's 240 Hz window from about 6.5 % of a core to 32.5 % — and it is
+  what the cached regions made affordable: a notified view marks only its own `Part` and the root's
+  shell dirty now. Measured with a 16-bit 44.1 kHz FLAC into a 48 kHz null sink under a headless
+  KWin over the scratch catalog, the window takes 7.3 % of a core with the pane in front. Paused,
+  or with nothing tapped, it asks for nothing: bars still falling ask again on a timer at the
+  poll's interval, and a paused transport holds the paused moment. Being an entity is what keeps
+  its state — the transform's tables, the bars, the three sample buffers — out of `RootView`.
+  Every frame is still a whole-window paint on the GPU, which is gpui's and not the pane's.
+  `RootView::render`
   calls `PlayerModel::listen_in` with whether the pane is in front, so the engine taps nothing
   while it is not.
 - **The analysis pane draws the whole of the playing track and says whether it is what it claims.**

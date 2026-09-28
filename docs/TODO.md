@@ -37,9 +37,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   than the same music in PCM. Applying it would clip hot material; it is a decision to take
 
 ## Performance and scale
-- The visualiser still repaints on the 16 ms poll rather than on the display's clock. Its pane is
-  a cached region of its own now, so following the display costs the CPU only the pane, but every
-  frame is still a whole-window paint on the GPU
+- Every frame the visualiser or the lyrics pane asks for is a whole-window paint on the GPU;
+  gpui draws the scene whole, so only a newer gpui avoids it
 - gpui 0.2.2 rasterises every batch of vector paths — the inspector's bitrate graph, the scope, the
   analysis plots, the equaliser curve — through a window-sized 4× MSAA texture it clears and
   resolves each frame, which costs an integrated GPU far more than the paths themselves. Only a
