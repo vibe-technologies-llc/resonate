@@ -64,10 +64,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   window is maximised or fullscreen, which is what drops the gutter, the rounding and the shadow
   there. `window_min_size`
   is the point the header's own children stop clipping rather than a size the panes were designed
-  around, and a compositor is free to ignore it. **None of the four marks is a glyph.** The minimise
-  mark is a bar `div`, the maximise and restore marks are bordered `div`s, and the close mark is
-  `Icon::WindowClose` — an SVG of its own, whose × spans the whole viewBox where `Icon::Close` is
-  inset in its box, so it renders at the square's own edge. All four are `theme::WINDOW_MARK` less
+  around, and a compositor is free to ignore it. **None of the four marks is a glyph, and all four are
+  icons.** `Icon::WindowMinimise`, `WindowMaximise`, `WindowRestore` and `WindowClose` are SVGs
+  of their own whose strokes run to the viewBox's edge where `Icon::Close` is inset in its box, so
+  each renders at the square's own edge, and their stroke is the 24-unit box's share of one
+  device pixel at the size they are drawn, so the bar and the square are as crisp as the bordered
+  `div`s they replaced while lighting on hover through the same `icons::lit_on_hover`. All four are `theme::WINDOW_MARK` less
   its overlap across, which is what puts the three at one size on one centre line. A glyph could
   not: no box is in the primary UI face, so the maximise mark always had to be drawn, and − and ×
   centre on the math axis rather than on the box, which left the × half a pixel off the square

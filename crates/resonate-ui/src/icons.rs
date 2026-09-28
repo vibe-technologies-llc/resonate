@@ -91,6 +91,9 @@ icons! {
     Pinned => "pinned",
     Share => "share",
     WindowClose => "window-close",
+    WindowMinimise => "window-minimise",
+    WindowMaximise => "window-maximise",
+    WindowRestore => "window-restore",
     Listen => "listen",
     More => "more",
 }

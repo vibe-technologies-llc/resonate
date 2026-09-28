@@ -33,24 +33,17 @@ enum Control {
 }
 
 impl Control {
-    fn mark(self) -> AnyElement {
-        match self {
-            Self::Minimise => bar().into_any_element(),
-            Self::Close => cross().into_any_element(),
-            Self::Maximise => outline().into_any_element(),
-            Self::Restore => div()
-                .relative()
-                .size(theme::width(theme::WINDOW_MARK))
-                .child(outline().absolute().top_0().right_0())
-                .child(
-                    outline()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .bg(rgb(theme::surface())),
-                )
-                .into_any_element(),
-        }
+    fn mark(self) -> Svg {
+        let icon = match self {
+            Self::Minimise => Icon::WindowMinimise,
+            Self::Maximise => Icon::WindowMaximise,
+            Self::Restore => Icon::WindowRestore,
+            Self::Close => Icon::WindowClose,
+        };
+        icons::lit_on_hover(
+            icons::icon(icon, mark_edge(), theme::muted()),
+            CONTROL_GROUP,
+        )
     }
 
     const fn id(self) -> &'static str {
@@ -137,31 +130,6 @@ const fn mark_edge() -> f32 {
 
 const fn mark_inset() -> f32 {
     (theme::WINDOW_CONTROL - mark_edge()) / 2.0
-}
-
-fn bar() -> Div {
-    div()
-        .w(theme::width(mark_edge()))
-        .h(px(1.0))
-        .bg(rgb(theme::muted()))
-        .group_hover(CONTROL_GROUP, |bar| bar.bg(rgb(theme::text())))
-}
-
-fn cross() -> Svg {
-    icons::lit_on_hover(
-        icons::icon(Icon::WindowClose, mark_edge(), theme::muted()),
-        CONTROL_GROUP,
-    )
-}
-
-fn outline() -> Div {
-    div()
-        .size(theme::width(mark_edge()))
-        .border_1()
-        .border_color(rgb(theme::muted()))
-        .group_hover(CONTROL_GROUP, |square| {
-            square.border_color(rgb(theme::text()))
-        })
 }
 
 pub(crate) fn client_side(window: &Window) -> bool {
