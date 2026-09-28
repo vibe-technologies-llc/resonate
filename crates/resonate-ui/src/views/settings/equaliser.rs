@@ -1,4 +1,4 @@
-use std::{cell::Cell as Slot, rc::Rc};
+use std::{cell::Cell as Slot, rc::Rc, time::Duration};
 
 use gpui::{
     BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent, PathBuilder,
@@ -37,6 +37,7 @@ const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here 
                              curve of its own drawn under Bands, or a kept profile — and a \
                              device bound to nothing takes what every other device does.";
 
+const DRAG_TOLD_EVERY: Duration = Duration::from_millis(50);
 const CURVE_HEIGHT: f32 = 168.0;
 
 const NO_FILE_PICKER: &str = "Couldn't open the file picker";
@@ -1005,9 +1006,26 @@ impl RootView {
             .equaliser
             .update(cx, |model, cx| model.move_to(held.row, placed, cx));
         if moved {
-            self.tell_the_engine(cx);
+            self.tell_the_engine_at_most_so_often(cx);
             cx.notify();
         }
+    }
+
+    fn tell_the_engine_at_most_so_often(&mut self, cx: &mut Context<Self>) {
+        if let Some(untold) = self.band_untold.as_mut() {
+            *untold = true;
+            return;
+        }
+        self.tell_the_engine(cx);
+        self.band_untold = Some(false);
+        self.band_retuning = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(DRAG_TOLD_EVERY).await;
+            let _ = this.update(cx, |this, cx| {
+                if this.band_untold.take() == Some(true) {
+                    this.tell_the_engine_at_most_so_often(cx);
+                }
+            });
+        });
     }
 
     pub(crate) fn let_the_band_go(&mut self, cx: &mut Context<Self>) {

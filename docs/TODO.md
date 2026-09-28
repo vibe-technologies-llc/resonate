@@ -162,4 +162,3 @@ that no listener is waiting on, and is worked only once the categories above it 
 - The statistics chart reads dates relatively, because nothing in the window draws a real date
 - A saved query's direction is written into the `sort` column above the order codes, so an older
   build reads it as the wrong order rather than refusing it
-- A drag on the equaliser's curve retunes the engine on every pointer move, uncoalesced

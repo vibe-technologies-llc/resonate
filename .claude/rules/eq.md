@@ -389,8 +389,12 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   `resonate eq --profile` switches it on when it binds; *Add a band* takes the same path. The
   binding row offers the own curve beside *nothing* and every kept profile, so a device can be
   moved between the two without losing either.
-- **The sound follows the pointer, and a drag never reshapes the chain.** Every move that lands on
-  a different band tells the engine the whole `Equalisation` at once, and the engine's `retune`
+- **The sound follows the pointer, and a drag never reshapes the chain.** A move that lands on a
+  different band tells the engine the whole `Equalisation` at once — at most once every
+  `DRAG_TOLD_EVERY` of 50 ms: a move inside that is noted in `band_untold`, and the timer the first
+  one started tells the engine where the band has got to when it runs out, so a pointer at 240 Hz
+  costs twenty retunes a second rather than two hundred and forty, and where it stopped is always
+  what is heard. The engine's `retune`
   finds the same shape — one band moved is not a change of shape, and transparency is structural,
   so a band dragged through 0 dB keeps its stage — and swaps coefficients under the running DF1
   history. Only the first band pressed onto an empty curve reshapes the chain, once, as switching
