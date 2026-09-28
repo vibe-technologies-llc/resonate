@@ -7,13 +7,23 @@ use resonate_core::MediaLocation;
 
 use crate::{
     PlaylistEntry, Result,
-    sheet::{self, Sheet},
+    sheet::{self, Listed, Sheet, Timed},
     store,
 };
 
 const DECLARATION: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
 
 const NAMESPACE: &str = "http://xspf.org/ns/0/";
+
+const VLC_NAMESPACE: &str = "http://www.videolan.org/vlc/playlist/ns/0/";
+
+const VLC_APPLICATION: &str = "http://www.videolan.org/vlc/playlist/0";
+
+const EXTENSION: &str = "extension";
+
+const VLC_OPTION: &str = "vlc:option";
+
+const OPTION: &str = "option";
 
 const XSPF_VERSION: u32 = 1;
 
@@ -123,6 +133,7 @@ impl Base {
 struct Offered {
     chosen: Option<MediaLocation>,
     alternates: usize,
+    timed: Timed,
 }
 
 impl Offered {
@@ -135,7 +146,10 @@ impl Offered {
 
     fn count(self, sheet: &mut Sheet) {
         match self.chosen {
-            Some(location) => sheet.locations.push(location),
+            Some(location) => sheet.locations.push(Listed {
+                location,
+                timed: self.timed,
+            }),
             None if self.alternates > 0 => sheet.elsewhere += 1,
             None => {}
         }
@@ -177,6 +191,8 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
                     mem::take(&mut offered).count(&mut sheet);
                 } else if element.eq_ignore_ascii_case(LOCATION) && depth == Depth::Track {
                     offered.offer(referenced(&plain_text(&written), &base));
+                } else if element.eq_ignore_ascii_case(OPTION) && depth == Depth::Track {
+                    offered.timed.read(&plain_text(&written));
                 } else if element.eq_ignore_ascii_case(TITLE) && depth == Depth::Playlist {
                     let named = plain_text(&written).trim().to_owned();
                     if !named.is_empty() {
@@ -192,8 +208,10 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
 }
 
 pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<String> {
-    let mut text =
-        format!("{DECLARATION}\n<{PLAYLIST} version=\"{XSPF_VERSION}\" xmlns=\"{NAMESPACE}\">\n");
+    let mut text = format!(
+        "{DECLARATION}\n<{PLAYLIST} version=\"{XSPF_VERSION}\" xmlns=\"{NAMESPACE}\" \
+         xmlns:vlc=\"{VLC_NAMESPACE}\">\n"
+    );
     text.push_str(&element(
         UNDER_THE_PLAYLIST,
         TITLE,
@@ -221,11 +239,31 @@ pub fn write(name: &str, entries: &[PlaylistEntry], beside: &Path) -> Result<Str
                 &(seconds * MILLISECONDS).to_string(),
             ));
         }
+        if let Some(timed) = sheet::timed(entry) {
+            text.push_str(&options(timed));
+        }
         text.push_str(&format!("    </{TRACK}>\n"));
     }
 
     text.push_str(&format!("  </{TRACK_LIST}>\n</{PLAYLIST}>\n"));
     Ok(text)
+}
+
+fn options(timed: Timed) -> String {
+    let mut written = format!("      <{EXTENSION} application=\"{VLC_APPLICATION}\">\n");
+    for (option, at) in [
+        (sheet::START_TIME, timed.from),
+        (sheet::STOP_TIME, timed.to),
+    ] {
+        if let Some(at) = at {
+            written.push_str(&format!(
+                "        <{VLC_OPTION}>{option}{}</{VLC_OPTION}>\n",
+                sheet::written_seconds(at)
+            ));
+        }
+    }
+    written.push_str(&format!("      </{EXTENSION}>\n"));
+    written
 }
 
 struct Tokens<'a> {
@@ -470,7 +508,7 @@ mod tests {
         read(&text, Path::new("/music"))
             .locations
             .iter()
-            .filter_map(|held| held.as_path().map(Path::to_path_buf))
+            .filter_map(|held| held.location.as_path().map(Path::to_path_buf))
             .collect()
     }
 

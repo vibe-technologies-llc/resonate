@@ -2294,6 +2294,18 @@ the pass.
   row, so a sheet naming a network mount that is down reports each of its rows as missing rather
   than as waiting, while a symlink stays unresolved because nothing but the filesystem knows where
   it points; nothing tells a file that grew between the two reads from one that lied about its size.
+- **A cue row leaves as the file it is cut from and the times VLC reads, and comes back as the
+  cut.** M3U, PLS and XSPF name files, so a row a sheet cuts is written as its file and, where the
+  format has a way to say it, the start and stop VLC honours: `#EXTVLCOPT:start-time=` and
+  `stop-time=` lines ahead of an M3U row, and the same two options as `<vlc:option>` inside a
+  track's VLC `<extension>` in XSPF, the playlist element declaring the `vlc` namespace. The
+  seconds are the cut's frames at the track's rate, rounded to the nanosecond, and reading one back
+  probes the file for its rate and rounds again, which lands on the frame it was written from at
+  every rate the workspace holds — a frame is never shorter than 1.3 µs. A row whose file will not
+  probe, or a PLS row, which has no word for a region, is the whole file, and `Sheet::locations`
+  holds `Listed` rows — a location and its `Timed` — so the parse stays free of I/O and the fuzz
+  target reaches it as before. `a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds` is
+  the claim.
 - **`xspf.rs` reads its own markup, and every leniency in it is deliberate.** A tag ends at the
   first `>` *outside* a quoted attribute value, so an attribute holding one does not cut the tag in
   half. `xml:base` is resolved down an element stack, so a relative `<location>` answers to the base

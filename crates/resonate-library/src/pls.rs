@@ -4,7 +4,7 @@ use resonate_core::MediaLocation;
 
 use crate::{
     PlaylistEntry, Result,
-    sheet::{self, Described, Sheet},
+    sheet::{self, Described, Listed, Sheet},
 };
 
 pub const HEADER: &str = "[playlist]";
@@ -55,7 +55,10 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
     }
 
     numbered.sort_by_key(|(at, _)| *at);
-    sheet.locations = numbered.into_iter().map(|(_, location)| location).collect();
+    sheet.locations = numbered
+        .into_iter()
+        .map(|(_, location)| Listed::whole(location))
+        .collect();
     sheet
 }
 

@@ -3002,6 +3002,40 @@ fn a_row_a_sheet_cannot_name_plainly_is_written_as_a_uri() -> Result<()> {
 }
 
 #[test]
+fn a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds() -> Result<()> {
+    let (tree, library) = scanned_sheet();
+    let cuts: Vec<Cut> = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .map(|row| Cut {
+            location: row.location,
+            span: row.span,
+        })
+        .collect();
+    assert!(cuts.iter().all(|cut| cut.span.is_some()));
+    let id = library.start_playlist("Meddle", &cuts)?;
+
+    for (name, format) in [("meddle.m3u8", "M3U"), ("meddle.xspf", "XSPF")] {
+        let sheet = tree.path().join(name);
+        library.export_playlist(id, &sheet)?;
+        let written = fs::read_to_string(&sheet).expect("a written sheet");
+        assert!(
+            written.contains("start-time="),
+            "{format} carried no cut: {written}"
+        );
+
+        let read_back = library.import_playlist(&sheet, Some(format))?;
+        assert_eq!(read_back.added, 3, "{format}");
+        assert_eq!(
+            library.playlist_cuts(read_back.id)?,
+            cuts,
+            "{format} did not read back the rows it wrote"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn a_row_whose_file_is_not_there_is_still_stored_as_an_absolute_path() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;

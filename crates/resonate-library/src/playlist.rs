@@ -14,10 +14,11 @@ use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
     Clause, Cut, Direction, Error, Exported, Imported, Kept, NamedPlaylist, Playlist,
-    PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search, StoreOp,
-    Track, TrackQuery,
+    PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search, Sources,
+    StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, RawTrack, TRACK_COLUMNS},
-    sheet, store,
+    sheet::{self, Listed},
+    store,
     undo::{self, Change, Edit},
 };
 
@@ -955,14 +956,15 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
     let mut fresh = Vec::with_capacity(reading.sheet.locations.len());
     let mut already = 0;
 
-    for location in reading.sheet.locations {
-        let named = Row::whole(local_path(&location)?.to_owned());
+    for listed in reading.sheet.locations {
+        let cut = cut_of(listed);
+        let named = Row::of(&cut)?;
         match held.get_mut(&named) {
             Some(times) if *times > 0 => {
                 *times -= 1;
                 already += 1;
             }
-            _ => fresh.push(Cut::whole(location)),
+            _ => fresh.push(cut),
         }
     }
     let missing = fresh
@@ -990,6 +992,27 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
         format: reading.format,
         encoding: reading.encoding,
     })
+}
+
+fn cut_of(listed: Listed) -> Cut {
+    if listed.timed.is_whole() {
+        return Cut::whole(listed.location);
+    }
+    let rate = match resonate_codec::probe(&Sources::local(), &listed.location) {
+        Ok(info) => info.spec.rate,
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                location = %listed.location,
+                "a timed row's file could not be read for its rate, so the whole file is listed"
+            );
+            return Cut::whole(listed.location);
+        }
+    };
+    Cut {
+        span: listed.timed.at(rate),
+        location: listed.location,
+    }
 }
 
 pub fn export(inner: &Inner, id: PlaylistId, path: &Path) -> Result<Exported> {
@@ -1233,14 +1256,6 @@ impl Row {
             start,
             frames,
         })
-    }
-
-    pub(crate) fn whole(path: String) -> Self {
-        Self {
-            path,
-            start: 0,
-            frames: None,
-        }
     }
 
     fn read_at(row: &SqlRow<'_>, first: usize) -> rusqlite::Result<Self> {

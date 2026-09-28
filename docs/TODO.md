@@ -55,8 +55,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   rating at all
 - No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
   count is one date and one total with no history
-- A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS
-  and XSPF have no vocabulary for a region
+- A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
 - Forgetting a wrong match leaves the track-level names the match corrected as it wrote them, and

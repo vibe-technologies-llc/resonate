@@ -4,9 +4,10 @@ use std::{
     fs::{self, File},
     io::Read as _,
     path::{self, Component, Path, PathBuf},
+    time::Duration,
 };
 
-use resonate_core::MediaLocation;
+use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate};
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, SheetEncoding, m3u, pls, store, xspf};
 
@@ -49,10 +50,97 @@ const WINDOWS_1252_FLOOR: u8 = 0x80;
 
 const WINDOWS_1252_CEILING: u8 = 0x9f;
 
+pub const START_TIME: &str = "start-time=";
+
+pub const STOP_TIME: &str = "stop-time=";
+
+const NANOS_A_SECOND: u128 = 1_000_000_000;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Timed {
+    pub from: Option<Duration>,
+    pub to: Option<Duration>,
+}
+
+impl Timed {
+    pub fn read(&mut self, option: &str) {
+        let option = option.trim();
+        if let Some(seconds) = option.strip_prefix(START_TIME) {
+            self.from = seconds_in(seconds);
+        } else if let Some(seconds) = option.strip_prefix(STOP_TIME) {
+            self.to = seconds_in(seconds);
+        }
+    }
+
+    pub const fn is_whole(self) -> bool {
+        self.from.is_none() && self.to.is_none()
+    }
+
+    pub fn at(self, rate: SampleRate) -> Option<FrameSpan> {
+        if self.is_whole() {
+            return None;
+        }
+        let start = self
+            .from
+            .map_or(Frames::ZERO, |from| Frames::from_duration(from, rate));
+        Some(match self.to {
+            Some(to) => {
+                let end = Frames::from_duration(to, rate);
+                if end <= start {
+                    FrameSpan::starting(start)
+                } else {
+                    FrameSpan::between(start, end)
+                }
+            }
+            None => FrameSpan::starting(start),
+        })
+    }
+
+    pub fn of(span: FrameSpan, rate: SampleRate) -> Self {
+        Self {
+            from: Some(exactly(span.start(), rate)),
+            to: span.end().map(|end| exactly(end, rate)),
+        }
+    }
+}
+
+fn exactly(frames: Frames, rate: SampleRate) -> Duration {
+    let hz = u128::from(rate.hz());
+    let nanos = (u128::from(frames.get()) * NANOS_A_SECOND + hz / 2) / hz;
+    Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+}
+
+fn seconds_in(text: &str) -> Option<Duration> {
+    let seconds: f64 = text.trim().parse().ok()?;
+    Duration::try_from_secs_f64(seconds).ok()
+}
+
+pub fn written_seconds(duration: Duration) -> String {
+    format!("{}.{:09}", duration.as_secs(), duration.subsec_nanos())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Listed {
+    pub location: MediaLocation,
+    pub timed: Timed,
+}
+
+impl Listed {
+    pub const fn whole(location: MediaLocation) -> Self {
+        Self {
+            location,
+            timed: Timed {
+                from: None,
+                to: None,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sheet {
     pub declared: Option<String>,
-    pub locations: Vec<MediaLocation>,
+    pub locations: Vec<Listed>,
     pub elsewhere: usize,
     pub promised: Option<usize>,
 }
@@ -111,6 +199,12 @@ pub fn write(path: &Path, name: &str, entries: &[PlaylistEntry]) -> Result<Playl
 
     staged_over(path, &text)?;
     Ok(format)
+}
+
+pub fn timed(entry: &PlaylistEntry) -> Option<Timed> {
+    let span = entry.span()?;
+    let rate = entry.track.as_ref()?.spec.rate;
+    Some(Timed::of(span, rate))
 }
 
 pub fn describe(entry: &PlaylistEntry) -> Described {
