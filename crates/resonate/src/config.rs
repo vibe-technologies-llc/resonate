@@ -104,6 +104,7 @@ pub struct Config {
     pub untagged: Option<Trim>,
     pub bit_perfect: Option<bool>,
     pub dop: Option<bool>,
+    pub dsd_like_pcm: Option<bool>,
     pub device_volume: Option<bool>,
     pub force_graph_rate: Option<bool>,
     pub bluetooth_wake: Option<bool>,
@@ -434,6 +435,7 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::ReplayGainUntagged => config.untagged = Some(at.trim(value)?),
             ConfigKey::BitPerfect => config.bit_perfect = Some(at.boolean(value)?),
             ConfigKey::Dop => config.dop = Some(at.boolean(value)?),
+            ConfigKey::DsdLikePcm => config.dsd_like_pcm = Some(at.boolean(value)?),
             ConfigKey::DeviceVolume => config.device_volume = Some(at.boolean(value)?),
             ConfigKey::TruePeak => config.true_peak = Some(at.boolean(value)?),
             ConfigKey::RestoreLossy => {

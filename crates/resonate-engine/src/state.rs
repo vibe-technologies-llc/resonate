@@ -118,6 +118,7 @@ pub struct OutputSettings {
     pub levelling: Levelling,
     pub prefer_bit_perfect: bool,
     pub dop: bool,
+    pub dsd_like_pcm: bool,
     pub device_volume: bool,
     pub force_graph_rate: bool,
     pub bluetooth: BluetoothWake,
@@ -139,6 +140,7 @@ impl OutputSettings {
             levelling: config.levelling,
             prefer_bit_perfect: config.prefer_bit_perfect,
             dop: config.dop,
+            dsd_like_pcm: config.dsd_like_pcm,
             device_volume: config.device_volume,
             force_graph_rate: config.force_graph_rate,
             bluetooth: config.bluetooth,
@@ -159,6 +161,7 @@ impl OutputSettings {
             && self.levelling == config.levelling
             && self.prefer_bit_perfect == config.prefer_bit_perfect
             && self.dop == config.dop
+            && self.dsd_like_pcm == config.dsd_like_pcm
             && self.device_volume == config.device_volume
             && self.force_graph_rate == config.force_graph_rate
             && self.bluetooth == config.bluetooth
@@ -266,6 +269,10 @@ mod tests {
         note("dop", config);
         *config = EngineConfig::default();
 
+        config.dsd_like_pcm = !EngineConfig::default().dsd_like_pcm;
+        note("dsd_like_pcm", config);
+        *config = EngineConfig::default();
+
         config.device_volume = !EngineConfig::default().device_volume;
         note("device_volume", config);
         *config = EngineConfig::default();
@@ -315,7 +322,7 @@ mod tests {
         let moved = every_field_moved(&mut config);
         assert_eq!(
             moved.len(),
-            15,
+            16,
             "a field OutputSettings publishes but already_says does not compare would stop the \
              engine publishing it; noticed {moved:?}"
         );

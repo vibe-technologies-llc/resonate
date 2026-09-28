@@ -958,6 +958,10 @@ impl Engine {
                 self.config.dop = marked;
                 self.reopen_where_the_stream_moves()
             }
+            Command::SetDsdLikePcm(raised) => {
+                self.config.dsd_like_pcm = raised;
+                self.retune()
+            }
             Command::SwitchProfile { sink, profile } => {
                 Ok(self.backend.set_card_profile(sink, profile)?)
             }

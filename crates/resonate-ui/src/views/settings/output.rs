@@ -726,6 +726,26 @@ impl RootView {
                 cx,
             ))
             .child(div().child(note(DOP_WARNING)))
+            .child(self.dsd_level_switch(cx))
+    }
+
+    fn dsd_level_switch(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let raised = self.player.read(cx).output_settings().dsd_like_pcm;
+
+        self.in_the_ring(
+            "dsd-like-pcm",
+            switch_row(
+                "Decimate DSD to the level of PCM",
+                "Off, a DSD master plays some 6 dB quieter than the same music in PCM",
+                raised,
+                "dsd-like-pcm",
+            ),
+            move |this, _, cx| {
+                this.send(Command::SetDsdLikePcm(!raised), cx);
+                this.store(&Setting::DsdLikePcm(!raised), cx);
+            },
+            cx,
+        )
     }
 }
 

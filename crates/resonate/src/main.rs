@@ -2041,6 +2041,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         prefer_bit_perfect: !cli.no_bit_perfect
             && config.bit_perfect.unwrap_or(defaults.prefer_bit_perfect),
         dop: config.dop.unwrap_or(defaults.dop),
+        dsd_like_pcm: config.dsd_like_pcm.unwrap_or(defaults.dsd_like_pcm),
         device_volume: config.device_volume.unwrap_or(defaults.device_volume),
         true_peak: config.true_peak.unwrap_or(defaults.true_peak),
         restoration: config.restoration.unwrap_or(defaults.restoration),

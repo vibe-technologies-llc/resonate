@@ -339,7 +339,7 @@ impl Group {
             Self::SampleRate => "bit perfect khz hz resample untouched",
             Self::GraphRate => "pipewire daemon switch rate",
             Self::Buffer => "latency milliseconds ms depth ring underrun",
-            Self::Dop => "dsd dsf dff sacd marker packing",
+            Self::Dop => "dsd dsf dff sacd marker packing level quieter louder six decibels 6 db",
             Self::Bluetooth => {
                 "headphones earbuds airpods a2dp wireless cut off clipped start first second \
                  wake sleep idle power save experimental"
@@ -458,7 +458,7 @@ impl Group {
             Self::SampleRate => &[SettingKey::BitPerfect],
             Self::GraphRate => &[SettingKey::ForceGraphRate],
             Self::Buffer => &[SettingKey::Buffer],
-            Self::Dop => &[SettingKey::Dop],
+            Self::Dop => &[SettingKey::Dop, SettingKey::DsdLikePcm],
             Self::Bluetooth => &[
                 SettingKey::BluetoothWake,
                 SettingKey::BluetoothLead,

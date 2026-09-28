@@ -31,8 +31,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A file embedding a huge picture still costs one materialisation, because symphonia reads it into
   a buffer of its own before `probe_cover_art` can weigh it
 - Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader
-- Nothing applies DSD's +6 dB modulation convention, so a DSD master decimates about 6 dB quieter
-  than the same music in PCM. Applying it would clip hot material; it is a decision to take
 
 ## Performance and scale
 - Every frame the visualiser or the lyrics pane asks for is a whole-window paint on the GPU;

@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use resonate_codec::{Codec, Delivery, DsdRate, MediaInfo, Packing, ReplayGain};
 use resonate_core::{
-    AppliedGain, BitDepth, ChannelLayout, Gain, SampleFormat, SampleRate, Silence, StreamSpec,
-    Trim, Volume,
+    AppliedGain, BitDepth, ChannelLayout, Decibels, Gain, SampleFormat, SampleRate, Silence,
+    StreamSpec, Trim, Volume,
     eq::{Frequency, Profile},
 };
 use resonate_dsp::{
@@ -50,6 +50,7 @@ pub struct EngineConfig {
     pub levelling: Levelling,
     pub prefer_bit_perfect: bool,
     pub dop: bool,
+    pub dsd_like_pcm: bool,
     pub device_volume: bool,
     pub force_graph_rate: bool,
     pub bluetooth: BluetoothWake,
@@ -131,6 +132,7 @@ impl Default for EngineConfig {
             levelling: Levelling::default(),
             prefer_bit_perfect: true,
             dop: false,
+            dsd_like_pcm: false,
             device_volume: false,
             force_graph_rate: true,
             bluetooth: BluetoothWake::default(),
@@ -417,6 +419,11 @@ pub fn plan_for(
     attenuator: Attenuator,
 ) -> OutputPlan {
     let decimates = matches!(source.packing, Packing::DopMarked(_));
+    let replay_gain = if decimates && config.dsd_like_pcm {
+        raised_like_pcm(replay_gain)
+    } else {
+        replay_gain
+    };
     let restoration = source
         .tuning
         .filter(|_| config.restoration != Restoration::Off)
@@ -476,6 +483,16 @@ pub fn plan_for(
         rounds,
         decoded_as,
         true_peak,
+    }
+}
+
+pub const DSD_MODULATION_DB: f32 = 6.02;
+
+fn raised_like_pcm(gain: AppliedGain) -> AppliedGain {
+    let raised = gain.gain.map_or(0.0, Decibels::get) + DSD_MODULATION_DB;
+    AppliedGain {
+        gain: Decibels::new(raised).ok().or(gain.gain),
+        ..gain
     }
 }
 
@@ -1598,6 +1615,49 @@ mod tests {
             OutputMode::Converted,
             "a decimation was called bit-perfect because the carrier matched the sink"
         );
+    }
+
+    #[test]
+    fn a_decimated_stream_is_raised_to_the_pcm_level_only_when_asked_and_dop_is_left_alone() {
+        let sink = sink(&[SampleRate::HZ_176400], &[SampleFormat::S24]);
+        let source = spec(SampleRate::HZ_176400, SampleFormat::S24);
+        let raised = EngineConfig {
+            dsd_like_pcm: true,
+            ..EngineConfig::default()
+        };
+
+        let as_decimated = plan_output(
+            packed(source),
+            &sink,
+            &EngineConfig::default(),
+            AppliedGain::default(),
+        );
+        let like_pcm = plan_output(packed(source), &sink, &raised, AppliedGain::default());
+        let asked = like_pcm
+            .gain
+            .map(|gain| gain.replay_gain.requested())
+            .expect("a raised decimation carries a gain stage");
+        assert!(
+            (asked.to_decibels().get() - DSD_MODULATION_DB).abs() < 1e-3,
+            "{asked:?}"
+        );
+        assert!(
+            as_decimated
+                .gain
+                .is_none_or(|gain| gain.replay_gain.requested().is_unity()),
+            "a decimation was raised though nothing asked"
+        );
+
+        let marked = plan_output(
+            packed(source),
+            &sink,
+            &EngineConfig {
+                dsd_like_pcm: true,
+                ..dop_config()
+            },
+            AppliedGain::default(),
+        );
+        assert!(matches!(marked.packing, Packing::DopMarked(_)));
     }
 
     #[test]

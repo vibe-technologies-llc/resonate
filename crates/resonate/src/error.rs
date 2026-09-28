@@ -24,6 +24,7 @@ pub enum ConfigKey {
     ReplayGainUntagged,
     BitPerfect,
     Dop,
+    DsdLikePcm,
     DeviceVolume,
     ForceGraphRate,
     BluetoothWake,
@@ -77,7 +78,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 64] = [
+    pub const ALL: [Self; 65] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -92,6 +93,7 @@ impl ConfigKey {
         Self::ReplayGainUntagged,
         Self::BitPerfect,
         Self::Dop,
+        Self::DsdLikePcm,
         Self::DeviceVolume,
         Self::ForceGraphRate,
         Self::BluetoothWake,
@@ -160,6 +162,7 @@ impl ConfigKey {
             Self::ReplayGainUntagged => "replay-gain-untagged",
             Self::BitPerfect => "bit-perfect",
             Self::Dop => "dop",
+            Self::DsdLikePcm => "dsd-like-pcm",
             Self::DeviceVolume => "device-volume",
             Self::ForceGraphRate => "force-graph-rate",
             Self::BluetoothWake => "bluetooth-wake",

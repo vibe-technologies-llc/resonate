@@ -445,11 +445,7 @@ impl RootView {
 
     fn lyric(&self, line: Line, cx: &mut Context<Self>) -> AnyElement {
         if let Some(height) = line.resting {
-            return div()
-                .flex_none()
-                .w(line.width)
-                .h(height)
-                .into_any_element();
+            return div().flex_none().w(line.width).h(height).into_any_element();
         }
         let second = line.voice == Voice::Two;
         let row = div()

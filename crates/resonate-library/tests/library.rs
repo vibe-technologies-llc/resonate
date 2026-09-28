@@ -3540,7 +3540,9 @@ fn the_playlists_most_played_this_month_are_ordered_by_what_the_month_played() -
         library.set_playing_playlist(loaded(carols));
     }
     beside(&database)
-        .execute_batch(&format!("UPDATE playlist_plays SET at = at - {TWO_MONTHS};"))
+        .execute_batch(&format!(
+            "UPDATE playlist_plays SET at = at - {TWO_MONTHS};"
+        ))
         .expect("the plays are moved back two months");
     library.set_playing_playlist(loaded(anthems));
 
@@ -3549,7 +3551,11 @@ fn the_playlists_most_played_this_month_are_ordered_by_what_the_month_played() -
         vec!["Carols", "Anthems"]
     );
     assert_eq!(
-        read_as(&library, PlaylistOrder::PlaysThisMonth, Direction::Descending)?,
+        read_as(
+            &library,
+            PlaylistOrder::PlaysThisMonth,
+            Direction::Descending
+        )?,
         vec!["Anthems", "Carols"]
     );
     Ok(())

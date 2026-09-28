@@ -562,6 +562,16 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `read_chunk`, and one more silence frame is written ahead of it where `Silence::would_write` says
   it would otherwise repeat. A frame inserted that way costs 5.7 µs and is what keeps the
   alternation unbroken across a seek, a starve and the first audio after a stream opens alike.
+- **A decimation is at the modulator's level unless the listener asks for PCM's.** DSD's full
+  scale is 50 % modulation, so a master decimates about 6 dB quieter than the same music in PCM.
+  `EngineConfig::dsd_like_pcm` — the `dsd-like-pcm` key and the Output category's *DSD over PCM*
+  group, off by default — is what raises it: `plan_for` adds `DSD_MODULATION_DB`, 6.02 dB, to
+  the gain it was handed wherever it decimates, so it rides the gain stage a decimation always
+  carries, is capped at a known peak and is ridden by the true-peak guard where none is known —
+  which is why it is a choice rather than the rule: hot material would otherwise clip. A DoP plan
+  is never raised, being untouched by construction, and `Command::SetDsdLikePcm` retunes the
+  chain in place.
+  `a_decimated_stream_is_raised_to_the_pcm_level_only_when_asked_and_dop_is_left_alone` is the claim.
 - **A decimation is a conversion, and DoP comes back the moment nothing stands in its way.** A
   decimated stream is the carrier rate at `S24`, which is exactly what `MediaInfo.spec` says, so
   `plan_for` reads the source's `Packing` rather than its spec to judge it: a `DopMarked` source

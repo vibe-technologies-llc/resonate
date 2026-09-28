@@ -101,7 +101,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::SampleRate => worn.prefer_bit_perfect != built.prefer_bit_perfect,
         Group::GraphRate => worn.force_graph_rate != built.force_graph_rate,
         Group::Buffer => worn.buffer != built.buffer,
-        Group::Dop => worn.dop != built.dop,
+        Group::Dop => worn.dop != built.dop || worn.dsd_like_pcm != built.dsd_like_pcm,
         Group::Bluetooth => worn.bluetooth != built.bluetooth,
         Group::Resampler => {
             worn.quality != built.quality || worn.filter_phase != built.filter_phase
@@ -182,7 +182,10 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         Group::SampleRate => vec![Command::SetBitPerfect(built.prefer_bit_perfect)],
         Group::GraphRate => vec![Command::SetForceGraphRate(built.force_graph_rate)],
         Group::Buffer => vec![Command::SetBuffer(built.buffer)],
-        Group::Dop => vec![Command::SetDop(built.dop)],
+        Group::Dop => vec![
+            Command::SetDop(built.dop),
+            Command::SetDsdLikePcm(built.dsd_like_pcm),
+        ],
         Group::Bluetooth => vec![Command::SetBluetoothWake(built.bluetooth)],
         Group::Resampler => vec![
             Command::SetQuality(built.quality),
@@ -446,6 +449,9 @@ mod tests {
         let commands = puts_back(Group::Dither);
 
         assert_eq!(commands, vec![Command::SetDither(DitherKind::Triangular)]);
-        assert_eq!(puts_back(Group::Dop), vec![Command::SetDop(false)]);
+        assert_eq!(
+            puts_back(Group::Dop),
+            vec![Command::SetDop(false), Command::SetDsdLikePcm(false)]
+        );
     }
 }
