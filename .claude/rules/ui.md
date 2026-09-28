@@ -360,9 +360,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   Graphite is Midnight at a chroma of nothing. A ramped flavour is a `LazyLock` rather than a
   `const`, because turning an HSL triple into a packed `u32` is arithmetic a `const` context will
   not run; `hsl` is held to the six corners of the cube by a test, so the ladder cannot quietly
-  shift under the palettes it builds. The three share one set of accents, because an accent is
-  what a colour *means* here — green is bit-perfect wherever it is drawn — and a palette's own
-  character is its surfaces.
+  shift under the palettes it builds. The three share the seven *hues*, because an accent is what
+  a colour *means* here — green is bit-perfect wherever it is drawn — but each lights them its own
+  way through the `LitAt` in its recipe: Midnight's pale and soft on the navy, Graphite's
+  greyed towards the ground it sits on, Plum's deep and rich, so the three no longer wear one
+  swatch row between them — `each_ramped_palette_lights_the_accents_its_own_way`, and the
+  contrast tests hold every one.
 - **Two faces, and figures are always in the second.** The window names Inter for text and
   JetBrains Mono for anything a listener would compare across rows — clocks, rates, counts, bitrates,
   kbps, the tag values in the inspector — and `theme::mono` builds the `Font` with `tnum` on, so

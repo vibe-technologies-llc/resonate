@@ -27,8 +27,8 @@ impl Accents {
         }
     }
 
-    fn ramped() -> Self {
-        let lit = |hue: f32| hsl(hue, RAMPED_ACCENT_SATURATION, RAMPED_ACCENT_LIGHTNESS);
+    fn ramped(lit_at: LitAt) -> Self {
+        let lit = |hue: f32| hsl(hue, lit_at.saturation, lit_at.lightness);
 
         Self {
             mauve: lit(MAUVE_HUE),
@@ -71,6 +71,13 @@ struct Recipe {
     hue: f32,
     chroma: f32,
     alarm: f32,
+    accents: LitAt,
+}
+
+#[derive(Clone, Copy)]
+struct LitAt {
+    saturation: f32,
+    lightness: f32,
 }
 
 const MAUVE_HUE: f32 = 0.762;
@@ -81,8 +88,18 @@ const AMBER_HUE: f32 = 0.108;
 const PEACH_HUE: f32 = 0.055;
 const RED_HUE: f32 = 0.985;
 
-const RAMPED_ACCENT_SATURATION: f32 = 0.70;
-const RAMPED_ACCENT_LIGHTNESS: f32 = 0.62;
+const LIT_ON_NAVY: LitAt = LitAt {
+    saturation: 0.60,
+    lightness: 0.68,
+};
+const LIT_ON_GREY: LitAt = LitAt {
+    saturation: 0.38,
+    lightness: 0.64,
+};
+const LIT_ON_PLUM: LitAt = LitAt {
+    saturation: 0.78,
+    lightness: 0.64,
+};
 
 const GROUND: f32 = 0.082;
 const BELOW_THE_GROUND: f32 = 0.056;
@@ -136,7 +153,7 @@ fn ramp(recipe: &Recipe) -> Flavour {
         paper: ink(PAPER),
         scrim: (pitch << 8) | SCRIM_ALPHA,
         alarm: hsl(recipe.alarm, 0.62, 0.55),
-        accents: Accents::ramped(),
+        accents: Accents::ramped(recipe.accents),
     }
 }
 
@@ -172,6 +189,7 @@ static MIDNIGHT: LazyLock<Flavour> = LazyLock::new(|| {
         hue: 0.598,
         chroma: 0.17,
         alarm: RED_HUE,
+        accents: LIT_ON_NAVY,
     })
 });
 
@@ -181,6 +199,7 @@ static GRAPHITE: LazyLock<Flavour> = LazyLock::new(|| {
         hue: 0.0,
         chroma: 0.0,
         alarm: RED_HUE,
+        accents: LIT_ON_GREY,
     })
 });
 
@@ -216,6 +235,7 @@ static PLUM: LazyLock<Flavour> = LazyLock::new(|| {
         hue: 0.783,
         chroma: 0.15,
         alarm: RED_HUE,
+        accents: LIT_ON_PLUM,
     })
 });
 
@@ -1153,6 +1173,15 @@ mod tests {
                 "{theme}'s scrim lets the panes through"
             );
         }
+    }
+
+    #[test]
+    fn each_ramped_palette_lights_the_accents_its_own_way() {
+        let rows = [&*MIDNIGHT, &*GRAPHITE, &*PLUM]
+            .map(|flavour| Accent::ALL.map(|accent| flavour.accent(Some(accent))));
+        assert_ne!(rows[0], rows[1]);
+        assert_ne!(rows[1], rows[2]);
+        assert_ne!(rows[0], rows[2]);
     }
 
     #[test]
