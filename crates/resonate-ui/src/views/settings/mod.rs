@@ -386,6 +386,7 @@ impl RootView {
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
             Group::Resuming => self.resuming_group(cx),
+            Group::History => self.history_group(cx),
             Group::Repeating => self.repeating_group(cx),
             Group::PreviousButton => self.previous_group(cx),
             Group::Lookups => self.lookups_group(cx),
@@ -502,6 +503,7 @@ impl RootView {
             Group::Studies => self.set_studies(defaults::STUDY, cx),
             Group::Lyrics => self.set_lyrics(defaults::FETCH_LYRICS, cx),
             Group::Resuming => self.set_resume(defaults::RESUME, cx),
+            Group::History => self.keep_the_history(defaults::HISTORY_KEPT, cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Discord => self.put_discord_back(cx),
             Group::DiscordShows => self.put_discord_shows_back(cx),
@@ -542,6 +544,7 @@ impl RootView {
         let studies = library.studies();
         let lyrics = library.fetches_lyrics();
         let resume = library.resumes();
+        let history_kept = cx.global::<ResonateApp>().history_kept;
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
@@ -577,6 +580,7 @@ impl RootView {
             listening_from,
             listening_for,
             resume,
+            history_kept,
             skip_under_repeat,
             previous_restarts,
             notify,

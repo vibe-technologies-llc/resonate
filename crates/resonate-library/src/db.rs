@@ -24,22 +24,22 @@ use rusqlite::{
 };
 
 use crate::{
-    Album, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail, ArtistOrder, ArtistProfile,
-    ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked, Certainty, Clause, Codec, Column,
-    Compare, Condition, Counted, CoverArt, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error,
-    Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack,
-    Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, LyricText, Mbid, Measured, Missing,
-    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing,
-    Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned,
-    Recording, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
-    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
-    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
-    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
-    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere,
-    enrich, enriched,
+    Aged, Album, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail, ArtistOrder,
+    ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked, Certainty, Clause,
+    Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day, Direction, EnrichHandle,
+    EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium,
+    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
+    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, LyricText, Mbid,
+    Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle,
+    OrganiseOptions, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
+    PortraitWanted, Pruned, Recording, RecordingRelease, Reference, Release, ReleaseDetail,
+    ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle,
+    ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics,
+    StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk,
+    Undoable, Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want,
+    Window, Word, elsewhere, enrich, enriched,
     hinted::Hinted,
-    import, likeness,
+    history, import, likeness,
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
     playlist,
@@ -1106,6 +1106,10 @@ impl Library {
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
         scrobble::submit(&self.inner, scrobbler)
+    }
+
+    pub fn age_the_history(&self, kept: HistoryKept) -> Result<Aged> {
+        history::age(&self.inner, kept, SystemTime::now())
     }
 
     pub fn statistics(&self, window: Window) -> Result<Statistics> {

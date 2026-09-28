@@ -20,7 +20,7 @@ use resonate_engine::{
     SkipUnderRepeat,
 };
 use resonate_eq::{Binding, ProfileName};
-use resonate_library::Layout;
+use resonate_library::{HistoryKept, Layout};
 use resonate_listen::Listening;
 use resonate_pipewire::NodeName;
 use toml_edit::{DocumentMut, Item, Table};
@@ -125,6 +125,7 @@ pub struct Config {
     pub equaliser: Option<bool>,
     pub equaliser_for: Option<Bindings>,
     pub resume: Option<bool>,
+    pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
     pub minimise_button: Option<bool>,
@@ -239,6 +240,10 @@ impl Config {
 
     pub fn resumes(&self) -> bool {
         self.resume.unwrap_or(true)
+    }
+
+    pub fn history_kept(&self) -> HistoryKept {
+        self.history_kept.unwrap_or_default()
     }
 
     pub fn notifies(&self) -> bool {
@@ -476,6 +481,12 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
+            ConfigKey::HistoryKept => {
+                config.history_kept = Some(match value.as_integer() {
+                    Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
+                    None => at.one_of(value, HistoryKept::parse)?,
+                });
+            }
             ConfigKey::Notify => config.notify = Some(at.boolean(value)?),
             ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
@@ -1201,6 +1212,20 @@ mod tests {
             ),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn the_history_is_kept_forever_until_the_file_names_a_span_of_days() {
+        let kept = |text: &str| read(text).expect("a span is valid").history_kept();
+
+        assert_eq!(kept(""), HistoryKept::Forever);
+        assert_eq!(kept("history-kept = \"forever\""), HistoryKept::Forever);
+        assert_eq!(
+            kept("history-kept = 365"),
+            HistoryKept::for_days(365).expect("a year of days")
+        );
+        assert!(read("history-kept = 0").is_err());
+        assert!(read("history-kept = \"a while\"").is_err());
     }
 
     #[cfg(feature = "ui")]

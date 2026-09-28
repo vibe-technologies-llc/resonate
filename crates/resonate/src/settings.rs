@@ -7,6 +7,7 @@ use resonate_engine::{
     SkipUnderRepeat,
 };
 use resonate_eq::Binding;
+use resonate_library::HistoryKept;
 use resonate_ui::{Setting, SettingKey, Settings};
 use toml_edit::Value;
 
@@ -167,6 +168,13 @@ impl Settings for File {
             ),
             Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
             Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
+            Setting::HistoryKept(kept) => (
+                ConfigKey::HistoryKept,
+                Some(match kept {
+                    HistoryKept::Forever => kept.to_string().into(),
+                    HistoryKept::Days(days) => i64::from(days.get()).into(),
+                }),
+            ),
             Setting::Notify(tells) => (ConfigKey::Notify, Some((*tells).into())),
             Setting::Discord(on) => (ConfigKey::Discord, Some((*on).into())),
             Setting::DiscordApp(app) => {
@@ -297,6 +305,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EqualiserFor => ConfigKey::EqualiserFor,
         SettingKey::EqualiserProfile => ConfigKey::EqualiserProfile,
         SettingKey::Resume => ConfigKey::Resume,
+        SettingKey::HistoryKept => ConfigKey::HistoryKept,
         SettingKey::OrganiseAs => ConfigKey::OrganiseAs,
         SettingKey::Notify => ConfigKey::Notify,
         SettingKey::MinimiseButton => ConfigKey::MinimiseButton,

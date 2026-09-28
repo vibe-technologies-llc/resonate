@@ -18,7 +18,7 @@ use resonate_engine::{
     QueueItem, Queued, SinkInfo, StreamDigest, Tapped, TrackState,
 };
 use resonate_eq::Corrected;
-use resonate_library::{Fingerprinters, Library, Reference};
+use resonate_library::{Fingerprinters, HistoryKept, Library, Reference};
 use resonate_lyrics::Lyricists;
 
 use crate::{
@@ -137,6 +137,7 @@ pub struct ResonateApp {
     pub attention: Sender<bool>,
     pub places: Places,
     pub resume: bool,
+    pub history_kept: HistoryKept,
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,
@@ -813,6 +814,7 @@ pub fn run(
             attention: bus.attention.clone(),
             places: stored.places.clone(),
             resume: stored.resume,
+            history_kept: stored.history_kept,
             organise_as: stored.organise_as.clone(),
             notify: Arc::clone(&stored.notify),
             window_buttons: stored.window_buttons,

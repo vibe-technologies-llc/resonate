@@ -13,6 +13,7 @@ use resonate_engine::{
     Restoration, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
+use resonate_library::HistoryKept;
 use resonate_listen::Listening;
 use resonate_providers::Providers;
 
@@ -166,6 +167,7 @@ pub enum SettingKey {
     EqualiserFor,
     EqualiserProfile,
     Resume,
+    HistoryKept,
     SkipUnderRepeat,
     PreviousRestarts,
     OrganiseAs,
@@ -194,7 +196,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 61] = [
+    pub const ALL: [Self; 62] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -231,6 +233,7 @@ impl SettingKey {
         Self::EqualiserFor,
         Self::EqualiserProfile,
         Self::Resume,
+        Self::HistoryKept,
         Self::SkipUnderRepeat,
         Self::PreviousRestarts,
         Self::OrganiseAs,
@@ -300,6 +303,7 @@ pub enum Setting {
     },
     EqualiserProfile(Option<Binding>),
     Resume(bool),
+    HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
     PreviousRestarts(PreviousRestarts),
     OrganiseAs(String),
@@ -366,6 +370,7 @@ impl Setting {
             Self::EqualiserFor { .. } => SettingKey::EqualiserFor,
             Self::EqualiserProfile(_) => SettingKey::EqualiserProfile,
             Self::Resume(_) => SettingKey::Resume,
+            Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
             Self::PreviousRestarts(_) => SettingKey::PreviousRestarts,
             Self::OrganiseAs(_) => SettingKey::OrganiseAs,
@@ -524,6 +529,7 @@ pub struct Stored {
     pub settings: Arc<dyn Settings>,
     pub places: Places,
     pub resume: bool,
+    pub history_kept: HistoryKept,
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,

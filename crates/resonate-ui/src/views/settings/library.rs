@@ -9,8 +9,8 @@ use gpui::{
 };
 use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{
-    Failure, Failures, ImportStats, ImportSummary, Layout, OrganiseStats, OrganiseSummary,
-    PollStats, RetagStats, RetagSummary, ScanStats, Wanted, Written,
+    Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout, OrganiseStats,
+    OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Wanted, Written,
 };
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis as _, Press},
         listing,
         root::RootView,
-        settings::{action, hugging, named, note, progress, rows, switch_row},
+        settings::{Choice, action, hugging, named, note, progress, rows, switch_row},
     },
 };
 
@@ -45,6 +45,35 @@ const SCANNING_NOTE: &str = "Rescan reads what was added or changed since the la
 const RESUMING_NOTE: &str = "The queue comes back paused on the row it was playing, so nothing \
                              starts on its own. Files named on the command line are queued \
                              instead of what was kept.";
+
+impl Choice for HistoryKept {
+    const ALL: &'static [Self] = &Self::OFFERED;
+
+    fn label(self) -> &'static str {
+        match self.span().map(|span| span.as_secs() / SECONDS_A_DAY) {
+            None => "Forever",
+            Some(1_826) => "Five years",
+            Some(730) => "Two years",
+            Some(365) => "A year",
+            Some(182) => "Six months",
+            Some(_) => "A while",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        match self {
+            Self::Forever => SharedString::new_static(
+                "Every listen is kept, so the statistics can reach back to the first one.",
+            ),
+            Self::Days(days) => SharedString::from(format!(
+                "Listens older than {days} days are forgotten as the library opens, once \
+                 ListenBrainz has been told of them."
+            )),
+        }
+    }
+}
+
+const SECONDS_A_DAY: u64 = 86_400;
 
 const REFRESHING_NOTE: &str = "The scan's progress shows under Scanning above. What MusicBrainz \
                                answered is asked again with Refresh all under Online.";
@@ -393,6 +422,27 @@ impl RootView {
                 cx,
             ))
             .child(note(RESUMING_NOTE))
+    }
+
+    pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let kept = cx.global::<ResonateApp>().history_kept;
+
+        kit::section_body().child(kit::field(
+            "Keep what was listened to",
+            self.choices(
+                "history-kept",
+                Some(kept),
+                cx,
+                |this, kept: HistoryKept, cx| this.keep_the_history(kept, cx),
+            ),
+        ))
+    }
+
+    pub(crate) fn keep_the_history(&self, kept: HistoryKept, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.history_kept = kept);
+        self.library
+            .update(cx, |library, cx| library.age_the_history(kept, cx));
+        self.store(&Setting::HistoryKept(kept), cx);
     }
 
     pub(super) fn repeating_group(&mut self, cx: &mut Context<Self>) -> Div {

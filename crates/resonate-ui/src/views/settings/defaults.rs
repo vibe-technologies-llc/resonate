@@ -5,6 +5,7 @@ use std::{
 
 use resonate_core::{Appearance, Presence, ScrollbarMode};
 use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat};
+use resonate_library::HistoryKept;
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
 use crate::{Tabs, WindowButtons, views::settings::find::Group};
@@ -14,6 +15,7 @@ pub(crate) const ENRICH_AFTER_SCAN: bool = true;
 pub(crate) const STUDY: bool = true;
 pub(crate) const FETCH_LYRICS: bool = true;
 pub(crate) const RESUME: bool = true;
+pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
@@ -38,6 +40,7 @@ pub(crate) struct Standing {
     pub(crate) listening_from: Listening,
     pub(crate) listening_for: Duration,
     pub(crate) resume: bool,
+    pub(crate) history_kept: HistoryKept,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
     pub(crate) notify: bool,
@@ -69,6 +72,7 @@ impl Standing {
             listening_from: Listening::Desktop,
             listening_for: CLIP_BY_DEFAULT,
             resume: RESUME,
+            history_kept: HISTORY_KEPT,
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             notify: NOTIFY,
@@ -116,6 +120,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Studies => standing.studies != STUDY,
         Group::Lyrics => standing.lyrics != FETCH_LYRICS,
         Group::Resuming => standing.resume != RESUME,
+        Group::History => standing.history_kept != HISTORY_KEPT,
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
         Group::Notifications => standing.notify != NOTIFY,
@@ -223,6 +228,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Vault
         | Group::Inbox
         | Group::Resuming
+        | Group::History
         | Group::Notifications
         | Group::Discord
         | Group::DiscordShows

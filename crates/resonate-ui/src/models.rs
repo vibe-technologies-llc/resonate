@@ -21,14 +21,14 @@ use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
-    HeldReleaseTrack, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept,
-    Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
-    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
-    Reference, ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
-    Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Window, asks_elsewhere,
+    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
+    Imported, Kept, Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened,
+    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
+    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
+    Raster, Reference, ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary,
+    RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats,
+    ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
+    TrackQuery, Undoable, UnheldRelease, Window, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -610,6 +610,7 @@ pub struct LibraryModel {
     pressings: Option<(AlbumId, Pressings)>,
     _pressings: Task<()>,
     _kept: Task<()>,
+    _aged: Task<()>,
     _finding: Task<()>,
     _previewing: Task<()>,
 }
@@ -750,6 +751,7 @@ impl LibraryModel {
             pressings: None,
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
+            _aged: Task::ready(()),
             _finding: Task::ready(()),
             _previewing: Task::ready(()),
         };
@@ -2954,6 +2956,16 @@ impl LibraryModel {
                 }
             });
         }
+        cx.notify();
+    }
+
+    pub fn age_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        self._aged = cx.background_executor().spawn(async move {
+            if let Err(error) = library.age_the_history(kept) {
+                tracing::warn!(%error, "the history could not be aged");
+            }
+        });
         cx.notify();
     }
 

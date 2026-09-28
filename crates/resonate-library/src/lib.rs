@@ -7,6 +7,7 @@ mod enriched;
 mod error;
 mod fingerprint;
 mod hinted;
+mod history;
 mod import;
 mod likeness;
 mod loose;
@@ -69,6 +70,7 @@ pub use crate::{
         SchemaFingerprint, StoreOp, TagName,
     },
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
+    history::{Aged, HistoryKept},
     import::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,

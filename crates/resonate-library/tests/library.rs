@@ -24,15 +24,15 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
+    Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
     BETTERED_AFTER, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding,
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
-    GroupAsked, GroupMatch, GroupRelease, HeldMedium, ImageFormat, ImportOptions, ImportSummary,
-    Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp, LyricText,
-    LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing,
-    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated,
-    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
-    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
+    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp,
+    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
+    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
+    Pruned, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
     RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
     Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion,
     TagField, TagSet, TagSink, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault,
@@ -4601,6 +4601,64 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
 
     assert_eq!(library.submit_listens(&told)?.submitted, 0);
     assert_eq!(told.titles().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told() -> Result<()> {
+    const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let heat = MediaLocation::local(tree.write(
+        "heat.wav",
+        &Wav::new().text(TITLE, "Heat").text(ARTIST, "Ben").build(),
+    ));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    library.track_played(&cold, None)?;
+    let told = Told::default();
+    assert!(library.submit_listens(&told)?.started);
+    library.track_played(&heat, None)?;
+    library.track_played(&cold, None)?;
+    library.passed(Duration::from_secs(20))?;
+    beside(&database)
+        .execute_batch(&format!(
+            "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};
+             UPDATE passes SET at = at - {WELL_BEFORE_A_YEAR};"
+        ))
+        .expect("the history is moved back past a year");
+
+    assert_eq!(
+        library.age_the_history(HistoryKept::Forever)?,
+        Aged::default()
+    );
+    let a_year = HistoryKept::parse("365").expect("a span of days");
+    assert_eq!(
+        library.age_the_history(a_year)?,
+        Aged {
+            listens: 1,
+            passes: 1
+        },
+        "a listen no service had been told of yet was forgotten"
+    );
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+
+    assert_eq!(library.submit_listens(&told)?.submitted, 2);
+    assert_eq!(library.age_the_history(a_year)?.listens, 2);
+    assert_eq!(library.statistics(Window::Everything)?.plays, 0);
+    assert_eq!(
+        library
+            .track_at(cold.as_path().expect("a local file"), None)?
+            .expect("the scanned track")
+            .plays,
+        2,
+        "forgetting the history took the count with it"
+    );
     Ok(())
 }
 

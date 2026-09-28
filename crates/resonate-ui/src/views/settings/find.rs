@@ -86,6 +86,7 @@ pub(crate) enum Group {
     Vault,
     Inbox,
     Resuming,
+    History,
     Repeating,
     PreviousButton,
     Lookups,
@@ -113,7 +114,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 49] = [
+    pub(crate) const ALL: [Self; 50] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -139,6 +140,7 @@ impl Group {
         Self::Vault,
         Self::Inbox,
         Self::Resuming,
+        Self::History,
         Self::Repeating,
         Self::PreviousButton,
         Self::Lookups,
@@ -189,6 +191,7 @@ impl Group {
             | Self::Vault
             | Self::Inbox
             | Self::Resuming
+            | Self::History
             | Self::Repeating
             | Self::PreviousButton => Category::Library,
             Self::Lookups
@@ -243,6 +246,7 @@ impl Group {
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
             Self::Resuming => "Resuming",
+            Self::History => "Listening history",
             Self::Repeating => "Repeating a track",
             Self::PreviousButton => "The previous button",
             Self::Lookups => "Reference lookups",
@@ -297,6 +301,7 @@ impl Group {
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
             Self::Resuming => RESUMING_HINT,
+            Self::History => HISTORY_HINT,
             Self::Repeating => REPEATING_HINT,
             Self::PreviousButton => PREVIOUS_HINT,
             Self::Lookups => ONLINE_HINT,
@@ -386,6 +391,10 @@ impl Group {
             }
             Self::Inbox => "provider poll wants missing download drop folder fill obtain supply",
             Self::Resuming => "queue restart restore carry on position where left off",
+            Self::History => {
+                "history listens plays statistics forget age prune older keep years months \
+                 privacy"
+            }
             Self::Repeating => "loop repeat one single track skip next previous spotify",
             Self::PreviousButton => {
                 "restart replay beginning start over back previous button spotify apple first \
@@ -471,6 +480,7 @@ impl Group {
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
             Self::Resuming => &[SettingKey::Resume],
+            Self::History => &[SettingKey::HistoryKept],
             Self::Repeating => &[SettingKey::SkipUnderRepeat],
             Self::PreviousButton => &[SettingKey::PreviousRestarts],
             Self::Lookups => &[SettingKey::Online],
@@ -762,6 +772,12 @@ pub(crate) const PREVIOUS_HINT: &str = "What previous does once a song is under 
                                          is still in those. Off, previous always goes back a \
                                          track. A song shorter than three seconds is left for \
                                          the one before it.";
+
+pub(crate) const HISTORY_HINT: &str = "How long what was listened to is kept. Forever keeps every \
+                                       listen; a span forgets the listens and the skipped time \
+                                       older than it as the library opens, once ListenBrainz has \
+                                       been told of them. A track's play count and when it was last \
+                                       played are kept whatever this says.";
 
 pub(crate) const RESUMING_HINT: &str = "Whether the queue, the row it is on and how far through \
                                         that row are kept in the library for the next run. On, \

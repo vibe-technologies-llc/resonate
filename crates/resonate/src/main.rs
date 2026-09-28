@@ -57,11 +57,11 @@ use resonate_engine::{
     resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
-    Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags, Kept,
-    Layout, Library, LookupOp, MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle,
-    Playing, Playlist, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, Search, SortOrder, StudyFilter, UnheldRelease, Vault,
-    VaultFiles, Want, folded_letters,
+    Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
+    HistoryKept, Kept, Layout, Library, LookupOp, MissingTrack, Move, OrganiseOptions,
+    OrganiseSummary, PassHandle, Playing, Playlist, PlaylistName, PlaylistOrder, PollOptions,
+    Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, Search, SortOrder,
+    StudyFilter, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -346,9 +346,23 @@ fn open_library(cli: &Cli, config: &Config) -> Result<Library> {
 
 fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> Result<Library> {
     let path = library_path(cli, config)?;
-    match vault {
-        Some(vault) => Ok(Library::open_with_vault(&path, Arc::clone(vault))?),
-        None => Ok(Library::open(&path)?),
+    let library = match vault {
+        Some(vault) => Library::open_with_vault(&path, Arc::clone(vault))?,
+        None => Library::open(&path)?,
+    };
+    age_the_history(&library, config.history_kept());
+    Ok(library)
+}
+
+fn age_the_history(library: &Library, kept: HistoryKept) {
+    match library.age_the_history(kept) {
+        Ok(aged) if aged != Aged::default() => tracing::info!(
+            listens = aged.listens,
+            passes = aged.passes,
+            "the history older than it is kept for was forgotten"
+        ),
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "the history could not be aged"),
     }
 }
 
@@ -2101,6 +2115,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             settings: Arc::new(settings),
             places,
             resume: keeps,
+            history_kept: config.history_kept(),
             organise_as: config.organise_as().to_string(),
             notify,
             window_buttons: config.window_buttons(),

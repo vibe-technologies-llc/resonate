@@ -54,7 +54,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
   popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
   rating at all
-- Nothing ages or bounds the play history
 - No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
   count is one date and one total with no history
 - A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS

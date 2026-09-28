@@ -124,6 +124,17 @@ through `Player::media` like any other unscanned row.
   so nothing downstream has to draw around a gap. `most_listened` is free to sort on a
   `count(*)` precisely because it is its own read and not a `SortOrder` — which is why the
   Statistics pane can answer what was heard most this month and the tracks pane still cannot.
+- **The history is kept for as long as the listener says, and never past what a service was
+  told.** `HistoryKept` is `Forever` — the default — or a span of days, and
+  `Library::age_the_history` deletes the `listens` and the `passes` older than it; a listen is
+  forgotten only where its id is at or behind the lowest mark `submissions` holds, so a history
+  aged while ListenBrainz could not be reached is still told in full when it can. What it takes is
+  the history alone: `tracks.plays` and `tracks.played` are counters of their own and stay, so a
+  track's count and the order *most played* reads off are what they were, and only the
+  Statistics pane's reads — every one of them over `listens` — reach back no further than the
+  span. The binary ages the catalog in `open_library_with`, so every command that opens it does,
+  and the settings pane's *Listening history* ages it the moment a span is chosen.
+  `a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told` is the claim.
 - **What a service has been told is a mark in the history, and the history is what is told.**
   `submissions` — the sixth step in `MIGRATIONS` — holds one row per `ListeningService`, the id of
   the last `listens` row that service has been told of, and `scrobble.rs` is the pass:
