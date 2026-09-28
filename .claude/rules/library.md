@@ -1313,10 +1313,18 @@ through `Player::media` like any other unscanned row.
   registers on each connection as a deterministic SQLite function, so *Fearless* on the album
   holds the *Fearless* single however either is punctuated, and only a single whose song the
   catalog has nowhere is listed as not held —
-  `a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`.
+  `a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`,
+  which reads the rest as well.
   **What was not read is said rather than logged.** `Reference::release_groups_of` answers a
   `Discography` — the releases and how many more the service credits than the browse's cap
-  read — and `land_artist_releases` keeps that as `artists.releases_unread`, which
+  read — and `land_artist_releases` keeps that as `artists.releases_unread`, and where the
+  browse stopped as `artists.releases_read_to`, a step in `MIGRATIONS` that sets the thousand the
+  cap always was on every artist a read had fallen short on. **The rest is read when the
+  listener asks**: `Library::read_the_rest_of` asks the reference for the next groups from that
+  offset and lands them `Discographed::Further` — beside what the first read kept rather than
+  over it — with the unread count and the offset moved on, so the artist page's *Read the rest*
+  and `resonate missing --artist <NAME> --read-the-rest` each read one more thousand and a
+  discography read to its end is not asked about again, which
   `ArtistDetail::releases_unread` carries to the artist page's *N releases not held* button and
   `resonate missing --artist` prints; `Library::unheld_releases` lists them under a cap by artist
   and first release date, `ArtistDetail::releases_unheld` counts one artist's and

@@ -227,8 +227,10 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   library's `worth_keeping` keeps, so a broadcast neither costs a page nor counts against the
   cap — in pages of `BROWSE_PAGE`, 100, following `release-group-offset` and
   `release-group-count` until the count is reached or `GROUPS_AT_MOST`, 1 000, is, so a
-  prolific artist costs ten requests and never more, and what it is credited on past that is
-  answered as `Discography::unread` for the catalog to keep and the window to say. `BrowsedGroupDoc::into_artist_release`
+  prolific artist costs ten requests a pass and never more, and what it is credited on past that
+  is answered as `Discography::unread` for the catalog to keep and the window to say, beside
+  `Discography::read_to`, the offset the browse stopped at. It takes a `from` as well, so the
+  next thousand are read from there when the listener asks for the rest. `BrowsedGroupDoc::into_artist_release`
   maps each to an `ArtistRelease` with its title, primary type, secondary types and first
   release date, and a group naming no mbid is a debug record rather than a row; the library's
   `worth_keeping` still reads the types — the secondary ones, a compilation or a live album, are

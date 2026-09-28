@@ -640,6 +640,14 @@ pub enum Sub {
             help = "List only the tracks and releases of the artist with this name"
         )]
         artist: Option<String>,
+
+        #[arg(
+            long,
+            requires = "artist",
+            help = "First ask MusicBrainz for the releases past the first thousand the artist is \
+                    credited on"
+        )]
+        read_the_rest: bool,
     },
 
     #[command(about = "Ask every registered provider for each wanted track not tried lately")]

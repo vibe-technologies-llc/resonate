@@ -69,6 +69,8 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE unheld_listens ADD COLUMN heard INTEGER NOT NULL DEFAULT 0;
      CREATE INDEX unheld_listens_by_time ON unheld_listens(at);",
     "ALTER TABLE tracks ADD COLUMN packets INTEGER;",
+    "ALTER TABLE artists ADD COLUMN releases_read_to INTEGER NOT NULL DEFAULT 0;
+     UPDATE artists SET releases_read_to = 1000 WHERE releases_unread > 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

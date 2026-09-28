@@ -49,8 +49,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
-- Past `GROUPS_AT_MOST` release groups an artist's discography is read no further; the count
-  left unread is said, and nothing reads the rest
 - The verdict reads only the lowpass wall, the upsampled wall and the padded bits — not an MP3's
   frame-to-frame holes, sfb21 content or pre-echo — so an encode with no lowpass a wall can find,
   ffmpeg's AAC at 256 kbps among them, reads as lossless; no FhG encode was weighed

@@ -207,7 +207,7 @@ fn the_reference_answers_pink_floyd_with_every_album_and_ep_it_is_credited_on() 
     let online = Online::with_client(client);
 
     let groups = online
-        .release_groups_of(&mbid(PINK_FLOYD))
+        .release_groups_of(&mbid(PINK_FLOYD), 0)
         .expect("musicbrainz answered")
         .releases;
     assert!(

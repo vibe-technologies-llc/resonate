@@ -226,7 +226,16 @@ fn run() -> Result<()> {
             },
         ),
         Some(Sub::Wants) => wants(&open_library(&cli, &config)?),
-        Some(Sub::Missing { artist }) => missing(&open_library(&cli, &config)?, artist.as_deref()),
+        Some(Sub::Missing {
+            artist,
+            read_the_rest,
+        }) => {
+            let library = open_library(&cli, &config)?;
+            if *read_the_rest && let Some(named) = artist.as_deref() {
+                read_the_rest_of(&library, &config, named)?;
+            }
+            missing(&library, artist.as_deref())
+        }
         Some(Sub::Poll { again }) => {
             let held = vault_already_kept(&cli, &config);
             poll(
@@ -723,6 +732,19 @@ fn linked_through(want: &Want) -> String {
         }
     }
     named.join(", ")
+}
+
+fn read_the_rest_of(library: &Library, config: &Config, named: &str) -> Result<()> {
+    let reference = online::reference_asked_for(config)?;
+    let Some(artist) = library.artist_named(named)? else {
+        return Ok(());
+    };
+    let read = library.read_the_rest_of(artist, reference.as_ref())?;
+    println!(
+        "read {} more of {named}'s discography",
+        counted(read as u64, "release", "releases")
+    );
+    Ok(())
 }
 
 fn missing(library: &Library, artist: Option<&str>) -> Result<()> {

@@ -85,8 +85,8 @@ impl Reference for Online {
         Ok(musicbrainz::find_artist(&self.client, name)?)
     }
 
-    fn release_groups_of(&self, artist: &Mbid) -> resonate_library::Result<Discography> {
-        Ok(musicbrainz::release_groups_of(&self.client, artist)?)
+    fn release_groups_of(&self, artist: &Mbid, from: u32) -> resonate_library::Result<Discography> {
+        Ok(musicbrainz::release_groups_of(&self.client, artist, from)?)
     }
 
     fn cover(

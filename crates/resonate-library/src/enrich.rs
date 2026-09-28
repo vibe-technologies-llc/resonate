@@ -1906,13 +1906,13 @@ impl Pass<'_> {
     }
 
     fn discography(&self, artist: ArtistId, mbid: &Mbid) -> Result<()> {
-        let Heard::Answered(held) = self.heard(self.reference.release_groups_of(mbid))? else {
+        let Heard::Answered(held) = self.heard(self.reference.release_groups_of(mbid, 0))? else {
             return Ok(());
         };
         let kept: Vec<ArtistRelease> = held.releases.into_iter().filter(worth_keeping).collect();
-        let written = self
-            .library
-            .land_artist_releases(artist, &kept, held.unread)?;
+        let written =
+            self.library
+                .land_artist_releases(artist, &kept, (held.unread, held.read_to))?;
         self.progress
             .releases_found
             .fetch_add(written as u64, Ordering::Relaxed);
@@ -2000,7 +2000,7 @@ const KEPT_KINDS: [&str; 3] = ["Album", "EP", "Single"];
 
 const SOUNDTRACK: &str = "Soundtrack";
 
-fn worth_keeping(release: &ArtistRelease) -> bool {
+pub(crate) fn worth_keeping(release: &ArtistRelease) -> bool {
     release
         .kind
         .as_deref()

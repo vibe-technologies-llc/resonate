@@ -91,6 +91,9 @@ const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to th
 
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
+const READ_THE_REST: &str = "Read the rest";
+const READ_THE_REST_HINT: &str =
+    "Ask MusicBrainz for the releases past the first thousand this artist is credited on";
 const NOTHING_PLACES_IT: &str = "Nothing has identified this track, so it is on no release yet";
 
 const WANTING_HINT: &str = "Adding its release to the catalog";
@@ -1559,6 +1562,7 @@ impl RootView {
                 )
             })
             .filter(|(unheld, _)| missing_shown && *unheld > 0);
+        let reads_further = library.can_enrich();
         let favourite = library.favoured_artist(id);
         let records = library.artist_albums().len();
         let tracks = library.listed().rows as usize;
@@ -1637,6 +1641,23 @@ impl RootView {
                             this.set_pane(Pane::Missing, cx);
                         })),
                     )
+                    .when(unread > 0 && reads_further, |row| {
+                        row.child(
+                            kit::button(
+                                "read-the-rest",
+                                Some(Icon::Import),
+                                READ_THE_REST,
+                                READ_THE_REST_HINT,
+                                Tone::Ghost,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    this.library
+                                        .update(cx, |library, cx| library.read_the_rest_of(id, cx));
+                                },
+                            )),
+                        )
+                    })
                 })
                 .when(records > 0, |row| {
                     row.child(div().flex_1())

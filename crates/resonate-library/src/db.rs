@@ -3054,10 +3054,51 @@ impl Library {
         &self,
         artist: ArtistId,
         releases: &[ArtistRelease],
-        unread: u32,
+        (unread, read_to): (u32, u32),
     ) -> Result<usize> {
         self.inner.write(|transaction| {
-            enriched::land_artist_releases(transaction, artist, releases, unread)
+            enriched::land_artist_releases(
+                transaction,
+                artist,
+                releases,
+                (unread, read_to),
+                enriched::Discographed::Afresh,
+            )
+        })
+    }
+
+    pub fn read_the_rest_of(&self, artist: ArtistId, reference: &dyn Reference) -> Result<usize> {
+        let held = self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT mbid, releases_read_to FROM artists
+                      WHERE id = ?1 AND releases_unread > 0",
+                    params![artist.get() as i64],
+                    |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, u32>(1)?)),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+        let Some((Some(mbid), read_to)) = held else {
+            return Ok(0);
+        };
+        let Some(mbid) = store::mbid_in(Some(&mbid)) else {
+            return Ok(0);
+        };
+        let further = reference.release_groups_of(&mbid, read_to)?;
+        let kept: Vec<ArtistRelease> = further
+            .releases
+            .into_iter()
+            .filter(enrich::worth_keeping)
+            .collect();
+        self.inner.write(|transaction| {
+            enriched::land_artist_releases(
+                transaction,
+                artist,
+                &kept,
+                (further.unread, further.read_to.max(read_to)),
+                enriched::Discographed::Further,
+            )
         })
     }
 

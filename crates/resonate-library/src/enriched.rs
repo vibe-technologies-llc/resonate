@@ -1209,11 +1209,18 @@ pub(crate) fn land_artist(
 
 const A_SINGLE: &str = "Single";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Discographed {
+    Afresh,
+    Further,
+}
+
 pub(crate) fn land_artist_releases(
     tx: &Transaction<'_>,
     artist: ArtistId,
     releases: &[ArtistRelease],
-    unread: u32,
+    (unread, read_to): (u32, u32),
+    discographed: Discographed,
 ) -> Result<usize> {
     let id = artist.get() as i64;
     let known = tx
@@ -1226,14 +1233,16 @@ pub(crate) fn land_artist_releases(
         return Err(Error::UnknownArtist(artist));
     }
 
+    if discographed == Discographed::Afresh {
+        tx.execute(
+            "DELETE FROM artist_releases WHERE artist_id = ?1",
+            params![id],
+        )
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
     tx.execute(
-        "DELETE FROM artist_releases WHERE artist_id = ?1",
-        params![id],
-    )
-    .map_err(|source| Error::store(StoreOp::Delete, source))?;
-    tx.execute(
-        "UPDATE artists SET releases_unread = ?2 WHERE id = ?1",
-        params![id, unread],
+        "UPDATE artists SET releases_unread = ?2, releases_read_to = ?3 WHERE id = ?1",
+        params![id, unread, read_to],
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
     let mut insert = tx

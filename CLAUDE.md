@@ -987,7 +987,8 @@ cargo run -- wants                    # the release tracks marked wanted, with w
 cargo run -- missing                  # the release tracks the catalog holds no file for, and
                                       #   the releases of held artists it holds none of, as a
                                       #   count line and two tables; --artist <NAME> lists one
-                                      #   artist's alone
+                                      #   artist's alone, and --read-the-rest first reads the
+                                      #   next thousand releases of a discography cut short
 cargo run -- poll                     # asks every registered provider for each want not tried
                                       #   lately and lands what they deliver in the vault as
                                       #   track rows; --again asks about those tried lately too

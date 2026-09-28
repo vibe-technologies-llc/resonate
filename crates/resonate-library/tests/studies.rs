@@ -264,7 +264,7 @@ impl Reference for Silent {
         Ok(Vec::new())
     }
 
-    fn release_groups_of(&self, _artist: &Mbid) -> Result<Discography> {
+    fn release_groups_of(&self, _artist: &Mbid, _from: u32) -> Result<Discography> {
         Ok(Discography::default())
     }
 

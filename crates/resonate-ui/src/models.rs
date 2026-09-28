@@ -93,6 +93,16 @@ const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't ta
 const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
 const PLACED_ON: &str = "Placed the track on that release";
 
+fn read_further(read: usize) -> String {
+    match read {
+        0 => "The rest of the discography held nothing worth keeping".to_owned(),
+        read => format!(
+            "Read {} more of the discography",
+            format::counted(read, "release", "releases")
+        ),
+    }
+}
+
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 
 pub(crate) const fn side(pixels: u32) -> NonZeroU32 {
@@ -238,6 +248,7 @@ enum Change {
     ForgetTheMatch,
     TakePressing,
     PlaceOn,
+    ReadTheRest,
     Undo,
     Redo,
 }
@@ -262,6 +273,7 @@ impl Change {
             Self::ForgetTheMatch => "forget that match",
             Self::TakePressing => "take that pressing",
             Self::PlaceOn => "place the track on that release",
+            Self::ReadTheRest => "read the rest of the discography",
             Self::Undo => "put that back",
             Self::Redo => "do that again",
         }
@@ -1442,6 +1454,22 @@ impl LibraryModel {
                 library
                     .place_on(track, reference.as_ref(), &recording, &release)
                     .map(|placed| placed.then(|| PLACED_ON.to_owned()))
+            },
+            cx,
+        );
+    }
+
+    pub fn read_the_rest_of(&mut self, artist: ArtistId, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        self.edited(
+            Wanted::Everything,
+            Change::ReadTheRest,
+            move |library| {
+                library
+                    .read_the_rest_of(artist, reference.as_ref())
+                    .map(|read| Some(read_further(read)))
             },
             cx,
         );

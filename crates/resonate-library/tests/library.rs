@@ -80,6 +80,7 @@ const BEST_OF_GROUP: &str = "2c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f";
 const SCORE_GROUP: &str = "3d4e5f6a-7b8c-4d9e-8fa0-2b3c4d5e6f7a";
 const SINGLE_GROUP: &str = "4e5f6a7b-8c9d-4eaf-8ab1-3c4d5e6f7a8b";
 const BROADCAST_GROUP: &str = "5f6a7b8c-9dae-4fb0-8bc2-4d5e6f7a8b9c";
+const NIGHTFALL_GROUP: &str = "6a7b8c9d-aebf-4ac1-8cd3-5e6f7a8b9cad";
 const RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
 const ANOTHER_RECORDING: &str = "c2b8d1ef-2222-4333-8444-555566667777";
 
@@ -8258,6 +8259,7 @@ struct Canned {
     found_artists: Vec<ArtistMatch>,
     artist_releases: Vec<(Mbid, Vec<ArtistRelease>)>,
     releases_unread: u32,
+    further_releases: Vec<ArtistRelease>,
     covers: Vec<(Mbid, CoverArt)>,
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
@@ -8454,16 +8456,30 @@ impl Reference for Fake {
         Ok(self.canned.found_artists.clone())
     }
 
-    fn release_groups_of(&self, artist: &Mbid) -> Result<Discography> {
+    fn release_groups_of(&self, artist: &Mbid, from: u32) -> Result<Discography> {
+        const FIRST_READ: u32 = 1_000;
         self.note(Called::ReleaseGroupsOf(artist.clone()))?;
+        if from > 0 {
+            return Ok(Discography {
+                releases: self.canned.further_releases.clone(),
+                unread: 0,
+                read_to: from + self.canned.releases_unread,
+            });
+        }
+        let releases = self
+            .canned
+            .artist_releases
+            .iter()
+            .find(|(held, _)| held == artist)
+            .map(|(_, releases)| releases.clone())
+            .unwrap_or_default();
         Ok(Discography {
-            releases: self
-                .canned
-                .artist_releases
-                .iter()
-                .find(|(held, _)| held == artist)
-                .map(|(_, releases)| releases.clone())
-                .unwrap_or_default(),
+            read_to: if self.canned.releases_unread > 0 {
+                FIRST_READ
+            } else {
+                releases.len() as u32
+            },
+            releases,
             unread: self.canned.releases_unread,
         })
     }
@@ -10044,6 +10060,13 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         artists: vec![orbiters()],
         artist_releases: vec![(mbid(ORBITERS), groups)],
         releases_unread: 250,
+        further_releases: vec![artist_release(
+            NIGHTFALL_GROUP,
+            "Nightfall",
+            Some("Album"),
+            &[],
+            Some("2011-01-01"),
+        )],
         ..Canned::default()
     }));
     enrich(&library, &fake, false)?;
@@ -10065,6 +10088,26 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
     let detail = library.artist_detail(artist.id)?.expect("the artist");
     assert_eq!(detail.releases_unheld, 4);
     assert_eq!(detail.releases_unread, 250);
+
+    assert_eq!(library.read_the_rest_of(artist.id, fake.as_ref())?, 1);
+    let unheld: Vec<String> = library
+        .unheld_releases(None, None)?
+        .into_iter()
+        .map(|release| release.title)
+        .collect();
+    assert!(unheld.contains(&"Nightfall".to_owned()), "{unheld:?}");
+    assert!(
+        unheld.contains(&"Satellite".to_owned()),
+        "reading the rest took away what the first read kept: {unheld:?}"
+    );
+    let detail = library.artist_detail(artist.id)?.expect("the artist");
+    assert_eq!(detail.releases_unheld, 5);
+    assert_eq!(detail.releases_unread, 0);
+    assert_eq!(
+        library.read_the_rest_of(artist.id, fake.as_ref())?,
+        0,
+        "a discography read to its end was read again"
+    );
     Ok(())
 }
 
@@ -10150,7 +10193,7 @@ fn an_unheld_release_is_found_by_a_name_spelt_either_way() -> Result<()> {
             &[],
             Some("1996-05-06"),
         )],
-        0,
+        (0, 1),
     )?;
 
     assert_eq!(

@@ -478,11 +478,13 @@ pub(crate) fn find_artist(client: &Client, name: &str) -> Result<Vec<ArtistMatch
         .collect())
 }
 
-pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Discography> {
+pub(crate) fn release_groups_of(client: &Client, artist: &Mbid, from: u32) -> Result<Discography> {
     let op = LookupOp::ReleaseGroupsOfArtist;
+    let reading_to = from.saturating_add(GROUPS_AT_MOST);
     let mut releases: Vec<ArtistRelease> = Vec::new();
     let mut unread: u32 = 0;
-    let mut offset: u32 = 0;
+    let mut read_to = from;
+    let mut offset = from;
     loop {
         let path = release_groups_path(artist, offset);
         let Some(page) = client.json::<BrowseDoc>(Host::MusicBrainz, op, &path)? else {
@@ -490,28 +492,33 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Discog
         };
         let read = u32::try_from(page.release_groups.len()).unwrap_or(u32::MAX);
         let next = page.release_group_offset.saturating_add(read);
-        if offset == 0 && page.release_group_count > GROUPS_AT_MOST {
-            unread = page.release_group_count - GROUPS_AT_MOST;
+        let held = page.release_group_count.min(reading_to);
+        unread = page.release_group_count.saturating_sub(held);
+        if offset == from && unread > 0 {
             tracing::debug!(
                 %artist,
                 credited = page.release_group_count,
-                read = GROUPS_AT_MOST,
+                read = held,
                 "an artist is credited on more release groups than a discography reads"
             );
         }
-        let held = page.release_group_count.min(GROUPS_AT_MOST);
         releases.extend(
             page.release_groups
                 .into_iter()
                 .filter_map(BrowsedGroupDoc::into_artist_release),
         );
+        read_to = next.min(held).max(read_to);
         if read == 0 || next <= offset || next >= held {
             break;
         }
         offset = next;
     }
 
-    Ok(Discography { releases, unread })
+    Ok(Discography {
+        releases,
+        unread,
+        read_to,
+    })
 }
 
 fn release_groups_path(artist: &Mbid, offset: u32) -> String {
