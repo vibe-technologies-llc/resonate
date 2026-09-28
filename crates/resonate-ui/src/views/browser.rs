@@ -233,7 +233,7 @@ impl RootView {
                         .flex_1()
                         .min_h(px(0.0))
                         .pt_5()
-                        .child(kit::measures_its_width(measured))
+                        .child(kit::measures_the_grid(measured))
                         .when(laid_out, |body| {
                             body.child(
                                 uniform_list(
@@ -1179,7 +1179,7 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .pt_5()
-            .child(kit::measures_its_width(measured))
+            .child(kit::measures_the_grid(measured))
             .when(laid_out, |body| {
                 body.child(
                     uniform_list(

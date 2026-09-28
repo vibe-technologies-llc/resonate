@@ -784,6 +784,43 @@ pub(crate) fn measures_its_width(measured: Rc<Cell<Pixels>>) -> impl IntoElement
     .inset_0()
 }
 
+#[derive(Default)]
+pub(crate) struct GridWidth {
+    narrower_than_the_window: Cell<Option<Pixels>>,
+    window: Cell<Pixels>,
+}
+
+impl GridWidth {
+    pub(crate) fn seen_in(&self, window: Pixels) {
+        self.window.set(window);
+    }
+
+    pub(crate) fn get(&self) -> Pixels {
+        self.narrower_than_the_window
+            .get()
+            .map_or(px(0.0), |narrower| {
+                (self.window.get() - narrower).max(px(0.0))
+            })
+    }
+}
+
+pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
+    canvas(
+        move |bounds, window, _| {
+            let across = window.viewport_size().width;
+            let narrower = Some(across - bounds.size.width);
+            grid.seen_in(across);
+            if grid.narrower_than_the_window.get() != narrower {
+                grid.narrower_than_the_window.set(narrower);
+                window.request_animation_frame();
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
 pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElement {
     canvas(
         move |bounds, window, _| {
@@ -953,3 +990,25 @@ pub(crate) trait Found: InteractiveElement + Sized {
 }
 
 impl<E: InteractiveElement> Found for E {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_grid_is_as_wide_as_the_window_now_less_what_it_was_narrower_by() {
+        let grid = GridWidth::default();
+        assert_eq!(grid.get(), px(0.0), "a grid nobody measured has a width");
+
+        grid.seen_in(px(1_400.0));
+        grid.narrower_than_the_window.set(Some(px(400.0)));
+        assert_eq!(grid.get(), px(1_000.0));
+
+        grid.seen_in(px(1_100.0));
+        assert_eq!(
+            grid.get(),
+            px(700.0),
+            "a window made narrower left the grid its old width for a frame"
+        );
+    }
+}

@@ -573,19 +573,23 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   playlist pass no runs. The accent is what lights a run, the same colour the playing row's title
   wears, with `FontWeight::MEDIUM` behind it so a run still reads where the whole title is already
   accented.
-- **The albums pane is a grid, and its column count is measured a frame behind.** A cell is
-  `theme::grid_cover()` square with the title and the artist and year under it, and a row of the
-  `uniform_list` is `columns` of them, so a library of two thousand albums still costs a screen of
-  cells a frame. The width the columns are read from is `RootView::grid_width`, a cell a canvas
-  under the list writes on prepaint; when it moves the canvas asks for the next animation frame,
-  because a refresh asked for mid-draw is ignored. **The list is not built until that cell holds
+- **The albums pane is a grid, and its column count follows the window in the frame it moves.**
+  A cell is `theme::grid_cover()` square with the title and the artist and year under it, and a
+  row of the `uniform_list` is `columns` of them, so a library of two thousand albums still costs
+  a screen of cells a frame. The width the columns are read from is `RootView::grid_width`, a
+  `kit::GridWidth`: the canvas under the list writes on prepaint how much *narrower than the
+  window* the grid is, and `RootView::region` tells it the window's width every time the pane is
+  built, so the width it answers is the window's now less that — the sidebar and the paddings
+  being fixed, a resize is the same pixels on both. When what it is narrower by moves the canvas
+  asks for the next animation frame, because a refresh asked for mid-draw is ignored. **The list is not built until that cell holds
   something**, the way the lyrics pane's `place` reveals nothing until the size it measured is
   the size it has: the `max(1)` fallback is a column count nobody wants drawn, and a frame of
   full-width cells stacked one to a row is the most visible thing the pane can do. The canvas is
   `absolute` and sized by the container rather than by the list, so it measures the same bounds
-  whether the list is there or not, which is what makes holding it back safe. A resize still
-  draws one frame at the count the last width gave, which is a cell or two out rather than a
-  collapse. `Drawn::InAGrid` is the third image `Art` holds, at twice the cell
+  whether the list is there or not, which is what makes holding it back safe. A resize is drawn
+  at the new count the first frame it is drawn at —
+  `a_grid_is_as_wide_as_the_window_now_less_what_it_was_narrower_by`; only a change the window's
+  width does not carry, a sidebar grown with the text size, takes the frame the measure does. `Drawn::InAGrid` is the third image `Art` holds, at twice the cell
   like the other two.
 - **An empty pane says what it is missing and what to do about it.** `kit::empty` draws the pane's
   own icon in a ring, one sentence naming the state and, where there is one, a second saying which

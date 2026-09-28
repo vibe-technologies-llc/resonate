@@ -469,7 +469,7 @@ pub struct RootView {
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
     listing_whole: Task<()>,
-    pub(crate) grid_width: Rc<Cell<Pixels>>,
+    pub(crate) grid_width: Rc<kit::GridWidth>,
     pub(crate) hero_width: Rc<Cell<Pixels>>,
     pub(crate) hero_height: Rc<Cell<Pixels>>,
     pub(crate) playing_room: Rc<Cell<Pixels>>,
@@ -857,7 +857,7 @@ impl RootView {
             creeping: None,
             creeping_on: Task::ready(()),
             listing_whole: Task::ready(()),
-            grid_width: Rc::new(Cell::new(px(0.0))),
+            grid_width: Rc::default(),
             hero_width: Rc::new(Cell::new(px(0.0))),
             hero_height: Rc::new(Cell::new(px(0.0))),
             playing_room: Rc::new(Cell::new(px(0.0))),
@@ -3327,7 +3327,10 @@ impl RootView {
         match region {
             Region::Header => self.header(window, cx).into_any_element(),
             Region::Sidebar => self.sidebar(cx).into_any_element(),
-            Region::Pane => self.content(cx),
+            Region::Pane => {
+                self.grid_width.seen_in(window.viewport_size().width);
+                self.content(cx)
+            }
             Region::Transport => self.transport(chrome::rounded_within_the_frame(window), cx),
         }
     }
