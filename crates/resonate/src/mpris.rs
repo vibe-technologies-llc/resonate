@@ -5,7 +5,7 @@ use std::sync::{
 
 use crossbeam_channel::{Receiver, Sender};
 use resonate_codec::Sources;
-use resonate_core::{FrameSpan, MediaLocation, SourceId};
+use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem, Unclaimed};
 use resonate_library::Library;
 use resonate_mpris::{Heard, Host, Mpris, Opened};
@@ -125,7 +125,9 @@ impl Host for Desktop {
         let items = match location.as_path().filter(|_| names_a_sheet(location)) {
             Some(sheet) => sheet_items(&self.sources, sheet, &mut minting),
             None => vec![QueueItem {
-                id: minting.mint(),
+                id: self
+                    .held_as(location, span)
+                    .unwrap_or_else(|| minting.mint()),
                 location: location.clone(),
                 span,
             }],
@@ -163,6 +165,37 @@ impl Host for Desktop {
             }
         }
     }
+
+    fn held_as(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<TrackId> {
+        held_as(self.library.as_deref()?, location, span)
+    }
+}
+
+pub(crate) fn held_as(
+    library: &Library,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+) -> Option<TrackId> {
+    match library.track_at(location.as_path()?, span) {
+        Ok(track) => track.map(|track| track.id),
+        Err(error) => {
+            tracing::debug!(%error, "whether the catalog holds a queued file could not be read");
+            None
+        }
+    }
+}
+
+pub(crate) fn claimed_by(library: Option<&Library>, items: Vec<QueueItem>) -> Vec<QueueItem> {
+    let Some(library) = library else {
+        return items;
+    };
+    items
+        .into_iter()
+        .map(|item| match held_as(library, &item.location, item.span) {
+            Some(id) => QueueItem { id, ..item },
+            None => item,
+        })
+        .collect()
 }
 
 pub(crate) fn start(

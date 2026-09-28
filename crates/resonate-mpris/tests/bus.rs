@@ -372,7 +372,17 @@ impl Host for Desktop {
             .find(|(held, cut, _)| held == location && *cut == span)
             .map(|(_, _, heard)| *heard)
     }
+
+    fn held_as(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<TrackId> {
+        self.catalog
+            .lock()
+            .iter()
+            .position(|(held, cut, _)| held == location && *cut == span)
+            .and_then(|at| TrackId::new(HELD_IDS_FROM + at as u64).ok())
+    }
 }
+
+const HELD_IDS_FROM: u64 = 4_242;
 
 struct Shelf {
     rows: Mutex<Vec<PlaylistInfo>>,
@@ -1148,6 +1158,52 @@ fn a_seek_past_the_end_of_a_track_acts_like_next_the_way_the_spec_says() {
                 .is_some_and(|track| track.id.get() == 2)
         },
         "the seek past the end to move to the next track",
+    );
+}
+
+#[test]
+fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load(&tree.wav("echoes.wav"));
+    harness.wait_for(
+        |harness| harness.tracks().len() == 1,
+        "the track list to publish",
+    );
+
+    let held = tree.wav("held.wav");
+    let loose = tree.wav("loose.wav");
+    harness
+        .catalog
+        .lock()
+        .push((MediaLocation::local(&held), None, Heard::default()));
+    let list = harness.proxy(TRACK_LIST);
+    for file in [&loose, &held] {
+        let tail = harness.tracks().last().cloned().expect("the loaded row");
+        list.call::<_, _, ()>(
+            "AddTrack",
+            &(MediaLocation::local(file).to_uri(), &tail, false),
+        )
+        .expect("AddTrack is served");
+    }
+    harness.wait_for(
+        |harness| harness.tracks().len() == 3,
+        "both files to reach the track list",
+    );
+
+    let queue = harness.player.queue();
+    let id_of = |file: &Path| {
+        queue
+            .iter()
+            .find(|item| item.location == MediaLocation::local(file))
+            .map(|item| item.id.get())
+    };
+    assert_eq!(id_of(&held), Some(HELD_IDS_FROM));
+    assert!(
+        id_of(&loose).is_some_and(|id| id != HELD_IDS_FROM),
+        "a file the catalog does not hold was not minted an id of its own"
     );
 }
 

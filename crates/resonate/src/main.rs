@@ -1672,10 +1672,11 @@ fn play(cli: &Cli, config: &Config, arguments: &[OsString], spec: Option<&str>) 
     let asleep = spec.map(sleep::Sleep::read).transpose()?;
     let library = catalog(cli, config);
 
+    let items = mpris::claimed_by(library.as_deref(), queue_items(arguments));
     play_queue(
         cli,
         config,
-        queue_items(arguments),
+        items,
         library,
         None,
         asleep.and_then(sleep::Sleep::until),
@@ -2197,7 +2198,7 @@ fn launch(cli: Cli, config: Config, _library: Arc<Library>) -> Result<()> {
 fn queue(player: &Player, arguments: &[OsString], kept: Option<&Library>) -> Result<()> {
     if !arguments.is_empty() {
         player.send(Command::Load {
-            items: queue_items(arguments),
+            items: mpris::claimed_by(kept, queue_items(arguments)),
             start_at: 0,
             autoplay: true,
         })?;

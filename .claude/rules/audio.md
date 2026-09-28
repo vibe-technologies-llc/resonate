@@ -887,7 +887,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   already holds, so no front end needs a counter of its own and two of them cannot mint the same id.
   `Unclaimed::beside` is that walk taken once and then counted down for a whole run of rows, which
   is what queueing a playlist of unscanned files goes through rather than walking the queue again
-  per row.
+  per row. **A file the catalog holds is queued under the catalog's id wherever there is a catalog to
+  ask.** `Host::held_as` answers the library row for a location and its span, and `AddTrack` and
+  `OpenUri` ask it before they mint; the binary's `mpris::claimed_by` does the same for the files
+  `resonate play` and the window are handed, so a file queued by path is the row it is in the
+  library rather than an id counted down from the top —
+  `a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id`.
 - **A queue row's id names that row and no other, and the queue is where that is made true.**
   `one_id_each` runs over everything `Queue::load` and `Queue::insert` are handed: a row whose id
   is already claimed — by the queue it is joining or by an earlier row of the same batch — is

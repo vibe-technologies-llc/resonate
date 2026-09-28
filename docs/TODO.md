@@ -138,8 +138,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Later: MPRIS
 - A row added and removed inside one 200 ms poll is never announced, and a shuffle is announced as
   the whole list replaced
-- An id `unclaimed_id` minted for a file outside the library is never reconciled with the library
-  row for the same file
+- A resumed queue is minted afresh by `Queue::restore`, so its rows carry no library id until the
+  window resolves them by location
 
 ## Later: MCP
 - Nothing is pushed: resources cannot be subscribed to and no notification is sent while a pass

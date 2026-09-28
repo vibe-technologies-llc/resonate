@@ -186,12 +186,13 @@ impl TrackList {
         let queue = self.shared.player.queue();
         let at = Self::landing(&queue, &after_track)?;
 
+        let id = self
+            .shared
+            .host
+            .held_as(&location, span)
+            .unwrap_or_else(|| unclaimed_id(&queue));
         self.shared.settle(Command::Insert {
-            items: vec![QueueItem {
-                id: unclaimed_id(&queue),
-                location,
-                span,
-            }],
+            items: vec![QueueItem { id, location, span }],
             at: Placement::At(at),
             play: set_as_current,
         })

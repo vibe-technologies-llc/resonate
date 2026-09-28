@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Opened {
@@ -54,6 +54,10 @@ pub trait Host: Send + Sync + 'static {
     }
 
     fn heard(&self, _location: &MediaLocation, _span: Option<FrameSpan>) -> Option<Heard> {
+        None
+    }
+
+    fn held_as(&self, _location: &MediaLocation, _span: Option<FrameSpan>) -> Option<TrackId> {
         None
     }
 }
