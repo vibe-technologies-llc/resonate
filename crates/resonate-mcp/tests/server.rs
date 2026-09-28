@@ -1691,14 +1691,28 @@ fn a_prompt_asked_wrongly_is_refused_and_one_whose_reading_fails_fails() {
     );
 }
 
+fn without_the_clock(mut statistics: Value) -> Value {
+    if let Some(fields) = statistics.as_object_mut() {
+        fields.remove("since");
+    }
+    statistics
+}
+
 #[test]
 fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
     let server = nothing_running();
 
     for window in ["week", "month", "year", "everything"] {
+        let read = read_resource(&server, &format!("resonate://library/statistics/{window}"));
+        let asked = called(&server, "listening_statistics", json!({ "window": window }));
         assert_eq!(
-            read_resource(&server, &format!("resonate://library/statistics/{window}")),
-            called(&server, "listening_statistics", json!({ "window": window })),
+            read.get("since").is_some(),
+            asked.get("since").is_some(),
+            "{window}"
+        );
+        assert_eq!(
+            without_the_clock(read),
+            without_the_clock(asked),
             "{window}"
         );
     }
