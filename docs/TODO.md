@@ -51,9 +51,9 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A file moved by hand and retagged past every name it had, or a cue-cut file, starts again at
   nothing. A file no scan has seen counts nothing — a queue of unscanned files plays and is
   forgotten
-- Nothing writes a favourite or a play count back into the file, so both stay with this catalog.
-  lofty's `ItemKey::Popularimeter` maps to `POPM`, Vorbis `RATING`, MP4 `rate` and RIFF `IRTD` and
-  carries a counter, so the seam `resonate tag` already is could write them
+- A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
+  popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
+  rating at all
 - Nothing ages or bounds the play history
 - No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
   count is one date and one total with no history

@@ -2203,6 +2203,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         Writing {
             edits: &edits,
             picture: None,
+            popularity: None,
         },
     )
     .expect("a written Opus file");
@@ -2649,6 +2650,7 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         Writing {
             edits: &edits,
             picture: None,
+            popularity: None,
         },
     )
     .expect("a written WavPack file");
@@ -2886,6 +2888,7 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         Writing {
             edits: &edits,
             picture: None,
+            popularity: None,
         },
     )
     .expect("a written Monkey's Audio file");

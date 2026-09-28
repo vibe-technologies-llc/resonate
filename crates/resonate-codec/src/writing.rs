@@ -12,7 +12,7 @@ use lofty::{
     file::{FileType, TaggedFileExt as _},
     picture::{MimeType, Picture, PictureType},
     probe::Probe,
-    tag::{ItemKey, Tag, TagExt as _},
+    tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
 use resonate_core::MediaLocation;
 
@@ -157,11 +157,45 @@ pub struct TagEdit {
 pub struct Writing<'a> {
     pub edits: &'a [TagEdit],
     pub picture: Option<&'a CoverArt>,
+    pub popularity: Option<Popularity>,
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Popularity {
+    pub favourite: bool,
+    pub plays: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Rated {
+    #[default]
+    Unrateable,
+    Unrated,
+    Favourite {
+        plays: Option<u64>,
+    },
+}
+
+impl Rated {
+    pub fn differs_from(self, wanted: Popularity) -> bool {
+        match self {
+            Self::Unrateable => false,
+            Self::Unrated => wanted.favourite,
+            Self::Favourite { plays } => {
+                !wanted.favourite || plays.is_some_and(|plays| plays != wanted.plays)
+            }
+        }
+    }
+}
+
+pub const RATED_BY: &str = "resonate";
+
+const FAVOURITE_STARS: u8 = 5;
 
 pub trait TagSink: TagSource {
     fn writes(&self, location: &MediaLocation) -> bool;
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()>;
+    fn rated(&self, location: &MediaLocation) -> Result<Rated>;
 }
 
 pub struct FileTags {
@@ -228,6 +262,11 @@ impl TagSink for FileTags {
             tag.remove_picture_type(PictureType::CoverFront);
             tag.push_picture(front_cover(picture));
         }
+        if let Some(popularity) = writing.popularity
+            && rates(tag.tag_type())
+        {
+            rate(tag, popularity);
+        }
 
         let staged = staged_beside(path);
         let written = fs::copy(path, &staged)
@@ -252,6 +291,82 @@ impl TagSink for FileTags {
             let _ = fs::remove_file(&staged);
         }
         written
+    }
+
+    fn rated(&self, location: &MediaLocation) -> Result<Rated> {
+        self.rating_of(location)
+    }
+}
+
+impl FileTags {
+    fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
+        let path = self.writable(location)?;
+        let tagged = opened(path, location)?;
+        let kind = tagged.primary_tag_type();
+        if !rates(kind) {
+            return Ok(Rated::Unrateable);
+        }
+        let Some(tag) = tagged.primary_tag() else {
+            return Ok(Rated::Unrated);
+        };
+        let plays_kept = kind == TagType::Id3v2;
+        Ok(tag
+            .get_strings(ItemKey::Popularimeter)
+            .filter_map(Popularimeter::read)
+            .find(|popularimeter| popularimeter.is_ours(kind))
+            .filter(|popularimeter| popularimeter.stars == FAVOURITE_STARS)
+            .map_or(Rated::Unrated, |popularimeter| Rated::Favourite {
+                plays: plays_kept.then_some(popularimeter.plays),
+            }))
+    }
+}
+
+struct Popularimeter<'a> {
+    by: &'a str,
+    stars: u8,
+    plays: u64,
+}
+
+impl<'a> Popularimeter<'a> {
+    fn read(text: &'a str) -> Option<Self> {
+        let mut parts = text.splitn(3, '|');
+        let by = parts.next()?;
+        let stars = parts.next()?.parse().ok()?;
+        let plays = parts.next()?.parse().ok()?;
+        Some(Self { by, stars, plays })
+    }
+
+    fn is_ours(&self, kind: TagType) -> bool {
+        !names_who_rated(kind) || self.by == RATED_BY
+    }
+}
+
+const fn rates(kind: TagType) -> bool {
+    matches!(
+        kind,
+        TagType::Id3v2 | TagType::VorbisComments | TagType::Mp4Ilst | TagType::RiffInfo
+    )
+}
+
+const fn names_who_rated(kind: TagType) -> bool {
+    matches!(kind, TagType::Id3v2 | TagType::VorbisComments)
+}
+
+fn rate(tag: &mut Tag, popularity: Popularity) {
+    let kind = tag.tag_type();
+    tag.retain(|item| {
+        item.key() != ItemKey::Popularimeter
+            || !item
+                .value()
+                .text()
+                .and_then(Popularimeter::read)
+                .is_some_and(|popularimeter| popularimeter.is_ours(kind))
+    });
+    if popularity.favourite {
+        tag.push(TagItem::new(
+            ItemKey::Popularimeter,
+            ItemValue::Text(format!("{RATED_BY}|{FAVOURITE_STARS}|{}", popularity.plays)),
+        ));
     }
 }
 
@@ -720,6 +835,7 @@ mod tests {
         Writing {
             edits,
             picture: None,
+            popularity: None,
         }
     }
 
@@ -727,7 +843,112 @@ mod tests {
         Writing {
             edits: &[],
             picture: Some(picture),
+            popularity: None,
         }
+    }
+
+    fn rating(popularity: Popularity) -> Writing<'static> {
+        Writing {
+            edits: &[],
+            picture: None,
+            popularity: Some(popularity),
+        }
+    }
+
+    #[test]
+    fn a_favourite_is_written_as_our_rating_and_taken_away_again() {
+        let folder = Folder::new();
+        let tags = FileTags::default();
+        for (name, bytes, plays_kept) in [
+            ("echoes.flac", flac(), None),
+            ("echoes.aiff", aiff(), Some(12)),
+        ] {
+            let location = folder.holding(name, &bytes);
+            assert_eq!(
+                tags.rated(&location).expect("a readable file"),
+                Rated::Unrated
+            );
+
+            let favoured = Popularity {
+                favourite: true,
+                plays: 12,
+            };
+            tags.write(&location, rating(favoured))
+                .expect("a rated file");
+            let held = tags.rated(&location).expect("a readable file");
+            assert_eq!(held, Rated::Favourite { plays: plays_kept }, "{name}");
+            assert!(!held.differs_from(favoured), "{name} did not read back");
+            assert!(
+                held.differs_from(Popularity {
+                    favourite: false,
+                    plays: 12
+                }),
+                "{name}"
+            );
+
+            tags.write(
+                &location,
+                rating(Popularity {
+                    favourite: false,
+                    plays: 12,
+                }),
+            )
+            .expect("a file unrated");
+            assert_eq!(
+                tags.rated(&location).expect("a readable file"),
+                Rated::Unrated,
+                "{name} kept the rating it was unfavoured of"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rating_another_player_wrote_is_left_where_it_stands() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut tagged = lofty::read_from_path(&path).expect("a readable FLAC");
+        if tagged.primary_tag().is_none() {
+            let kind = tagged.primary_tag_type();
+            tagged.insert_tag(Tag::new(kind));
+        }
+        let tag = tagged.primary_tag_mut().expect("a primary tag");
+        tag.push(TagItem::new(
+            ItemKey::Popularimeter,
+            ItemValue::Text("MusicBee|3|0".to_owned()),
+        ));
+        tag.save_to_path(&path, WriteOptions::default())
+            .expect("a rated FLAC");
+
+        let tags = FileTags::default();
+        tags.write(
+            &location,
+            rating(Popularity {
+                favourite: true,
+                plays: 1,
+            }),
+        )
+        .expect("a rated FLAC");
+
+        let tagged = lofty::read_from_path(&path).expect("a readable FLAC");
+        let ratings: Vec<String> = tagged
+            .primary_tag()
+            .expect("a primary tag")
+            .get_strings(ItemKey::Popularimeter)
+            .map(str::to_owned)
+            .collect();
+        assert!(
+            ratings
+                .iter()
+                .any(|rating| rating.starts_with("MusicBee|3")),
+            "another player's rating was taken away: {ratings:?}"
+        );
+        assert!(
+            ratings
+                .iter()
+                .any(|rating| rating.starts_with("resonate|5")),
+            "the favourite was not written: {ratings:?}"
+        );
     }
 
     #[test]
@@ -824,6 +1045,7 @@ mod tests {
             Writing {
                 edits: &edits,
                 picture: Some(&picture),
+                popularity: None,
             },
         )
         .expect("a written FLAC");
@@ -854,6 +1076,7 @@ mod tests {
             Writing {
                 edits: &edits,
                 picture: Some(&cover),
+                popularity: None,
             },
         )
         .expect("a written FLAC");
@@ -888,6 +1111,7 @@ mod tests {
             Writing {
                 edits: &edits,
                 picture: Some(&cover),
+                popularity: None,
             },
         )
         .expect("a written WAV");

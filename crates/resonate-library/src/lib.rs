@@ -42,8 +42,9 @@ mod xspf;
 
 pub use resonate_analysis::{Cutoff, LossyGuess, Study, Verdict};
 pub use resonate_codec::{
-    Codec, CoverArt, Drawing, FileTags, Hinting, ImageFormat, Pictured, Picturing, Raster, Sources,
-    StandIn, StoodIn, TagEdit, TagField, TagSet, TagSink, TagSource, Tagged,
+    Codec, CoverArt, Drawing, FileTags, Hinting, ImageFormat, Pictured, Picturing, Popularity,
+    Raster, Rated, Sources, StandIn, StoodIn, TagEdit, TagField, TagSet, TagSink, TagSource,
+    Tagged,
 };
 pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service};
 pub use resonate_vault::{

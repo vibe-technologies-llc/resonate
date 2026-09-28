@@ -53,5 +53,5 @@ pub use crate::{
     tags::{Credits, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged},
     text::TextEncoding,
     timeline::Timeline,
-    writing::{FileTags, TagEdit, TagField, TagSink, Writing},
+    writing::{FileTags, Popularity, RATED_BY, Rated, TagEdit, TagField, TagSink, Writing},
 };

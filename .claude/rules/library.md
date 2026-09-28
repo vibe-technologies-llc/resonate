@@ -1362,6 +1362,23 @@ through `Player::media` like any other unscanned row.
   as it weighs each field, so a container that quietly drops one is `Unwritten::Unconfirmed` and the
   catalog is not moved. `RetagStats::pictures` counts them apart from `fields`, because a picture is
   not a field and a write of one alone is still a write.
+- **A favourite and its plays are written as this build's own rating, beside anybody else's.**
+  `TrackToTag::popularity` is the row's favourite and its play count, and `Writing::popularity`
+  rides them into the same write as the fields: lofty's generic popularimeter under the name
+  `resonate_codec::RATED_BY` — `resonate`, the software and nothing about the listener — five
+  stars for a favourite, the play counter beside it, and for a row that is not one, this build's
+  rating taken away. It lands wherever lofty maps one: an ID3v2 `POPM`, which keeps the counter,
+  a Vorbis `RATING:resonate`, MP4's `rate` and RIFF's `IRTD`; APE carries none, so a WavPack or a
+  Monkey's Audio answers `Rated::Unrateable` and is never offered one. A rating another player
+  wrote under its own name is left where it stands, and where a format names nobody — MP4 and
+  RIFF hold one rating — that one is ours. What the file holds is read through `TagSink::rated`
+  rather than the `TagSet`, because symphonia reads `POPM` and ignores a Vorbis rating, so the
+  comparison and the read-back go through the writer that wrote it: `Rated::differs_from` weighs
+  the favourite always and the plays only where the tag keeps a counter, so a play counted since
+  the last run rewrites an MP3's `POPM` and never a FLAC's comment. A row that is no favourite is
+  written no rating at all, because a popularimeter has no word for *unrated* but a star count, so
+  a play count reaches a file only beside a favourite. `RetagStats::ratings` counts them and
+  `a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again` is the claim.
 - **A write never touches the file it is writing until it is whole.** lofty's `save_to_path`
   splices a FLAC's metadata and shifts the audio behind it in place, so a full disc or a run killed
   halfway left a truncated file. `FileTags::write` copies the file to a staged sibling —

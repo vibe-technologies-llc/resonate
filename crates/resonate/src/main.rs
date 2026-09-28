@@ -45,7 +45,7 @@ use std::{
 
 use clap::Parser;
 use crossbeam_channel::{bounded, never, select, tick};
-use resonate_codec::{CoverArt, Packing, Sources, probe, read_cue_media};
+use resonate_codec::{CoverArt, Packing, Popularity, Sources, probe, read_cue_media};
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
@@ -99,6 +99,7 @@ const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off";
 const WITHIN_THE_MINUTE: &str = "just now";
 
 const COVER_ART: &str = "cover art";
+const RATING: &str = "rating";
 
 fn main() -> ExitCode {
     match run() {
@@ -888,6 +889,18 @@ fn pictured(picture: &CoverArt) -> String {
     )
 }
 
+fn rated(popularity: Popularity) -> String {
+    let plays = match popularity.plays {
+        1 => "1 play".to_owned(),
+        plays => format!("{plays} plays"),
+    };
+    if popularity.favourite {
+        format!("favourite · {plays}")
+    } else {
+        "not a favourite".to_owned()
+    }
+}
+
 fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     let retagging = &summary.retagging;
     if retagging.writes.is_empty() && retagging.passed_over.is_empty() {
@@ -913,6 +926,13 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                     pictured(picture),
                 ]);
             }
+            if let Some(popularity) = write.popularity {
+                table.push(vec![
+                    mem::take(&mut named),
+                    RATING.to_owned(),
+                    rated(popularity),
+                ]);
+            }
         }
         told.push_str(&table.render());
     }
@@ -928,12 +948,12 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     let stats = &summary.stats;
     let written = if apply {
         format!(
-            "written {} | fields {} | pictures {}",
-            stats.written, stats.fields, stats.pictures
+            "written {} | fields {} | pictures {} | ratings {}",
+            stats.written, stats.fields, stats.pictures, stats.ratings
         )
     } else {
         format!(
-            "would write {} | fields {} | pictures {}",
+            "would write {} | fields {} | pictures {} | ratings {}",
             retagging.writes.len(),
             retagging
                 .writes
@@ -944,6 +964,11 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                 .writes
                 .iter()
                 .filter(|write| write.picture.is_some())
+                .count(),
+            retagging
+                .writes
+                .iter()
+                .filter(|write| write.popularity.is_some())
                 .count()
         )
     };

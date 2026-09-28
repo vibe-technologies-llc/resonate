@@ -831,9 +831,14 @@ fn written(summary: &RetagSummary) -> String {
         .iter()
         .filter(|write| write.picture.is_some())
         .count();
+    let ratings = retagging
+        .writes
+        .iter()
+        .filter(|write| write.popularity.is_some())
+        .count();
     let told = format!(
-        "would write {} · fields {fields} · pictures {pictures} · already said {} · passed over \
-         {} · nothing has been written",
+        "would write {} · fields {fields} · pictures {pictures} · ratings {ratings} · already said \
+         {} · passed over {} · nothing has been written",
         retagging.writes.len(),
         stats.unchanged,
         stats.passed_over

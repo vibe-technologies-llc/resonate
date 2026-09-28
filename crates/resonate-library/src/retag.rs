@@ -9,7 +9,9 @@ use std::{
     time::SystemTime,
 };
 
-use resonate_codec::{CoverArt, Pictured, Picturing, TagEdit, TagField, TagSet, TagSink, Writing};
+use resonate_codec::{
+    CoverArt, Pictured, Picturing, Popularity, TagEdit, TagField, TagSet, TagSink, Writing,
+};
 use resonate_core::{AlbumId, MediaLocation, TrackId};
 use rusqlite::{Transaction, params};
 
@@ -56,6 +58,7 @@ pub struct Written {
     pub path: PathBuf,
     pub edits: Vec<TagEdit>,
     pub picture: Option<Arc<CoverArt>>,
+    pub popularity: Option<Popularity>,
 }
 
 impl Written {
@@ -63,6 +66,7 @@ impl Written {
         Writing {
             edits: &self.edits,
             picture: self.picture.as_deref(),
+            popularity: self.popularity,
         }
     }
 }
@@ -95,6 +99,7 @@ pub struct RetagStats {
     pub written: u64,
     pub fields: u64,
     pub pictures: u64,
+    pub ratings: u64,
     pub unchanged: u64,
     pub passed_over: u64,
 }
@@ -105,6 +110,7 @@ pub struct RetagProgress {
     written: AtomicU64,
     fields: AtomicU64,
     pictures: AtomicU64,
+    ratings: AtomicU64,
     unchanged: AtomicU64,
     passed_over: AtomicU64,
     cancelled: AtomicBool,
@@ -117,6 +123,7 @@ impl RetagProgress {
             written: self.written.load(Ordering::Relaxed),
             fields: self.fields.load(Ordering::Relaxed),
             pictures: self.pictures.load(Ordering::Relaxed),
+            ratings: self.ratings.load(Ordering::Relaxed),
             unchanged: self.unchanged.load(Ordering::Relaxed),
             passed_over: self.passed_over.load(Ordering::Relaxed),
         }
@@ -239,6 +246,7 @@ pub(crate) struct TrackToTag {
     pub barcode: Option<String>,
     pub track_total: Option<u32>,
     pub disc_total: Option<u32>,
+    pub popularity: Popularity,
 }
 
 #[derive(Default)]
@@ -317,7 +325,8 @@ fn planned(
 
         let edits = wanted(row, &held.tags);
         let picture = offered_picture(library, &held.picture, row, sleeve);
-        if edits.is_empty() && picture.is_none() {
+        let popularity = rated_otherwise(tags, &location, row.popularity);
+        if edits.is_empty() && picture.is_none() && popularity.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;
         }
@@ -327,10 +336,29 @@ fn planned(
             path: row.path.clone(),
             edits,
             picture,
+            popularity,
         });
     }
 
     retagging
+}
+
+fn rated_otherwise(
+    tags: &dyn TagSink,
+    location: &MediaLocation,
+    wanted: Popularity,
+) -> Option<Popularity> {
+    match tags.rated(location) {
+        Ok(held) => held.differs_from(wanted).then_some(wanted),
+        Err(source) => {
+            tracing::debug!(
+                %location,
+                %source,
+                "a file's rating could not be read, so none is written to it"
+            );
+            None
+        }
+    }
 }
 
 fn offered_picture(
@@ -464,6 +492,9 @@ fn apply(
                 if write.picture.is_some() {
                     RetagProgress::step(&progress.pictures);
                 }
+                if write.popularity.is_some() {
+                    RetagProgress::step(&progress.ratings);
+                }
                 followed.push(follow);
                 retagging.writes.push(write);
             }
@@ -504,6 +535,24 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
                 path = %write.path.display(),
                 field = %edit.field,
                 "a tag this build wrote does not read back, so the catalog does not follow it"
+            );
+            return Err(Unwritten::Unconfirmed);
+        }
+    }
+
+    if let Some(popularity) = write.popularity {
+        let rated = tags.rated(&location).map_err(|source| {
+            tracing::warn!(
+                path = %write.path.display(),
+                %source,
+                "a file's rating could not be read back after it was written"
+            );
+            Unwritten::Unconfirmed
+        })?;
+        if rated.differs_from(popularity) {
+            tracing::warn!(
+                path = %write.path.display(),
+                "a rating this build wrote does not read back, so the catalog does not follow it"
             );
             return Err(Unwritten::Unconfirmed);
         }
@@ -606,6 +655,7 @@ mod tests {
             barcode: None,
             track_total: Some(6),
             disc_total: Some(1),
+            popularity: Popularity::default(),
         }
     }
 
@@ -699,6 +749,7 @@ mod tests {
                 value: "Echoes".to_owned(),
             }],
             picture: None,
+            popularity: None,
         };
 
         assert_eq!(wrote(&write, TagField::Title).as_deref(), Some("Echoes"));

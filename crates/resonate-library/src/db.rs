@@ -11,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::{Condvar, Mutex};
-use resonate_codec::{Hinting, Likeness, Sources, StandIn};
+use resonate_codec::{Hinting, Likeness, Popularity, Sources, StandIn};
 use resonate_core::{
     AlbumId, ArtistId, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, ListenId,
     MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable, Resumption,
@@ -262,7 +262,7 @@ const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, t
             a.answered IS NOT NULL, a.release_title,
             artists.answered IS NOT NULL, artists.name, artists.mbid,
             a.mbid, a.release_group, a.date, a.label, a.catalog_number, a.barcode,
-            tracks.vault_key IS NOT NULL
+            tracks.vault_key IS NOT NULL, tracks.favourite IS NOT NULL, tracks.plays
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN albums a ON a.id = tracks.album_id
@@ -3859,6 +3859,8 @@ struct RawToTag {
     catalog_number: Option<String>,
     barcode: Option<String>,
     vaulted: bool,
+    favourite: bool,
+    plays: i64,
 }
 
 impl RawToTag {
@@ -3890,6 +3892,8 @@ impl RawToTag {
             catalog_number: row.get(23)?,
             barcode: row.get(24)?,
             vaulted: row.get(25)?,
+            favourite: row.get(26)?,
+            plays: row.get(27)?,
         })
     }
 
@@ -3929,6 +3933,10 @@ impl RawToTag {
                 .album
                 .and_then(|album| tracks.get(&(album, seat)).copied()),
             disc_total: self.album.and_then(|album| discs.get(&album).copied()),
+            popularity: Popularity {
+                favourite: self.favourite,
+                plays: u64::try_from(self.plays).unwrap_or(0),
+            },
         })
     }
 }

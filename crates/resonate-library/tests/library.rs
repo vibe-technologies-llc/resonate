@@ -30,13 +30,13 @@ use resonate_library::{
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, ImageFormat, ImportOptions, ImportSummary,
     Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp, LyricText,
     LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing,
-    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Pruned, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagField,
-    TagSet, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording,
-    Written,
+    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated,
+    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
+    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
+    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TagField, TagSet, TagSink, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault,
+    Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -13785,6 +13785,68 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
         again.retagging.writes
     );
     assert_eq!(again.stats.unchanged, 1);
+    Ok(())
+}
+
+#[test]
+fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(&library, &options(&tree))?;
+    let location = MediaLocation::local(&file);
+    let track = library
+        .track_at(&file, None)?
+        .expect("the scanned track")
+        .id;
+    library.favour(Favoured::Track(track), true)?;
+    library.track_played(&location, None)?;
+    library.track_played(&location, None)?;
+
+    let preview = retagged(&library, false)?;
+    let wanted = Popularity {
+        favourite: true,
+        plays: 2,
+    };
+    assert_eq!(
+        preview
+            .retagging
+            .writes
+            .iter()
+            .map(|write| write.popularity)
+            .collect::<Vec<_>>(),
+        vec![Some(wanted)]
+    );
+
+    let applied = retagged(&library, true)?;
+    assert_eq!(applied.stats.ratings, 1);
+    assert_eq!(
+        FileTags::default()
+            .rated(&location)
+            .expect("a rating that reads back"),
+        Rated::Favourite { plays: Some(2) }
+    );
+    let again = retagged(&library, false)?;
+    assert!(
+        again.retagging.writes.is_empty(),
+        "the rating did not stick: {:?}",
+        again.retagging.writes
+    );
+
+    library.favour(Favoured::Track(track), false)?;
+    retagged(&library, true)?;
+    assert_eq!(
+        FileTags::default()
+            .rated(&location)
+            .expect("a rating that reads back"),
+        Rated::Unrated
+    );
     Ok(())
 }
 
