@@ -926,7 +926,13 @@ through `Player::media` like any other unscanned row.
   group, where the album was landed as a group alone — in `refused_releases`, the eighth step in
   `MIGRATIONS`, clears what the landing wrote (the ids, the release's title, date, country, kind
   and disambiguation, a cover the archive gave), takes away the release's rows, its media and its
-  links, and puts `asked` back to nothing so the next lookup asks at once. The label, the
+  links, and puts `asked` back to nothing so the next lookup asks at once. **What the match wrote
+  on the tracks goes with it**: each of the album's tracks takes back the title and the artist
+  its file gave — `tagged_title` and `tagged_artist` — loses the release's title and a release
+  track id that named one of the rows taken away, is put back to never asked so the next lookup
+  identifies it afresh, and is indexed again under the name it now bears, so a track renamed by a
+  wrong pressing is not left billed and found as that pressing had it —
+  `forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again`. The label, the
   catalogue number and the barcode stay, because the tags may have given them. `take_release`
   and `take_group` are where every route lands, a tagged id and a search alike, and both ask
   `Library::refuses` first and pass a refused id over as `nothing_landed`, so the next lookup

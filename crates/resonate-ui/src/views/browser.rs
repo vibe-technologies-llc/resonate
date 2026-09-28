@@ -47,6 +47,11 @@ const OTHER_PRESSINGS_HINT: &str =
     "List every pressing of this record MusicBrainz holds, and take the one these files are";
 const ASKING_FOR_PRESSINGS: &str = "Asking MusicBrainz for the pressings…";
 const NO_PRESSINGS: &str = "MusicBrainz named no pressings";
+const FIND_THE_RECORD: &str = "Find the record";
+const FIND_THE_RECORD_HINT: &str = "Ask MusicBrainz for the releases named like this album, and \
+                                    take the one these files are";
+const ASKING_FOR_RELEASES: &str = "Asking MusicBrainz for releases named like this…";
+const NO_RELEASES: &str = "MusicBrainz named no release like this";
 const TAKE_THE_PRESSING_HINT: &str = "Take this pressing for the album in place of the one in use";
 const PRESSING_IN_USE_HINT: &str = "The pressing the album is matched to now";
 const PRESSINGS_SHOWN: usize = 12;
@@ -1428,6 +1433,8 @@ impl RootView {
         });
         let under = summary(library.listed(), album.and_then(|album| album.year));
         let record = library.release().and_then(record_of);
+        let findable = library.can_enrich() && !library.release().is_some_and(is_matched);
+        let record = record.map(drop).or(findable.then_some(()));
         let favourite = library.favoured_album(id);
 
         let cover = self
@@ -1704,17 +1711,33 @@ impl RootView {
                     if library.selection() != Selection::Album(album) {
                         return None;
                     }
-                    let release = library.release()?;
-                    let record = record_of(release)?;
-                    let group = release.group.clone().filter(|_| library.can_enrich());
-                    let current = release.mbid.clone();
+                    let release = library.release();
+                    let findable = library.can_enrich() && !release.is_some_and(is_matched);
+                    let record = release
+                        .and_then(record_of)
+                        .or_else(|| findable.then(Record::bare))?;
+                    let group = release
+                        .and_then(|release| release.group.clone())
+                        .filter(|_| library.can_enrich());
+                    let current = release.and_then(|release| release.mbid.clone());
                     let pressings = library.pressings_of(album).cloned();
                     let card = record_card(&record);
-                    let card = match group {
-                        Some(group) => {
-                            card.child(self.other_pressings(album, (group, current), pressings, cx))
-                        }
-                        None => card,
+                    let card = match (group, findable) {
+                        (Some(group), _) => card.child(self.other_pressings(
+                            album,
+                            Asking::Group(group),
+                            current,
+                            pressings,
+                            cx,
+                        )),
+                        (None, true) => card.child(self.other_pressings(
+                            album,
+                            Asking::Search,
+                            current,
+                            pressings,
+                            cx,
+                        )),
+                        (None, false) => card,
                     };
                     let card = match record.matched {
                         true => card.child(self.not_this_record(album, at, forgetting, cx)),
@@ -1744,30 +1767,48 @@ impl RootView {
     fn other_pressings(
         &self,
         album: AlbumId,
-        (group, current): (Mbid, Option<Mbid>),
+        asking: Asking,
+        current: Option<Mbid>,
         pressings: Option<Pressings>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let (label, hint, waiting, none) = match asking {
+            Asking::Group(_) => (
+                OTHER_PRESSINGS,
+                OTHER_PRESSINGS_HINT,
+                ASKING_FOR_PRESSINGS,
+                NO_PRESSINGS,
+            ),
+            Asking::Search => (
+                FIND_THE_RECORD,
+                FIND_THE_RECORD_HINT,
+                ASKING_FOR_RELEASES,
+                NO_RELEASES,
+            ),
+        };
         let listed = match pressings {
             None => {
                 return div().child(
                     kit::button(
                         "other-pressings",
                         Some(Icon::Disc),
-                        OTHER_PRESSINGS,
-                        OTHER_PRESSINGS_HINT,
+                        label,
+                        hint,
                         Tone::Ghost,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        let asked = group.clone();
-                        this.library.update(cx, |library, cx| {
-                            library.ask_for_pressings(album, asked, cx);
+                        let asking = asking.clone();
+                        this.library.update(cx, |library, cx| match asking {
+                            Asking::Group(group) => {
+                                library.ask_for_pressings(album, group, cx);
+                            }
+                            Asking::Search => library.ask_for_releases(album, cx),
                         });
                     })),
                 );
             }
-            Some(Pressings::Asking) => return pressing_note(ASKING_FOR_PRESSINGS),
-            Some(Pressings::Unanswered) => return pressing_note(NO_PRESSINGS),
+            Some(Pressings::Asking) => return pressing_note(waiting),
+            Some(Pressings::Unanswered) => return pressing_note(none),
             Some(Pressings::Listed(listed)) => listed,
         };
 
@@ -2558,7 +2599,7 @@ fn record_of(release: &ReleaseDetail) -> Option<Record> {
         facts,
         note,
         on,
-        matched: release.mbid.is_some() || release.group.is_some(),
+        matched: is_matched(release),
     };
 
     (!record.is_empty()).then_some(record)
@@ -2582,7 +2623,26 @@ struct Record {
     matched: bool,
 }
 
+#[derive(Clone)]
+enum Asking {
+    Group(Mbid),
+    Search,
+}
+
+fn is_matched(release: &ReleaseDetail) -> bool {
+    release.mbid.is_some() || release.group.is_some()
+}
+
 impl Record {
+    const fn bare() -> Self {
+        Self {
+            facts: Vec::new(),
+            note: None,
+            on: Vec::new(),
+            matched: false,
+        }
+    }
+
     fn is_empty(&self) -> bool {
         self.facts.is_empty() && self.note.is_none() && self.on.is_empty()
     }

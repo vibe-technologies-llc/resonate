@@ -1920,6 +1920,45 @@ pub(crate) fn reindex_the_tracks_of(tx: &Transaction<'_>, artist: i64) -> Result
     Ok(())
 }
 
+pub(crate) fn reindex_the_tracks_on(tx: &Transaction<'_>, album: i64) -> Result<()> {
+    let mut statement = tx
+        .prepare(
+            "SELECT t.id, t.title, t.artist, a.title, t.genre, t.artist_id
+               FROM tracks t JOIN albums a ON a.id = t.album_id
+              WHERE t.album_id = ?1",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let held: Vec<(Indexable, Option<i64>)> = statement
+        .query_map(params![album], |row| {
+            Ok((
+                Indexable {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    artist: row.get(2)?,
+                    album: row.get(3)?,
+                    genre: row.get(4)?,
+                },
+                row.get(5)?,
+            ))
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    drop(statement);
+
+    for (track, artist) in held {
+        index_row(
+            tx,
+            track.id,
+            &track.title,
+            track.artist.as_deref().unwrap_or_default(),
+            track.album.as_deref().unwrap_or_default(),
+            &indexed_genre_of(tx, track.genre.as_deref(), artist)?,
+        )?;
+    }
+
+    Ok(())
+}
+
 pub(crate) fn indexed_genre_of(
     tx: &Transaction<'_>,
     tagged: Option<&str>,

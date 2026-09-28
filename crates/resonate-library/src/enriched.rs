@@ -312,6 +312,22 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
     tx.execute(
+        "UPDATE tracks SET
+             title              = coalesce(tagged_title, title),
+             artist             = coalesce(tagged_artist, artist),
+             release_title      = NULL,
+             release_track_mbid = CASE WHEN release_track_mbid IN
+                                      (SELECT track_mbid FROM release_tracks WHERE album_id = ?1)
+                                  THEN NULL ELSE release_track_mbid END,
+             asks               = 0,
+             refusals           = 0,
+             asked              = NULL,
+             answered           = NULL
+         WHERE album_id = ?1",
+        params![id],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.execute(
         "UPDATE albums SET
              mbid           = NULL,
              release_group  = NULL,
@@ -343,6 +359,7 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
         tx.execute(taken, params![id])
             .map_err(|source| Error::store(StoreOp::Delete, source))?;
     }
+    store::reindex_the_tracks_on(tx, id)?;
 
     Ok(true)
 }

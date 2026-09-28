@@ -25,10 +25,10 @@ use resonate_library::{
     Imported, Kept, Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened,
     NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
     Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
-    Raster, Reference, ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary,
-    RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats,
-    ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
-    TrackQuery, Undoable, UnheldRelease, Window, asks_elsewhere,
+    Raster, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress,
+    RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions,
+    ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -1306,6 +1306,63 @@ impl LibraryModel {
                 Ok(None) => Pressings::Unanswered,
                 Err(error) => {
                     tracing::warn!(%error, "a release group's pressings could not be read");
+                    Pressings::Unanswered
+                }
+            };
+            let landed = this.update(cx, |this, cx| {
+                if this
+                    .pressings
+                    .as_ref()
+                    .is_some_and(|(held, _)| *held == album)
+                {
+                    this.pressings = Some((album, answered));
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
+    }
+
+    pub fn ask_for_releases(&mut self, album: AlbumId, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        let Some(held) = self.album_of(album) else {
+            return;
+        };
+        let release = self.release.as_ref();
+        let asked = ReleaseAsked {
+            title: held.title.clone(),
+            artist: held.artist.clone(),
+            artist_mbid: None,
+            barcode: release.and_then(|release| release.barcode.clone()),
+            catalog_number: release.and_then(|release| release.catalog_number.clone()),
+            wording: Wording::Words,
+        };
+        self.pressings = Some((album, Pressings::Asking));
+        cx.notify();
+
+        self._pressings = cx.spawn(async move |this, cx| {
+            let asked = cx
+                .background_executor()
+                .spawn(async move { reference.find_release(&asked) })
+                .await;
+            let answered = match asked {
+                Ok(found) if !found.is_empty() => Pressings::Listed(Arc::from(
+                    found
+                        .into_iter()
+                        .map(|found| GroupRelease {
+                            title: named_with_its_credit(&found),
+                            id: found.release,
+                            date: found.date,
+                            country: None,
+                            track_count: found.track_count,
+                        })
+                        .collect::<Vec<_>>(),
+                )),
+                Ok(_) => Pressings::Unanswered,
+                Err(error) => {
+                    tracing::warn!(%error, "the releases an album might be could not be found");
                     Pressings::Unanswered
                 }
             };
@@ -3711,6 +3768,15 @@ fn on_the_clipboard(shared: &Shared) -> String {
     match shared.artist.as_deref() {
         Some(artist) => format!("{artist} — {} is on the clipboard", shared.title),
         None => format!("{} is on the clipboard", shared.title),
+    }
+}
+
+fn named_with_its_credit(found: &ReleaseMatch) -> String {
+    let credit = found.credited_as();
+    if credit.trim().is_empty() {
+        found.title.clone()
+    } else {
+        format!("{} · {credit}", found.title)
     }
 }
 

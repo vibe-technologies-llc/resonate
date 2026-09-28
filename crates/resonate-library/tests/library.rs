@@ -25,8 +25,8 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Edit, Encoding,
-    EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
+    BETTERED_AFTER, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Edit,
+    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp,
     LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
@@ -8901,6 +8901,59 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
     assert!(
         !library.forget_the_match(album.id)?,
         "an album matched to nothing forgot a match"
+    );
+    Ok(())
+}
+
+#[test]
+fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again()
+-> Result<()> {
+    let (_tree, library, database) = scanned_orbits_on_disk()?;
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    let album = only_album(&library)?;
+    let track = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .next()
+        .expect("a scanned track");
+    let file = track
+        .location
+        .as_path()
+        .expect("a local file")
+        .to_path_buf();
+    let tagged = stored(&database, &file);
+    library.land_recording(
+        track.id,
+        &Recording {
+            id: mbid("5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c"),
+            title: "Renamed By The Match".to_owned(),
+            credit: Vec::new(),
+            length: None,
+            isrcs: Vec::new(),
+            releases: Vec::new(),
+        },
+        Certainty::Exactly,
+        None,
+    )?;
+    assert_eq!(stored(&database, &file).title, "Renamed By The Match");
+
+    assert!(library.forget_the_match(album.id)?);
+    let forgotten = stored(&database, &file);
+    assert_eq!(
+        Some(forgotten.title.as_str()),
+        tagged.tagged_title.as_deref(),
+        "the name the match wrote was left standing"
+    );
+    assert_eq!(forgotten.answered, None);
+    assert_eq!(forgotten.asked, None);
+    assert!(
+        library.search("renamed", 10)?.tracks.is_empty(),
+        "the index still finds the name the match wrote"
     );
     Ok(())
 }

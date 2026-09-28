@@ -58,9 +58,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
-- Forgetting a wrong match leaves the track-level names the match corrected as it wrote them, and
-  only an album a lookup matched offers its other pressings — one it could not match offers no
-  releases to choose from
 - A found song or a track named by its audio is placed by a rule rather than by the listener:
   nothing offers the choice of release, and a recording read by its ISRC carries no release
   kinds to weigh

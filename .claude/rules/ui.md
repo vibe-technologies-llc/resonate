@@ -1605,7 +1605,13 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the group's releases in the order they came out, the first `PRESSINGS_SHOWN` of them, each as
   its date, country and track count, the one in use badged *IN USE*; a press on another is
   `LibraryModel::take_pressing`, which lands it through `Library::take_pressing` and closes the
-  card. Where the album was matched it ends in *Not this record*, which takes two presses — the
+  card. **An album nothing matched has the card too**, wherever the reference can be reached: the
+  mark is drawn for it however little `record_of` has to say, and the card offers *Find the
+  record* in the place of *Other pressings* — `LibraryModel::ask_for_releases` asks
+  `Reference::find_release` in words with the album's title, its artist and whatever barcode or
+  catalogue number the tags gave, and lists what comes back the way a group's pressings are
+  listed, each named with its credit, so a press is the same `take_pressing` and an album a
+  lookup could not settle is settled by the listener. Where the album was matched it ends in *Not this record*, which takes two presses — the
   second under *Press again to forget the match*, the arming held on `OpenedRecord::Album` so
   any way the card closes lowers it — and is `LibraryModel::forget_the_match`, told as a toast.
   Escape closes it after a magnified cover and before a toast, a second press on the mark
