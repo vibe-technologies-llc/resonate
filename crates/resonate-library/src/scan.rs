@@ -26,6 +26,7 @@ use crate::{
     db::Inner,
     enriched::stripped_title,
     history, loose, moves,
+    numerals::{self, SEPARATORS},
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
@@ -996,192 +997,6 @@ const SPELLINGS: [&str; 10] = [
     "cd", "disc", "disco", "disk", "disque", "dysk", "platte", "schijf", "skiva", "диск",
 ];
 
-const ELSEWHERE: [(&str, u32); 68] = [
-    ("un", 1),
-    ("une", 1),
-    ("uno", 1),
-    ("eins", 1),
-    ("een", 1),
-    ("um", 1),
-    ("uma", 1),
-    ("deux", 2),
-    ("dos", 2),
-    ("due", 2),
-    ("zwei", 2),
-    ("twee", 2),
-    ("dois", 2),
-    ("duas", 2),
-    ("trois", 3),
-    ("tres", 3),
-    ("três", 3),
-    ("tre", 3),
-    ("drei", 3),
-    ("drie", 3),
-    ("quatre", 4),
-    ("cuatro", 4),
-    ("quattro", 4),
-    ("quatro", 4),
-    ("vier", 4),
-    ("cinq", 5),
-    ("cinco", 5),
-    ("cinque", 5),
-    ("fünf", 5),
-    ("funf", 5),
-    ("vijf", 5),
-    ("seis", 6),
-    ("sei", 6),
-    ("sechs", 6),
-    ("zes", 6),
-    ("sept", 7),
-    ("siete", 7),
-    ("sette", 7),
-    ("sete", 7),
-    ("sieben", 7),
-    ("zeven", 7),
-    ("huit", 8),
-    ("ocho", 8),
-    ("otto", 8),
-    ("oito", 8),
-    ("acht", 8),
-    ("neuf", 9),
-    ("nueve", 9),
-    ("nove", 9),
-    ("neun", 9),
-    ("negen", 9),
-    ("dix", 10),
-    ("diez", 10),
-    ("dieci", 10),
-    ("dez", 10),
-    ("zehn", 10),
-    ("tien", 10),
-    ("onze", 11),
-    ("once", 11),
-    ("undici", 11),
-    ("elf", 11),
-    ("douze", 12),
-    ("doce", 12),
-    ("dodici", 12),
-    ("doze", 12),
-    ("zwölf", 12),
-    ("zwolf", 12),
-    ("twaalf", 12),
-];
-const ORDINALS_ELSEWHERE: [(&str, u32); 113] = [
-    ("premier", 1),
-    ("première", 1),
-    ("premiere", 1),
-    ("deuxième", 2),
-    ("deuxieme", 2),
-    ("second", 2),
-    ("seconde", 2),
-    ("troisième", 3),
-    ("troisieme", 3),
-    ("quatrième", 4),
-    ("quatrieme", 4),
-    ("cinquième", 5),
-    ("cinquieme", 5),
-    ("sixième", 6),
-    ("sixieme", 6),
-    ("septième", 7),
-    ("septieme", 7),
-    ("huitième", 8),
-    ("huitieme", 8),
-    ("neuvième", 9),
-    ("neuvieme", 9),
-    ("dixième", 10),
-    ("dixieme", 10),
-    ("onzième", 11),
-    ("onzieme", 11),
-    ("douzième", 12),
-    ("douzieme", 12),
-    ("primer", 1),
-    ("primero", 1),
-    ("primera", 1),
-    ("segundo", 2),
-    ("segunda", 2),
-    ("tercer", 3),
-    ("tercero", 3),
-    ("tercera", 3),
-    ("cuarto", 4),
-    ("cuarta", 4),
-    ("quinto", 5),
-    ("quinta", 5),
-    ("sexto", 6),
-    ("sexta", 6),
-    ("séptimo", 7),
-    ("septimo", 7),
-    ("séptima", 7),
-    ("septima", 7),
-    ("octavo", 8),
-    ("octava", 8),
-    ("noveno", 9),
-    ("novena", 9),
-    ("décimo", 10),
-    ("decimo", 10),
-    ("décima", 10),
-    ("decima", 10),
-    ("undécimo", 11),
-    ("undecimo", 11),
-    ("duodécimo", 12),
-    ("duodecimo", 12),
-    ("primo", 1),
-    ("prima", 1),
-    ("secondo", 2),
-    ("seconda", 2),
-    ("terzo", 3),
-    ("terza", 3),
-    ("quarto", 4),
-    ("quarta", 4),
-    ("sesto", 6),
-    ("sesta", 6),
-    ("settimo", 7),
-    ("settima", 7),
-    ("ottavo", 8),
-    ("ottava", 8),
-    ("nono", 9),
-    ("nona", 9),
-    ("undicesimo", 11),
-    ("undicesima", 11),
-    ("dodicesimo", 12),
-    ("dodicesima", 12),
-    ("erste", 1),
-    ("zweite", 2),
-    ("dritte", 3),
-    ("vierte", 4),
-    ("fünfte", 5),
-    ("funfte", 5),
-    ("sechste", 6),
-    ("siebte", 7),
-    ("achte", 8),
-    ("neunte", 9),
-    ("zehnte", 10),
-    ("elfte", 11),
-    ("zwölfte", 12),
-    ("zwolfte", 12),
-    ("eerste", 1),
-    ("tweede", 2),
-    ("derde", 3),
-    ("vierde", 4),
-    ("vijfde", 5),
-    ("zesde", 6),
-    ("zevende", 7),
-    ("achtste", 8),
-    ("negende", 9),
-    ("tiende", 10),
-    ("elfde", 11),
-    ("twaalfde", 12),
-    ("primeiro", 1),
-    ("primeira", 1),
-    ("terceiro", 3),
-    ("terceira", 3),
-    ("sétimo", 7),
-    ("setimo", 7),
-    ("sétima", 7),
-    ("setima", 7),
-    ("oitavo", 8),
-    ("oitava", 8),
-];
-const SEPARATORS: [char; 4] = [' ', '-', '_', '.'];
 const ONES: [(&str, &str); 9] = [
     ("one", "first"),
     ("two", "second"),
@@ -1217,7 +1032,7 @@ const TENS: [(&str, &str); 8] = [
 ];
 
 pub(crate) fn disc_in_folder(name: &str) -> Option<NonZeroU32> {
-    let folded = name.trim().to_lowercase();
+    let folded = numerals::plainly(name);
     numbered_after_the_word(&folded).or_else(|| named_before_the_word(&folded))
 }
 
@@ -1242,9 +1057,7 @@ fn numbered_after_the_word(folded: &str) -> Option<NonZeroU32> {
 }
 
 fn numbered_elsewhere(word: &str) -> Option<NonZeroU32> {
-    ELSEWHERE
-        .iter()
-        .find_map(|(spelling, count)| (*spelling == word).then(|| numbering(*count)))
+    numerals::ELSEWHERE.cardinal(word)
 }
 
 fn named_before_the_word(folded: &str) -> Option<NonZeroU32> {
@@ -1287,10 +1100,7 @@ fn ordinal_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
 }
 
 fn ordinal_elsewhere_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
-    ORDINALS_ELSEWHERE
-        .iter()
-        .filter_map(|(spelling, count)| Some((numbering(*count), folded.strip_prefix(spelling)?)))
-        .min_by_key(|(_, beyond)| beyond.len())
+    numerals::ELSEWHERE.ordinal_at_the_front(folded)
 }
 
 fn tens_and_ones_at_the_front(folded: &str) -> Option<(NonZeroU32, &str)> {
@@ -1790,6 +1600,29 @@ mod tests {
         assert_eq!(spelt("Discovery"), None);
         assert_eq!(spelt("Disconnected"), None);
         assert_eq!(spelt("Discography"), None);
+    }
+
+    #[test]
+    fn a_disc_past_twelve_is_composed_in_every_language_it_is_numbered_in() {
+        let spelt = |name: &str| disc_in_folder(name).map(NonZeroU32::get);
+
+        assert_eq!(spelt("Disque Treize"), Some(13));
+        assert_eq!(spelt("Disque Vingt-et-un"), Some(21));
+        assert_eq!(spelt("Disco Treinta y Uno"), Some(31));
+        assert_eq!(spelt("Disco Ventidue"), Some(22));
+        assert_eq!(spelt("CD Einundzwanzig"), Some(21));
+        assert_eq!(spelt("Schijf Dertien"), Some(13));
+        assert_eq!(spelt("Disco Vinte e Dois"), Some(22));
+
+        assert_eq!(spelt("Dreizehnte CD"), Some(13));
+        assert_eq!(spelt("Vingt-et-unième Disque"), Some(21));
+        assert_eq!(spelt("Vigésimo Primero Disco"), Some(21));
+        assert_eq!(spelt("Ventunesimo Disco"), Some(21));
+        assert_eq!(spelt("Twintigste Schijf"), Some(20));
+        assert_eq!(spelt("Décimo Terceiro Disco"), Some(13));
+
+        assert_eq!(spelt("Disco Treinta y Uno Bonus"), None);
+        assert_eq!(spelt("Vigésimo Disco Primero"), None);
     }
 
     #[test]

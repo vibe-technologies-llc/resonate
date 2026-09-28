@@ -570,19 +570,28 @@ through `Player::media` like any other unscanned row.
   a set filed this way the same as `organise::disc_of` always read `CD1`. What it costs is a key
   format change: a set already scanned under `Second Disc` is named by a key naming that folder,
   so it stays two albums until the catalog is deleted and scanned again.
-- **A number word in another language is a flat table and goes no further than twelve.**
-  `ELSEWHERE` is `numbered_after_the_word`'s last resort — sixty-eight spellings of one to twelve
-  in French, Spanish, Italian, German, Dutch and Portuguese, each marked and unmarked where the
-  two differ, so `Disc Un`, `CD Dos` and `Disco Zwölf` read as the discs they name — and
-  `ORDINALS_ELSEWHERE` is its twin before the word, the same six languages' ordinals of one to
-  twelve in each gender a folder is likely to be named in, so `Zweite CD`, `Deuxième disque`,
-  `Primera-CD` and `Tweede Schijf` do too. Both are flat rather than composed, because
-  composition — `Disc Twenty One`, `Twenty-First Disc` — is an English idiom with tables of its
-  own, and a set past twelve is filed in digits, which every language already reads.
-  `named_before_the_word` weighs the English reading and the flat one side by side and takes
+- **A number word in another language is composed the way that language writes it, up to
+  ninety-nine.** `numerals.rs` spells every number from one to ninety-nine in French, Spanish,
+  Italian, German, Dutch and Portuguese — cardinals and ordinals, each language's own rules:
+  `vingt-et-un` and `quatre-vingt-onze`, `treinta y uno` and `veintidós`, `ventuno` with the
+  vowel elided and `ventitré`, `einundzwanzig`, `tweeëntwintig`, `vinte e um` and Portugal's
+  `dezasseis`; `vingt-et-unième`, `vigésimo primero` in two words and in one, `ventunesimo`,
+  `einundzwanzigste` with each of its endings, `eenentwintigste`, and the feminine of every
+  Romance ordinal — and `ELSEWHERE` is the table built from them once, on first use.
+  `numerals::plainly` is what both sides are read through: the name is folded by
+  `store::folded_letters`, so a mark, an `ß` and a `ë` cost no second spelling, and every run of
+  separators is one space, so `Disque Vingt-et-un`, `disque_vingt_et_un` and `DISQUE.VINGT ET UN`
+  are one disc. `numbered_after_the_word` looks a cardinal up whole and
+  `ordinal_elsewhere_at_the_front` takes the longest ordinal the name begins with, so
+  `Vigésimo Primero Disco` is the twenty-first rather than the twentieth with `primero disco`
+  left over. English keeps the composed tables above, because its idiom is the one they were
+  written for. `a_spelling_names_one_number_whichever_language_spells_it` holds every spelling
+  to one number across the six, and
+  `a_disc_past_twelve_is_composed_in_every_language_it_is_numbered_in` is the claim.
+  `named_before_the_word` weighs the English reading and the composed one side by side and takes
   whichever leaves a separator and a disc word behind it, because an English ordinal is a prefix
   of some of theirs: `second` begins `Secondo Disco` and leaves `o disco`, which names nothing,
-  where `secondo` leaves the disc. The flat table is read at its longest match for the same
+  where `secondo` leaves the disc. The composed table is read at its longest match for the same
   reason — `primer` begins `primera`. A set already scanned under `Zweite CD` is keyed by that
   folder, the way one under `Second Disc` was, so it stays one album a disc until it is scanned
   again from nothing. What it

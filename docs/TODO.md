@@ -71,7 +71,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Later: Tagging and organising
 - A cue-cut row is never written, and an album landed as a release group gets no totals
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer: lofty writes none of them
-- A disc numbered in words is composed only in English beyond the flat tables of twelve
 
 ## Later: Equaliser and DSP extras
 - *Fit the preamp* models the curve rather than measuring what the music peaks at

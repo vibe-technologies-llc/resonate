@@ -14,6 +14,7 @@ mod loose;
 mod m3u;
 mod model;
 mod moves;
+mod numerals;
 mod organise;
 mod paged;
 mod pass;
