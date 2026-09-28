@@ -1,6 +1,6 @@
 mod about;
 mod appearance;
-mod curve;
+pub(crate) mod curve;
 mod defaults;
 mod desktop;
 mod equaliser;
@@ -252,6 +252,7 @@ impl RootView {
                     category.label(),
                     div()
                         .id(SharedString::new_static(category.label()))
+                        .debug_selector(|| format!("category-{}", category.label()))
                         .flex()
                         .items_center()
                         .gap_2p5()
@@ -335,6 +336,7 @@ impl RootView {
 
         div()
             .id("settings")
+            .debug_selector(|| "settings".to_owned())
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 if !*hovered && this.holds_a_press_armed() {
                     this.lower_every_armed_press();

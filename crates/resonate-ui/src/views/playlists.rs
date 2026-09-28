@@ -2066,6 +2066,7 @@ fn picked(playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
 
     row(false)
         .id(("picker", id.get() as usize))
+        .debug_selector(move || format!("picker-{}", id.get()))
         .px_3()
         .cursor_pointer()
         .hover(|row| row.bg(rgb(theme::hover())))

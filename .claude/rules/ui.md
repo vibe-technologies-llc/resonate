@@ -1308,6 +1308,33 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `truncate().ends_in_an_ellipsis()`, so a name whose room runs out because an *ancestor* is the
   box that ran out ends in an ellipsis rather than a glyph sliced in half.
 
+## Driven by tests
+
+- **A pane is pressed, dragged and scrolled by a test, under gpui's own test platform.**
+  `resonate-ui` takes gpui with `test-support` as a dev-dependency, and `driven.rs` is the harness:
+  `Driven::open` sets the `ResonateApp` global the way `run` does — a `Player` over an
+  `Unplugged` backend that has no sinks and refuses every stream, an in-memory `Library`, the
+  `Ephemeral` settings, `Places` under a temporary folder so a curve the pane writes lands there —
+  and opens a real `RootView` in a `VisualTestContext`. It presses, right-presses, drags,
+  scrolls and moves the pointer at the bounds gpui drew, which it reads through
+  `debug_selector`: `kit::Found::found_as` names every button, chip, segment, switch, choice
+  and mark by its `ElementId`, and the rows, tabs, menu entries and surfaces a test reaches name
+  themselves the same way — `tab-visualiser`, `track-<id>`, `queued-<id>`, `menu-entry-<n>`,
+  `picker-<id>`, `equaliser-curve`. The selector is compiled out of a build without
+  `test-support`, so it costs the window nothing. `Driven::settle` runs the executor until it
+  parks and advances the test clock a frame, which is what lets the models' polls run, and
+  `Driven::until` waits on the real engine and scan threads. `Driven::play` opens rows through a
+  `Command::Resume`, which opens the first paused without asking the graph for a sink. What is
+  driven: a tab, the visualiser's Scope segment, a track's menu and an entry of it, the playlist
+  picker, a queued row dragged below another, a suggestion card, the equaliser curve pressed,
+  dragged and right-pressed, the settings body scrolled, and the Listen sheet with its segments
+  and microphone chips — the chips planted through `ListenModel::hearing_of`, since a microphone
+  is PipeWire's to list. **What it found.** Pressing the curve with the equaliser off turned it on,
+  which showed the switch's note above and moved the curve out from under the press that was
+  shaping it, and the put-back mark appearing in a group's header grew the header; the note is
+  now always there and `kit::section_header` holds the height of a row control, so a first band
+  lands where it was pressed.
+
 ## Panes
 
 - **A favourite is a star, because the heart is taken, and what is missing is neither.**

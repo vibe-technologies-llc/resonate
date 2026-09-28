@@ -47,11 +47,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
 
 ## Testing
-- Nothing drives `resonate-ui`'s panes: KWin offers no synthetic input without the remote-desktop
-  portal, so a pane is seen only by making it the default and rebuilding. Everything that appears
-  only under a pointer — the menus, drags, the pickers, the equaliser curve, *Take this name*, a
-  suggestion card, the Listen card and its microphone chips, the Scope segment, scrolling the
-  settings body — has been checked by eye alone
+- *Take this name* is checked by eye alone: driving it wants a recognition the catalog holds, which
+  no fake fingerprinter hands the analysis pane yet
 - A microphone recording has not been proved against real sound reaching a microphone
 
 ## Later: Sources and providers

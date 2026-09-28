@@ -3,6 +3,8 @@ mod analysis_plot;
 mod app;
 mod clipboard;
 mod drawing;
+#[cfg(test)]
+mod driven;
 mod edit;
 mod equaliser;
 mod error;

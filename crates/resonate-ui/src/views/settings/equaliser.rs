@@ -89,7 +89,7 @@ impl RootView {
                 move |this, _, cx| this.switch_the_equaliser(!on, cx),
                 cx,
             ))
-            .when(on, |body| body.child(note(NOT_BIT_PERFECT)))
+            .child(note(NOT_BIT_PERFECT))
     }
 
     pub(super) fn bound_to_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -263,6 +263,7 @@ impl RootView {
 
         div()
             .id("equaliser-curve")
+            .debug_selector(|| "equaliser-curve".to_owned())
             .relative()
             .h(px(CURVE_HEIGHT))
             .w_full()

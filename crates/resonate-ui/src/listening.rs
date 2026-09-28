@@ -82,6 +82,12 @@ impl ListenModel {
         &self.microphones
     }
 
+    #[cfg(test)]
+    pub(crate) fn hearing_of(&mut self, microphones: Vec<(String, String)>) {
+        self.microphones = microphones;
+        self.listing = Task::ready(());
+    }
+
     pub(crate) const fn is_listening(&self) -> bool {
         matches!(self.stage, Stage::Recording(_) | Stage::Asking)
     }

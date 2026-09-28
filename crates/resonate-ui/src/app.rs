@@ -705,7 +705,7 @@ fn answering_on_a_band(on_a_band: Option<&str>) -> Vec<KeyBinding> {
     ]
 }
 
-fn bindings() -> Vec<KeyBinding> {
+pub(crate) fn bindings() -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
     let mut bindings = answering_anywhere();

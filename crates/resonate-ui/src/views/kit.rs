@@ -177,6 +177,7 @@ pub(crate) fn button_when(
 
     div()
         .id(id.clone())
+        .found_as(&id)
         .group(BUTTON_GROUP)
         .flex()
         .flex_none()
@@ -277,8 +278,10 @@ fn marked(
     drawn: Svg,
     saying: impl Into<SharedString>,
 ) -> Stateful<Div> {
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
+        .found_as(&id)
         .group(BUTTON_GROUP)
         .flex()
         .flex_none()
@@ -312,6 +315,7 @@ fn pill(id: impl Into<ElementId>, colour: u32, selected: bool) -> Stateful<Div> 
 
     div()
         .id(id.clone())
+        .found_as(&id)
         .flex()
         .flex_none()
         .items_center()
@@ -409,6 +413,8 @@ pub(crate) fn section() -> Div {
         .border_color(rgb(theme::border()))
 }
 
+const SECTION_HEADER_PADDING: f32 = 17.0;
+
 pub(crate) fn section_header() -> Div {
     div()
         .flex()
@@ -417,6 +423,7 @@ pub(crate) fn section_header() -> Div {
         .gap_2()
         .px_4()
         .py_2()
+        .min_h(px(theme::row_control() + SECTION_HEADER_PADDING))
         .border_b_1()
         .border_color(rgb(theme::border()))
 }
@@ -472,6 +479,7 @@ pub(crate) fn segment(
 
     div()
         .id(id.clone())
+        .found_as(&id)
         .flex()
         .flex_none()
         .items_center()
@@ -500,8 +508,10 @@ pub(crate) fn segment(
 }
 
 pub(crate) fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
+        .found_as(&id)
         .flex()
         .flex_none()
         .items_center()
@@ -560,8 +570,10 @@ pub(crate) fn preview(dressed: Appearance) -> Div {
 }
 
 pub(crate) fn dot_swatch(id: impl Into<ElementId>, colour: u32, chosen: bool) -> Stateful<Div> {
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
+        .found_as(&id)
         .flex()
         .flex_none()
         .items_center()
@@ -584,8 +596,10 @@ pub(crate) fn dot_swatch(id: impl Into<ElementId>, colour: u32, chosen: bool) ->
 }
 
 pub(crate) fn choice_row(id: impl Into<ElementId>, chosen: bool) -> Stateful<Div> {
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
+        .found_as(&id)
         .flex()
         .items_start()
         .gap_3()
@@ -712,6 +726,7 @@ pub(crate) fn way_back(
 
     div()
         .id(id.clone())
+        .found_as(&id)
         .group(WAY_BACK_GROUP)
         .flex()
         .flex_none()
@@ -929,3 +944,12 @@ pub(crate) fn avatar_at(name: &str, lit: bool, side: f32, letter: f32) -> Div {
         .text_color(rgb(if lit { theme::accent() } else { theme::muted() }))
         .child(initial)
 }
+
+pub(crate) trait Found: InteractiveElement + Sized {
+    fn found_as(self, id: &ElementId) -> Self {
+        let named = id.clone();
+        self.debug_selector(move || named.to_string())
+    }
+}
+
+impl<E: InteractiveElement> Found for E {}

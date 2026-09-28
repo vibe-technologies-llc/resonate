@@ -150,6 +150,7 @@ impl RootView {
             .child(
                 div()
                     .id(("suggestion-open", index))
+                    .debug_selector(move || format!("suggestion-open-{index}"))
                     .flex()
                     .flex_col()
                     .flex_grow()

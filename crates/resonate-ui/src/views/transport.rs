@@ -943,6 +943,7 @@ impl RootView {
 
         div()
             .id(id)
+            .debug_selector(move || id.to_owned())
             .group(CONTROL_GROUP)
             .flex()
             .flex_none()

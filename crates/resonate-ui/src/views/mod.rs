@@ -22,13 +22,13 @@ mod queue;
 mod reorder;
 mod root;
 mod scrollbar;
-mod settings;
+pub(crate) mod settings;
 mod slider;
 pub(crate) mod sorting;
 pub(crate) mod statistics;
 mod suggestions;
 pub(crate) mod transport;
 mod typing;
-mod visualiser;
+pub(crate) mod visualiser;
 
 pub use crate::views::root::{Pane, RootView};

@@ -3187,6 +3187,7 @@ impl RootView {
 
         div()
             .id(SharedString::new_static(pane.label()))
+            .debug_selector(|| format!("tab-{}", pane.as_str()))
             .group(PANE_GROUP)
             .relative()
             .flex()

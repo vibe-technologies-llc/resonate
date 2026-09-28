@@ -275,6 +275,7 @@ impl RootView {
 
         div()
             .id(("menu-entry", at))
+            .debug_selector(move || format!("menu-entry-{at}"))
             .group(MENU_GROUP)
             .flex()
             .items_center()

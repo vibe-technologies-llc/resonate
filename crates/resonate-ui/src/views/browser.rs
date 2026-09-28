@@ -849,6 +849,7 @@ impl RootView {
 
         let row = row(playing)
             .id(("track", id.get()))
+            .debug_selector(move || format!("track-{}", id.get()))
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))

@@ -572,8 +572,10 @@ impl RootView {
                                     let title = drawn.title.clone();
                                     let artist = drawn.artist.clone();
                                     let menued = Arc::clone(&holding);
+                                    let queued_as = item.id.get();
                                     let listed = row(current)
-                                        .id(("queued", item.id.get()))
+                                        .id(("queued", queued_as))
+                                        .debug_selector(move || format!("queued-{queued_as}"))
                                         .group(ROW_GROUP)
                                         .cursor_pointer()
                                         .when(heard, |entry| entry.opacity(HEARD_FADED))
