@@ -1,8 +1,8 @@
 use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
-    ArtistMatch, ArtistProfile, ArtistRelease, Credit, Genre, GroupAsked, GroupMatch, GroupRelease,
-    Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked,
+    ArtistMatch, ArtistProfile, ArtistRelease, Credit, Discography, Genre, GroupAsked, GroupMatch,
+    GroupRelease, Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked,
     RecordingMatch, RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
     ReleaseTrack, Wording,
 };
@@ -19,7 +19,7 @@ const SONGS_FOUND_AT_MOST: u32 = 25;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
 const BROWSE_PAGE: u32 = 100;
 const GROUPS_AT_MOST: u32 = 1000;
-const DISCOGRAPHY_KINDS: &str = "album|ep";
+const DISCOGRAPHY_KINDS: &str = "album|ep|single";
 const RELEASE_INCLUDES: &str =
     "recordings+artist-credits+media+release-groups+isrcs+labels+url-rels+recording-level-rels";
 const ARTIST_INCLUDES: &str = "url-rels+tags+aliases";
@@ -478,9 +478,10 @@ pub(crate) fn find_artist(client: &Client, name: &str) -> Result<Vec<ArtistMatch
         .collect())
 }
 
-pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Vec<ArtistRelease>> {
+pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Discography> {
     let op = LookupOp::ReleaseGroupsOfArtist;
     let mut releases: Vec<ArtistRelease> = Vec::new();
+    let mut unread: u32 = 0;
     let mut offset: u32 = 0;
     loop {
         let path = release_groups_path(artist, offset);
@@ -490,11 +491,12 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Vec<Ar
         let read = u32::try_from(page.release_groups.len()).unwrap_or(u32::MAX);
         let next = page.release_group_offset.saturating_add(read);
         if offset == 0 && page.release_group_count > GROUPS_AT_MOST {
-            tracing::warn!(
+            unread = page.release_group_count - GROUPS_AT_MOST;
+            tracing::debug!(
                 %artist,
                 credited = page.release_group_count,
                 read = GROUPS_AT_MOST,
-                "an artist is credited on more albums and EPs than a discography reads"
+                "an artist is credited on more release groups than a discography reads"
             );
         }
         let held = page.release_group_count.min(GROUPS_AT_MOST);
@@ -509,7 +511,7 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid) -> Result<Vec<Ar
         offset = next;
     }
 
-    Ok(releases)
+    Ok(Discography { releases, unread })
 }
 
 fn release_groups_path(artist: &Mbid, offset: u32) -> String {
@@ -1853,7 +1855,7 @@ mod tests {
 
         assert_eq!(
             release_groups_path(&artist, 200),
-            "/release-group?artist=83d91898-7763-47d7-b03b-b92132375c47&type=album%7Cep\
+            "/release-group?artist=83d91898-7763-47d7-b03b-b92132375c47&type=album%7Cep%7Csingle\
              &limit=100&offset=200&fmt=json"
         );
     }

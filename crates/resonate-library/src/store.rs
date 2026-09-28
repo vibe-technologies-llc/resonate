@@ -1086,6 +1086,16 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
     Ok(spellings)
 }
 
+pub(crate) const WORDS_OF: &str = "words_of";
+
+pub(crate) fn words_of(text: &str) -> String {
+    folded_letters(text)
+        .split(|glyph: char| !glyph.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn folded_letters(text: &str) -> String {
     let mut folded = String::with_capacity(text.len());
     for letter in text.to_lowercase().nfd() {

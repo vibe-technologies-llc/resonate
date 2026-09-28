@@ -1207,10 +1207,13 @@ pub(crate) fn land_artist(
     write_links(tx, "artist_links", "artist_id", id, &profile.links)
 }
 
+const A_SINGLE: &str = "Single";
+
 pub(crate) fn land_artist_releases(
     tx: &Transaction<'_>,
     artist: ArtistId,
     releases: &[ArtistRelease],
+    unread: u32,
 ) -> Result<usize> {
     let id = artist.get() as i64;
     let known = tx
@@ -1228,10 +1231,16 @@ pub(crate) fn land_artist_releases(
         params![id],
     )
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.execute(
+        "UPDATE artists SET releases_unread = ?2 WHERE id = ?1",
+        params![id, unread],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
     let mut insert = tx
         .prepare(
-            "INSERT INTO artist_releases (artist_id, mbid, title, kind, first_released, folded)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO artist_releases (artist_id, mbid, title, kind, first_released, folded,
+                                          song)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(artist_id, mbid) DO NOTHING",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -1244,7 +1253,9 @@ pub(crate) fn land_artist_releases(
                 release.title,
                 release.kind,
                 release.first_released,
-                spelt_out(release)
+                spelt_out(release),
+                (release.kind.as_deref() == Some(A_SINGLE))
+                    .then(|| store::words_of(&release.title))
             ])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }

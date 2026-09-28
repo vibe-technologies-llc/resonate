@@ -157,7 +157,10 @@ macro_rules! artist_tracks {
 
 macro_rules! unheld_by_any_album {
     () => {
-        "NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)"
+        "NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)
+         AND NOT EXISTS (SELECT 1 FROM tracks t
+                          WHERE r.song IS NOT NULL AND t.artist_id = r.artist_id
+                            AND words_of(t.title) = r.song)"
     };
 }
 
@@ -2255,7 +2258,7 @@ impl Library {
             let Some(raw) = connection
                 .query_row(
                     "SELECT mbid, sort_name, kind, gender, country, area, began_in, began, ended,
-                            has_ended, disambiguation, asked, answered, name
+                            has_ended, disambiguation, asked, answered, name, releases_unread
                        FROM artists WHERE id = ?1",
                     params![artist],
                     RawArtistDetail::read,
@@ -2928,9 +2931,11 @@ impl Library {
         &self,
         artist: ArtistId,
         releases: &[ArtistRelease],
+        unread: u32,
     ) -> Result<usize> {
-        self.inner
-            .write(|transaction| enriched::land_artist_releases(transaction, artist, releases))
+        self.inner.write(|transaction| {
+            enriched::land_artist_releases(transaction, artist, releases, unread)
+        })
     }
 
     pub fn land_portrait(&self, artist: ArtistId, art: &CoverArt) -> Result<bool> {
@@ -4689,6 +4694,7 @@ struct RawArtistDetail {
     asked: Option<i64>,
     answered: Option<i64>,
     name: String,
+    releases_unread: u32,
 }
 
 impl RawArtistDetail {
@@ -4708,6 +4714,7 @@ impl RawArtistDetail {
             asked: row.get(11)?,
             answered: row.get(12)?,
             name: row.get(13)?,
+            releases_unread: row.get(14)?,
         })
     }
 
@@ -4737,6 +4744,7 @@ impl RawArtistDetail {
             genres,
             links,
             releases_unheld,
+            releases_unread: self.releases_unread,
         })
     }
 }

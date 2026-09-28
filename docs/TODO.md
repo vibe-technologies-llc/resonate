@@ -63,8 +63,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A file with no title tag and no artist tag, whose stem is neither numbered nor separated, gives
   the search nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or
   recording id
-- The discography asks for albums and EPs alone, so singles are never listed as not held, and past
-  `GROUPS_AT_MOST` the rest are passed over with only a log line
+- Past `GROUPS_AT_MOST` release groups an artist's discography is read no further; the count
+  left unread is said, and nothing reads the rest
 - The verdict's thresholds were measured on one library of FLACs and LAME transcodes; no FhG, AAC,
   Opus or Vorbis transcode was weighed, and it reads only the lowpass wall, the upsampled wall and
   the padded bits — not an MP3's frame-to-frame holes, sfb21 content or pre-echo

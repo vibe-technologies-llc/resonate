@@ -1532,8 +1532,13 @@ impl RootView {
             .unwrap_or_default();
         let missing_shown = cx.global::<ResonateApp>().tabs.missing;
         let unheld = detail
-            .map(|detail| detail.releases_unheld as usize)
-            .filter(|unheld| missing_shown && *unheld > 0);
+            .map(|detail| {
+                (
+                    detail.releases_unheld as usize,
+                    detail.releases_unread as usize,
+                )
+            })
+            .filter(|(unheld, _)| missing_shown && *unheld > 0);
         let favourite = library.favoured_artist(id);
         let records = library.artist_albums().len();
         let tracks = library.listed().rows as usize;
@@ -1589,15 +1594,21 @@ impl RootView {
                         ),
                     )
                 })
-                .when_some(unheld, |row, unheld| {
+                .when_some(unheld, |row, (unheld, unread)| {
                     row.child(
                         kit::button(
                             "unheld-releases",
                             Some(Icon::Missing),
-                            format!(
-                                "{} not held",
-                                format::counted(unheld, "release", "releases")
-                            ),
+                            match unread {
+                                0 => format!(
+                                    "{} not held",
+                                    format::counted(unheld, "release", "releases")
+                                ),
+                                unread => format!(
+                                    "{} not held, {unread} more unread",
+                                    format::counted(unheld, "release", "releases")
+                                ),
+                            },
                             UNHELD_HINT,
                             Tone::Ghost,
                         )

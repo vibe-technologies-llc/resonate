@@ -126,6 +126,9 @@ paths:
   Lyricsfile draft asks a reader to — and takes a budget of nodes, depth and documents, which is
   what lets a document off the network be parsed at all. `serde_yaml` was archived and
   `yaml-rust2` has no serde side, which is the whole of why this one.
+- `rusqlite` needs `functions` beside `hooks`, `bundled` and `cache`: `schema::configure`
+  registers `words_of` on every connection, the one fold of a title SQL cannot spell, which is
+  what weighs a single against the songs an artist's tracks carry.
 - `rusqlite` needs `hooks` beside `bundled` and `cache`. `Connection::update_hook` is what
   `db::watch_the_names` registers to know when a name in `tracks`, `albums` or `artists` could
   have moved, which is what the kept spelling vocabulary is stamped against; deriving that from

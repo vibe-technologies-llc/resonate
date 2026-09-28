@@ -1254,10 +1254,10 @@ through `Player::media` like any other unscanned row.
 - **An artist's discography is kept once its profile lands, and what the catalog is short of is
   read off it.** `Pass::artist` calls `discography` after `land_artist`: `release_groups_of` is
   asked for every release group the artist is credited on, `worth_keeping` keeps those whose
-  primary type is one of `KEPT_KINDS` — `Album` and `EP` — and whose secondary types are none or
-  `Soundtrack` alone, so a live album, a compilation, a remix, a single and a group with no type
-  are left out, which `an_album_and_an_ep_are_worth_keeping_and_a_soundtrack_is_still_one` and
-  `a_live_album_a_compilation_a_remix_a_single_and_an_unkinded_group_are_left_out` in
+  primary type is one of `KEPT_KINDS` — `Album`, `EP` and `Single` — and whose secondary types are
+  none or `Soundtrack` alone, so a live album, a compilation, a remix and a group with no type
+  are left out, which `an_album_an_ep_and_a_single_are_worth_keeping_and_a_soundtrack_is_still_one` and
+  `a_live_album_a_compilation_a_remix_and_an_unkinded_group_are_left_out` in
   `enrich.rs` are the claims of; and `land_artist_releases` deletes and reinserts
   `artist_releases` — `(artist_id, mbid)` with the title, the kind, the first release date and
   the `folded` haystack `spelt_out` writes, which is those three run through
@@ -1265,7 +1265,19 @@ through `Player::media` like any other unscanned row.
   `EnrichStats::releases_found` counts. A release is
   *unheld* where no album's `release_group` is its mbid — `unheld_by_any_album!` in `db.rs`,
   read off `albums_by_release_group` — so a landed pressing takes its group out of the list and
-  a group landed thin does the same; `Library::unheld_releases` lists them under a cap by artist
+  a group landed thin does the same. **A single is held wherever its song is**: its title is kept
+  as `artist_releases.song`, the words of it — `store::words_of`, the letter fold with every run
+  of what is not a letter or a digit made one space — and the macro weighs it against the words
+  of every title the artist's tracks carry through `words_of`, which `schema::configure`
+  registers on each connection as a deterministic SQLite function, so *Fearless* on the album
+  holds the *Fearless* single however either is punctuated, and only a single whose song the
+  catalog has nowhere is listed as not held —
+  `a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`.
+  **What was not read is said rather than logged.** `Reference::release_groups_of` answers a
+  `Discography` — the releases and how many more the service credits than the browse's cap
+  read — and `land_artist_releases` keeps that as `artists.releases_unread`, which
+  `ArtistDetail::releases_unread` carries to the artist page's *N releases not held* button and
+  `resonate missing --artist` prints; `Library::unheld_releases` lists them under a cap by artist
   and first release date, `ArtistDetail::releases_unheld` counts one artist's and
   `Library::missing_counted` answers a `Missing` — those beside the release rows with no
   `track_id`, which `Library::missing_tracks` lists in album order with each row's `WantId`.

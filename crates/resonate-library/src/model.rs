@@ -209,6 +209,7 @@ pub struct ArtistDetail {
     pub genres: Vec<Genre>,
     pub links: Vec<Link>,
     pub releases_unheld: u32,
+    pub releases_unread: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

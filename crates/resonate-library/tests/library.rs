@@ -25,18 +25,18 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Edit,
-    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
-    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, ListeningService, LookupOp,
-    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
-    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
-    Pruned, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
-    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, SheetEncoding, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TagField, TagSet, TagSink, TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault,
-    Waits, Window, Wording, Written,
+    BETTERED_AFTER, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Discography,
+    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
+    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat,
+    ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
+    ListeningService, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack,
+    OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder,
+    PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
+    RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
+    ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder,
+    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEncoding,
+    Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagField, TagSet, TagSink,
+    TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -8093,6 +8093,7 @@ struct Canned {
     artists: Vec<ArtistProfile>,
     found_artists: Vec<ArtistMatch>,
     artist_releases: Vec<(Mbid, Vec<ArtistRelease>)>,
+    releases_unread: u32,
     covers: Vec<(Mbid, CoverArt)>,
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
@@ -8289,15 +8290,18 @@ impl Reference for Fake {
         Ok(self.canned.found_artists.clone())
     }
 
-    fn release_groups_of(&self, artist: &Mbid) -> Result<Vec<ArtistRelease>> {
+    fn release_groups_of(&self, artist: &Mbid) -> Result<Discography> {
         self.note(Called::ReleaseGroupsOf(artist.clone()))?;
-        Ok(self
-            .canned
-            .artist_releases
-            .iter()
-            .find(|(held, _)| held == artist)
-            .map(|(_, releases)| releases.clone())
-            .unwrap_or_default())
+        Ok(Discography {
+            releases: self
+                .canned
+                .artist_releases
+                .iter()
+                .find(|(held, _)| held == artist)
+                .map(|(_, releases)| releases.clone())
+                .unwrap_or_default(),
+            unread: self.canned.releases_unread,
+        })
     }
 
     fn cover(&self, release: &Mbid, group: Option<&Mbid>) -> Result<Option<CoverArt>> {
@@ -9731,12 +9735,13 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
             Called::ReleaseGroupsOf(mbid(ORBITERS)),
         ]
     );
-    assert_eq!(summary.stats.releases_found, 3);
+    assert_eq!(summary.stats.releases_found, 4);
 
     let artist = artist_named(&library, "The Orbiters")?;
     let expected = vec![
         unheld(&artist, HOURS_GROUP, "Hours", "EP", Some("1996-05-06")),
         unheld(&artist, SCORE_GROUP, "The Orbit", "Album", Some("2003-11")),
+        unheld(&artist, SINGLE_GROUP, "San Tropez", "Single", None),
     ];
     assert_eq!(library.unheld_releases(None, None)?, expected);
     assert_eq!(library.unheld_releases(None, Some(1))?, expected[..1]);
@@ -9744,27 +9749,84 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
         library
             .artist_detail(artist.id)?
             .map(|detail| detail.releases_unheld),
-        Some(2)
+        Some(3)
     );
     assert_eq!(
         library.missing_counted(None)?,
         Missing {
             tracks: 0,
-            releases: 2,
+            releases: 3,
         }
     );
 
     let fake = Arc::new(Fake::new(canned()));
     let summary = enrich(&library, &fake, true)?;
     assert_eq!(fake.called(LookupOp::ReleaseGroupsOfArtist), 1);
-    assert_eq!(summary.stats.releases_found, 3);
+    assert_eq!(summary.stats.releases_found, 4);
     assert_eq!(library.unheld_releases(None, None)?, expected);
     assert_eq!(
         library
             .artist_detail(artist.id)?
             .map(|detail| detail.releases_unheld),
-        Some(2)
+        Some(3)
     );
+    Ok(())
+}
+
+#[test]
+fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read()
+-> Result<()> {
+    const FEARLESS_SINGLE: &str = "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d";
+    const SATELLITE_SINGLE: &str = "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e";
+    let (_tree, library) = scanned_orbits()?;
+    let mut release = orbits(orbits_rows(), Vec::new());
+    release.credit = vec![Credit {
+        name: "The Orbiters".to_owned(),
+        joined_by: String::new(),
+        mbid: Some(mbid(ORBITERS)),
+    }];
+    let mut groups = orbiters_groups();
+    groups.push(artist_release(
+        FEARLESS_SINGLE,
+        "Fearless",
+        Some("Single"),
+        &[],
+        Some("1998-01-01"),
+    ));
+    groups.push(artist_release(
+        SATELLITE_SINGLE,
+        "Satellite",
+        Some("Single"),
+        &[],
+        Some("2004-01-01"),
+    ));
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![release],
+        artists: vec![orbiters()],
+        artist_releases: vec![(mbid(ORBITERS), groups)],
+        releases_unread: 250,
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    let artist = artist_named(&library, "The Orbiters")?;
+    let unheld: Vec<String> = library
+        .unheld_releases(None, None)?
+        .into_iter()
+        .map(|release| release.title)
+        .collect();
+    assert!(
+        unheld.contains(&"Satellite".to_owned()),
+        "a single whose song is not held was not listed: {unheld:?}"
+    );
+    assert!(
+        !unheld.contains(&"Fearless".to_owned()),
+        "a single whose song is held on the album was listed: {unheld:?}"
+    );
+    let detail = library.artist_detail(artist.id)?.expect("the artist");
+    assert_eq!(detail.releases_unheld, 4);
+    assert_eq!(detail.releases_unread, 250);
     Ok(())
 }
 
@@ -9850,6 +9912,7 @@ fn an_unheld_release_is_found_by_a_name_spelt_either_way() -> Result<()> {
             &[],
             Some("1996-05-06"),
         )],
+        0,
     )?;
 
     assert_eq!(

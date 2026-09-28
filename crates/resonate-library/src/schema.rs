@@ -1,6 +1,6 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, functions::FunctionFlags};
 
-use crate::{Error, Result, SchemaFingerprint, StoreOp};
+use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
 pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_after(V1, MIGRATIONS);
 
@@ -47,6 +47,8 @@ const MIGRATIONS: &[&str] = &[
      ) STRICT;
      CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);",
     "ALTER TABLE tracks ADD COLUMN named_by_its_stem INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE artist_releases ADD COLUMN song TEXT;
+     ALTER TABLE artists ADD COLUMN releases_unread INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -454,6 +456,17 @@ impl Role {
 pub fn configure(connection: &Connection, role: Role) -> Result<()> {
     let page_cache_kib = role.page_cache_kib();
 
+    connection
+        .create_scalar_function(
+            store::WORDS_OF,
+            1,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| {
+                let text: Option<String> = context.get(0)?;
+                Ok(text.map(|text| store::words_of(&text)))
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
     connection
         .execute_batch(&format!(
             "PRAGMA journal_mode = WAL;

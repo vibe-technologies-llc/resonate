@@ -1906,11 +1906,13 @@ impl Pass<'_> {
     }
 
     fn discography(&self, artist: ArtistId, mbid: &Mbid) -> Result<()> {
-        let Heard::Answered(groups) = self.heard(self.reference.release_groups_of(mbid))? else {
+        let Heard::Answered(held) = self.heard(self.reference.release_groups_of(mbid))? else {
             return Ok(());
         };
-        let kept: Vec<ArtistRelease> = groups.into_iter().filter(worth_keeping).collect();
-        let written = self.library.land_artist_releases(artist, &kept)?;
+        let kept: Vec<ArtistRelease> = held.releases.into_iter().filter(worth_keeping).collect();
+        let written = self
+            .library
+            .land_artist_releases(artist, &kept, held.unread)?;
         self.progress
             .releases_found
             .fetch_add(written as u64, Ordering::Relaxed);
@@ -1994,7 +1996,7 @@ impl Pass<'_> {
     }
 }
 
-const KEPT_KINDS: [&str; 2] = ["Album", "EP"];
+const KEPT_KINDS: [&str; 3] = ["Album", "EP", "Single"];
 
 const SOUNDTRACK: &str = "Soundtrack";
 
@@ -2026,8 +2028,8 @@ mod tests {
     }
 
     #[test]
-    fn an_album_and_an_ep_are_worth_keeping_and_a_soundtrack_is_still_one() {
-        for kind in ["Album", "EP"] {
+    fn an_album_an_ep_and_a_single_are_worth_keeping_and_a_soundtrack_is_still_one() {
+        for kind in ["Album", "EP", "Single"] {
             assert!(worth_keeping(&artist_release(Some(kind), &[])), "{kind}");
             assert!(
                 worth_keeping(&artist_release(Some(kind), &["Soundtrack"])),
@@ -2037,7 +2039,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_album_a_compilation_a_remix_a_single_and_an_unkinded_group_are_left_out() {
+    fn a_live_album_a_compilation_a_remix_and_an_unkinded_group_are_left_out() {
         for secondary in [
             ["Live"].as_slice(),
             ["Compilation"].as_slice(),
@@ -2050,13 +2052,7 @@ mod tests {
                 "{secondary:?}"
             );
         }
-        for kind in [
-            None,
-            Some("Single"),
-            Some("Other"),
-            Some("Broadcast"),
-            Some("album"),
-        ] {
+        for kind in [None, Some("Other"), Some("Broadcast"), Some("album")] {
             assert!(!worth_keeping(&artist_release(kind, &[])), "{kind:?}");
         }
     }

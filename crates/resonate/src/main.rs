@@ -759,6 +759,20 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
     } else {
         print!("{}", unheld_releases_table(&releases).render());
     }
+    if let Some(named) = artist
+        && let Some(id) = library.artist_named(named)?
+        && let Some(detail) = library.artist_detail(id)?
+        && detail.releases_unread > 0
+    {
+        println!(
+            "MusicBrainz credits {named} on {} more that were not read",
+            counted(
+                u64::from(detail.releases_unread),
+                "release group",
+                "release groups"
+            )
+        );
+    }
     Ok(())
 }
 

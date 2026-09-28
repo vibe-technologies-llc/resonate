@@ -12,7 +12,7 @@ use std::{
 
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
-    Agreement, ArtistMatch, ArtistProfile, ArtistRelease, CoverArt, Credit, EnrichOptions,
+    Agreement, ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, EnrichOptions,
     EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
     Library, Link, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked,
     RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
@@ -264,8 +264,8 @@ impl Reference for Silent {
         Ok(Vec::new())
     }
 
-    fn release_groups_of(&self, _artist: &Mbid) -> Result<Vec<ArtistRelease>> {
-        Ok(Vec::new())
+    fn release_groups_of(&self, _artist: &Mbid) -> Result<Discography> {
+        Ok(Discography::default())
     }
 
     fn cover(&self, _release: &Mbid, _group: Option<&Mbid>) -> Result<Option<CoverArt>> {

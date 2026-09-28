@@ -95,9 +95,9 @@ pub use crate::{
         SavedQuery, SearchResults, SortOrder, TrackQuery,
     },
     reference::{
-        ArtistMatch, ArtistProfile, ArtistRelease, Credit, Genre, GroupAsked, GroupMatch,
-        GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText, LyricsAsked, Medium,
-        Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
+        ArtistMatch, ArtistProfile, ArtistRelease, Credit, Discography, Genre, GroupAsked,
+        GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText, LyricsAsked,
+        Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
         ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked, Wording,
         apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
         spotify_urls, wikidata_urls, wikipedia_urls,

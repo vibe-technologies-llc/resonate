@@ -208,7 +208,8 @@ fn the_reference_answers_pink_floyd_with_every_album_and_ep_it_is_credited_on() 
 
     let groups = online
         .release_groups_of(&mbid(PINK_FLOYD))
-        .expect("musicbrainz answered");
+        .expect("musicbrainz answered")
+        .releases;
     assert!(
         groups.len() >= 100,
         "the browse answered only {} groups",

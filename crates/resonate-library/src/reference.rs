@@ -355,6 +355,12 @@ pub struct ArtistRelease {
     pub first_released: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Discography {
+    pub releases: Vec<ArtistRelease>,
+    pub unread: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtistMatch {
     pub mbid: Mbid,
@@ -412,7 +418,7 @@ pub trait Reference: Send + Sync {
 
     fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>>;
 
-    fn release_groups_of(&self, artist: &Mbid) -> Result<Vec<ArtistRelease>>;
+    fn release_groups_of(&self, artist: &Mbid) -> Result<Discography>;
 
     fn cover(&self, release: &Mbid, group: Option<&Mbid>) -> Result<Option<CoverArt>>;
 
