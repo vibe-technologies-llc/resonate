@@ -1,8 +1,8 @@
 use std::{borrow::Cow, time::SystemTime};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Div, FontWeight, PathBuilder, Pixels, Point, SharedString,
-    canvas, div, linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
+    AnyElement, Bounds, Canvas, Context, Div, FontWeight, Pixels, Point, SharedString, canvas, div,
+    linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
 };
 use resonate_core::{AppliedGain, Decibels, Frames, SampleRate};
 use resonate_engine::{
@@ -18,6 +18,7 @@ use crate::{
     views::{
         browser::OPEN_ALBUM_HINT,
         kit::{self, EndsInAnEllipsis, Tone},
+        plot,
         root::RootView,
         scrollbar::Scrollbars,
         transport::{Heard, copied_on_a_right_click},
@@ -449,47 +450,17 @@ fn traced(shares: Vec<f32>) -> Canvas<()> {
         |_, _, _| (),
         move |bounds, (), window, _| {
             let plotted = plotted(&shares, bounds);
-            let (Some(first), Some(last)) = (plotted.first(), plotted.last()) else {
-                return;
-            };
-            if plotted.len() < 2 {
-                return;
-            }
-
-            let mut under = PathBuilder::fill();
-            under.move_to(point(first.x, bounds.bottom()));
-            for at in &plotted {
-                under.line_to(*at);
-            }
-            under.line_to(point(last.x, bounds.bottom()));
-            under.close();
-
-            match under.build() {
-                Ok(shaded) => window.paint_path(
-                    shaded,
-                    linear_gradient(
-                        180.0,
-                        linear_color_stop(theme::tinted(theme::accent(), 0x4d), 0.0),
-                        linear_color_stop(theme::tinted(theme::accent(), 0x00), 1.0),
-                    ),
+            plot::wash(
+                window,
+                &plotted,
+                bounds.bottom(),
+                linear_gradient(
+                    180.0,
+                    linear_color_stop(theme::tinted(theme::accent(), 0x4d), 0.0),
+                    linear_color_stop(theme::tinted(theme::accent(), 0x00), 1.0),
                 ),
-                Err(error) => {
-                    tracing::debug!(%error, "the bitrate graph's wash would not tessellate")
-                }
-            }
-
-            let mut line = PathBuilder::stroke(px(GRAPH_LINE));
-            line.move_to(*first);
-            for at in plotted.iter().skip(1) {
-                line.line_to(*at);
-            }
-
-            match line.build() {
-                Ok(drawn) => window.paint_path(drawn, rgb(theme::accent())),
-                Err(error) => {
-                    tracing::debug!(%error, "the bitrate graph's line would not tessellate")
-                }
-            }
+            );
+            plot::stroke(window, &plotted, GRAPH_LINE, rgb(theme::accent()));
         },
     )
     .size_full()

@@ -33,10 +33,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Performance and scale
 - Every frame the visualiser or the lyrics pane asks for is a whole-window paint on the GPU;
   gpui draws the scene whole, so only a newer gpui avoids it
-- gpui 0.2.2 rasterises every batch of vector paths — the inspector's bitrate graph, the scope, the
-  analysis plots, the equaliser curve — through a window-sized 4× MSAA texture it clears and
-  resolves each frame, which costs an integrated GPU far more than the paths themselves. Only a
-  newer gpui or drawing those plots without `paint_path` avoids it
 
 ## Library
 - A cue row exported to PLS is its whole file, the format having no word for a region

@@ -1,7 +1,7 @@
 use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent, PathBuilder,
+    BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
     PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Window, canvas,
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
@@ -24,6 +24,7 @@ use crate::{
     views::{
         hint::Names as _,
         kit::{self, EndsInAnEllipsis as _, Tone},
+        plot,
         root::RootView,
         settings::{
             action,
@@ -827,51 +828,32 @@ fn traced(
             let level = |decibels: f64| px(plot.y_of(decibels));
             let across = |at: usize| px(left + at as f32 / steps * wide);
 
-            let mut zero = PathBuilder::stroke(px(1.0));
-            zero.move_to(point(bounds.left(), level(0.0)));
-            zero.line_to(point(bounds.right(), level(0.0)));
-            match zero.build() {
-                Ok(drawn) => window.paint_path(drawn, rgb(theme::outline())),
-                Err(error) => tracing::debug!(%error, "the curve's zero line would not tessellate"),
-            }
+            plot::stroke(
+                window,
+                &[
+                    point(bounds.left(), level(0.0)),
+                    point(bounds.right(), level(0.0)),
+                ],
+                1.0,
+                rgb(theme::outline()),
+            );
 
             let plotted: Vec<gpui::Point<Pixels>> = curve
                 .iter()
                 .enumerate()
                 .map(|(at, decibels)| point(across(at), level(*decibels)))
                 .collect();
-            if let (Some(first), Some(last)) = (plotted.first(), plotted.last())
-                && plotted.len() >= 2
-            {
-                let mut under = PathBuilder::fill();
-                under.move_to(point(first.x, level(0.0)));
-                for at in &plotted {
-                    under.line_to(*at);
-                }
-                under.line_to(point(last.x, level(0.0)));
-                under.close();
-                match under.build() {
-                    Ok(shaded) => window.paint_path(
-                        shaded,
-                        linear_gradient(
-                            180.0,
-                            linear_color_stop(theme::tinted(theme::accent(), 0x40), 0.0),
-                            linear_color_stop(theme::tinted(theme::accent(), 0x10), 1.0),
-                        ),
-                    ),
-                    Err(error) => tracing::debug!(%error, "the curve's wash would not tessellate"),
-                }
-
-                let mut line = PathBuilder::stroke(px(CURVE_LINE));
-                line.move_to(*first);
-                for at in plotted.iter().skip(1) {
-                    line.line_to(*at);
-                }
-                match line.build() {
-                    Ok(drawn) => window.paint_path(drawn, rgb(theme::accent())),
-                    Err(error) => tracing::debug!(%error, "the curve would not tessellate"),
-                }
-            }
+            plot::wash(
+                window,
+                &plotted,
+                level(0.0),
+                linear_gradient(
+                    180.0,
+                    linear_color_stop(theme::tinted(theme::accent(), 0x40), 0.0),
+                    linear_color_stop(theme::tinted(theme::accent(), 0x10), 1.0),
+                ),
+            );
+            plot::stroke(window, &plotted, CURVE_LINE, rgb(theme::accent()));
 
             for (row, band) in handles.bands.iter().enumerate() {
                 window.paint_quad(handle(plot, *band, handles.chosen == Some(row)));

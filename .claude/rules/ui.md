@@ -594,6 +594,20 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
 
 ## Drawing
 
+- **A plot is quads, never a path.** gpui 0.2.2 rasterises every batch of vector paths through a
+  window-sized 4× MSAA texture it clears and resolves each frame, which cost an integrated GPU far
+  more than the plots themselves — and the scope, the inspector's bitrate graph, the analysis
+  pane's waveform and spectrum and the equaliser's curve are all plots. `views/plot.rs` draws them
+  out of `paint_quad` instead, which gpui batches as instances: `stroke` lays one quad over each
+  segment's bounding box, as tall as the segment rises plus the line's width and never narrower
+  than it, `wash` one from each segment's middle height to a level — the floor for a bitrate or a
+  spectrum, the zero line for the equaliser's signed curve, so a cut is washed up to it rather
+  than down to the floor — and `between` one per column from the higher of two traces to the
+  lower, which is the waveform's envelope. A gradient is laid over each quad rather than over the
+  plot, so it runs from the trace down; the points are a pixel or three apart, so the steps read
+  as the line. `PathBuilder` has no caller in the crate, and nothing is drawn through the MSAA
+  texture at all.
+
 - **An icon is an embedded SVG reached for by an `Icon` variant, never a text glyph, and one list
   is the whole of what an icon is.** The `icons!` macro takes a variant and the name it is drawn
   from, and writes the enum, `Icon::ALL`, `Icon::path` and `Icon::drawing` out of that one list, so
@@ -2218,8 +2232,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   resumed mid-span, so the graph covers the decoded span since the last rebind, which is what
   `StreamDigest::profiled_from` names. The digest is rebuilt once per closed window, so once per
   second of decoded audio, and the decoder runs ahead of the sink by the ring's depth, so the graph
-  leads what is being heard. It is drawn as a line rather than as bars: `canvas` and `PathBuilder`
-  stroke a polyline over a filled area washed from the accent down to nothing, because what a
+  leads what is being heard. It is drawn as a line rather than as bars: `plot::stroke` draws a
+  polyline over a `plot::wash` from the accent down to nothing, because what a
   listener reads off a bitrate graph is the rise and the fall between windows rather than the height
   of any one of them, and a `div` per column cost a layout node per point. The line is condensed at
   the digest's rate rather than at the frame rate: `PlayerModel::condensed` holds the series the

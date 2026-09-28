@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Corners, Div, Entity, PathBuilder, Pixels, Point, Render,
-    SharedString, Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point,
-    prelude::*, px, rgb,
+    AnyElement, Bounds, Canvas, Context, Corners, Div, Entity, Pixels, Point, Render, SharedString,
+    Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px,
+    rgb,
 };
 use resonate_core::{Frames, SampleRate};
 use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
@@ -17,7 +17,7 @@ use crate::{
     views::{
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
-        kit,
+        kit, plot,
         root::RootView,
         settings::{across_at, marked_frequencies},
         transport::Playing,
@@ -374,21 +374,7 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
 }
 
 fn stroke(window: &mut Window, points: &[Point<Pixels>], colour: gpui::Rgba) {
-    let Some((first, rest)) = points.split_first() else {
-        return;
-    };
-    if rest.is_empty() {
-        return;
-    }
-    let mut line = PathBuilder::stroke(px(TRACE_LINE));
-    line.move_to(*first);
-    for at in rest {
-        line.line_to(*at);
-    }
-    match line.build() {
-        Ok(path) => window.paint_path(path, colour),
-        Err(error) => tracing::debug!(%error, "the scope's trace would not tessellate"),
-    }
+    plot::stroke(window, points, TRACE_LINE, colour);
 }
 
 impl RootView {

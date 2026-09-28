@@ -1,8 +1,8 @@
 use std::{borrow::Cow, sync::Arc};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Div, MouseButton, MouseDownEvent, ObjectFit, PathBuilder,
-    Pixels, Point, SharedString, canvas, div, fill, img, point, prelude::*, px, relative, rgb,
+    AnyElement, Bounds, Canvas, Context, Div, MouseButton, MouseDownEvent, ObjectFit, Pixels,
+    Point, SharedString, canvas, div, fill, img, point, prelude::*, px, relative, rgb,
 };
 use resonate_engine::{Analysis, Finding, Reach, Verdict};
 use resonate_library::{Agreement, HeardAs};
@@ -23,6 +23,7 @@ use crate::{
         hint::{self, Names},
         inspector::{beside, card, fields},
         kit::{self, EndsInAnEllipsis as _},
+        plot,
         root::RootView,
         scrollbar::Scrollbars,
         transport::Playing,
@@ -437,23 +438,17 @@ fn filled_between(
             px(middle - level.clamp(-1.0, 1.0) * reach),
         )
     };
-    let Some(first) = reaches.first() else {
-        return;
-    };
-
-    let mut path = PathBuilder::fill();
-    path.move_to(at(0, upper(first)));
-    for (nth, one) in reaches.iter().enumerate().skip(1) {
-        path.line_to(at(nth, upper(one)));
-    }
-    for (nth, one) in reaches.iter().enumerate().rev() {
-        path.line_to(at(nth, lower(one)));
-    }
-    path.close();
-    match path.build() {
-        Ok(built) => window.paint_path(built, colour),
-        Err(error) => tracing::debug!(%error, "the waveform would not tessellate"),
-    }
+    let over: Vec<Point<Pixels>> = reaches
+        .iter()
+        .enumerate()
+        .map(|(nth, one)| at(nth, upper(one)))
+        .collect();
+    let under: Vec<Point<Pixels>> = reaches
+        .iter()
+        .enumerate()
+        .map(|(nth, one)| at(nth, lower(one)))
+        .collect();
+    plot::between(window, &over, &under, colour);
 }
 
 fn waveform(
@@ -655,28 +650,13 @@ fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas
                     )
                 })
                 .collect();
-            if let (Some(first), Some(last)) = (points.first(), points.last()) {
-                let mut wash = PathBuilder::fill();
-                wash.move_to(point(first.x, px(bottom)));
-                for at in &points {
-                    wash.line_to(*at);
-                }
-                wash.line_to(point(last.x, px(bottom)));
-                wash.close();
-                if let Ok(built) = wash.build() {
-                    window.paint_path(built, theme::tinted(accent, SPECTRUM_WASH_ALPHA));
-                }
-
-                let mut line = PathBuilder::stroke(px(SPECTRUM_LINE));
-                line.move_to(*first);
-                for at in points.iter().skip(1) {
-                    line.line_to(*at);
-                }
-                match line.build() {
-                    Ok(built) => window.paint_path(built, rgb(accent)),
-                    Err(error) => tracing::debug!(%error, "the spectrum would not tessellate"),
-                }
-            }
+            plot::wash(
+                window,
+                &points,
+                px(bottom),
+                theme::tinted(accent, SPECTRUM_WASH_ALPHA),
+            );
+            plot::stroke(window, &points, SPECTRUM_LINE, rgb(accent));
 
             if let Some(share) = cutoff {
                 let x = left + share * wide;
