@@ -72,7 +72,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Later: The vault
 - `flacenc` 0.5.1 caps the Rice parameter at 14, the rate at 96 kHz and the depth at 24 bits, so a
   24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz rip is never a FLAC
-- A kept object in MP4 or Matroska keeps the tags its container holds inside its structure
 
 ## Later: Tagging and organising
 - Nothing undoes a `resonate tag` run; the way back is another run

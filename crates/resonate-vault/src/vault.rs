@@ -14,7 +14,7 @@ use resonate_codec::{
 use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
 
 use crate::{
-    bare, chunks, cover,
+    bare, blanks, chunks, cover,
     drawn::Drawings,
     error::{Error, Result, VaultOp},
     flac,
@@ -672,9 +672,15 @@ impl Vault {
             Stripping::Whole => None,
         };
         let stripped = bared.is_some();
-        let (head, until, renumbering, left_out) = bared
-            .map_or((Vec::new(), None, None, Vec::new()), |bared| {
-                (bared.head, bared.until, bared.renumbering, bared.left_out)
+        let (head, until, renumbering, left_out, blanks) =
+            bared.map_or((Vec::new(), None, None, Vec::new(), Vec::new()), |bared| {
+                (
+                    bared.head,
+                    bared.until,
+                    bared.renumbering,
+                    bared.left_out,
+                    bared.blanks,
+                )
             });
         let start = media
             .stream
@@ -696,6 +702,9 @@ impl Vault {
         };
         if let Some(renumbering) = renumbering {
             rest = Box::new(ogg::Renumbered::over(rest, renumbering));
+        }
+        if !blanks.is_empty() {
+            rest = Box::new(blanks::Blanked::over(rest, start, blanks));
         }
         let mut buffer = vec![0_u8; COPY_BYTES];
         loop {

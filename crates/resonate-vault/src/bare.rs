@@ -7,6 +7,7 @@ use std::{
 use resonate_codec::{Container, MediaStream};
 
 use crate::{
+    blanks::{self, Blank},
     chunks::{self, Layout},
     error::{Error, Result, VaultOp},
     ogg::{self, Renumbering},
@@ -51,6 +52,7 @@ pub(crate) struct Bare {
     pub(crate) until: Option<u64>,
     pub(crate) renumbering: Option<Renumbering>,
     pub(crate) left_out: Vec<Range<u64>>,
+    pub(crate) blanks: Vec<Blank>,
 }
 
 pub(crate) fn bare(
@@ -73,12 +75,15 @@ pub(crate) fn bare(
             until: None,
             renumbering: bared.renumbering,
             left_out: Vec::new(),
+            blanks: Vec::new(),
         }),
         Container::Wave => shed_chunks(stream, Layout::Riff),
         Container::Aiff => shed_chunks(stream, Layout::Aiff),
         Container::Caf => shed_chunks(stream, Layout::Caf),
         Container::Dff => shed_chunks(stream, Layout::Dsdiff),
-        Container::IsoMp4 | Container::Matroska | Container::Unknown => None,
+        Container::IsoMp4 => blanked(stream, |held| blanks::blanked_movie(held)),
+        Container::Matroska => blanked(stream, |held| blanks::blanked_segment(held)),
+        Container::Unknown => None,
     };
 
     if found.is_none() {
@@ -87,6 +92,21 @@ pub(crate) fn bare(
             .map_err(|source| Error::io(VaultOp::Read, named, source))?;
     }
     Ok(found)
+}
+
+fn blanked(
+    stream: &mut Box<dyn MediaStream>,
+    walk: impl FnOnce(&mut dyn MediaStream) -> Option<Vec<Blank>>,
+) -> Option<Bare> {
+    let blanks = walk(stream.as_mut());
+    stream.seek(SeekFrom::Start(0)).ok()?;
+    Some(Bare {
+        head: Vec::new(),
+        until: None,
+        renumbering: None,
+        left_out: Vec::new(),
+        blanks: blanks?,
+    })
 }
 
 fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
@@ -136,6 +156,7 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         until: None,
         renumbering: None,
         left_out: Vec::new(),
+        blanks: Vec::new(),
     })
 }
 
@@ -149,6 +170,7 @@ fn shed_chunks(stream: &mut Box<dyn MediaStream>, layout: Layout) -> Option<Bare
         until: None,
         renumbering: None,
         left_out: shed.left_out,
+        blanks: Vec::new(),
     })
 }
 
@@ -169,6 +191,7 @@ fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         until: Some(until),
         renumbering: None,
         left_out: Vec::new(),
+        blanks: Vec::new(),
     })
 }
 
@@ -289,6 +312,7 @@ fn bare_dsf(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
         until: Some(metadata),
         renumbering: None,
         left_out: Vec::new(),
+        blanks: Vec::new(),
     })
 }
 

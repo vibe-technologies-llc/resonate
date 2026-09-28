@@ -1,4 +1,5 @@
 mod bare;
+mod blanks;
 mod chunks;
 mod cover;
 mod drawn;

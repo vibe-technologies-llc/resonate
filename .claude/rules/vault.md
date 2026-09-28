@@ -92,6 +92,19 @@ decoded; the size comparison may then overrule it.
   declares more than the file holds is read to the end rather than refused, which is how a
   streamed WAVE is written. `a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample`
   is the claim.
+  **An MP4 or a Matroska file has its tags blanked where they stand.** Their tags sit inside the
+  structure that indexes the audio — an MP4's chunk offsets count from the start of the file, and
+  a Matroska SeekHead and Cues name positions — so cutting them out would mean rewriting every
+  offset behind them. `blanks::blanked_movie` walks the boxes instead, into `moov` and each `trak`,
+  and turns every `udta` and every top-level or `moov`-level `meta` into a `free` box of the same
+  length with nothing in it; `blanks::blanked_segment` walks the segment's top-level elements and
+  lays an EBML `Void` of exactly the same length over every `Tags` and `Attachments`, and over the
+  `Title` inside `Info`, which is where ffmpeg writes a title. Nothing moves, so no offset has to,
+  and `Blanked` lays the blanks over the copy as it passes; a SeekHead entry left pointing at a
+  Void is read past by symphonia as an element it does not want. A box or an element running past
+  its parent, or an unknown-sized one before the tags, copies the file whole.
+  `a_kept_mp4_blanks_the_tags_its_movie_holds_and_keeps_every_sample_it_decodes_to` and
+  `a_kept_matroska_blanks_its_tags_and_keeps_every_sample_it_decodes_to` are the claims.
 
 **Where the speakers sit is part of what is kept.** `MediaInfo::speakers` is the source's
 positions as symphonia reads them — its `Position` bits, which are the WAVE channel mask — and
@@ -160,7 +173,9 @@ kept copies encoding 2 began stripping, or Vorbis or Opus, whose encoding 3 did;
 DSDIFF or a Vorbis in Matroska among those is copied again to the same key and stamped. Encoding 4
 began stripping an Ogg FLAC, which `Form::of` never keeps and so is walked again regardless. Encoding 5 began shedding the tag chunks of a WAVE, an AIFF, a CAF and a DSDIFF, whose kept
 objects are DSD, AAC or integer PCM a re-encode could not beat — the first two already among the
-codecs walked again and the third never kept by `Form::of` — so it needs no rule of its own. The
+codecs walked again and the third never kept by `Form::of` — so it needs no rule of its own, and
+neither does encoding 6, which began blanking a kept MP4's and Matroska's tags: what those carry
+is AAC, Vorbis or Opus, walked again already, or lossless audio `Form::of` never keeps. The
 preview marks such a row as *weighed again*. A renewal is a `Taking` with `renewing` set, and what it changes is the one rule
 that would otherwise hide the new encode: an object already standing under the same key is not a
 dedup hit but a rival, and the new one replaces it — `Kept::replaced`, a rename over the standing
@@ -358,8 +373,3 @@ stream whose zstd'd WAVE does not beat it, which is how a FLAC is ever kept — 
 each checking the object's sequence numbers and checksums with a CRC written bit by bit rather
 than through the table the vault uses.
 
-## What it does not do
-
-- A `Form::Kept` object in MP4 or Matroska keeps the tags its container was written with —
-  MP4's `udta` and `meta`, Matroska's `Tags` — because stripping those means rewriting the box
-  or element sizes and offsets that index the audio, a writer per format.

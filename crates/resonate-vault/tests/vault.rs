@@ -962,6 +962,64 @@ fn a_kept_ogg_opus_sheds_its_tags_and_keeps_every_packet_it_decodes_to() {
     sheds_its_comments_and_decodes_alike("libopus", "tagged.opus");
 }
 
+fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
+    let tree = Tree::new();
+    let path = tree.root.join(named);
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+        .arg("sine=frequency=997:sample_rate=44100:duration=2")
+        .args(["-ac", "2", "-c:a", codec, "-b:a", "96k"])
+        .args([
+            "-metadata",
+            "title=Echoes",
+            "-metadata",
+            "artist=Pink Floyd",
+            "-metadata",
+        ])
+        .arg(format!("comment={}", "a long note ".repeat(4_000)))
+        .arg(&path)
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: no ffmpeg with {codec} to write a tagged {named}");
+        return;
+    }
+    let before = fs::read(&path).expect("the tagged file");
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    let object = fs::read(&held.path).expect("an object");
+    assert_eq!(held.form, Form::Kept);
+    assert!(object.len() <= before.len());
+    assert!(
+        !object.windows(6).any(|window| window == b"Echoes"),
+        "a tag was kept"
+    );
+    assert!(
+        !object.windows(9).any(|window| window == b"long note"),
+        "a comment was kept"
+    );
+    assert_eq!(
+        decoded(&held.path, SampleFormat::F32),
+        decoded(&path, SampleFormat::F32)
+    );
+    assert_eq!(fs::read(&path).expect("the tagged file"), before);
+    let probed =
+        probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+    assert!(probed.tags.title.is_none());
+    assert!(probed.tags.artist.is_none());
+}
+
+#[test]
+fn a_kept_mp4_blanks_the_tags_its_movie_holds_and_keeps_every_sample_it_decodes_to() {
+    blanks_its_tags_and_decodes_alike("aac", "tagged.m4a");
+}
+
+#[test]
+fn a_kept_matroska_blanks_its_tags_and_keeps_every_sample_it_decodes_to() {
+    blanks_its_tags_and_decodes_alike("libvorbis", "tagged.mka");
+}
+
 #[test]
 fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
     let tree = Tree::new();
