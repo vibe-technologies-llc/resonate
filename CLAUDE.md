@@ -153,9 +153,10 @@ Invariants the layering exists to protect:
   else.** `MIME_TYPES` in the binary is what `SupportedMimeTypes` answers, what
   `packaging/resonate.desktop` declares and what the metainfo's `<provides>` names, held to both
   in both directions by a test each, and
-  `resonate-library`'s `AUDIO_EXTENSIONS` names the same formats. Symphonia's `ape` feature is
-  APEv2 metadata rather than Monkey's Audio, so that is not offered; WavPack is, through
-  `symphonia-codec-wavpack` and a decoder of the codec crate's own around it; AAC is,
+  `resonate-library`'s `AUDIO_EXTENSIONS` names the same formats. WavPack is offered, through
+  `symphonia-codec-wavpack` and a decoder of the codec crate's own around it, and so is Monkey's
+  Audio, through a reader and a decoder of the codec crate's own over `ape-decoder` — symphonia's
+  `ape` feature being APEv2 metadata rather than the codec; AAC is,
   bare ADTS included, because the `aac` feature registers `AdtsReader` as well as the decoder, and
   so is Opus — `audio/opus` and `audio/x-opus+ogg` — which symphonia demuxes and `opus-rs` decodes
   through a registry of the codec crate's own, `audio.md` having the rest.
@@ -774,8 +775,9 @@ cargo test -p resonate-mpris --test bus        # needs a session bus; prints a s
                                                #   but for the notification press, which hosts a
                                                #   bus of its own and needs dbus-run-session
 cargo test -p resonate-codec --test encoded    # needs ffmpeg, metaflac for the embedded
-                                               #   CUESHEET block and wavpack for the WavPack
-                                               #   fixtures; prints a skip without each
+                                               #   CUESHEET block, wavpack and mac for the
+                                               #   WavPack and Monkey's Audio fixtures; prints
+                                               #   a skip without each
 cargo test -p resonate-library --test library  # one embedded-sheet test needs ffmpeg and skips
 cargo clippy --workspace --all-targets -- -D warnings
 cargo tree -p resonate-core                # must stay free of symphonia, pipewire, gpui, serde
@@ -798,7 +800,7 @@ cd fuzz && cargo +nightly fuzz run probe corpus/probe seeds/probe -- -max_total_
 takes every push to `master` and every pull request through clippy with `-D warnings`, the headless
 build and tests, the whole workspace's build and tests, the `cargo tree` refusals above and
 `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
-plus ffmpeg, `metaflac` and `wavpack`, so the tests that want them run rather than skip. There is no daemon and
+plus ffmpeg, `metaflac`, `wavpack` and `mac`, so the tests that want them run rather than skip. There is no daemon and
 no session bus there, so the PipeWire and bus tests print their skip — all but the two reconnect
 tests, which start a daemon of their own, and the notification press, which starts a bus of its own under
 `dbus-run-session` from the `dbus` package the container is given for it. `RUSTFLAGS` is emptied over `target-cpu=native`, because the cache
@@ -825,8 +827,8 @@ The corpus a run grows is not kept — `.gitignore` has it — but a seed corpus
 second corpus folder so what the run grows lands in the ignored `corpus/` and the seeds stay as
 they were. `probe` has one of every container the scan takes — a 50 ms 8 kHz tone ffmpeg writes as
 WAVE, a three-channel 24-bit WAVE, FLAC carrying a Vorbis `CUESHEET`, MP3, ADTS, AAC and ALAC in
-MP4, FLAC and Vorbis in Matroska, Vorbis, Opus in stereo and in 5.1, AIFF, CAF and WavPack in
-integers and in floats — beside a DSF, a DSDIFF and an MP3 whose ID3v2 carries
+MP4, FLAC and Vorbis in Matroska, Vorbis, Opus in stereo and in 5.1, AIFF, CAF, WavPack in
+integers and in floats and Monkey's Audio — beside a DSF, a DSDIFF and an MP3 whose ID3v2 carries
 `SYLT`, `USLT` and a MusicBrainz `UFID`, written by hand to the formats' own layouts; seeded, a run
 starts at 11 733 edges where an empty one starts at 343. `boxes` takes the two MP4s, and `cue`,
 `lrc` and `playlist` a sheet each. A seed is added by hand when a run finds something worth
@@ -848,6 +850,13 @@ CAF reader overflows the same way on three declared values, and `caf.rs` reads t
 symphonia does: packets whose size in bits a `u32` cannot hold are `Error::PacketTooLarge`, a
 `data` chunk declaring more frames than a `u64` counts is `Error::FrameCountNotRepresentable`,
 and a packet table whose offsets run past one is `Error::PacketOffsetNotRepresentable`.
+**The two third-party decoders' arithmetic is written to wrap.** `ape-decoder` wraps the way the
+reference encoder's SIMD does, and `symphonia-codec-wavpack` reads a header's fields into widths
+it wraps on a malformed file, so each has its overflow checks turned off in `[profile.dev]` and a
+debug build behaves as a release one does. The fuzz build's checks reach both through `RUSTFLAGS`
+all the same, so an overflow panic inside either is its wrapping rather than a finding, and
+`cargo +nightly fuzz run -O probe …` — no debug assertions, no overflow checks — is the run that
+says what a release build, which aborts on a panic, would do.
 
 **A cost is measured rather than guessed, and neither measure is a check.**
 `cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,

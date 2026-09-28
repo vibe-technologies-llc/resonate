@@ -37,6 +37,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ape-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95097ef8efebf7b1e1d638b77935cfce25576163614427b464efe256bb8b2ec1"
+dependencies = [
+ "crc32fast",
+ "md-5",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,6 +944,7 @@ dependencies = [
 name = "resonate-codec"
 version = "0.1.0"
 dependencies = [
+ "ape-decoder",
  "image",
  "lofty",
  "opus-rs",

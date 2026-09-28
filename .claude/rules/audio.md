@@ -224,6 +224,22 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   two fail against the crate's decoder alone. A WavPack is lossless to the rest of the build, a
   hybrid one included, because nothing reads the flag that says a block was coded lossy; its APEv2
   tags are read by the crate's reader and written by lofty.
+- **Monkey's Audio is read by a reader of the codec crate's own and decoded frame by frame.**
+  `ape.rs`'s `ApeReader` parses the header and the seek table through `ape-decoder`, answers one
+  packet per frame — its bytes read from the seek table's offset less the frame's alignment, with
+  that remainder carried in the packet's first byte — and seeks by frame, the decoder discarding
+  forward to the frame asked for. Its markers are `MAC ` and `MACF`, the second being what Monkey's
+  Audio 11 writes for a floating stream; missing it, the probe skipped to the `RIFF` header the
+  file stores and opened that as a WAVE. The WAVE header a file keeps is read for its channel mask,
+  so a 5.1 is placed. `Ape` decodes a packet through `FrameDecoder`, whose per-frame checksum is
+  what refuses a frame decoded wrong, and lays the bytes it answers into the buffer of the stream's
+  own width; a floating stream's words are turned back into IEEE bits by the transform the format
+  stores them through. A stream made from an AIFF decodes little-endian and unsigned like any
+  other, the flags saying only what the original file was. A 32-bit stereo stream is refused, the
+  crate narrowing the side channel to 32 bits before it undoes it.
+  `monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in` and
+  `a_floating_monkeys_audio_decodes_to_every_bit_that_went_in` are the claims, over files `mac`
+  writes.
 - **This build drops every priming itself, and asks nobody else to.** `Decoder::build` makes its
   decoder with `AudioDecoderOptions::gapless(false)`, so symphonia's decoders emit whole blocks and
   the only trimming anywhere is `MediaInfo::playable`. That is one rule rather than a list, and the

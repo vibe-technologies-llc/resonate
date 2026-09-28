@@ -46,6 +46,7 @@ pub enum Container {
     IsoMp4,
     Matroska,
     WavPack,
+    MonkeysAudio,
     #[default]
     Unknown,
 }
@@ -63,6 +64,9 @@ impl Container {
         }
         if id == crate::dsd::DFF_FORMAT_ID {
             return Self::Dff;
+        }
+        if id == crate::ape::APE_FORMAT_ID {
+            return Self::MonkeysAudio;
         }
 
         match id {
@@ -94,6 +98,7 @@ impl Container {
             Self::IsoMp4 => "ISO-BMFF",
             Self::Matroska => "Matroska",
             Self::WavPack => "WavPack",
+            Self::MonkeysAudio => "Monkey's Audio",
             Self::Unknown => "Unknown",
         }
     }
@@ -116,12 +121,13 @@ pub enum Codec {
     Vorbis,
     Opus,
     WavPack,
+    MonkeysAudio,
     #[default]
     Unknown,
 }
 
 impl Codec {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Flac,
         Self::Alac,
         Self::Dsd,
@@ -131,24 +137,31 @@ impl Codec {
         Self::Vorbis,
         Self::Opus,
         Self::WavPack,
+        Self::MonkeysAudio,
         Self::Unknown,
     ];
 
     pub const fn is_lossless(self) -> bool {
         match self {
-            Self::Flac | Self::Alac | Self::Dsd | Self::Pcm | Self::WavPack => true,
+            Self::Flac
+            | Self::Alac
+            | Self::Dsd
+            | Self::Pcm
+            | Self::WavPack
+            | Self::MonkeysAudio => true,
             Self::Aac | Self::Mp3 | Self::Vorbis | Self::Opus | Self::Unknown => false,
         }
     }
 
     pub fn from_id(id: AudioCodecId) -> Self {
         use symphonia::core::codecs::audio::well_known::{
-            CODEC_ID_AAC, CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MP1, CODEC_ID_MP2, CODEC_ID_MP3,
-            CODEC_ID_OPUS, CODEC_ID_PCM_ALAW, CODEC_ID_PCM_F32BE, CODEC_ID_PCM_F32LE,
-            CODEC_ID_PCM_F64BE, CODEC_ID_PCM_F64LE, CODEC_ID_PCM_MULAW, CODEC_ID_PCM_S8,
-            CODEC_ID_PCM_S16BE, CODEC_ID_PCM_S16LE, CODEC_ID_PCM_S24BE, CODEC_ID_PCM_S24LE,
-            CODEC_ID_PCM_S32BE, CODEC_ID_PCM_S32LE, CODEC_ID_PCM_U8, CODEC_ID_PCM_U16LE,
-            CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U32LE, CODEC_ID_VORBIS, CODEC_ID_WAVPACK,
+            CODEC_ID_AAC, CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MONKEYS_AUDIO, CODEC_ID_MP1,
+            CODEC_ID_MP2, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_PCM_ALAW, CODEC_ID_PCM_F32BE,
+            CODEC_ID_PCM_F32LE, CODEC_ID_PCM_F64BE, CODEC_ID_PCM_F64LE, CODEC_ID_PCM_MULAW,
+            CODEC_ID_PCM_S8, CODEC_ID_PCM_S16BE, CODEC_ID_PCM_S16LE, CODEC_ID_PCM_S24BE,
+            CODEC_ID_PCM_S24LE, CODEC_ID_PCM_S32BE, CODEC_ID_PCM_S32LE, CODEC_ID_PCM_U8,
+            CODEC_ID_PCM_U16LE, CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U32LE, CODEC_ID_VORBIS,
+            CODEC_ID_WAVPACK,
         };
 
         if id == crate::dsd::DSD_CODEC_ID {
@@ -163,6 +176,7 @@ impl Codec {
             CODEC_ID_VORBIS => Self::Vorbis,
             CODEC_ID_OPUS => Self::Opus,
             CODEC_ID_WAVPACK => Self::WavPack,
+            CODEC_ID_MONKEYS_AUDIO => Self::MonkeysAudio,
             CODEC_ID_PCM_S32LE | CODEC_ID_PCM_S32BE | CODEC_ID_PCM_S24LE | CODEC_ID_PCM_S24BE
             | CODEC_ID_PCM_S16LE | CODEC_ID_PCM_S16BE | CODEC_ID_PCM_S8 | CODEC_ID_PCM_U32LE
             | CODEC_ID_PCM_U24LE | CODEC_ID_PCM_U16LE | CODEC_ID_PCM_U8 | CODEC_ID_PCM_F32LE
@@ -183,6 +197,7 @@ impl Codec {
             Self::Vorbis => "Vorbis",
             Self::Opus => "Opus",
             Self::WavPack => "WavPack",
+            Self::MonkeysAudio => "Monkey's Audio",
             Self::Unknown => "Unknown",
         }
     }

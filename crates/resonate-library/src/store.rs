@@ -314,6 +314,7 @@ pub const fn codec_code(codec: Codec) -> i64 {
         Codec::Opus => 9,
         Codec::Dsd => 10,
         Codec::WavPack => 11,
+        Codec::MonkeysAudio => 12,
     }
 }
 
@@ -604,6 +605,7 @@ pub(crate) const fn codec_named_by(code: i64) -> Option<Codec> {
         9 => Some(Codec::Opus),
         10 => Some(Codec::Dsd),
         11 => Some(Codec::WavPack),
+        12 => Some(Codec::MonkeysAudio),
         _ => None,
     }
 }

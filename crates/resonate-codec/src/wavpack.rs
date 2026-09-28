@@ -56,6 +56,8 @@ const SIGN: u32 = 1 << 31;
 const EXPONENT_SENT_FROM: u32 = 25;
 const WIDTH_BITS: u32 = 5;
 
+const MOST_FRAMES_A_BLOCK: u64 = 1 << 20;
+
 const MATROSKA_VERSIONS: Range<u16> = 0x402..0x411;
 const MATROSKA_PREFIX_BYTES: usize = 8;
 const MATROSKA_BLOCK_SIZE_BYTES: usize = 4;
@@ -106,7 +108,12 @@ impl WavPack {
         let Some(channels) = params.channels.clone() else {
             return unsupported_error("wavpack: the channels are not declared");
         };
+        let capacity = params
+            .max_frames_per_packet
+            .unwrap_or(0)
+            .min(MOST_FRAMES_A_BLOCK);
         let mut integers = params.clone();
+        integers.max_frames_per_packet = Some(capacity);
         if matches!(integers.sample_format, Some(SampleFormat::F32)) {
             integers.sample_format = Some(SampleFormat::S32);
         }
@@ -115,8 +122,6 @@ impl WavPack {
             .as_deref()
             .and_then(|extra| extra.get(..2))
             .map(|version| u16::from_le_bytes([version[0], version[1]]));
-        let capacity = params.max_frames_per_packet.unwrap_or(0);
-
         Ok(Self {
             params: params.clone(),
             inner: WavPackDecoder::try_new(&integers, options)?,
@@ -137,6 +142,9 @@ impl WavPack {
         };
         self.buffer.clear();
         let frames = integers.frames();
+        if frames > self.buffer.capacity() {
+            self.buffer.grow_capacity(frames);
+        }
         self.buffer.render_uninit(Some(frames));
 
         for floating in &self.rewriting.floating {
@@ -194,6 +202,11 @@ impl Rewriting {
             };
             at += size;
 
+            if u64::from(word(header, BLOCK_SAMPLES_AT)) > MOST_FRAMES_A_BLOCK {
+                return decode_error(
+                    "wavpack: a block claims more samples than any encoder writes",
+                );
+            }
             let flags = word(header, FLAGS_AT);
             let floats = flags & FLOAT_DATA != 0;
             let stored_channels = if flags & (MONO | FALSE_STEREO) != 0 {

@@ -189,6 +189,7 @@ pub const fn tuning_of(codec: Codec) -> Option<Tuning> {
         | Codec::Pcm
         | Codec::Opus
         | Codec::WavPack
+        | Codec::MonkeysAudio
         | Codec::Unknown => None,
     }
 }

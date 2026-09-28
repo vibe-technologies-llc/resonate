@@ -3,13 +3,18 @@ use std::sync::LazyLock;
 use symphonia::core::{codecs::registry::CodecRegistry, formats::probe::Probe};
 use symphonia_codec_wavpack::WavPackReader;
 
-use crate::{opus::Opus, wavpack::WavPack};
+use crate::{
+    ape::{Ape, ApeReader},
+    opus::Opus,
+    wavpack::WavPack,
+};
 
 static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
     let mut registry = CodecRegistry::new();
     symphonia::default::register_enabled_codecs(&mut registry);
     registry.register_audio_decoder::<Opus>();
     registry.register_audio_decoder::<WavPack>();
+    registry.register_audio_decoder::<Ape>();
     registry
 });
 
@@ -17,6 +22,7 @@ static FORMATS: LazyLock<Probe> = LazyLock::new(|| {
     let mut probe = Probe::new();
     symphonia::default::register_enabled_formats(&mut probe);
     probe.register_format::<WavPackReader<'_>>();
+    probe.register_format::<ApeReader<'_>>();
     probe
 });
 

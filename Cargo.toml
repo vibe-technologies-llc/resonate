@@ -83,6 +83,7 @@ symphonia = {
 }
 
 symphonia-codec-wavpack = { version = "0.1.1", default-features = false }
+ape-decoder = { version = "0.3.2", default-features = false }
 
 opus-rs = { version = "0.1.34", default-features = false, features = ["std", "heap"] }
 
@@ -201,6 +202,13 @@ opt-level = 3
 
 [profile.dev.package.zune-jpegxl]
 opt-level = 3
+
+[profile.dev.package.ape-decoder]
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.symphonia-codec-wavpack]
+overflow-checks = false
 
 [profile.release]
 opt-level = 3

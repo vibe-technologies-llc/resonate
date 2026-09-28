@@ -53,6 +53,7 @@
     <mediatype>audio/x-dsf</mediatype>
     <mediatype>audio/x-dff</mediatype>
     <mediatype>audio/x-wavpack</mediatype>
+    <mediatype>audio/x-ape</mediatype>
   </provides>
 
   <categories>

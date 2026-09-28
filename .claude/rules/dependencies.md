@@ -54,6 +54,11 @@ paths:
   bits a 32-bit or floating stream keeps its low bits in, so it is never registered on its own —
   `wavpack.rs` wraps it — and a version bump is weighed against the WavPack tests in
   `tests/encoded.rs`, which fail against the bare decoder.
+- `ape-decoder` is the Monkey's Audio decoder, and nothing of it but `format::parse` and
+  `FrameDecoder` is used: `ape.rs` is the symphonia reader and decoder around them. Its default set
+  is nothing. Its arithmetic is written to wrap, so its dev profile turns overflow checks off, and
+  it narrows a 32-bit stereo stream's side channel to 32 bits before undoing it, so `Ape` refuses
+  that one shape rather than decode it wrong.
 - `pipewire` needs `v0_3_50`. `PW_KEY_NODE_RATE` is gated behind `v0_3_33` and
   `PW_KEY_TARGET_OBJECT` behind `v0_3_44` — the keys the bit-perfect path depends on —
   `pw_buffer.requested` behind `v0_3_49` and `pw_time.buffered` behind `v0_3_50`, which are what

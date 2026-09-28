@@ -2267,6 +2267,12 @@ const WIDEST: Shape = Shape {
     bits: 32,
 };
 
+const WIDEST_ALONE: Shape = Shape {
+    rate: 48_000,
+    channels: 1,
+    bits: 32,
+};
+
 const LONE: Shape = Shape {
     rate: 44_100,
     channels: 1,
@@ -2402,9 +2408,15 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
             "{name} changed its rate"
         );
         assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
+        let wanted = widened(&samples, shape.bits);
         assert_eq!(
-            decoded.samples,
-            widened(&samples, shape.bits),
+            decoded.samples.len(),
+            wanted.len(),
+            "{name} changed its length"
+        );
+        assert_eq!(
+            first_apart(&decoded.samples, &wanted),
+            None,
             "{name} is lossless and did not round-trip"
         );
     }
@@ -2435,12 +2447,9 @@ fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
 
         let wanted: Vec<u32> = samples.iter().map(|sample| sample.to_bits()).collect();
         assert_eq!(decoded.len(), wanted.len());
-        let first_apart = decoded
-            .iter()
-            .zip(&wanted)
-            .position(|(held, sent)| held != sent);
         assert_eq!(
-            first_apart, None,
+            first_apart(&decoded, &wanted),
+            None,
             "a floating WavPack under {modes:?} did not decode to the bits that went in"
         );
     }
@@ -2608,4 +2617,261 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         before,
         "writing the tags moved the audio"
     );
+}
+
+fn first_apart<T: PartialEq>(decoded: &[T], wanted: &[T]) -> Option<usize> {
+    decoded
+        .iter()
+        .zip(wanted)
+        .position(|(held, sent)| held != sent)
+}
+
+fn monkeys() -> bool {
+    Command::new("mac")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn monkeyed(source: &Path, target: &Path, level: &str) -> bool {
+    ran(
+        "mac",
+        &[
+            source.to_str().expect("a UTF-8 path"),
+            target.to_str().expect("a UTF-8 path"),
+            level,
+        ],
+    ) && target.exists()
+}
+
+#[test]
+fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixtures");
+        return;
+    }
+    let cases: [(&str, Shape, ChannelLayout, &str); 6] = [
+        ("cd.ape", CD, ChannelLayout::Stereo, "-c2000"),
+        ("cd.insane.ape", CD, ChannelLayout::Stereo, "-c5000"),
+        ("studio.ape", STUDIO, ChannelLayout::Stereo, "-c1000"),
+        ("widest.ape", WIDEST_ALONE, ChannelLayout::Mono, "-c3000"),
+        (
+            "surround.ape",
+            SURROUND,
+            ChannelLayout::Surround51,
+            "-c4000",
+        ),
+        ("lone.ape", LONE, ChannelLayout::Mono, "-c2000"),
+    ];
+
+    for (name, shape, layout, level) in cases {
+        let tree = Tree::new();
+        let samples = tone(shape);
+        let source = tree.at("source.wav");
+        wav(&source, shape, &samples);
+        let target = tree.at(name);
+        assert!(
+            monkeyed(&source, &target, level),
+            "mac would not write {name}"
+        );
+
+        let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
+            .expect("a Monkey's Audio file probes");
+        assert_eq!(
+            Container::from_id(report.info.container),
+            Container::MonkeysAudio
+        );
+        assert_eq!(Codec::from_id(report.info.codec), Codec::MonkeysAudio);
+
+        let decoded = decode(&target);
+        assert_eq!(
+            decoded.spec.rate.hz(),
+            shape.rate,
+            "{name} changed its rate"
+        );
+        assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
+        let wanted = widened(&samples, shape.bits);
+        assert_eq!(
+            decoded.samples.len(),
+            wanted.len(),
+            "{name} changed its length"
+        );
+        assert_eq!(
+            first_apart(&decoded.samples, &wanted),
+            None,
+            "{name} is lossless and did not round-trip"
+        );
+    }
+}
+
+#[test]
+fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let frames = 96_000;
+    let samples: Vec<f32> = (0..frames)
+        .map(|frame| {
+            let time = frame as f32 / 48_000.0;
+            let fading = (-(frame as f32) / 3_000.0).exp();
+            if frame % 997 == 0 {
+                -0.0
+            } else {
+                0.8 * (std::f32::consts::TAU * 440.0 * time).sin() * fading
+            }
+        })
+        .collect();
+    let source = tree.at("floats.wav");
+    float_wav(&source, 48_000, 1, &samples);
+    let target = tree.at("floats.ape");
+    assert!(
+        monkeyed(&source, &target, "-c3000"),
+        "mac would not write floats"
+    );
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
+        .expect("a floating Monkey's Audio file opens");
+    assert_eq!(info.spec.format, SampleFormat::F32);
+    let decoded = drain_floats(&mut decoder, info.spec);
+    let wanted: Vec<u32> = samples.iter().map(|sample| sample.to_bits()).collect();
+    assert_eq!(decoded.len(), wanted.len());
+    assert_eq!(
+        first_apart(&decoded, &wanted),
+        None,
+        "a floating Monkey's Audio lost bits"
+    );
+}
+
+#[test]
+fn a_32_bit_stereo_monkeys_audio_is_refused_rather_than_heard_wrong() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, WIDEST, &tone(WIDEST));
+    let target = tree.at("widest.ape");
+    assert!(
+        monkeyed(&source, &target, "-c2000"),
+        "mac would not write the fixture"
+    );
+
+    assert!(
+        probe(&Sources::local(), &MediaLocation::local(&target)).is_ok(),
+        "a 32-bit stereo file did not even probe"
+    );
+    assert!(matches!(
+        Decoder::open(&Sources::local(), &MediaLocation::local(&target)),
+        Err(resonate_codec::Error::NoDecoder { .. })
+    ));
+}
+
+#[test]
+fn a_monkeys_audio_made_from_an_aiff_decodes_to_the_same_samples() {
+    if !monkeys() || !ffmpeg() {
+        eprintln!("skipped: no mac and ffmpeg to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let samples = tone(STUDIO);
+    let source = tree.at("source.wav");
+    wav(&source, STUDIO, &samples);
+    let aiff = tree.at("source.aiff");
+    assert!(
+        encode(&source, &aiff, &["-c:a", "pcm_s24be"]),
+        "ffmpeg would not write an AIFF"
+    );
+    let target = tree.at("from-aiff.ape");
+    assert!(
+        monkeyed(&aiff, &target, "-c2000"),
+        "mac would not take an AIFF"
+    );
+
+    assert_eq!(decode(&target).samples, widened(&samples, STUDIO.bits));
+}
+
+#[test]
+fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, CD, &tone(CD));
+    let path = tree.at("written.ape");
+    assert!(
+        monkeyed(&source, &path, "-c2000"),
+        "mac would not write the fixture"
+    );
+
+    let before = decode(&path).samples;
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::default();
+    assert!(
+        tags.writes(&location),
+        "a Monkey's Audio file was not offered for writing"
+    );
+
+    let edits: Vec<TagEdit> = TagField::ALL
+        .into_iter()
+        .map(|field| TagEdit {
+            field,
+            value: match field {
+                TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
+                TagField::DiscNumber | TagField::DiscTotal => "1".to_owned(),
+                _ => format!("{field}"),
+            },
+        })
+        .collect();
+    tags.write(
+        &location,
+        Writing {
+            edits: &edits,
+            picture: None,
+        },
+    )
+    .expect("a written Monkey's Audio file");
+
+    let read = tags
+        .read(&location, Picturing::Whether)
+        .expect("a readable Monkey's Audio file")
+        .tags;
+    for edit in &edits {
+        assert_eq!(
+            edit.field.read(&read).as_deref(),
+            Some(edit.value.as_str()),
+            "{} did not read back as it was written",
+            edit.field
+        );
+    }
+    assert_eq!(
+        decode(&path).samples,
+        before,
+        "writing the tags moved the audio"
+    );
+
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &location).expect("a tagged Monkey's Audio opens");
+    assert!(info.is_seekable);
+    let lanes = usize::from(CHANNELS);
+    for target in [
+        Frames(u64::from(RATE) * 2),
+        Frames(u64::from(RATE) / 3),
+        Frames(0),
+    ] {
+        let landed = decoder.seek(target).expect("a seekable stream seeks");
+        assert_eq!(landed, target, "seek to {target} landed on {landed}");
+        let from_there = drain(&mut decoder, info.spec);
+        let skipped = target.get() as usize * lanes;
+        assert_eq!(
+            from_there,
+            before[skipped..],
+            "a seek to {target} heard another stream"
+        );
+    }
 }

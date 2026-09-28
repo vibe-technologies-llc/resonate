@@ -288,6 +288,7 @@ const fn read_back_here(kind: FileType) -> bool {
         kind,
         FileType::Aac
             | FileType::Aiff
+            | FileType::Ape
             | FileType::Flac
             | FileType::Mp4
             | FileType::Mpeg

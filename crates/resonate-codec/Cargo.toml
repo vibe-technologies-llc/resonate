@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ape-decoder.workspace = true
 image.workspace = true
 lofty.workspace = true
 opus-rs.workspace = true

@@ -3,6 +3,11 @@
 Categories run from most to least important. Everything under a `Later:` heading is a nice-to-have
 that no listener is waiting on, and is worked only once the categories above it are quiet.
 
+## Defects
+- A Vorbis setup header whose ordered codebook runs a length past 32 indexes past symphonia's
+  codeword table, which panics — and a release build aborts on a panic — rather than refusing the
+  file; the probe fuzz target reaches it through Vorbis in Matroska
+
 ## Playback and output
 - A device with no volume of its own is still turned by the stream, so anything under 100 % leaves
   bit-perfect there
@@ -24,8 +29,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- Monkey's Audio has no decoder anywhere in the tree, so the desktop entry, the bus and the scan
-  pass it over. Closing it is a decoder beside `opus-rs` in the codec crate's registry
+- A 32-bit stereo Monkey's Audio — integers or floats — is refused, because `ape-decoder` narrows
+  the side channel to 32 bits before undoing it
 - A hybrid WavPack is taken for lossless: nothing reads the flag that says a block was coded lossy,
   and a `.wvc` correction file beside it is never opened
 - DST-compressed DSDIFF is refused rather than decoded
