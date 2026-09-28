@@ -60,7 +60,14 @@ decoded; the size comparison may then overrule it.
   moment it reaches what the source weighs, before the read-back is spent on it, so a hi-res
   source whose WAVE would only be thrown away costs a fraction of a level-19 pass rather than
   the whole of one; `keep` hands a whole file that answered `NoSmaller` to `kept_whole` the way
-  it hands one whose finished object came out too large.
+  it hands one whose finished object came out too large. **A pass is foretold before it is paid for.** Past
+  `FORETOLD_FROM_BYTES`, 32 MiB of staged WAVE, `wave::hopeless` compresses four slices of
+  `SLICE_BYTES` spread evenly through it at the same level and scales what they came to by the
+  whole; where that lands more than an eighth past what the source weighs, the pass is
+  `NoSmaller` before it starts. Measured on a five-minute 24/192 FLAC of 251 MB, the slices
+  foretold 504.9 MB of a pass that came to 508.3 MB — which took 40 s on five cores — so a
+  hi-res rip is kept after some eight megabytes of zstd rather than after most of a pass;
+  a forecast within the eighth pays the pass, which is what still decides.
 - **`Form::Kept`** — the source's own bytes, because re-encoding would lose something or cost more
   than it saves: a lossy codec, DSD, more than 8 channels, or a re-encode that came out no smaller.
   What a container keeps its tags in *around* the audio is left behind, so the promise about tags

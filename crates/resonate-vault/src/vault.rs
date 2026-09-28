@@ -566,6 +566,11 @@ impl Vault {
             }));
         }
 
+        if let Some(ceiling) = weighing.smaller_than
+            && wave::hopeless(&staging, ceiling)?
+        {
+            return Ok(Keeping::Refused(Refusal::NoSmaller));
+        }
         let packed = self.staged(&compressed_name(WAVE_EXTENSION))?;
         if wave::compressed(&staging, &packed, weighing.smaller_than)? == wave::Packed::NoSmaller {
             return Ok(Keeping::Refused(Refusal::NoSmaller));

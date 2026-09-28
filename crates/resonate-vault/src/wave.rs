@@ -33,6 +33,10 @@ const RIFF_HEADER: u32 = 8;
 
 pub(crate) const LARGEST_PCM: u64 = u32::MAX as u64 - WIDEST_HEADER as u64;
 pub(crate) const ARCHIVED_AT: i32 = 19;
+const FORETOLD_FROM_BYTES: u64 = 32 << 20;
+const SLICES_FORETOLD_FROM: u64 = 4;
+const SLICE_BYTES: usize = 2 << 20;
+const FORETOLD_HOPELESS_PAST: u64 = 8;
 
 pub(crate) struct Written {
     pub(crate) key: VaultKey,
@@ -171,6 +175,31 @@ pub(crate) fn compressed(from: &Path, into: &Path, smaller_than: Option<u64>) ->
     Ok(Packed::Within)
 }
 
+pub(crate) fn hopeless(from: &Path, smaller_than: u64) -> Result<bool> {
+    let read = |source| Error::io(VaultOp::Read, from, source);
+    let mut source = File::open(from).map_err(read)?;
+    let length = source.metadata().map_err(read)?.len();
+    if length < FORETOLD_FROM_BYTES {
+        return Ok(false);
+    }
+
+    let mut slice = vec![0_u8; SLICE_BYTES];
+    let mut sampled = 0_u64;
+    let mut packed = 0_u64;
+    for at in (0..SLICES_FORETOLD_FROM).map(|slice| length / SLICES_FORETOLD_FROM * slice) {
+        source.seek(SeekFrom::Start(at)).map_err(read)?;
+        source.read_exact(&mut slice).map_err(read)?;
+        let squeezed = zstd::bulk::compress(&slice, ARCHIVED_AT)
+            .map_err(|source| Error::io(VaultOp::Write, from, source))?;
+        sampled += SLICE_BYTES as u64;
+        packed += squeezed.len() as u64;
+    }
+
+    let foretold = u128::from(packed) * u128::from(length) / u128::from(sampled);
+    let beyond_doubt = u128::from(smaller_than) + u128::from(smaller_than / FORETOLD_HOPELESS_PAST);
+    Ok(foretold > beyond_doubt)
+}
+
 pub(crate) fn unpacked(from: &Path) -> std::io::Result<Vec<u8>> {
     let file = File::open(from)?;
     zstd::decode_all(std::io::BufReader::new(file))
@@ -267,6 +296,35 @@ mod tests {
             written < HELD as u64 / 4,
             "the whole of the file was compressed before it was given up on: {written} bytes"
         );
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_compression_foretold_to_lose_by_its_slices_is_hopeless_and_one_that_may_win_is_not() {
+        const HELD: usize = 40 << 20;
+
+        let folder = env::temp_dir().join(format!("resonate-wave-foretold-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let noise_at = folder.join("noise.wav");
+        let hush_at = folder.join("hush.wav");
+        let mut state = 0x9e37_79b9_u32;
+        let noise: Vec<u8> = (0..HELD)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect();
+        fs::write(&noise_at, &noise).expect("a noisy file");
+        fs::write(&hush_at, vec![0_u8; HELD]).expect("a quiet file");
+
+        assert!(hopeless(&noise_at, HELD as u64 / 2).expect("a forecast"));
+        assert!(!hopeless(&noise_at, HELD as u64 * 2).expect("a forecast"));
+        assert!(!hopeless(&hush_at, HELD as u64 / 2).expect("a forecast"));
+        let small_at = folder.join("small.wav");
+        fs::write(&small_at, &noise[..SLICE_BYTES]).expect("a small file");
+        assert!(!hopeless(&small_at, 1).expect("a file too small to foretell"));
         let _ = fs::remove_dir_all(&folder);
     }
 }
