@@ -1227,10 +1227,16 @@ impl RootView {
     }
 
     pub(crate) fn undo_edit(&mut self, cx: &mut Context<Self>) {
+        if self.pane == Pane::Queue && self.put_the_queue_back(cx) {
+            return;
+        }
         self.library.update(cx, |library, cx| library.undo(cx));
     }
 
     pub(crate) fn redo_edit(&mut self, cx: &mut Context<Self>) {
+        if self.pane == Pane::Queue && self.take_the_queue_out_again(cx) {
+            return;
+        }
         self.library.update(cx, |library, cx| library.redo(cx));
     }
 

@@ -504,33 +504,32 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   under the heading that stood for as long as the offer did; *Put back* stays in the heading and sends the rows as a `Command::Insert` at
   `Placement::At` the row they came out of. The rows are kept as `QueueItem`s rather than as ids,
   because `one_id_each` mints new ones on the way back in.
-- **A run of gestures is walked back through one at a time, and each step is the queue the one
-  before it left.** `TakenBack` is the bounded stack `TakenOut` now sits in: *Put back* pops the
-  top, and the step beneath it then stands, because putting rows back restores exactly the queue
-  the earlier gesture had left — `Unclaimed::claim` hands a removed row its own id back, so the
-  ids `stands_over` weighs are the ones it was written against. A gesture whose queue no longer
-  stands clears the whole walk rather than leaving stale steps under a fresh one, which is why
-  `keeping` is handed the queue *as it was before the drop*: the previous top standing over that
-  queue is what says the two gestures are consecutive. `KEPT_GESTURES` bounds it at sixteen, the
-  oldest going first, and the button's hint says how many are behind — so a walk is as visible as the playlists pane's `Undoable`
-  makes its own.
+- **A run of gestures is walked back through one at a time, and nothing queued since takes the
+  walk away.** `TakenBack` is the bounded stack `TakenOut` sits in: *Put back* pops the top and
+  sends its rows as a `Command::Insert` at the row after the one they followed — `TakenOut::after`,
+  the id of the row before them when they were taken, which `landing_in` finds wherever it now
+  stands, the front where they were the front, and the place they came out of where that row has
+  gone too. A step stands while none of its rows is back in the queue — `stands_over` weighs their
+  ids, which `Unclaimed::claim` hands back to a row on its way in — so an album queued, a row
+  dragged or a track played between a *Clear* and a *Put back* leaves the offer standing where it
+  used to take it away, and a row already queued again is not put back twice. `KEPT_GESTURES`
+  bounds the walk at sixteen, the oldest going first, and the button's hint says how many are
+  behind.
 - **What was put back can be taken out again, walked forward the way it was walked back.**
   *Put back* moves the step it pops onto a second stack beside the first, and *Take out again*
-  pops that one: it sends `Command::Remove` over the rows the step put back and stacks the step
-  where it was, so its `left` is again the queue the step stands over and *Put back* offers it
-  once more. A put-back step stands while the queue is the one it left — `TakenOut::stands_under`
-  weighs the ids against `left` with the step's own rows spliced back in at `at`, which is what
-  `Unclaimed::claim` handing each row its id back makes exact — and a fresh gesture clears the
-  whole forward walk, as a new edit clears any redo. It goes through neither `drop_rows` nor a
-  toast, because it is the gesture already told about being made again.
-- **The offer stands while the queue is what the gesture left, and `TakenOut::stands_over` is that
-  reading.** It weighs the ids the queue holds now against the ids it held once the rows were out,
-  so anything that queues, loads, moves or takes away a row takes the offer with it — the row the
-  rows came out of is a place in a list that no longer exists, and putting them back there would
-  be a guess. It is why `queue_pane` no longer returns `empty` outright: an emptied queue is the
-  one place the offer could be seen, so the heading is drawn over the empty pane for exactly as
-  long as it stands, while *Clear* and *Save as a playlist* are hidden there, neither having
-  anything to act on.
+  pops that one: `TakenOut::standing_in` finds the step's rows by their ids as the run they were
+  put back as, wherever other edits have since moved it, and sends `Command::Remove` over that
+  run, stacking the step where it was so *Put back* offers it once more. A step whose rows no
+  longer stand together is not offered, and a fresh gesture clears the whole forward walk, as a
+  new edit clears any redo. It goes through neither `drop_rows` nor a toast, because it is the
+  gesture already told about being made again. **The walk has the undo keys while the queue is in
+  front**: `RootView::undo_edit` and `redo_edit` try `put_the_queue_back` and
+  `take_the_queue_out_again` first where the pane is `Pane::Queue`, and reach the playlists' undo
+  only where the queue has nothing to walk.
+- **The offer is drawn while there is a step to walk.** `queue_pane` no longer returns `empty`
+  outright: an emptied queue is the one place the offer could be seen, so the heading is drawn over
+  the empty pane for as long as a step stands, while *Clear* and *Save as a playlist* are hidden
+  there, neither having anything to act on.
 - **A card leaves out what the file does not declare, and the cards stack in two columns.**
   `fields` takes an `Option` per row and draws only what is there, falling back to one faint line
   where a whole card is empty — the shape `tags` always had, now shared by all five, so a file

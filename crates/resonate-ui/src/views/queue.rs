@@ -268,7 +268,7 @@ impl QueueParts {
 pub(crate) struct TakenOut {
     rows: Vec<QueueItem>,
     at: usize,
-    left: Vec<TrackId>,
+    after: Option<TrackId>,
 }
 
 impl TakenOut {
@@ -278,41 +278,45 @@ impl TakenOut {
             return None;
         }
 
-        let mut left: Vec<TrackId> = queue.iter().map(|item| item.id).collect();
-        left.drain(rows.range());
         Some(Self {
             rows: taken.to_vec(),
             at: rows.first(),
-            left,
+            after: rows
+                .first()
+                .checked_sub(1)
+                .and_then(|before| queue.get(before))
+                .map(|item| item.id),
         })
     }
 
     fn stands_over(&self, queue: &[QueueItem]) -> bool {
-        queue.len() == self.left.len()
-            && queue
-                .iter()
-                .map(|item| item.id)
-                .eq(self.left.iter().copied())
-    }
-
-    fn stands_under(&self, queue: &[QueueItem]) -> bool {
-        let (before, after) = self.left.split_at(self.at.min(self.left.len()));
-        let restored = before
+        self.rows
             .iter()
-            .copied()
-            .chain(self.rows.iter().map(|item| item.id))
-            .chain(after.iter().copied());
-
-        queue.len() == self.left.len() + self.rows.len()
-            && queue.iter().map(|item| item.id).eq(restored)
+            .all(|taken| queue.iter().all(|item| item.id != taken.id))
     }
 
-    fn rows(&self) -> Span {
-        Span::between(self.at, self.at + self.rows.len().saturating_sub(1))
+    fn landing_in(&self, queue: &[QueueItem]) -> usize {
+        match self.after {
+            None => 0,
+            Some(after) => queue
+                .iter()
+                .position(|item| item.id == after)
+                .map_or(self.at.min(queue.len()), |before| before + 1),
+        }
+    }
+
+    fn standing_in(&self, queue: &[QueueItem]) -> Option<Span> {
+        let first = self.rows.first()?;
+        let at = queue.iter().position(|item| item.id == first.id)?;
+        let held = queue.get(at..at + self.rows.len())?;
+        held.iter()
+            .map(|item| item.id)
+            .eq(self.rows.iter().map(|item| item.id))
+            .then(|| Span::between(at, at + self.rows.len() - 1))
     }
 }
 
-struct PuttingBack {
+pub(crate) struct PuttingBack {
     rows: Vec<QueueItem>,
     at: usize,
 }
@@ -327,9 +331,6 @@ impl TakenBack {
     pub(crate) fn keeping(&mut self, queue: &[QueueItem], rows: Span) -> Option<usize> {
         let taken = TakenOut::of(queue, rows)?;
         let kept = taken.rows.len();
-        if self.standing(queue).is_none() {
-            self.steps.clear();
-        }
         self.put_back.clear();
         self.stack(taken);
         Some(kept)
@@ -349,7 +350,7 @@ impl TakenBack {
     fn standing_again(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
         self.put_back
             .last()
-            .filter(|taken| taken.stands_under(queue))
+            .filter(|taken| taken.standing_in(queue).is_some())
     }
 
     fn offered(&self, queue: &[QueueItem]) -> Option<Offer> {
@@ -366,21 +367,20 @@ impl TakenBack {
         })
     }
 
-    fn take(&mut self, queue: &[QueueItem]) -> Option<PuttingBack> {
+    pub(crate) fn take(&mut self, queue: &[QueueItem]) -> Option<PuttingBack> {
         self.standing(queue)?;
         let taken = self.steps.pop()?;
         let putting = PuttingBack {
             rows: taken.rows.clone(),
-            at: taken.at,
+            at: taken.landing_in(queue),
         };
         self.put_back.push(taken);
         Some(putting)
     }
 
-    fn take_again(&mut self, queue: &[QueueItem]) -> Option<Span> {
-        self.standing_again(queue)?;
+    pub(crate) fn take_again(&mut self, queue: &[QueueItem]) -> Option<Span> {
+        let rows = self.standing_again(queue)?.standing_in(queue)?;
         let taken = self.put_back.pop()?;
-        let rows = taken.rows();
         self.stack(taken);
         Some(rows)
     }
@@ -855,18 +855,7 @@ impl RootView {
                                     )
                                     .on_click(cx.listener(
                                         |this, _, _, cx| {
-                                            let queued = this.player.read(cx).queue();
-                                            let Some(taken) = this.took_out.take(&queued) else {
-                                                return;
-                                            };
-                                            this.send(
-                                                Command::Insert {
-                                                    items: taken.rows,
-                                                    at: Placement::At(taken.at),
-                                                    play: false,
-                                                },
-                                                cx,
-                                            );
+                                            this.put_the_queue_back(cx);
                                         },
                                     )),
                                 )
@@ -882,12 +871,7 @@ impl RootView {
                                     )
                                     .on_click(cx.listener(
                                         |this, _, _, cx| {
-                                            let queued = this.player.read(cx).queue();
-                                            let Some(rows) = this.took_out.take_again(&queued)
-                                            else {
-                                                return;
-                                            };
-                                            this.send(Command::Remove(rows), cx);
+                                            this.take_the_queue_out_again(cx);
                                         },
                                     )),
                                 )
@@ -897,6 +881,31 @@ impl RootView {
             .when(self.ordering, |heading| {
                 heading.child(self.queue_in_order(cx))
             })
+    }
+
+    pub(crate) fn put_the_queue_back(&mut self, cx: &mut Context<Self>) -> bool {
+        let queued = self.player.read(cx).queue();
+        let Some(taken) = self.took_out.take(&queued) else {
+            return false;
+        };
+        self.send(
+            Command::Insert {
+                items: taken.rows,
+                at: Placement::At(taken.at),
+                play: false,
+            },
+            cx,
+        );
+        true
+    }
+
+    pub(crate) fn take_the_queue_out_again(&mut self, cx: &mut Context<Self>) -> bool {
+        let queued = self.player.read(cx).queue();
+        let Some(rows) = self.took_out.take_again(&queued) else {
+            return false;
+        };
+        self.send(Command::Remove(rows), cx);
+        true
     }
 
     fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
@@ -1298,7 +1307,8 @@ mod tests {
     }
 
     #[test]
-    fn a_fresh_gesture_or_a_moved_queue_leaves_nothing_to_take_out_again() {
+    fn what_was_put_back_is_taken_out_again_though_rows_were_queued_since_and_not_after_a_fresh_gesture()
+     {
         let mut queue = queued(&[1, 2, 3]);
         let mut kept = TakenBack::default();
 
@@ -1307,10 +1317,11 @@ mod tests {
         let offer = kept.offered_again(&queue).expect("the put back is offered");
         assert_eq!((offer.rows, offer.behind), (1, 0));
 
-        queue.push(queued(&[9])[0].clone());
-        assert_eq!(kept.offered_again(&queue), None);
-        queue.pop();
+        queue.insert(0, queued(&[9])[0].clone());
         assert!(kept.offered_again(&queue).is_some());
+        assert!(take_again(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[9, 2, 3]));
+        assert!(put_back(&mut kept, &mut queue));
 
         back(&mut kept, &mut queue, Span::between(2, 2));
         assert_eq!(
@@ -1337,26 +1348,33 @@ mod tests {
     }
 
     #[test]
-    fn a_queue_that_moved_under_the_offer_takes_the_whole_walk_with_it() {
+    fn rows_queued_since_leave_the_walk_standing_and_the_rows_land_beside_the_one_they_followed() {
+        let mut queue = queued(&[1, 2, 3, 4]);
+        let mut kept = TakenBack::default();
+
+        back(&mut kept, &mut queue, Span::between(1, 2));
+        back(&mut kept, &mut queue, Span::between(0, 0));
+        assert_eq!(queue, queued(&[4]));
+        queue.insert(0, queued(&[9])[0].clone());
+
+        let offer = kept.offered(&queue).expect("the walk still stands");
+        assert_eq!((offer.rows, offer.behind), (1, 1));
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 9, 4]));
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 2, 3, 9, 4]));
+    }
+
+    #[test]
+    fn a_row_already_back_in_the_queue_is_not_put_back_twice() {
         let mut queue = queued(&[1, 2, 3]);
         let mut kept = TakenBack::default();
 
         back(&mut kept, &mut queue, Span::between(2, 2));
-        queue.push(queued(&[9])[0].clone());
+        queue.push(queued(&[3])[0].clone());
 
-        assert_eq!(
-            kept.offered(&queue),
-            None,
-            "a moved queue was still offered"
-        );
+        assert_eq!(kept.offered(&queue), None);
         assert!(kept.take(&queue).is_none());
-
-        back(&mut kept, &mut queue, Span::between(0, 0));
-        let offer = kept.offered(&queue).expect("the fresh gesture is offered");
-        assert_eq!(
-            offer.behind, 0,
-            "a walk was carried over a queue that had moved"
-        );
     }
 
     #[test]
