@@ -1,4 +1,5 @@
 mod art;
+mod caret;
 mod desktop;
 mod error;
 mod host;
@@ -13,6 +14,7 @@ mod track;
 mod tracklist;
 
 pub use crate::{
+    caret::{Blinking, caret_blinking},
     error::{BusOp, Error, Result},
     host::{Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists},
     icons::tell_the_icons_changed,

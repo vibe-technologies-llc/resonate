@@ -209,6 +209,7 @@ impl Driven {
                 convolution: None,
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
+                caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,
@@ -230,7 +231,8 @@ impl Driven {
             cx.bind_keys(app::bindings());
         });
         let (root, cx) = cx.add_window_view(RootView::new);
-        let cx = cx.clone();
+        let mut cx = cx.clone();
+        cx.update(|window, _| window.activate_window());
         cx.simulate_resize(size(px(WIDE), px(TALL)));
         cx.run_until_parked();
         Self { root, cx }
@@ -597,6 +599,38 @@ mod tests {
                 .opened_suggestion()
                 .is_some_and(|opened| !opened.tracks.is_empty())
         });
+    }
+
+    #[gpui::test]
+    fn the_caret_blinks_as_the_desktop_says_and_holds_still_where_it_says_not_to(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.cx.simulate_keystrokes("ctrl-f");
+        driven.settle();
+        let lit = |driven: &mut Driven| driven.read(|root, cx| root.search.read(cx).caret_is_lit());
+        let mut seen_dark = false;
+        for _ in 0..40 {
+            driven.cx.executor().advance_clock(FRAME * 4);
+            driven.settle();
+            seen_dark |= !lit(&mut driven);
+        }
+        assert!(seen_dark, "the caret never blinked");
+
+        let caret = driven
+            .cx
+            .update(|_, cx| cx.global::<ResonateApp>().caret.clone());
+        caret.steady();
+        driven.cx.executor().advance_clock(Duration::from_secs(2));
+        driven.settle();
+        for _ in 0..40 {
+            driven.cx.executor().advance_clock(FRAME * 4);
+            driven.settle();
+            assert!(
+                lit(&mut driven),
+                "a caret the desktop holds still went dark"
+            );
+        }
     }
 
     #[gpui::test]

@@ -2230,6 +2230,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         },
         resonate_ui::Stored {
             settings: Arc::new(settings),
+            caret: caret_as_the_desktop_blinks(),
             places,
             resume: keeps,
             history_kept: config.history_kept(),
@@ -2263,6 +2264,23 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     drop(mpris);
     outcome?;
     Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn caret_as_the_desktop_blinks() -> resonate_ui::CaretBlink {
+    let caret = resonate_ui::CaretBlink::as_built();
+    let told = caret.clone();
+    let asked = thread::Builder::new()
+        .name("resonate-caret".to_owned())
+        .spawn(move || match resonate_mpris::caret_blinking() {
+            resonate_mpris::Blinking::Steady => told.steady(),
+            resonate_mpris::Blinking::Every(half) => told.every(half),
+            resonate_mpris::Blinking::Unsaid => {}
+        });
+    if let Err(error) = asked {
+        tracing::debug!(%error, "the desktop was not asked how its caret blinks");
+    }
+    caret
 }
 
 #[cfg(feature = "ui")]

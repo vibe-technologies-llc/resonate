@@ -1,6 +1,9 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -556,6 +559,7 @@ pub struct Places {
 
 pub struct Stored {
     pub settings: Arc<dyn Settings>,
+    pub caret: CaretBlink,
     pub places: Places,
     pub resume: bool,
     pub history_kept: HistoryKept,
@@ -576,6 +580,41 @@ pub struct Stored {
     pub presence: Presence,
     pub present: Arc<dyn Present>,
     pub launcher: Arc<dyn Launcher>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CaretBlink {
+    half: Arc<AtomicU64>,
+}
+
+const STEADY: u64 = 0;
+const HALF_A_BLINK_AS_BUILT: Duration = Duration::from_millis(500);
+
+impl CaretBlink {
+    pub fn as_built() -> Self {
+        Self {
+            half: Arc::new(AtomicU64::new(millis(HALF_A_BLINK_AS_BUILT))),
+        }
+    }
+
+    pub fn steady(&self) {
+        self.half.store(STEADY, Ordering::Relaxed);
+    }
+
+    pub fn every(&self, half: Duration) {
+        self.half.store(millis(half).max(1), Ordering::Relaxed);
+    }
+
+    pub(crate) fn half(&self) -> Option<Duration> {
+        match self.half.load(Ordering::Relaxed) {
+            STEADY => None,
+            half => Some(Duration::from_millis(half)),
+        }
+    }
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 pub trait Present: Send + Sync {

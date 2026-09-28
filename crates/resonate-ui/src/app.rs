@@ -23,7 +23,7 @@ use resonate_library::{Fingerprinters, HistoryKept, Library, Reference};
 use resonate_lyrics::Lyricists;
 
 use crate::{
-    AppIcon, Bindings, Error, Launcher, Notice, Result, RootView, Settings, WindowKind,
+    AppIcon, Bindings, CaretBlink, Error, Launcher, Notice, Result, RootView, Settings, WindowKind,
     drawing::Drawer,
     format, icons,
     listening::Listens,
@@ -145,6 +145,7 @@ pub struct ResonateApp {
     pub convolution: Option<PathBuf>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
+    pub caret: CaretBlink,
     pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
     pub remember_tab: bool,
@@ -824,6 +825,7 @@ pub fn run(
             convolution: stored.convolution.clone(),
             window_buttons: stored.window_buttons,
             scroll_volume: stored.scroll_volume,
+            caret: stored.caret.clone(),
             scrollbars: stored.scrollbars,
             tabs: stored.tabs,
             remember_tab: stored.remember_tab,

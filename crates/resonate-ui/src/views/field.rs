@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::{
+    ResonateApp,
     app::SEARCH_CONTEXT,
     clipboard,
     edit::{Anchor, Edit, Motion, Removal},
@@ -78,7 +79,7 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
     ]
 }
 
-const BLINK: Duration = Duration::from_millis(500);
+const STEADY_LOOKS_AGAIN_AFTER: Duration = Duration::from_secs(1);
 
 struct Painted {
     line: ShapedLine,
@@ -125,7 +126,7 @@ impl Field {
         }
     }
 
-    const fn caret_is_lit(&self) -> bool {
+    pub(crate) const fn caret_is_lit(&self) -> bool {
         self.lit
     }
 
@@ -146,9 +147,15 @@ impl Field {
         if self.holds_focus {
             self.blink = cx.spawn(async move |this, cx| {
                 loop {
-                    cx.background_executor().timer(BLINK).await;
+                    let half = cx
+                        .update(|cx| cx.global::<ResonateApp>().caret.half())
+                        .ok()
+                        .flatten();
+                    cx.background_executor()
+                        .timer(half.unwrap_or(STEADY_LOOKS_AGAIN_AFTER))
+                        .await;
                     let shown = this.update(cx, |this, cx| {
-                        this.lit = !this.lit;
+                        this.lit = half.is_none() || !this.lit;
                         cx.notify();
                     });
                     if shown.is_err() {

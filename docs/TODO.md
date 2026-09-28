@@ -114,6 +114,5 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Later: Polish
 - A tooltip whose control moved under a perfectly still pointer stays up
-- The search caret's blink ignores the desktop's cursor-blink setting
 - `Wayback` restores a row rather than a pixel, so a list whose rows changed height lands a row out
 - The album grid draws one frame at the old column count on a resize

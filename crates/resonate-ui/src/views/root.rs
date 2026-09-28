@@ -492,7 +492,7 @@ pub struct RootView {
     scale: Scale,
     pub(crate) resolved: RefCell<Option<Resolved>>,
     pub(crate) focus: FocusHandle,
-    search: Entity<Field>,
+    pub(crate) search: Entity<Field>,
     pub(crate) remember_tab: bool,
     pub(crate) remember_window_size: bool,
     pub(crate) remember_settings_category: bool,

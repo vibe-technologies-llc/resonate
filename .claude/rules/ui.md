@@ -103,6 +103,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   than truncating, and a selection drag is followed from a `Window::on_mouse_event` registered in
   `paint`, because the element's own `on_mouse_move` fires only while the pointer is over it — the
   same reason `views/slider.rs` carries a drag surface.
+- **The caret blinks as the desktop says it does.** `CaretBlink` is a shared half-period on
+  `Stored` and `ResonateApp` — `as_built` is half a second, `steady` holds it lit — and every
+  field's blink task reads it afresh on each tick, so what arrives after the window opened takes
+  effect on the next one and a caret held still looks again a second later. The binary's
+  `caret_as_the_desktop_blinks` asks on a `resonate-caret` thread, so the window never waits for
+  the answer: `resonate_mpris::caret_blinking` reads the Settings portal's `ReadOne`, under a
+  one-second deadline — `org.gnome.desktop.interface`'s `cursor-blink` and `cursor-blink-time`,
+  which KDE's portal answers too, then `org.kde.kdeglobals.KDE`'s `CursorBlinkRate` — and a
+  cycle of nothing, or blinking off, is a steady caret; a desktop that answers neither leaves the
+  half second. The cycle is halved, because a desktop names the time for dark and lit together.
+  `the_caret_blinks_as_the_desktop_says_and_holds_still_where_it_says_not_to` drives it.
 - **The search field's undo step is a span of edits, not a keystroke.** `edit.rs` keeps a bounded
   stack of content-and-selection snapshots and coalesces consecutive edits that carry the same
   `edit::Span` — `Typing`, `Removing` or `Composing`, distinct from `resonate-core::Span` — *and*
@@ -1335,7 +1346,8 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `Driven::open` sets the `ResonateApp` global the way `run` does — a `Player` over an
   `Unplugged` backend that has no sinks and refuses every stream, an in-memory `Library`, the
   `Ephemeral` settings, `Places` under a temporary folder so a curve the pane writes lands there —
-  and opens a real `RootView` in a `VisualTestContext`. It presses, right-presses, drags,
+  and opens a real `RootView` in a `VisualTestContext`, activated, since gpui tells a view it has
+  focus only in an active window. It presses, right-presses, drags,
   scrolls and moves the pointer at the bounds gpui drew, which it reads through
   `debug_selector`: `kit::Found::found_as` names every button, chip, segment, switch, choice
   and mark by its `ElementId`, and the rows, tabs, menu entries and surfaces a test reaches name
