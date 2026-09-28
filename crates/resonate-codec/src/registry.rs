@@ -6,6 +6,7 @@ use symphonia_codec_wavpack::WavPackReader;
 use crate::{
     ape::{Ape, ApeReader},
     opus::Opus,
+    vorbis::Vorbis,
     wavpack::WavPack,
 };
 
@@ -13,6 +14,7 @@ static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
     let mut registry = CodecRegistry::new();
     symphonia::default::register_enabled_codecs(&mut registry);
     registry.register_audio_decoder::<Opus>();
+    registry.register_audio_decoder::<Vorbis>();
     registry.register_audio_decoder::<WavPack>();
     registry.register_audio_decoder::<Ape>();
     registry

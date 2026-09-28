@@ -3,11 +3,6 @@
 Categories run from most to least important. Everything under a `Later:` heading is a nice-to-have
 that no listener is waiting on, and is worked only once the categories above it are quiet.
 
-## Defects
-- A Vorbis setup header whose ordered codebook runs a length past 32 indexes past symphonia's
-  codeword table, which panics — and a release build aborts on a panic — rather than refusing the
-  file; the probe fuzz target reaches it through Vorbis in Matroska
-
 ## Playback and output
 - A device with no volume of its own is still turned by the stream, so anything under 100 % leaves
   bit-perfect there

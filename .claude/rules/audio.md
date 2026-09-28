@@ -224,6 +224,17 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   two fail against the crate's decoder alone. A WavPack is lossless to the rest of the build, a
   hybrid one included, because nothing reads the flag that says a block was coded lossy; its APEv2
   tags are read by the crate's reader and written by lofty.
+- **A Vorbis setup header is walked before symphonia's decoder reads it.** symphonia builds each
+  codebook's codewords into a table of 33 lengths and indexes it by the length a codebook names,
+  and an *ordered* codebook counts its lengths up one run at a time with nothing stopping them past
+  32 — so a crafted setup indexed past the table and panicked, which a release build turns into an
+  abort of the whole player. `vorbis::Vorbis` is registered over symphonia's `VorbisDecoder`: it
+  finds the setup header in the extra data — Xiph-laced or packed behind the identification
+  header, the two shapes the readers hand over — walks every codebook forward, lookup tables
+  included, and refuses the decoder where a run of entries lands on a length past 32, handing
+  everything else to symphonia untouched. A walk that cannot read a codebook stops and leaves the
+  refusal to symphonia. `a_decoder_is_refused_for_a_setup_whose_codewords_run_past_32_bits_rather_than_panicking`
+  is the claim, and it panics against the bare decoder.
 - **Monkey's Audio is read by a reader of the codec crate's own and decoded frame by frame.**
   `ape.rs`'s `ApeReader` parses the header and the seek table through `ape-decoder`, answers one
   packet per frame — its bytes read from the seek table's offset less the frame's alignment, with

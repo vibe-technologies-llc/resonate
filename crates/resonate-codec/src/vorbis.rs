@@ -1,3 +1,17 @@
+use symphonia::{
+    core::{
+        audio::GenericAudioBufferRef,
+        codecs::{
+            CodecInfo,
+            audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult},
+            registry::{RegisterableAudioDecoder, SupportedAudioCodec},
+        },
+        errors::{Result, decode_error},
+        packet::PacketRef,
+    },
+    default::codecs::VorbisDecoder,
+};
+
 const IDENTIFICATION: u8 = 1;
 const SETUP: u8 = 5;
 const MAGIC: &[u8; 6] = b"vorbis";
@@ -17,6 +31,14 @@ const LEAST_SETUP_BITS_LEFT: u64 = 97;
 const XIPH_LACE_CONTINUES: u8 = 0xFF;
 const AUDIO_PACKET_FLAG: u8 = 1;
 const WINDOW_QUARTERS: u32 = 4;
+const IDENTIFICATION_BYTES: usize = 30;
+const HEADER_PREAMBLE_BYTES: usize = 7;
+const CODEBOOK_SYNC: u32 = 0x56_4342;
+const LONGEST_CODEWORD: u32 = 32;
+const LENGTH_BITS: u32 = 5;
+const LOOKUP_TYPE_BITS: u32 = 4;
+const VALUE_BITS_BITS: u32 = 4;
+const LOOKUP_BOUND_BITS: u32 = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Windows {
@@ -195,6 +217,180 @@ impl<'a> Backwards<'a> {
     }
 }
 
+pub(crate) fn setup_of_extra_data(extra: &[u8]) -> Option<&[u8]> {
+    if extra.first() == Some(&((HEADERS - 1) as u8)) {
+        let [_, _, setup] = xiph_laced(extra)?;
+        return Some(setup);
+    }
+    let setup = extra.get(IDENTIFICATION_BYTES..)?;
+    headed(setup, SETUP).then_some(setup)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Codewords {
+    Fit,
+    TooLong,
+    Unread,
+}
+
+pub(crate) fn codewords_of(setup: &[u8]) -> Codewords {
+    if !headed(setup, SETUP) {
+        return Codewords::Unread;
+    }
+    let Some(packed) = setup.get(HEADER_PREAMBLE_BYTES..) else {
+        return Codewords::Unread;
+    };
+    let mut forwards = Forwards::over(packed);
+    let Some(books) = forwards.bits(8) else {
+        return Codewords::Unread;
+    };
+    for _ in 0..=books {
+        match codebook(&mut forwards) {
+            Some(true) => {}
+            Some(false) => return Codewords::TooLong,
+            None => return Codewords::Unread,
+        }
+    }
+    Codewords::Fit
+}
+
+fn codebook(forwards: &mut Forwards<'_>) -> Option<bool> {
+    if forwards.bits(24)? != CODEBOOK_SYNC {
+        return None;
+    }
+    let dimensions = forwards.bits(16)?;
+    let entries = forwards.bits(24)?;
+    if forwards.bit()? {
+        let mut length = forwards.bits(LENGTH_BITS)? + 1;
+        let mut entry = 0_u32;
+        while entry < entries {
+            let taken = forwards.bits(bits_to_count(entries - entry + 1))?;
+            if taken > 0 && length > LONGEST_CODEWORD {
+                return Some(false);
+            }
+            entry = entry.checked_add(taken)?;
+            length += 1;
+        }
+    } else if forwards.bit()? {
+        for _ in 0..entries {
+            if forwards.bit()? {
+                forwards.skip(u64::from(LENGTH_BITS))?;
+            }
+        }
+    } else {
+        forwards.skip(u64::from(entries) * u64::from(LENGTH_BITS))?;
+    }
+
+    let values = match forwards.bits(LOOKUP_TYPE_BITS)? {
+        0 => return Some(true),
+        1 => lookup1_values(entries, dimensions)?,
+        2 => u64::from(entries) * u64::from(dimensions),
+        _ => return None,
+    };
+    forwards.skip(2 * u64::from(LOOKUP_BOUND_BITS))?;
+    let width = forwards.bits(VALUE_BITS_BITS)? + 1;
+    forwards.skip(1)?;
+    forwards.skip(values.checked_mul(u64::from(width))?)?;
+    Some(true)
+}
+
+fn lookup1_values(entries: u32, dimensions: u32) -> Option<u64> {
+    if dimensions == 0 {
+        return None;
+    }
+    let mut root = (f64::from(entries).powf(1.0 / f64::from(dimensions)).floor() as u64).max(1);
+    let fits = |root: u64| {
+        u128::from(root)
+            .checked_pow(dimensions)
+            .is_some_and(|held| held <= u128::from(entries))
+    };
+    while root > 1 && !fits(root) {
+        root -= 1;
+    }
+    while fits(root + 1) {
+        root += 1;
+    }
+    Some(root)
+}
+
+struct Forwards<'a> {
+    bytes: &'a [u8],
+    read: u64,
+}
+
+impl<'a> Forwards<'a> {
+    const fn over(bytes: &'a [u8]) -> Self {
+        Self { bytes, read: 0 }
+    }
+
+    fn skip(&mut self, bits: u64) -> Option<()> {
+        let read = self.read.checked_add(bits)?;
+        if read > self.bytes.len() as u64 * 8 {
+            return None;
+        }
+        self.read = read;
+        Some(())
+    }
+
+    fn bit(&mut self) -> Option<bool> {
+        let byte = *self.bytes.get(usize::try_from(self.read / 8).ok()?)?;
+        let held = (byte >> (self.read % 8)) & 1 == 1;
+        self.read += 1;
+        Some(held)
+    }
+
+    fn bits(&mut self, count: u32) -> Option<u32> {
+        (0..count).try_fold(0_u32, |held, at| {
+            Some(held | (u32::from(self.bit()?) << at))
+        })
+    }
+}
+
+pub(crate) struct Vorbis(VorbisDecoder);
+
+impl AudioDecoder for Vorbis {
+    fn reset(&mut self) {
+        self.0.reset();
+    }
+
+    fn codec_info(&self) -> &CodecInfo {
+        self.0.codec_info()
+    }
+
+    fn codec_params(&self) -> &AudioCodecParameters {
+        self.0.codec_params()
+    }
+
+    fn decode_ref(&mut self, packet: &PacketRef<'_>) -> Result<GenericAudioBufferRef<'_>> {
+        self.0.decode_ref(packet)
+    }
+
+    fn finalize(&mut self) -> FinalizeResult {
+        self.0.finalize()
+    }
+
+    fn last_decoded(&self) -> GenericAudioBufferRef<'_> {
+        self.0.last_decoded()
+    }
+}
+
+impl RegisterableAudioDecoder for Vorbis {
+    fn try_registry_new(
+        params: &AudioCodecParameters,
+        options: &AudioDecoderOptions,
+    ) -> Result<Box<dyn AudioDecoder>> {
+        let setup = params.extra_data.as_deref().and_then(setup_of_extra_data);
+        if setup.map(codewords_of) == Some(Codewords::TooLong) {
+            return decode_error("vorbis: a codebook names a codeword longer than 32 bits");
+        }
+        Ok(Box::new(Self(VorbisDecoder::try_new(params, options)?)))
+    }
+
+    fn supported_codecs() -> &'static [SupportedAudioCodec] {
+        VorbisDecoder::supported_codecs()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +524,60 @@ mod tests {
         assert!(
             Windows::of_codec_private(&laced([&identification(12, 8), b"\x03vorbis", &good_setup]))
                 .is_none()
+        );
+    }
+
+    const CHANNELS_AT: usize = 11;
+    const RATE_AT: usize = 12;
+
+    fn ordered_codebook(first_length: u32, runs: &[u32]) -> Vec<u8> {
+        let entries: u32 = runs.iter().sum();
+        let mut packet = vec![SETUP];
+        packet.extend_from_slice(MAGIC);
+        let mut books = Forwards::new();
+        books.put(0, 8);
+        books.put(CODEBOOK_SYNC, 24);
+        books.put(1, 16);
+        books.put(entries, 24);
+        books.put(1, 1);
+        books.put(first_length - 1, LENGTH_BITS);
+        let mut entry = 0;
+        for &run in runs {
+            books.put(run, bits_to_count(entries - entry + 1));
+            entry += run;
+        }
+        books.put(0, LOOKUP_TYPE_BITS);
+        packet.extend(books.bytes);
+        packet
+    }
+
+    #[test]
+    fn an_ordered_codebook_running_past_32_bits_is_told_apart_from_one_that_fits() {
+        assert_eq!(codewords_of(&ordered_codebook(1, &[2])), Codewords::Fit);
+        assert_eq!(
+            codewords_of(&ordered_codebook(32, &[1, 1])),
+            Codewords::TooLong
+        );
+        assert_eq!(codewords_of(b"not a setup header"), Codewords::Unread);
+    }
+
+    #[test]
+    fn a_decoder_is_refused_for_a_setup_whose_codewords_run_past_32_bits_rather_than_panicking() {
+        use symphonia::core::codecs::audio::well_known::CODEC_ID_VORBIS;
+
+        let mut identification = identification(8, 11);
+        identification[CHANNELS_AT] = 2;
+        identification[RATE_AT..RATE_AT + 4].copy_from_slice(&44_100_u32.to_le_bytes());
+        let setup = ordered_codebook(32, &[1, 1]);
+        let mut params = AudioCodecParameters::new();
+        params
+            .for_codec(CODEC_ID_VORBIS)
+            .with_extra_data(laced([&identification, b"", &setup]).into_boxed_slice());
+
+        assert!(
+            crate::registry::codecs()
+                .make_audio_decoder(&params, &AudioDecoderOptions::default())
+                .is_err()
         );
     }
 }
