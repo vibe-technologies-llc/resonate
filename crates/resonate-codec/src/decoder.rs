@@ -121,13 +121,14 @@ pub enum Codec {
     Vorbis,
     Opus,
     WavPack,
+    WavPackHybrid,
     MonkeysAudio,
     #[default]
     Unknown,
 }
 
 impl Codec {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Flac,
         Self::Alac,
         Self::Dsd,
@@ -137,6 +138,7 @@ impl Codec {
         Self::Vorbis,
         Self::Opus,
         Self::WavPack,
+        Self::WavPackHybrid,
         Self::MonkeysAudio,
         Self::Unknown,
     ];
@@ -149,7 +151,12 @@ impl Codec {
             | Self::Pcm
             | Self::WavPack
             | Self::MonkeysAudio => true,
-            Self::Aac | Self::Mp3 | Self::Vorbis | Self::Opus | Self::Unknown => false,
+            Self::Aac
+            | Self::Mp3
+            | Self::Vorbis
+            | Self::Opus
+            | Self::WavPackHybrid
+            | Self::Unknown => false,
         }
     }
 
@@ -166,6 +173,9 @@ impl Codec {
 
         if id == crate::dsd::DSD_CODEC_ID {
             return Self::Dsd;
+        }
+        if id == crate::wavpack::HYBRID_CODEC_ID {
+            return Self::WavPackHybrid;
         }
 
         match id {
@@ -197,6 +207,7 @@ impl Codec {
             Self::Vorbis => "Vorbis",
             Self::Opus => "Opus",
             Self::WavPack => "WavPack",
+            Self::WavPackHybrid => "WavPack hybrid",
             Self::MonkeysAudio => "Monkey's Audio",
             Self::Unknown => "Unknown",
         }

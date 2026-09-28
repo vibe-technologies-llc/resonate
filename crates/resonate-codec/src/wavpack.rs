@@ -1,4 +1,7 @@
-use std::ops::Range;
+use std::{
+    io::{Read, Seek, SeekFrom},
+    ops::Range,
+};
 
 use symphonia::core::{
     audio::{
@@ -8,15 +11,20 @@ use symphonia::core::{
     codecs::{
         CodecInfo,
         audio::{
-            AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult,
+            AudioCodecId, AudioCodecParameters, AudioDecoder, AudioDecoderOptions, FinalizeResult,
             well_known::CODEC_ID_WAVPACK,
         },
         registry::{RegisterableAudioDecoder, SupportedAudioCodec},
     },
+    common::FourCc,
     errors::{Result, decode_error, unsupported_error},
     packet::PacketRef,
 };
 use symphonia_codec_wavpack::WavPackDecoder;
+
+use crate::prescan::read_exact;
+
+pub(crate) const HYBRID_CODEC_ID: AudioCodecId = AudioCodecId::new(FourCc::new(*b"wvhy"));
 
 const MARKER: &[u8; 4] = b"wvpk";
 const HEADER_BYTES: usize = 32;
@@ -26,6 +34,7 @@ const BLOCK_SAMPLES_AT: Range<usize> = 20..24;
 const FLAGS_AT: Range<usize> = 24..28;
 
 const MONO: u32 = 0x4;
+const HYBRID: u32 = 0x8;
 const FLOAT_DATA: u32 = 0x80;
 const FINAL_BLOCK: u32 = 0x1000;
 const FALSE_STEREO: u32 = 0x4000_0000;
@@ -61,6 +70,38 @@ const MOST_FRAMES_A_BLOCK: u64 = 1 << 20;
 const MATROSKA_VERSIONS: Range<u16> = 0x402..0x411;
 const MATROSKA_PREFIX_BYTES: usize = 8;
 const MATROSKA_BLOCK_SIZE_BYTES: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Coding {
+    #[default]
+    Lossless,
+    Hybrid,
+}
+
+impl Coding {
+    pub(crate) const fn codec(self, declared: AudioCodecId) -> AudioCodecId {
+        match self {
+            Self::Hybrid => HYBRID_CODEC_ID,
+            Self::Lossless => declared,
+        }
+    }
+}
+
+pub(crate) fn read_coding<S: Read + Seek + ?Sized>(source: &mut S) -> Coding {
+    let Ok(origin) = source.stream_position() else {
+        return Coding::Lossless;
+    };
+    let found = match read_exact::<HEADER_BYTES, S>(source) {
+        Some(header) if header.starts_with(MARKER) && word(&header, FLAGS_AT) & HYBRID != 0 => {
+            Coding::Hybrid
+        }
+        Some(_) | None => Coding::Lossless,
+    };
+    if source.seek(SeekFrom::Start(origin)).is_err() {
+        tracing::debug!("a WavPack header read could not restore the stream position");
+    }
+    found
+}
 
 #[derive(Clone, Copy)]
 struct FloatInfo {
@@ -644,5 +685,46 @@ impl RegisterableAudioDecoder for WavPack {
                 profiles: &[],
             },
         }]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn header(flags: u32) -> Vec<u8> {
+        let mut header = vec![0; HEADER_BYTES + 3];
+        header[..MARKER.len()].copy_from_slice(MARKER);
+        header[FLAGS_AT].copy_from_slice(&flags.to_le_bytes());
+        header
+    }
+
+    #[test]
+    fn a_stream_whose_first_block_is_coded_hybrid_is_read_as_hybrid() {
+        let mut source = Cursor::new(header(HYBRID | FINAL_BLOCK));
+
+        assert_eq!(read_coding(&mut source), Coding::Hybrid);
+        assert_eq!(source.position(), 0);
+        assert_eq!(Coding::Hybrid.codec(CODEC_ID_WAVPACK), HYBRID_CODEC_ID);
+    }
+
+    #[test]
+    fn a_lossless_block_or_a_stream_that_is_not_wavpack_is_read_as_lossless() {
+        assert_eq!(
+            read_coding(&mut Cursor::new(header(FINAL_BLOCK))),
+            Coding::Lossless
+        );
+
+        let mut elsewhere = header(HYBRID);
+        elsewhere[..MARKER.len()].copy_from_slice(b"fLaC");
+        assert_eq!(read_coding(&mut Cursor::new(elsewhere)), Coding::Lossless);
+
+        assert_eq!(
+            read_coding(&mut Cursor::new(MARKER.to_vec())),
+            Coding::Lossless
+        );
+        assert_eq!(Coding::Lossless.codec(CODEC_ID_WAVPACK), CODEC_ID_WAVPACK);
     }
 }

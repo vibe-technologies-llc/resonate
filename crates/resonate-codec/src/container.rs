@@ -314,7 +314,7 @@ pub(crate) fn coded_info(
 
     Ok(MediaInfo {
         container: opened.reader.format_info().format,
-        codec: params.codec,
+        codec: prescan.wavpack.codec(params.codec),
         spec,
         speakers: Speakers::of(opus::channels_of(params).as_ref()),
         duration: playable.and_then(FrameSpan::frames).or_else(|| {

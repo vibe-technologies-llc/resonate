@@ -2492,6 +2492,10 @@ fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
         decode(&unpacked).samples,
         "a hybrid WavPack decoded to something the reference decoder does not"
     );
+    let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
+        .expect("a hybrid WavPack probes");
+    assert_eq!(Codec::from_id(report.info.codec), Codec::WavPackHybrid);
+    assert!(!Codec::from_id(report.info.codec).is_lossless());
 }
 
 #[test]

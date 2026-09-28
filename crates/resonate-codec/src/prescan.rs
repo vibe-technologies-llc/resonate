@@ -8,6 +8,7 @@ use crate::{
     flac::{self, Flac},
     matroska::{self, Segment},
     riff::{self, Riff},
+    wavpack::{self, Coding},
 };
 
 const PRESCAN_WINDOW: usize = 4 * 1024;
@@ -23,6 +24,7 @@ pub(crate) struct Prescan {
     pub(crate) boxes: Movie,
     pub(crate) flac: Flac,
     pub(crate) caf: Option<Overflow>,
+    pub(crate) wavpack: Coding,
 }
 
 impl Prescan {
@@ -33,6 +35,7 @@ impl Prescan {
             boxes: boxes::read_movie(source),
             flac: flac::read(source),
             caf: caf::read(source),
+            wavpack: wavpack::read_coding(source),
         }
     }
 

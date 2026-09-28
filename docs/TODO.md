@@ -26,8 +26,12 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Formats
 - A 32-bit stereo Monkey's Audio — integers or floats — is refused, because `ape-decoder` narrows
   the side channel to 32 bits before undoing it
-- A hybrid WavPack is taken for lossless: nothing reads the flag that says a block was coded lossy,
-  and a `.wvc` correction file beside it is never opened
+- A `.wvc` correction file beside a hybrid WavPack is never opened, so the file plays and is billed
+  as lossy: `symphonia-codec-wavpack` 0.1.1 reads a held zero's correction from the wrong range,
+  and applying one waits on the crate being fixed upstream
+- A hybrid WavPack inside Matroska is still billed lossless, because the flag is read off a native
+  stream's first block alone, and a hybrid file scanned before the flag was read keeps its old
+  billing until the file changes
 - A source that cannot seek is read whole before it plays, up to 256 MiB, so a slow remote stream
   waits for its download; past that cap it is prescanned only through its head
 - A file embedding a huge picture still costs one materialisation, because symphonia reads it into

@@ -221,8 +221,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `a_floating_wavpack_decodes_to_every_bit_that_went_in` — zeros, negative zeros, subnormals and
   values a hundred binades under the peak among them — and
   `a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it` are the claims; the first
-  two fail against the crate's decoder alone. A WavPack is lossless to the rest of the build, a
-  hybrid one included, because nothing reads the flag that says a block was coded lossy; its APEv2
+  two fail against the crate's decoder alone. **A hybrid WavPack is billed as the lossy codec it
+  decodes as.** The prescan reads the first block's header — `wavpack::read_coding` — and where
+  its flags carry `HYBRID`, `coded_info` answers `wavpack::HYBRID_CODEC_ID` rather than the
+  stream's own id, which `Codec::from_id` reads as `Codec::WavPackHybrid`: not `is_lossless`, so
+  the badge, `is:lossy`, the verdict's `Lossy`, the vault's `Kept` and every other reader of the
+  codec take it for what it is, and the catalog stores it as code 13 and searches it as
+  `codec:hybrid`. The decoder is still made from the track's parameters, so nothing about the
+  decode moves. The same test that holds the decode to `wvunpack`'s holds the billing. A `.wvc`
+  correction file beside it is not read: `symphonia-codec-wavpack` 0.1.1 takes a held zero's
+  correction from the range it has already narrowed to its midpoint — it sets `low = mid` before
+  `read_code(high - low) + low`, where libwavpack reads from the narrowed `low` — so a corrected
+  decode drifts off the source from the first such word, and splicing the correction blocks into
+  each packet was measured to land within a few steps of the source rather than on it. Its APEv2
   tags are read by the crate's reader and written by lofty.
 - **A Vorbis setup header is walked before symphonia's decoder reads it.** symphonia builds each
   codebook's codewords into a table of 33 lengths and indexes it by the length a codebook names,
