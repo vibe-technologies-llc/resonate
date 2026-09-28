@@ -190,8 +190,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   end of, a segment of unknown length — and any of those leaves it `None`, the window open-ended,
   and the length the segment's millisecond count less the pre-skip it includes,
   `Carrying::declared_before_the_music`, within three half-millisecond roundings. Reaching the
-  segment's own end is what keeps a source that cannot seek honest: its prescan sees only
-  `MAX_PRESCAN_HEAD` bytes, and a count cut short there would close the window on the music.
+  segment's own end is what keeps a source that cannot seek honest: past `SPOOLED_AT_MOST` its
+  prescan sees only the head, and a count cut short there would close the window on the music.
   **A surround stream Matroska leaves unplaced is placed by its head.** Matroska carries a channel
   count and no mask, so a 5.1 Opus track opened as `Discrete(6)`, which a downmix truncates one
   channel for one; mapping family 1 *is* the Vorbis order, so `opus::channels_of` answers those
@@ -357,17 +357,25 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   arrive — and then seek absolutely past whatever the chunk or element claimed, so a thirty-byte file declaring a gigabyte costs one bounded read and a failed seek
   rather than the allocation. A declared size is what the walk advances by; it is never what a `Vec`
   is sized to.
-- **A prescan reads the head of a source that cannot seek, rather than skipping it.** The `INFO`
-  scan looks for its magic no further than `SOUGHT_WITHIN` bytes in, the EBML title scan bails on
-  the first bytes where the magic is not its own, and both restore the position they found, so a
-  container that is neither pays a rejected read and nothing more. A source that cannot seek cannot be restored, so `container::open` reads `MAX_PRESCAN_HEAD`
-  bytes into memory with `take`, scans a `Cursor` over those, and hands symphonia a `Replaying`
-  stream that serves the head before the rest — still `is_seekable() == false` and still
-  `byte_len() == None`, so the reader sees the stream it always saw, from the start. Both walks
-  advance by absolute seek, which over a `Cursor` of the head simply stops at the end of it, so
-  neither `riff.rs` nor `matroska.rs` knows the difference. What this reaches is what lives near the
-  front of a file — Matroska's `Info`, a WAV's leading `LIST INFO` — and not a `LIST INFO` a writer
-  put after `data`.
+- **A source that cannot seek is spooled, and only one too long to spool is read from its head.**
+  The `INFO` scan looks for its magic no further than `SOUGHT_WITHIN` bytes in, the EBML title scan
+  bails on the first bytes where the magic is not its own, and both restore the position they
+  found, so a container that is neither pays a rejected read and nothing more. A source that
+  cannot seek cannot be restored, so `container::open` reads it into memory with `take`, up to
+  `SPOOLED_AT_MOST` — 256 MiB, which a five-minute 24/192 FLAC fits in — and where the stream ends
+  inside that, it is opened as a seekable `Reading` over the bytes, with everything a file has: the
+  whole prescan, a trailing `moov`, a `LIST INFO` after `data`, the Matroska cluster walk that
+  counts an Opus or FLAC track exactly, the seek bar and the end bound a priming is trimmed
+  against. What it costs is the whole stream read before the first sample, which is a local
+  provider's copy and a remote one's download. A stream past the cap keeps the head it was read
+  into: symphonia is handed a `Replaying` stream that serves the head before the rest — still
+  `is_seekable() == false` and still `byte_len() == None` — and the walks run over a `Cursor` of
+  the head, advancing by absolute seek, which simply stops at its end, so neither `riff.rs` nor
+  `matroska.rs` knows the difference.
+  `a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio`,
+  `a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek` and
+  `a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pages_declare` are
+  the claims.
 - **A prescan over a source that *can* seek reads through a window, because the five walks are made
   of four-byte reads.** `riff.rs`, `caf.rs`, `matroska.rs`, `boxes.rs` and `flac.rs` each read an id or a
   header a few bytes at a time and then seek absolutely past whatever it declared, and `Reading`
@@ -597,8 +605,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   outside it is refused by name. The seam is proved by a provider that serves a track out of memory
   in `crates/resonate-engine/tests/transport.rs` and by nothing else.
 - **A provider hands back a `Read + Seek + Send + Sync` stream and says whether it is seekable**,
-  which is symphonia's own contract. A source that can only stream forward therefore loses the
-  prescan, the seek bar and the box walk rather than being handled differently.
+  which is symphonia's own contract. A source that can only stream forward is spooled into memory
+  up to `SPOOLED_AT_MOST` and is then a seekable source like any other; past that it loses the
+  prescan past its head, the seek bar and the box walk.
 - **`Sources` is resolved by a linear walk over the registered providers**, which is right for the
   handful a desktop player registers and wrong for hundreds.
 

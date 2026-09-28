@@ -28,9 +28,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   the side channel to 32 bits before undoing it
 - A hybrid WavPack is taken for lossless: nothing reads the flag that says a block was coded lossy,
   and a `.wvc` correction file beside it is never opened
-- A source that cannot seek is prescanned only through its first `MAX_PRESCAN_HEAD` bytes, so over
-  a pipe an `.m4a` with a trailing `moov` plays its priming, a WAV with `LIST INFO` after `data`
-  loses those tags, and an Opus or FLAC track in Matroska falls back to millisecond timestamps
+- A source that cannot seek is read whole before it plays, up to 256 MiB, so a slow remote stream
+  waits for its download; past that cap it is prescanned only through its head
 - A file embedding a huge picture still costs one materialisation, because symphonia reads it into
   a buffer of its own before `probe_cover_art` can weigh it
 - Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader

@@ -37,7 +37,7 @@ use crate::{
     opus,
     prescan::Prescan,
     riff::{self, Riff},
-    source::{FormatHint, Media, MediaStream, Replaying, Sources},
+    source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
 };
@@ -48,7 +48,7 @@ const ALAC_COOKIE_BYTES: [usize; 2] = [24, 48];
 const ALAC_BIT_DEPTH_AT: usize = 5;
 const ALAC_MAX_BIT_DEPTH: u32 = 32;
 
-const MAX_PRESCAN_HEAD: u64 = 1 << 20;
+const SPOOLED_AT_MOST: u64 = 256 << 20;
 const NAMEABLE_WAVE_CHANNELS: u32 = Position::all().bits().count_ones();
 
 const STREAMINFO_BYTES: usize = 34;
@@ -130,18 +130,30 @@ pub(crate) fn open_media(sources: &Sources, location: &MediaLocation) -> Result<
 }
 
 pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
+    open_spooling(media, location, SPOOLED_AT_MOST)
+}
+
+fn open_spooling(media: Media, location: &MediaLocation, spooled_at_most: u64) -> Result<Opened> {
     let Media {
         stream: mut bytes,
         hint: named,
     } = media;
-    let seekable = bytes.is_seekable();
+    let mut seekable = bytes.is_seekable();
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut())
     } else {
-        let head = read_head(bytes.as_mut());
-        let found = Prescan::read(&mut Cursor::new(head.as_slice()));
-        bytes = Box::new(Replaying::over(bytes, head));
-        found
+        match spooled(bytes.as_mut(), spooled_at_most) {
+            Spooled::Whole(held) => {
+                bytes = Box::new(Reading::new(Cursor::new(held)));
+                seekable = true;
+                Prescan::buffered(bytes.as_mut())
+            }
+            Spooled::Head(head) => {
+                let found = Prescan::read(&mut Cursor::new(head.as_slice()));
+                bytes = Box::new(Replaying::over(bytes, head));
+                found
+            }
+        }
     };
 
     if let Some(container) = dsd::sniff(bytes.as_mut()) {
@@ -251,12 +263,21 @@ fn refuse_what_the_caf_reader_would_overflow_on(
     }
 }
 
-fn read_head(bytes: &mut dyn MediaStream) -> Vec<u8> {
-    let mut head = Vec::new();
-    if let Err(source) = bytes.take(MAX_PRESCAN_HEAD).read_to_end(&mut head) {
-        tracing::debug!(%source, "a prescan of a source that cannot seek stopped early");
+enum Spooled {
+    Whole(Vec<u8>),
+    Head(Vec<u8>),
+}
+
+fn spooled(bytes: &mut dyn MediaStream, at_most: u64) -> Spooled {
+    let mut held = Vec::new();
+    match bytes.take(at_most).read_to_end(&mut held) {
+        Ok(_) if (held.len() as u64) < at_most => Spooled::Whole(held),
+        Ok(_) => Spooled::Head(held),
+        Err(source) => {
+            tracing::debug!(%source, "a source that cannot seek stopped before it was spooled");
+            Spooled::Head(held)
+        }
     }
-    head
 }
 
 pub(crate) fn audio_track<'a>(
@@ -686,6 +707,46 @@ mod tests {
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
+    }
+
+    struct Piped(Cursor<Vec<u8>>);
+
+    impl Read for Piped {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.0.read(buf)
+        }
+    }
+
+    impl Seek for Piped {
+        fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "a pipe"))
+        }
+    }
+
+    fn piped(bytes: Vec<u8>) -> Media {
+        Media {
+            stream: Box::new(Reading::new(Piped(Cursor::new(bytes)))),
+            hint: None,
+        }
+    }
+
+    #[test]
+    fn a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek() {
+        let mut wave = wave_of(2);
+        wave.extend(std::iter::repeat_n(0, 4_096));
+        let location = MediaLocation::local("long.wav");
+
+        let long = open_spooling(piped(wave.clone()), &location, 1_024)
+            .expect("a pipe opens")
+            .into_coded()
+            .expect("a coded stream");
+        assert!(!long.seekable);
+
+        let short = open_spooling(piped(wave), &location, SPOOLED_AT_MOST)
+            .expect("a pipe opens")
+            .into_coded()
+            .expect("a coded stream");
+        assert!(short.seekable, "a pipe under the spool was not read whole");
     }
 
     #[test]

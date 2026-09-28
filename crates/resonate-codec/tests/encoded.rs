@@ -1332,7 +1332,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
 }
 
 #[test]
-fn a_vorbis_rip_over_a_pipe_drops_the_priming_its_pages_declare() {
+fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pages_declare() {
     if !ffmpeg() {
         eprintln!("skipped: no ffmpeg to build an ogg the way an encoder does");
         return;
@@ -1379,7 +1379,10 @@ fn a_vorbis_rip_over_a_pipe_drops_the_priming_its_pages_declare() {
         Decoder::open_reader(Piped(Cursor::new(held)), &MediaLocation::local(&target))
             .expect("a well-formed ogg opens over a pipe");
 
-    assert!(!info.is_seekable, "the pipe was read as a file");
+    assert!(
+        info.is_seekable,
+        "a pipe short enough to spool was not read whole"
+    );
     assert!(
         info.encoder_delay > 0,
         "the first page's discard never reached the decoder"
@@ -1391,17 +1394,15 @@ fn a_vorbis_rip_over_a_pipe_drops_the_priming_its_pages_declare() {
     );
     assert_eq!(
         info.playable.and_then(FrameSpan::frames),
-        None,
-        "a pipe reaches no end bound, so nothing can say where the music stops"
+        Some(music),
+        "a spooled pipe reaches the last page, so its end bounds the music"
     );
 
     let decoded = drain(&mut decoder, info.spec);
-    let wanted = widened(&samples, CD.bits);
-    let primed =
-        usize::try_from(info.encoder_delay).expect("a priming of a hundred frames") * lanes;
-    assert!(
-        drift(&decoded, &wanted) < drift(&decoded[primed..], &wanted),
-        "an ogg over a pipe kept the priming no end bound could bound"
+    assert_eq!(
+        (decoded.len() / lanes) as u64,
+        music.get(),
+        "an ogg over a pipe decoded its priming or its padding as audio"
     );
 }
 

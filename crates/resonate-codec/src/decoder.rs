@@ -856,6 +856,7 @@ mod tests {
         0x71,
     ];
     const FRAMES: usize = 40_000;
+    const PAST_ANY_HEAD: usize = 1 << 20;
 
     struct Wav {
         bits: u16,
@@ -863,6 +864,7 @@ mod tests {
         float: bool,
         id3: Vec<u8>,
         info: Vec<u8>,
+        info_trails: bool,
     }
 
     impl Wav {
@@ -873,11 +875,17 @@ mod tests {
                 float: false,
                 id3: Vec::new(),
                 info: Vec::new(),
+                info_trails: false,
             }
         }
 
         fn using(mut self, valid_bits: u16) -> Self {
             self.valid_bits = Some(valid_bits);
+            self
+        }
+
+        fn with_info_after_the_data(mut self) -> Self {
+            self.info_trails = true;
             self
         }
 
@@ -942,10 +950,13 @@ mod tests {
             let mut body = Vec::new();
             body.extend_from_slice(b"WAVE");
             chunk(&mut body, b"fmt ", &fmt);
-            if !self.info.is_empty() {
+            if !self.info.is_empty() && !self.info_trails {
                 chunk(&mut body, b"LIST", &self.info);
             }
             chunk(&mut body, b"data", &data);
+            if !self.info.is_empty() && self.info_trails {
+                chunk(&mut body, b"LIST", &self.info);
+            }
 
             let mut file = Vec::new();
             if !self.id3.is_empty() {
@@ -1367,16 +1378,17 @@ FILE "Meddle.wav" WAVE
     }
 
     #[test]
-    fn a_source_that_cannot_seek_keeps_the_tags_a_seekable_one_would_have() {
+    fn a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio() {
         let wav = Wav::pcm(16)
             .with_info(b"INAM", "Speak to Me")
             .with_info(b"IART", "Pink Floyd")
-            .build(&ramp(16));
+            .with_info_after_the_data()
+            .build(&vec![0; PAST_ANY_HEAD]);
 
         let (_, piped) = piped(wav.clone());
         let (_, seekable) = open(wav);
 
-        assert!(!piped.is_seekable);
+        assert!(piped.is_seekable, "a short pipe was not spooled");
         assert_eq!(piped.tags.title.as_deref(), Some("Speak to Me"));
         assert_eq!(piped.tags.artist.as_deref(), Some("Pink Floyd"));
         assert_eq!(piped.tags, seekable.tags);
