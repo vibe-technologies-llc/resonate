@@ -16,16 +16,33 @@ const MARKED_THROUGH: &str = "INSERT INTO submissions (service, through) VALUES 
 
 const THE_LAST_LISTEN: &str = "SELECT coalesce(max(id), 0) FROM listens";
 
-const THE_LISTENS_AFTER: &str = "SELECT l.id, l.at, t.title, coalesce(t.artist, r.name), a.title,
-            t.mbid, a.mbid, coalesce(t.artist_mbid, r.mbid), t.track_number, t.duration,
-            t.sample_rate
-       FROM listens l
+macro_rules! billed_columns {
+    () => {
+        "t.title, coalesce(t.artist, r.name), a.title, t.mbid, a.mbid,
+         coalesce(t.artist_mbid, r.mbid), t.track_number, t.duration, t.sample_rate"
+    };
+}
+
+const THE_LISTENS_AFTER: &str = concat!(
+    "SELECT l.id, coalesce(l.began, l.at), ",
+    billed_columns!(),
+    " FROM listens l
        JOIN tracks t ON t.id = l.track_id
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = t.artist_id
       WHERE l.id > ?1
       ORDER BY l.id
-      LIMIT ?2";
+      LIMIT ?2"
+);
+
+const THE_TRACK_BILLED: &str = concat!(
+    "SELECT ",
+    billed_columns!(),
+    " FROM tracks t
+       LEFT JOIN albums a ON a.id = t.album_id
+       LEFT JOIN artists r ON r.id = t.artist_id
+      WHERE t.path = ?1 AND t.span_start = ?2"
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ListeningService {
@@ -41,9 +58,7 @@ impl ListeningService {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Scrobble {
-    pub listen: ListenId,
-    pub at: SystemTime,
+pub struct Billed {
     pub title: String,
     pub artist: String,
     pub album: Option<String>,
@@ -54,10 +69,19 @@ pub struct Scrobble {
     pub length: Option<Duration>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Scrobble {
+    pub listen: ListenId,
+    pub at: SystemTime,
+    pub billed: Billed,
+}
+
 pub trait Scrobbler: Send + Sync {
     fn service(&self) -> ListeningService;
 
     fn submit(&self, listens: &[Scrobble]) -> Result<()>;
+
+    fn playing_now(&self, playing: &Billed) -> Result<()>;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -106,7 +130,7 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
                         Err(error) if refused_as_malformed(&error) => {
                             tracing::warn!(
                                 listen = one.listen.get(),
-                                title = one.title,
+                                title = one.billed.title,
                                 "a listen was refused as malformed and is passed over"
                             );
                             submitted.refused += 1;
@@ -195,6 +219,31 @@ fn listens_after(connection: &Connection, through: u64) -> Result<Vec<Pending>> 
 struct RawListen {
     listen: i64,
     at: i64,
+    billed: RawBilled,
+}
+
+impl RawListen {
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            listen: row.get(0)?,
+            at: row.get(1)?,
+            billed: RawBilled::read(row, 2)?,
+        })
+    }
+
+    fn pending(self) -> Result<Pending> {
+        let listen = ListenId::new(self.listen.cast_unsigned())?;
+        let scrobble = self.billed.billed().map(|billed| Scrobble {
+            listen,
+            at: store::from_nanos(self.at),
+            billed,
+        });
+
+        Ok(Pending { listen, scrobble })
+    }
+}
+
+struct RawBilled {
     title: String,
     artist: Option<String>,
     album: Option<String>,
@@ -206,34 +255,29 @@ struct RawListen {
     rate: i64,
 }
 
-impl RawListen {
-    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+impl RawBilled {
+    fn read(row: &rusqlite::Row<'_>, from: usize) -> rusqlite::Result<Self> {
         Ok(Self {
-            listen: row.get(0)?,
-            at: row.get(1)?,
-            title: row.get(2)?,
-            artist: row.get(3)?,
-            album: row.get(4)?,
-            recording: row.get(5)?,
-            release: row.get(6)?,
-            artist_mbid: row.get(7)?,
-            number: row.get(8)?,
-            frames: row.get(9)?,
-            rate: row.get(10)?,
+            title: row.get(from)?,
+            artist: row.get(from + 1)?,
+            album: row.get(from + 2)?,
+            recording: row.get(from + 3)?,
+            release: row.get(from + 4)?,
+            artist_mbid: row.get(from + 5)?,
+            number: row.get(from + 6)?,
+            frames: row.get(from + 7)?,
+            rate: row.get(from + 8)?,
         })
     }
 
-    fn pending(self) -> Result<Pending> {
-        let listen = ListenId::new(self.listen.cast_unsigned())?;
+    fn billed(self) -> Option<Billed> {
         let length = self
             .frames
             .zip(u32::try_from(self.rate).ok().filter(|rate| *rate > 0))
             .map(|(frames, rate)| Duration::from_secs_f64(frames.max(0) as f64 / f64::from(rate)));
-        let scrobble = named(Some(self.title))
+        named(Some(self.title))
             .zip(named(self.artist))
-            .map(|(title, artist)| Scrobble {
-                listen,
-                at: store::from_nanos(self.at),
+            .map(|(title, artist)| Billed {
                 title,
                 artist,
                 album: named(self.album),
@@ -242,10 +286,20 @@ impl RawListen {
                 artist_mbid: store::mbid_in(self.artist_mbid.as_deref()),
                 number: self.number.and_then(|number| u32::try_from(number).ok()),
                 length,
-            });
-
-        Ok(Pending { listen, scrobble })
+            })
     }
+}
+
+pub(crate) fn billed_as(inner: &Inner, path: &str, start: i64) -> Result<Option<Billed>> {
+    inner.read(|connection| {
+        connection
+            .query_row(THE_TRACK_BILLED, params![path, start], |row| {
+                RawBilled::read(row, 0)
+            })
+            .optional()
+            .map(|raw| raw.and_then(RawBilled::billed))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
 }
 
 fn named(text: Option<String>) -> Option<String> {

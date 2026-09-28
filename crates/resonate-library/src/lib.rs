@@ -107,7 +107,7 @@ pub use crate::{
         Written,
     },
     scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary},
-    scrobble::{ListeningService, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Submitted},
+    scrobble::{Billed, ListeningService, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Submitted},
     search::{Asked, Clause, Column, Compare, Condition, Lit, Search, Shape, Term, Word},
     share::Shared,
     spelling::Spellings,

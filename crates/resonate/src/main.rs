@@ -1811,7 +1811,7 @@ fn play_queue(
     let presenter = discord::start(&player, library.as_ref(), config);
     let submitting = library
         .as_ref()
-        .map(|library| submitting::start(config, library));
+        .map(|library| submitting::start(config, library, &player));
 
     let keyed = input::KeyAtATime::where_a_terminal();
     let help = if keyed.is_some() {
@@ -1910,7 +1910,7 @@ fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Op
 
     match counting {
         Counting::Counts(played) => {
-            *counted = match library.track_played(&played.location, played.span) {
+            *counted = match library.track_played(&played.location, played.span, played.heard) {
                 Ok(row) => row.map(|row| row.listen),
                 Err(error) => {
                     tracing::warn!(%error, "a play was not counted");
@@ -2102,7 +2102,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     );
     let listens = listen::in_the_window(&config, mpris.as_ref().map(resonate_mpris::Mpris::teller));
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
-    let submitting = submitting::start(&config, &library);
+    let submitting = submitting::start(&config, &library, &player);
     let outcome = resonate_ui::run(
         Arc::clone(&player),
         Arc::clone(&library),

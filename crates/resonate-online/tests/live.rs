@@ -7,8 +7,8 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble, Scrobbler,
-    Service, StreamAsked, Wording,
+    Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble,
+    Scrobbler, Service, StreamAsked, Wording,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -327,14 +327,16 @@ fn listenbrainz_refuses_a_token_it_never_issued_and_says_so_by_its_status() {
     let refused = listenbrainz.submit(&[Scrobble {
         listen: resonate_core::ListenId::new(1).expect("a listen id is not zero"),
         at: std::time::SystemTime::now(),
-        title: "Echoes".to_owned(),
-        artist: "Pink Floyd".to_owned(),
-        album: Some("Meddle".to_owned()),
-        recording: None,
-        release: Some(mbid(MEDDLE)),
-        artist_mbid: Some(mbid(PINK_FLOYD)),
-        number: Some(6),
-        length: Some(ECHOES_LASTS),
+        billed: Billed {
+            title: "Echoes".to_owned(),
+            artist: "Pink Floyd".to_owned(),
+            album: Some("Meddle".to_owned()),
+            recording: None,
+            release: Some(mbid(MEDDLE)),
+            artist_mbid: Some(mbid(PINK_FLOYD)),
+            number: Some(6),
+            length: Some(ECHOES_LASTS),
+        },
     }]);
 
     assert!(

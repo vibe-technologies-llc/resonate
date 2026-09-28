@@ -4,14 +4,19 @@ use std::{
     fs,
     path::PathBuf,
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 #[cfg(feature = "online")]
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
+#[cfg(feature = "online")]
+use resonate_core::{FrameSpan, MediaLocation};
+#[cfg(feature = "online")]
+use resonate_engine::PlaybackState;
+use resonate_engine::Player;
 use resonate_library::Library;
 #[cfg(feature = "online")]
-use resonate_library::{Error as LibraryError, LookupOp};
+use resonate_library::{Error as LibraryError, LookupOp, Scrobbler};
 
 use crate::config::Config;
 #[cfg(feature = "online")]
@@ -21,6 +26,8 @@ use crate::{config, online};
 const FIRST_AFTER: Duration = Duration::from_secs(5);
 #[cfg(feature = "online")]
 const SUBMITTED_EVERY: Duration = Duration::from_secs(30);
+#[cfg(feature = "online")]
+const PLAYING_LOOKED_AT_EVERY: Duration = Duration::from_secs(2);
 #[cfg(feature = "online")]
 const WAITED_AT_MOST: Duration = Duration::from_secs(60 * 60);
 #[cfg(feature = "online")]
@@ -43,23 +50,24 @@ impl Drop for Submitting {
 }
 
 #[cfg(feature = "online")]
-pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Submitting {
+pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player>) -> Submitting {
     let (stop, stopped) = bounded(1);
     let config = config.clone();
     let library = Arc::clone(library);
+    let player = Arc::clone(player);
     let started = thread::Builder::new()
         .name("resonate-submit".to_owned())
         .spawn(move || {
             let mut token = Token::of(&config);
-            let mut waiting = FIRST_AFTER;
+            let mut due = Instant::now() + FIRST_AFTER;
             let mut refused: Option<String> = None;
             let mut failed = 0;
+            let mut told_playing: Option<Row> = None;
             loop {
-                match stopped.recv_timeout(waiting) {
+                match stopped.recv_timeout(PLAYING_LOOKED_AT_EVERY) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                waiting = SUBMITTED_EVERY;
                 let Some(held) = token.current() else {
                     continue;
                 };
@@ -67,6 +75,19 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Submitting {
                     continue;
                 }
                 let scrobbler = online::listenbrainz(&config, held.to_owned());
+
+                let playing = playing_row(&player);
+                if playing.is_some() && playing != told_playing {
+                    told_playing.clone_from(&playing);
+                    if let Some(row) = playing {
+                        tell_what_is_playing(&library, &*scrobbler, &row);
+                    }
+                }
+
+                if Instant::now() < due {
+                    continue;
+                }
+                due = Instant::now() + SUBMITTED_EVERY;
                 match library.submit_listens(&*scrobbler) {
                     Ok(submitted) => {
                         failed = 0;
@@ -91,8 +112,8 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Submitting {
                     }
                     Err(error) => {
                         failed += 1;
-                        waiting = backed_off(failed);
-                        tracing::warn!(%error, ?waiting, "what was heard was not submitted; it is kept and tried again");
+                        due = Instant::now() + backed_off(failed);
+                        tracing::warn!(%error, "what was heard was not submitted; it is kept and tried again");
                     }
                 }
             }
@@ -104,8 +125,48 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Submitting {
     Submitting { stop }
 }
 
+#[cfg(feature = "online")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Row {
+    location: MediaLocation,
+    span: Option<FrameSpan>,
+}
+
+#[cfg(feature = "online")]
+fn playing_row(player: &Player) -> Option<Row> {
+    let state = player.state();
+    if state.playback != PlaybackState::Playing {
+        return None;
+    }
+    let current = state.current.as_ref()?;
+    let queue = player.queue();
+    let item = state
+        .queue_position
+        .and_then(|position| queue.get(position))
+        .filter(|item| item.id == current.id)?;
+    Some(Row {
+        location: item.location.clone(),
+        span: item.span,
+    })
+}
+
+#[cfg(feature = "online")]
+fn tell_what_is_playing(library: &Library, scrobbler: &dyn Scrobbler, row: &Row) {
+    let billed = match library.billed_as(&row.location, row.span) {
+        Ok(Some(billed)) => billed,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::debug!(%error, "what is playing could not be read to tell ListenBrainz");
+            return;
+        }
+    };
+    if let Err(error) = scrobbler.playing_now(&billed) {
+        tracing::debug!(%error, "ListenBrainz was not told what is playing");
+    }
+}
+
 #[cfg(not(feature = "online"))]
-pub(crate) fn start(config: &Config, _library: &Arc<Library>) -> Submitting {
+pub(crate) fn start(config: &Config, _library: &Arc<Library>, _player: &Arc<Player>) -> Submitting {
     if config.listenbrainz_token.is_some() {
         tracing::warn!("this build reaches no network, so nothing heard is submitted");
     }

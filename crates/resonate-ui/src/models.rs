@@ -2104,7 +2104,9 @@ impl LibraryModel {
         self._counted = cx.spawn(async move |this, cx| {
             let counted = cx
                 .background_executor()
-                .spawn(async move { library.track_played(&heard.location, heard.span) })
+                .spawn(
+                    async move { library.track_played(&heard.location, heard.span, heard.heard) },
+                )
                 .await;
 
             let outcome = this.update(cx, |this, cx| match counted {

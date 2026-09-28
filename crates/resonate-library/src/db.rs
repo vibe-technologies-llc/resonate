@@ -25,19 +25,19 @@ use rusqlite::{
 
 use crate::{
     Aged, Album, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail, ArtistOrder,
-    ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked, Certainty, Clause,
-    Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day, Direction, EnrichHandle,
-    EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium,
-    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
-    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, LyricText, Mbid,
-    Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle,
-    OrganiseOptions, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
-    PortraitWanted, Pruned, Recording, RecordingRelease, Reference, Release, ReleaseDetail,
-    ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle,
-    ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics,
-    StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk,
-    Undoable, Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want,
-    Window, Word, elsewhere, enrich, enriched,
+    ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked, Billed, Certainty,
+    Clause, Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day, Direction,
+    EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless,
+    Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle,
+    ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics,
+    LifeSpan, Link, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
+    NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording, RecordingRelease,
+    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
+    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
+    Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
+    VaultObject, Verdict, Waits, Want, Window, Word, elsewhere, enrich, enriched,
     hinted::Hinted,
     history, import, likeness,
     model::CoverWanted,
@@ -1063,6 +1063,7 @@ impl Library {
         &self,
         location: &MediaLocation,
         span: Option<FrameSpan>,
+        heard: Duration,
     ) -> Result<Option<Counted>> {
         let Some(path) = location.as_path() else {
             return Ok(None);
@@ -1071,7 +1072,9 @@ impl Library {
         let (start, _) = store::span_columns(span);
 
         let raw = self.inner.write(|transaction| {
-            let now = store::to_nanos(SystemTime::now());
+            let moment = SystemTime::now();
+            let now = store::to_nanos(moment);
+            let began = store::to_nanos(moment.checked_sub(heard).unwrap_or(moment));
             let counted = transaction
                 .execute(
                     "UPDATE tracks SET plays = plays + 1, played = ?1
@@ -1082,8 +1085,9 @@ impl Library {
             if counted == 0 {
                 transaction
                     .execute(
-                        "INSERT INTO unheld_listens (path, span_start, at) VALUES (?1, ?2, ?3)",
-                        params![text, start, now],
+                        "INSERT INTO unheld_listens (path, span_start, at, began)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![text, start, now, began],
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
                 return Ok(None);
@@ -1091,10 +1095,10 @@ impl Library {
 
             let listen = transaction
                 .query_row(
-                    "INSERT INTO listens (track_id, at)
-                     SELECT id, ?1 FROM tracks WHERE path = ?2 AND span_start = ?3
+                    "INSERT INTO listens (track_id, at, began)
+                     SELECT id, ?1, ?4 FROM tracks WHERE path = ?2 AND span_start = ?3
                      RETURNING id",
-                    params![now, text, start],
+                    params![now, text, start, began],
                     |row| row.get::<_, i64>(0),
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
@@ -1123,6 +1127,18 @@ impl Library {
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
         scrobble::submit(&self.inner, scrobbler)
+    }
+
+    pub fn billed_as(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+    ) -> Result<Option<Billed>> {
+        let Some(path) = location.as_path() else {
+            return Ok(None);
+        };
+        let text = store::path_text(path)?;
+        scrobble::billed_as(&self.inner, text, store::span_columns(span).0)
     }
 
     pub fn age_the_history(&self, kept: HistoryKept) -> Result<Aged> {

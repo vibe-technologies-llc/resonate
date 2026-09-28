@@ -132,8 +132,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   front
 
 ## Later: Scrobbling
-- ListenBrainz gets no `playing_now`, a listen is stamped when it counted rather than when it
-  began, and plays from before the token are never sent. Last.fm is not reached at all
+- Plays from before the token are never sent to ListenBrainz, and Last.fm is not reached at all
 
 ## Later: MPRIS
 - A row added and removed inside one 200 ms poll is never announced, and a shuffle is announced as

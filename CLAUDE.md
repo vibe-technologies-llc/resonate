@@ -642,7 +642,9 @@ Invariants the layering exists to protect:
   a service asked for the first time marks where the history stands and tells nothing before it.
   The binary's `submitting.rs` is the thread that asks: the window and every command that plays
   start one, it reads `listenbrainz-token` again wherever the settings file moved, and a token the
-  service refuses is left alone until it changes. `library.md` and `online.md` have the rest.
+  service refuses is left alone until it changes. A listen is told as the moment it began, and
+  the same thread tells the service what has just begun playing as `playing_now`. `library.md`
+  and `online.md` have the rest.
 - **What was listened to is read back rather than kept.** `listens` grew a `heard` — the
   nanoseconds of that visit actually listened to — and `listens_by_time`, and `statistics.rs` is
   three reads over them, each bounded by `listens.at >= ?` so the index serves it. A day is

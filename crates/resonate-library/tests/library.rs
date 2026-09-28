@@ -14,7 +14,7 @@ use std::{
         mpsc::{self, Receiver, Sender},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use parking_lot::Mutex;
@@ -25,10 +25,10 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction, Discography,
-    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
-    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat,
-    ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
+    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction,
+    Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags,
+    Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept,
+    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
     ListeningService, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack,
     OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder,
     PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
@@ -1885,7 +1885,7 @@ fn a_root_takes_in_the_one_it_covers_and_the_counts_it_held() -> Result<()> {
     let one = MediaLocation::local(tree.path().join("rock/one.wav"));
     assert_eq!(
         library
-            .track_played(&one, None)?
+            .track_played(&one, None, Duration::ZERO)?
             .map(|counted| counted.track.plays),
         Some(1)
     );
@@ -4516,14 +4516,14 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
 
     let once = library
-        .track_played(&cold, None)?
+        .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
     assert_eq!(once.track.plays, 1);
     assert_eq!(once.track.location, cold);
     assert!(once.track.played.is_some());
 
     let twice = library
-        .track_played(&cold, None)?
+        .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
     assert_eq!(twice.track.plays, 2);
     assert_eq!(twice.track.id, once.track.id);
@@ -4548,7 +4548,11 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_nothing() -> Result<()> 
 
     assert!(
         library
-            .track_played(&MediaLocation::local(tree.path().join("nothing.wav")), None)?
+            .track_played(
+                &MediaLocation::local(tree.path().join("nothing.wav")),
+                None,
+                Duration::ZERO
+            )?
             .is_none()
     );
     assert!(
@@ -4558,7 +4562,8 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_nothing() -> Result<()> 
                     SourceId::new("radio").expect("a lowercase name"),
                     "a-stream"
                 ),
-                None
+                None,
+                Duration::ZERO
             )?
             .is_none()
     );
@@ -4584,7 +4589,7 @@ impl Told {
         self.batches
             .lock()
             .iter()
-            .map(|batch| batch.iter().map(|told| told.title.clone()).collect())
+            .map(|batch| batch.iter().map(|told| told.billed.title.clone()).collect())
             .collect()
     }
 }
@@ -4603,12 +4608,18 @@ impl Scrobbler for Told {
         }
         self.batches.lock().push(listens.to_vec());
         match self.malformed {
-            Some(title) if listens.iter().any(|told| told.title == title) => Err(Error::Refused {
-                op: LookupOp::Submit,
-                status: 400,
-            }),
+            Some(title) if listens.iter().any(|told| told.billed.title == title) => {
+                Err(Error::Refused {
+                    op: LookupOp::Submit,
+                    status: 400,
+                })
+            }
             _ => Ok(()),
         }
+    }
+
+    fn playing_now(&self, _playing: &Billed) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -4641,7 +4652,7 @@ fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {
 #[test]
 fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once() -> Result<()> {
     let (_tree, library, [cold, heat, loose]) = scanned_listening();
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     let told = Told::default();
 
     let started = library.submit_listens(&told)?;
@@ -4649,9 +4660,9 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
     assert_eq!(started.submitted, 0);
     assert!(told.titles().is_empty());
 
-    library.track_played(&heat, None)?;
-    library.track_played(&loose, None)?;
-    library.track_played(&cold, None)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
+    library.track_played(&loose, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     let submitted = library.submit_listens(&told)?;
 
     assert_eq!(submitted.submitted, 2);
@@ -4659,17 +4670,59 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
     assert!(!submitted.started);
     assert_eq!(told.titles(), vec![vec!["Heat", "Cold"]]);
     let batch = told.batches.lock()[0].clone();
-    assert_eq!(batch[0].artist, "Ben");
-    assert_eq!(batch[0].album, None);
-    assert_eq!(batch[0].length, Some(Duration::from_secs(1)));
-    assert_eq!(batch[1].artist, "Ada");
-    assert_eq!(batch[1].album.as_deref(), Some("Winter"));
-    assert_eq!(batch[1].number, Some(3));
+    assert_eq!(batch[0].billed.artist, "Ben");
+    assert_eq!(batch[0].billed.album, None);
+    assert_eq!(batch[0].billed.length, Some(Duration::from_secs(1)));
+    assert_eq!(batch[1].billed.artist, "Ada");
+    assert_eq!(batch[1].billed.album.as_deref(), Some("Winter"));
+    assert_eq!(batch[1].billed.number, Some(3));
     assert!(batch[0].listen < batch[1].listen);
     assert!(batch[0].at <= batch[1].at);
 
     assert_eq!(library.submit_listens(&told)?.submitted, 0);
     assert_eq!(told.titles().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_listen_is_told_as_when_it_began_rather_than_when_it_counted() -> Result<()> {
+    const HEARD_FOR: Duration = Duration::from_secs(95);
+    let (_tree, library, [cold, heat, _]) = scanned_listening();
+    let told = Told::default();
+    library.submit_listens(&told)?;
+
+    library.track_played(&cold, None, HEARD_FOR)?;
+    let counted = SystemTime::now();
+    library.track_played(&heat, None, Duration::ZERO)?;
+    library.submit_listens(&told)?;
+
+    let batch = told.batches.lock()[0].clone();
+    let began = counted
+        .duration_since(batch[0].at)
+        .expect("a listen told as beginning after it counted");
+    assert!(
+        began >= HEARD_FOR && began < HEARD_FOR + Duration::from_secs(5),
+        "a listen heard for {HEARD_FOR:?} was told as beginning {began:?} before it counted"
+    );
+    assert!(batch[1].at >= batch[0].at + HEARD_FOR);
+    Ok(())
+}
+
+#[test]
+fn what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold_is_not()
+-> Result<()> {
+    let (tree, library, [cold, _, loose]) = scanned_listening();
+
+    let billed = library
+        .billed_as(&cold, None)?
+        .expect("a scanned track the service can be told of");
+    assert_eq!(billed.title, "Cold");
+    assert_eq!(billed.artist, "Ada");
+    assert_eq!(library.billed_as(&loose, None)?, None);
+    assert_eq!(
+        library.billed_as(&MediaLocation::local(tree.path().join("nowhere.wav")), None)?,
+        None
+    );
     Ok(())
 }
 
@@ -4689,11 +4742,11 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
     let library = Library::open(&database)?;
     scan(&library, &options(&tree))?;
 
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     let told = Told::default();
     assert!(library.submit_listens(&told)?.started);
-    library.track_played(&heat, None)?;
-    library.track_played(&cold, None)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     library.passed(Duration::from_secs(20))?;
     beside(&database)
         .execute_batch(&format!(
@@ -4747,12 +4800,12 @@ fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Re
     let library = Library::open(&database)?;
     scan(&library, &options(&tree))?;
     for _ in 0..3 {
-        library.track_played(&cold, None)?;
+        library.track_played(&cold, None, Duration::ZERO)?;
     }
     beside(&database)
         .execute_batch(&format!("UPDATE listens SET at = at - {TWO_MONTHS};"))
         .expect("the plays are moved back two months");
-    library.track_played(&heat, None)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
 
     let titles = |sort| -> Result<Vec<String>> {
         Ok(library
@@ -4776,9 +4829,9 @@ fn a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told(
     let told = Told::refusing("Heat");
     library.submit_listens(&told)?;
 
-    library.track_played(&cold, None)?;
-    library.track_played(&heat, None)?;
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     let submitted = library.submit_listens(&told)?;
 
     assert_eq!(submitted.submitted, 2);
@@ -4803,8 +4856,8 @@ fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<(
     let (_tree, library, [cold, heat, _]) = scanned_listening();
     let told = Told::default();
     library.submit_listens(&told)?;
-    library.track_played(&cold, None)?;
-    library.track_played(&heat, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
 
     told.unreachable.store(true, Ordering::Relaxed);
     assert!(matches!(
@@ -4830,7 +4883,11 @@ fn a_rescan_keeps_how_often_a_track_was_played() -> Result<()> {
     scan(&library, &options(&tree))?;
     assert!(
         library
-            .track_played(&MediaLocation::local(tree.path().join("one.wav")), None)?
+            .track_played(
+                &MediaLocation::local(tree.path().join("one.wav")),
+                None,
+                Duration::ZERO
+            )?
             .is_some()
     );
 
@@ -4852,8 +4909,8 @@ fn a_rescan_keeps_how_often_a_track_was_played() -> Result<()> {
 fn a_search_narrows_by_how_often_and_how_lately_a_track_was_played() -> Result<()> {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
-    library.track_played(&cold, None)?;
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
 
     assert_eq!(matched(&library, "plays:0")?, vec!["Heat"]);
     assert_eq!(matched(&library, "plays:>0")?, vec!["Cold"]);
@@ -4872,7 +4929,7 @@ fn a_play_counted_against_a_track_is_a_listen_a_window_can_narrow_on() -> Result
 
     assert!(matched(&library, "plays:>0@30d")?.is_empty());
 
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     assert_eq!(matched(&library, "plays:>0@30d")?, vec!["Cold"]);
     assert_eq!(matched(&library, "plays:1@30d")?, vec!["Cold"]);
     assert_eq!(matched(&library, "plays:0@30d")?, vec!["Heat"]);
@@ -4885,9 +4942,9 @@ fn a_window_narrows_on_how_often_a_track_was_heard_inside_it() -> Result<()> {
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     let heat = MediaLocation::local(tree.path().join("heat.wav"));
     for _ in 0..3 {
-        library.track_played(&cold, None)?;
+        library.track_played(&cold, None, Duration::ZERO)?;
     }
-    library.track_played(&heat, None)?;
+    library.track_played(&heat, None, Duration::ZERO)?;
 
     assert_eq!(matched(&library, "plays:>1@30d")?, vec!["Cold"]);
     assert_eq!(matched(&library, "plays:>0@30d")?, vec!["Cold", "Heat"]);
@@ -4902,8 +4959,8 @@ fn a_window_narrows_on_how_often_a_track_was_heard_inside_it() -> Result<()> {
 fn forgetting_a_root_takes_the_listens_counted_under_it_with_it() -> Result<()> {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
-    library.track_played(&cold, None)?;
-    library.track_played(&cold, None)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
     assert_eq!(matched(&library, "plays:>1@30d")?, vec!["Cold"]);
 
     assert!(library.remove_root(tree.path())?);
@@ -4922,7 +4979,11 @@ fn forgetting_a_root_takes_the_listens_counted_under_it_with_it() -> Result<()> 
 #[test]
 fn a_track_never_played_answers_a_denied_play_term() -> Result<()> {
     let (tree, library) = scanned_shapes();
-    library.track_played(&MediaLocation::local(tree.path().join("cold.wav")), None)?;
+    library.track_played(
+        &MediaLocation::local(tree.path().join("cold.wav")),
+        None,
+        Duration::ZERO,
+    )?;
 
     assert_eq!(matched(&library, "-played:<1d")?, vec!["Heat"]);
     assert_eq!(matched(&library, "-plays:0")?, vec!["Cold"]);
@@ -4932,7 +4993,11 @@ fn a_track_never_played_answers_a_denied_play_term() -> Result<()> {
 #[test]
 fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Result<()> {
     let (tree, library) = scanned_shapes();
-    library.track_played(&MediaLocation::local(tree.path().join("heat.wav")), None)?;
+    library.track_played(
+        &MediaLocation::local(tree.path().join("heat.wav")),
+        None,
+        Duration::ZERO,
+    )?;
 
     let lately = library.tracks(&TrackQuery {
         sort: SortOrder::Played,
@@ -4953,7 +5018,11 @@ fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Resul
 #[test]
 fn a_saved_query_fills_itself_from_what_was_played_most() -> Result<()> {
     let (tree, library) = scanned_shapes();
-    library.track_played(&MediaLocation::local(tree.path().join("heat.wav")), None)?;
+    library.track_played(
+        &MediaLocation::local(tree.path().join("heat.wav")),
+        None,
+        Duration::ZERO,
+    )?;
 
     let id = library.save_query(
         "On repeat",
@@ -4966,8 +5035,16 @@ fn a_saved_query_fills_itself_from_what_was_played_most() -> Result<()> {
     )?;
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["heat"]);
 
-    library.track_played(&MediaLocation::local(tree.path().join("cold.wav")), None)?;
-    library.track_played(&MediaLocation::local(tree.path().join("cold.wav")), None)?;
+    library.track_played(
+        &MediaLocation::local(tree.path().join("cold.wav")),
+        None,
+        Duration::ZERO,
+    )?;
+    library.track_played(
+        &MediaLocation::local(tree.path().join("cold.wav")),
+        None,
+        Duration::ZERO,
+    )?;
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["cold", "heat"]);
 
     let revised = library
@@ -6243,7 +6320,7 @@ fn a_play_counted_against_one_cue_row_is_not_counted_against_its_neighbours() ->
     let second = &rows[1];
 
     let counted = library
-        .track_played(&second.location, second.span)?
+        .track_played(&second.location, second.span, Duration::ZERO)?
         .expect("the row that was heard");
     assert_eq!(counted.track.plays, 1);
     assert_eq!(counted.track.id, second.id);
@@ -6262,7 +6339,7 @@ fn reading_every_file_again_keeps_each_rows_id_plays_and_favourite() -> Result<(
     let (tree, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
     let second = &rows[1];
-    library.track_played(&second.location, second.span)?;
+    library.track_played(&second.location, second.span, Duration::ZERO)?;
     library.favour(Favoured::Track(second.id), true)?;
 
     let read = scan(
@@ -12735,7 +12812,7 @@ fn a_sheet_named_apart_from_the_file_it_cuts_travels_with_it_and_the_rows_surviv
     let rows = all(&library)?;
     assert_eq!(rows.len(), 3);
     for row in &rows {
-        library.track_played(&row.location, row.span)?;
+        library.track_played(&row.location, row.span, Duration::ZERO)?;
     }
 
     let summary = applied(&library)?;
@@ -13299,7 +13376,7 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
     let before = library
         .track_at(&stood, None)?
         .expect("the scan stored the file it walked");
-    library.track_played(&before.location, None)?;
+    library.track_played(&before.location, None, Duration::ZERO)?;
 
     applied(&library)?;
     let landed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
@@ -14129,8 +14206,8 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
         .expect("the scanned track")
         .id;
     library.favour(Favoured::Track(track), true)?;
-    library.track_played(&location, None)?;
-    library.track_played(&location, None)?;
+    library.track_played(&location, None, Duration::ZERO)?;
+    library.track_played(&location, None, Duration::ZERO)?;
 
     let preview = retagged(&library, false)?;
     let wanted = Popularity {
@@ -14469,7 +14546,7 @@ fn a_play_records_how_long_of_it_was_heard() -> Result<()> {
 
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     let counted = library
-        .track_played(&cold, None)?
+        .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
     assert_eq!(
         heard_in(&database),
@@ -14481,7 +14558,7 @@ fn a_play_records_how_long_of_it_was_heard() -> Result<()> {
     assert_eq!(heard_in(&database), vec![90_000_000_000]);
 
     let again = library
-        .track_played(&cold, None)?
+        .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
     assert_ne!(again.listen, counted.listen);
     library.listened(again.listen, Duration::from_millis(1_500))?;
@@ -14896,7 +14973,7 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     let track = all(&library)?.remove(0);
 
     let counted = library
-        .track_played(&track.location, track.span)?
+        .track_played(&track.location, track.span, Duration::ZERO)?
         .expect("the catalog counted the play against the row it scanned");
     library.listened(counted.listen, HEARD_FOR)?;
 
@@ -15718,7 +15795,7 @@ fn a_vaulted_row_counts_its_plays_and_sits_in_a_playlist_as_the_file_it_came_fro
     vaulted(&library, true)?;
 
     let row = all(&library)?.remove(0);
-    let counted = library.track_played(&row.location, row.span)?;
+    let counted = library.track_played(&row.location, row.span, Duration::ZERO)?;
     assert!(counted.is_some(), "a play of a vaulted row was not counted");
 
     let playlist = library.create_playlist("Evening")?;
@@ -15767,7 +15844,7 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
 
     fs::write(&path, Wav::new().text(TITLE, "Echoes (remastered)").build())
         .expect("the file is ripped again");
-    let later = std::time::SystemTime::now() + Duration::from_secs(60);
+    let later = SystemTime::now() + Duration::from_secs(60);
     fs::File::options()
         .write(true)
         .open(&path)
@@ -17121,7 +17198,7 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
     let echoes = library
-        .track_played(&MediaLocation::local(&before), None)?
+        .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
         .track;
     library.favour(Favoured::Track(echoes.id), true)?;
@@ -17217,7 +17294,7 @@ fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() 
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
     let heard = library
-        .track_played(&MediaLocation::local(&first), None)?
+        .track_played(&MediaLocation::local(&first), None, Duration::ZERO)?
         .expect("a counted play")
         .track;
 
@@ -17259,7 +17336,7 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
     let heard = library
-        .track_played(&MediaLocation::local(&before), None)?
+        .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
         .track;
 
@@ -17301,7 +17378,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     let library = Library::open(&database)?;
     scan(&library, &options(&tree))?;
     let heard = library
-        .track_played(&MediaLocation::local(&before), None)?
+        .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
         .track;
     let print = resonate_analysis::print(
@@ -17353,7 +17430,7 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the sheet's third row");
-    library.track_played(&echoes.location, echoes.span)?;
+    library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
 
     fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
     fs::rename(
@@ -17397,8 +17474,16 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does(
     )?;
 
     let location = MediaLocation::local(&unheld);
-    assert!(library.track_played(&location, None)?.is_none());
-    assert!(library.track_played(&location, None)?.is_none());
+    assert!(
+        library
+            .track_played(&location, None, Duration::ZERO)?
+            .is_none()
+    );
+    assert!(
+        library
+            .track_played(&location, None, Duration::ZERO)?
+            .is_none()
+    );
     assert_eq!(library.statistics(Window::Everything)?.plays, 0);
 
     scan(&library, &options(&tree))?;

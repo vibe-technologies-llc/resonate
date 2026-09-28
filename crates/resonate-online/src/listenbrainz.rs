@@ -3,7 +3,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-use resonate_library::{ListeningService, LookupOp, Scrobble, Scrobbler};
+use resonate_library::{Billed, ListeningService, LookupOp, Scrobble, Scrobbler};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -17,6 +17,7 @@ const JSON: &str = "application/json";
 const TOKEN_SCHEME: &str = "Token";
 const ONE_LISTEN: &str = "single";
 const SEVERAL_LISTENS: &str = "import";
+const PLAYING_NOW: &str = "playing_now";
 const NAME: &str = "resonate";
 const ACCEPTED: &str = "ok";
 
@@ -42,6 +43,16 @@ impl Scrobbler for ListenBrainz {
     }
 
     fn submit(&self, listens: &[Scrobble]) -> resonate_library::Result<()> {
+        self.posted(&submission(listens))
+    }
+
+    fn playing_now(&self, playing: &Billed) -> resonate_library::Result<()> {
+        self.posted(&now_playing(playing))
+    }
+}
+
+impl ListenBrainz {
+    fn posted(&self, body: &Value) -> resonate_library::Result<()> {
         let url = format!("{}{SUBMIT_LISTENS}", Host::ListenBrainz.base());
         let answer: Option<Answer> = self.client.posted(
             Host::ListenBrainz,
@@ -50,7 +61,7 @@ impl Scrobbler for ListenBrainz {
             &Posted {
                 content_type: JSON.to_owned(),
                 encoded: Encoded::Plain,
-                bytes: submission(listens).to_string().into_bytes(),
+                bytes: body.to_string().into_bytes(),
                 authorization: Some(format!("{TOKEN_SCHEME} {}", self.token.trim())),
             },
         )?;
@@ -71,7 +82,24 @@ fn submission(listens: &[Scrobble]) -> Value {
     })
 }
 
+fn now_playing(playing: &Billed) -> Value {
+    json!({
+        "listen_type": PLAYING_NOW,
+        "payload": [{ "track_metadata": metadata(playing) }],
+    })
+}
+
 fn listen(told: &Scrobble) -> Value {
+    json!({
+        "listened_at": told
+            .at
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs()),
+        "track_metadata": metadata(&told.billed),
+    })
+}
+
+fn metadata(told: &Billed) -> Value {
     let mut additional = Map::new();
     additional.insert("media_player".to_owned(), Value::from(NAME));
     additional.insert("submission_client".to_owned(), Value::from(NAME));
@@ -102,14 +130,7 @@ fn listen(told: &Scrobble) -> Value {
         metadata.insert("release_name".to_owned(), Value::from(album.as_str()));
     }
     metadata.insert("additional_info".to_owned(), Value::Object(additional));
-
-    json!({
-        "listened_at": told
-            .at
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs()),
-        "track_metadata": metadata,
-    })
+    Value::Object(metadata)
 }
 
 fn milliseconds(length: Duration) -> u64 {
@@ -127,6 +148,12 @@ mod tests {
         Scrobble {
             listen: ListenId::new(7).expect("a listen id is not zero"),
             at: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            billed: billed(title),
+        }
+    }
+
+    fn billed(title: &str) -> Billed {
+        Billed {
             title: title.to_owned(),
             artist: "Pink Floyd".to_owned(),
             album: None,
@@ -136,6 +163,27 @@ mod tests {
             number: None,
             length: None,
         }
+    }
+
+    #[test]
+    fn what_is_playing_now_is_told_with_no_moment_and_as_one_listen() {
+        assert_eq!(
+            now_playing(&billed("Echoes")),
+            json!({
+                "listen_type": "playing_now",
+                "payload": [{
+                    "track_metadata": {
+                        "artist_name": "Pink Floyd",
+                        "track_name": "Echoes",
+                        "additional_info": {
+                            "media_player": "resonate",
+                            "submission_client": "resonate",
+                            "submission_client_version": env!("CARGO_PKG_VERSION"),
+                        },
+                    },
+                }],
+            })
+        );
     }
 
     #[test]
@@ -170,18 +218,21 @@ mod tests {
         );
 
         let whole = listen(&Scrobble {
-            album: Some("Meddle".to_owned()),
-            recording: Some(
-                Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("a well-formed mbid"),
-            ),
-            release: Some(
-                Mbid::new("aadf62d6-d475-42e0-b622-e6da7a59fdf7").expect("a well-formed mbid"),
-            ),
-            artist_mbid: Some(
-                Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("a well-formed mbid"),
-            ),
-            number: Some(6),
-            length: Some(Duration::from_millis(1_412_500)),
+            billed: Billed {
+                album: Some("Meddle".to_owned()),
+                recording: Some(
+                    Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("a well-formed mbid"),
+                ),
+                release: Some(
+                    Mbid::new("aadf62d6-d475-42e0-b622-e6da7a59fdf7").expect("a well-formed mbid"),
+                ),
+                artist_mbid: Some(
+                    Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("a well-formed mbid"),
+                ),
+                number: Some(6),
+                length: Some(Duration::from_millis(1_412_500)),
+                ..billed("Echoes")
+            },
             ..told("Echoes")
         });
         let metadata = &whole["track_metadata"];

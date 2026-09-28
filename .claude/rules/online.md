@@ -388,8 +388,9 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   `Authorization: Token <token>` — `Posted::authorization`, the one header a body carries that the
   others leave `None` — and a `listen_type` of `single` for one listen and `import` for several,
   which is what the service asks a batch to be called. A listen is its moment in whole seconds —
-  when the catalog counted it, which is when the play earned its count rather than when it began —
-  the artist, the title and, where the catalog holds them, the album, the recording, release and
+  when it *began*, `listens.began`, which `Library::track_played` writes as the moment it counted
+  less what had been heard of the visit by then, and the counted moment for a listen kept before
+  the column was — the artist, the title and, where the catalog holds them, the album, the recording, release and
   artist MBIDs, the track number and the length in milliseconds, with `media_player`,
   `submission_client` and `submission_client_version` naming this build as its User-Agent does.
   An answer whose `status` is not `ok` is `Unreadable`; a status is `Refused` like every other
@@ -397,11 +398,18 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   and how the binary knows to stop asking under that token.
   `a_listen_says_what_was_heard_when_and_nothing_the_catalog_does_not_hold` pins the document, and
   `listenbrainz_refuses_a_token_it_never_issued_and_says_so_by_its_status` is the live test that
-  proves the request reaches the service and is read there.
+  proves the request reaches the service and is read there. **What is playing is told as it
+  starts.** `Scrobbler::playing_now` takes a `Billed` — the track as a listen names it, which a
+  `Scrobble` carries beside its id and its moment — and `ListenBrainz` posts it as a
+  `playing_now` listen with no `listened_at`, which the service shows and never counts;
+  `what_is_playing_now_is_told_with_no_moment_and_as_one_listen` pins the document.
 - **The binary's half is a thread that follows the file.** `submitting.rs` starts a thread named
   `resonate-submit` for the window and for every command that plays: five seconds after it starts
   and every `SUBMITTED_EVERY` of thirty after that it asks `Library::submit_listens`, doubling the
-  wait after each failure up to an hour. `Token` is `Followed` again for this key: the file's
+  wait after each failure up to an hour. Between those it looks at the player every
+  `PLAYING_LOOKED_AT_EVERY` of two seconds, and a row that has begun playing since the last look
+  is read through `Library::billed_as` and told as playing now — once per row, and not while
+  paused, and never for a file the catalog holds no names for. `Token` is `Followed` again for this key: the file's
   modification time is weighed and `config::submitting_in` reads `online` and
   `listenbrainz-token` out of it only where it moved, so a token typed into the window's
   *ListenBrainz* group, or written by hand, is carried by the next submission, and `online` turned

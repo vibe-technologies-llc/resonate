@@ -139,7 +139,8 @@ through `Player::media` like any other unscanned row.
   `submissions` — the sixth step in `MIGRATIONS` — holds one row per `ListeningService`, the id of
   the last `listens` row that service has been told of, and `scrobble.rs` is the pass:
   `Library::submit_listens` reads the listens past the mark in id order, `SUBMITTED_AT_ONCE` — a
-  hundred — at a time, joined to the track, its album and its artist for the names and the
+  hundred — at a time, each at `listens.began` — the moment it counted less what `track_played`
+  was told had been heard of the visit, a step in `MIGRATIONS` that the unheld plays carry too — joined to the track, its album and its artist for the names and the
   MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` and moves the mark past the
   batch in a `max` so it never goes back. A listen of a row naming no title or no artist is a
   `Submitted::unnamed` and passed over, because a service can file nothing under a blank name. A
@@ -152,8 +153,11 @@ through `Player::media` like any other unscanned row.
   counted, so it does not matter which process counted it, and a listen whose track leaves the
   catalog before it is told leaves with it on the cascade. The claims are
   `a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once`,
-  `a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told` and
-  `a_play_a_service_could_not_be_reached_for_is_told_the_next_time`. Two runs submitting at once
+  `a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told`,
+  `a_play_a_service_could_not_be_reached_for_is_told_the_next_time` and
+  `a_listen_is_told_as_when_it_began_rather_than_when_it_counted`. `Library::billed_as` is the
+  same names for one row, which is what a `playing_now` is told —
+  `what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold_is_not`. Two runs submitting at once
   may tell the same batch twice; ListenBrainz keeps one listen per moment and name, so nothing
   guards against it.
 - **A suggestion is a saved query with a name on it.** `suggest.rs` answers

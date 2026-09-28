@@ -56,6 +56,8 @@ const MIGRATIONS: &[&str] = &[
      CREATE INDEX playlist_plays_by_playlist ON playlist_plays(playlist_id, at);
      INSERT INTO playlist_plays (playlist_id, at)
           SELECT id, played FROM playlists WHERE played IS NOT NULL;",
+    "ALTER TABLE listens ADD COLUMN began INTEGER;
+     ALTER TABLE unheld_listens ADD COLUMN began INTEGER;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
