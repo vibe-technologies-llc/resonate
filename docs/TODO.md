@@ -114,4 +114,3 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Later: Polish
 - A tooltip whose control moved under a perfectly still pointer stays up
-- `Wayback` restores a row rather than a pixel, so a list whose rows changed height lands a row out

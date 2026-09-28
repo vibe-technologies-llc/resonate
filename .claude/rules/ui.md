@@ -2157,10 +2157,17 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   *‹ Hypnotize* — and where nothing was left behind it reads the category the page stands under
   and goes there, clearing the scope. It replaced a ghost *Show all* among the actions on the
   right, which cleared the scope rather than returning and was the one control on the page that
-  did not look like the way out. Escape is `RootView::step_back` too. The landing is a frame
-  behind on purpose — the listing is read on the background executor, so `land_where_it_was_left`
-  holds the row until the pane has that many and only then scrolls, the same shape the album
-  grid's measured width takes. All three lists land — the albums grid, the tracks and the artists — each through
+  did not look like the way out. Escape is `RootView::step_back` too. **Where a list was left is
+  a row and how far into it, not a row alone.** `LeftAt` reads the scroll offset against the
+  height the pane's rows are drawn at — `row_height_of`: the grid's row for the albums and an
+  artist grid, the tall row for the artists list, the plain row for the tracks — as the row it
+  stands in and the fraction of that row scrolled past, and the landing sets the offset back from
+  the same pair at the rows' height then, so a list is back on the pixel it was left at and one
+  whose rows grew with the text size lands on the same row as far into it —
+  `the_way_back_lands_on_the_pixel_the_list_was_left_at`, driven, and
+  `a_list_whose_rows_grew_lands_on_the_row_it_was_left_at_and_as_far_into_it`. The landing waits
+  on purpose — the listing is read on the background executor, so `land_where_it_was_left`
+  holds it until the pane has that many rows and only then sets the offset. All three lists land — the albums grid, the tracks and the artists — each through
   a scroll handle of its own, `album_rows` being the grid's, so the row a list was left on is
   read off the list that was showing rather than off `track_rows`. `landing_on` is set only for a
   pane that `Pane::lands_where_it_was_left`, and `set_pane` clears it, so a landing no pane reads

@@ -170,8 +170,37 @@ const WAYS_BACK: usize = 16;
 struct Wayback {
     pane: Pane,
     selection: Selection,
-    at: usize,
+    at: LeftAt,
     named: SharedString,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LeftAt {
+    row: usize,
+    into_the_row: f32,
+}
+
+impl Eq for LeftAt {}
+
+impl LeftAt {
+    fn read_off(offset: Pixels, row_height: f32) -> Self {
+        let past = f32::from(-offset).max(0.0);
+        if row_height <= 0.0 {
+            return Self {
+                row: 0,
+                into_the_row: 0.0,
+            };
+        }
+        let row = (past / row_height).floor();
+        Self {
+            row: row as usize,
+            into_the_row: (past - row * row_height) / row_height,
+        }
+    }
+
+    fn offset_at(self, row_height: f32) -> Pixels {
+        px(-(row_height * (self.row as f32 + self.into_the_row)))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -459,7 +488,7 @@ pub struct RootView {
     pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
     pub(crate) playlists_drawn: PlaylistsDrawn,
-    landing_on: Option<usize>,
+    pub(crate) landing_on: Option<LeftAt>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
@@ -2276,23 +2305,37 @@ impl RootView {
     }
 
     pub(crate) fn land_where_it_was_left(&mut self, held: usize) {
-        let Some(at) = self.landing_on else {
+        let Some(left_at) = self.landing_on else {
             return;
         };
-        if at >= held {
+        if left_at.row >= held {
             if held > 0 {
                 self.landing_on = None;
             }
             return;
         }
 
-        self.scroll_of(self.pane)
-            .scroll_to_item(at, ScrollStrategy::Top);
+        let base = self.scroll_of(self.pane).0.borrow().base_handle.clone();
+        let offset = base.offset();
+        base.set_offset(point(
+            offset.x,
+            left_at.offset_at(self.row_height_of(self.pane)),
+        ));
         self.landing_on = None;
     }
 
-    fn top_row(&self) -> usize {
-        self.scroll_of(self.pane).0.borrow().base_handle.top_item()
+    fn top_row(&self) -> LeftAt {
+        let offset = self.scroll_of(self.pane).0.borrow().base_handle.offset().y;
+        LeftAt::read_off(offset, self.row_height_of(self.pane))
+    }
+
+    fn row_height_of(&self, pane: Pane) -> f32 {
+        match pane {
+            Pane::Albums => theme::grid_row(),
+            Pane::Artists if self.artists_drawn == ArtistsDrawn::Grid => theme::grid_row(),
+            Pane::Artists => theme::tall_row_height(),
+            _ => theme::row_height(),
+        }
     }
 
     fn scroll_of(&self, pane: Pane) -> &UniformListScrollHandle {
@@ -3627,9 +3670,10 @@ pub(crate) fn empty(icon: Icon, message: &'static str, more: Option<&'static str
 
 #[cfg(test)]
 mod tests {
+    use gpui::px;
     use resonate_core::{AlbumId, ArtistId};
 
-    use super::{Following, Landing, Pane, Step, in_front_of, landing, stepped_pane};
+    use super::{Following, Landing, LeftAt, Pane, Step, in_front_of, landing, stepped_pane};
     use crate::{Selection, Tabs};
 
     const EVERY_TAB: Tabs = Tabs {
@@ -3648,6 +3692,17 @@ mod tests {
 
     fn an_artist() -> Selection {
         Selection::Artist(ArtistId::new(5).expect("a non-zero id"))
+    }
+
+    #[test]
+    fn a_list_whose_rows_grew_lands_on_the_row_it_was_left_at_and_as_far_into_it() {
+        let left_at = LeftAt::read_off(px(-1_037.0), 36.0);
+        assert_eq!(left_at.row, 28);
+        assert!((left_at.into_the_row - 29.0 / 36.0).abs() < 1e-5);
+
+        assert_eq!(left_at.offset_at(36.0), px(-1_037.0));
+        let grown = f32::from(left_at.offset_at(40.0));
+        assert!((grown - -(40.0 * 28.0 + 29.0 / 36.0 * 40.0)).abs() < 1e-3);
     }
 
     #[test]

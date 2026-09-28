@@ -60,6 +60,10 @@ impl Folder {
     }
 
     pub(crate) fn tone(&self, name: &str, seconds: u32) -> PathBuf {
+        self.tagged(name, seconds, &[])
+    }
+
+    pub(crate) fn tagged(&self, name: &str, seconds: u32, tags: &[(&[u8; 4], &str)]) -> PathBuf {
         let frames = RATE * seconds;
         let block = u32::from(CHANNELS) * 2;
         let mut bytes = Vec::new();
@@ -80,6 +84,24 @@ impl Folder {
             for _ in 0..CHANNELS {
                 bytes.extend_from_slice(&level.to_le_bytes());
             }
+        }
+        if !tags.is_empty() {
+            let mut listed = b"INFO".to_vec();
+            for (id, text) in tags {
+                let mut value = text.as_bytes().to_vec();
+                value.push(0);
+                if value.len() % 2 == 1 {
+                    value.push(0);
+                }
+                listed.extend_from_slice(*id);
+                listed.extend_from_slice(&(value.len() as u32).to_le_bytes());
+                listed.extend_from_slice(&value);
+            }
+            bytes.extend_from_slice(b"LIST");
+            bytes.extend_from_slice(&(listed.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&listed);
+            let riff = (bytes.len() - 8) as u32;
+            bytes[4..8].copy_from_slice(&riff.to_le_bytes());
         }
         let path = self.root.join(name);
         fs::write(&path, bytes).expect("a writable temporary file");
@@ -288,6 +310,10 @@ impl Driven {
 
     pub(crate) fn scroll(&mut self, selector: &'static str, down: f32) {
         let at = self.centre_of(selector);
+        self.scroll_at(at, down);
+    }
+
+    pub(crate) fn scroll_at(&mut self, at: Point<Pixels>, down: f32) {
         self.cx.simulate_event(ScrollWheelEvent {
             position: at,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-down))),
@@ -631,6 +657,52 @@ mod tests {
                 "a caret the desktop holds still went dark"
             );
         }
+    }
+
+    #[gpui::test]
+    fn the_way_back_lands_on_the_pixel_the_list_was_left_at(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        for nth in 0..80 {
+            folder.tagged(
+                &format!("{nth:02}.wav"),
+                1,
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .album_id
+            .expect("an album the tags named");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 80);
+        let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+        driven.scroll_at(middle, 1_000.0);
+        driven.scroll_at(middle, 37.0);
+        let left_at = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.opened(crate::Selection::Album(album), cx);
+            });
+        });
+        driven.settle();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
+        driven.until(|root, _| root.landing_on.is_none());
+        driven.settle();
+
+        let landed = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        assert!(
+            (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
+            "the way back landed at {landed:?} where the list was left at {left_at:?}"
+        );
     }
 
     #[gpui::test]
