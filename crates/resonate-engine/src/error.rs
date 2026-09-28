@@ -132,6 +132,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
     match read {
         Read::Io { .. }
         | Read::NoSuchSource { .. }
+        | Read::OpenTookTooLong { .. }
         | Read::LocatorNotUsable { .. }
         | Read::Unwritable { .. } => Cause::Unreadable,
         Read::UnrecognisedContainer { .. }

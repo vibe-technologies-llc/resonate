@@ -2,7 +2,9 @@ use std::{
     cmp::min,
     fs::File,
     io::{self, Read, Seek, SeekFrom},
-    sync::Arc,
+    sync::{Arc, mpsc},
+    thread,
+    time::Duration,
 };
 
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackHints};
@@ -182,15 +184,25 @@ pub struct Sources {
     providers: Vec<Arc<dyn MediaProvider>>,
     stand_in: Option<Arc<dyn StandIn>>,
     hinting: Option<Arc<dyn Hinting>>,
+    opened_within: Duration,
 }
 
 impl Sources {
+    pub const OPENED_WITHIN: Duration = Duration::from_secs(5);
+
     pub fn local() -> Self {
         Self {
             providers: vec![Arc::new(LocalFiles::default())],
             stand_in: None,
             hinting: None,
+            opened_within: Self::OPENED_WITHIN,
         }
+    }
+
+    #[must_use]
+    pub const fn opening_within(mut self, within: Duration) -> Self {
+        self.opened_within = within;
+        self
     }
 
     #[must_use]
@@ -242,12 +254,48 @@ impl Sources {
     }
 
     pub fn open(&self, location: &MediaLocation) -> Result<Media> {
-        self.provider(location.source())
-            .ok_or_else(|| Error::NoSuchSource {
+        let Some(provider) = self
+            .providers
+            .iter()
+            .find(|provider| provider.source() == location.source())
+        else {
+            return Err(Error::NoSuchSource {
                 location: location.clone(),
-            })?
-            .open(location)
+            });
+        };
+        if provider.source() == &SourceId::local() {
+            return provider.open(location);
+        }
+        opened_within(Arc::clone(provider), location, self.opened_within)
     }
+}
+
+fn opened_within(
+    provider: Arc<dyn MediaProvider>,
+    location: &MediaLocation,
+    within: Duration,
+) -> Result<Media> {
+    let (answer, answered) = mpsc::sync_channel(1);
+    let asked = location.clone();
+    let inline = Arc::clone(&provider);
+    let spawned = thread::Builder::new()
+        .name("resonate-open".to_owned())
+        .spawn(move || {
+            let opened = provider.open(&asked);
+            if answer.send(opened).is_err() {
+                tracing::debug!(location = %asked, "a provider answered after it was given up on");
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "no thread could be started to wait on a provider, so it is asked here");
+        return inline.open(location);
+    }
+    answered
+        .recv_timeout(within)
+        .unwrap_or(Err(Error::OpenTookTooLong {
+            location: location.clone(),
+            waited: within,
+        }))
 }
 
 impl Default for Sources {
@@ -337,5 +385,55 @@ mod tests {
         assert!(matches!(opened, Err(Error::LocatorNotUsable { .. })));
         assert_eq!(location.locator().as_key(), Some("track/1"));
         assert!(matches!(location.locator(), Locator::Key(_)));
+    }
+
+    struct Stalled {
+        source: SourceId,
+        for_as_long_as: std::time::Duration,
+    }
+
+    impl MediaProvider for Stalled {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn open(&self, _: &MediaLocation) -> Result<Media> {
+            thread::sleep(self.for_as_long_as);
+            Ok(Media {
+                stream: Box::new(Reading::new(Cursor::new(Vec::new()))),
+                hint: None,
+            })
+        }
+    }
+
+    #[test]
+    fn a_provider_that_does_not_answer_in_time_is_given_up_on_and_one_that_does_is_heard() {
+        let source = SourceId::new("elsewhere").expect("a nameable source");
+        let location = MediaLocation::new(source.clone(), "a track");
+        let within = Duration::from_millis(50);
+        let slow = Sources::local()
+            .opening_within(within)
+            .and(Arc::new(Stalled {
+                source: source.clone(),
+                for_as_long_as: Duration::from_secs(2),
+            }));
+
+        let asked = std::time::Instant::now();
+        assert!(matches!(
+            slow.open(&location),
+            Err(Error::OpenTookTooLong { waited, .. }) if waited == within
+        ));
+        assert!(
+            asked.elapsed() < Duration::from_secs(1),
+            "the open was waited on"
+        );
+
+        let quick = Sources::local()
+            .opening_within(Duration::from_secs(2))
+            .and(Arc::new(Stalled {
+                source,
+                for_as_long_as: Duration::ZERO,
+            }));
+        assert!(quick.open(&location).is_ok());
     }
 }

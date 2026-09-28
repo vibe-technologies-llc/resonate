@@ -610,6 +610,16 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   prescan past its head, the seek bar and the box walk.
 - **`Sources` is resolved by a linear walk over the registered providers**, which is right for the
   handful a desktop player registers and wrong for hundreds.
+- **A provider that is not the filesystem is waited on for `Sources::OPENED_WITHIN` and no
+  longer.** `Sources::open` asks `SourceId::local()` in line, as it always did — a scan opens
+  hundreds of thousands of files and a thread each would cost more than the opens — and asks any
+  other provider on a `resonate-open` thread of its own, taking `Error::OpenTookTooLong` where no
+  answer has come within five seconds, or within what `Sources::opening_within` says. The engine
+  reads that as a row that will not open and passes it over, and the tag reader as a row with
+  nothing to say, so neither is held for as long as a remote open hangs. What is given up on is not
+  stopped: the thread stays with the provider until it answers and its answer is dropped, so a
+  provider is still expected to put a deadline of its own on the network.
+  `a_provider_that_does_not_answer_in_time_is_given_up_on_and_one_that_does_is_heard` is the claim.
 
 ## Transport
 

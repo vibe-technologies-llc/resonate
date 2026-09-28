@@ -198,6 +198,12 @@ pub enum Error {
     #[error("nothing in this build answers for the source that names {location}")]
     NoSuchSource { location: MediaLocation },
 
+    #[error("the source that names {location} did not answer within {waited:?}")]
+    OpenTookTooLong {
+        location: MediaLocation,
+        waited: std::time::Duration,
+    },
+
     #[error("{location} is addressed in a way its source cannot open")]
     LocatorNotUsable { location: MediaLocation },
 
@@ -250,6 +256,7 @@ impl Error {
             | Self::DsdCompressed { location, .. }
             | Self::SheetTooLarge { location, .. }
             | Self::NoSuchSource { location }
+            | Self::OpenTookTooLong { location, .. }
             | Self::LocatorNotUsable { location }
             | Self::Unwritable { location }
             | Self::TagsUnread { location, .. }

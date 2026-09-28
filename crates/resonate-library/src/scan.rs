@@ -116,6 +116,7 @@ impl Failure {
             | Codec::Symphonia { .. }
             | Codec::SheetTooLarge { .. }
             | Codec::NoSuchSource { .. }
+            | Codec::OpenTookTooLong { .. }
             | Codec::LocatorNotUsable { .. }
             | Codec::UnknownDuration { .. }
             | Codec::SeekOutOfRange { .. }

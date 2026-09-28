@@ -51,11 +51,9 @@ that no listener is waiting on, and is worked only once the categories above it 
   variable-height `list` is the virtualising element that would fix it
 - A cover is decoded once and resized to all three drawn sizes whether or not the grid is opened,
   at a fixed twice-the-cell that is exact only at a scale factor of 1 or 2
-- A provider is asked for bytes on the engine thread and the tag reader, and `MediaProvider` has
-  no deadline, so a slow remote open stalls the track change; a provider or stream left behind as
-  late keeps its thread for as long as it runs. A picture asked for after its tags landed opens the
-  file a second time
-
+- A track is opened on the engine thread, so a provider that is not the filesystem can still hold
+  a track change for up to `Sources::OPENED_WITHIN`; a stream's reads have no deadline; and a
+  picture asked for after its tags landed opens the file a second time
 ## Library
 - A file moved by hand and retagged past every name it had, or a cue-cut file, starts again at
   nothing. A file no scan has seen counts nothing — a queue of unscanned files plays and is
