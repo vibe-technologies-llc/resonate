@@ -284,9 +284,10 @@ came of it. A stream past the cap is `Refusal::TooLarge` and never decoded. The 
 filtered to its ASCII letters and digits the way `named_extension` filters a location's, so a
 delivered `../flac` stages as `flac` under `staging/` and nowhere else. The poll writes the
 `vault_objects` row, a `tracks` row with no root named by the object's own path and paired with
-the release track the want was for, and records `wants.offered` as the *vault* object's URI
-rather than the provider's, because that is where the bytes now are. `providers.md` has why the
-row belongs to no root. A poll cancelled while a delivery was being kept stops at that file
+the release track the want was for — carrying the genre, the ReplayGain and the words
+`Kept::declared` says the source declared, since the object itself declares nothing — and
+records `wants.offered` as the *vault* object's URI rather than the provider's, because that is
+where the bytes now are. `providers.md` has why the row belongs to no root. A poll cancelled while a delivery was being kept stops at that file
 boundary the way every pass does: an object that landed is noted, row and want alike, before the
 poll ends, because `--prune` walks the rows rather than `audio/` and an object nothing names would
 otherwise stand there for good — `a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted`.

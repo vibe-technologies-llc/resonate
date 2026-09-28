@@ -62,7 +62,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   count is one date and one total with no history
 - A playlist of cue rows exports as one path per row and imports as whole files, because M3U, PLS
   and XSPF have no vocabulary for a region
-- A delivered row carries no genre, and is levelled only once studied
 
 ## Identification
 - Forgetting a wrong match leaves the track-level names the match corrected as it wrote them, and

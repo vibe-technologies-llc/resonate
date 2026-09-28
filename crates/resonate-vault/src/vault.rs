@@ -9,7 +9,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::{
-    Codec, Container, CoverArt, DecodeStatus, Decoder, MediaInfo, Sources, Speakers, probe,
+    Codec, Container, CoverArt, DecodeStatus, Decoder, MediaInfo, Sources, Speakers, TagSet, probe,
 };
 use resonate_core::{AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec};
 
@@ -93,6 +93,7 @@ pub struct Kept {
     pub codec: Codec,
     pub deduped: bool,
     pub replaced: bool,
+    pub declared: Box<TagSet>,
 }
 
 #[derive(Clone, Copy)]
@@ -307,7 +308,7 @@ impl Vault {
             }
             kept => kept,
         };
-        Ok(weighed(kept, held))
+        Ok(weighed(kept, held, Box::new(info.tags)))
     }
 
     pub fn keep_cover(&self, art: &CoverArt) -> Result<KeptCover> {
@@ -561,6 +562,7 @@ impl Vault {
                 codec,
                 deduped: true,
                 replaced: false,
+                declared: Box::default(),
             }));
         }
 
@@ -592,6 +594,7 @@ impl Vault {
             codec,
             deduped: false,
             replaced: false,
+            declared: Box::default(),
         }))
     }
 
@@ -643,6 +646,7 @@ impl Vault {
             codec,
             deduped: false,
             replaced: false,
+            declared: Box::default(),
         }))
     }
 
@@ -745,6 +749,7 @@ impl Vault {
             codec,
             deduped: false,
             replaced: false,
+            declared: Box::default(),
         }))
     }
 
@@ -986,10 +991,11 @@ impl Landing {
     }
 }
 
-fn weighed(kept: Keeping, was: Option<u64>) -> Keeping {
+fn weighed(kept: Keeping, was: Option<u64>, declared: Box<TagSet>) -> Keeping {
     match kept {
         Keeping::Kept(kept) => Keeping::Kept(Kept {
             was: was.unwrap_or(kept.bytes),
+            declared,
             ..kept
         }),
         refused @ Keeping::Refused(_) => refused,

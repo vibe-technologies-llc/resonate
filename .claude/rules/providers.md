@@ -75,7 +75,12 @@ A provider does none of this, so none of it is written twice:
   row is named by the object's own path, as a vaulted row whose file has gone is, with
   `vault_key` and `vault_path` set, so the stand-in answers for it and `--prune` spares it; its
   names, disc, number and identifiers are the release track's and its album is the want's,
-  because the object carries no tags and the release is what the want was identified against. It
+  because the object carries no tags and the release is what the want was identified against.
+  What the release cannot say, the delivery can: `Vault::keep` hands back the tags the source
+  declared before the object shed them as `Kept::declared`, and the row takes its genre, its
+  ReplayGain and its words from there, so a delivered row is found by `genre:` and `lyrics:`,
+  levelled by the stand-in and sung by the lyrics pane before any study or lookup has reached
+  it — `a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared`. It
   belongs to **no root** — `tracks.root_id` is nullable for exactly this — so a scan's prune, a
   forget, `organise`, `tag`, `vault --import` and `vault --release` never reach it, each of them
   joining `roots`: an object in the vault is not the user's library to move, write into or hand

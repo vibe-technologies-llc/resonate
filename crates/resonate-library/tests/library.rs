@@ -182,6 +182,14 @@ impl Wav {
         self
     }
 
+    fn sung(mut self, words: &str) -> Self {
+        let mut body = vec![UTF8];
+        body.extend_from_slice(b"eng\0");
+        body.extend_from_slice(words.as_bytes());
+        frame(&mut self.id3, b"USLT", &body);
+        self
+    }
+
     fn identified(mut self, owner: &str, id: &str) -> Self {
         let mut body = owner.as_bytes().to_vec();
         body.push(0);
@@ -16102,6 +16110,71 @@ fn a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted() -> Result<(
     assert_eq!(
         wants[0].offered.as_deref(),
         Some(MediaLocation::local(&objects[0].path).to_uri().as_str())
+    );
+    Ok(())
+}
+
+#[test]
+fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(GENRE, "Krautrock")
+            .described("REPLAYGAIN_TRACK_GAIN", "-7.50 dB")
+            .described("REPLAYGAIN_TRACK_PEAK", "0.891")
+            .sung("Lazing in the sun on the shore")
+            .frames(8_820)
+            .build(),
+    );
+
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let _want = wanted_san_tropez(&library)?;
+
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    let summary = library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    assert_eq!(summary.stats.kept, 1);
+
+    let landed = library
+        .wants()?
+        .first()
+        .and_then(|want| want.held)
+        .expect("the delivery is paired with the want");
+    let track = library.track(landed)?.expect("the delivery is a track row");
+    assert_eq!(
+        titles(&library.search("genre:krautrock", 10)?.tracks),
+        vec!["San Tropez"],
+        "the genre the delivered file declared does not reach a search"
+    );
+
+    let stood = library
+        .stand_in()
+        .stands_in(&track.location, track.span)
+        .expect("the vault stands in for the delivered row");
+    let gain = stood.tags.replay_gain;
+    assert!(
+        gain.track_gain
+            .is_some_and(|gain| (gain.get() + 7.5).abs() < 1e-3),
+        "the delivered row is not levelled by the gain its file declared: {gain:?}"
+    );
+    assert!(
+        gain.track_peak
+            .is_some_and(|peak| (peak - 0.891).abs() < 1e-3)
+    );
+    assert_eq!(
+        stood.tags.lyrics.as_deref(),
+        Some("Lazing in the sun on the shore")
+    );
+    assert_eq!(
+        matching(&library, "lyrics:shore")?,
+        ["San Tropez"],
+        "the words the delivered file declared do not reach a search"
     );
     Ok(())
 }

@@ -1896,6 +1896,8 @@ impl Library {
         let modified = std::fs::metadata(&kept.path)
             .and_then(|metadata| metadata.modified())
             .unwrap_or(now);
+        let declared = &kept.declared;
+        let gain = declared.replay_gain;
 
         let id = self.inner.write(|transaction| {
             transaction
@@ -1934,10 +1936,11 @@ impl Library {
                          root_id, path, title, artist, artist_id, album_id, track_number,
                          disc_number, duration, sample_rate, channels, sample_format, codec,
                          file_size, modified, added, seen, mbid, release_track_mbid, isrc,
-                         vault_key, vault_path
+                         vault_key, vault_path, genre, lyrics, rg_track_gain, rg_track_peak,
+                         rg_album_gain, rg_album_peak
                      ) VALUES (
                          NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         ?15, 0, ?16, ?17, ?18, ?19, ?20
+                         ?15, 0, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
                      )
                      ON CONFLICT(path, span_start) DO NOTHING
                      RETURNING id",
@@ -1962,6 +1965,12 @@ impl Library {
                         want.isrc.as_ref().map(Isrc::as_str),
                         key,
                         held,
+                        declared.genre,
+                        declared.lyrics,
+                        gain.track_gain.map(|gain| f64::from(gain.get())),
+                        gain.track_peak.map(f64::from),
+                        gain.album_gain.map(|gain| f64::from(gain.get())),
+                        gain.album_peak.map(f64::from),
                     ],
                     |row| row.get(0),
                 )
@@ -1976,7 +1985,7 @@ impl Library {
                         &want.title,
                         want.artist.as_deref().unwrap_or_default(),
                         &want.album_title,
-                        &store::indexed_genre_of(transaction, None, artist)?,
+                        &store::indexed_genre_of(transaction, declared.genre.as_deref(), artist)?,
                     )?;
                     id
                 }
