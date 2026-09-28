@@ -281,8 +281,9 @@ Invariants the layering exists to protect:
   `Option<Heard>`: `None` for a build with no catalog or a location it holds no row for, and
   `Some` with a count of zero for a row nothing has played, which are different answers and are
   written as different metadata. `xesam:lastUsed` is an ISO-8601 UTC stamp written by hand in
-  `track.rs`, because no date crate is in the tree and one civil-from-days function is cheaper than
-  one; it is total, so a `SystemTime` before the epoch converts rather than saturating. The playing
+  `track.rs` over `resonate-core::CivilDate`, because no date crate is in the tree and one
+  civil-from-days function is cheaper than one — the statistics chart reads its axis through the
+  same one; it is total, so a `SystemTime` before the epoch converts rather than saturating. The playing
   track's reading is taken again the moment the row changes and otherwise at most once a second —
   `HEARD_READ_EVERY` — rather than on every 200 ms poll, which was a catalog read five times a
   second for a number that moves once a track; a client watching `Metadata` still sees the count

@@ -1,6 +1,7 @@
 mod appearance;
 mod buffer;
 mod channel;
+mod date;
 pub mod eq;
 mod error;
 mod format;
@@ -23,6 +24,7 @@ pub use crate::{
     appearance::{Accent, Appearance, ScrollbarMode, TextSize, Theme},
     buffer::{AudioBuffer, SampleData},
     channel::{ChannelCount, ChannelLayout, ChannelPosition},
+    date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     error::{Error, Result},
     format::{BitDepth, RateFamily, Ratio, SampleFormat, SampleRate, StreamSpec},
     hints::{MeasuredGain, TrackHints},

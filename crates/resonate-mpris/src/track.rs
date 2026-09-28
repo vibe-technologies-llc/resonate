@@ -1,10 +1,12 @@
 use std::{
     collections::HashMap,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 
-use resonate_core::{Frames, MediaLocation, PlaylistId, TrackId};
+use resonate_core::{
+    CivilDate, Frames, MediaLocation, PlaylistId, SECONDS_PER_DAY, TrackId, seconds_since_the_epoch,
+};
 use resonate_engine::{
     Asleep, MediaInfo, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest, TagSet,
     Until,
@@ -19,19 +21,8 @@ const TRACK_PREFIX: &str = "/org/resonate/track/";
 const PLAYLIST_PREFIX: &str = "/org/resonate/playlist/";
 
 const MICROS_PER_SECOND: u128 = 1_000_000;
-const SECONDS_PER_DAY: i64 = 86_400;
 const SECONDS_PER_HOUR: i64 = 3_600;
 const SECONDS_PER_MINUTE: i64 = 60;
-const DAYS_FROM_0000_03_01_TO_THE_EPOCH: i64 = 719_468;
-const DAYS_PER_ERA: i64 = 146_097;
-const LAST_DAY_OF_AN_ERA: i64 = DAYS_PER_ERA - 1;
-const YEARS_PER_ERA: i64 = 400;
-const DAYS_PER_COMMON_YEAR: i64 = 365;
-const DAYS_PER_FOUR_YEARS: i64 = 1_460;
-const DAYS_PER_CENTURY: i64 = 36_524;
-const DAYS_PER_FIVE_MONTHS: i64 = 153;
-const MARCH: i64 = 3;
-const MONTHS_PER_YEAR: i64 = 12;
 
 pub(crate) fn track_path(track: TrackId) -> OwnedObjectPath {
     let path = format!("{TRACK_PREFIX}{}", track.get());
@@ -337,51 +328,9 @@ fn absorb_plays(fields: &mut HashMap<String, OwnedValue>, heard: Option<Heard>) 
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CivilDate {
-    year: i64,
-    month: i64,
-    day: i64,
-}
-
-fn seconds_since_the_epoch(at: SystemTime) -> i64 {
-    match at.duration_since(UNIX_EPOCH) {
-        Ok(after) => i64::try_from(after.as_secs()).unwrap_or(i64::MAX),
-        Err(before) => {
-            let before = before.duration();
-            let whole = i64::try_from(before.as_secs()).unwrap_or(i64::MAX);
-            let part_of_a_second = i64::from(before.subsec_nanos() > 0);
-            whole.saturating_add(part_of_a_second).saturating_neg()
-        }
-    }
-}
-
-fn civil_from_days(days: i64) -> CivilDate {
-    let shifted = days.saturating_add(DAYS_FROM_0000_03_01_TO_THE_EPOCH);
-    let era = shifted.div_euclid(DAYS_PER_ERA);
-    let day_of_era = shifted.rem_euclid(DAYS_PER_ERA);
-    let year_of_era = (day_of_era - day_of_era / DAYS_PER_FOUR_YEARS
-        + day_of_era / DAYS_PER_CENTURY
-        - day_of_era / LAST_DAY_OF_AN_ERA)
-        / DAYS_PER_COMMON_YEAR;
-    let day_of_year =
-        day_of_era - (DAYS_PER_COMMON_YEAR * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let months_from_march = (5 * day_of_year + 2) / DAYS_PER_FIVE_MONTHS;
-    let day = day_of_year - (DAYS_PER_FIVE_MONTHS * months_from_march + 2) / 5 + 1;
-    let month = months_from_march + MARCH;
-    let month = if month > MONTHS_PER_YEAR {
-        month - MONTHS_PER_YEAR
-    } else {
-        month
-    };
-    let year = year_of_era + era * YEARS_PER_ERA + i64::from(month <= 2);
-
-    CivilDate { year, month, day }
-}
-
 pub fn utc_stamp(at: SystemTime) -> String {
     let seconds = seconds_since_the_epoch(at);
-    let date = civil_from_days(seconds.div_euclid(SECONDS_PER_DAY));
+    let date = CivilDate::of_day(seconds.div_euclid(SECONDS_PER_DAY));
     let time_of_day = seconds.rem_euclid(SECONDS_PER_DAY);
     let hour = time_of_day / SECONDS_PER_HOUR;
     let minute = time_of_day % SECONDS_PER_HOUR / SECONDS_PER_MINUTE;
@@ -450,6 +399,8 @@ fn insert<'a, T: Into<Value<'a>>>(fields: &mut HashMap<String, OwnedValue>, key:
 
 #[cfg(test)]
 mod tests {
+    use std::time::UNIX_EPOCH;
+
     use super::*;
 
     fn at(seconds: i64) -> SystemTime {

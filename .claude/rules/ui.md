@@ -1340,7 +1340,9 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `hint::Names` hover for free where a canvas would need hit-testing written by hand. A day
   nothing was played on still draws its baseline, so the axis has no holes, and a run longer than
   `BARS_AT_MOST` folds whole days into one bar rather than drawing a year a pixel at a time. The
-  axis reads relatively — *today*, *9 days ago* — because there is no date crate in the tree.
+  axis reads *today* and *yesterday* and otherwise the date, *29 Jan*, with the year beside it
+  where it is not this one, through `resonate-core::CivilDate` — the UTC day the history buckets
+  a play into, so a bar and its date always agree.
 - **A suggestion card reads its rows off the frame.** `RootView::with_the_rows_of` is the sibling
   of `with_everything_listed`: a suggestion is a search and may name the whole library, so Play
   and Add to queue read it on the background executor before they act. *Save* is

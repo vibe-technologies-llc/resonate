@@ -6,7 +6,7 @@ use std::{
 use gpui::{
     AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb,
 };
-use resonate_core::{AlbumId, ArtistId};
+use resonate_core::{AlbumId, ArtistId, CivilDate};
 use resonate_library::{Day, Listened, Lit, MostListened, Statistics, Window};
 
 use crate::{
@@ -74,8 +74,8 @@ const MOST_LISTENED_ARTISTS: Kind = Kind {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Bar {
-    first_ago: u64,
-    last_ago: u64,
+    first: Dated,
+    last: Dated,
     plays: u64,
     listened: Duration,
     share: f32,
@@ -90,6 +90,15 @@ pub(crate) struct Chart {
 impl Chart {
     pub(crate) fn of(days: &[Day], now: SystemTime, at_most: usize) -> Self {
         let today = day_of(now);
+        let this_year = CivilDate::of_day(today as i64).year;
+        let dated = |at: SystemTime| {
+            let day = day_of(at);
+            Dated {
+                ago: today.saturating_sub(day),
+                date: CivilDate::of_day(day as i64),
+                this_year,
+            }
+        };
         let mut bars: Vec<Bar> = Vec::new();
 
         for run in days.chunks(folded(days.len(), at_most)) {
@@ -97,8 +106,8 @@ impl Chart {
                 continue;
             };
             bars.push(Bar {
-                first_ago: today.saturating_sub(day_of(first.at)),
-                last_ago: today.saturating_sub(day_of(last.at)),
+                first: dated(first.at),
+                last: dated(last.at),
                 plays: run
                     .iter()
                     .fold(0, |held, day| held.saturating_add(day.plays)),
@@ -141,24 +150,37 @@ fn day_of(at: SystemTime) -> u64 {
     at.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / SECONDS_A_DAY
 }
 
-fn how_long_ago(days: u64) -> String {
-    match days {
-        0 => "today".to_owned(),
-        1 => "yesterday".to_owned(),
-        days => format!("{days} days ago"),
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Dated {
+    ago: u64,
+    date: CivilDate,
+    this_year: i64,
+}
+
+impl Dated {
+    fn named(self) -> String {
+        match self.ago {
+            0 => "today".to_owned(),
+            1 => "yesterday".to_owned(),
+            _ if self.date.year == self.this_year => {
+                format!("{} {}", self.date.day, self.date.month_named())
+            }
+            _ => format!(
+                "{} {} {}",
+                self.date.day,
+                self.date.month_named(),
+                self.date.year
+            ),
+        }
     }
 }
 
 fn spanned(bar: Bar) -> String {
-    if bar.first_ago == bar.last_ago {
-        return how_long_ago(bar.first_ago);
+    if bar.first.ago == bar.last.ago {
+        return bar.first.named();
     }
 
-    format!(
-        "{} to {}",
-        how_long_ago(bar.first_ago),
-        how_long_ago(bar.last_ago)
-    )
+    format!("{} to {}", bar.first.named(), bar.last.named())
 }
 
 fn said(bar: Bar) -> String {
@@ -523,6 +545,14 @@ mod tests {
         }
     }
 
+    fn dated_ago(ago: u64) -> Dated {
+        Dated {
+            ago,
+            date: CivilDate::of_day((TODAY - ago) as i64),
+            this_year: 2024,
+        }
+    }
+
     fn now() -> SystemTime {
         UNIX_EPOCH + Duration::from_secs(TODAY * SECONDS_A_DAY + 3_600)
     }
@@ -586,11 +616,17 @@ mod tests {
         assert_eq!(chart.bars.len(), 84);
         assert_eq!(chart.bars[0].plays, 3);
         assert_eq!(chart.bars[0].listened, Duration::from_secs(180));
-        assert_eq!(chart.bars[0].first_ago, 249);
-        assert_eq!(chart.bars[0].last_ago, 247);
+        assert_eq!(chart.bars[0].first.ago, 249);
+        assert_eq!(chart.bars[0].last.ago, 247);
+        assert_eq!(spanned(chart.bars[0]), "29 Jan to 31 Jan".to_owned());
         assert_eq!(
-            spanned(chart.bars[0]),
-            "249 days ago to 247 days ago".to_owned()
+            Dated {
+                ago: 300,
+                date: CivilDate::of_day(TODAY as i64 - 300),
+                this_year: 2024,
+            }
+            .named(),
+            "9 Dec 2023"
         );
     }
 
@@ -598,8 +634,8 @@ mod tests {
     fn a_bar_says_how_long_ago_it_was_and_what_was_played_in_it() {
         assert_eq!(
             said(Bar {
-                first_ago: 1,
-                last_ago: 1,
+                first: dated_ago(1),
+                last: dated_ago(1),
                 plays: 1,
                 listened: Duration::from_secs(3_600),
                 share: 1.0,
@@ -608,8 +644,8 @@ mod tests {
         );
         assert_eq!(
             said(Bar {
-                first_ago: 0,
-                last_ago: 0,
+                first: dated_ago(0),
+                last: dated_ago(0),
                 plays: 0,
                 listened: Duration::ZERO,
                 share: 0.0,
