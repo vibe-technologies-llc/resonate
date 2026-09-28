@@ -41,7 +41,7 @@ use crate::{
     hinted::Hinted,
     import, likeness,
     model::CoverWanted,
-    organise::{self, TrackToFile},
+    organise::{self, Filing, TrackToFile},
     playlist,
     retag::{self, Followed, TrackToTag},
     scan, schema, scrobble, search, share, spelling, statistics, store,
@@ -224,6 +224,10 @@ const TRACKS_TO_FILE: &str = concat!(
        LEFT JOIN albums a ON a.id = tracks.album_id
        LEFT JOIN artists ON artists.id = a.artist_id"
 );
+
+const FILES_TO_FILE: &str = "SELECT tracks.path, roots.path, tracks.album_id, tracks.disc_number
+       FROM tracks
+       JOIN roots ON roots.id = tracks.root_id";
 
 const FILED_IN_ORDER: &str = " ORDER BY tracks.path, tracks.span_start";
 
@@ -1639,20 +1643,36 @@ impl Library {
             .write(|transaction| organise::re_key_the_sleeves(transaction, landed))
     }
 
-    pub(crate) fn tracks_to_tag(&self, roots: &[PathBuf]) -> Result<Vec<TrackToTag>> {
-        let named = rooted(roots)?;
-        let sql = under_roots(TRACKS_TO_TAG, named.len());
+    pub(crate) fn release_totals(&self) -> Result<ReleaseTotals> {
+        self.inner.read(|connection| {
+            Ok(ReleaseTotals {
+                tracks: counted_by_disc(connection, RELEASE_DISC_TRACKS)?,
+                discs: counted_by_album(connection, RELEASE_MEDIA)?,
+            })
+        })
+    }
+
+    pub(crate) fn tracks_to_tag_after(
+        &self,
+        roots: &[PathBuf],
+        after: Option<&Path>,
+        at_most: usize,
+        totals: &ReleaseTotals,
+    ) -> Result<Vec<TrackToTag>> {
+        let mut binds = rooted(roots)?;
+        let sql = paged_under_roots(TRACKS_TO_TAG, binds.len(), after.is_some());
+        if let Some(after) = after {
+            binds.push(Value::Text(store::path_text(after)?.to_owned()));
+        }
+        binds.push(Value::Integer(i64::try_from(at_most).unwrap_or(i64::MAX)));
 
         self.inner.read(|connection| {
-            let tracks = counted_by_disc(connection, RELEASE_DISC_TRACKS)?;
-            let discs = counted_by_album(connection, RELEASE_MEDIA)?;
-            let held = rows(connection, &sql, named.clone(), |row| {
+            rows(connection, &sql, binds.clone(), |row| {
                 RawToTag::read(row).map(Ok)
-            })?;
-
-            held.into_iter()
-                .map(|raw| raw.into_tagged(&tracks, &discs))
-                .collect()
+            })?
+            .into_iter()
+            .map(|raw| raw.into_tagged(&totals.tracks, &totals.discs))
+            .collect()
         })
     }
 
@@ -2002,17 +2022,103 @@ impl Library {
         })
     }
 
-    pub(crate) fn tracks_to_file(&self, roots: &[PathBuf]) -> Result<Vec<TrackToFile>> {
+    pub(crate) fn album_discs(&self) -> Result<AHashMap<i64, u32>> {
+        self.inner
+            .read(|connection| counted_by_album(connection, ALBUM_DISCS))
+    }
+
+    pub(crate) fn each_file_to_file(
+        &self,
+        roots: &[PathBuf],
+        mut each: impl FnMut(Filing),
+    ) -> Result<()> {
         let named = rooted(roots)?;
-        let sql = under_roots(TRACKS_TO_FILE, named.len());
+        let sql = under_roots(FILES_TO_FILE, named.len());
 
         self.inner.read(|connection| {
-            let discs = counted_by_album(connection, ALBUM_DISCS)?;
-            let held = rows(connection, &sql, named.clone(), |row| {
-                RawFiled::read(row).map(Ok)
-            })?;
+            let mut statement = connection
+                .prepare(&sql)
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let mut held = statement
+                .query(params_from_iter(named))
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            while let Some(row) = held
+                .next()
+                .map_err(|source| Error::store(StoreOp::Query, source))?
+            {
+                let (path, root, album, disc) =
+                    read_filing(row).map_err(|source| Error::store(StoreOp::Query, source))?;
+                each(Filing {
+                    path: PathBuf::from(path),
+                    root: PathBuf::from(root),
+                    album: album.map(|id| AlbumId::new(id as u64)).transpose()?,
+                    disc: disc
+                        .and_then(|number| u32::try_from(number).ok())
+                        .and_then(NonZeroU32::new),
+                });
+            }
+            Ok(())
+        })
+    }
 
-            held.into_iter().map(|raw| raw.into_filed(&discs)).collect()
+    pub(crate) fn tracks_to_file_after(
+        &self,
+        roots: &[PathBuf],
+        after: Option<&Path>,
+        at_most: usize,
+        discs: &AHashMap<i64, u32>,
+    ) -> Result<Vec<TrackToFile>> {
+        let mut binds = rooted(roots)?;
+        let sql = paged_under_roots(TRACKS_TO_FILE, binds.len(), after.is_some());
+        if let Some(after) = after {
+            binds.push(Value::Text(store::path_text(after)?.to_owned()));
+        }
+        binds.push(Value::Integer(i64::try_from(at_most).unwrap_or(i64::MAX)));
+        self.filed_rows(&sql, binds, discs)
+    }
+
+    pub(crate) fn tracks_to_file_at(
+        &self,
+        roots: &[PathBuf],
+        files: &[PathBuf],
+        discs: &AHashMap<i64, u32>,
+    ) -> Result<Vec<TrackToFile>> {
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut binds = rooted(roots)?;
+        let mut clauses = Vec::with_capacity(2);
+        if !binds.is_empty() {
+            clauses.push(format!(
+                "roots.path IN ({})",
+                vec!["?"; binds.len()].join(", ")
+            ));
+        }
+        clauses.push(format!(
+            "tracks.path IN ({})",
+            vec!["?"; files.len()].join(", ")
+        ));
+        for file in files {
+            binds.push(Value::Text(store::path_text(file)?.to_owned()));
+        }
+        let sql = format!(
+            "{TRACKS_TO_FILE} WHERE {}{FILED_IN_ORDER}",
+            clauses.join(" AND ")
+        );
+        self.filed_rows(&sql, binds, discs)
+    }
+
+    fn filed_rows(
+        &self,
+        sql: &str,
+        binds: Vec<Value>,
+        discs: &AHashMap<i64, u32>,
+    ) -> Result<Vec<TrackToFile>> {
+        self.inner.read(|connection| {
+            rows(connection, sql, binds, |row| RawFiled::read(row).map(Ok))?
+                .into_iter()
+                .map(|raw| raw.into_filed(discs))
+                .collect()
         })
     }
 
@@ -3643,6 +3749,33 @@ fn and_roots(select: &str, roots: usize) -> String {
             vec!["?"; held].join(", ")
         ),
     }
+}
+
+type FilingRow = (String, String, Option<i64>, Option<i64>);
+
+fn read_filing(row: &Row<'_>) -> rusqlite::Result<FilingRow> {
+    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+}
+
+pub(crate) struct ReleaseTotals {
+    tracks: AHashMap<(i64, i64), u32>,
+    discs: AHashMap<i64, u32>,
+}
+
+fn paged_under_roots(select: &str, roots: usize, after: bool) -> String {
+    let mut clauses = Vec::with_capacity(2);
+    if roots > 0 {
+        clauses.push(format!("roots.path IN ({})", vec!["?"; roots].join(", ")));
+    }
+    if after {
+        clauses.push("tracks.path > ?".to_owned());
+    }
+    let filter = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    format!("{select}{filter}{FILED_IN_ORDER} LIMIT ?")
 }
 
 fn under_roots(select: &str, roots: usize) -> String {

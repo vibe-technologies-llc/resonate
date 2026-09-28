@@ -49,7 +49,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   caches own rather than from encoded bytes
 - Every line of a lyric set is laid out on every frame, including the ones faded to nothing; gpui's
   variable-height `list` is the virtualising element that would fix it
-- `resonate tag` and `resonate organise` read every scanned row into memory before planning
 - A cover is decoded once and resized to all three drawn sizes whether or not the grid is opened,
   at a fixed twice-the-cell that is exact only at a scale factor of 1 or 2
 - A provider is asked for bytes on the engine thread and the tag reader, and `MediaProvider` has

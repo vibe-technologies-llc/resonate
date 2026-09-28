@@ -14,6 +14,7 @@ mod m3u;
 mod model;
 mod moves;
 mod organise;
+mod paged;
 mod pass;
 mod playlist;
 mod pls;

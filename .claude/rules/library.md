@@ -1389,6 +1389,15 @@ through `Player::media` like any other unscanned row.
   fails moves out of `Retagging::writes` and into `passed_over`, so what is printed after an apply
   is what was done rather than what was intended. The settings pane's *Tagging* group draws that
   same plan — see `ui.md` — so the command line and the window are two presenters of one pass.
+- **The rows are read a page at a time, and a file is never split across two.** Planning a file
+  needs that file's rows and nothing else, so `retag::run` walks the catalog through `paged::Paging`
+  — `ROWS_A_PAGE` rows in path order past the last path handed out, with the rows of the file the
+  page ended in held back for the next one, and the page doubled where one file's cue rows fill it
+  — and plans, and under `--apply` writes and follows, each page before reading the next. The
+  release totals every row is weighed against are read once. What stays in memory is the plan's
+  writes, which the preview prints; a catalog of 500 000 rows is no longer held whole to decide
+  them. `every_row_is_handed_out_once_and_no_file_is_split_across_two_pages` holds the paging to
+  every page size from one row up.
 
 ## Organising
 
@@ -1442,6 +1451,15 @@ the pass.
   album's count to the larger of its stored `max(disc_number)` and what the folders spell, and
   holds it per album rather than per row so every track of a set agrees about how many discs there
   are.
+- **What filing weighs across the library is read lean, and the rows are paged.** A destination is
+  checked against every source path, a layout needs its root's `Naming` and an album's disc count,
+  and nothing else is library-wide, so `Planner::knows` is fed `Filing`s — the path, the root, the
+  album and the disc — by a cursor that collects nothing, and the rows that name a file are read
+  through the same `paged::Paging` retag uses. A sheet that ties files together is followed across
+  a page: the members the page does not hold are read by their paths, the whole set is filed
+  together, and each member's own page later passes it by. The plan itself is still whole, because
+  the preview lists every move and the chains are ordered across all of them.
+  `files_one_sheet_names_are_filed_together_even_when_a_page_holds_only_one_of_them` is the claim.
 - **The preview is the plan the apply performs, not a description of it.** `organise::run` builds
   one `Plan` and hands that same `Plan` to `apply` only where `OrganiseOptions::apply` says so, so
   there is no second walk and no second set of rules for the two to disagree about, and

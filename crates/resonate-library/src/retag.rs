@@ -16,6 +16,7 @@ use rusqlite::{Transaction, params};
 use crate::{
     Library, StoreOp,
     error::{Error, Result},
+    paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, PassHandle, PassKind, RetagHandle},
     store,
 };
@@ -181,10 +182,25 @@ fn run(
         }
     }
 
-    let rows = library.tracks_to_tag(&options.roots)?;
-    let mut retagging = planned(library, &rows, tags, progress);
-    if options.apply {
-        apply(library, tags, &mut retagging, progress)?;
+    let totals = library.release_totals()?;
+    let mut retagging = Retagging::default();
+    let mut sleeve = Sleeve::default();
+    let mut paging = Paging::by(ROWS_A_PAGE);
+    while !progress.is_cancelled() {
+        let Some(page) = paging.next(
+            |after, at_most| library.tracks_to_tag_after(&options.roots, after, at_most, &totals),
+            |row| row.path.as_path(),
+        )?
+        else {
+            break;
+        };
+
+        let mut planned = planned(library, &page, tags, progress, &mut sleeve);
+        if options.apply {
+            apply(library, tags, &mut planned, progress)?;
+        }
+        retagging.writes.append(&mut planned.writes);
+        retagging.passed_over.append(&mut planned.passed_over);
     }
 
     Ok(RetagSummary {
@@ -256,9 +272,9 @@ fn planned(
     rows: &[TrackToTag],
     tags: &dyn TagSink,
     progress: &RetagProgress,
+    sleeve: &mut Sleeve,
 ) -> Retagging {
     let mut retagging = Retagging::default();
-    let mut sleeve = Sleeve::default();
     for group in rows.chunk_by(|one, next| one.path == next.path) {
         if progress.is_cancelled() {
             break;
@@ -300,7 +316,7 @@ fn planned(
         };
 
         let edits = wanted(row, &held.tags);
-        let picture = offered_picture(library, &held.picture, row, &mut sleeve);
+        let picture = offered_picture(library, &held.picture, row, sleeve);
         if edits.is_empty() && picture.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;

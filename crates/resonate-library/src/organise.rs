@@ -22,6 +22,7 @@ use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, param
 use crate::{
     Library, StoreOp,
     error::{Error, FieldName, LayoutFault, MoveOp, Result},
+    paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
     scan, store,
 };
@@ -611,10 +612,27 @@ fn run(
         sweep_what_a_killed_run_staged(library);
     }
 
-    let rows = library.tracks_to_file(&options.roots)?;
-    let mut plan = planned(&rows, &options.layout, progress);
+    let discs = library.album_discs()?;
+    let mut planner = Planner::new(&options.layout, progress);
+    library.each_file_to_file(&options.roots, |filing| planner.knows(&filing, &discs))?;
+
+    let mut paging = Paging::by(ROWS_A_PAGE);
+    while !progress.is_cancelled() {
+        let Some(page) = paging.next(
+            |after, at_most| library.tracks_to_file_after(&options.roots, after, at_most, &discs),
+            |row| row.path.as_path(),
+        )?
+        else {
+            break;
+        };
+        planner.plan(&page, |files| {
+            library.tracks_to_file_at(&options.roots, files, &discs)
+        })?;
+    }
+
+    let roots: AHashSet<PathBuf> = planner.namings.keys().cloned().collect();
+    let mut plan = planner.settle();
     if options.apply {
-        let roots: AHashSet<PathBuf> = rows.iter().map(|row| row.root.clone()).collect();
         apply(library, &mut plan, &roots, progress);
     }
 
@@ -641,51 +659,11 @@ pub(crate) struct TrackToFile {
     pub discs: u32,
 }
 
-fn planned(rows: &[TrackToFile], layout: &Layout, progress: &OrganiseProgress) -> Plan {
-    let groups: Vec<&[TrackToFile]> = rows.chunk_by(|one, next| one.path == next.path).collect();
-    let at: AHashMap<&Path, usize> = groups
-        .iter()
-        .enumerate()
-        .filter_map(|(at, group)| Some((group.first()?.path.as_path(), at)))
-        .collect();
-
-    let mut planner = Planner::over(rows, layout, progress);
-    let mut filed = vec![false; groups.len()];
-    for (index, group) in groups.iter().enumerate() {
-        if progress.is_cancelled() {
-            break;
-        }
-        if filed[index] {
-            continue;
-        }
-        let Some(first) = group.first() else {
-            continue;
-        };
-
-        let tied = planner.tied_by_sheets(&first.path);
-        if tied.sheets.is_empty() {
-            filed[index] = true;
-            planner.file(group);
-            continue;
-        }
-
-        let members: Vec<Option<usize>> = tied
-            .files
-            .iter()
-            .map(|file| at.get(file.as_path()).copied())
-            .collect();
-        for member in members.iter().flatten() {
-            filed[*member] = true;
-        }
-        let held: Vec<&[TrackToFile]> = members.iter().flatten().map(|at| groups[*at]).collect();
-        if members.iter().any(Option::is_none) {
-            planner.refuse_the_sheets(&held, &tied, None);
-            continue;
-        }
-        planner.file_together(&held, &tied);
-    }
-
-    planner.settle()
+pub(crate) struct Filing {
+    pub path: PathBuf,
+    pub root: PathBuf,
+    pub album: Option<AlbumId>,
+    pub disc: Option<NonZeroU32>,
 }
 
 struct Beside {
@@ -747,9 +725,10 @@ struct Planned {
 struct Planner<'a> {
     layout: &'a Layout,
     progress: &'a OrganiseProgress,
-    sources: AHashSet<&'a Path>,
-    namings: AHashMap<&'a Path, Naming>,
+    sources: AHashSet<PathBuf>,
+    namings: AHashMap<PathBuf, Naming>,
     discs: AHashMap<AlbumId, u32>,
+    filed: AHashSet<PathBuf>,
     claimed: AHashMap<PathBuf, PathBuf>,
     going: AHashSet<PathBuf>,
     beside: AHashMap<PathBuf, Beside>,
@@ -771,29 +750,14 @@ struct Tied {
 }
 
 impl<'a> Planner<'a> {
-    fn over(rows: &'a [TrackToFile], layout: &'a Layout, progress: &'a OrganiseProgress) -> Self {
-        let mut sources = AHashSet::with_capacity(rows.len());
-        let mut namings: AHashMap<&Path, Naming> = AHashMap::new();
-        let mut discs: AHashMap<AlbumId, u32> = AHashMap::new();
-        for row in rows {
-            sources.insert(row.path.as_path());
-            namings
-                .entry(row.root.as_path())
-                .or_insert_with(|| Naming::of(&row.root));
-            if let Some(album) = row.album_id {
-                let counted = discs.entry(album).or_default();
-                *counted = (*counted)
-                    .max(row.discs)
-                    .max(disc_of(row).map_or(0, NonZeroU32::get));
-            }
-        }
-
+    fn new(layout: &'a Layout, progress: &'a OrganiseProgress) -> Self {
         Self {
             layout,
             progress,
-            sources,
-            namings,
-            discs,
+            sources: AHashSet::new(),
+            namings: AHashMap::new(),
+            discs: AHashMap::new(),
+            filed: AHashSet::new(),
             claimed: AHashMap::new(),
             going: AHashSet::new(),
             beside: AHashMap::new(),
@@ -802,6 +766,85 @@ impl<'a> Planner<'a> {
             moves: Vec::new(),
             plan: Plan::default(),
         }
+    }
+
+    fn knows(&mut self, filing: &Filing, album_discs: &AHashMap<i64, u32>) {
+        self.sources.insert(filing.path.clone());
+        if !self.namings.contains_key(&filing.root) {
+            self.namings
+                .insert(filing.root.clone(), Naming::of(&filing.root));
+        }
+        if let Some(album) = filing.album {
+            let declared = album_discs.get(&(album.get() as i64)).copied().unwrap_or(0);
+            let counted = self.discs.entry(album).or_default();
+            *counted = (*counted)
+                .max(declared)
+                .max(disc_in(&filing.path, filing.disc).map_or(0, NonZeroU32::get));
+        }
+    }
+
+    fn plan(
+        &mut self,
+        rows: &[TrackToFile],
+        rows_of: impl Fn(&[PathBuf]) -> Result<Vec<TrackToFile>>,
+    ) -> Result<()> {
+        let groups: Vec<&[TrackToFile]> =
+            rows.chunk_by(|one, next| one.path == next.path).collect();
+        let at: AHashMap<&Path, usize> = groups
+            .iter()
+            .enumerate()
+            .filter_map(|(at, group)| Some((group.first()?.path.as_path(), at)))
+            .collect();
+
+        for group in &groups {
+            if self.progress.is_cancelled() {
+                break;
+            }
+            let Some(first) = group.first() else {
+                continue;
+            };
+            if !self.filed.insert(first.path.clone()) {
+                continue;
+            }
+
+            let tied = self.tied_by_sheets(&first.path);
+            if tied.sheets.is_empty() {
+                self.file(group);
+                continue;
+            }
+
+            let elsewhere: Vec<PathBuf> = tied
+                .files
+                .iter()
+                .filter(|file| !at.contains_key(file.as_path()))
+                .cloned()
+                .collect();
+            let fetched = rows_of(&elsewhere)?;
+            let fetched: AHashMap<&Path, &[TrackToFile]> = fetched
+                .chunk_by(|one, next| one.path == next.path)
+                .filter_map(|group| Some((group.first()?.path.as_path(), group)))
+                .collect();
+
+            let members: Vec<Option<&[TrackToFile]>> = tied
+                .files
+                .iter()
+                .map(|file| {
+                    at.get(file.as_path())
+                        .map(|at| groups[*at])
+                        .or_else(|| fetched.get(file.as_path()).copied())
+                })
+                .collect();
+            for file in &tied.files {
+                self.filed.insert(file.clone());
+            }
+            let held: Vec<&[TrackToFile]> = members.iter().flatten().copied().collect();
+            if members.iter().any(Option::is_none) {
+                self.refuse_the_sheets(&held, &tied, None);
+                continue;
+            }
+            self.file_together(&held, &tied);
+        }
+        Ok(())
     }
 
     fn file(&mut self, group: &[TrackToFile]) {
@@ -1417,9 +1460,12 @@ fn listing<'b>(beside: &'b mut AHashMap<PathBuf, Beside>, folder: &Path) -> &'b 
 }
 
 fn disc_of(row: &TrackToFile) -> Option<NonZeroU32> {
-    row.disc.or_else(|| {
-        row.path
-            .parent()
+    disc_in(&row.path, row.disc)
+}
+
+fn disc_in(path: &Path, disc: Option<NonZeroU32>) -> Option<NonZeroU32> {
+    disc.or_else(|| {
+        path.parent()
             .and_then(Path::file_name)
             .and_then(OsStr::to_str)
             .and_then(scan::disc_in_folder)
@@ -2632,6 +2678,29 @@ mod tests {
         (plan, progress.snapshot())
     }
 
+    fn planned(rows: &[TrackToFile], layout: &Layout, progress: &OrganiseProgress) -> Plan {
+        let discs: AHashMap<i64, u32> = rows
+            .iter()
+            .filter_map(|row| Some((row.album_id?.get() as i64, row.discs)))
+            .collect();
+        let mut planner = Planner::new(layout, progress);
+        for row in rows {
+            planner.knows(
+                &Filing {
+                    path: row.path.clone(),
+                    root: row.root.clone(),
+                    album: row.album_id,
+                    disc: row.disc,
+                },
+                &discs,
+            );
+        }
+        planner
+            .plan(rows, |_| Ok(Vec::new()))
+            .expect("a plan of rows held in memory");
+        planner.settle()
+    }
+
     fn a_folder_of_its_own() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let folder = env::temp_dir().join(format!(
@@ -3107,5 +3176,64 @@ mod tests {
         );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn files_one_sheet_names_are_filed_together_even_when_a_page_holds_only_one_of_them() {
+        let folder = a_folder_of_its_own();
+        let one = folder.join("rip/one.wav");
+        let two = folder.join("rip/two.wav");
+        fs::create_dir_all(folder.join("rip")).expect("a folder for the rip");
+        fs::write(&one, b"RIFF").expect("a file");
+        fs::write(&two, b"RIFF").expect("a file");
+        fs::write(
+            folder.join("rip/Meddle.cue"),
+            b"FILE \"one.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"two.wav\" WAVE\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n",
+        )
+        .expect("a sheet");
+        let rooted = |id, path: &Path, track, title: &str| TrackToFile {
+            root: folder.clone(),
+            track: Some(track),
+            title: title.to_owned(),
+            ..row(id, &path.to_string_lossy())
+        };
+        let rows = [
+            rooted(1, &one, 1, "One of These Days"),
+            rooted(2, &two, 2, "Echoes"),
+        ];
+
+        let layout = read(DEFAULT_LAYOUT);
+        let whole = planned(&rows, &layout, &OrganiseProgress::default());
+
+        let progress = OrganiseProgress::default();
+        let mut planner = Planner::new(&layout, &progress);
+        let discs = AHashMap::new();
+        for row in &rows {
+            planner.knows(
+                &Filing {
+                    path: row.path.clone(),
+                    root: row.root.clone(),
+                    album: row.album_id,
+                    disc: row.disc,
+                },
+                &discs,
+            );
+        }
+        let rest = |files: &[PathBuf]| {
+            Ok(rows
+                .iter()
+                .filter(|row| files.contains(&row.path))
+                .cloned()
+                .collect())
+        };
+        planner.plan(&rows[..1], rest).expect("a first page");
+        planner.plan(&rows[1..], rest).expect("a second page");
+        let paged = planner.settle();
+
+        assert_eq!(whole.moves.len(), 1, "{whole:?}");
+        assert_eq!(whole.moves[0].companions.len(), 1, "{whole:?}");
+        assert_eq!(paged.moves, whole.moves);
+        assert_eq!(paged.refused, whole.refused);
+        let _ = fs::remove_dir_all(folder);
     }
 }
