@@ -2153,8 +2153,10 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   *Organising* and *Tagging* are the two, and they are one shape: a *Preview* that runs the pass
   with `Pass::Preview`, an *Apply* that is greyed until a preview has landed and then takes two
   presses — the second under a note saying what the first armed — and a *Stop* drawn only while the
-  pass is running. `RootView::moving_the_files` and `writing_the_tags` are the two arming flags and
-  `disarm` clears both, so leaving the pane or changing category puts an armed control back. So
+  pass is running. Each also offers *Put the last run back* wherever the library says a run is
+  noted — `walks_back` and `tags_walk_back` — armed the same way under `walking_the_filing_back`
+  and `walking_the_tags_back`. `RootView::moving_the_files` and `writing_the_tags` are the other
+  two arming flags and `disarm` clears all four, so leaving the pane or changing category puts an armed control back. So
   does the pointer leaving the settings body: its `on_hover` lowers every armed press —
   *Reset everything* and the vault's *Keep* with these two — the moment it reads false, which is
   a transition, so a press armed from the keyboard with the pointer already elsewhere stays armed

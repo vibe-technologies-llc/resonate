@@ -2202,7 +2202,9 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         &location,
         Writing {
             edits: &edits,
+            taken: &[],
             picture: None,
+            unpictured: false,
             popularity: None,
         },
     )
@@ -2649,7 +2651,9 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         &location,
         Writing {
             edits: &edits,
+            taken: &[],
             picture: None,
+            unpictured: false,
             popularity: None,
         },
     )
@@ -2887,7 +2891,9 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         &location,
         Writing {
             edits: &edits,
+            taken: &[],
             picture: None,
+            unpictured: false,
             popularity: None,
         },
     )

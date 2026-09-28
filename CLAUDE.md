@@ -1015,7 +1015,9 @@ cargo run -- tag                      # the tags that would be written into ever
                                       #   none and a favourite as a rating with its plays;
                                       #   --apply writes them, reads each file back and has
                                       #   the catalog follow what it now says, and --root <root>
-                                      #   writes only the files scanned from that root
+                                      #   writes only the files scanned from that root; --undo
+                                      #   puts back what the last applied run replaced, printed
+                                      #   until --apply
 cargo run -- vault                    # what the managed vault holds, by form, with what its
                                       #   sources weigh and what was saved; --import prints what
                                       #   would be kept and --apply keeps it, --root <root> takes

@@ -684,6 +684,16 @@ pub enum Sub {
                     afterwards and the catalog follows what it now says"
         )]
         apply: bool,
+
+        #[arg(
+            long,
+            conflicts_with = "root",
+            help = "Put back what the last applied run replaced in every file it wrote, printed \
+                    until --apply writes it: each field as it read before, a field the run \
+                    added taken away, a cover it added taken out and the rating it changed \
+                    restored"
+        )]
+        undo: bool,
     },
 
     #[command(

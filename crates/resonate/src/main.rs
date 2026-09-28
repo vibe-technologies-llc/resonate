@@ -99,6 +99,7 @@ const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off";
 const WITHIN_THE_MINUTE: &str = "just now";
 
 const COVER_ART: &str = "cover art";
+const TAKEN_AWAY: &str = "(taken away)";
 const RATING: &str = "rating";
 
 fn main() -> ExitCode {
@@ -245,7 +246,9 @@ fn run() -> Result<()> {
             )
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
-        Some(Sub::Tag { root, apply }) => tag(&open_library(&cli, &config)?, root, *apply),
+        Some(Sub::Tag { root, apply, undo }) => {
+            tag(&open_library(&cli, &config)?, root, *apply, *undo)
+        }
         Some(Sub::Vault(args)) => {
             let held = vault_asked_for(&cli, &config)?;
             vault::run(&open_library_with(&cli, &config, Some(&held))?, &held, args)
@@ -936,12 +939,13 @@ fn forget(library: &Library, roots: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn tag(library: &Library, roots: &[PathBuf], apply: bool) -> Result<()> {
+fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<()> {
     let summary = until_told(library.retag(
         Arc::new(FileTags::default()),
         RetagOptions {
             roots: filed_from(roots),
             apply,
+            undo,
         },
     )?)?;
 
@@ -987,11 +991,25 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                     edit.value.clone(),
                 ]);
             }
+            for field in &write.taken {
+                table.push(vec![
+                    mem::take(&mut named),
+                    field.to_string(),
+                    TAKEN_AWAY.to_owned(),
+                ]);
+            }
             if let Some(picture) = &write.picture {
                 table.push(vec![
                     mem::take(&mut named),
                     COVER_ART.to_owned(),
                     pictured(picture),
+                ]);
+            }
+            if write.unpictured {
+                table.push(vec![
+                    mem::take(&mut named),
+                    COVER_ART.to_owned(),
+                    TAKEN_AWAY.to_owned(),
                 ]);
             }
             if let Some(popularity) = write.popularity {
@@ -1026,7 +1044,7 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
             retagging
                 .writes
                 .iter()
-                .map(|write| write.edits.len())
+                .map(|write| write.edits.len() + write.taken.len())
                 .sum::<usize>(),
             retagging
                 .writes

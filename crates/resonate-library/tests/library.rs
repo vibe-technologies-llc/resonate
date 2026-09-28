@@ -14346,6 +14346,7 @@ fn retagged(library: &Library, apply: bool) -> Result<RetagSummary> {
             RetagOptions {
                 roots: Vec::new(),
                 apply,
+                undo: false,
             },
         )?
         .join()?;
@@ -14436,6 +14437,91 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
         again.retagging.writes
     );
     assert_eq!(again.stats.unchanged, 1);
+    Ok(())
+}
+
+fn walked_back(library: &Library, apply: bool) -> Result<RetagSummary> {
+    let summary = library
+        .retag(
+            Arc::new(FileTags::default()),
+            RetagOptions {
+                roots: Vec::new(),
+                apply,
+                undo: true,
+            },
+        )?
+        .join()?;
+    assert!(!summary.cancelled, "the pass reported itself cancelled");
+    Ok(summary)
+}
+
+#[test]
+fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again()
+-> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    let location = MediaLocation::local(&file);
+    let track = library
+        .track_at(&file, None)?
+        .expect("the scanned track")
+        .id;
+    library.favour(Favoured::Track(track), true)?;
+    assert!(
+        !library.retag_walks_back()?,
+        "a run was kept before any applied"
+    );
+
+    retagged(&library, true)?;
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+    assert!(library.retag_walks_back()?);
+
+    let preview = walked_back(&library, false)?;
+    assert_eq!(preview.retagging.writes.len(), 1);
+    assert_eq!(preview.stats.written, 0);
+    assert_eq!(
+        tags_of(&file).title.as_deref(),
+        Some("Echoes"),
+        "a preview wrote"
+    );
+
+    let undone = walked_back(&library, true)?;
+    assert_eq!(undone.stats.written, 1);
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&file).artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(
+        FileTags::default()
+            .rated(&location)
+            .expect("a rating that reads back"),
+        Rated::Unrated
+    );
+    assert_eq!(
+        stored(&database, &file).tagged_title.as_deref(),
+        Some("Echos"),
+        "the catalog did not follow the file put back"
+    );
+
+    walked_back(&library, true)?;
+    assert_eq!(
+        tags_of(&file).title.as_deref(),
+        Some("Echoes"),
+        "putting the walk back did not write the run again"
+    );
+    assert_eq!(
+        FileTags::default()
+            .rated(&location)
+            .expect("a rating that reads back"),
+        Rated::Favourite { plays: Some(0) }
+    );
     Ok(())
 }
 

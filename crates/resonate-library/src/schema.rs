@@ -71,6 +71,17 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN packets INTEGER;",
     "ALTER TABLE artists ADD COLUMN releases_read_to INTEGER NOT NULL DEFAULT 0;
      UPDATE artists SET releases_read_to = 1000 WHERE releases_unread > 0;",
+    "CREATE TABLE retagged (
+         path     TEXT PRIMARY KEY,
+         pictured INTEGER NOT NULL,
+         rated    INTEGER
+     ) STRICT, WITHOUT ROWID;
+     CREATE TABLE retagged_fields (
+         path  TEXT NOT NULL,
+         field TEXT NOT NULL,
+         was   TEXT,
+         PRIMARY KEY (path, field)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

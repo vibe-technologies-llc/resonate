@@ -1535,6 +1535,23 @@ through `Player::media` like any other unscanned row.
   fails moves out of `Retagging::writes` and into `passed_over`, so what is printed after an apply
   is what was done rather than what was intended. The settings pane's *Tagging* group draws that
   same plan — see `ui.md` — so the command line and the window are two presenters of one pass.
+- **The last applied run can be put back.** Every write carries a `Held` — what each field it
+  touches read as before, `None` where the file carried none, and the rating where it changes
+  one — and the apply notes it in `retagged` and `retagged_fields`, a step in `MIGRATIONS`, beside
+  whether the write added the album's cover; the first page of a run that writes anything clears
+  what the run before noted, so the record is the last run's alone. `RetagOptions::undo` plans
+  out of that record instead of the catalog: each field read before is written back, one the run
+  added is taken away — `Writing::taken`, which removes the key — a cover it added is taken out —
+  `Writing::unpictured`, the front cover alone — and the rating is put back as it was, and it is
+  handed to the same `apply`, which reads every file back, has the catalog follow `tagged_title`
+  and `tagged_artist` as they now stand and notes what it replaced in turn, so putting the walk
+  back writes the run again. Only a cover is not written again, the walk back having nothing to
+  put back but its absence. `resonate tag --undo` previews it and `--undo --apply` writes it, and
+  the settings pane's *Tagging* group offers *Put the last run back* behind a second press
+  wherever `Library::retag_walks_back` says a run is noted. A file that has gone since is passed
+  over as unreadable, and one that moved is not found by its old path.
+  `an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again` is
+  the claim.
 - **The rows are read a page at a time, and a file is never split across two.** Planning a file
   needs that file's rows and nothing else, so `retag::run` walks the catalog through `paged::Paging`
   — `ROWS_A_PAGE` rows in path order past the last path handed out, with the rows of the file the

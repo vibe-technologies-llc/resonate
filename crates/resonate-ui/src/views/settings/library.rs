@@ -92,6 +92,11 @@ const PREVIEW_FIRST: &str = "Preview first, so what would move is on screen befo
 const ASK_AGAIN_TO_MOVE: &str = "Press it again to move the files. Nothing is copied — every \
                                  track is renamed where it stands.";
 
+const ASK_AGAIN_TO_PUT_THE_TAGS_BACK: &str = "Press it again to put back what the last run \
+                                              wrote into every file it wrote: each field as it \
+                                              read before, a cover it added taken out and the \
+                                              rating it changed restored.";
+
 const ASK_AGAIN_TO_PUT_BACK: &str = "Press it again to put every file the last run moved back \
                                      where it stood. Putting it back twice files them again.";
 
@@ -804,6 +809,8 @@ impl RootView {
         let planned = library.previewed_tags();
         let previewed = planned.is_shown();
         let armed = self.writing_the_tags && previewed;
+        let walks_back = library.tags_walk_back();
+        let walking_back = self.walking_the_tags_back && walks_back;
         let stopping = library.is_stopping_retag();
         let stats = library.retag_stats();
         let told = library
@@ -820,12 +827,18 @@ impl RootView {
                     .gap_2()
                     .child(self.preview_the_tags(busy, tagging && !writing, cx))
                     .child(self.write_the_tags(busy || !previewed, writing, armed, cx))
-                    .when(tagging, |row| row.child(self.stop_tagging(stopping, cx))),
+                    .when(tagging, |row| row.child(self.stop_tagging(stopping, cx)))
+                    .when(walks_back && !tagging, |row| {
+                        row.child(self.put_the_tags_back(busy, walking_back, cx))
+                    }),
             )
             .when(!previewed && !tagging, |body| {
                 body.child(note(unplanned(planned, PREVIEW_TAGS_FIRST)))
             })
             .when(armed, |body| body.child(note(ASK_AGAIN_TO_WRITE)))
+            .when(walking_back, |body| {
+                body.child(note(ASK_AGAIN_TO_PUT_THE_TAGS_BACK))
+            })
             .when(tagging, |body| {
                 body.child(note(so_far(stats.unwrap_or_default(), writing)))
             })
@@ -833,6 +846,36 @@ impl RootView {
                 body.when_some(listed, |body, listed| body.child(listed))
                     .child(note(told))
             })
+    }
+
+    fn put_the_tags_back(
+        &self,
+        held_back: bool,
+        armed: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        action(
+            "put-the-tags-back",
+            if armed {
+                "Press again to put them back"
+            } else {
+                "Put the last run back"
+            },
+            Icon::Undo,
+            held_back,
+            move |this, _, cx| {
+                if armed {
+                    this.walking_the_tags_back = false;
+                    this.library
+                        .update(cx, |library, cx| library.walk_the_tags_back(cx));
+                } else {
+                    this.walking_the_tags_back = true;
+                }
+                cx.notify();
+            },
+            self,
+            cx,
+        )
     }
 
     fn preview_the_tags(

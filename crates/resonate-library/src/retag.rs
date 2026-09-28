@@ -10,7 +10,7 @@ use std::{
 };
 
 use resonate_codec::{
-    CoverArt, Pictured, Picturing, Popularity, TagEdit, TagField, TagSet, TagSink, Writing,
+    CoverArt, Pictured, Picturing, Popularity, Rated, TagEdit, TagField, TagSet, TagSink, Writing,
 };
 use resonate_core::{AlbumId, MediaLocation, TrackId};
 use rusqlite::{Transaction, params};
@@ -57,15 +57,38 @@ pub struct Written {
     pub track: TrackId,
     pub path: PathBuf,
     pub edits: Vec<TagEdit>,
+    pub taken: Vec<TagField>,
     pub picture: Option<Arc<CoverArt>>,
+    pub unpictured: bool,
     pub popularity: Option<Popularity>,
+    pub was: Held,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Held {
+    pub fields: Vec<(TagField, Option<String>)>,
+    pub rated: Option<Rated>,
+}
+
+impl Held {
+    fn of(tags: &TagSet, fields: impl IntoIterator<Item = TagField>, rated: Option<Rated>) -> Self {
+        Self {
+            fields: fields
+                .into_iter()
+                .map(|field| (field, field.read(tags)))
+                .collect(),
+            rated,
+        }
+    }
 }
 
 impl Written {
     fn writing(&self) -> Writing<'_> {
         Writing {
             edits: &self.edits,
+            taken: &self.taken,
             picture: self.picture.as_deref(),
+            unpictured: self.unpictured,
             popularity: self.popularity,
         }
     }
@@ -91,6 +114,7 @@ impl Retagging {
 pub struct RetagOptions {
     pub roots: Vec<PathBuf>,
     pub apply: bool,
+    pub undo: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -189,6 +213,19 @@ fn run(
         }
     }
 
+    let mut noted = Noted::default();
+    if options.undo {
+        let mut retagging = undone(library, tags, progress)?;
+        if options.apply {
+            apply(library, tags, &mut retagging, progress, &mut noted)?;
+        }
+        return Ok(RetagSummary {
+            stats: progress.snapshot(),
+            retagging,
+            cancelled: progress.is_cancelled(),
+        });
+    }
+
     let totals = library.release_totals()?;
     let mut retagging = Retagging::default();
     let mut sleeve = Sleeve::default();
@@ -204,7 +241,7 @@ fn run(
 
         let mut planned = planned(library, &page, tags, progress, &mut sleeve);
         if options.apply {
-            apply(library, tags, &mut planned, progress)?;
+            apply(library, tags, &mut planned, progress, &mut noted)?;
         }
         retagging.writes.append(&mut planned.writes);
         retagging.passed_over.append(&mut planned.passed_over);
@@ -325,18 +362,26 @@ fn planned(
 
         let edits = wanted(row, &held.tags);
         let picture = offered_picture(library, &held.picture, row, sleeve);
-        let popularity = rated_otherwise(tags, &location, row.popularity);
+        let (popularity, rated) = rated_otherwise(tags, &location, row.popularity);
         if edits.is_empty() && picture.is_none() && popularity.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;
         }
 
+        let was = Held::of(
+            &held.tags,
+            edits.iter().map(|edit| edit.field),
+            popularity.and(rated),
+        );
         retagging.writes.push(Written {
             track: row.id,
             path: row.path.clone(),
             edits,
+            taken: Vec::new(),
             picture,
+            unpictured: false,
             popularity,
+            was,
         });
     }
 
@@ -347,16 +392,16 @@ fn rated_otherwise(
     tags: &dyn TagSink,
     location: &MediaLocation,
     wanted: Popularity,
-) -> Option<Popularity> {
+) -> (Option<Popularity>, Option<Rated>) {
     match tags.rated(location) {
-        Ok(held) => held.differs_from(wanted).then_some(wanted),
+        Ok(held) => (held.differs_from(wanted).then_some(wanted), Some(held)),
         Err(source) => {
             tracing::debug!(
                 %location,
                 %source,
                 "a file's rating could not be read, so none is written to it"
             );
-            None
+            (None, None)
         }
     }
 }
@@ -462,10 +507,22 @@ fn counted(into: &mut Vec<(TagField, String)>, field: TagField, value: Option<u3
 #[derive(Clone, Debug)]
 pub(crate) struct Followed {
     pub track: TrackId,
-    pub title: Option<String>,
-    pub artist: Option<String>,
+    pub title: Option<Option<String>>,
+    pub artist: Option<Option<String>>,
     pub file_size: u64,
     pub modified: SystemTime,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Undoing {
+    pub path: PathBuf,
+    pub pictured: bool,
+    pub was: Held,
+}
+
+#[derive(Default)]
+pub(crate) struct Noted {
+    begun: bool,
 }
 
 fn apply(
@@ -473,9 +530,11 @@ fn apply(
     tags: &dyn TagSink,
     retagging: &mut Retagging,
     progress: &RetagProgress,
+    noted: &mut Noted,
 ) -> Result<()> {
     let planned = mem::take(&mut retagging.writes);
     let mut followed = Vec::with_capacity(planned.len());
+    let mut undoing = Vec::with_capacity(planned.len());
 
     for write in planned {
         if progress.is_cancelled() {
@@ -486,9 +545,10 @@ fn apply(
         match written(tags, &write) {
             Ok(follow) => {
                 RetagProgress::step(&progress.written);
-                progress
-                    .fields
-                    .fetch_add(write.edits.len() as u64, Ordering::Relaxed);
+                progress.fields.fetch_add(
+                    (write.edits.len() + write.taken.len()) as u64,
+                    Ordering::Relaxed,
+                );
                 if write.picture.is_some() {
                     RetagProgress::step(&progress.pictures);
                 }
@@ -496,13 +556,20 @@ fn apply(
                     RetagProgress::step(&progress.ratings);
                 }
                 followed.push(follow);
+                undoing.push(Undoing {
+                    path: write.path.clone(),
+                    pictured: write.picture.is_some(),
+                    was: write.was.clone(),
+                });
                 retagging.writes.push(write);
             }
             Err(why) => retagging.pass_over(&write.path, why, progress),
         }
     }
 
-    library.files_retagged(&followed)
+    let begins = !noted.begun && !undoing.is_empty();
+    noted.begun |= begins;
+    library.files_retagged(&followed, &undoing, begins)
 }
 
 fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed, Unwritten> {
@@ -535,6 +602,16 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
                 path = %write.path.display(),
                 field = %edit.field,
                 "a tag this build wrote does not read back, so the catalog does not follow it"
+            );
+            return Err(Unwritten::Unconfirmed);
+        }
+    }
+    for field in &write.taken {
+        if field.read(&held.tags).is_some() {
+            tracing::warn!(
+                path = %write.path.display(),
+                %field,
+                "a tag this build took away still reads back, so the catalog does not follow it"
             );
             return Err(Unwritten::Unconfirmed);
         }
@@ -587,22 +664,30 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
     })
 }
 
-fn wrote(write: &Written, field: TagField) -> Option<String> {
+fn wrote(write: &Written, field: TagField) -> Option<Option<String>> {
+    if write.taken.contains(&field) {
+        return Some(None);
+    }
     write
         .edits
         .iter()
         .find(|edit| edit.field == field)
-        .map(|edit| edit.value.clone())
+        .map(|edit| Some(edit.value.clone()))
 }
 
-pub(crate) fn files_retagged(tx: &Transaction<'_>, followed: &[Followed]) -> Result<()> {
+pub(crate) fn files_retagged(
+    tx: &Transaction<'_>,
+    followed: &[Followed],
+    undoing: &[Undoing],
+    begins: bool,
+) -> Result<()> {
     let mut statement = tx
         .prepare(
             "UPDATE tracks
-                SET tagged_title = coalesce(?2, tagged_title),
-                    tagged_artist = coalesce(?3, tagged_artist),
-                    file_size = ?4,
-                    modified = ?5
+                SET tagged_title = CASE WHEN ?2 THEN ?3 ELSE tagged_title END,
+                    tagged_artist = CASE WHEN ?4 THEN ?5 ELSE tagged_artist END,
+                    file_size = ?6,
+                    modified = ?7
               WHERE id = ?1",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -611,15 +696,168 @@ pub(crate) fn files_retagged(tx: &Transaction<'_>, followed: &[Followed]) -> Res
         statement
             .execute(params![
                 follow.track.get() as i64,
-                follow.title,
-                follow.artist,
+                follow.title.is_some(),
+                follow.title.clone().flatten(),
+                follow.artist.is_some(),
+                follow.artist.clone().flatten(),
                 follow.file_size as i64,
                 store::to_nanos(follow.modified)
             ])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
 
+    note_what_was_there(tx, undoing, begins)
+}
+
+const UNRATED: i64 = -1;
+
+fn rating_kept(rated: Option<Rated>) -> Option<i64> {
+    match rated? {
+        Rated::Unrateable => None,
+        Rated::Unrated => Some(UNRATED),
+        Rated::Favourite { plays } => Some(i64::try_from(plays.unwrap_or(0)).unwrap_or(i64::MAX)),
+    }
+}
+
+fn rating_read(kept: Option<i64>) -> Option<Popularity> {
+    let kept = kept?;
+    Some(if kept == UNRATED {
+        Popularity::default()
+    } else {
+        Popularity {
+            favourite: true,
+            plays: u64::try_from(kept).unwrap_or(0),
+        }
+    })
+}
+
+fn note_what_was_there(tx: &Transaction<'_>, undoing: &[Undoing], begins: bool) -> Result<()> {
+    if begins {
+        tx.execute_batch("DELETE FROM retagged; DELETE FROM retagged_fields;")
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
+    for held in undoing {
+        let path = store::path_text(&held.path)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO retagged (path, pictured, rated) VALUES (?1, ?2, ?3)",
+            params![path, held.pictured, rating_kept(held.was.rated)],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        for (field, was) in &held.was.fields {
+            tx.execute(
+                "INSERT OR REPLACE INTO retagged_fields (path, field, was) VALUES (?1, ?2, ?3)",
+                params![path, field.as_str(), was],
+            )
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+    }
     Ok(())
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct KeptRetag {
+    pub path: PathBuf,
+    pub pictured: bool,
+    pub rated: Option<i64>,
+    pub fields: Vec<(TagField, Option<String>)>,
+}
+
+fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Result<Retagging> {
+    let mut retagging = Retagging::default();
+    for kept in library.last_retag()? {
+        if progress.is_cancelled() {
+            break;
+        }
+        RetagProgress::step(&progress.walked);
+        let Some(track) = library.track_at(&kept.path, None)?.map(|track| track.id) else {
+            retagging.pass_over(&kept.path, Unwritten::Unreadable, progress);
+            continue;
+        };
+        let location = MediaLocation::local(&kept.path);
+        let held = match tags.read(&location, Picturing::Whether) {
+            Ok(held) => held,
+            Err(source) => {
+                tracing::debug!(
+                    path = %kept.path.display(),
+                    %source,
+                    "a file's own tags could not be read, so nothing is put back into it"
+                );
+                retagging.pass_over(&kept.path, Unwritten::Unreadable, progress);
+                continue;
+            }
+        };
+        let popularity = rating_read(kept.rated);
+        let rated = popularity
+            .is_some()
+            .then(|| tags.rated(&location).ok())
+            .flatten();
+        let (edits, taken): (Vec<_>, Vec<_>) =
+            kept.fields.iter().partition(|(_, was)| was.is_some());
+        retagging.writes.push(Written {
+            track,
+            path: kept.path.clone(),
+            was: Held::of(
+                &held.tags,
+                kept.fields.iter().map(|(field, _)| *field),
+                rated,
+            ),
+            edits: edits
+                .into_iter()
+                .filter_map(|(field, was)| {
+                    Some(TagEdit {
+                        field: *field,
+                        value: was.clone()?,
+                    })
+                })
+                .collect(),
+            taken: taken.into_iter().map(|(field, _)| *field).collect(),
+            picture: None,
+            unpictured: kept.pictured,
+            popularity,
+        });
+    }
+    Ok(retagging)
+}
+
+pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRetag>> {
+    let mut statement = connection
+        .prepare(
+            "SELECT r.path, r.pictured, r.rated, f.field, f.was
+               FROM retagged r LEFT JOIN retagged_fields f ON f.path = r.path
+              ORDER BY r.path, f.field",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, bool>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    let mut kept: Vec<KeptRetag> = Vec::new();
+    for (path, pictured, rated, field, was) in rows {
+        let path = PathBuf::from(path);
+        if kept.last().is_none_or(|last| last.path != path) {
+            kept.push(KeptRetag {
+                path,
+                pictured,
+                rated,
+                fields: Vec::new(),
+            });
+        }
+        if let (Some(last), Some(field)) =
+            (kept.last_mut(), field.as_deref().and_then(TagField::named))
+        {
+            last.fields.push((field, was));
+        }
+    }
+    Ok(kept)
 }
 
 #[cfg(test)]
@@ -748,11 +986,43 @@ mod tests {
                 field: TagField::Title,
                 value: "Echoes".to_owned(),
             }],
+            taken: vec![TagField::Album],
             picture: None,
+            unpictured: false,
             popularity: None,
+            was: Held::default(),
         };
 
-        assert_eq!(wrote(&write, TagField::Title).as_deref(), Some("Echoes"));
+        assert_eq!(
+            wrote(&write, TagField::Title),
+            Some(Some("Echoes".to_owned()))
+        );
+        assert_eq!(wrote(&write, TagField::Album), Some(None));
         assert_eq!(wrote(&write, TagField::Artist), None);
+    }
+
+    #[test]
+    fn a_rating_is_kept_and_read_back_as_the_popularity_that_puts_it_back() {
+        assert_eq!(rating_kept(None), None);
+        assert_eq!(rating_kept(Some(Rated::Unrateable)), None);
+        for (rated, back) in [
+            (Rated::Unrated, Popularity::default()),
+            (
+                Rated::Favourite { plays: Some(7) },
+                Popularity {
+                    favourite: true,
+                    plays: 7,
+                },
+            ),
+            (
+                Rated::Favourite { plays: None },
+                Popularity {
+                    favourite: true,
+                    plays: 0,
+                },
+            ),
+        ] {
+            assert_eq!(rating_read(rating_kept(Some(rated))), Some(back));
+        }
     }
 }

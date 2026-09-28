@@ -581,6 +581,7 @@ pub struct LibraryModel {
     work: Work,
     organised: Option<(Pass, OrganiseSummary)>,
     walks_back: bool,
+    tags_walk_back: bool,
     previewed: Planned,
     imported: Option<(Pass, ImportSummary)>,
     previewed_import: Planned,
@@ -665,6 +666,7 @@ impl LibraryModel {
             ..
         } = Asked::at_first();
         let walks_back = library.walks_back().unwrap_or_default();
+        let tags_walk_back = library.retag_walks_back().unwrap_or_default();
         let mut model = Self {
             first_read,
             library,
@@ -725,6 +727,7 @@ impl LibraryModel {
             work: Work::Nothing,
             organised: None,
             walks_back,
+            tags_walk_back,
             previewed: Planned::Not,
             imported: None,
             previewed_import: Planned::Not,
@@ -2357,6 +2360,10 @@ impl LibraryModel {
         self.walks_back
     }
 
+    pub const fn tags_walk_back(&self) -> bool {
+        self.tags_walk_back
+    }
+
     pub fn is_moving(&self) -> bool {
         self.work
             .organising()
@@ -3557,19 +3564,37 @@ impl LibraryModel {
     }
 
     pub fn retag(&mut self, pass: Pass, cx: &mut Context<Self>) {
+        self.tag(
+            RetagOptions {
+                roots: Vec::new(),
+                apply: pass.applies(),
+                undo: false,
+            },
+            pass,
+            cx,
+        );
+    }
+
+    pub fn walk_the_tags_back(&mut self, cx: &mut Context<Self>) {
+        self.tag(
+            RetagOptions {
+                roots: Vec::new(),
+                apply: true,
+                undo: true,
+            },
+            Pass::Apply,
+            cx,
+        );
+    }
+
+    fn tag(&mut self, options: RetagOptions, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
             toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
             cx.notify();
             return;
         }
         let read_at = self.library.plans_stamp();
-        let handle = match self.library.retag(
-            Arc::new(FileTags::default()),
-            RetagOptions {
-                roots: Vec::new(),
-                apply: pass.applies(),
-            },
-        ) {
+        let handle = match self.library.retag(Arc::new(FileTags::default()), options) {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the catalog could not be written back into the files");
@@ -3598,6 +3623,7 @@ impl LibraryModel {
 
                 let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.tags_walk_back = this.library.retag_walks_back().unwrap_or_default();
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {

@@ -1743,9 +1743,28 @@ impl Library {
         })
     }
 
-    pub(crate) fn files_retagged(&self, followed: &[Followed]) -> Result<()> {
+    pub(crate) fn files_retagged(
+        &self,
+        followed: &[Followed],
+        undoing: &[retag::Undoing],
+        begins: bool,
+    ) -> Result<()> {
         self.inner
-            .write(|transaction| retag::files_retagged(transaction, followed))
+            .write(|transaction| retag::files_retagged(transaction, followed, undoing, begins))
+    }
+
+    pub(crate) fn last_retag(&self) -> Result<Vec<retag::KeptRetag>> {
+        self.inner.read(retag::last_retag)
+    }
+
+    pub fn retag_walks_back(&self) -> Result<bool> {
+        self.inner.read(|connection| {
+            connection
+                .query_row("SELECT EXISTS (SELECT 1 FROM retagged)", [], |row| {
+                    row.get(0)
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
     }
 
     pub fn import(&self, sources: Arc<Sources>, options: ImportOptions) -> Result<ImportHandle> {

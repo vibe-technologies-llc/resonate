@@ -92,6 +92,10 @@ impl TagField {
         }
     }
 
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|field| field.as_str() == name)
+    }
+
     pub fn read(self, tags: &TagSet) -> Option<String> {
         match self {
             Self::Title => tags.title.clone(),
@@ -156,7 +160,9 @@ pub struct TagEdit {
 #[derive(Clone, Copy, Debug)]
 pub struct Writing<'a> {
     pub edits: &'a [TagEdit],
+    pub taken: &'a [TagField],
     pub picture: Option<&'a CoverArt>,
+    pub unpictured: bool,
     pub popularity: Option<Popularity>,
 }
 
@@ -257,6 +263,12 @@ impl TagSink for FileTags {
             .expect("a primary tag this call has just put there");
         for edit in writing.edits {
             tag.insert_text(edit.field.key(), edit.value.clone());
+        }
+        for field in writing.taken {
+            tag.remove_key(field.key());
+        }
+        if writing.unpictured {
+            tag.remove_picture_type(PictureType::CoverFront);
         }
         if let Some(picture) = writing.picture {
             tag.remove_picture_type(PictureType::CoverFront);
@@ -834,7 +846,9 @@ mod tests {
     fn just(edits: &[TagEdit]) -> Writing<'_> {
         Writing {
             edits,
+            taken: &[],
             picture: None,
+            unpictured: false,
             popularity: None,
         }
     }
@@ -842,7 +856,9 @@ mod tests {
     fn only(picture: &CoverArt) -> Writing<'_> {
         Writing {
             edits: &[],
+            taken: &[],
             picture: Some(picture),
+            unpictured: false,
             popularity: None,
         }
     }
@@ -850,7 +866,9 @@ mod tests {
     fn rating(popularity: Popularity) -> Writing<'static> {
         Writing {
             edits: &[],
+            taken: &[],
             picture: None,
+            unpictured: false,
             popularity: Some(popularity),
         }
     }
@@ -1044,7 +1062,9 @@ mod tests {
             &location,
             Writing {
                 edits: &edits,
+                taken: &[],
                 picture: Some(&picture),
+                unpictured: false,
                 popularity: None,
             },
         )
@@ -1075,7 +1095,9 @@ mod tests {
             &location,
             Writing {
                 edits: &edits,
+                taken: &[],
                 picture: Some(&cover),
+                unpictured: false,
                 popularity: None,
             },
         )
@@ -1110,7 +1132,9 @@ mod tests {
             &location,
             Writing {
                 edits: &edits,
+                taken: &[],
                 picture: Some(&cover),
+                unpictured: false,
                 popularity: None,
             },
         )

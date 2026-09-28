@@ -620,6 +620,7 @@ impl RootView {
         self.resetting_everything
             || self.moving_the_files
             || self.walking_the_filing_back
+            || self.walking_the_tags_back
             || self.writing_the_tags
             || self.keeping_the_tracks
             || self.discarding_the_curve
@@ -629,6 +630,7 @@ impl RootView {
         self.resetting_everything = false;
         self.moving_the_files = false;
         self.walking_the_filing_back = false;
+        self.walking_the_tags_back = false;
         self.writing_the_tags = false;
         self.keeping_the_tracks = false;
         self.discarding_the_curve = false;
