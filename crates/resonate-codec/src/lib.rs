@@ -17,6 +17,7 @@ mod registry;
 mod riff;
 mod source;
 mod speakers;
+mod spool;
 mod stream;
 mod sylt;
 mod tags;

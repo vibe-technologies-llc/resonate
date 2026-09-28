@@ -1,5 +1,6 @@
 use std::{
     io::{self, Cursor, Read, Seek, SeekFrom},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -38,6 +39,7 @@ use crate::{
     prescan::Prescan,
     riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
+    spool::Spool,
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
 };
@@ -63,6 +65,7 @@ pub(crate) struct Coded {
     pub(crate) prescan: Prescan,
     pub(crate) revisions: Revisions,
     pub(crate) chunk_pictures: Vec<Visual>,
+    pub(crate) spool: Option<Arc<Spool>>,
 }
 
 pub(crate) struct OpenedDsd {
@@ -70,6 +73,7 @@ pub(crate) struct OpenedDsd {
     pub(crate) layout: dsd::Layout,
     pub(crate) seekable: bool,
     pub(crate) tags: TagSet,
+    pub(crate) spool: Option<Arc<Spool>>,
 }
 
 pub(crate) enum Opened {
@@ -78,6 +82,13 @@ pub(crate) enum Opened {
 }
 
 impl Opened {
+    pub(crate) fn spool(&self) -> Option<Arc<Spool>> {
+        match self {
+            Self::Coded(coded) => coded.spool.clone(),
+            Self::Dsd(held) => held.spool.clone(),
+        }
+    }
+
     pub(crate) fn into_coded(self) -> Option<Coded> {
         match self {
             Self::Coded(coded) => Some(*coded),
@@ -135,7 +146,11 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
     open_spooling(media, location, SPOOLED_AT_MOST)
 }
 
-fn open_spooling(media: Media, location: &MediaLocation, spooled_at_most: u64) -> Result<Opened> {
+pub(crate) fn open_spooling(
+    media: Media,
+    location: &MediaLocation,
+    spooled_at_most: u64,
+) -> Result<Opened> {
     open_spooling_within(media, location, spooled_at_most, SPOOLED_WITHIN)
 }
 
@@ -150,6 +165,7 @@ fn open_spooling_within(
         hint: named,
     } = media;
     let mut seekable = bytes.is_seekable();
+    let mut spool = None;
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut())
     } else {
@@ -161,7 +177,17 @@ fn open_spooling_within(
             }
             Spooled::Head(head) => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
-                bytes = Box::new(Replaying::over(bytes, head));
+                bytes = match Spool::beginning_with(&head, bytes, named.clone()) {
+                    Ok(held) => {
+                        let streamed = Box::new(held.streamed());
+                        spool = Some(held);
+                        streamed
+                    }
+                    Err((source, bytes)) => {
+                        tracing::debug!(%source, "a source that cannot seek could not be spooled on disc; it plays from its head");
+                        Box::new(Replaying::over(bytes, head))
+                    }
+                };
                 found
             }
         }
@@ -175,6 +201,7 @@ fn open_spooling_within(
             layout,
             seekable,
             tags,
+            spool,
         })));
     }
 
@@ -217,6 +244,7 @@ fn open_spooling_within(
         prescan,
         revisions,
         chunk_pictures: chunk.map(|held| held.media.visuals).unwrap_or_default(),
+        spool,
     })))
 }
 

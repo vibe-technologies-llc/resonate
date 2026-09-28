@@ -1,6 +1,7 @@
 use std::{
     fmt,
     io::{self, Read, Seek},
+    sync::Arc,
 };
 
 use resonate_core::{
@@ -21,6 +22,7 @@ use crate::{
     cue,
     dsd::{self, DSD_BLOCK_FRAMES, Packing},
     source::{FormatHint, Media, Reading as SourceReading, Sources},
+    spool::Spool,
     stream::PacketSpan,
     timeline::Timeline,
 };
@@ -324,6 +326,7 @@ pub struct Decoder {
     origin: Frames,
     limit: Option<Frames>,
     last_packet: Option<PacketSpan>,
+    spool: Option<Arc<Spool>>,
 }
 
 impl Decoder {
@@ -419,6 +422,7 @@ impl Decoder {
 
     fn build(opened: Opened, location: &MediaLocation) -> Result<(Self, MediaInfo)> {
         let info = opened.media_info(location)?;
+        let spool = opened.spool();
 
         let (reading, timeline) = match opened {
             Opened::Dsd(held) => {
@@ -472,6 +476,7 @@ impl Decoder {
             origin: Frames::ZERO,
             limit: None,
             last_packet: None,
+            spool,
         };
         decoder.open_on_the_music()?;
 
@@ -493,6 +498,46 @@ impl Decoder {
 
     pub fn info(&self) -> &MediaInfo {
         &self.info
+    }
+
+    pub fn settle_the_spool(&mut self) -> Option<&MediaInfo> {
+        if !self.spool.as_ref().is_some_and(|spool| spool.is_whole()) {
+            return None;
+        }
+        let media = self.spool.take()?.whole()?;
+        match self.settled_over(media) {
+            Ok(settled) => {
+                *self = settled;
+                Some(&self.info)
+            }
+            Err(error) => {
+                tracing::debug!(%error, location = %self.location, "a spooled source would not open whole; it plays on as it arrived");
+                None
+            }
+        }
+    }
+
+    fn settled_over(&self, media: Media) -> Result<Self> {
+        let (mut settled, whole) =
+            Self::build(container::open(media, &self.location)?, &self.location)?;
+        settled.deliver(self.delivery);
+        if whole.is_seekable {
+            let landed = settled.seek_reader(self.position)?;
+            settled.restart(landed)?;
+            settled.discard_to(self.position)?;
+        }
+        let open_ended = self.limit.is_none() && self.origin == Frames::ZERO;
+        settled.origin = self.origin;
+        let mut info = self.info.clone();
+        info.is_seekable = whole.is_seekable;
+        if open_ended {
+            info.duration = whole.duration;
+            info.playable = whole.playable;
+        } else {
+            settled.limit = self.limit;
+        }
+        settled.info = info;
+        Ok(settled)
     }
 
     pub fn position(&self) -> Frames {
@@ -1386,6 +1431,57 @@ FILE "Meddle.wav" WAVE
             decoder.seek(Frames(9_000)),
             Err(Error::SeekOutOfRange { .. })
         ));
+    }
+
+    #[test]
+    fn a_pipe_too_long_to_hold_is_spooled_on_disc_and_seeks_once_it_has_all_arrived() {
+        let samples = ramp(16);
+        let location = MediaLocation::local("long.wav");
+        let media = Media {
+            stream: Box::new(SourceReading::new(Piped(Wav::pcm(16).build(&samples)))),
+            hint: FormatHint::of(&location),
+        };
+        let opened = container::open_spooling(media, &location, 1_024).expect("a pipe opens");
+        let (mut decoder, info) = Decoder::build(opened, &location).expect("a pipe decodes");
+        assert!(!info.is_seekable, "a long pipe was read whole into memory");
+
+        let mut out = AudioBuffer::empty(info.spec);
+        assert_eq!(
+            decoder.next_block(&mut out).expect("a block decodes"),
+            DecodeStatus::Decoded
+        );
+        let mut heard = integers(&out);
+
+        let waited = std::time::Instant::now();
+        let settled = loop {
+            if let Some(settled) = decoder.settle_the_spool() {
+                break settled.clone();
+            }
+            assert!(
+                waited.elapsed() < std::time::Duration::from_secs(10),
+                "the spool never had it all"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert!(settled.is_seekable);
+        assert_eq!(settled.duration, Some(Frames(FRAMES as u64)));
+
+        heard.extend(drain(&mut decoder, &mut out));
+        assert_eq!(
+            heard, samples,
+            "the stream skipped or repeated as it settled"
+        );
+
+        assert_eq!(
+            decoder
+                .seek(Frames(1_000))
+                .expect("a seek once it has all arrived"),
+            Frames(1_000)
+        );
+        assert_eq!(
+            drain(&mut decoder, &mut out),
+            slice_of(&samples, FrameSpan::starting(Frames(1_000)))
+        );
     }
 
     #[test]

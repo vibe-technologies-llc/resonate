@@ -663,6 +663,7 @@ impl Engine {
                 self.settle();
                 self.let_the_link_rest();
                 self.heed_the_measured_peak();
+                self.settle_what_was_spooled();
                 self.doze();
                 self.publish();
                 self.answer();
@@ -1092,6 +1093,23 @@ impl Engine {
             track.measure_where_wanted(&self.sources, &self.config);
         }
         self.retune()
+    }
+
+    fn settle_what_was_spooled(&mut self) {
+        let Some(track) = self.track.as_mut() else {
+            return;
+        };
+        if track.info.is_seekable {
+            return;
+        }
+        let Some(settled) = track.decoder.settle_the_spool() else {
+            return;
+        };
+        let info = Arc::make_mut(&mut track.info);
+        info.is_seekable = settled.is_seekable;
+        info.duration = settled.duration;
+        info.playable = settled.playable;
+        track.published = None;
     }
 
     fn heed_the_measured_peak(&mut self) {

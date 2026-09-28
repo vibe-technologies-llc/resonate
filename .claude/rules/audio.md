@@ -392,11 +392,26 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   FLAC track exactly, the seek bar and the end bound a priming is trimmed against. The wait is
   what keeps a slow remote stream from holding the first sample for its whole download: a local
   provider's copy lands well inside it, and a stream still arriving when it runs out — or one past
-  the cap — keeps the head it was read into: symphonia is handed a `Replaying` stream that serves
-  the head before the rest — still
-  `is_seekable() == false` and still `byte_len() == None` — and the walks run over a `Cursor` of
-  the head, advancing by absolute seek, which simply stops at its end, so neither `riff.rs` nor
-  `matroska.rs` knows the difference.
+  the cap — goes on arriving onto the disc. `spool::Spool` is an unnamed file under the
+  temporary folder — made and unlinked at once, so nothing is left behind whatever ends the run —
+  holding the head, and a `resonate-spool` thread copies the rest of the source into it as it
+  arrives, up to `SPOOLED_ON_DISC_AT_MOST`, 8 GiB, and stops the moment nothing but itself holds
+  the spool. symphonia is handed its `Spooling` side, which reads what has arrived and waits on a
+  condition for what has not — still `is_seekable() == false` and `byte_len() == None`, because a
+  reader that thinks it can seek looks for the end at once, and that is the whole download — and
+  the walks run over a `Cursor` of the head, advancing by absolute seek, which simply stops at its
+  end, so neither `riff.rs` nor `matroska.rs` knows the difference. **Once it has all arrived it
+  can seek.** `Decoder::settle_the_spool` answers `None` until the copy has reached the source's
+  end, and then opens the spooled file over again as a seekable source — `Unspooled`, reading at
+  its own offset, the whole prescan with it — seeks the new decoder to the frame the old one had
+  reached, carries the delivery, the span and the tags across, and takes its place, so a length a
+  stream never declared is known and the seek bar appears. The engine asks every pass while the
+  playing track cannot seek — `Engine::settle_what_was_spooled` — and republishes the digest, so
+  MPRIS's `CanSeek` and the window follow. A spool that could not be made — no writable
+  temporary folder — falls back to the `Replaying` head it always had, and one cut short by its
+  ceiling or a failing source plays to where it stopped and never claims to be whole.
+  `a_pipe_too_long_to_hold_is_spooled_on_disc_and_seeks_once_it_has_all_arrived` holds the
+  stream to every sample across the swap and a seek after it.
   `a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio`,
   `a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek`,
   `a_stream_that_arrives_slowly_opens_from_what_came_within_the_wait_rather_than_its_whole` and
@@ -643,7 +658,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **A provider hands back a `Read + Seek + Send + Sync` stream and says whether it is seekable**,
   which is symphonia's own contract. A source that can only stream forward is spooled into memory
   up to `SPOOLED_AT_MOST`, for as long as `SPOOLED_WITHIN`, and is then a seekable source like
-  any other; past either it loses the prescan past its head, the seek bar and the box walk.
+  any other; past either it is spooled onto the disc, plays as it arrives with the prescan of its
+  head alone, and can seek once it has all arrived.
 - **`Sources` is resolved by a linear walk over the registered providers**, which is right for the
   handful a desktop player registers and wrong for hundreds.
 - **A provider that is not the filesystem is waited on for `Sources::OPENED_WITHIN` and no

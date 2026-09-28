@@ -26,8 +26,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A `.wvc` correction file beside a hybrid WavPack is never opened, so the file plays and is billed
   as lossy: `symphonia-codec-wavpack` 0.1.1 reads a held zero's correction from the wrong range,
   and applying one waits on the crate being fixed upstream
-- A source that cannot seek and does not arrive whole within `SPOOLED_WITHIN`, or runs past
-  256 MiB, plays from its head: it cannot seek and is prescanned only through that head
 - A file embedding a huge picture still costs one materialisation, because symphonia reads it into
   a buffer of its own before `probe_cover_art` can weigh it
 - Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader
