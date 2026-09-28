@@ -177,6 +177,19 @@ it answers could change, because it is what a stored study is weighed against.
   bitrate, which lands in the suspect band — Vorbis q6 11 and V0 9. AAC at 256 kbps has no lowpass
   a wall can find and was never caught. Sixty random FLACs of the library read the same under both
   but three, each now suspect with a wall at 19.x or 20.x kHz, and all three a web or scene rip.
+  **What else was weighed against AAC at 256 kbps, and why none of it is a finding.** Twelve CD
+  rips, a minute of each, put through ffmpeg's AAC at 256 and 320 kbps, LAME at 320 and V0,
+  libopus at 160 and libvorbis at q6: the AAC encodes keep every 500 Hz band from 14 to 22 kHz
+  within half a decibel of their source; they leave no more 100 Hz holes — a band 20 to 25 dB
+  under the median of its neighbours — than the source has; their side channel above 10 kHz is
+  as loud against the mid as the source's, where a joint-stereo encoder would have zeroed it;
+  the top octave swings from window to window by the same 1 to 5 dB; and an MDCT taken on AAC's
+  own 1 024-sample grid, at the offset the decode starts on and at three it does not, finds no
+  more coefficients at the 16-bit floor in 11 to 19 kHz than the source's does. Only the MP3s
+  differ in any of these — a top octave that swings two to three times as far — and a wall at
+  19.5 to 20 kHz already calls every one of them. A detector that cannot tell the two apart on
+  this material would only be a threshold waiting to misfire, so the verdict reads walls and
+  padding alone.
 
 ## Studies in the catalog
 

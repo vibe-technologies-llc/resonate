@@ -49,9 +49,9 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
-- The verdict reads only the lowpass wall, the upsampled wall and the padded bits — not an MP3's
-  frame-to-frame holes, sfb21 content or pre-echo — so an encode with no lowpass a wall can find,
-  ffmpeg's AAC at 256 kbps among them, reads as lossless; no FhG encode was weighed
+- An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
+  measured the same as its source by every spectral feature `analysis.md` lists, and no FhG encode
+  was weighed
 - AcoustID has never been reached with a real key; its fixture is written from the documentation
 
 ## Search
