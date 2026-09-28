@@ -76,6 +76,41 @@ pub fn analyse(
     })
 }
 
+pub fn print(
+    sources: &Sources,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+    watch: &dyn Watching,
+) -> Result<Option<Chromaprint>> {
+    let (mut decoder, info) = opened(sources, location, span)?;
+    let codec = Codec::from_id(info.codec);
+    let format = native_format(&info, codec);
+    decoder.set_output_format(format);
+
+    let rate = info.spec.rate;
+    let mut printing = Printing::new(rate.hz(), usize::from(info.spec.channels.count().get()));
+    let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
+    let mut normalised = Vec::new();
+    let mut frames = 0_u64;
+    while !printing.is_full() {
+        if watch.stopped() {
+            return Err(Error::Stopped);
+        }
+        let status = decoder
+            .next_block(&mut block)
+            .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
+        if status == DecodeStatus::EndOfStream {
+            break;
+        }
+        normalise(block.data(), &mut normalised);
+        printing.note(&normalised);
+        frames += block.frames() as u64;
+    }
+
+    let length = info.duration.unwrap_or(Frames(frames)).to_duration(rate);
+    Ok(printing.finished(length))
+}
+
 trait Drawing {
     fn note_block(&mut self, interleaved: &[f32]);
 

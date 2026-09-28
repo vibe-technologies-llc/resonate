@@ -40,6 +40,12 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE lyrics_kept ADD COLUMN lyricsfile TEXT;",
     "ALTER TABLE tracks ADD COLUMN probe_again INTEGER NOT NULL DEFAULT 0;
      UPDATE tracks SET probe_again = 1 WHERE codec = 11;",
+    "CREATE TABLE unheld_listens (
+         path       TEXT NOT NULL,
+         span_start INTEGER NOT NULL,
+         at         INTEGER NOT NULL
+     ) STRICT;
+     CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -718,7 +724,11 @@ mod tests {
     #[test]
     fn a_catalog_carried_forward_probes_its_wavpack_rows_again_and_nothing_else() {
         let connection = opened();
-        lay_out_through(&connection, V1, &MIGRATIONS[..MIGRATIONS.len() - 1])
+        let marking = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("probe_again"))
+            .expect("the step that marks rows to probe again");
+        lay_out_through(&connection, V1, &MIGRATIONS[..marking])
             .expect("the previous schema applies");
         connection
             .execute_batch(

@@ -1069,6 +1069,12 @@ impl Library {
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
             if counted == 0 {
+                transaction
+                    .execute(
+                        "INSERT INTO unheld_listens (path, span_start, at) VALUES (?1, ?2, ?3)",
+                        params![text, start, now],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
                 return Ok(None);
             }
 

@@ -34,6 +34,41 @@ struct Row {
     likeness: Likeness,
     rate: i64,
     channels: i64,
+    cut: (i64, Option<i64>),
+    print: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct CutLikeness {
+    size: i64,
+    codec: i64,
+    cuts: Vec<(i64, Option<i64>)>,
+}
+
+struct Cut {
+    path: String,
+    rows: Vec<Row>,
+}
+
+impl Cut {
+    fn likeness(&self) -> CutLikeness {
+        CutLikeness {
+            size: self.rows[0].likeness.size,
+            codec: self.rows[0].likeness.codec,
+            cuts: self.rows.iter().map(|row| row.cut).collect(),
+        }
+    }
+
+    fn named_alike(&self, other: &Self) -> bool {
+        let titles = |cut: &Self| {
+            cut.rows
+                .iter()
+                .map(|row| row.likeness.title.clone())
+                .collect::<Vec<_>>()
+        };
+        titles(self) == titles(other)
+            || Path::new(&self.path).file_name() == Path::new(&other.path).file_name()
+    }
 }
 
 impl Row {
@@ -62,15 +97,26 @@ impl Row {
 struct Paired {
     from: Row,
     to: Row,
+    rows: usize,
+}
+
+impl Paired {
+    const fn whole(from: Row, to: Row) -> Self {
+        Self { from, to, rows: 1 }
+    }
 }
 
 const WHOLE_AND_ALONE: &str = "span_frames IS NULL AND span_start = 0
      AND NOT EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.id != t.id)";
 
+const CUT_OR_SHARED: &str = "(span_frames IS NOT NULL OR span_start != 0
+     OR EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.id != t.id))";
+
 pub(crate) fn follow_the_moved(
     tx: &Transaction<'_>,
     roots: &[i64],
     generation: i64,
+    heard: &dyn Fn(&Path) -> Option<String>,
 ) -> Result<u64> {
     if roots.is_empty() {
         return Ok(0);
@@ -81,6 +127,21 @@ pub(crate) fn follow_the_moved(
         .collect::<Vec<_>>()
         .join(",");
 
+    let mut paired = wholes_moved(tx, &scoped, generation, heard)?;
+    paired.extend(cuts_moved(tx, &scoped, generation)?);
+    if paired.is_empty() {
+        return Ok(0);
+    }
+    follow(tx, &paired, generation)?;
+    Ok(paired.iter().map(|pair| pair.rows as u64).sum())
+}
+
+fn wholes_moved(
+    tx: &Transaction<'_>,
+    scoped: &str,
+    generation: i64,
+    heard: &dyn Fn(&Path) -> Option<String>,
+) -> Result<Vec<Paired>> {
     let gone: Vec<Row> = rows(
         tx,
         &format!("seen != ?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
@@ -90,7 +151,7 @@ pub(crate) fn follow_the_moved(
     .filter(|row| !Path::new(&row.path).exists())
     .collect();
     if gone.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
     let arrived = rows(
         tx,
@@ -99,20 +160,81 @@ pub(crate) fn follow_the_moved(
     )?;
 
     let (mut paired, gone, arrived) = pairs(gone, arrived);
-    paired.extend(pairs_by_sound(gone, arrived));
-    if paired.is_empty() {
-        return Ok(0);
+    paired.extend(pairs_by_sound(gone, arrived, heard));
+    Ok(paired)
+}
+
+fn cuts_moved(tx: &Transaction<'_>, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
+    let gone: Vec<Cut> = cuts(rows(
+        tx,
+        &format!("seen != ?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
+        generation,
+    )?)
+    .into_iter()
+    .filter(|cut| !Path::new(&cut.path).exists())
+    .collect();
+    if gone.is_empty() {
+        return Ok(Vec::new());
     }
-    follow(tx, &paired, generation)?;
-    Ok(paired.len() as u64)
+    let arrived = cuts(rows(
+        tx,
+        &format!(
+            "seen = ?1 AND added >= ?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}
+             AND NOT EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.added < ?1)"
+        ),
+        generation,
+    )?);
+
+    let mut left: AHashMap<CutLikeness, Vec<Cut>> = AHashMap::new();
+    for cut in gone {
+        left.entry(cut.likeness()).or_default().push(cut);
+    }
+    let mut came: AHashMap<CutLikeness, Vec<Cut>> = AHashMap::new();
+    for cut in arrived {
+        came.entry(cut.likeness()).or_default().push(cut);
+    }
+
+    Ok(left
+        .into_iter()
+        .filter_map(|(likeness, from)| {
+            let to = came.remove(&likeness)?;
+            let [from] = <[Cut; 1]>::try_from(from).ok()?;
+            let [to] = <[Cut; 1]>::try_from(to).ok()?;
+            if !from.named_alike(&to) {
+                return None;
+            }
+            let rows = from.rows.len();
+            Some(Paired {
+                from: from.rows.into_iter().next()?,
+                to: to.rows.into_iter().next()?,
+                rows,
+            })
+        })
+        .collect())
+}
+
+fn cuts(rows: Vec<Row>) -> Vec<Cut> {
+    let mut by_path: AHashMap<String, Vec<Row>> = AHashMap::new();
+    for row in rows {
+        by_path.entry(row.path.clone()).or_default().push(row);
+    }
+    by_path
+        .into_iter()
+        .map(|(path, mut rows)| {
+            rows.sort_by_key(|row| row.cut);
+            Cut { path, rows }
+        })
+        .collect()
 }
 
 fn rows(tx: &Transaction<'_>, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
     let mut statement = tx
         .prepare(&format!(
-            "SELECT path, root_id, album_id, file_size, duration, codec, tagged_title,
-                    tagged_artist, sample_rate, channels
+            "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,
+                    t.tagged_title, t.tagged_artist, t.sample_rate, t.channels, t.span_start,
+                    t.span_frames, s.print
                FROM tracks t
+               LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE {narrowed}"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -132,6 +254,8 @@ fn rows(tx: &Transaction<'_>, narrowed: &str, generation: i64) -> Result<Vec<Row
                 },
                 rate: row.get(8)?,
                 channels: row.get(9)?,
+                cut: (row.get(10)?, row.get(11)?),
+                print: row.get(12)?,
             })
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -165,7 +289,11 @@ fn pairs(gone: Vec<Row>, arrived: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
     (paired, unpaired_gone, unpaired_arrived)
 }
 
-fn pairs_by_sound(gone: Vec<Row>, arrived: Vec<Row>) -> Vec<Paired> {
+fn pairs_by_sound(
+    gone: Vec<Row>,
+    arrived: Vec<Row>,
+    heard: &dyn Fn(&Path) -> Option<String>,
+) -> Vec<Paired> {
     let mut left: AHashMap<Sound, Vec<Row>> = AHashMap::new();
     for row in gone {
         if let Some(sound) = row.sound() {
@@ -185,9 +313,17 @@ fn pairs_by_sound(gone: Vec<Row>, arrived: Vec<Row>) -> Vec<Paired> {
             let [from] = <[Row; 1]>::try_from(from).ok()?;
             let [to] = <[Row; 1]>::try_from(to).ok()?;
 
-            from.named_alike(&to).then_some(Paired { from, to })
+            (from.named_alike(&to) || sounds_alike(&from, &to, heard))
+                .then(|| Paired::whole(from, to))
         })
         .collect()
+}
+
+fn sounds_alike(from: &Row, to: &Row, heard: &dyn Fn(&Path) -> Option<String>) -> bool {
+    let Some(studied) = from.print.as_deref() else {
+        return false;
+    };
+    heard(Path::new(&to.path)).as_deref() == Some(studied)
 }
 
 fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>) {
@@ -195,7 +331,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
         let paired = from
             .into_iter()
             .zip(to)
-            .map(|(from, to)| Paired { from, to })
+            .map(|(from, to)| Paired::whole(from, to))
             .collect();
         return (paired, Vec::new(), Vec::new());
     }
@@ -222,12 +358,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
     let mut to: Vec<Option<Row>> = to.into_iter().map(Some).collect();
     let paired = taken
         .into_iter()
-        .filter_map(|(was, is)| {
-            Some(Paired {
-                from: from[was].take()?,
-                to: to[is].take()?,
-            })
-        })
+        .filter_map(|(was, is)| Some(Paired::whole(from[was].take()?, to[is].take()?)))
         .collect();
 
     (
@@ -269,7 +400,7 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
         .map(|pair| Move {
             from: PathBuf::from(&pair.from.path),
             to: PathBuf::from(&pair.to.path),
-            rows: 1,
+            rows: u32::try_from(pair.rows).unwrap_or(u32::MAX),
             companions: Vec::new(),
             sidecars: Vec::new(),
         })

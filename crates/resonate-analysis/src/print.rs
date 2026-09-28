@@ -39,6 +39,10 @@ impl Printing {
         }
     }
 
+    pub(crate) const fn is_full(&self) -> bool {
+        self.left == 0 || self.printer.is_none()
+    }
+
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
         let Some(printer) = &mut self.printer else {
             return;

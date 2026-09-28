@@ -18,6 +18,24 @@ const FORGET_THE_LISTENS: &str = "DELETE FROM listens
 
 const FORGET_THE_PASSES: &str = "DELETE FROM passes WHERE at < ?1";
 
+const FORGET_THE_UNHELD: &str = "DELETE FROM unheld_listens WHERE at < ?1";
+
+const CREDIT_THE_UNHELD: &str = "INSERT INTO listens (track_id, at)
+     SELECT t.id, u.at FROM unheld_listens u
+       JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
+      ORDER BY u.at;
+     UPDATE tracks
+        SET plays = plays + (SELECT count(*) FROM unheld_listens u
+                              WHERE u.path = tracks.path AND u.span_start = tracks.span_start),
+            played = max(coalesce(played, 0),
+                         (SELECT max(u.at) FROM unheld_listens u
+                           WHERE u.path = tracks.path AND u.span_start = tracks.span_start))
+      WHERE EXISTS (SELECT 1 FROM unheld_listens u
+                     WHERE u.path = tracks.path AND u.span_start = tracks.span_start);
+     DELETE FROM unheld_listens
+      WHERE EXISTS (SELECT 1 FROM tracks t
+                     WHERE t.path = unheld_listens.path AND t.span_start = unheld_listens.span_start);";
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum HistoryKept {
     #[default]
@@ -99,10 +117,19 @@ fn forgotten_before(transaction: &Transaction<'_>, before: i64) -> Result<Aged> 
     let passes = transaction
         .execute(FORGET_THE_PASSES, params![before])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    transaction
+        .execute(FORGET_THE_UNHELD, params![before])
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
     Ok(Aged {
         listens: listens as u64,
         passes: passes as u64,
     })
+}
+
+pub(crate) fn credit_the_unheld(transaction: &Transaction<'_>) -> Result<()> {
+    transaction
+        .execute_batch(CREDIT_THE_UNHELD)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 #[cfg(test)]

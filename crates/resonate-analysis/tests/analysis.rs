@@ -7,7 +7,7 @@ use std::{
 };
 
 use resonate_analysis::{
-    Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching, analyse, study,
+    Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching, analyse, print, study,
 };
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, Frames, MediaLocation};
@@ -164,6 +164,21 @@ fn band_limited_noise_reaching_the_top_is_genuine_and_everything_is_drawn() {
         .spectrogram
         .painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]));
     assert_eq!(painted.width as usize, analysis.spectrogram.columns());
+}
+
+#[test]
+fn a_print_of_the_head_alone_is_the_print_the_whole_study_took() {
+    let tree = Tree::new();
+    let location = tree.wave("printed.wav", RATE, 16, &music(RATE, 16_000.0, 20_000.0));
+    let studied = study(&Sources::local(), &location, None, &Watch::default())
+        .expect("a study")
+        .print
+        .expect("a studied print");
+    let printed = print(&Sources::local(), &location, None, &Watch::default())
+        .expect("a print")
+        .expect("a printed head");
+
+    assert_eq!(printed.encoded(), studied.encoded());
 }
 
 #[test]

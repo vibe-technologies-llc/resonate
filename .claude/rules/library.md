@@ -656,7 +656,14 @@ through `Player::media` like any other unscanned row.
   agree on the tagged title, the tagged artist or the file's own name. The frame count is what
   makes the pairing safe and the uniqueness what keeps two rips of one length from being guessed
   between; the agreement is what keeps a file deleted and an unrelated one of the same length
-  added from being taken for one moved file.
+  added from being taken for one moved file. **Where no name agrees, the print decides.** A gone
+  row whose study kept a Chromaprint is paired with the one new row of its sound where
+  `resonate_analysis::print` — the first two minutes decoded exactly as the study decodes them,
+  and nothing past them — writes the same print, so a file retagged past every name it had and
+  renamed as it moved is still the row it was; a row nobody studied, or a print that differs, is
+  forgotten and found as before. The decode happens inside the scan's write, which is why it is
+  asked only of the few rows a unique sound leaves unnamed.
+  `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_study_took`,
   `a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like` and
   `a_file_taken_away_and_another_of_its_length_added_are_not_one_file` are the claims. A pair is
   followed through `organise::files_moved`, so the new row is dropped and the old one takes its
@@ -665,16 +672,29 @@ through `Player::media` like any other unscanned row.
   album the scan made for the new folder holds nothing else and every row that moved into it came
   out of one album, it is gathered into that album through `enriched::gather`, so the new folder's
   key names the album the rows always had and a release, a cover and a favourite are not left
-  behind; otherwise the moved row joins the album the scan filed it under. A cue-cut file is not
-  followed, its rows sharing a path. `ScanStats::moved` counts the pairs and `added` leaves them
-  out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist`,
+  behind; otherwise the moved row joins the album the scan filed it under. **A file a sheet cuts
+  is followed whole.** `cuts_moved` groups the rows sharing a path on either side — every row
+  gone where the file is not there, every row new where none of the path's rows is older than
+  the scan — and pairs two groups that are alike in size, codec and every cut's start and length,
+  where each is the one group on its side of that shape and the titles the sheet gave or the
+  file's own name agree; `files_moved` moves every row of the path at once.
+  `a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays` is the claim.
+  `ScanStats::moved` counts the rows followed and `added` leaves them out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist`,
   `an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was` and
   `two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with` are the claims.
 - **A track's count is the catalog's and a rescan leaves it where it stands.** `tracks.plays` and
   `tracks.played` are absent from the upsert's `DO UPDATE SET` the way `added` is, so a rescan keeps
   both; forgetting a root drops the rows and the counts with them. It is kept against the path, so a
-  file no scan has seen counts nothing — `Library::track_played` answers `None` rather than
-  refusing, because a location that is not local has no row here, and answers with the row it
+  file no scan has seen is not counted against a row — `Library::track_played` answers `None`
+  rather than refusing, because a location that is not local has no row here — **but the play is
+  kept against the path.** `unheld_listens` holds the path, the span's start and the moment, and
+  `history::credit_the_unheld` runs after every scan's prune: a play whose path and start now
+  name a row becomes a `listens` row stamped when it was heard, the row's `plays` and `played`
+  follow, and the unheld play goes, so a queue of files played before the folder was ever
+  scanned is counted the moment it is —
+  `a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does`. What the
+  settle of such a visit heard is not kept, having no listen to spend it on, and the history's
+  span ages the unheld plays with the rest. It answers with the row it
   counted where there was one, read back inside the same transaction so the caller has the count it
   now stands at without a read of its own. `plays:` and `played:` narrow on
   the two columns and `SortOrder::Plays` and `Played` order on them, so *Top 25 most played* is a

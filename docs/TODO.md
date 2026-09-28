@@ -48,9 +48,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   picture asked for after its tags landed opens the file a second time
 
 ## Library
-- A file moved by hand and retagged past every name it had, or a cue-cut file, starts again at
-  nothing. A file no scan has seen counts nothing — a queue of unscanned files plays and is
-  forgotten
+- A file moved by hand and retagged past every name it had starts again at nothing unless a study
+  kept its print, and a play of a file no scan has seen keeps no listening time
 - A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
   popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
   rating at all

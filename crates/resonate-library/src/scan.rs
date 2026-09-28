@@ -14,6 +14,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, bounded};
+use resonate_analysis::Watch;
 use resonate_codec::{
     Codec, CueFile, CueSheet, MediaInfo, Picturing, Sources, TagSet, probe_pictured, read_cue,
 };
@@ -24,7 +25,7 @@ use crate::{
     Error, Result, StoreOp, alternatives,
     db::Inner,
     enriched::stripped_title,
-    loose, moves,
+    history, loose, moves,
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
@@ -500,11 +501,13 @@ fn run(
 
     let cancelled = progress.is_cancelled();
     if !cancelled {
-        let moved =
-            inner.write(|transaction| moves::follow_the_moved(transaction, &ids, generation))?;
+        let moved = inner.write(|transaction| {
+            moves::follow_the_moved(transaction, &ids, generation, &heard_as)
+        })?;
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
+        inner.write(history::credit_the_unheld)?;
         let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
         progress.removed.store(removed + tidied, Ordering::Relaxed);
         let gathered = inner.write(|transaction| loose::gather_the_loose(transaction, &ids))?;
@@ -524,6 +527,21 @@ fn run(
         stats: progress.snapshot(),
         cancelled,
     })
+}
+
+fn heard_as(path: &Path) -> Option<String> {
+    match resonate_analysis::print(
+        &Sources::local(),
+        &MediaLocation::local(path),
+        None,
+        &Watch::default(),
+    ) {
+        Ok(print) => print.map(|print| print.encoded().to_owned()),
+        Err(error) => {
+            tracing::debug!(%error, path = %path.display(), "a moved file could not be heard");
+            None
+        }
+    }
 }
 
 fn held_roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {

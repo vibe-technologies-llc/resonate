@@ -12,7 +12,7 @@ mod verdict;
 mod watch;
 
 pub use crate::{
-    analysis::{Analysis, Examined, Study, analyse, study},
+    analysis::{Analysis, Examined, Study, analyse, print, study},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
     levels::{Levels, Stereo},

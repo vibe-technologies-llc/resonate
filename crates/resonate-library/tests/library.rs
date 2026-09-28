@@ -17021,6 +17021,145 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
 }
 
 #[test]
+fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_study_took()
+-> Result<()> {
+    const SECONDS_HEARD: usize = 6;
+    let tree = Tree::new();
+    let before = tree.write(
+        "incoming/track01.wav",
+        &Wav::new()
+            .frames(SECONDS_HEARD * RATE as usize)
+            .text(TITLE, "Echoes")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let heard = library
+        .track_played(&MediaLocation::local(&before), None)?
+        .expect("a counted play")
+        .track;
+    let print = resonate_analysis::print(
+        &Sources::local(),
+        &MediaLocation::local(&before),
+        None,
+        &resonate_analysis::Watch::default(),
+    )
+    .expect("a readable file")
+    .expect("a print of the file");
+    beside(&database)
+        .execute(
+            "INSERT INTO track_studies (track_id, studied, studied_under, verdict, peak, rms,
+                                        true_peak, clipped, mono_as_stereo, print, print_length)
+             VALUES (?1, 0, 0, 'genuine', 1.0, 0.5, 1.0, 0, 0, ?2, ?3)",
+            rusqlite::params![heard.id.get() as i64, print.encoded(), SECONDS_HEARD as i64],
+        )
+        .expect("the study is kept");
+
+    fs::remove_file(&before).expect("the file is taken away");
+    let after = tree.write(
+        "Pink Floyd/Meddle/06 Money.wav",
+        &Wav::new()
+            .frames(SECONDS_HEARD * RATE as usize)
+            .text(TITLE, "Money")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 1);
+    let row = library
+        .track_at(&after, None)?
+        .expect("the row followed the file");
+    assert_eq!(row.id, heard.id);
+    assert_eq!(row.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the sheet's third row");
+    library.track_played(&echoes.location, echoes.span)?;
+
+    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    fs::rename(
+        tree.path().join("rip"),
+        tree.path().join("Pink Floyd/Meddle"),
+    )
+    .expect("the rip is moved by hand");
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 3);
+    assert_eq!(stats.added, 0);
+    let moved = library
+        .track_at(
+            &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
+            echoes.span,
+        )?
+        .expect("the row followed the file");
+    assert_eq!(moved.id, echoes.id);
+    assert_eq!(moved.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does() -> Result<()> {
+    let tree = Tree::new();
+    let unheld = tree.write(
+        "later/echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").build(),
+    );
+    let library = Library::open_in_memory()?;
+    tree.write(
+        "scanned/seamus.wav",
+        &Wav::new().text(TITLE, "Seamus").build(),
+    );
+    scan(
+        &library,
+        &ScanOptions {
+            roots: vec![tree.path().join("scanned")],
+            ..options(&tree)
+        },
+    )?;
+
+    let location = MediaLocation::local(&unheld);
+    assert!(library.track_played(&location, None)?.is_none());
+    assert!(library.track_played(&location, None)?.is_none());
+    assert_eq!(library.statistics(Window::Everything)?.plays, 0);
+
+    scan(&library, &options(&tree))?;
+    let row = library
+        .track_at(&unheld, None)?
+        .expect("the file a later scan found");
+    assert_eq!(
+        row.plays, 2,
+        "the plays heard before the scan were not credited"
+    );
+    assert!(row.played.is_some());
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+
+    scan(&library, &options(&tree))?;
+    assert_eq!(
+        library
+            .track_at(&unheld, None)?
+            .expect("the same row")
+            .plays,
+        2,
+        "a play was credited twice"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write(
