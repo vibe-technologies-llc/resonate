@@ -500,7 +500,10 @@ impl RootView {
             Group::BoundTo => self.unbind_every_device(cx),
             Group::Lookups => self.set_online(defaults::ONLINE, cx),
             Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
-            Group::Studies => self.set_studies(defaults::STUDY, cx),
+            Group::Studies => {
+                self.set_studies(defaults::STUDY, cx);
+                self.set_by_sound(defaults::BY_SOUND, cx);
+            }
             Group::Lyrics => self.set_lyrics(defaults::FETCH_LYRICS, cx),
             Group::Resuming => self.set_resume(defaults::RESUME, cx),
             Group::History => self.keep_the_history(defaults::HISTORY_KEPT, cx),
@@ -548,6 +551,7 @@ impl RootView {
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
+        let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
@@ -572,6 +576,7 @@ impl RootView {
             online,
             after_scan,
             studies,
+            by_sound,
             lyrics,
             contact_given,
             key_given,

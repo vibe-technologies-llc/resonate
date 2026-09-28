@@ -2,6 +2,7 @@ mod acoustid;
 mod apple;
 mod audd;
 mod autoeq;
+mod by_ear;
 mod client;
 mod commons;
 mod coverart;
@@ -24,6 +25,7 @@ pub use crate::{
     acoustid::AcoustId,
     audd::Audd,
     autoeq::AutoEq,
+    by_ear::ByEar,
     client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
     listenbrainz::ListenBrainz,

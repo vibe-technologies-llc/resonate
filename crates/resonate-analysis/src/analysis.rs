@@ -111,6 +111,60 @@ pub fn print(
     Ok(printing.finished(length))
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Excerpt {
+    pub rate: SampleRate,
+    pub mono: Vec<f32>,
+}
+
+pub fn excerpt(
+    sources: &Sources,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+    from: Duration,
+    lasting: Duration,
+    watch: &dyn Watching,
+) -> Result<Option<Excerpt>> {
+    let (mut decoder, info) = opened(sources, location, span)?;
+    let codec = Codec::from_id(info.codec);
+    let format = native_format(&info, codec);
+    decoder.set_output_format(format);
+
+    let rate = info.spec.rate;
+    let channels = usize::from(info.spec.channels.count().get());
+    let start = Frames::from_duration(from, rate);
+    if info.is_seekable
+        && start != Frames::ZERO
+        && info.duration.is_none_or(|duration| start < duration)
+        && let Err(error) = decoder.seek(start)
+    {
+        tracing::debug!(%error, %location, "an excerpt is taken from the start instead");
+    }
+
+    let wanted = usize::try_from(Frames::from_duration(lasting, rate).get()).unwrap_or(usize::MAX);
+    let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
+    let mut normalised = Vec::new();
+    let mut mixed = Vec::new();
+    let mut mono = Vec::with_capacity(wanted.min(1 << 22));
+    while mono.len() < wanted {
+        if watch.stopped() {
+            return Err(Error::Stopped);
+        }
+        let status = decoder
+            .next_block(&mut block)
+            .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
+        if status == DecodeStatus::EndOfStream {
+            break;
+        }
+        normalise(block.data(), &mut normalised);
+        mix_down(&normalised, channels, &mut mixed);
+        let room = wanted - mono.len();
+        mono.extend_from_slice(&mixed[..mixed.len().min(room)]);
+    }
+
+    Ok((!mono.is_empty()).then_some(Excerpt { rate, mono }))
+}
+
 trait Drawing {
     fn note_block(&mut self, interleaved: &[f32]);
 

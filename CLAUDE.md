@@ -517,7 +517,8 @@ Invariants the layering exists to protect:
   carries: AcoustID answers only a registered client key, so with the key empty no fingerprint
   leaves the machine and `online::fingerprinters` registers nothing but the stub. `audd-token` is
   the third, and AudD is sent a clip only where it is set; Shazam asks for no key and is sent only
-  a signature — the peaks of what was heard — and only when a listener asks to listen.
+  a signature — the peaks of what was heard — and only when a listener asks to listen, or where
+  `identify-by-sound` is on and a lookup has nothing else to name a track by.
   `listenbrainz-token` is the fourth, and it is the one that sends something about the listener
   rather than about a file: with it set and `online` on, every play the catalog counts is told to
   ListenBrainz under that token, and with it empty nothing heard leaves the machine.
@@ -1100,8 +1101,8 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-sixty-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-seven have none, so the
+sixty-six have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-eight have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -1109,7 +1110,7 @@ settings pane and the file are the whole of how any of them is set: the output's
 `maximise-button`, `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab`, `tab-counts`,
 `remember-tab`, `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category`
 and `last-settings-category`, which every headless subcommand has no use for; and the standing decisions
-rather than per-run ones — `online`, `enrich-after-scan`, `study`, `fetch-lyrics`, `contact`, `acoustid-key`, `equaliser`,
+rather than per-run ones — `online`, `enrich-after-scan`, `study`, `fetch-lyrics`, `identify-by-sound`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `history-kept`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
 `listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
 chosen with the Library category's *The inbox* group, which polls from the window as well — and
@@ -1127,7 +1128,12 @@ again once the heard position is past its first three seconds, and goes back a t
 still in those. The Library category's *The previous button* writes it, and it is live.
 `enrich-after-scan` defaults to true and is
 read by `resonate scan` and the window's scan alike; off, the reference is asked only by
-`resonate enrich`, the Library card's *Enrich* and the Online card's *Look up*. `study` defaults
+`resonate enrich`, the Library card's *Enrich* and the Online card's *Look up*.
+`identify-by-sound` defaults to false: on, `online::fingerprinters` registers `ByEar` behind the
+AcoustID printer, so a lookup, `resonate analyse --recognise` and the Analysis pane name a track
+nothing else could by twelve seconds of its sound sent to Shazam as a signature. It is an
+`Arc<AtomicBool>` the window shares with the fingerprinter, written by the Online category's
+*Studying tracks* group and live the moment it is. `study` defaults
 to true and is read by every lookup, from the command line or the window; off, no lookup starts
 the pool of studies, and a track is decoded only where the pane analyses it or the fingerprint
 route needs its print. `fetch-lyrics` defaults to true and is read the same way; off, no lookup

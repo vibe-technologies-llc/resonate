@@ -49,9 +49,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
-- A file with no title tag and no artist tag, whose stem is neither numbered nor separated, gives
-  the search nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or
-  recording id
 - Past `GROUPS_AT_MOST` release groups an artist's discography is read no further; the count
   left unread is said, and nothing reads the rest
 - The verdict reads only the lowpass wall, the upsampled wall and the padded bits — not an MP3's

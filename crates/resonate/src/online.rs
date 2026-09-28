@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 #[cfg(feature = "online")]
 use std::{fs, path::PathBuf, sync::OnceLock, time::SystemTime};
 
 #[cfg(feature = "online")]
 use parking_lot::Mutex;
+use resonate_codec::Sources;
 use resonate_eq::Corrected;
 #[cfg(feature = "online")]
 use resonate_library::Scrobbler;
@@ -15,7 +16,7 @@ use resonate_lyrics::Lyricists;
 use resonate_online::Lrclib;
 #[cfg(feature = "online")]
 use resonate_online::{
-    AcoustId, Audd, AutoEq, Client, Identity, Introduction, ListenBrainz, Online, Shazam,
+    AcoustId, Audd, AutoEq, ByEar, Client, Identity, Introduction, ListenBrainz, Online, Shazam,
 };
 
 #[cfg(feature = "online")]
@@ -103,16 +104,29 @@ pub fn reference_asked_for(config: &Config) -> Result<Arc<dyn Reference>> {
     reference(config).ok_or(Error::OnlineOff)
 }
 
+pub fn by_sound(config: &Config) -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(config.identifies_by_sound()))
+}
+
 #[cfg(feature = "online")]
-pub fn fingerprinters(config: &Config) -> Fingerprinters {
+pub fn fingerprinters(
+    config: &Config,
+    sources: Arc<Sources>,
+    by_sound: &Arc<AtomicBool>,
+) -> Fingerprinters {
     let local = Fingerprinters::none();
     if !config.online_enabled() {
         return local;
     }
-    match config.acoustid_key.clone() {
+    let printed = match config.acoustid_key.clone() {
         Some(key) => local.and(Arc::new(AcoustId::new(client(config), key))),
         None => local,
-    }
+    };
+    printed.and(Arc::new(ByEar::new(
+        client(config),
+        sources,
+        Arc::clone(by_sound),
+    )))
 }
 
 #[cfg(feature = "online")]
@@ -121,7 +135,11 @@ pub fn listenbrainz(config: &Config, token: String) -> Arc<dyn Scrobbler> {
 }
 
 #[cfg(not(feature = "online"))]
-pub fn fingerprinters(_config: &Config) -> Fingerprinters {
+pub fn fingerprinters(
+    _config: &Config,
+    _sources: Arc<Sources>,
+    _by_sound: &Arc<AtomicBool>,
+) -> Fingerprinters {
     Fingerprinters::none()
 }
 

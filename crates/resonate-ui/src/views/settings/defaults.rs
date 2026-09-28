@@ -13,6 +13,7 @@ use crate::{Tabs, WindowButtons, views::settings::find::Group};
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
 pub(crate) const STUDY: bool = true;
+pub(crate) const BY_SOUND: bool = false;
 pub(crate) const FETCH_LYRICS: bool = true;
 pub(crate) const RESUME: bool = true;
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
@@ -32,6 +33,7 @@ pub(crate) struct Standing {
     pub(crate) online: bool,
     pub(crate) after_scan: bool,
     pub(crate) studies: bool,
+    pub(crate) by_sound: bool,
     pub(crate) lyrics: bool,
     pub(crate) contact_given: bool,
     pub(crate) key_given: bool,
@@ -64,6 +66,7 @@ impl Standing {
             online: ONLINE,
             after_scan: ENRICH_AFTER_SCAN,
             studies: STUDY,
+            by_sound: BY_SOUND,
             lyrics: FETCH_LYRICS,
             contact_given: false,
             key_given: false,
@@ -117,7 +120,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::BoundTo => worn.equaliser.binds_anything(),
         Group::Lookups => standing.online != ONLINE,
         Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
-        Group::Studies => standing.studies != STUDY,
+        Group::Studies => standing.studies != STUDY || standing.by_sound != BY_SOUND,
         Group::Lyrics => standing.lyrics != FETCH_LYRICS,
         Group::Resuming => standing.resume != RESUME,
         Group::History => standing.history_kept != HISTORY_KEPT,
@@ -407,6 +410,13 @@ mod tests {
             Group::Studies,
             &Standing {
                 studies: false,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Studies,
+            &Standing {
+                by_sound: true,
                 ..built.clone()
             }
         ));

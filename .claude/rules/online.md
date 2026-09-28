@@ -496,6 +496,19 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   asks the same `/lookup` through `looked_up`, and names the clip by its best recording scored at
   `A_CLIP_HEARD_AT_LEAST`, 50. It is last because a snippet from the middle of a song rarely
   matches a print taken from its start.
+- **A file nothing else can name is named by ear, where the listener has said so.** `ByEar` is a
+  `Fingerprints` the binary registers after `AcoustId` wherever `online` is on, and it answers
+  only while the `identify-by-sound` switch it shares is on — `Fingerprints::answers`, which
+  `Fingerprinters::has_a_source` and `recognise` both weigh, so a switch turned off costs no
+  study and asks nothing. It reads twelve seconds of the track through
+  `resonate_analysis::excerpt` — from a third of the way in or thirty seconds, whichever is
+  sooner, mixed to mono — signs them with `Shazam::signed`, the same request Listen makes, and
+  turns what Shazam names into recordings: its ISRC through `recordings_of_isrc`, the takes
+  within `LENGTHS_AGREE_WITHIN` of the file's length scored whole, and otherwise a
+  `find_recording` phrase search of the title, the artist and the album, scored as MusicBrainz
+  scored it. The pass then weighs them as it weighs any recognition — the strict score, and
+  `Certainty::Nearly`, so a name the file never gave is filled and none it gave is touched —
+  which is what finally names a file with no title, no artist and a stem that says nothing.
 
 ## Fixtures and the live test
 

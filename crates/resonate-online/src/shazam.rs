@@ -4,7 +4,7 @@ use std::{
 };
 
 use resonate_analysis::signature_of;
-use resonate_core::{Isrc, SourceId};
+use resonate_core::{Isrc, SampleRate, SourceId};
 use resonate_library::LookupOp;
 use resonate_listen::{Clip, Heard, Picture, PictureFormat, Recogniser};
 use serde::{Deserialize, Serialize};
@@ -138,7 +138,24 @@ impl Recogniser for Shazam {
     }
 
     fn recognise(&self, clip: &Clip) -> resonate_listen::Result<Option<Heard>> {
-        let signature = signature_of(&clip.mono(), clip.rate);
+        let Some((mut heard, cover)) = self
+            .signed(&clip.mono(), clip.rate)
+            .map_err(|error| error.into_listen_error(self.service.clone()))?
+        else {
+            return Ok(None);
+        };
+        heard.picture = cover.and_then(|url| self.picture(&url));
+        Ok(Some(heard))
+    }
+}
+
+impl Shazam {
+    pub(crate) fn signed(
+        &self,
+        mono: &[f32],
+        rate: SampleRate,
+    ) -> crate::Result<Option<(Heard, Option<String>)>> {
+        let signature = signature_of(mono, rate);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis() as u64);
@@ -157,8 +174,9 @@ impl Recogniser for Shazam {
             timestamp: now,
             timezone: TIMEZONE,
         };
-        let body = serde_json::to_vec(&asked).map_err(|_| resonate_listen::Error::Unreadable {
-            service: self.service.clone(),
+        let body = serde_json::to_vec(&asked).map_err(|_| crate::Error::Unreadable {
+            host: Host::Shazam,
+            op: LookupOp::Recognise,
         })?;
         let url = format!(
             "{}{TAGGED_AT}/{}/{}{ASKED_WITH}",
@@ -166,26 +184,19 @@ impl Recogniser for Shazam {
             Uuid::new_v4().hyphenated().to_string().to_uppercase(),
             Uuid::new_v4().hyphenated()
         );
-        let answer: Option<Answer> = self
-            .client
-            .posted(
-                Host::Shazam,
-                LookupOp::Recognise,
-                &url,
-                &Posted {
-                    content_type: JSON.to_owned(),
-                    encoded: Encoded::Plain,
-                    bytes: body,
-                    authorization: None,
-                },
-            )
-            .map_err(|error| error.into_listen_error(self.service.clone()))?;
+        let answer: Option<Answer> = self.client.posted(
+            Host::Shazam,
+            LookupOp::Recognise,
+            &url,
+            &Posted {
+                content_type: JSON.to_owned(),
+                encoded: Encoded::Plain,
+                bytes: body,
+                authorization: None,
+            },
+        )?;
 
-        let Some((mut heard, cover)) = heard_in(answer, &self.service) else {
-            return Ok(None);
-        };
-        heard.picture = cover.and_then(|url| self.picture(&url));
-        Ok(Some(heard))
+        Ok(heard_in(answer, &self.service))
     }
 }
 

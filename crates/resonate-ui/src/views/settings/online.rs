@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::atomic::Ordering, time::Duration};
 
 use gpui::{
     ClickEvent, Context, Div, Entity, SharedString, Stateful, Window, div, prelude::*, rgb,
@@ -33,6 +33,11 @@ const TOKEN_NOTE: &str = "Used from the next start by Listen, which asks AudD be
 const SUBMITTING_NOTE: &str = "Followed as soon as it is given: every play counted from then on \
                                is sent to ListenBrainz within a minute. Leave it empty to send \
                                nothing.";
+
+const BY_SOUND_NOTE: &str = "A lookup that finds no name, recording id or ISRC to ask with, and \
+                             no AcoustID answer, sends Shazam the peaks of twelve seconds of the \
+                             track and asks MusicBrainz for what it names. The Analysis pane \
+                             recognises the same way.";
 
 const LISTENING_NOTE: &str = "Listen names a song playing on the desktop or into a microphone, \
                               whether or not the library holds it. A microphone named in the \
@@ -164,18 +169,40 @@ impl RootView {
 
     pub(super) fn studies_group(&mut self, cx: &mut Context<Self>) -> Div {
         let studies = self.library.read(cx).studies();
+        let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
 
-        kit::section_body().child(self.in_the_ring(
-            "studying-tracks",
-            switch_row(
-                "Study every track as a lookup runs",
-                "Off, a track is decoded only to be heard or named",
-                studies,
+        kit::section_body()
+            .child(self.in_the_ring(
                 "studying-tracks",
-            ),
-            move |this, _, cx| this.set_studies(!studies, cx),
-            cx,
-        ))
+                switch_row(
+                    "Study every track as a lookup runs",
+                    "Off, a track is decoded only to be heard or named",
+                    studies,
+                    "studying-tracks",
+                ),
+                move |this, _, cx| this.set_studies(!studies, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                "identifying-by-sound",
+                switch_row(
+                    "Name a track nothing else can by how it sounds",
+                    "Off, no track's sound is sent to Shazam",
+                    by_sound,
+                    "identifying-by-sound",
+                ),
+                move |this, _, cx| this.set_by_sound(!by_sound, cx),
+                cx,
+            ))
+            .child(note(BY_SOUND_NOTE))
+    }
+
+    pub(crate) fn set_by_sound(&self, by_sound: bool, cx: &mut Context<Self>) {
+        cx.global::<ResonateApp>()
+            .by_sound
+            .store(by_sound, Ordering::Release);
+        self.store(&Setting::IdentifyBySound(by_sound), cx);
+        cx.notify();
     }
 
     pub(super) fn lyrics_group(&mut self, cx: &mut Context<Self>) -> Div {

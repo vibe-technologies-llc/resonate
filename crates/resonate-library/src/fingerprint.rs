@@ -32,6 +32,10 @@ pub trait Fingerprints: Send + Sync {
     fn source(&self) -> &SourceId;
 
     fn recognise(&self, sounded: &Sounded) -> Result<Printed>;
+
+    fn answers(&self) -> bool {
+        true
+    }
 }
 
 pub struct NoFingerprints {
@@ -85,12 +89,12 @@ impl Fingerprinters {
     pub fn has_a_source(&self) -> bool {
         self.printers
             .iter()
-            .any(|printer| printer.source().as_str() != UNPRINTED)
+            .any(|printer| printer.source().as_str() != UNPRINTED && printer.answers())
     }
 
     pub fn recognise(&self, sounded: &Sounded) -> Recognition {
         let mut refused = false;
-        for printer in &self.printers {
+        for printer in self.printers.iter().filter(|printer| printer.answers()) {
             match printer.recognise(sounded) {
                 Ok(Printed::Recognised(found)) if !found.is_empty() => {
                     return Recognition {

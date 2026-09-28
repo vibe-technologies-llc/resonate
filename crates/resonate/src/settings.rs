@@ -126,6 +126,7 @@ impl Settings for File {
             }
             Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
             Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
+            Setting::IdentifyBySound(hears) => (ConfigKey::IdentifyBySound, Some((*hears).into())),
             Setting::SkipUnderRepeat(skip) => (
                 ConfigKey::SkipRepeatsQueue,
                 Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
@@ -295,6 +296,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
         SettingKey::Study => ConfigKey::Study,
         SettingKey::FetchLyrics => ConfigKey::FetchLyrics,
+        SettingKey::IdentifyBySound => ConfigKey::IdentifyBySound,
         SettingKey::SkipUnderRepeat => ConfigKey::SkipRepeatsQueue,
         SettingKey::PreviousRestarts => ConfigKey::PreviousRestarts,
         SettingKey::Contact => ConfigKey::Contact,

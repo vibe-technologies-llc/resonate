@@ -158,6 +158,7 @@ pub enum SettingKey {
     EnrichAfterScan,
     Study,
     FetchLyrics,
+    IdentifyBySound,
     Contact,
     AcoustidKey,
     AuddToken,
@@ -197,7 +198,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 63] = [
+    pub const ALL: [Self; 64] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -225,6 +226,7 @@ impl SettingKey {
         Self::EnrichAfterScan,
         Self::Study,
         Self::FetchLyrics,
+        Self::IdentifyBySound,
         Self::Contact,
         Self::AcoustidKey,
         Self::AuddToken,
@@ -293,6 +295,7 @@ pub enum Setting {
     EnrichAfterScan(bool),
     Study(bool),
     FetchLyrics(bool),
+    IdentifyBySound(bool),
     Contact(String),
     AcoustidKey(String),
     AuddToken(String),
@@ -364,6 +367,7 @@ impl Setting {
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
             Self::Study(_) => SettingKey::Study,
             Self::FetchLyrics(_) => SettingKey::FetchLyrics,
+            Self::IdentifyBySound(_) => SettingKey::IdentifyBySound,
             Self::Contact(_) => SettingKey::Contact,
             Self::AcoustidKey(_) => SettingKey::AcoustidKey,
             Self::AuddToken(_) => SettingKey::AuddToken,
@@ -536,6 +540,7 @@ pub struct Stored {
     pub history_kept: HistoryKept,
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
+    pub by_sound: Arc<AtomicBool>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,

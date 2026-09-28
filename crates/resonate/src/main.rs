@@ -184,7 +184,13 @@ fn run() -> Result<()> {
             analyse::print(
                 &analyse::Analysed::named(file, *track, &sources)?,
                 &sources,
-                (*recognise).then(|| online::fingerprinters(&config)),
+                (*recognise).then(|| {
+                    online::fingerprinters(
+                        &config,
+                        sources_over(vault_already_kept(&cli, &config).as_ref()),
+                        &online::by_sound(&config),
+                    )
+                }),
             )
         }
         Some(Sub::Studies {
@@ -569,7 +575,11 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
     {
         let summary = until_told(library.enrich(
             reference,
-            Arc::new(online::fingerprinters(config)),
+            Arc::new(online::fingerprinters(
+                config,
+                Arc::new(library.sources()),
+                &online::by_sound(config),
+            )),
             carrying_on(
                 library,
                 EnrichOptions {
@@ -589,7 +599,11 @@ fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<
     let options = carrying_on(library, options)?;
     let summary = until_told(library.enrich(
         reference,
-        Arc::new(online::fingerprinters(config)),
+        Arc::new(online::fingerprinters(
+            config,
+            Arc::new(library.sources()),
+            &online::by_sound(config),
+        )),
         options,
     )?)?;
     print!("{}", enriched(&summary));
@@ -2104,6 +2118,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let (attending, attention) = crossbeam_channel::unbounded();
     let (asked_to_raise, raising) = bounded(1);
     let notify = Arc::new(AtomicBool::new(config.notifies()));
+    let by_sound = online::by_sound(&config);
     let mpris = mpris::start(
         &player,
         &sources,
@@ -2123,7 +2138,11 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         Arc::clone(&library),
         resonate_ui::Lookups {
             lyricists: Arc::new(online::lyricists(&config, Some(Arc::clone(&library)))),
-            fingerprinters: Arc::new(online::fingerprinters(&config)),
+            fingerprinters: Arc::new(online::fingerprinters(
+                &config,
+                Arc::new(library.sources()),
+                &by_sound,
+            )),
             reference: online::reference(&config),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
@@ -2150,6 +2169,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             history_kept: config.history_kept(),
             organise_as: config.organise_as().to_string(),
             notify,
+            by_sound,
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             scrollbars: config.scrollbars(),

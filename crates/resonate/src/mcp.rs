@@ -12,17 +12,20 @@ use crate::{Result, cli::Cli, config::Config};
 
 #[cfg(feature = "mcp")]
 pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
-    let server = Server::new(
-        crate::open_library(cli, config)?,
-        OnTheBus::named(player.map(PlayerName::new)),
-    )
-    .looking_up_with(Lookups {
-        reference: crate::online::reference(config),
-        fingerprinters: Arc::new(crate::online::fingerprinters(config)),
-        providers: Arc::new(crate::providers::registered(config)),
-        studies: config.studies(),
-        lyrics: config.fetches_lyrics(),
-    });
+    let library = crate::open_library(cli, config)?;
+    let sources = library.sources();
+    let server = Server::new(library, OnTheBus::named(player.map(PlayerName::new)))
+        .looking_up_with(Lookups {
+            reference: crate::online::reference(config),
+            fingerprinters: Arc::new(crate::online::fingerprinters(
+                config,
+                Arc::new(sources),
+                &crate::online::by_sound(config),
+            )),
+            providers: Arc::new(crate::providers::registered(config)),
+            studies: config.studies(),
+            lyrics: config.fetches_lyrics(),
+        });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 
     Ok(server.serve(io::stdin().lock(), io::stdout().lock())?)

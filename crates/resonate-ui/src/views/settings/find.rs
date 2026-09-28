@@ -406,7 +406,7 @@ impl Group {
             Self::AfterScan => "enrich automatic handover",
             Self::Studies => {
                 "analyse analysis decode fake lossless transcode verdict loudness true peak \
-                 fingerprint cpu cores"
+                 fingerprint cpu cores shazam sound identify unnamed untagged"
             }
             Self::Lyrics => "lyrics lrclib lyricsfile synced karaoke words voices cache upgrade",
             Self::Contact => "user-agent email identity request",
@@ -487,7 +487,7 @@ impl Group {
             Self::PreviousButton => &[SettingKey::PreviousRestarts],
             Self::Lookups => &[SettingKey::Online],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
-            Self::Studies => &[SettingKey::Study],
+            Self::Studies => &[SettingKey::Study, SettingKey::IdentifyBySound],
             Self::Lyrics => &[SettingKey::FetchLyrics],
             Self::Contact => &[SettingKey::Contact],
             Self::Recognition => &[SettingKey::AcoustidKey, SettingKey::AuddToken],
