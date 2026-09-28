@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 pub(crate) use crate::SettingsCategory as Category;
 use crate::{SettingKey, icons::Icon};
 
@@ -529,13 +531,34 @@ impl Group {
     }
 
     fn matches(self, word: &str) -> bool {
+        self.read_as(word).is_some()
+    }
+
+    fn read_as(self, word: &str) -> Option<AnsweredBy> {
         let reads = |text: &str| text.to_lowercase().contains(word);
 
-        reads(self.title())
-            || reads(self.also_called())
-            || reads(self.category().label())
-            || reads(self.hint())
+        if reads(self.title()) {
+            Some(AnsweredBy::Title)
+        } else if reads(self.also_called()) {
+            Some(AnsweredBy::AnotherName)
+        } else if reads(self.category().label()) {
+            Some(AnsweredBy::Category)
+        } else if reads(self.hint()) {
+            Some(AnsweredBy::Hint)
+        } else {
+            None
+        }
     }
+}
+
+type Ranked = (Reverse<Option<AnsweredBy>>, u8, Reverse<AnsweredBy>, Group);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum AnsweredBy {
+    Hint,
+    Category,
+    AnotherName,
+    Title,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -570,9 +593,40 @@ impl Narrowing {
     }
 
     pub(crate) fn anywhere(&self) -> impl Iterator<Item = Group> + '_ {
-        Group::ALL
+        let found: Vec<(Group, AnsweredBy)> = Group::ALL
             .into_iter()
-            .filter(move |group| self.allows(*group))
+            .filter_map(|group| self.reading_of(group).map(|reading| (group, reading)))
+            .collect();
+        let best_in = |category: Category| {
+            found
+                .iter()
+                .filter(|(group, _)| group.category() == category)
+                .map(|(_, reading)| *reading)
+                .max()
+        };
+        let mut ranked: Vec<Ranked> = found
+            .iter()
+            .map(|(group, reading)| {
+                let category = group.category();
+                (
+                    Reverse(best_in(category)),
+                    category as u8,
+                    Reverse(*reading),
+                    *group,
+                )
+            })
+            .collect();
+        ranked.sort_by_key(|(best, category, reading, _)| (*best, *category, *reading));
+        ranked.into_iter().map(|(_, _, _, group)| group)
+    }
+
+    fn reading_of(&self, group: Group) -> Option<AnsweredBy> {
+        self.words
+            .iter()
+            .map(|word| group.read_as(word))
+            .try_fold(AnsweredBy::Title, |weakest, reading| {
+                reading.map(|reading| weakest.min(reading))
+            })
     }
 }
 
@@ -982,6 +1036,36 @@ mod tests {
             assert!(narrowing.allows(group));
         }
         assert_eq!(narrowing.anywhere().count(), Group::ALL.len());
+    }
+
+    #[test]
+    fn a_setting_named_by_the_words_leads_one_whose_hint_merely_mentions_them() {
+        for word in [
+            "dither", "volume", "lyrics", "cover", "buffer", "discord", "accent",
+        ] {
+            let found: Vec<Group> = Narrowing::of(word).anywhere().collect();
+            let titled = found
+                .iter()
+                .any(|group| group.title().to_lowercase().contains(word));
+            if titled {
+                assert!(
+                    found[0].title().to_lowercase().contains(word),
+                    "{word:?} led with {:?} ahead of a setting called by it",
+                    found[0].title()
+                );
+            }
+            let mut seen = Vec::new();
+            for group in &found {
+                let category = group.category();
+                if seen.last() != Some(&category) {
+                    assert!(
+                        !seen.contains(&category),
+                        "{word:?} drew {category:?} under two headings"
+                    );
+                    seen.push(category);
+                }
+            }
+        }
     }
 
     #[test]

@@ -2001,7 +2001,12 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   While a query is in force the heading reads *Found*, the rail draws each category's match count
   instead of a selection, and the body draws the matching sections from *every* category under a
   category eyebrow, because a filter that only looked inside the tab in front would be a worse
-  version of the tab.
+  version of the tab. **What is found is ranked by how it answered.** A group answers each word
+  by its title, another name, its category or its hint, in that order of strength, and the
+  weakest of its words is what it is weighed as; a category leads by the best group in it and a
+  group within it by its own weight, so *dither* opens on Dither rather than on a shaping hint
+  that mentions it, and no category is drawn under two eyebrows —
+  `a_setting_named_by_the_words_leads_one_whose_hint_merely_mentions_them`.
 - **A right press answers with a menu, and `views/menu.rs` is the whole of how.** `Menu` is a
   position and a run of entries, each an icon, a label, an optional key and a closure;
   `Menu::at(…).does(…).under(…).apart()` builds one and `menu::opens_a_menu` attaches it to any
