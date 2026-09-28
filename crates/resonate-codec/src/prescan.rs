@@ -12,7 +12,28 @@ use crate::{
 };
 
 const PRESCAN_WINDOW: usize = 4 * 1024;
-pub(crate) const SOUGHT_WITHIN: usize = 2 * 1024;
+pub(crate) const PROBED_WITHIN: u64 = 1024 * 1024;
+const SEARCHED_AT_ONCE: usize = 16 * 1024;
+const LOOKED_PAST: usize = 2 * 1024;
+const OTHER_CONTAINERS: [&[u8; 4]; 9] = [
+    b"fLaC",
+    b"OggS",
+    b"\x1a\x45\xdf\xa3",
+    b"FORM",
+    b"wvpk",
+    b"MAC ",
+    b"MACF",
+    b"DSD ",
+    b"FRM8",
+];
+const MP4_TYPE_AT: usize = 4;
+const MP4_TYPE: &[u8; 4] = b"ftyp";
+const RIFF: &[u8; 4] = b"RIFF";
+const WAVE: &[u8; 4] = b"WAVE";
+const WAVE_AT: usize = 8;
+const CAFF: &[u8; 4] = b"caff";
+const MPEG_SYNC: u8 = 0xff;
+const MPEG_SYNC_HIGH: u8 = 0xe0;
 const ID3: &[u8; 3] = b"ID3";
 const ID3_HEADER: u64 = 10;
 const ID3_FOOTER_FLAG: u8 = 0x10;
@@ -190,25 +211,108 @@ pub(crate) fn past_id3<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
     Some(origin + ID3_HEADER + size + footer)
 }
 
-pub(crate) fn found_within<S: Read + Seek + ?Sized>(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Opened {
+    Wave,
+    Caf,
+    Another,
+}
+
+pub(crate) fn opened_first<S: Read + Seek + ?Sized>(
     source: &mut S,
     start: u64,
-    header_bytes: usize,
-    is_header: impl Fn(&[u8]) -> bool,
-) -> Option<u64> {
+) -> Option<(Opened, u64)> {
     source.seek(SeekFrom::Start(start)).ok()?;
-    let mut held = [0_u8; SOUGHT_WITHIN];
-    let filled = filled(source, &mut held);
-    let held = held.get(..filled)?;
-
-    let at = held.windows(header_bytes).position(is_header)?;
-    if at > 0 {
-        tracing::debug!(
-            junk = at,
-            "a container header was found behind bytes that are not one"
-        );
+    let mut held: Vec<u8> = Vec::with_capacity(SEARCHED_AT_ONCE + LOOKED_PAST);
+    let mut searched: u64 = 0;
+    let mut chunk = [0_u8; SEARCHED_AT_ONCE];
+    loop {
+        let read = filled(source, &mut chunk);
+        held.extend_from_slice(chunk.get(..read)?);
+        let ended = read < SEARCHED_AT_ONCE;
+        let settled = if ended {
+            held.len()
+        } else {
+            held.len().saturating_sub(LOOKED_PAST)
+        };
+        let within = usize::try_from(PROBED_WITHIN.saturating_sub(searched)).unwrap_or(usize::MAX);
+        let found = (0..settled.min(within)).find_map(|at| {
+            let opened = container_at(held.get(at..)?)?;
+            Some((opened, at))
+        });
+        if let Some((opened, at)) = found {
+            let at = searched + at as u64;
+            if at > 0 {
+                tracing::debug!(
+                    junk = at,
+                    ?opened,
+                    "a container header was found behind bytes that are not one"
+                );
+            }
+            return Some((opened, start + at));
+        }
+        searched += settled as u64;
+        if ended || searched >= PROBED_WITHIN {
+            return None;
+        }
+        held.drain(..settled);
     }
-    Some(start + at as u64)
+}
+
+fn container_at(from: &[u8]) -> Option<Opened> {
+    let marker = from.get(..4)?;
+    if marker == RIFF {
+        return (from.get(WAVE_AT..WAVE_AT + 4) == Some(WAVE.as_slice())).then_some(Opened::Wave);
+    }
+    if marker == CAFF {
+        return Some(Opened::Caf);
+    }
+    if OTHER_CONTAINERS
+        .iter()
+        .any(|other| marker == other.as_slice())
+        || from.get(MP4_TYPE_AT..MP4_TYPE_AT + 4) == Some(MP4_TYPE.as_slice())
+        || mpeg_frames_at(from)
+    {
+        return Some(Opened::Another);
+    }
+    None
+}
+
+fn mpeg_frames_at(from: &[u8]) -> bool {
+    let Some(length) = mpeg_frame_length(from) else {
+        return false;
+    };
+    from.get(length..).and_then(mpeg_frame_length).is_some()
+}
+
+fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
+    const BITRATES_KBPS: [u32; 15] = [
+        0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+    ];
+    const RATES_HZ: [u32; 3] = [44_100, 48_000, 32_000];
+    const LAYER_THREE: u8 = 0b01;
+    const MPEG_ONE: u8 = 0b11;
+    const SAMPLES_A_FRAME_OVER_BITS: u32 = 144;
+    const BITS_A_KILOBIT: u32 = 1_000;
+
+    let [sync, flags, rates, ..] = *header else {
+        return None;
+    };
+    if sync != MPEG_SYNC || flags & MPEG_SYNC_HIGH != MPEG_SYNC_HIGH {
+        return None;
+    }
+    let version = (flags >> 3) & 0b11;
+    let layer = (flags >> 1) & 0b11;
+    if version != MPEG_ONE || layer != LAYER_THREE {
+        return None;
+    }
+    let bitrate = *BITRATES_KBPS.get(usize::from(rates >> 4))?;
+    let rate = *RATES_HZ.get(usize::from((rates >> 2) & 0b11))?;
+    if bitrate == 0 {
+        return None;
+    }
+    let padding = u32::from((rates >> 1) & 1);
+    usize::try_from(SAMPLES_A_FRAME_OVER_BITS * bitrate * BITS_A_KILOBIT / rate + padding).ok()
 }
 
 fn filled<S: Read + ?Sized>(source: &mut S, buf: &mut [u8]) -> usize {

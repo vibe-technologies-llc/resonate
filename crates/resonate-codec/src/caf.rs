@@ -1,6 +1,6 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::prescan::{found_within, past_id3, read_exact};
+use crate::prescan::{Opened, opened_first, past_id3, read_exact};
 
 const CAFF: &[u8; 4] = b"caff";
 const DESC: &[u8; 4] = b"desc";
@@ -55,7 +55,9 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> 
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
     let start = past_id3(source)?;
-    let header = found_within(source, start, CAFF.len(), |header| header == CAFF)?;
+    let (Opened::Caf, header) = opened_first(source, start)? else {
+        return None;
+    };
     source
         .seek(SeekFrom::Start(header + CAFF.len() as u64))
         .ok()?;

@@ -792,6 +792,48 @@ mod tests {
     }
 
     #[test]
+    fn a_wave_behind_more_junk_than_a_tag_would_hold_is_still_refused_as_symphonia_would_open_it() {
+        let location = MediaLocation::local("junk.wav");
+        let mut file = vec![0x55_u8; 100 * 1024];
+        file.extend_from_slice(&wave_of(20_000));
+        let opened = open(
+            Media {
+                stream: Box::new(Reading::new(Cursor::new(file))),
+                hint: None,
+            },
+            &location,
+        );
+
+        assert!(matches!(
+            opened,
+            Err(Error::TooManyChannels {
+                channels: 20_000,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_wave_behind_another_containers_marker_is_left_to_the_container_symphonia_opens_first() {
+        let location = MediaLocation::local("ogg-first.wav");
+        let mut file = b"OggS".to_vec();
+        file.extend_from_slice(&[0_u8; 60]);
+        file.extend_from_slice(&wave_of(20_000));
+        let opened = open(
+            Media {
+                stream: Box::new(Reading::new(Cursor::new(file))),
+                hint: None,
+            },
+            &location,
+        );
+
+        assert!(
+            !matches!(opened, Err(Error::TooManyChannels { .. })),
+            "a WAVE symphonia never reaches was refused for what it declares"
+        );
+    }
+
+    #[test]
     fn a_caf_whose_packets_overflow_the_reader_is_refused_before_symphonia_reads_it() {
         let location = MediaLocation::local("wide.caf");
         let mut file = b"caff\x00\x01\x00\x00desc".to_vec();

@@ -375,7 +375,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   rather than the allocation. A declared size is what the walk advances by; it is never what a `Vec`
   is sized to.
 - **A source that cannot seek is spooled, and only one too long to spool is read from its head.**
-  The `INFO` scan looks for its magic no further than `SOUGHT_WITHIN` bytes in, the EBML title scan
+  The `INFO` scan looks for its magic where `prescan::opened_first` says symphonia would find it, the EBML title scan
   bails on the first bytes where the magic is not its own, and both restore the position they
   found, so a container that is neither pays a rejected read and nothing more. A source that
   cannot seek cannot be restored, so `container::open` reads it into memory with `take`, up to

@@ -843,9 +843,14 @@ a WAVE layout holds as `Error::TooManyChannels`, and one whose mask
 `riff::a_mask_the_decoder_cannot_widen` as `Error::ChannelMaskNotRepresentable`, before
 symphonia sees either. symphonia's probe searches for a container's magic byte by byte rather than
 reading it at the start, so a `RIFF` header behind junk, or behind an ID3 tag whose size is not
-synchsafe, is still what it opens: `prescan::found_within` looks through the first
-`SOUGHT_WITHIN` bytes past a tag — or past the start where the tag's size cannot be read — for
-the header, a slice of the window the prescan already holds, so the search costs no read. The
+synchsafe, is still what it opens: `prescan::opened_first` searches past a tag — or past the
+start where the tag's size cannot be read — as far as symphonia's own probe does, `PROBED_WITHIN`,
+a megabyte, a chunk at a time and no further than the first marker it finds, and answers which
+container that marker is: a `RIFF … WAVE` or a `caff` is what the two guards weigh, and any other
+container symphonia registers — `fLaC`, `OggS`, EBML, `FORM`, `wvpk`, `MAC `, a DSD file, an
+MP4's `ftyp`, or two MPEG frames in a row — means symphonia opens that one first and the guards
+stand aside rather than refusing a WAVE it never reaches. A file whose marker is at its start,
+which is every file but a broken one, costs the one read it always did. The
 CAF reader overflows the same way on three declared values, and `caf.rs` reads them before
 symphonia does: packets whose size in bits a `u32` cannot hold are `Error::PacketTooLarge`, a
 `data` chunk declaring more frames than a `u64` counts is `Error::FrameCountNotRepresentable`,

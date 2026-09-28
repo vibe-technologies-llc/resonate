@@ -2,11 +2,9 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::{
     TagName,
-    prescan::{found_within, past_id3, read_exact},
+    prescan::{Opened, opened_first, past_id3, read_exact},
 };
 
-const RIFF: &[u8; 4] = b"RIFF";
-const WAVE: &[u8; 4] = b"WAVE";
 const LIST: &[u8; 4] = b"LIST";
 const FMT: &[u8; 4] = b"fmt ";
 const INFO: &[u8; 4] = b"INFO";
@@ -19,7 +17,6 @@ const MAX_INFO_BYTES: u64 = 1 << 20;
 const MAX_VALUE_BYTES: u64 = 4_096;
 const MAX_ID3_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
 const RIFF_HEADER_BYTES: usize = 12;
-const FORM_TYPE_AT: usize = 8;
 
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 const FMT_FORMAT_TAG_AT: usize = 0;
@@ -249,9 +246,10 @@ const fn padded(size: u64) -> u64 {
 }
 
 fn riff_header_at<S: Read + Seek + ?Sized>(source: &mut S, start: u64) -> Option<u64> {
-    found_within(source, start, RIFF_HEADER_BYTES, |header| {
-        header.starts_with(RIFF) && header.get(FORM_TYPE_AT..) == Some(WAVE.as_slice())
-    })
+    match opened_first(source, start)? {
+        (Opened::Wave, at) => Some(at),
+        (Opened::Caf | Opened::Another, _) => None,
+    }
 }
 
 #[cfg(test)]
@@ -259,7 +257,10 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-    use crate::prescan::SOUGHT_WITHIN;
+    use crate::prescan::PROBED_WITHIN;
+
+    const RIFF: &[u8; 4] = b"RIFF";
+    const WAVE: &[u8; 4] = b"WAVE";
 
     fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
         into.extend_from_slice(id);
@@ -440,7 +441,7 @@ mod tests {
 
     #[test]
     fn a_riff_header_further_in_than_the_search_reaches_is_not_found() {
-        let mut file = vec![0_u8; SOUGHT_WITHIN];
+        let mut file = vec![0_u8; PROBED_WITHIN as usize];
         file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
 
         assert_eq!(read(&mut Cursor::new(file)), Riff::default());
