@@ -90,7 +90,7 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A kept object in MP4 or Matroska keeps the tags its container holds inside its structure
 
 ## Later: Tagging and organising
-- Nothing undoes a `resonate tag` or `resonate organise` run; the way back is another run
+- Nothing undoes a `resonate tag` run; the way back is another run
 - A cue-cut row is never written, a thumbnail a ripper embedded is never replaced by a better
   cover, and an album landed as a release group gets no totals
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer, and a WAV with ID3v2 before `RIFF`

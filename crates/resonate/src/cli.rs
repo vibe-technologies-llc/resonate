@@ -713,6 +713,15 @@ pub enum Sub {
                     with it, and a folder the moves leave empty is taken away"
         )]
         apply: bool,
+
+        #[arg(
+            long,
+            conflicts_with_all = ["layout", "root"],
+            help = "Put back what the last applied run moved, every file to where it stood \
+                    before, the catalog following. Printed until --apply says so, and walking \
+                    it back twice files them again"
+        )]
+        undo: bool,
     },
 
     #[command(about = "Play files through the engine and print what the transport does")]

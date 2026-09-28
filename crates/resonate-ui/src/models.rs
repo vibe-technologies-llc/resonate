@@ -564,6 +564,7 @@ pub struct LibraryModel {
     instead: Option<String>,
     work: Work,
     organised: Option<(Pass, OrganiseSummary)>,
+    walks_back: bool,
     previewed: Planned,
     imported: Option<(Pass, ImportSummary)>,
     previewed_import: Planned,
@@ -647,6 +648,7 @@ impl LibraryModel {
             window,
             ..
         } = Asked::at_first();
+        let walks_back = library.walks_back().unwrap_or_default();
         let mut model = Self {
             first_read,
             library,
@@ -706,6 +708,7 @@ impl LibraryModel {
             instead: None,
             work: Work::Nothing,
             organised: None,
+            walks_back,
             previewed: Planned::Not,
             imported: None,
             previewed_import: Planned::Not,
@@ -2282,6 +2285,10 @@ impl LibraryModel {
         self.work.organising().is_some()
     }
 
+    pub const fn walks_back(&self) -> bool {
+        self.walks_back
+    }
+
     pub fn is_moving(&self) -> bool {
         self.work
             .organising()
@@ -3544,17 +3551,37 @@ impl LibraryModel {
     }
 
     pub fn organise(&mut self, layout: Layout, pass: Pass, cx: &mut Context<Self>) {
+        self.file(
+            OrganiseOptions {
+                layout,
+                apply: pass.applies(),
+                ..OrganiseOptions::default()
+            },
+            pass,
+            cx,
+        );
+    }
+
+    pub fn walk_the_filing_back(&mut self, cx: &mut Context<Self>) {
+        self.file(
+            OrganiseOptions {
+                apply: true,
+                walk_back: true,
+                ..OrganiseOptions::default()
+            },
+            Pass::Apply,
+            cx,
+        );
+    }
+
+    fn file(&mut self, options: OrganiseOptions, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
             toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
             cx.notify();
             return;
         }
         let read_at = self.library.plans_stamp();
-        let handle = match self.library.organise(OrganiseOptions {
-            layout,
-            apply: pass.applies(),
-            ..OrganiseOptions::default()
-        }) {
+        let handle = match self.library.organise(options) {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the files could not be put in order");
@@ -3579,6 +3606,7 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
+                this.walks_back = this.library.walks_back().unwrap_or_default();
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {

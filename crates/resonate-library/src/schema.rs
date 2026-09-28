@@ -58,6 +58,14 @@ const MIGRATIONS: &[&str] = &[
           SELECT id, played FROM playlists WHERE played IS NOT NULL;",
     "ALTER TABLE listens ADD COLUMN began INTEGER;
      ALTER TABLE unheld_listens ADD COLUMN began INTEGER;",
+    "CREATE TABLE organised (
+         position  INTEGER PRIMARY KEY,
+         unit      INTEGER NOT NULL,
+         part      INTEGER NOT NULL,
+         rows      INTEGER NOT NULL,
+         moved_from TEXT NOT NULL,
+         moved_to   TEXT NOT NULL
+     ) STRICT;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

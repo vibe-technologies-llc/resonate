@@ -239,12 +239,16 @@ fn run() -> Result<()> {
             layout,
             root,
             apply,
+            undo,
         }) => organise(
             &open_library(&cli, &config)?,
             &config,
             layout.as_deref(),
             root,
-            *apply,
+            Organising {
+                apply: *apply,
+                walk_back: *undo,
+            },
         ),
         Some(Sub::Play { files, sleep }) => play(&cli, &config, files, sleep.as_deref()),
         Some(Sub::Queue(wanted)) => queue_onto_a_running_player(&cli, &config, wanted),
@@ -1014,12 +1018,18 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     told
 }
 
+#[derive(Clone, Copy)]
+struct Organising {
+    apply: bool,
+    walk_back: bool,
+}
+
 fn organise(
     library: &Library,
     config: &Config,
     named: Option<&str>,
     roots: &[PathBuf],
-    apply: bool,
+    how: Organising,
 ) -> Result<()> {
     let layout = match named {
         Some(template) => Layout::read(template)?,
@@ -1028,10 +1038,15 @@ fn organise(
     let summary = until_told(library.organise(OrganiseOptions {
         layout,
         roots: filed_from(roots),
-        apply,
+        apply: how.apply,
+        walk_back: how.walk_back,
     })?)?;
 
-    print!("{}", organised(&summary, &library.roots()?, apply));
+    if how.walk_back && summary.plan.moves.is_empty() {
+        println!("no applied run is kept to put back");
+        return Ok(());
+    }
+    print!("{}", organised(&summary, &library.roots()?, how.apply));
     Ok(())
 }
 

@@ -1014,7 +1014,8 @@ cargo run -- organise                 # the moves that would file every scanned 
                                       #   rewrites the catalog to follow and prunes the folders
                                       #   they empty, --as <layout> files them under another shape
                                       #   for this run alone and --root <root> files only the
-                                      #   tracks scanned from that root
+                                      #   tracks scanned from that root; --undo puts back what the
+                                      #   last applied run moved, printed until --apply
 cargo run -- playlists                # the playlists the library holds, with their lengths and
                                       #   play counts; --order names which way to list them,
                                       #   --reverse turns that order around and --named lists only

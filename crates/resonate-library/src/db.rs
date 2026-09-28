@@ -1671,6 +1671,25 @@ impl Library {
             .write(|transaction| organise::staged_away(transaction, staged))
     }
 
+    pub(crate) fn note_organised(&self, landed: &[Move]) -> Result<()> {
+        self.inner
+            .write(|transaction| organise::note_organised(transaction, landed))
+    }
+
+    pub(crate) fn last_organised(&self) -> Result<Vec<Move>> {
+        self.inner.read(organise::last_organised)
+    }
+
+    pub fn walks_back(&self) -> Result<bool> {
+        self.inner.read(|connection| {
+            connection
+                .query_row("SELECT EXISTS (SELECT 1 FROM organised)", [], |row| {
+                    row.get::<_, bool>(0)
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+    }
+
     pub(crate) fn staged_writes(&self) -> Result<Vec<organise::StagedWrite>> {
         self.inner.read(organise::staged_writes)
     }

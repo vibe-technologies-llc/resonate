@@ -1673,6 +1673,18 @@ the pass.
   process's alone and a window and a `resonate organise --apply` beside it may each be copying.
   A preview writes nothing and sweeps nothing.
   `what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies` is the claim.
+- **The last applied run can be walked back.** `organised`, a step in `MIGRATIONS`, holds what
+  the last apply landed — every unit, its companions and its sidecars, in the order they landed —
+  and each apply that moved anything replaces it. `OrganiseOptions::walk_back` builds its plan out
+  of that rather than out of a layout: the units in reverse, each `Move::reversed`, so a chain and
+  a parked cycle undo in the order that makes room, and it is handed to the same `apply` — batches,
+  the catalog following, a sheet's `FILE` line renamed back, the folders the run made pruned. What
+  the walk back landed is noted in turn, so walking it back again files the tracks again.
+  `resonate organise --undo` previews it and `--undo --apply` makes it, and the settings pane's
+  *Organising* group offers *Put the last run back* behind a second press wherever
+  `Library::walks_back` says a run is kept.
+  `an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again` is the
+  claim. A file that moved or went since the run is refused at `standing` like any other.
 - **A run files the roots it is given, and one the catalog does not hold is refused.**
   `OrganiseOptions::roots` empty is every root, which is what the settings pane and a bare
   `resonate organise` ask for; naming one puts a `roots.path IN (…)` on `TRACKS_TO_FILE`, so the

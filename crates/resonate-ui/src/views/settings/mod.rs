@@ -605,6 +605,7 @@ impl RootView {
     fn holds_a_press_armed(&self) -> bool {
         self.resetting_everything
             || self.moving_the_files
+            || self.walking_the_filing_back
             || self.writing_the_tags
             || self.keeping_the_tracks
             || self.discarding_the_curve
@@ -613,6 +614,7 @@ impl RootView {
     fn lower_every_armed_press(&mut self) {
         self.resetting_everything = false;
         self.moving_the_files = false;
+        self.walking_the_filing_back = false;
         self.writing_the_tags = false;
         self.keeping_the_tracks = false;
         self.discarding_the_curve = false;

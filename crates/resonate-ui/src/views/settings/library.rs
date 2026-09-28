@@ -92,6 +92,9 @@ const PREVIEW_FIRST: &str = "Preview first, so what would move is on screen befo
 const ASK_AGAIN_TO_MOVE: &str = "Press it again to move the files. Nothing is copied — every \
                                  track is renamed where it stands.";
 
+const ASK_AGAIN_TO_PUT_BACK: &str = "Press it again to put every file the last run moved back \
+                                     where it stood. Putting it back twice files them again.";
+
 const TAGGING_NOTE: &str = "Writes what a lookup answered for back into the files themselves, so \
                             another player reads the same names. Only fields the catalog was told \
                             about are touched, and a cover goes in only where the file carries \
@@ -587,6 +590,8 @@ impl RootView {
         let planned = library.previewed();
         let previewed = planned.is_shown();
         let armed = self.moving_the_files && previewed;
+        let walks_back = library.walks_back();
+        let walking_back = self.walking_the_filing_back && walks_back;
         let stopping = library.is_stopping_organise();
         let stats = library.organise_stats();
         let told = library
@@ -612,12 +617,16 @@ impl RootView {
                         armed,
                         cx,
                     ))
-                    .when(organising, |row| row.child(self.stop_filing(stopping, cx))),
+                    .when(organising, |row| row.child(self.stop_filing(stopping, cx)))
+                    .when(walks_back && !organising, |row| {
+                        row.child(self.put_the_filing_back(busy, walking_back, cx))
+                    }),
             )
             .when(!previewed && !organising, |body| {
                 body.child(note(unplanned(planned, PREVIEW_FIRST)))
             })
             .when(armed, |body| body.child(note(ASK_AGAIN_TO_MOVE)))
+            .when(walking_back, |body| body.child(note(ASK_AGAIN_TO_PUT_BACK)))
             .when(organising, |body| {
                 body.child(note(going(stats.unwrap_or_default(), moving)))
             })
@@ -709,6 +718,36 @@ impl RootView {
             |this, _, cx| {
                 this.library
                     .update(cx, |library, cx| library.stop_organise(cx));
+            },
+            self,
+            cx,
+        )
+    }
+
+    fn put_the_filing_back(
+        &self,
+        held_back: bool,
+        armed: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        action(
+            "put-the-filing-back",
+            if armed {
+                "Press again to put them back"
+            } else {
+                "Put the last run back"
+            },
+            Icon::Undo,
+            held_back,
+            move |this, _, cx| {
+                if armed {
+                    this.walking_the_filing_back = false;
+                    this.library
+                        .update(cx, |library, cx| library.walk_the_filing_back(cx));
+                } else {
+                    this.walking_the_filing_back = true;
+                }
+                cx.notify();
             },
             self,
             cx,

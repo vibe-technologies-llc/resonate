@@ -13418,6 +13418,63 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
 }
 
 #[test]
+fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("loose/echoes.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
+    tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let stood = root.join("loose/echoes.wav");
+    let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
+    let heard = library
+        .track_played(&MediaLocation::local(&stood), None, Duration::ZERO)?
+        .expect("the loose file was counted");
+
+    let forward = applied(&library)?;
+    assert_eq!(forward.plan.files_moving(), 2);
+    assert!(filed.is_file());
+
+    let walked = |apply: bool| -> Result<OrganiseSummary> {
+        library
+            .organise(OrganiseOptions {
+                apply,
+                walk_back: true,
+                ..OrganiseOptions::default()
+            })?
+            .join()
+    };
+    let preview = walked(false)?;
+    assert_eq!(preview.plan.files_moving(), 2);
+    assert!(filed.is_file(), "a preview of the walk back moved a file");
+
+    let back = walked(true)?;
+    assert_eq!(back.stats.moved, 2);
+    assert!(stood.is_file(), "the file was not put back where it stood");
+    assert!(root.join("loose/days.wav").is_file());
+    assert!(!filed.exists());
+    assert!(
+        !root.join("Pink Floyd").exists(),
+        "the folders the run made were left behind"
+    );
+    let returned = library
+        .track_at(&stood, None)?
+        .expect("the row followed its file back");
+    assert_eq!(returned.id, heard.track.id);
+    assert_eq!(returned.plays, 1);
+
+    let again = walked(true)?;
+    assert_eq!(again.stats.moved, 2);
+    assert!(
+        filed.is_file(),
+        "walking the walk back back did not file it again"
+    );
+    Ok(())
+}
+
+#[test]
 fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -> Result<()> {
     let tree = Tree::new();
     let echoes = meddle("Echoes", "2");

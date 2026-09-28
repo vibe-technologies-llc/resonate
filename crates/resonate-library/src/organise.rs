@@ -483,6 +483,31 @@ impl Move {
             .is_some_and(|name| name.contains(&format!(".{PARKED}-")))
     }
 
+    pub fn reversed(&self) -> Self {
+        Self {
+            from: self.to.clone(),
+            to: self.from.clone(),
+            rows: self.rows,
+            companions: self
+                .companions
+                .iter()
+                .map(|companion| Companion {
+                    from: companion.to.clone(),
+                    to: companion.from.clone(),
+                    rows: companion.rows,
+                })
+                .collect(),
+            sidecars: self
+                .sidecars
+                .iter()
+                .map(|sidecar| Sidecar {
+                    from: sidecar.to.clone(),
+                    to: sidecar.from.clone(),
+                })
+                .collect(),
+        }
+    }
+
     pub fn files(&self) -> impl Iterator<Item = (&Path, &Path)> {
         iter::once((self.from.as_path(), self.to.as_path())).chain(
             self.companions
@@ -531,6 +556,7 @@ pub struct OrganiseOptions {
     pub layout: Layout,
     pub roots: Vec<PathBuf>,
     pub apply: bool,
+    pub walk_back: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -621,6 +647,28 @@ fn run(
         sweep_what_a_killed_run_staged(library);
     }
 
+    if options.walk_back {
+        let mut plan = Plan {
+            moves: library
+                .last_organised()?
+                .iter()
+                .rev()
+                .map(Move::reversed)
+                .collect(),
+            ..Plan::default()
+        };
+        if options.apply {
+            let roots: AHashSet<PathBuf> = library.roots()?.into_iter().collect();
+            apply(library, &mut plan, &roots, progress);
+            library.note_organised(&plan.moves)?;
+        }
+        return Ok(OrganiseSummary {
+            stats: progress.snapshot(),
+            plan,
+            cancelled: progress.is_cancelled(),
+        });
+    }
+
     let discs = library.album_discs()?;
     let mut planner = Planner::new(&options.layout, progress);
     library.each_file_to_file(&options.roots, |filing| planner.knows(&filing, &discs))?;
@@ -643,6 +691,9 @@ fn run(
     let mut plan = planner.settle();
     if options.apply {
         apply(library, &mut plan, &roots, progress);
+        if !plan.moves.is_empty() {
+            library.note_organised(&plan.moves)?;
+        }
     }
 
     Ok(OrganiseSummary {
@@ -1907,6 +1958,87 @@ pub(crate) fn staged_away(tx: &Transaction<'_>, staged: &Path) -> Result<()> {
     )
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
     Ok(())
+}
+
+const MOVED_ITSELF: i64 = 0;
+const MOVED_BESIDE: i64 = 1;
+const CARRIED_ALONG: i64 = 2;
+
+pub(crate) fn note_organised(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
+    tx.execute("DELETE FROM organised", [])
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    let mut noted = prepared(
+        tx,
+        "INSERT INTO organised (unit, part, rows, moved_from, moved_to)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    for (unit, planned) in landed.iter().enumerate() {
+        let parts =
+            iter::once((MOVED_ITSELF, planned.rows, &planned.from, &planned.to))
+                .chain(planned.companions.iter().map(|companion| {
+                    (MOVED_BESIDE, companion.rows, &companion.from, &companion.to)
+                }))
+                .chain(
+                    planned
+                        .sidecars
+                        .iter()
+                        .map(|sidecar| (CARRIED_ALONG, 0, &sidecar.from, &sidecar.to)),
+                );
+        for (part, rows, from, to) in parts {
+            noted
+                .execute(params![
+                    unit as i64,
+                    part,
+                    i64::from(rows),
+                    store::path_text(from)?,
+                    store::path_text(to)?
+                ])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn last_organised(connection: &Connection) -> Result<Vec<Move>> {
+    let mut statement = connection
+        .prepare("SELECT unit, part, rows, moved_from, moved_to FROM organised ORDER BY position")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let parts = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                PathBuf::from(row.get::<_, String>(3)?),
+                PathBuf::from(row.get::<_, String>(4)?),
+            ))
+        })
+        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    let mut moves: Vec<(i64, Move)> = Vec::new();
+    for (unit, part, rows, from, to) in parts {
+        let rows = u32::try_from(rows).unwrap_or_default();
+        match (part, moves.last_mut()) {
+            (MOVED_BESIDE, Some((held, planned))) if *held == unit => {
+                planned.companions.push(Companion { from, to, rows });
+            }
+            (CARRIED_ALONG, Some((held, planned))) if *held == unit => {
+                planned.sidecars.push(Sidecar { from, to });
+            }
+            _ => moves.push((
+                unit,
+                Move {
+                    from,
+                    to,
+                    rows,
+                    companions: Vec::new(),
+                    sidecars: Vec::new(),
+                },
+            )),
+        }
+    }
+    Ok(moves.into_iter().map(|(_, planned)| planned).collect())
 }
 
 pub(crate) fn staged_writes(connection: &Connection) -> Result<Vec<StagedWrite>> {
