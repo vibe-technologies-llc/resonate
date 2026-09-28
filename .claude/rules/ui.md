@@ -649,14 +649,22 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   the accent itself, and its root given `id="resonate-in-the-accent"` — so switching palette moves
   the icon with the accent until one is chosen by hand, and going back to Resonate's own takes it
   away. `AppIcon::drawn_here` reads that id, and it is what makes the file ours to replace or take
-  away: an icon under the same name nobody here drew is left exactly as it was. `run` shows the
+  away: an icon under the same name nobody here drew is left exactly as it was — **unless it is a
+  copy of the packaged icon**, byte for byte, which is what a hand install of `packaging/` or a
+  tree run unpackaged leaves there. Such a copy takes the accent like an empty place does, but
+  what is written over it opens with `data-written-over="the-packaged-icon"` beside the id, so
+  going back to Resonate's own accent writes the packaged copy back rather than taking the file
+  away and leaving the launcher with no icon at all —
+  `a_copy_of_the_packaged_icon_takes_the_accent_and_is_put_back_after_it`. `run` shows the
   appearance it opens in and `RootView::dress` every one it wears after, through `Launcher`, a seam
   on `Stored` the way `Present` is, so `resonate-ui` does no I/O for it. The binary's
   `launcher::Icons` is behind it: a thread that waits `SETTLES_AFTER` of quiet so a run of presses
   is placed once, writes a staged copy over `$XDG_DATA_HOME/icons/hicolor/scalable/apps/resonate.svg`
   or removes it, and only where that moved anything flushes what the install scriptlet flushes —
   the theme folder's mtime, `kbuildsycoca6` and KIconLoader's `iconChanged`, which
-  `resonate_mpris::tell_the_icons_changed` emits. A run opening in the appearance the file already
+  `resonate_mpris::tell_the_icons_changed` emits — and, where the folder holds an
+  `icon-theme.cache`, the GTK cache through `gtk-update-icon-cache` or its GTK 4 twin, since a
+  stale cache there hides the new file from every GTK desktop. A run opening in the appearance the file already
   shows writes and flushes nothing. **The gradient is in `userSpaceOnUse`**, spanning the mark's own
   24-box: under the default `objectBoundingBox` each stroke is a zero-width box, which the SVG
   specification says paints nothing, and librsvg drew the packaged icon as an empty tile.

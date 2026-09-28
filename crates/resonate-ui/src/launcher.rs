@@ -6,6 +6,8 @@ const PACKAGED: &str = include_str!("../../../packaging/resonate.svg");
 const PACKAGED_STOPS: [&str; 2] = ["stop-color=\"#6ea8fe\"", "stop-color=\"#63d29b\""];
 const OPENS: &str = "<svg ";
 const OPENS_RECOLOURED: &str = "<svg id=\"resonate-in-the-accent\" ";
+const OPENS_OVER_THE_PACKAGED: &str =
+    "<svg id=\"resonate-in-the-accent\" data-written-over=\"the-packaged-icon\" ";
 const LIFTED_TOWARD_WHITE: f32 = 0.3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +34,23 @@ impl AppIcon {
 
     pub fn drawn_here(held: &[u8]) -> bool {
         held.starts_with(OPENS_RECOLOURED.as_bytes())
+            || held.starts_with(OPENS_OVER_THE_PACKAGED.as_bytes())
+    }
+
+    pub fn is_the_packaged_copy(held: &[u8]) -> bool {
+        held == PACKAGED.as_bytes()
+    }
+
+    pub fn written_over_the_packaged_copy(held: &[u8]) -> bool {
+        held.starts_with(OPENS_OVER_THE_PACKAGED.as_bytes())
+    }
+
+    pub fn over_the_packaged_copy(drawn: &str) -> String {
+        drawn.replacen(OPENS_RECOLOURED, OPENS_OVER_THE_PACKAGED, 1)
+    }
+
+    pub const fn packaged_copy() -> &'static str {
+        PACKAGED
     }
 }
 

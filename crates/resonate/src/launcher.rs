@@ -16,6 +16,8 @@ const ICON_NAME: &str = "resonate";
 const SCALABLE_APPS: &str = "scalable/apps";
 const SETTLES_AFTER: Duration = Duration::from_millis(1_500);
 const SERVICE_CACHE_BUILDER: &str = "kbuildsycoca6";
+const GTK_ICON_CACHE: &str = "icon-theme.cache";
+const GTK_ICON_CACHE_BUILDERS: [&str; 2] = ["gtk-update-icon-cache", "gtk4-update-icon-cache"];
 
 pub(crate) struct Icons {
     wanted: Sender<AppIcon>,
@@ -85,6 +87,27 @@ fn icon_path(theme: &Path) -> PathBuf {
     theme.join(SCALABLE_APPS).join(format!("{ICON_NAME}.svg"))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Standing {
+    Nothing,
+    Ours { over_the_packaged_copy: bool },
+    ThePackagedCopy,
+    Somebody,
+}
+
+impl Standing {
+    fn of(held: Option<&[u8]>) -> Self {
+        match held {
+            None => Self::Nothing,
+            Some(held) if AppIcon::is_the_packaged_copy(held) => Self::ThePackagedCopy,
+            Some(held) if AppIcon::drawn_here(held) => Self::Ours {
+                over_the_packaged_copy: AppIcon::written_over_the_packaged_copy(held),
+            },
+            Some(_) => Self::Somebody,
+        }
+    }
+}
+
 fn placed(icon: &AppIcon, theme: &Path) -> Result<Placing> {
     let path = icon_path(theme);
     let held = match fs::read(&path) {
@@ -98,31 +121,52 @@ fn placed(icon: &AppIcon, theme: &Path) -> Result<Placing> {
             });
         }
     };
-    if held
-        .as_deref()
-        .is_some_and(|held| !AppIcon::drawn_here(held))
-    {
-        return Ok(Placing::NotOurs);
-    }
 
-    match (icon, held) {
-        (AppIcon::Packaged, None) => Ok(Placing::Standing),
-        (AppIcon::Packaged, Some(_)) => {
+    let wanted = match (icon, Standing::of(held.as_deref())) {
+        (_, Standing::Somebody) => return Ok(Placing::NotOurs),
+        (AppIcon::Packaged, Standing::Nothing | Standing::ThePackagedCopy) => {
+            return Ok(Placing::Standing);
+        }
+        (
+            AppIcon::Packaged,
+            Standing::Ours {
+                over_the_packaged_copy: false,
+            },
+        ) => {
             fs::remove_file(&path).map_err(|source| Error::Icon {
                 op: IconOp::Remove,
                 path,
                 source,
             })?;
-            Ok(Placing::Moved)
+            return Ok(Placing::Moved);
         }
-        (AppIcon::Recoloured(drawn), Some(held)) if held == drawn.as_bytes() => {
-            Ok(Placing::Standing)
-        }
-        (AppIcon::Recoloured(drawn), _) => {
-            written(&path, drawn)?;
-            Ok(Placing::Moved)
-        }
+        (
+            AppIcon::Packaged,
+            Standing::Ours {
+                over_the_packaged_copy: true,
+            },
+        ) => AppIcon::packaged_copy().to_owned(),
+        (AppIcon::Recoloured(drawn), Standing::Nothing) => drawn.clone(),
+        (
+            AppIcon::Recoloured(drawn),
+            Standing::ThePackagedCopy
+            | Standing::Ours {
+                over_the_packaged_copy: true,
+            },
+        ) => AppIcon::over_the_packaged_copy(drawn),
+        (
+            AppIcon::Recoloured(drawn),
+            Standing::Ours {
+                over_the_packaged_copy: false,
+            },
+        ) => drawn.clone(),
+    };
+
+    if held.as_deref() == Some(wanted.as_bytes()) {
+        return Ok(Placing::Standing);
     }
+    written(&path, &wanted)?;
+    Ok(Placing::Moved)
 }
 
 fn written(path: &Path, drawn: &str) -> Result<()> {
@@ -179,6 +223,24 @@ fn flushed(theme: &Path) {
         }
         Ok(_) => {}
         Err(error) => tracing::debug!(%error, "the desktop's service cache was not rebuilt"),
+    }
+
+    if theme.join(GTK_ICON_CACHE).exists() {
+        let rebuilt = GTK_ICON_CACHE_BUILDERS.iter().find_map(|builder| {
+            Command::new(builder)
+                .args(["--force", "--ignore-theme-index", "--quiet"])
+                .arg(theme)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .ok()
+        });
+        match rebuilt {
+            Some(status) if status.success() => {}
+            Some(status) => tracing::debug!(%status, "the GTK icon cache was not rebuilt"),
+            None => tracing::debug!("no GTK icon cache builder is installed"),
+        }
     }
 
     if let Err(error) = resonate_mpris::tell_the_icons_changed() {
@@ -296,6 +358,46 @@ mod tests {
             panic!("a red accent is not the packaged icon's");
         };
         assert_eq!(scratch.held().as_deref(), Some(drawn.as_bytes()));
+    }
+
+    #[test]
+    fn a_copy_of_the_packaged_icon_takes_the_accent_and_is_put_back_after_it() {
+        let scratch = Scratch::new();
+        let path = icon_path(&scratch.theme);
+        fs::create_dir_all(path.parent().expect("a folder")).expect("a scratch folder");
+        fs::write(&path, AppIcon::packaged_copy()).expect("a copy of the packaged icon");
+        let (icon, drawn) = recoloured();
+
+        assert_eq!(
+            placed(&icon, &scratch.theme).expect("placed"),
+            Placing::Moved
+        );
+        let held = scratch.held().expect("an icon in the accent");
+        assert!(AppIcon::drawn_here(&held));
+        assert!(AppIcon::written_over_the_packaged_copy(&held));
+        assert_ne!(
+            held,
+            drawn.as_bytes(),
+            "the copy it wrote over was forgotten"
+        );
+        assert_eq!(
+            placed(&icon, &scratch.theme).expect("placed"),
+            Placing::Standing
+        );
+
+        assert_eq!(
+            placed(&AppIcon::Packaged, &scratch.theme).expect("put back"),
+            Placing::Moved
+        );
+        assert_eq!(
+            scratch.held().as_deref(),
+            Some(AppIcon::packaged_copy().as_bytes()),
+            "the packaged copy it wrote over was taken away rather than put back"
+        );
+        assert_eq!(
+            placed(&AppIcon::Packaged, &scratch.theme).expect("nothing to do"),
+            Placing::Standing
+        );
     }
 
     #[test]
