@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     num::NonZeroUsize,
+    path::PathBuf,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
@@ -141,6 +142,7 @@ pub struct ResonateApp {
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
+    pub convolution: Option<PathBuf>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,
@@ -819,6 +821,7 @@ pub fn run(
             organise_as: stored.organise_as.clone(),
             notify: Arc::clone(&stored.notify),
             by_sound: Arc::clone(&stored.by_sound),
+            convolution: stored.convolution.clone(),
             window_buttons: stored.window_buttons,
             scroll_volume: stored.scroll_volume,
             scrollbars: stored.scrollbars,

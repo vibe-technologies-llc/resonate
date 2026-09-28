@@ -1,19 +1,19 @@
-use std::{cell::Cell as Slot, rc::Rc, time::Duration};
+use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent, PathBuilder,
-    Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Window, canvas, div,
-    linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
+    PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Window, canvas,
+    div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
-    SampleRate,
+    MediaLocation, SampleRate,
     eq::{Band, BandKind, Preamp},
 };
-use resonate_engine::{Command, NodeName};
+use resonate_engine::{Command, NodeName, Sources, read_impulse};
 use resonate_eq::{Binding, Device, ProfileName};
 
 use crate::{
-    Notice, Setting,
+    Notice, ResonateApp, Setting,
     app::{
         BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
         CONTROL_CONTEXT,
@@ -1336,3 +1336,107 @@ impl RootView {
         }
     }
 }
+
+const ROOM_NOTE: &str = "The response is convolved with every stream after the equaliser, at the \
+                         stream's own rate, a partition of 1 024 frames behind. It is read again \
+                         from the file at every start, so a new measurement written over it is \
+                         heard from then on.";
+
+const NO_ROOM: &str = "Nothing is corrected.";
+
+impl RootView {
+    pub(super) fn room_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let held = cx.global::<ResonateApp>().convolution.clone();
+
+        kit::section_body()
+            .child(match &held {
+                Some(file) => note(file.display().to_string()),
+                None => note(NO_ROOM),
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(action(
+                        "choose-a-response",
+                        "Choose a response…",
+                        Icon::Folder,
+                        false,
+                        |this, _, cx| this.choose_a_response(cx),
+                        self,
+                        cx,
+                    ))
+                    .when(held.is_some(), |row| {
+                        row.child(action(
+                            "stop-correcting",
+                            "Stop correcting",
+                            Icon::Close,
+                            false,
+                            |this, _, cx| this.correct_the_room(None, cx),
+                            self,
+                            cx,
+                        ))
+                    }),
+            )
+            .child(note(ROOM_NOTE))
+    }
+
+    fn choose_a_response(&self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(SharedString::new_static("Choose")),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(chosen))) = picked.await else {
+                return;
+            };
+            let Some(file) = chosen.into_iter().next() else {
+                return;
+            };
+            let chose = this.update(cx, |this, cx| this.correct_the_room(Some(file), cx));
+            let _ = chose;
+        })
+        .detach();
+    }
+
+    pub(crate) fn correct_the_room(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
+        let Some(file) = file else {
+            cx.update_global::<ResonateApp, _>(|global, _| global.convolution = None);
+            self.send(Command::SetConvolution(None), cx);
+            self.store(&Setting::Convolution(None), cx);
+            cx.notify();
+            return;
+        };
+        let reading = file.clone();
+        let read = cx
+            .background_executor()
+            .spawn(async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading)) });
+        cx.spawn(async move |this, cx| {
+            let read = read.await;
+            let _ = this.update(cx, |this, cx| match read {
+                Ok(Some(impulse)) => {
+                    cx.update_global::<ResonateApp, _>(|global, _| {
+                        global.convolution = Some(file.clone());
+                    });
+                    this.send(Command::SetConvolution(Some(Arc::new(impulse))), cx);
+                    this.store(&Setting::Convolution(Some(file)), cx);
+                    this.report(Notice::Done(CORRECTING.to_owned()), cx);
+                    cx.notify();
+                }
+                Ok(None) => this.report(Notice::Trouble(NO_TAPS.to_owned()), cx),
+                Err(error) => {
+                    tracing::warn!(%error, "a room's response could not be read");
+                    this.report(Notice::Trouble(UNREAD.to_owned()), cx);
+                }
+            });
+        })
+        .detach();
+    }
+}
+
+const CORRECTING: &str = "The room is corrected from now on";
+const NO_TAPS: &str = "That file holds no response to convolve with";
+const UNREAD: &str = "That file could not be read as a response";

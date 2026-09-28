@@ -3,6 +3,8 @@ paths:
   - "crates/resonate-eq/**/*.rs"
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
+  - "crates/resonate-dsp/src/convolve.rs"
+  - "crates/resonate-engine/src/impulse.rs"
   - "crates/resonate-online/src/autoeq.rs"
   - "crates/resonate-ui/src/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/equaliser.rs"
@@ -195,6 +197,33 @@ to the run, with AutoEq's measurements behind it. `audio.md` has the chain it si
   attenuates rather than limits, and a preamp *is* the attenuation. *Fit* sets it from the
   profile's own peak; a listener who overrides it meets the existing clamps, which is their doing
   and is visible in `resonate explain`.
+
+## Room correction
+
+- **A measured impulse response is convolved with the stream after the equaliser.** `Impulse` is
+  the taps of each of its channels at the rate it was measured at — a stereo response corrects
+  each channel with its own, a mono one every channel alike, and a response with fewer channels
+  than the stream is read round again — and `Impulse::at` draws it again at the stream's rate
+  through the `VeryHigh` resampler, skipping the resampler's delay, scaling by the rate ratio so
+  its gain holds, and keeping each rate it was drawn at so a second track at that rate costs
+  nothing. `engine::read_impulse` decodes one out of any file the codec opens, at most
+  `LONGEST_IMPULSE`, ten seconds, of it. `Convolver` is uniformly partitioned overlap-save over
+  `rustfft`: each partition's spectrum is taken once, a frequency-domain delay line holds the
+  input's, and a block out is the inverse of their summed products — one partition behind, which
+  is its latency and what `latency_frames` says. `partition_frames_at` grows the partition with
+  the rate, 1 024 frames to 48 kHz and a power of two past it, because a partition's cost per
+  sample falls as it widens while its latency stays near a fiftieth of a second; a second's
+  response costs 0.45 % of a core at 48 kHz and 2.3 % at 192 kHz, where a fixed partition cost
+  12 %. A track's end flushes the response's tail. `a_long_response_convolves_as_the_direct_sum_does_and_each_channel_takes_its_own`
+  holds it to the direct sum.
+- **It is `EngineConfig::convolution` and `Command::SetConvolution`, read from the
+  `convolution` key.** The plan carries it as `OutputPlan::convolution`, which makes it
+  `Converted` like a curve does, and a change rebinds at the position rather than retuning,
+  since the stage's latency moves the stream. The binary reads the file at start and
+  `resonate explain` names it; the settings pane's *Room correction* group chooses one with the
+  file picker, reads it on a background thread, sends it and writes the key, and *Stop
+  correcting* clears both. It is one response for every device rather than a binding, because a
+  room is measured once and heard through whatever plays in it.
 
 ## The binding
 

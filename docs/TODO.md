@@ -79,7 +79,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A disc numbered in words is composed only in English beyond the flat tables of twelve
 
 ## Later: Equaliser and DSP extras
-- There is no convolution stage for room correction or a measured impulse response
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
 - A downmix folds by position alone: a `Discrete(n)` source is truncated one for one, and a

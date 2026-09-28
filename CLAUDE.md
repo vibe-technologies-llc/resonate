@@ -1121,8 +1121,8 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-sixty-nine have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other sixty-one have none, so the
+seventy have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other sixty-two have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -1131,7 +1131,7 @@ settings pane and the file are the whole of how any of them is set: the output's
 `remember-tab`, `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category`
 and `last-settings-category`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `fetch-lyrics`, `identify-by-sound`, `contact`, `acoustid-key`, `equaliser`,
-`equaliser-for`, `equaliser-profile`, `resume`, `history-kept`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
+`equaliser-for`, `equaliser-profile`, `convolution`, `resume`, `history-kept`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
 `listenbrainz-token`, `listen-from`, `listen-for`, `inbox`, chosen with the Library category's
 *The inbox* group, which polls from the window as well, and `subsonic`, `subsonic-user` and
 `subsonic-password`, typed into its *A Subsonic server* group and used from the next start — and

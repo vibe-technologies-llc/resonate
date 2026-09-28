@@ -12,9 +12,9 @@ use resonate_core::{
     eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q},
 };
 use resonate_dsp::{
-    Chain, Dither, DitherKind, Equaliser, FilterPhase, GainConfig, GainStage, NoiseShaping,
-    Processor, Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig,
-    TruePeak, Tuning,
+    Chain, Convolver, Dither, DitherKind, Equaliser, FilterPhase, GainConfig, GainStage, Impulse,
+    NoiseShaping, Processor, Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore,
+    RestoreConfig, TruePeak, Tuning,
 };
 
 const BLOCK: usize = 1_024;
@@ -427,6 +427,26 @@ fn main() {
                 Box::new(Equaliser::new(profile(bands), at))
             });
         }
+    }
+
+    for at in [rate, SampleRate::HZ_192000] {
+        let response = Arc::new(
+            Impulse::new(
+                at,
+                vec![
+                    (0..at.hz() as usize)
+                        .map(|tap| 0.5_f64.powi(tap as i32 % 7))
+                        .collect();
+                    2
+                ],
+            )
+            .expect("a benchmarked response"),
+        );
+        bench.stage(
+            &format!("convolve a second's response at {}", kilohertz(at)),
+            stereo(at),
+            || Box::new(Convolver::new(Arc::clone(&response))),
+        );
     }
 
     for at in [rate, SampleRate::HZ_192000] {

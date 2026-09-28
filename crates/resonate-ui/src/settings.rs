@@ -168,6 +168,7 @@ pub enum SettingKey {
     Equaliser,
     EqualiserFor,
     EqualiserProfile,
+    Convolution,
     Resume,
     HistoryKept,
     SkipUnderRepeat,
@@ -201,7 +202,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 67] = [
+    pub const ALL: [Self; 68] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -239,6 +240,7 @@ impl SettingKey {
         Self::Equaliser,
         Self::EqualiserFor,
         Self::EqualiserProfile,
+        Self::Convolution,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipUnderRepeat,
@@ -314,6 +316,7 @@ pub enum Setting {
         binding: Option<Binding>,
     },
     EqualiserProfile(Option<Binding>),
+    Convolution(Option<PathBuf>),
     Resume(bool),
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
@@ -386,6 +389,7 @@ impl Setting {
             Self::Equaliser(_) => SettingKey::Equaliser,
             Self::EqualiserFor { .. } => SettingKey::EqualiserFor,
             Self::EqualiserProfile(_) => SettingKey::EqualiserProfile,
+            Self::Convolution(_) => SettingKey::Convolution,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
@@ -558,6 +562,7 @@ pub struct Stored {
     pub organise_as: String,
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
+    pub convolution: Option<PathBuf>,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,

@@ -7,9 +7,9 @@ use resonate_core::{
     eq::{Frequency, Profile},
 };
 use resonate_dsp::{
-    Chain, ChainBuilder, Dither, DitherKind, Equaliser, FilterPhase, Front, GainConfig, GainStage,
-    NoiseShaping, Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig, Restoration, Restore,
-    RestoreConfig, Result, TruePeak, Tuning,
+    Chain, ChainBuilder, Convolver, Dither, DitherKind, Equaliser, FilterPhase, Front, GainConfig,
+    GainStage, Impulse, NoiseShaping, Quality, Remix, ReplayGainMode, Resampler, ResamplerConfig,
+    Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
 };
 use resonate_pipewire::{NodeName, SinkInfo};
 
@@ -56,6 +56,7 @@ pub struct EngineConfig {
     pub bluetooth: BluetoothWake,
     pub volume: Volume,
     pub equaliser: Arc<Equalisation>,
+    pub convolution: Option<Arc<Impulse>>,
     pub skip_under_repeat: SkipUnderRepeat,
     pub previous_restarts: PreviousRestarts,
 }
@@ -138,6 +139,7 @@ impl Default for EngineConfig {
             bluetooth: BluetoothWake::default(),
             volume: Volume::MAX,
             equaliser: Arc::new(Equalisation::default()),
+            convolution: None,
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
         }
@@ -206,6 +208,7 @@ pub struct OutputPlan {
     pub restoration: Option<RestoreConfig>,
     pub resample: Option<(SampleRate, SampleRate)>,
     pub equalisation: Option<Arc<Profile>>,
+    pub convolution: Option<Arc<Impulse>>,
     pub dither_to: Option<BitDepth>,
     pub shaping: NoiseShaping,
     pub gain: Option<GainConfig>,
@@ -220,6 +223,7 @@ impl OutputPlan {
             && self.restoration.is_none()
             && self.resample.is_none()
             && self.equalisation.is_none()
+            && self.convolution.is_none()
             && self.gain.is_none()
             && self.dither_to.is_none()
             && !self.rounds
@@ -261,6 +265,7 @@ impl OutputPlan {
             && self.restoration == other.restoration
             && self.resample == other.resample
             && self.equalisation.is_some() == other.equalisation.is_some()
+            && self.convolution == other.convolution
             && self.dither_to == other.dither_to
             && self.shaping == other.shaping
             && self.gain.is_some() == other.gain.is_some()
@@ -321,6 +326,9 @@ impl OutputPlan {
                 Arc::clone(profile),
                 self.stream.rate,
             )));
+        }
+        if let Some(impulse) = self.convolution.as_ref() {
+            builder = builder.push(Box::new(Convolver::new(Arc::clone(impulse))));
         }
         if let Some(gain) = self.gain {
             builder = builder.push(Box::new(GainStage::new(gain)));
@@ -401,6 +409,7 @@ fn untouched(stream: StreamSpec, rate: DsdRate) -> OutputPlan {
         restoration: None,
         resample: None,
         equalisation: None,
+        convolution: None,
         dither_to: None,
         shaping: NoiseShaping::None,
         gain: None,
@@ -438,8 +447,12 @@ pub fn plan_for(
     let remix = (stream.channel_count() != source.channel_count())
         .then_some((source.channels, stream.channels));
     let equalisation = eq_config(config, sink, stream.rate);
-    let converts =
-        resample.is_some() || remix.is_some() || equalisation.is_some() || restoration.is_some();
+    let convolution = config.convolution.clone();
+    let converts = resample.is_some()
+        || remix.is_some()
+        || equalisation.is_some()
+        || convolution.is_some()
+        || restoration.is_some();
     let gain = gain_config(config, attenuator, replay_gain)
         .or_else(|| converts.then(|| gain_of(config, attenuator, replay_gain)));
 
@@ -477,6 +490,7 @@ pub fn plan_for(
         restoration,
         resample,
         equalisation,
+        convolution,
         dither_to: dithers.then(|| stream.format.bit_depth()),
         shaping: config.noise_shaping.at(stream.rate),
         gain,
@@ -1900,6 +1914,31 @@ mod tests {
         assert_eq!(plan.packing, Packing::Samples);
         assert!(plan.equalisation.is_some());
         assert_eq!(plan.mode, OutputMode::Converted);
+    }
+
+    #[test]
+    fn a_rooms_response_takes_the_plan_off_the_bit_perfect_path_and_into_the_chain() {
+        let source = spec(SampleRate::HZ_48000, SampleFormat::S24);
+        let sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S24]);
+        let impulse = Arc::new(
+            Impulse::new(SampleRate::HZ_48000, vec![vec![1.0, 0.25]]).expect("a response"),
+        );
+        let config = EngineConfig {
+            convolution: Some(Arc::clone(&impulse)),
+            ..EngineConfig::default()
+        };
+
+        let plan = plan(source, &sink, &config);
+
+        assert_eq!(plan.mode, OutputMode::Converted);
+        assert_eq!(plan.convolution, Some(impulse));
+        let chain = plan
+            .build_chain(source, &config, 1_024)
+            .expect("a chain that convolves");
+        assert!(
+            chain.latency_frames()
+                >= resonate_dsp::partition_frames_at(SampleRate::HZ_48000) as f64
+        );
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub enum ConfigKey {
     Equaliser,
     EqualiserFor,
     EqualiserProfile,
+    Convolution,
     Resume,
     HistoryKept,
     SkipRepeatsQueue,
@@ -82,7 +83,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 69] = [
+    pub const ALL: [Self; 70] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -117,6 +118,7 @@ impl ConfigKey {
         Self::Equaliser,
         Self::EqualiserFor,
         Self::EqualiserProfile,
+        Self::Convolution,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
@@ -192,6 +194,7 @@ impl ConfigKey {
             Self::Equaliser => "equaliser",
             Self::EqualiserFor => "equaliser-for",
             Self::EqualiserProfile => "equaliser-profile",
+            Self::Convolution => "convolution",
             Self::Resume => "resume",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",

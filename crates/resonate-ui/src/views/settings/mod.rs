@@ -380,6 +380,7 @@ impl RootView {
             Group::BoundTo => self.bound_to_group(cx),
             Group::Bands => self.bands_group(cx),
             Group::Measured => self.measured_group(cx),
+            Group::RoomCorrection => self.room_group(cx),
             Group::Folders => self.folders_group(cx),
             Group::Scanning => self.scanning_group(cx),
             Group::Refreshing => self.refreshing_group(cx),
@@ -529,6 +530,7 @@ impl RootView {
                 .library
                 .update(cx, |library, cx| library.set_inbox(None, cx)),
             Group::Subsonic => self.forget_the_account(cx),
+            Group::RoomCorrection => self.correct_the_room(None, cx),
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
@@ -573,6 +575,7 @@ impl RootView {
         let listening_for = listen.length();
         let template_given = self.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
+        let convolving = cx.global::<ResonateApp>().convolution.is_some();
         let subsonic_given = self
             .subsonic
             .iter()
@@ -608,6 +611,7 @@ impl RootView {
             template_given,
             inbox_given,
             subsonic_given,
+            convolving,
         }
     }
 

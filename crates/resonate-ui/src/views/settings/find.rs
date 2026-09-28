@@ -80,6 +80,7 @@ pub(crate) enum Group {
     BoundTo,
     Bands,
     Measured,
+    RoomCorrection,
     Folders,
     Scanning,
     Refreshing,
@@ -117,7 +118,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 51] = [
+    pub(crate) const ALL: [Self; 52] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -135,6 +136,7 @@ impl Group {
         Self::BoundTo,
         Self::Bands,
         Self::Measured,
+        Self::RoomCorrection,
         Self::Folders,
         Self::Scanning,
         Self::Refreshing,
@@ -186,7 +188,11 @@ impl Group {
             | Self::ReplayGain
             | Self::TruePeak
             | Self::LossySources => Category::Processing,
-            Self::Equalising | Self::BoundTo | Self::Bands | Self::Measured => Category::Equaliser,
+            Self::Equalising
+            | Self::BoundTo
+            | Self::Bands
+            | Self::Measured
+            | Self::RoomCorrection => Category::Equaliser,
             Self::Folders
             | Self::Scanning
             | Self::Refreshing
@@ -243,6 +249,7 @@ impl Group {
             Self::BoundTo => "Bound to each device",
             Self::Bands => "Bands",
             Self::Measured => "Measured corrections",
+            Self::RoomCorrection => "Room correction",
             Self::Folders => "Music folders",
             Self::Scanning => "Scanning",
             Self::Refreshing => "Refreshing",
@@ -299,6 +306,7 @@ impl Group {
             Self::BoundTo => BOUND_TO_HINT,
             Self::Bands => BANDS_HINT,
             Self::Measured => MEASURED_HINT,
+            Self::RoomCorrection => ROOM_HINT,
             Self::Folders => FOLDERS_HINT,
             Self::Scanning => SCANNING_HINT,
             Self::Refreshing => REFRESHING_HINT,
@@ -378,6 +386,10 @@ impl Group {
             Self::Measured => {
                 "autoeq oratory1990 crinacle harman target download fetch \
                                measurement rig suggest"
+            }
+            Self::RoomCorrection => {
+                "convolution impulse response ir fir room correction speakers rew drc \
+                 measurement wav"
             }
             Self::Folders => "roots directories add scan music path",
             Self::Scanning => "rescan stop enrich tags index",
@@ -490,6 +502,7 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
+            Self::RoomCorrection => &[SettingKey::Convolution],
             Self::Subsonic => &[
                 SettingKey::Subsonic,
                 SettingKey::SubsonicUser,
@@ -814,6 +827,10 @@ pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself.
 pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked wanted are \
                                         also filled from, matched by the recording's \
                                         MusicBrainz id or its ISRC.";
+
+pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
+                                    FLAC as REW or DRC writes it — convolved with everything \
+                                    played, after the equaliser.";
 
 pub(crate) const INBOX_HINT: &str = "A folder the tracks marked wanted are filled from. A file \
                                      directly inside it whose name is the recording's \

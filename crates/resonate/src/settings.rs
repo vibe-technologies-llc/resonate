@@ -225,6 +225,16 @@ impl Settings for File {
                     .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
                 (ConfigKey::Inbox, Some(folder.into()))
             }
+            Setting::Convolution(held) => {
+                let held = held
+                    .as_deref()
+                    .map(|path| {
+                        path.to_str()
+                            .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })
+                    })
+                    .transpose()?;
+                (ConfigKey::Convolution, held.map(Into::into))
+            }
             Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
             Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
             Setting::SubsonicPassword(given) => {
@@ -336,6 +346,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
         SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
+        SettingKey::Convolution => ConfigKey::Convolution,
         SettingKey::Subsonic => ConfigKey::Subsonic,
         SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
         SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,

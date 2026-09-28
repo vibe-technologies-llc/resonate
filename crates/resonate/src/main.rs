@@ -52,9 +52,9 @@ use resonate_core::{
     AlbumId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
 };
 use resonate_engine::{
-    BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Keep, Keeping, Levelling,
-    Listening, OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until, plan_output,
-    resolve_replay_gain, stamp_of,
+    BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
+    Levelling, Listening, OutputPlan, Placement, Player, QueueItem, RepeatMode, Unclaimed, Until,
+    plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
     Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
@@ -1248,6 +1248,14 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     } else if config.equaliser.enabled {
         println!("eq:      on, but nothing this device is bound to shapes the sound");
     }
+    if let Some(impulse) = plan.convolution.as_ref() {
+        println!(
+            "room:     {} taps a channel over {} channels, measured at {}",
+            impulse.frames(),
+            impulse.channels(),
+            impulse.rate()
+        );
+    }
     if let Some(restoring) = plan.restoration {
         let wall = restoring.wall.map_or_else(
             || "found as it plays".to_owned(),
@@ -2079,6 +2087,20 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn impulse_at(path: &Path) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(path)) {
+        Ok(Some(impulse)) => Some(Arc::new(impulse)),
+        Ok(None) => {
+            tracing::warn!(path = %path.display(), "the room's response holds no taps, so nothing is corrected");
+            None
+        }
+        Err(error) => {
+            tracing::warn!(%error, "the room's response could not be read, so nothing is corrected");
+            None
+        }
+    }
+}
+
 fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
     let defaults = EngineConfig::default();
     EngineConfig {
@@ -2126,6 +2148,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         volume: config.volume.unwrap_or(defaults.volume),
         buffer: config.buffer.unwrap_or(defaults.buffer),
         equaliser: Arc::new(equaliser::resolved(config)),
+        convolution: config.convolution.as_deref().and_then(impulse_at),
         skip_under_repeat: config.skip_under_repeat(),
         previous_restarts: config.previous_restarts(),
         ..defaults
@@ -2213,6 +2236,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             organise_as: config.organise_as().to_string(),
             notify,
             by_sound,
+            convolution: config.convolution.clone(),
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             scrollbars: config.scrollbars(),

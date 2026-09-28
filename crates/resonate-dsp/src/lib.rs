@@ -1,4 +1,5 @@
 mod chain;
+mod convolve;
 mod dither;
 mod eq;
 mod error;
@@ -12,6 +13,7 @@ mod restore;
 
 pub use crate::{
     chain::{Chain, ChainBuilder, Front},
+    convolve::{Convolver, Impulse, partition_frames_at},
     dither::{Dither, DitherKind, NoiseShaping},
     eq::{Easing, Equaliser},
     error::{Error, RatioLimits, Result},

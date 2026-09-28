@@ -2,7 +2,9 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
 use resonate_core::{Frames, Resumption, SampleRate, Span, Volume};
-use resonate_dsp::{DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration};
+use resonate_dsp::{
+    DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
+};
 use resonate_pipewire::{NodeName, ProfileIndex, SinkId};
 
 use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
@@ -93,6 +95,7 @@ pub enum Command {
     SetReplayGain(ReplayGainMode),
     SetLevelling(Levelling),
     SetEqualisation(Arc<Equalisation>),
+    SetConvolution(Option<Arc<Impulse>>),
     SetBitPerfect(bool),
     SetDop(bool),
     SetDsdLikePcm(bool),
@@ -139,6 +142,7 @@ pub enum CommandKind {
     SetReplayGain,
     SetLevelling,
     SetEqualisation,
+    SetConvolution,
     SetBitPerfect,
     SetDop,
     SetDsdLikePcm,
@@ -182,6 +186,7 @@ impl CommandKind {
             Self::SetReplayGain => "ReplayGain",
             Self::SetLevelling => "the pre-amp",
             Self::SetEqualisation => "the equaliser",
+            Self::SetConvolution => "the room correction",
             Self::SetBitPerfect => "the sample rate",
             Self::SetDop => "DSD over PCM",
             Self::SetDsdLikePcm => "the level DSD is decimated at",
@@ -234,6 +239,7 @@ impl Command {
             Self::SetReplayGain(_) => CommandKind::SetReplayGain,
             Self::SetLevelling(_) => CommandKind::SetLevelling,
             Self::SetEqualisation(_) => CommandKind::SetEqualisation,
+            Self::SetConvolution(_) => CommandKind::SetConvolution,
             Self::SetBitPerfect(_) => CommandKind::SetBitPerfect,
             Self::SetDop(_) => CommandKind::SetDop,
             Self::SetDsdLikePcm(_) => CommandKind::SetDsdLikePcm,

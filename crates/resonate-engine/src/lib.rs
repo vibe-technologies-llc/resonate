@@ -4,6 +4,7 @@ mod command;
 mod engine;
 mod error;
 mod heard;
+mod impulse;
 mod kept;
 mod measure;
 mod pipeline;
@@ -36,7 +37,8 @@ pub use resonate_core::{
     },
 };
 pub use resonate_dsp::{
-    DitherKind, FilterPhase, NoiseShaping, Quality, ReplayGainMode, Restoration, SincParams, Tuning,
+    DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
+    SincParams, Tuning,
 };
 pub use resonate_pipewire::{
     AudioSource, CardProfile, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole,
@@ -52,6 +54,7 @@ pub use crate::{
     },
     error::{Cause, Error, Result},
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
+    impulse::{LONGEST_IMPULSE, read_impulse},
     kept::{KEPT_EVERY, Keep, Keeping},
     pipeline::{
         BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,

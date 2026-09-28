@@ -1018,6 +1018,11 @@ impl Engine {
                 self.config.levelling = levelling;
                 self.re_level()
             }
+            Command::SetConvolution(impulse) => {
+                self.config.convolution = impulse;
+                let at = self.position();
+                self.rebind(Some(at), None)
+            }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
                 self.retune()
