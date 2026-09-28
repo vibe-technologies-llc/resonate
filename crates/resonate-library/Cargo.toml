@@ -25,5 +25,9 @@ image.workspace = true
 proptest.workspace = true
 rustfft.workspace = true
 
+[[bench]]
+name = "spelling"
+harness = false
+
 [lints]
 workspace = true

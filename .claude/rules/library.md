@@ -1795,6 +1795,21 @@ the pass.
   which reads back as two words — unless the word was scoped, where it is written as a phrase so
   `artist:` reaches both halves rather than the first alone. `worth_asking` weighs an adjacent pair
   joined as well as each run alone, so *flo yd* is worth the read that *flo* and *yd* are not.
+- **A vocabulary is indexed for the catalog the scan is written for, and the cost is measured.**
+  A `Vocabulary` holds its words and its names each as a `Held`: the entries keyed by an
+  `Arc<str>`, the same keys bucketed by how many letters they hold, and — built the first time a
+  prefix is asked for and dropped by the next `take` — the keys in order. `nearest_in` weighs only
+  the buckets within `furthest` letters of the run, and within them only a key whose `Signature`,
+  the set of letters it holds folded into 32 bits, differs from the run's in at most two bits an
+  edit — which no edit can exceed, a substitution taking one letter out and putting one in — so
+  the bounded distance runs on the few keys that could be near; `edits_between` works on bytes
+  where both are ASCII and on the stack below 64 letters, and allocates nothing either way.
+  `holds` and `names` read the ordered keys by a binary search rather than walking them.
+  `cargo bench -p resonate-library --bench spelling` builds the vocabulary of 500 000 tracks,
+  50 000 artists and 60 000 albums out of synthetic words and times what a listener asks of it:
+  the build takes some 700 ms, a word held or a name held answers in microseconds, a word a
+  letter pair away in 4 ms, a query like nothing in the catalog in under 1 ms — where the walk
+  over every entry with an allocating distance took 20 and 127 ms — and a completion about 1 ms.
 - **A phrase is weighed against a whole name before it is corrected a word at a time.**
   `Vocabulary` holds the names beside the words — every title, artist and album of more than one
   run, keyed by its runs folded and joined by a space, spelt the way `better_spelt` picks for a

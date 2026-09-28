@@ -1,6 +1,11 @@
-use std::{cmp::Reverse, ops::Range};
+use std::{
+    cmp::Reverse,
+    ops::Range,
+    sync::{Arc, OnceLock},
+};
 
 use ahash::{AHashMap, AHashSet};
+use smallvec::{SmallVec, smallvec};
 
 use crate::{
     Clause, Column, Condition, Search, Word,
@@ -20,6 +25,8 @@ const MOST_TOKENS_IN_A_NAME: usize = 8;
 
 const BETWEEN_RUNS: char = ' ';
 
+const EDITS_TURN_AT_MOST_TWO_LETTERS: usize = 2;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Spellings {
     titles: Vocabulary,
@@ -30,8 +37,100 @@ pub struct Spellings {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Vocabulary {
-    spelled: AHashMap<String, Spelled>,
-    named: AHashMap<String, Spelled>,
+    spelled: Held,
+    named: Held,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Held {
+    entries: AHashMap<Arc<str>, Spelled>,
+    by_letters: Vec<Vec<(Signature, Arc<str>)>>,
+    in_order: OnceLock<Vec<Arc<str>>>,
+}
+
+impl Held {
+    fn take(&mut self, folded: String, spelling: &str) {
+        if let Some(held) = self.entries.get_mut(folded.as_str()) {
+            held.rows = held.rows.saturating_add(1);
+            if better_spelt(spelling, &held.spelling) {
+                held.spelling = spelling.to_owned();
+            }
+            return;
+        }
+
+        self.in_order = OnceLock::new();
+        let letters = letters_in(&folded);
+        let key: Arc<str> = Arc::from(folded);
+        if self.by_letters.len() <= letters {
+            self.by_letters.resize_with(letters + 1, Vec::new);
+        }
+        self.by_letters[letters].push((Signature::of(&key), Arc::clone(&key)));
+        self.entries.insert(
+            key,
+            Spelled {
+                spelling: spelling.to_owned(),
+                rows: 1,
+            },
+        );
+    }
+
+    fn begins_one(&self, run: &str) -> bool {
+        if self.entries.contains_key(run) {
+            return true;
+        }
+        let in_order = self.in_order.get_or_init(|| {
+            let mut keys: Vec<Arc<str>> = self.entries.keys().cloned().collect();
+            keys.sort_unstable();
+            keys
+        });
+        let at = in_order.partition_point(|folded| &**folded < run);
+        in_order
+            .get(at)
+            .is_some_and(|folded| folded.starts_with(run))
+    }
+
+    fn get(&self, folded: &str) -> Option<&Spelled> {
+        self.entries.get(folded)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&str, &Spelled)> {
+        self.entries
+            .iter()
+            .map(|(folded, spelt)| (&**folded, spelt))
+    }
+
+    fn within<'a>(
+        &'a self,
+        run: &str,
+        letters: usize,
+        furthest: usize,
+    ) -> impl Iterator<Item = (&'a str, &'a Spelled)> {
+        let signed = Signature::of(run);
+        let from = letters.saturating_sub(furthest);
+        let to = (letters + furthest + 1).min(self.by_letters.len());
+        self.by_letters
+            .get(from..to)
+            .unwrap_or_default()
+            .iter()
+            .flatten()
+            .filter(move |(signature, _)| signature.may_be_within(signed, furthest))
+            .filter_map(|(_, folded)| Some((&**folded, self.entries.get(folded)?)))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Signature(u32);
+
+impl Signature {
+    fn of(folded: &str) -> Self {
+        Self(folded.chars().fold(0, |held, letter| {
+            held | 1 << (u32::from(letter) % u32::BITS)
+        }))
+    }
+
+    const fn may_be_within(self, other: Self, edits: usize) -> bool {
+        (self.0 ^ other.0).count_ones() as usize <= EDITS_TURN_AT_MOST_TWO_LETTERS * edits
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,20 +177,20 @@ impl Vocabulary {
                 whole.push(BETWEEN_RUNS);
             }
             whole.push_str(&folded);
-            take(&mut self.spelled, folded, spelling);
+            self.spelled.take(folded, spelling);
         }
 
         if whole.contains(BETWEEN_RUNS) {
-            take(&mut self.named, whole, name.trim());
+            self.named.take(whole, name.trim());
         }
     }
 
     fn holds(&self, run: &str) -> bool {
-        begins_one_of(&self.spelled, run)
+        self.spelled.begins_one(run)
     }
 
     fn names(&self, whole: &str) -> bool {
-        begins_one_of(&self.named, whole)
+        self.named.begins_one(whole)
     }
 
     fn spelt(&self, run: &str) -> Option<&Spelled> {
@@ -107,26 +206,12 @@ impl Vocabulary {
     }
 }
 
-fn take(into: &mut AHashMap<String, Spelled>, folded: String, spelling: &str) {
-    let held = into.entry(folded).or_insert_with(|| Spelled {
-        spelling: spelling.to_owned(),
-        rows: 0,
-    });
-    held.rows = held.rows.saturating_add(1);
-    if better_spelt(spelling, &held.spelling) {
-        held.spelling = spelling.to_owned();
-    }
-}
-
-fn begins_one_of(held: &AHashMap<String, Spelled>, run: &str) -> bool {
-    held.contains_key(run) || held.keys().any(|spelt| spelt.starts_with(run))
-}
-
-fn nearest_in<'a>(held: &'a AHashMap<String, Spelled>, run: &str) -> Option<(&'a str, Nearness)> {
-    let furthest = furthest_from(letters_in(run))?;
+fn nearest_in<'a>(held: &'a Held, run: &str) -> Option<(&'a str, Nearness)> {
+    let letters = letters_in(run);
+    let furthest = furthest_from(letters)?;
     let mut nearest: Option<(&str, Nearness)> = None;
 
-    for (folded, spelt) in held {
+    for (folded, spelt) in held.within(run, letters, furthest) {
         let Some(apart) = apart_by(run, folded, furthest) else {
             continue;
         };
@@ -363,7 +448,7 @@ impl Spellings {
 
         let mut offered = Vec::new();
         for vocabulary in [&self.artists, &self.albums, &self.genres] {
-            for (folded, spelt) in &vocabulary.named {
+            for (folded, spelt) in vocabulary.named.iter() {
                 for (taken, tail) in tails.iter().enumerate() {
                     if folded.starts_with(&tail.folded) {
                         offered.push(Offered {
@@ -375,7 +460,7 @@ impl Spellings {
                     }
                 }
             }
-            for (folded, spelt) in &vocabulary.spelled {
+            for (folded, spelt) in vocabulary.spelled.iter() {
                 if folded.starts_with(&last.folded) {
                     offered.push(Offered {
                         runs: 1,
@@ -622,15 +707,26 @@ const fn furthest_from(letters: usize) -> Option<usize> {
 }
 
 fn apart_by(one: &str, other: &str, furthest: usize) -> Option<usize> {
-    let left: Vec<char> = one.chars().collect();
-    let right: Vec<char> = other.chars().collect();
+    if one.is_ascii() && other.is_ascii() {
+        return edits_between(one.as_bytes(), other.as_bytes(), furthest);
+    }
+    let left: Letters<char> = one.chars().collect();
+    let right: Letters<char> = other.chars().collect();
+    edits_between(&left, &right, furthest)
+}
+
+type Letters<T> = SmallVec<[T; HELD_ON_THE_STACK]>;
+
+const HELD_ON_THE_STACK: usize = 64;
+
+fn edits_between<T: PartialEq>(left: &[T], right: &[T], furthest: usize) -> Option<usize> {
     if left.len().abs_diff(right.len()) > furthest {
         return None;
     }
 
-    let mut before = (0..=right.len()).collect::<Vec<usize>>();
-    let mut last = vec![0; right.len() + 1];
-    let mut row = vec![0; right.len() + 1];
+    let mut before: Letters<usize> = (0..=right.len()).collect();
+    let mut last: Letters<usize> = smallvec![0; right.len() + 1];
+    let mut row: Letters<usize> = smallvec![0; right.len() + 1];
 
     for (down, letter) in left.iter().enumerate() {
         row[0] = down + 1;

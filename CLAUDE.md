@@ -865,7 +865,10 @@ says what a release build, which aborts on a panic, would do.
 `cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,
 over four seconds of audio and prints each as a share of a core; any word narrows it to the runs
 whose names hold it. It plays a hot signal through the true-peak guard as well as the usual one,
-because a guard that never limits never pays for limiting. `cargo build --profile profiling` is
+because a guard that never limits never pays for limiting.
+`cargo bench -p resonate-library --bench spelling` builds the search vocabulary of a synthetic
+500 000-track catalog and times the corrections and completions a listener asks of it.
+`cargo build --profile profiling` is
 the release build with its symbols and line tables kept, which `perf record` and
 `cargo flamegraph` need and `strip = "symbols"` takes away. Neither asserts anything, so the CI
 runs neither.
