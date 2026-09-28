@@ -24,6 +24,8 @@ pub(crate) fn near_the_words(pointer: Point<Pixels>, pane: Bounds<Pixels>, colum
     (pointer.x - middle).abs() <= column / 2.0 + slack
 }
 
+const DRAWN_WITHIN_PANES: f32 = 1.0;
+
 const TURN: Duration = Duration::from_millis(420);
 
 const GLIDE_RESPONSE_SECS: f32 = 0.62;
@@ -784,6 +786,20 @@ impl LyricsModel {
         let middle = pane.top() + (pane.size.height - line.size.height) / 2.0;
 
         Some(middle - line.top())
+    }
+
+    pub fn resting_height(&self, index: usize) -> Option<Pixels> {
+        let pane = self.scroll.bounds();
+        if self.laid_out != Some(pane.size) || pane.size.height <= px(0.0) {
+            return None;
+        }
+        let line = self.scroll.bounds_for_item(index)?;
+        let scrolled = self.scroll.offset().y;
+        let reach = pane.size.height * DRAWN_WITHIN_PANES;
+        let far_above = line.bottom() + scrolled < pane.top() - reach;
+        let far_below = line.top() + scrolled > pane.bottom() + reach;
+
+        (far_above || far_below).then_some(line.size.height)
     }
 
     pub fn pane_height(&self) -> Pixels {

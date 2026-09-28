@@ -1168,6 +1168,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   `glide_to` moves `lands` in place while a glide is in flight and a drift is under `RESETTLE`, and
   starts a fresh one only for a jump. Restarting on every drift was what froze the scroll near its
   start and then let it snap.
+- **A line far from the pane is not laid out, only held open at the height it had.**
+  `LyricsModel::resting_height` answers the height `bounds_for_item` last gave a line wherever
+  that line, moved by the scroll offset the bounds leave out, lies more than
+  `DRAWN_WITHIN_PANES` — a pane's height — above or below the pane, and only while the pane is
+  the size the line was laid out at; `lyric` draws such a line as an empty box of that height and
+  width, so the sheet's layout, the child indices `centre_of` reads and every other line's place
+  are what they were while a hundred lines nobody can see cost a box each rather than a text
+  layout each frame. A line coming within a pane of view is drawn whole again before it can be
+  seen, and a pane that changes size lays every line out once more.
 - **The end of the words is a row of its own, so an outro is not an empty pane.** Once
   `Lyrics::has_ended` — nothing in play and nothing but blank lines still to come — the read line
   is `LyricsModel::end_of_the_sheet`, one past the last line, and the turn reads `At` it, so the

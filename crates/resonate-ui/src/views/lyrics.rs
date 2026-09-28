@@ -105,6 +105,7 @@ struct Line {
     breathes: bool,
     breath: Option<Breath>,
     sweep: Option<Sweep>,
+    resting: Option<Pixels>,
 }
 
 #[derive(Clone, Copy)]
@@ -344,6 +345,7 @@ impl RootView {
                             .contains(&Some(index))
                             .then(|| model.sweep(index, position))
                             .flatten(),
+                        resting: model.resting_height(index),
                     }
                 })
                 .collect();
@@ -442,6 +444,13 @@ impl RootView {
     }
 
     fn lyric(&self, line: Line, cx: &mut Context<Self>) -> AnyElement {
+        if let Some(height) = line.resting {
+            return div()
+                .flex_none()
+                .w(line.width)
+                .h(height)
+                .into_any_element();
+        }
         let second = line.voice == Voice::Two;
         let row = div()
             .flex()

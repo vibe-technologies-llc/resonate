@@ -41,8 +41,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   analysis plots, the equaliser curve — through a window-sized 4× MSAA texture it clears and
   resolves each frame, which costs an integrated GPU far more than the paths themselves. Only a
   newer gpui or drawing those plots without `paint_path` avoids it
-- Every line of a lyric set is laid out on every frame, including the ones faded to nothing; gpui's
-  variable-height `list` is the virtualising element that would fix it
 - A track is opened on the engine thread, so a provider that is not the filesystem can still hold
   a track change for up to `Sources::OPENED_WITHIN`; a stream's reads have no deadline; and a
   picture asked for after its tags landed opens the file a second time
