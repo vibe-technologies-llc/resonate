@@ -111,5 +111,3 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Later: Packaging
 - gpui pulls `stacksafe` and with it `proc-macro-error2`, whose `E0365` future-incompatibility
   warning becomes a hard error in a future rustc. Only a `[patch]` or a newer gpui fixes it
-
-## Later: Polish
