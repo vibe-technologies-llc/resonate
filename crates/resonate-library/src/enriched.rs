@@ -1722,6 +1722,7 @@ mod tests {
                 ..TagSet::default()
             },
             embeds_a_picture: false,
+            named_by_its_stem: false,
         }
     }
 

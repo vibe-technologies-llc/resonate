@@ -758,7 +758,16 @@ through `Player::media` like any other unscanned row.
   hold is what `scan::name_from_stem` left in the `TagSet`, not the tag alone: a file naming no
   title in its tags is read through `stem.rs` first, so `tagged_title IS NULL` means neither the
   tags nor the file name said anything, and `title` is then the bare stem `store::title` falls back
-  to. `store::index_row` is shared between the scan and `land_recording` for that reason — a
+  to. **A name the file's *name* gave is not a tag, so renaming the file is not retagging it.**
+  `tracks.named_by_its_stem` — a step in `MIGRATIONS`, nothing before it having kept the fact —
+  says the scan's reading took its title or its artist off the stem, and `store::RETAGGED` is the
+  one reading of *the file said something else* every column of the upsert weighs: the tagged
+  names moved, and not between two readings that both came off the stem. A stem-named row a
+  lookup answered therefore keeps what it was told when it is renamed by hand, edited or both,
+  while a tag written into it, or taken out of it, is still a retagging —
+  `a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed`. A row
+  scanned before the column holds nothing, so it is weighed the old way until it is next read.
+  `store::index_row` is shared between the scan and `land_recording` for that reason — a
   corrected title is what `tracks_fts` holds a moment later rather than at the next scan — and
   the upsert answers the title, artist and artist id it *left* on the row, so a rescan indexes
   those rather than the file's; `a_rescan_indexes_and_bills_the_names_the_lookup_kept` is the

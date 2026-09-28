@@ -63,8 +63,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A file with no title tag and no artist tag, whose stem is neither numbered nor separated, gives
   the search nothing to ask with, so without an `acoustid-key` it is identified only by an ISRC or
   recording id
-- A stem-named row renamed and edited together is asked again from its new name, overwriting what
-  the last lookup wrote
 - An artist linked to none of Commons, Wikidata, Apple Music, Spotify, Deezer or SoundCloud has no
   portrait: nothing reads the page a `wikipedia` relation names
 - The discography asks for albums and EPs alone, so singles are never listed as not held, and past

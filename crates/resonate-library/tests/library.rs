@@ -17276,6 +17276,40 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_once_one_does(
 }
 
 #[test]
+fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed() -> Result<()> {
+    let tree = Tree::new();
+    let before = tree.write(
+        "The Orbiters - Echoes.wav",
+        &Wav::new().frames(7_919).build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    beside(&database)
+        .execute(
+            "UPDATE tracks SET title = 'Echoes (Answered)', answered = 1 WHERE path = ?1",
+            rusqlite::params![settled(&before)],
+        )
+        .expect("the row is answered");
+
+    fs::remove_file(&before).expect("the file is renamed");
+    let after = tree.write(
+        "The Orbiters - Echoes (2011).wav",
+        &Wav::new().frames(7_919).text(b"TCOM", "Somebody").build(),
+    );
+    scan(&library, &options(&tree))?;
+    scan(&library, &options(&tree))?;
+
+    let held = stored(&database, &after);
+    assert_eq!(held.title, "Echoes (Answered)");
+    assert!(
+        held.answered.is_some(),
+        "a rename was read as a retagging and the row asked about again"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write(

@@ -1489,6 +1489,7 @@ fn cut_into_rows(
             span: Some(span),
             tags: track.titled(),
             embeds_a_picture,
+            named_by_its_stem: false,
         });
     }
 
@@ -1530,18 +1531,20 @@ fn names_the_same_title(tagged: Option<&str>, parsed: &str) -> bool {
     }
 }
 
-fn name_from_stem(path: &Path, tags: &mut TagSet) {
+fn name_from_stem(path: &Path, tags: &mut TagSet) -> bool {
     if tags.title.is_some() && tags.artist.is_some() {
-        return;
+        return false;
     }
     let Some(stem) = path.file_stem() else {
-        return;
+        return false;
     };
     let Some(named) = stem::read(&stem.to_string_lossy()) else {
-        return;
+        return false;
     };
 
+    let mut named_it = false;
     if tags.artist.is_none() && names_the_same_title(tags.title.as_deref(), &named.title) {
+        named_it |= named.artist.is_some();
         tags.artist = named.artist;
     }
     if tags.track_number.is_none() {
@@ -1549,7 +1552,9 @@ fn name_from_stem(path: &Path, tags: &mut TagSet) {
     }
     if tags.title.is_none() {
         tags.title = Some(named.title);
+        named_it = true;
     }
+    named_it
 }
 
 fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackRecord>> {
@@ -1575,7 +1580,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
     {
         return Ok(cut_into_rows(&cutting, cut, &info, embeds_a_picture));
     }
-    name_from_stem(&candidate.path, &mut info.tags);
+    let named_by_its_stem = name_from_stem(&candidate.path, &mut info.tags);
 
     Ok(vec![TrackRecord {
         root_id: candidate.root_id,
@@ -1591,6 +1596,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
         span: None,
         tags: info.tags,
         embeds_a_picture,
+        named_by_its_stem,
     }])
 }
 

@@ -78,6 +78,7 @@ pub struct TrackRecord {
     pub span: Option<FrameSpan>,
     pub tags: TagSet,
     pub embeds_a_picture: bool,
+    pub named_by_its_stem: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1598,6 +1599,10 @@ fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool>
     Ok(true)
 }
 
+const RETAGGED: &str = "(NOT (tracks.named_by_its_stem AND excluded.named_by_its_stem)
+    AND (tracks.tagged_title  IS NOT excluded.tagged_title
+      OR tracks.tagged_artist IS NOT excluded.tagged_artist))";
+
 const ANSWERED_AND_UNCHANGED: &str = "tracks.answered IS NOT NULL
     AND tracks.file_size      =  excluded.file_size
     AND tracks.modified       =  excluded.modified
@@ -1612,28 +1617,25 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
-             genre, lyrics, release_title, asked, answered
+             genre, lyrics, release_title, asked, answered, named_by_its_stem
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
              title              = CASE
                  WHEN tracks.answered IS NULL                            THEN excluded.title
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN excluded.title
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.title
+                 WHEN {RETAGGED} THEN excluded.title
                  ELSE tracks.title END,
              artist             = CASE
                  WHEN tracks.answered IS NULL                            THEN excluded.artist
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN excluded.artist
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.artist
+                 WHEN {RETAGGED} THEN excluded.artist
                  ELSE tracks.artist END,
              artist_id          = CASE
                  WHEN tracks.answered IS NULL                            THEN excluded.artist_id
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN excluded.artist_id
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN excluded.artist_id
+                 WHEN {RETAGGED} THEN excluded.artist_id
                  ELSE tracks.artist_id END,
              album_id           = excluded.album_id,
              track_number       = CASE
@@ -1659,29 +1661,26 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              mbid               = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.mbid
                  WHEN excluded.mbid IS NOT NULL                          THEN excluded.mbid
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 WHEN {RETAGGED} THEN NULL
                  ELSE tracks.mbid END,
              artist_mbid        = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.artist_mbid
                  WHEN excluded.artist_mbid IS NOT NULL                   THEN excluded.artist_mbid
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 WHEN {RETAGGED} THEN NULL
                  ELSE tracks.artist_mbid END,
              release_track_mbid = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.release_track_mbid
                  WHEN excluded.release_track_mbid IS NOT NULL            THEN excluded.release_track_mbid
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 WHEN {RETAGGED} THEN NULL
                  ELSE tracks.release_track_mbid END,
              isrc               = CASE
                  WHEN {ANSWERED_AND_UNCHANGED} THEN tracks.isrc
                  WHEN excluded.isrc IS NOT NULL                          THEN excluded.isrc
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title  THEN NULL
-                 WHEN tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 WHEN {RETAGGED} THEN NULL
                  ELSE tracks.isrc END,
              tagged_title       = excluded.tagged_title,
              tagged_artist      = excluded.tagged_artist,
+             named_by_its_stem  = excluded.named_by_its_stem,
              genre              = excluded.genre,
              lyrics             = excluded.lyrics,
              probe_again        = 0,
@@ -1696,16 +1695,13 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
                   AND tracks.span_frames IS excluded.span_frames THEN tracks.vault_path
                  ELSE NULL END,
              asks               = CASE
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title
-                   OR tracks.tagged_artist IS NOT excluded.tagged_artist THEN 0
+                 WHEN {RETAGGED} THEN 0
                  ELSE tracks.asks END,
              refusals           = CASE
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title
-                   OR tracks.tagged_artist IS NOT excluded.tagged_artist THEN 0
+                 WHEN {RETAGGED} THEN 0
                  ELSE tracks.refusals END,
              answered           = CASE
-                 WHEN tracks.tagged_title  IS NOT excluded.tagged_title
-                   OR tracks.tagged_artist IS NOT excluded.tagged_artist THEN NULL
+                 WHEN {RETAGGED} THEN NULL
                  ELSE tracks.answered END
          RETURNING id, title, artist, artist_id"
     )
@@ -1766,6 +1762,7 @@ fn track(
             record.tags.artist,
             record.tags.genre,
             record.tags.lyrics,
+            record.named_by_its_stem,
         ],
         |row| {
             Ok(Stored {
@@ -2079,6 +2076,7 @@ mod tests {
                 ..TagSet::default()
             },
             embeds_a_picture: false,
+            named_by_its_stem: false,
         }
     }
 

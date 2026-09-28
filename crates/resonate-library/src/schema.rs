@@ -46,6 +46,7 @@ const MIGRATIONS: &[&str] = &[
          at         INTEGER NOT NULL
      ) STRICT;
      CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);",
+    "ALTER TABLE tracks ADD COLUMN named_by_its_stem INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
