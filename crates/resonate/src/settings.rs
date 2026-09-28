@@ -225,6 +225,11 @@ impl Settings for File {
                     .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
                 (ConfigKey::Inbox, Some(folder.into()))
             }
+            Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
+            Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
+            Setting::SubsonicPassword(given) => {
+                given_or_cleared(ConfigKey::SubsonicPassword, given)
+            }
         };
 
         self.written(key, value).map_err(|error| {
@@ -258,6 +263,11 @@ impl Settings for File {
         }
         Ok(())
     }
+}
+
+fn given_or_cleared(key: ConfigKey, given: &str) -> (ConfigKey, Option<Value>) {
+    let given = given.trim();
+    (key, (!given.is_empty()).then(|| given.into()))
 }
 
 fn written_as_a_binding(setting: &Setting, written: crate::Result<()>) -> resonate_ui::Result<()> {
@@ -326,6 +336,9 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
         SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
+        SettingKey::Subsonic => ConfigKey::Subsonic,
+        SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
+        SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,
         SettingKey::DiscordShows => ConfigKey::DiscordShows,

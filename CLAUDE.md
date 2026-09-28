@@ -47,7 +47,7 @@ standing rule of how work is done moves — and then in the same commit.
 
 ## Architecture
 
-Nineteen crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
+Twenty crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
 and `resonate-pipewire` never depend on each other, and `resonate-engine` is what joins them.
 
 ```
@@ -71,7 +71,8 @@ resonate            bin — CLI, tracing, wiring
   ├── resonate-listen     capture the desktop or a microphone, and the recogniser seam
   ├── resonate-eq         profile formats, the profile store, the AutoEq catalogue and its seam
   ├── resonate-providers  the provider seam: an identity in, media out  → filled by providers/*
-  ├── providers/inbox     resonate-inbox, the one provider this build registers
+  ├── providers/inbox     resonate-inbox, a folder of the listener's
+  ├── providers/subsonic  resonate-subsonic, a Subsonic server of the listener's  [gated behind `online`]
   └── resonate-core       domain vocabulary
 ```
 
@@ -616,9 +617,12 @@ Invariants the layering exists to protect:
   track it was wanted for, and stamps the want with where the bytes now are. **A delivered row
   belongs to no root**: `tracks.root_id` is nullable, the row is named by the vault object's own
   path, and every pass that walks the user's files joins `roots`, so none of them moves, retags,
-  re-imports or releases what only the vault holds. `resonate-inbox` is the only provider there is: a folder named by the `inbox` key, read and
-  never written to, answering a file whose stem is the recording MBID, the track MBID or the ISRC
-  and never one that merely shares a title. `providers.md` has the rest.
+  re-imports or releases what only the vault holds. `resonate-inbox` is a folder named by the
+  `inbox` key, read and never written to, answering a file whose stem is the recording MBID, the
+  track MBID or the ISRC and never one that merely shares a title; `resonate-subsonic` is a
+  Subsonic server the `subsonic`, `subsonic-user` and `subsonic-password` keys name, asked by the
+  same identifiers and never by a title, and registered only where all three are given and
+  `online` is on. `providers.md` has the rest.
 - **A favourite is a timestamp, a genre is a folded column, and a pin leads every order.** All
   three are columns on tables that already existed, so all three were a schema break and the
   catalog was deleted and scanned again — the rule then; a change now is a step in `MIGRATIONS`
@@ -1112,8 +1116,8 @@ Settings load from `$XDG_CONFIG_HOME/resonate/config.toml`, or from `--config <F
 exist where the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s
 defaults, and an unknown key warns through `tracing` rather than failing the run. Every key is a
 `ConfigKey` variant, so a bad value names the key without putting prose in an error. Eight of the
-sixty-six have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other fifty-eight have none, so the
+sixty-nine have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+`noise-shaping` and `bit-perfect`, the last as `--no-bit-perfect` — and the other sixty-one have none, so the
 settings pane and the file are the whole of how any of them is set: the output's `true-peak`,
 `restore-lossy`, `replay-gain`,
 `replay-gain-pre-amp`, `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -1123,8 +1127,9 @@ settings pane and the file are the whole of how any of them is set: the output's
 and `last-settings-category`, which every headless subcommand has no use for; and the standing decisions
 rather than per-run ones — `online`, `enrich-after-scan`, `study`, `fetch-lyrics`, `identify-by-sound`, `contact`, `acoustid-key`, `equaliser`,
 `equaliser-for`, `equaliser-profile`, `resume`, `history-kept`, `skip-repeats-queue`, `previous-restarts`, `organise-as`, `notify`, `audd-token`,
-`listenbrainz-token`, `listen-from`, `listen-for` and `inbox`, the last
-chosen with the Library category's *The inbox* group, which polls from the window as well — and
+`listenbrainz-token`, `listen-from`, `listen-for`, `inbox`, chosen with the Library category's
+*The inbox* group, which polls from the window as well, and `subsonic`, `subsonic-user` and
+`subsonic-password`, typed into its *A Subsonic server* group and used from the next start — and
 the seven that shape a Discord presence, `discord`, `discord-app`, `discord-shows`, `discord-art`,
 `discord-icon`, `discord-progress` and `discord-paused`, written by the Desktop category's two
 Discord groups and live the moment they are.

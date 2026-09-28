@@ -1,0 +1,36 @@
+{
+  "subsonic-response": {
+    "status": "ok",
+    "version": "1.16.1",
+    "type": "navidrome",
+    "openSubsonic": true,
+    "searchResult3": {
+      "song": [
+        {
+          "id": "song-1",
+          "title": "Echoes",
+          "artist": "A Tribute Band",
+          "suffix": "mp3",
+          "musicBrainzId": "",
+          "isrc": []
+        },
+        {
+          "id": "song-2",
+          "title": "Echoes",
+          "artist": "Pink Floyd",
+          "album": "Meddle",
+          "suffix": "flac",
+          "musicBrainzId": "83d91898-7763-47d7-b03b-b92132375c47",
+          "isrc": ["GBN9Y1100088"]
+        },
+        {
+          "id": "song-3",
+          "title": "Echoes (2011 Remaster)",
+          "artist": "Pink Floyd",
+          "suffix": "flac",
+          "isrc": "GBN9Y1100089"
+        }
+      ]
+    }
+  }
+}

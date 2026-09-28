@@ -54,7 +54,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{QueueLength, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
-        settings::{Category, FILTER_PLACEHOLDER, HeldBand, Plotted},
+        settings::{Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted},
         slider::{Grab, Rail},
         transport::Resolved,
         typing::{self, TypeAhead, jumped},
@@ -417,6 +417,7 @@ pub struct RootView {
     pub(crate) acoustid: Entity<Field>,
     pub(crate) audd: Entity<Field>,
     pub(crate) listenbrainz: Entity<Field>,
+    pub(crate) subsonic: [Entity<Field>; 3],
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
@@ -634,7 +635,7 @@ impl RootView {
 
         let contact = cx.new(|cx| {
             let mut field = Field::new(CONTACT_PLACEHOLDER, window, cx);
-            field.hold(online.contact, cx);
+            field.hold(online.contact.clone(), cx);
             field
         });
         cx.subscribe_in(&contact, window, |this, _, _: &Submitted, window, cx| {
@@ -675,6 +676,8 @@ impl RootView {
             },
         )
         .detach();
+
+        let subsonic = Account::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -798,6 +801,7 @@ impl RootView {
             acoustid,
             audd,
             listenbrainz,
+            subsonic,
             discord_app,
             discord_icon,
             organising,
@@ -2548,6 +2552,7 @@ impl RootView {
             || self.contact.read(cx).is_focused(window)
             || self.acoustid.read(cx).is_focused(window)
             || self.audd.read(cx).is_focused(window)
+            || self.an_account_field_is_focused(window, cx)
             || self.discord_app.read(cx).is_focused(window)
             || self.discord_icon.read(cx).is_focused(window)
             || self.organising.read(cx).is_focused(window)
@@ -2612,6 +2617,10 @@ impl RootView {
         }
         if self.listenbrainz.read(cx).is_focused(window) {
             self.leave_listenbrainz_token(window, cx);
+            return;
+        }
+        if self.an_account_field_is_focused(window, cx) {
+            self.leave_the_account(window, cx);
             return;
         }
         if self.discord_app.read(cx).is_focused(window) {

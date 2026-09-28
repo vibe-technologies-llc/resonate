@@ -1,0 +1,17 @@
+[package]
+name = "resonate-subsonic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+md-5.workspace = true
+resonate-core.workspace = true
+resonate-providers.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true

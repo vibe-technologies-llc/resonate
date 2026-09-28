@@ -66,8 +66,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A microphone recording has not been proved against real sound reaching a microphone
 
 ## Later: Sources and providers
-- No provider reaches a network: `resonate-inbox` is the only one, registered only where an inbox
-  folder is set, and the service links an `Identity` carries are read by nothing
+- The service links an `Identity` carries are read by nothing: no provider asks Tidal, Bandcamp or
+  Discogs, whose pages the links name
 
 ## Later: The vault
 - `flacenc` 0.5.1 caps the Rice parameter at 14, the rate at 96 kHz and the depth at 24 bits, so a

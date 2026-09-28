@@ -13,7 +13,7 @@ clap_mangen.workspace = true
 default = ["ui", "online", "mcp", "discord"]
 discord = ["dep:resonate-discord"]
 mcp = ["dep:resonate-mcp"]
-online = ["dep:resonate-online"]
+online = ["dep:resonate-online", "dep:resonate-subsonic"]
 ui = ["dep:resonate-ui"]
 
 [dependencies]
@@ -32,6 +32,7 @@ resonate-lyrics.workspace = true
 resonate-mcp = { workspace = true, optional = true }
 resonate-mpris.workspace = true
 resonate-online = { workspace = true, optional = true }
+resonate-subsonic = { workspace = true, optional = true }
 resonate-pipewire.workspace = true
 resonate-providers.workspace = true
 resonate-ui = { workspace = true, optional = true }

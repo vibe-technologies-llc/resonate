@@ -18,6 +18,7 @@ members = [
     "crates/resonate-online",
     "crates/resonate-providers",
     "crates/providers/inbox",
+    "crates/providers/subsonic",
     "crates/resonate-ui",
     "crates/resonate-vault"
 ]
@@ -107,6 +108,7 @@ rusqlite = {
 
 toml_edit = { version = "0.25.15", default-features = false, features = ["parse", "display"] }
 
+md-5 = { version = "0.10.6", default-features = false }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
 uuid = { version = "1.26.1", default-features = false, features = ["std", "v4"] }
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
@@ -167,6 +169,7 @@ resonate-mpris = { version = "0.1.0", path = "crates/resonate-mpris" }
 resonate-online = { version = "0.1.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.1.0", path = "crates/resonate-providers" }
 resonate-inbox = { version = "0.1.0", path = "crates/providers/inbox" }
+resonate-subsonic = { version = "0.1.0", path = "crates/providers/subsonic" }
 resonate-ui = { version = "0.1.0", path = "crates/resonate-ui" }
 resonate-vault = { version = "0.1.0", path = "crates/resonate-vault" }
 

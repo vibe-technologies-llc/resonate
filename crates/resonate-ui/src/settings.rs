@@ -188,6 +188,9 @@ pub enum SettingKey {
     RememberSettingsCategory,
     LastSettingsCategory,
     Inbox,
+    Subsonic,
+    SubsonicUser,
+    SubsonicPassword,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -198,7 +201,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 64] = [
+    pub const ALL: [Self; 67] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -256,6 +259,9 @@ impl SettingKey {
         Self::RememberSettingsCategory,
         Self::LastSettingsCategory,
         Self::Inbox,
+        Self::Subsonic,
+        Self::SubsonicUser,
+        Self::SubsonicPassword,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -328,6 +334,9 @@ pub enum Setting {
     RememberSettingsCategory(bool),
     LastSettingsCategory(SettingsCategory),
     Inbox(PathBuf),
+    Subsonic(String),
+    SubsonicUser(String),
+    SubsonicPassword(String),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -397,6 +406,9 @@ impl Setting {
             Self::RememberSettingsCategory(_) => SettingKey::RememberSettingsCategory,
             Self::LastSettingsCategory(_) => SettingKey::LastSettingsCategory,
             Self::Inbox(_) => SettingKey::Inbox,
+            Self::Subsonic(_) => SettingKey::Subsonic,
+            Self::SubsonicUser(_) => SettingKey::SubsonicUser,
+            Self::SubsonicPassword(_) => SettingKey::SubsonicPassword,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -418,12 +430,17 @@ pub struct Online {
     pub acoustid_key: String,
     pub audd_token: String,
     pub listenbrainz_token: String,
+    pub subsonic: String,
+    pub subsonic_user: String,
+    pub subsonic_password: String,
 }
+
+pub type Registering = Arc<dyn Fn(Option<&Path>) -> Providers + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Sourcing {
     pub inbox: Option<PathBuf>,
-    pub register: fn(Option<&Path>) -> Providers,
+    pub register: Registering,
 }
 
 impl Sourcing {
@@ -436,7 +453,7 @@ impl Default for Sourcing {
     fn default() -> Self {
         Self {
             inbox: None,
-            register: |_| Providers::none(),
+            register: Arc::new(|_| Providers::none()),
         }
     }
 }

@@ -56,6 +56,7 @@ pub(crate) struct Standing {
     pub(crate) presence: Presence,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
+    pub(crate) subsonic_given: bool,
 }
 
 impl Standing {
@@ -89,6 +90,7 @@ impl Standing {
             presence: Presence::OFF,
             template_given: false,
             inbox_given: false,
+            subsonic_given: false,
         }
     }
 }
@@ -148,6 +150,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Organising => standing.template_given,
         Group::Inbox => standing.inbox_given,
+        Group::Subsonic => standing.subsonic_given,
         Group::Colour => {
             standing.appearance.theme != Appearance::DEFAULT.theme
                 || standing.appearance.accent != Appearance::DEFAULT.accent
@@ -233,6 +236,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Organising
         | Group::Vault
         | Group::Inbox
+        | Group::Subsonic
         | Group::Resuming
         | Group::History
         | Group::Notifications

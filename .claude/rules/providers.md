@@ -141,3 +141,32 @@ A provider does none of this, so none of it is written twice:
 `resonate-inbox` is the reference: `Inbox::at` over the folder the `inbox` key names, one directory
 read per want, a file directly inside whose stem is the recording MBID, then the track MBID, then
 the ISRC, ignoring case, and never a nested folder.
+
+## A Subsonic server
+
+`resonate-subsonic` is the provider that reaches a network: a server of the listener's own —
+Navidrome, Airsonic, Gonic, anything that speaks the Subsonic API — named by `subsonic`,
+`subsonic-user` and `subsonic-password`. `providers::sourced` registers it after the inbox only
+where all three are given and `online` is on, behind the binary's `online` feature, so a build
+with no HTTP client carries none of it; the window builds its registry through the same closure,
+handed over as `Sourcing::register`, and the Library category's *A Subsonic server* group writes
+the keys for the next start.
+
+- **It is asked by the identifiers and never by a title.** A want with neither a recording MBID
+  nor an ISRC answers `Nothing` without a request. Otherwise `search3` is asked with the title —
+  the only words the API searches — for `SONGS_ASKED` songs, and a song is taken only where its
+  `musicBrainzId` is the recording or, failing that, its `isrc` — one code or a list, as
+  OpenSubsonic writes it — holds the want's, so a tribute band's *Echoes* is never delivered for
+  Pink Floyd's. `a_song_is_taken_by_its_recording_and_then_by_its_isrc_and_never_by_its_title` is
+  the claim, over a captured Navidrome answer.
+- **What it delivers is the server's original file.** `download` answers the bytes as they sit
+  on the server, handed over as a `Delivery::Stream` keyed by the song's id and hinted by its
+  `suffix`, which the vault keeps and validates like any other; a suffix that is no `Extension`
+  answers `Nothing` rather than a guess.
+- **The password never leaves as it was typed.** Every request carries the user, a fresh salt and
+  `t`, the MD5 of the password and that salt, which is the API's token scheme, beside `v` and
+  `c=resonate`; the User-Agent is `resonate/<version>` and nothing else, as `online.md` asks.
+  A server that answers `status: failed` is `Error::TurnedAway` with its own code — 40 for a
+  wrong password — an HTTP refusal is `Error::Refused`, an answer that is not the document is
+  `Error::Unreadable`, and a connection that fails is `Error::Io`, each naming
+  `ProviderOp::Search` or `Download`.

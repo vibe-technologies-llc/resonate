@@ -149,6 +149,9 @@ pub struct Config {
     pub remember_settings_category: Option<bool>,
     pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
+    pub subsonic: Option<String>,
+    pub subsonic_user: Option<String>,
+    pub subsonic_password: Option<String>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -492,6 +495,11 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
             ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
+            ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
+            ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
+            ConfigKey::SubsonicPassword => {
+                config.subsonic_password = given(at.string(value)?);
+            }
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::HistoryKept => {

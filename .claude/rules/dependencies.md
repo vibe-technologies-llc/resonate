@@ -155,6 +155,10 @@ paths:
   than one of the sizes the crate lists. symphonia, `parking_lot` and gpui already link it, so the
   lockfile gains edges and no crate. A collection that is built once, or that has no bound a
   listener could not exceed in ordinary use — a queue, a playlist, a catalog read — stays a `Vec`.
+- `resonate-subsonic` reaches `ureq`, `serde`, `serde_json` and `md-5` itself, as a network
+  provider is told to rather than going through `resonate-online`; `md-5` was in the lockfile
+  already under lofty, so the token costs an edge and no crate, and the binary takes the provider
+  only under `online`.
 - `parking_lot` is `resonate-codec`'s too, for the one lock a `Deadlined` stream holds its
   answers behind, since `MediaStream` is `Sync` and `std`'s receiver is not. It was in the
   lockfile already, so the codec gains an edge and the tree no crate.

@@ -9,6 +9,7 @@ mod library;
 mod online;
 mod output;
 mod processing;
+mod subsonic;
 
 use std::sync::atomic::Ordering;
 
@@ -24,6 +25,7 @@ pub(crate) use crate::views::settings::{
     curve::{HeldBand, Plotted, across_at},
     equaliser::marked_frequencies,
     find::{Category, Group},
+    subsonic::Account,
 };
 use crate::{
     AppIcon, Notice, ResonateApp, Setting, SettingKey,
@@ -385,6 +387,7 @@ impl RootView {
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
+            Group::Subsonic => self.subsonic_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
             Group::Repeating => self.repeating_group(cx),
@@ -525,6 +528,7 @@ impl RootView {
             Group::Inbox => self
                 .library
                 .update(cx, |library, cx| library.set_inbox(None, cx)),
+            Group::Subsonic => self.forget_the_account(cx),
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
@@ -569,6 +573,10 @@ impl RootView {
         let listening_for = listen.length();
         let template_given = self.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
+        let subsonic_given = self
+            .subsonic
+            .iter()
+            .any(|field| !field.read(cx).text().trim().is_empty());
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),
@@ -599,6 +607,7 @@ impl RootView {
             presence,
             template_given,
             inbox_given,
+            subsonic_given,
         }
     }
 

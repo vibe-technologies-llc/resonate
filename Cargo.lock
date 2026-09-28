@@ -4952,6 +4952,7 @@ dependencies = [
  "resonate-online",
  "resonate-pipewire",
  "resonate-providers",
+ "resonate-subsonic",
  "resonate-ui",
  "resonate-vault",
  "rustix 1.1.5",
@@ -5178,6 +5179,19 @@ dependencies = [
  "resonate-core",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "resonate-subsonic"
+version = "0.1.0"
+dependencies = [
+ "md-5",
+ "resonate-core",
+ "resonate-providers",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
