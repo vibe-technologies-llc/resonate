@@ -293,6 +293,16 @@ struct Stored {
     file_size: u64,
     modified: SystemTime,
     sheet_modified: Option<SystemTime>,
+    probe_again: bool,
+}
+
+impl Stored {
+    fn unchanged(&self, file_size: u64, modified: SystemTime, sheet: Option<SystemTime>) -> bool {
+        !self.probe_again
+            && self.file_size == file_size
+            && self.modified == modified
+            && self.sheet_modified == sheet
+    }
 }
 
 #[derive(Default)]
@@ -306,7 +316,7 @@ impl Known {
         inner.read(|connection| {
             let mut statement = connection
                 .prepare(
-                    "SELECT path, id, file_size, modified, sheet_modified FROM tracks
+                    "SELECT path, id, file_size, modified, sheet_modified, probe_again FROM tracks
                      WHERE path >= ?1 AND path < ?2 ORDER BY path, span_start",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -321,17 +331,19 @@ impl Known {
                             row.get::<_, i64>(2)?,
                             row.get::<_, i64>(3)?,
                             row.get::<_, Option<i64>>(4)?,
+                            row.get::<_, bool>(5)?,
                         ))
                     })
                     .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
                     .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-                for (path, id, file_size, modified, sheet_modified) in rows {
+                for (path, id, file_size, modified, sheet_modified, probe_again) in rows {
                     known.rows.entry(path).or_default().push(Stored {
                         id: TrackId::new(id as u64)?,
                         file_size: file_size as u64,
                         modified: store::from_nanos(modified),
                         sheet_modified: sheet_modified.map(store::from_nanos),
+                        probe_again,
                     });
                 }
             }
@@ -859,11 +871,9 @@ fn sheet_job(
 
     let rows = known.rows(text);
     let unchanged = rows.len() == tracks
-        && rows.iter().all(|held| {
-            held.file_size == file_size
-                && held.modified == modified
-                && held.sheet_modified == Some(touched)
-        });
+        && rows
+            .iter()
+            .all(|held| held.unchanged(file_size, modified, Some(touched)));
 
     if options.incremental && unchanged {
         for held in rows {
@@ -912,11 +922,9 @@ fn whole_file_job(walking: &Walking<'_>, path: &Path, metadata: &Metadata) -> Re
 
     let rows = known.rows(text);
     let unchanged = !rows.is_empty()
-        && rows.iter().all(|held| {
-            held.file_size == file_size
-                && held.modified == modified
-                && held.sheet_modified.is_none()
-        });
+        && rows
+            .iter()
+            .all(|held| held.unchanged(file_size, modified, None));
 
     if options.incremental && unchanged {
         rows_past_the_first(progress, rows.len());

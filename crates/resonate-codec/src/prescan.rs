@@ -29,13 +29,15 @@ pub(crate) struct Prescan {
 
 impl Prescan {
     pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Self {
+        let riff = riff::read(source);
+        let segment = matroska::read_segment(source);
         Self {
-            riff: riff::read(source),
-            segment: matroska::read_segment(source),
+            riff,
             boxes: boxes::read_movie(source),
             flac: flac::read(source),
             caf: caf::read(source),
-            wavpack: wavpack::read_coding(source),
+            wavpack: wavpack::read_coding(source).or(segment.wavpack),
+            segment,
         }
     }
 

@@ -38,6 +38,8 @@ const MIGRATIONS: &[&str] = &[
      ) STRICT;
      CREATE INDEX passes_by_time ON passes(at);",
     "ALTER TABLE lyrics_kept ADD COLUMN lyricsfile TEXT;",
+    "ALTER TABLE tracks ADD COLUMN probe_again INTEGER NOT NULL DEFAULT 0;
+     UPDATE tracks SET probe_again = 1 WHERE codec = 11;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -711,6 +713,35 @@ mod tests {
             0
         );
         lay_out(&connection).expect("opening again is idempotent");
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_probes_its_wavpack_rows_again_and_nothing_else() {
+        let connection = opened();
+        lay_out_through(&connection, V1, &MIGRATIONS[..MIGRATIONS.len() - 1])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES ('packed.wv', 'Packed', 44100, 2, 1, 11, 10, 1, 1, 1),
+                        ('song.flac', 'Song', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the tracks are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64)> = connection
+            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        assert_eq!(
+            marked,
+            [("packed.wv".to_owned(), 1), ("song.flac".to_owned(), 0)]
+        );
     }
 
     #[test]

@@ -36,6 +36,16 @@ through `Player::media` like any other unscanned row.
   SQL can recompute, say — and then say so in the step's absence rather than by editing `V1`. The
   history begins at `0ca1e683`, the `V1` that stood when the policy changed, so a catalog written
   by any build since opens and is carried forward.
+- **A change to what a probe reads is carried forward by marking the rows it moves.**
+  `tracks.probe_again` is set by a migration step over the rows whose billing the new probe
+  would change — the first such step marks every WavPack, because a hybrid one was billed
+  lossless until the flag was read — and an incremental scan weighs a marked row as changed
+  though its size and its mtime have not moved, and the upsert clears the mark. Nothing else about
+  the row moves: the vault link and what a lookup wrote are kept on the size and the mtime, which
+  have not changed, so a marked row is re-read rather than re-imported or asked about again —
+  `a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved`. A later probe
+  change is another step that sets the mark on the rows it concerns, never a rescan of the whole
+  catalog.
 - **What the transport was doing is three tables, because the rows, their order and the place each
   move at a rate of their own.** `resume` is a singleton row — the row the queue was on, the frame
   into it, whether it was shuffled and when it was taken. `resume_rows` is the queue itself, one

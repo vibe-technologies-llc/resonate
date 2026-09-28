@@ -70,6 +70,8 @@ const MOST_FRAMES_A_BLOCK: u64 = 1 << 20;
 const MATROSKA_VERSIONS: Range<u16> = 0x402..0x411;
 const MATROSKA_PREFIX_BYTES: usize = 8;
 const MATROSKA_BLOCK_SIZE_BYTES: usize = 4;
+const MATROSKA_FLAGS_AT: Range<usize> = 4..8;
+pub(crate) const MATROSKA_HEAD_BYTES: usize = 8;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Coding {
@@ -79,10 +81,29 @@ pub(crate) enum Coding {
 }
 
 impl Coding {
-    pub(crate) const fn codec(self, declared: AudioCodecId) -> AudioCodecId {
+    const fn of_flags(flags: u32) -> Self {
+        if flags & HYBRID == 0 {
+            Self::Lossless
+        } else {
+            Self::Hybrid
+        }
+    }
+
+    pub(crate) fn of_matroska_head(head: [u8; MATROSKA_HEAD_BYTES]) -> Self {
+        Self::of_flags(word(&head, MATROSKA_FLAGS_AT))
+    }
+
+    pub(crate) const fn or(self, other: Self) -> Self {
         match self {
-            Self::Hybrid => HYBRID_CODEC_ID,
-            Self::Lossless => declared,
+            Self::Hybrid => Self::Hybrid,
+            Self::Lossless => other,
+        }
+    }
+
+    pub(crate) fn codec(self, declared: AudioCodecId) -> AudioCodecId {
+        match self {
+            Self::Hybrid if declared == CODEC_ID_WAVPACK => HYBRID_CODEC_ID,
+            Self::Hybrid | Self::Lossless => declared,
         }
     }
 }
@@ -92,9 +113,7 @@ pub(crate) fn read_coding<S: Read + Seek + ?Sized>(source: &mut S) -> Coding {
         return Coding::Lossless;
     };
     let found = match read_exact::<HEADER_BYTES, S>(source) {
-        Some(header) if header.starts_with(MARKER) && word(&header, FLAGS_AT) & HYBRID != 0 => {
-            Coding::Hybrid
-        }
+        Some(header) if header.starts_with(MARKER) => Coding::of_flags(word(&header, FLAGS_AT)),
         Some(_) | None => Coding::Lossless,
     };
     if source.seek(SeekFrom::Start(origin)).is_err() {
@@ -692,6 +711,8 @@ impl RegisterableAudioDecoder for WavPack {
 mod tests {
     use std::io::Cursor;
 
+    use symphonia::core::codecs::audio::well_known::CODEC_ID_FLAC;
+
     use super::*;
 
     fn header(flags: u32) -> Vec<u8> {
@@ -708,6 +729,7 @@ mod tests {
         assert_eq!(read_coding(&mut source), Coding::Hybrid);
         assert_eq!(source.position(), 0);
         assert_eq!(Coding::Hybrid.codec(CODEC_ID_WAVPACK), HYBRID_CODEC_ID);
+        assert_eq!(Coding::Hybrid.codec(CODEC_ID_FLAC), CODEC_ID_FLAC);
     }
 
     #[test]

@@ -1684,6 +1684,7 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              tagged_artist      = excluded.tagged_artist,
              genre              = excluded.genre,
              lyrics             = excluded.lyrics,
+             probe_again        = 0,
              vault_key          = CASE
                  WHEN tracks.file_size   = excluded.file_size
                   AND tracks.modified    = excluded.modified

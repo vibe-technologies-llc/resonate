@@ -2499,6 +2499,54 @@ fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
 }
 
 #[test]
+fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() {
+    if !wavpack() || !ffmpeg() {
+        eprintln!("skipped: no wavpack and ffmpeg to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, CD, &tone(CD));
+
+    for (name, modes, billed) in [
+        ("hybrid", &["-b256"][..], Codec::WavPackHybrid),
+        ("lossless", &[][..], Codec::WavPack),
+    ] {
+        let native = tree.at(&format!("{name}.wv"));
+        assert!(
+            packed(&source, &native, modes),
+            "wavpack would not write the {name} file"
+        );
+        let wrapped = tree.at(&format!("{name}.mka"));
+        assert!(
+            ran(
+                "ffmpeg",
+                &[
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    native.to_str().expect("a UTF-8 path"),
+                    "-c:a",
+                    "copy",
+                    wrapped.to_str().expect("a UTF-8 path"),
+                ]
+            ),
+            "ffmpeg would not put the {name} WavPack into Matroska"
+        );
+
+        let report = probe_stream(&Sources::local(), &MediaLocation::local(&wrapped))
+            .expect("a WavPack in Matroska probes");
+        assert_eq!(Codec::from_id(report.info.codec), billed, "{name}");
+        assert_eq!(
+            decode(&wrapped).samples,
+            decode(&native).samples,
+            "a {name} WavPack in Matroska decoded to something the native stream does not"
+        );
+    }
+}
+
+#[test]
 fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
     if !wavpack() {
         eprintln!("skipped: no wavpack to build the fixture");

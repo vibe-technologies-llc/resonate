@@ -222,13 +222,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   values a hundred binades under the peak among them — and
   `a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it` are the claims; the first
   two fail against the crate's decoder alone. **A hybrid WavPack is billed as the lossy codec it
-  decodes as.** The prescan reads the first block's header — `wavpack::read_coding` — and where
-  its flags carry `HYBRID`, `coded_info` answers `wavpack::HYBRID_CODEC_ID` rather than the
-  stream's own id, which `Codec::from_id` reads as `Codec::WavPackHybrid`: not `is_lossless`, so
-  the badge, `is:lossy`, the verdict's `Lossy`, the vault's `Kept` and every other reader of the
-  codec take it for what it is, and the catalog stores it as code 13 and searches it as
-  `codec:hybrid`. The decoder is still made from the track's parameters, so nothing about the
-  decode moves. The same test that holds the decode to `wvunpack`'s holds the billing. A `.wvc`
+  decodes as.** The prescan reads the first block's header — `wavpack::read_coding` for a native
+  stream, and for one in Matroska the flags that follow the sample count in the first block of
+  the `A_WAVPACK4` track, laced or grouped, which `matroska::read_segment` finds — and where they
+  carry `HYBRID` and the track is WavPack, `coded_info` answers `wavpack::HYBRID_CODEC_ID` rather
+  than the stream's own id, which `Codec::from_id` reads as `Codec::WavPackHybrid`: not
+  `is_lossless`, so the badge, `is:lossy`, the verdict's `Lossy`, the vault's `Kept` and every
+  other reader of the codec take it for what it is, and the catalog stores it as code 13 and
+  searches it as `codec:hybrid`. The decoder is still made from the track's parameters, so nothing
+  about the decode moves. The same test that holds the decode to `wvunpack`'s holds the billing,
+  and `a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not` holds it
+  through ffmpeg's remux. A catalog written before the flag was read is carried forward by a
+  migration step that marks every WavPack row `probe_again`, so the next scan bills it by what
+  it is — `library.md` has the mechanism. A `.wvc`
   correction file beside it is not read: `symphonia-codec-wavpack` 0.1.1 takes a held zero's
   correction from the range it has already narrowed to its midpoint — it sets `low = mid` before
   `read_code(high - low) + low`, where libwavpack reads from the narrowed `low` — so a corrected

@@ -5,7 +5,12 @@ use std::{
 
 use resonate_core::{Frames, SampleRate};
 
-use crate::{flac, opus, prescan::read_exact, vorbis::Windows};
+use crate::{
+    flac, opus,
+    prescan::read_exact,
+    vorbis::Windows,
+    wavpack::{self, Coding},
+};
 
 const EBML_HEADER: u32 = 0x1A45_DFA3;
 const SEGMENT: u32 = 0x1853_8067;
@@ -38,6 +43,7 @@ const MAX_BLOCKS: usize = 65_536;
 const OPUS_CODEC_ID: &str = "A_OPUS";
 const FLAC_CODEC_ID: &str = "A_FLAC";
 const VORBIS_CODEC_ID: &str = "A_VORBIS";
+const WAVPACK_CODEC_ID: &str = "A_WAVPACK4";
 const PRIVATE_BYTES_AT_MOST: u64 = 1 << 20;
 const LACING: u8 = 0b0110;
 const LACING_SHIFT: u8 = 1;
@@ -56,6 +62,7 @@ pub(crate) struct Segment {
     pub(crate) opus_samples: Option<u64>,
     pub(crate) framed_samples: Option<u64>,
     pub(crate) counted_track: Option<u64>,
+    pub(crate) wavpack: Coding,
 }
 
 impl Segment {
@@ -254,6 +261,15 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
         found.opus_samples = counted.tally.samples_where(|counts| counts == Counts::Opus);
         found.framed_samples = counted.tally.samples_where(Counts::framed);
         found.counted_track = counted_track.map(|counting| counting.track);
+    }
+    let wavpack_track = source
+        .seek(SeekFrom::Start(body))
+        .ok()
+        .and_then(|_| read_wavpack_track(source, within));
+    if let Some(track) = wavpack_track
+        && source.seek(SeekFrom::Start(body)).is_ok()
+    {
+        found.wavpack = read_wavpack_coding(source, within, track).unwrap_or_default();
     }
 
     Some(found)
@@ -573,13 +589,34 @@ fn read_counted_track<S: Read + Seek + ?Sized>(
     source: &mut S,
     within: Option<u64>,
 ) -> Option<Counting> {
+    first_track(source, within, |entry| {
+        Some(Counting {
+            track: entry.number?,
+            counts: Counts::of(entry.codec.as_deref()?, entry.private.as_deref())?,
+        })
+    })
+}
+
+fn read_wavpack_track<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u64> {
+    first_track(source, within, |entry| {
+        (entry.codec.as_deref() == Some(WAVPACK_CODEC_ID))
+            .then_some(entry.number)
+            .flatten()
+    })
+}
+
+fn first_track<S: Read + Seek + ?Sized, T>(
+    source: &mut S,
+    within: Option<u64>,
+    taken: impl Fn(Entry) -> Option<T>,
+) -> Option<T> {
     let tracks = find(source, TRACKS, within)?;
     let limit = tracks.end();
 
     for _ in 0..MAX_ELEMENTS {
         let entry = element(source)?;
         if entry.id == TRACK_ENTRY
-            && let Some(track) = counted_track(source, entry.end())
+            && let Some(track) = taken(read_entry(source, entry.end()))
         {
             return Some(track);
         }
@@ -592,19 +629,24 @@ fn read_counted_track<S: Read + Seek + ?Sized>(
     None
 }
 
-fn counted_track<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Option<Counting> {
-    let mut number = None;
-    let mut codec = None;
-    let mut private = None;
+#[derive(Default)]
+struct Entry {
+    number: Option<u64>,
+    codec: Option<String>,
+    private: Option<Vec<u8>>,
+}
+
+fn read_entry<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Entry {
+    let mut entry = Entry::default();
 
     for _ in 0..MAX_ELEMENTS {
         let Some(element) = element(source) else {
             break;
         };
         match element.id {
-            TRACK_NUMBER => number = positive(uint(source, element.length)),
-            CODEC_ID => codec = text(source, element.length),
-            CODEC_PRIVATE => private = bytes(source, element.length),
+            TRACK_NUMBER => entry.number = positive(uint(source, element.length)),
+            CODEC_ID => entry.codec = text(source, element.length),
+            CODEC_PRIVATE => entry.private = bytes(source, element.length),
             _ => {}
         }
 
@@ -616,10 +658,74 @@ fn counted_track<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) ->
         }
     }
 
-    Some(Counting {
-        track: number?,
-        counts: Counts::of(codec.as_deref()?, private.as_deref())?,
-    })
+    entry
+}
+
+fn read_wavpack_coding<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+    track: u64,
+) -> Option<Coding> {
+    for _ in 0..MAX_CLUSTERS {
+        let element = element(source)?;
+        if element.id == CLUSTER
+            && let Some(coding) = wavpack_coding_in_cluster(source, element.end(), track)
+        {
+            return Some(coding);
+        }
+
+        let next = skip(source, &element)?;
+        if within.is_some_and(|within| next >= within) {
+            break;
+        }
+    }
+    None
+}
+
+fn wavpack_coding_in_cluster<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    limit: Option<u64>,
+    track: u64,
+) -> Option<Coding> {
+    for _ in 0..MAX_BLOCKS {
+        let element = element(source)?;
+        let block = match element.id {
+            SIMPLE_BLOCK => Some(element),
+            BLOCK_GROUP => find(source, BLOCK, element.end()),
+            _ => None,
+        };
+        if let Some(block) = block
+            && let Some(coding) = wavpack_coding_in_block(source, block, track)
+        {
+            return Some(coding);
+        }
+
+        let next = skip(source, &element)?;
+        if limit.is_none_or(|limit| next >= limit) {
+            break;
+        }
+    }
+    None
+}
+
+fn wavpack_coding_in_block<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    block: Element,
+    track: u64,
+) -> Option<Coding> {
+    let end = block.end()?;
+    source.seek(SeekFrom::Start(block.body)).ok()?;
+    let Length::Known(number) = length(source)? else {
+        return None;
+    };
+    if number != track {
+        return None;
+    }
+    let [_, _, flags] = read_exact::<3, S>(source)?;
+    let mut sizes = [0_u64; LACED_FRAMES_AT_MOST];
+    lace_sizes(source, end, Lacing::of(flags), &mut sizes)?;
+    let head = read_exact::<{ wavpack::MATROSKA_HEAD_BYTES }, S>(source)?;
+    Some(Coding::of_matroska_head(head))
 }
 
 fn bytes<S: Read + ?Sized>(source: &mut S, length: Length) -> Option<Vec<u8>> {
@@ -689,6 +795,7 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         opus_samples: None,
         framed_samples: None,
         counted_track: None,
+        wavpack: Coding::Lossless,
     }
 }
 
@@ -1300,6 +1407,80 @@ mod tests {
             Some(1_920)
         );
         assert_eq!(read_segment(&mut Cursor::new(head)).opus_samples, None);
+    }
+
+    const WAVPACK_HYBRID: u32 = 0x8;
+    const WAVPACK_FINAL_BLOCK: u32 = 0x1000;
+
+    fn wavpack_frame(flags: u32) -> Vec<u8> {
+        let mut frame = 4_608_u32.to_le_bytes().to_vec();
+        frame.extend_from_slice(&flags.to_le_bytes());
+        frame.extend_from_slice(&[0; 8]);
+        frame
+    }
+
+    fn wavpack_block(track: u8, flags: u32) -> Vec<u8> {
+        let mut block = vec![0x80 | track, 0, 0, 0];
+        block.extend_from_slice(&wavpack_frame(flags));
+        element(SIMPLE_BLOCK, &block)
+    }
+
+    fn wavpack_coding(entries: &[Vec<u8>], blocks: &[Vec<u8>]) -> Coding {
+        read_segment(&mut Cursor::new(with_tracks(entries, blocks))).wavpack
+    }
+
+    #[test]
+    fn a_wavpack_track_whose_first_block_is_coded_hybrid_is_read_as_hybrid() {
+        let wavpack = track_entry(2, WAVPACK_CODEC_ID);
+        let hybrid = WAVPACK_HYBRID | WAVPACK_FINAL_BLOCK;
+
+        assert_eq!(
+            wavpack_coding(
+                &[track_entry(1, "A_VORBIS"), wavpack.clone()],
+                &[wavpack_block(1, hybrid), wavpack_block(2, hybrid)],
+            ),
+            Coding::Hybrid
+        );
+        assert_eq!(
+            wavpack_coding(
+                &[track_entry(1, "A_VORBIS"), wavpack],
+                &[
+                    wavpack_block(1, hybrid),
+                    wavpack_block(2, WAVPACK_FINAL_BLOCK)
+                ],
+            ),
+            Coding::Lossless
+        );
+    }
+
+    #[test]
+    fn a_wavpack_block_in_a_group_or_behind_a_lace_is_read_as_well() {
+        let wavpack = track_entry(1, WAVPACK_CODEC_ID);
+        let hybrid = WAVPACK_HYBRID | WAVPACK_FINAL_BLOCK;
+        let mut grouped = vec![0x81, 0, 0, 0];
+        grouped.extend_from_slice(&wavpack_frame(hybrid));
+        let group = element(BLOCK_GROUP, &element(BLOCK, &grouped));
+        let frames = [wavpack_frame(hybrid), wavpack_frame(WAVPACK_FINAL_BLOCK)];
+
+        assert_eq!(
+            wavpack_coding(std::slice::from_ref(&wavpack), &[group]),
+            Coding::Hybrid
+        );
+        assert_eq!(
+            wavpack_coding(&[wavpack], &[laced_block(FIXED_LACED, &[], &frames)]),
+            Coding::Hybrid
+        );
+    }
+
+    #[test]
+    fn a_hybrid_flag_on_a_track_that_is_not_wavpack_is_not_read() {
+        assert_eq!(
+            wavpack_coding(
+                &[track_entry(1, OPUS_CODEC_ID)],
+                &[wavpack_block(1, WAVPACK_HYBRID)],
+            ),
+            Coding::Lossless
+        );
     }
 
     #[test]

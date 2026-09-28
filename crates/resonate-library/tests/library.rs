@@ -2833,6 +2833,55 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
 }
 
 #[test]
+fn a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("06 Echoes.wav", &one_song(16, 44_100));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let billed_wrongly =
+        "UPDATE tracks SET codec = 11, vault_key = 'kept', vault_path = 'audio/kept'";
+    beside(&database)
+        .execute(billed_wrongly, [])
+        .expect("the track row is writable");
+    scan(&library, &options(&tree))?;
+    let held = |database: &Path| {
+        beside(database)
+            .query_row(
+                "SELECT codec, probe_again, vault_key, vault_path FROM tracks",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .expect("the track row reads")
+    };
+    assert_eq!(
+        held(&database).0,
+        11,
+        "a row nobody marked was probed again though its file had not moved"
+    );
+
+    beside(&database)
+        .execute("UPDATE tracks SET probe_again = 1", [])
+        .expect("the track row is writable");
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(
+        held(&database),
+        (5, 0, Some("kept".to_owned()), Some("audio/kept".to_owned())),
+        "a marked row was not billed by what its file is, or lost its vault object on the way"
+    );
+    Ok(())
+}
+
+#[test]
 fn two_copies_whose_lengths_disagree_are_two_songs() -> Result<()> {
     let tree = Tree::new();
     tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
