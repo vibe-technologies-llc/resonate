@@ -378,19 +378,22 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   The `INFO` scan looks for its magic where `prescan::opened_first` says symphonia would find it, the EBML title scan
   bails on the first bytes where the magic is not its own, and both restore the position they
   found, so a container that is neither pays a rejected read and nothing more. A source that
-  cannot seek cannot be restored, so `container::open` reads it into memory with `take`, up to
-  `SPOOLED_AT_MOST` — 256 MiB, which a five-minute 24/192 FLAC fits in — and where the stream ends
-  inside that, it is opened as a seekable `Reading` over the bytes, with everything a file has: the
-  whole prescan, a trailing `moov`, a `LIST INFO` after `data`, the Matroska cluster walk that
-  counts an Opus or FLAC track exactly, the seek bar and the end bound a priming is trimmed
-  against. What it costs is the whole stream read before the first sample, which is a local
-  provider's copy and a remote one's download. A stream past the cap keeps the head it was read
-  into: symphonia is handed a `Replaying` stream that serves the head before the rest — still
+  cannot seek cannot be restored, so `container::open` reads it into memory, up to
+  `SPOOLED_AT_MOST` — 256 MiB, which a five-minute 24/192 FLAC fits in — for at most
+  `SPOOLED_WITHIN`, three quarters of a second, and where the stream ends inside both, it is
+  opened as a seekable `Reading` over the bytes, with everything a file has: the whole prescan, a
+  trailing `moov`, a `LIST INFO` after `data`, the Matroska cluster walk that counts an Opus or
+  FLAC track exactly, the seek bar and the end bound a priming is trimmed against. The wait is
+  what keeps a slow remote stream from holding the first sample for its whole download: a local
+  provider's copy lands well inside it, and a stream still arriving when it runs out — or one past
+  the cap — keeps the head it was read into: symphonia is handed a `Replaying` stream that serves
+  the head before the rest — still
   `is_seekable() == false` and still `byte_len() == None` — and the walks run over a `Cursor` of
   the head, advancing by absolute seek, which simply stops at its end, so neither `riff.rs` nor
   `matroska.rs` knows the difference.
   `a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio`,
-  `a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek` and
+  `a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek`,
+  `a_stream_that_arrives_slowly_opens_from_what_came_within_the_wait_rather_than_its_whole` and
   `a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pages_declare` are
   the claims.
 - **A prescan over a source that *can* seek reads through a window, because the five walks are made
@@ -633,8 +636,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   in `crates/resonate-engine/tests/transport.rs` and by nothing else.
 - **A provider hands back a `Read + Seek + Send + Sync` stream and says whether it is seekable**,
   which is symphonia's own contract. A source that can only stream forward is spooled into memory
-  up to `SPOOLED_AT_MOST` and is then a seekable source like any other; past that it loses the
-  prescan past its head, the seek bar and the box walk.
+  up to `SPOOLED_AT_MOST`, for as long as `SPOOLED_WITHIN`, and is then a seekable source like
+  any other; past either it loses the prescan past its head, the seek bar and the box walk.
 - **`Sources` is resolved by a linear walk over the registered providers**, which is right for the
   handful a desktop player registers and wrong for hundreds.
 - **A provider that is not the filesystem is waited on for `Sources::OPENED_WITHIN` and no

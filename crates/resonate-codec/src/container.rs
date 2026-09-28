@@ -1,6 +1,6 @@
 use std::{
     io::{self, Cursor, Read, Seek, SeekFrom},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use resonate_core::{
@@ -49,6 +49,8 @@ const ALAC_BIT_DEPTH_AT: usize = 5;
 const ALAC_MAX_BIT_DEPTH: u32 = 32;
 
 const SPOOLED_AT_MOST: u64 = 256 << 20;
+const SPOOLED_WITHIN: Duration = Duration::from_millis(750);
+const SPOOLED_A_READ_AT_A_TIME: usize = 64 << 10;
 const NAMEABLE_WAVE_CHANNELS: u32 = Position::all().bits().count_ones();
 
 const STREAMINFO_BYTES: usize = 34;
@@ -134,6 +136,15 @@ pub(crate) fn open(media: Media, location: &MediaLocation) -> Result<Opened> {
 }
 
 fn open_spooling(media: Media, location: &MediaLocation, spooled_at_most: u64) -> Result<Opened> {
+    open_spooling_within(media, location, spooled_at_most, SPOOLED_WITHIN)
+}
+
+fn open_spooling_within(
+    media: Media,
+    location: &MediaLocation,
+    spooled_at_most: u64,
+    spooled_within: Duration,
+) -> Result<Opened> {
     let Media {
         stream: mut bytes,
         hint: named,
@@ -142,7 +153,7 @@ fn open_spooling(media: Media, location: &MediaLocation, spooled_at_most: u64) -
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut())
     } else {
-        match spooled(bytes.as_mut(), spooled_at_most) {
+        match spooled(bytes.as_mut(), spooled_at_most, spooled_within) {
             Spooled::Whole(held) => {
                 bytes = Box::new(Reading::new(Cursor::new(held)));
                 seekable = true;
@@ -268,14 +279,26 @@ enum Spooled {
     Head(Vec<u8>),
 }
 
-fn spooled(bytes: &mut dyn MediaStream, at_most: u64) -> Spooled {
+fn spooled(bytes: &mut dyn MediaStream, at_most: u64, within: Duration) -> Spooled {
+    let began = Instant::now();
     let mut held = Vec::new();
-    match bytes.take(at_most).read_to_end(&mut held) {
-        Ok(_) if (held.len() as u64) < at_most => Spooled::Whole(held),
-        Ok(_) => Spooled::Head(held),
-        Err(source) => {
-            tracing::debug!(%source, "a source that cannot seek stopped before it was spooled");
-            Spooled::Head(held)
+    let mut reading = vec![0_u8; SPOOLED_A_READ_AT_A_TIME];
+    loop {
+        let room = at_most.saturating_sub(held.len() as u64);
+        if room == 0 || began.elapsed() >= within {
+            return Spooled::Head(held);
+        }
+        let wanted = usize::try_from(room)
+            .unwrap_or(usize::MAX)
+            .min(reading.len());
+        match bytes.read(&mut reading[..wanted]) {
+            Ok(0) => return Spooled::Whole(held),
+            Ok(read) => held.extend_from_slice(&reading[..read]),
+            Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
+            Err(source) => {
+                tracing::debug!(%source, "a source that cannot seek stopped before it was spooled");
+                return Spooled::Head(held);
+            }
         }
     }
 }
@@ -747,6 +770,61 @@ mod tests {
             .into_coded()
             .expect("a coded stream");
         assert!(short.seekable, "a pipe under the spool was not read whole");
+    }
+
+    struct Trickling {
+        bytes: Cursor<Vec<u8>>,
+        prompt_for: u64,
+        then_every_read_waits: Duration,
+    }
+
+    impl Read for Trickling {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.bytes.position() >= self.prompt_for {
+                std::thread::sleep(self.then_every_read_waits);
+                let short = buf.len().min(64);
+                return self.bytes.read(&mut buf[..short]);
+            }
+            let prompt = usize::try_from(self.prompt_for - self.bytes.position())
+                .unwrap_or(usize::MAX)
+                .min(buf.len());
+            self.bytes.read(&mut buf[..prompt])
+        }
+    }
+
+    impl Seek for Trickling {
+        fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "a slow stream"))
+        }
+    }
+
+    #[test]
+    fn a_stream_that_arrives_slowly_opens_from_what_came_within_the_wait_rather_than_its_whole() {
+        const WAITED_AT_MOST: Duration = Duration::from_millis(40);
+        let mut wave = wave_of(2);
+        wave.extend(std::iter::repeat_n(0, 4_096));
+        let head = wave_of(2).len() as u64 + 256;
+        let location = MediaLocation::local("remote.wav");
+        let trickling = Media {
+            stream: Box::new(Reading::new(Trickling {
+                bytes: Cursor::new(wave),
+                prompt_for: head,
+                then_every_read_waits: Duration::from_millis(10),
+            })),
+            hint: None,
+        };
+
+        let began = Instant::now();
+        let opened = open_spooling_within(trickling, &location, SPOOLED_AT_MOST, WAITED_AT_MOST)
+            .expect("a slow stream opens")
+            .into_coded()
+            .expect("a coded stream");
+
+        assert!(
+            began.elapsed() < Duration::from_millis(400),
+            "the open waited for the whole stream"
+        );
+        assert!(!opened.seekable);
     }
 
     #[test]
