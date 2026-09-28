@@ -6,7 +6,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, Image, MouseButton,
+    AnyElement, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
     MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
     hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
@@ -22,6 +22,7 @@ use smallvec::smallvec;
 use crate::{
     Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection, format,
     icons::{self, Icon},
+    models::Picture,
     theme,
     views::{
         hint::Names,
@@ -2445,7 +2446,7 @@ pub(crate) fn controls_place() -> Div {
         .w(px(controls_width(ROW_CONTROLS)))
 }
 
-pub(crate) fn portrait_frame(art: Arc<Image>, side: f32) -> Div {
+pub(crate) fn portrait_frame(art: Picture, side: f32) -> Div {
     div()
         .flex()
         .flex_none()

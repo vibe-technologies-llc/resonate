@@ -1,13 +1,13 @@
 use std::{cell::Cell, num::NonZeroUsize, rc::Rc, sync::Arc, time::Duration};
 
-use gpui::{Bounds, Context, Image, Pixels, Task};
+use gpui::{Bounds, Context, Pixels, Task};
 use resonate_core::{FrameSpan, MediaLocation, TrackId};
 use resonate_engine::{Analysis, AnalysisError, Player, Reach, Watch};
 use resonate_library::{Agreement, Fingerprinters, HeardAs, Library, Sounded, Studied};
 
 use crate::{
     analysis_plot::{SPECTRUM_COLUMNS, WAVEFORM_COLUMNS, lanes_of, ramp_through, traced},
-    models::{Forget, painted},
+    models::{Forget, Picture, picture_of},
     recent::Recent,
 };
 
@@ -71,7 +71,7 @@ impl Hearing {
 struct Painted {
     row: Row,
     stops: Vec<u32>,
-    image: Arc<Image>,
+    image: Picture,
 }
 
 pub(crate) struct AnalysisModel {
@@ -309,7 +309,7 @@ impl AnalysisModel {
         &mut self,
         stops: Vec<u32>,
         cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
+    ) -> Option<Picture> {
         let row = self.following.clone()?;
         if let Some(painted) = &self.painted
             && painted.row == row
@@ -331,15 +331,9 @@ impl AnalysisModel {
         self.painting = Some(wanted);
         let drawn = Arc::clone(drawn);
         let ramp = ramp_through(&stops);
-        let image = cx.background_executor().spawn(async move {
-            match drawn.analysis.spectrogram.painted(&ramp) {
-                Ok(art) => Some(Arc::new(Image::from_bytes(painted(art.format), art.bytes))),
-                Err(error) => {
-                    tracing::debug!(%error, "the spectrogram could not be painted");
-                    None
-                }
-            }
-        });
+        let image = cx
+            .background_executor()
+            .spawn(async move { picture_of(drawn.analysis.spectrogram.painted(&ramp)) });
         self.drawing = cx.spawn(async move |this, cx| {
             let image = image.await;
             let _ = this.update(cx, |this, cx| {

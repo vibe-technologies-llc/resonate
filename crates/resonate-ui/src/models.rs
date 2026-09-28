@@ -1,5 +1,4 @@
 use std::{
-    cell::OnceCell,
     fs, mem,
     num::{NonZeroU32, NonZeroUsize},
     os::unix::fs::MetadataExt as _,
@@ -12,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
-use gpui::{App, Context, Image, Task};
+use gpui::{App, Context, Image, RenderImage, Task};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
     Span, TrackId, WantId,
@@ -22,10 +21,10 @@ use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
-    HeldReleaseTrack, ImageFormat, ImportOptions, ImportProgress, ImportStats, ImportSummary,
-    Imported, Kept, Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened,
-    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
-    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
+    HeldReleaseTrack, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept,
+    Layout, Library, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
+    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
     Reference, ReleaseDetail, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
     RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
     Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
@@ -578,13 +577,14 @@ pub struct LibraryModel {
     favourite_artist_ids: AHashSet<ArtistId>,
     favoured: AHashMap<Favoured, bool>,
     charted: Arc<Chart>,
-    covers: Recent<AlbumId, Option<Art>>,
-    decoding: AHashSet<AlbumId>,
-    released_covers: Recent<Mbid, Option<Art>>,
+    covers: Recent<AtSide<AlbumId>, Option<Picture>>,
+    decoding: AHashSet<AtSide<AlbumId>>,
+    released_covers: Recent<AtSide<Mbid>, Option<Picture>>,
     fetching_covers: AHashSet<Mbid>,
     magnified: Option<Magnifying<AlbumId>>,
-    portraits: Recent<ArtistId, Option<Portrait>>,
-    decoding_portraits: AHashSet<ArtistId>,
+    portraits: Recent<AtSide<ArtistId>, Option<Picture>>,
+    decoding_portraits: AHashSet<AtSide<ArtistId>>,
+    scale: Scale,
     _warming: Task<()>,
     warmed: bool,
     named: Recent<TrackId, Named>,
@@ -724,6 +724,7 @@ impl LibraryModel {
             magnified: None,
             portraits: Recent::new(PORTRAITS_HELD),
             decoding_portraits: AHashSet::new(),
+            scale: Scale::ONE,
             _warming: Task::ready(()),
             warmed: false,
             named: Recent::new(NAMES_HELD),
@@ -2295,16 +2296,42 @@ impl LibraryModel {
         self.previewed_tags
     }
 
-    pub fn cover(
-        &mut self,
-        id: AlbumId,
-        drawn: Drawn,
-        cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
-        self.art_of(id, cx).map(|art| art.drawn(drawn))
+    pub fn scaled_by(&mut self, scale: Scale) {
+        self.scale = scale;
     }
 
-    pub fn whole_cover(&mut self, id: AlbumId, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    pub fn cover(&mut self, id: AlbumId, drawn: Drawn, cx: &mut Context<Self>) -> Option<Picture> {
+        let wanted = AtSide {
+            key: id,
+            side: drawn.side(self.scale),
+        };
+        if let Some(held) = self.covers.get(&wanted) {
+            return held.clone();
+        }
+        if self.decoding.contains(&wanted) || self.decoding.len() >= DECODES_AT_ONCE {
+            return None;
+        }
+        self.decoding.insert(wanted.clone());
+
+        let library = Arc::clone(&self.library);
+        let side = wanted.side;
+        let drawing = cx
+            .global::<Drawer>()
+            .draw(move || drawn_cover(&library, id, side));
+        cx.spawn(async move |this, cx| {
+            let decoded = drawing.await.flatten();
+            let landed = this.update(cx, |this, cx| {
+                this.decoding.remove(&wanted);
+                this.covers.insert(wanted, decoded).forget(cx);
+                cx.notify();
+            });
+            let _ = landed;
+        })
+        .detach();
+        None
+    }
+
+    pub fn whole_cover(&mut self, id: AlbumId, cx: &mut Context<Self>) -> Option<Picture> {
         if let Some(magnified) = &self.magnified
             && magnified.names(&id)
         {
@@ -2313,17 +2340,19 @@ impl LibraryModel {
         self.magnified.replace(Magnifying::Reading(id)).forget(cx);
 
         let library = Arc::clone(&self.library);
+        let drawing = cx
+            .global::<Drawer>()
+            .draw(move || whole_cover_of(&library, id));
         cx.spawn(async move |this, cx| {
-            let read = cx
-                .background_executor()
-                .spawn(async move { whole_cover_of(&library, id) })
-                .await;
+            let read = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
                 if this.magnified.as_ref().is_some_and(|held| held.names(&id)) {
                     this.magnified
                         .replace(Magnifying::Read(id, read))
                         .forget(cx);
                     cx.notify();
+                } else {
+                    read.forget(cx);
                 }
             });
             let _ = landed;
@@ -2337,9 +2366,13 @@ impl LibraryModel {
         release: &Mbid,
         drawn: Drawn,
         cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
-        if let Some(held) = self.released_covers.get(release) {
-            return held.as_ref().map(|art| art.drawn(drawn));
+    ) -> Option<Picture> {
+        let wanted = AtSide {
+            key: release.clone(),
+            side: drawn.side(self.scale),
+        };
+        if let Some(held) = self.released_covers.get(&wanted) {
+            return held.clone();
         }
         let reference = self.reference.clone().filter(|_| self.online)?;
         if self.fetching_covers.contains(release) || self.fetching_covers.len() >= FETCHES_AT_ONCE {
@@ -2351,7 +2384,7 @@ impl LibraryModel {
         let fetched = cx
             .background_executor()
             .spawn(async move { reference.cover(&asked, None) });
-        let landing = release.clone();
+        let side = wanted.side;
         cx.spawn(async move |this, cx| {
             let art = fetched.await.unwrap_or_else(|error| {
                 tracing::warn!(%error, "a found song's cover could not be fetched");
@@ -2359,43 +2392,15 @@ impl LibraryModel {
             });
             let drawing = this.update(cx, |_, cx| {
                 cx.global::<Drawer>()
-                    .draw(move || art.as_ref().map(Art::of))
+                    .draw(move || art.as_ref().and_then(|art| drawn_within(art, side)))
             });
             let Ok(drawing) = drawing else {
                 return;
             };
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
-                this.released_covers
-                    .insert(landing.clone(), decoded)
-                    .forget(cx);
-                this.fetching_covers.remove(&landing);
-                cx.notify();
-            });
-            let _ = landed;
-        })
-        .detach();
-        None
-    }
-
-    fn art_of(&mut self, id: AlbumId, cx: &mut Context<Self>) -> Option<Art> {
-        if let Some(held) = self.covers.get(&id) {
-            return held.clone();
-        }
-        if self.decoding.contains(&id) || self.decoding.len() >= DECODES_AT_ONCE {
-            return None;
-        }
-        self.decoding.insert(id);
-
-        let library = Arc::clone(&self.library);
-        let drawing = cx
-            .global::<Drawer>()
-            .draw(move || decoded_cover(&library, id));
-        cx.spawn(async move |this, cx| {
-            let decoded = drawing.await.flatten();
-            let landed = this.update(cx, |this, cx| {
-                this.covers.insert(id, decoded).forget(cx);
-                this.decoding.remove(&id);
+                this.fetching_covers.remove(&wanted.key);
+                this.released_covers.insert(wanted, decoded).forget(cx);
                 cx.notify();
             });
             let _ = landed;
@@ -2409,30 +2414,31 @@ impl LibraryModel {
         id: ArtistId,
         portrayed: Portrayed,
         cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
-        self.portrait_of(id, cx)
-            .map(|portrait| portrait.portrayed(portrayed))
-    }
-
-    fn portrait_of(&mut self, id: ArtistId, cx: &mut Context<Self>) -> Option<Portrait> {
-        if let Some(held) = self.portraits.get(&id) {
+    ) -> Option<Picture> {
+        let wanted = AtSide {
+            key: id,
+            side: portrayed.drawn().side(self.scale),
+        };
+        if let Some(held) = self.portraits.get(&wanted) {
             return held.clone();
         }
-        if self.decoding_portraits.contains(&id) || self.decoding_portraits.len() >= DECODES_AT_ONCE
+        if self.decoding_portraits.contains(&wanted)
+            || self.decoding_portraits.len() >= DECODES_AT_ONCE
         {
             return None;
         }
-        self.decoding_portraits.insert(id);
+        self.decoding_portraits.insert(wanted.clone());
 
         let library = Arc::clone(&self.library);
+        let side = wanted.side;
         let drawing = cx
             .global::<Drawer>()
-            .draw(move || decoded_portrait(&library, id));
+            .draw(move || drawn_portrait(&library, id, side));
         cx.spawn(async move |this, cx| {
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
-                this.portraits.insert(id, decoded).forget(cx);
-                this.decoding_portraits.remove(&id);
+                this.decoding_portraits.remove(&wanted);
+                this.portraits.insert(wanted, decoded).forget(cx);
                 cx.notify();
             });
             let _ = landed;
@@ -2774,26 +2780,31 @@ impl LibraryModel {
         let library = Arc::clone(&self.library);
         self._warming = cx.spawn(async move |this, cx| {
             for id in wanted {
-                let Ok(worth_reading) = this.update(cx, |this, _| {
-                    !this.covers.holds(&id) && !this.decoding.contains(&id)
+                let Ok(sized) = this.update(cx, |this, _| {
+                    let sized = AtSide {
+                        key: id,
+                        side: Drawn::InAGrid.side(this.scale),
+                    };
+                    (!this.covers.holds(&sized) && !this.decoding.contains(&sized)).then_some(sized)
                 }) else {
                     return;
                 };
-                if !worth_reading {
+                let Some(sized) = sized else {
                     continue;
-                }
+                };
 
                 let reading = Arc::clone(&library);
+                let side = sized.side;
                 let Ok(drawing) = this.update(cx, |_, cx| {
                     cx.global::<Drawer>()
-                        .draw(move || decoded_cover(&reading, id))
+                        .draw(move || drawn_cover(&reading, id, side))
                 }) else {
                     return;
                 };
                 let decoded = drawing.await.flatten();
 
                 let landed = this.update(cx, |this, cx| {
-                    this.covers.insert(id, decoded).forget(cx);
+                    this.covers.insert(sized, decoded).forget(cx);
                     cx.notify();
                 });
                 if landed.is_err() {
@@ -4178,9 +4189,9 @@ fn pictures_of<'a>(
     Ok(pictured)
 }
 
-fn decoded_cover(library: &Library, id: AlbumId) -> Option<Art> {
+fn drawn_cover(library: &Library, id: AlbumId, side: NonZeroU32) -> Option<Picture> {
     match library.cover_art(id) {
-        Ok(art) => art.as_ref().map(Art::of),
+        Ok(art) => art.as_ref().and_then(|art| drawn_within(art, side)),
         Err(error) => {
             tracing::warn!(%error, album = id.get(), "cover art could not be read");
             None
@@ -4188,9 +4199,9 @@ fn decoded_cover(library: &Library, id: AlbumId) -> Option<Art> {
     }
 }
 
-fn whole_cover_of(library: &Library, id: AlbumId) -> Option<Arc<Image>> {
+fn whole_cover_of(library: &Library, id: AlbumId) -> Option<Picture> {
     match library.cover_art(id) {
-        Ok(art) => art.as_ref().map(whole_of),
+        Ok(art) => art.as_ref().and_then(magnified_of),
         Err(error) => {
             tracing::warn!(%error, album = id.get(), "cover art could not be read");
             None
@@ -4198,9 +4209,9 @@ fn whole_cover_of(library: &Library, id: AlbumId) -> Option<Arc<Image>> {
     }
 }
 
-fn decoded_portrait(library: &Library, id: ArtistId) -> Option<Portrait> {
+fn drawn_portrait(library: &Library, id: ArtistId, side: NonZeroU32) -> Option<Picture> {
     match library.portrait(id) {
-        Ok(art) => art.as_ref().map(Portrait::of),
+        Ok(art) => art.as_ref().and_then(|art| drawn_square(art, side)),
         Err(error) => {
             tracing::warn!(%error, artist = id.get(), "a portrait could not be read");
             None
@@ -4351,17 +4362,47 @@ pub enum Drawn {
 }
 
 impl Drawn {
-    fn side(self) -> NonZeroU32 {
-        let twice = |drawn: f32| side(2 * drawn as u32);
-
+    fn cell(self) -> f32 {
         match self {
-            Self::InARow => twice(theme::row_cover()),
-            Self::NowPlaying => twice(theme::now_playing_cover()),
-            Self::InAGrid => twice(theme::grid_cover()),
-            Self::OnThePage => twice(theme::scope_cover()),
+            Self::InARow => theme::row_cover(),
+            Self::NowPlaying => theme::now_playing_cover(),
+            Self::InAGrid => theme::grid_cover(),
+            Self::OnThePage => theme::scope_cover(),
         }
     }
+
+    pub(crate) fn side(self, scale: Scale) -> NonZeroU32 {
+        scale.texels_for(self.cell())
+    }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scale(f32);
+
+impl Scale {
+    pub const ONE: Self = Self(1.0);
+
+    pub fn of(factor: f32) -> Self {
+        if factor.is_finite() && factor > 0.0 {
+            Self(factor)
+        } else {
+            Self::ONE
+        }
+    }
+
+    fn texels_for(self, cell: f32) -> NonZeroU32 {
+        let averaged = if self.0 < DRAWN_ONE_TO_ONE_FROM {
+            TEXELS_A_PIXEL_BELOW_TWICE
+        } else {
+            1.0
+        };
+        side((cell * self.0 * averaged).ceil() as u32)
+    }
+}
+
+const TEXELS_A_PIXEL_BELOW_TWICE: f32 = 2.0;
+const DRAWN_ONE_TO_ONE_FROM: f32 = 2.0;
+const MAGNIFIED_AT_MOST: NonZeroU32 = side(4_096);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Portrayed {
@@ -4371,7 +4412,7 @@ pub enum Portrayed {
 }
 
 impl Portrayed {
-    const fn drawn(self) -> Drawn {
+    pub(crate) const fn drawn(self) -> Drawn {
         match self {
             Self::InARow => Drawn::InARow,
             Self::InAGrid => Drawn::InAGrid,
@@ -4380,99 +4421,39 @@ impl Portrayed {
     }
 }
 
-struct Sizing<'a, F> {
-    art: &'a CoverArt,
-    drawing: Option<Drawing>,
-    scaled: F,
-    as_it_came: OnceCell<Arc<Image>>,
+pub(crate) type Picture = Arc<RenderImage>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct AtSide<K> {
+    pub(crate) key: K,
+    pub(crate) side: NonZeroU32,
 }
 
-impl<'a, F: Fn(&Drawing, NonZeroU32) -> Option<CoverArt>> Sizing<'a, F> {
-    fn of(art: &'a CoverArt, scaled: F) -> Self {
-        Self {
-            art,
-            drawing: Drawing::of(art),
-            scaled,
-            as_it_came: OnceCell::new(),
-        }
-    }
-
-    fn at(&self, drawn: Drawn) -> Arc<Image> {
-        match self
-            .drawing
-            .as_ref()
-            .and_then(|drawing| (self.scaled)(drawing, drawn.side()))
-        {
-            Some(drawn) => Arc::new(Image::from_bytes(painted(drawn.format), drawn.bytes)),
-            None => Arc::clone(self.as_it_came.get_or_init(|| whole_of(self.art))),
-        }
-    }
+pub(crate) fn picture_of(raster: Raster) -> Option<Picture> {
+    let Raster {
+        width,
+        height,
+        bgra,
+    } = raster;
+    let held = image::RgbaImage::from_raw(width, height, bgra)?;
+    Some(Arc::new(RenderImage::new(vec![image::Frame::new(held)])))
 }
 
-#[derive(Clone)]
-pub(crate) struct Art {
-    in_a_row: Arc<Image>,
-    now_playing: Arc<Image>,
-    in_a_grid: Arc<Image>,
-    on_the_page: Arc<Image>,
+pub(crate) fn drawn_within(art: &CoverArt, side: NonZeroU32) -> Option<Picture> {
+    picture_of(Drawing::of(art)?.no_larger_than(side)?)
 }
 
-impl Art {
-    pub(crate) fn of(art: &CoverArt) -> Self {
-        let sizing = Sizing::of(art, Drawing::no_larger_than);
-
-        Self {
-            in_a_row: sizing.at(Drawn::InARow),
-            now_playing: sizing.at(Drawn::NowPlaying),
-            in_a_grid: sizing.at(Drawn::InAGrid),
-            on_the_page: sizing.at(Drawn::OnThePage),
-        }
-    }
-
-    pub(crate) fn drawn(&self, drawn: Drawn) -> Arc<Image> {
-        match drawn {
-            Drawn::InARow => Arc::clone(&self.in_a_row),
-            Drawn::NowPlaying => Arc::clone(&self.now_playing),
-            Drawn::InAGrid => Arc::clone(&self.in_a_grid),
-            Drawn::OnThePage => Arc::clone(&self.on_the_page),
-        }
-    }
+pub(crate) fn drawn_square(art: &CoverArt, side: NonZeroU32) -> Option<Picture> {
+    picture_of(Drawing::of(art)?.squared(side)?)
 }
 
-#[derive(Clone)]
-pub(crate) struct Portrait {
-    in_a_row: Arc<Image>,
-    in_a_grid: Arc<Image>,
-    on_the_page: Arc<Image>,
-}
-
-impl Portrait {
-    pub(crate) fn of(art: &CoverArt) -> Self {
-        let sizing = Sizing::of(art, Drawing::squared);
-
-        Self {
-            in_a_row: sizing.at(Portrayed::InARow.drawn()),
-            in_a_grid: sizing.at(Portrayed::InAGrid.drawn()),
-            on_the_page: sizing.at(Portrayed::OnThePage.drawn()),
-        }
-    }
-
-    pub(crate) fn portrayed(&self, portrayed: Portrayed) -> Arc<Image> {
-        match portrayed {
-            Portrayed::InARow => Arc::clone(&self.in_a_row),
-            Portrayed::InAGrid => Arc::clone(&self.in_a_grid),
-            Portrayed::OnThePage => Arc::clone(&self.on_the_page),
-        }
-    }
-}
-
-pub(crate) fn whole_of(art: &CoverArt) -> Arc<Image> {
-    Arc::new(Image::from_bytes(painted(art.format), art.bytes.clone()))
+pub(crate) fn magnified_of(art: &CoverArt) -> Option<Picture> {
+    drawn_within(art, MAGNIFIED_AT_MOST)
 }
 
 pub(crate) enum Magnifying<K> {
     Reading(K),
-    Read(K, Option<Arc<Image>>),
+    Read(K, Option<Picture>),
 }
 
 impl<K: PartialEq> Magnifying<K> {
@@ -4482,7 +4463,7 @@ impl<K: PartialEq> Magnifying<K> {
         }
     }
 
-    pub(crate) fn whole(&self) -> Option<Arc<Image>> {
+    pub(crate) fn whole(&self) -> Option<Picture> {
         match self {
             Self::Reading(_) => None,
             Self::Read(_, whole) => whole.clone(),
@@ -4492,6 +4473,12 @@ impl<K: PartialEq> Magnifying<K> {
 
 pub(crate) trait Forget {
     fn forget(self, cx: &mut App);
+}
+
+impl Forget for Picture {
+    fn forget(self, cx: &mut App) {
+        cx.drop_image(self, None);
+    }
 }
 
 impl Forget for Arc<Image> {
@@ -4516,38 +4503,12 @@ impl<T: Forget> Forget for Leaving<T> {
     }
 }
 
-impl Forget for Art {
-    fn forget(self, cx: &mut App) {
-        for drawn in [self.in_a_row, self.now_playing, self.in_a_grid] {
-            drawn.forget(cx);
-        }
-    }
-}
-
-impl Forget for Portrait {
-    fn forget(self, cx: &mut App) {
-        for drawn in [self.in_a_row, self.in_a_grid] {
-            drawn.forget(cx);
-        }
-    }
-}
-
 impl<K> Forget for Magnifying<K> {
     fn forget(self, cx: &mut App) {
         match self {
             Self::Reading(_) => {}
             Self::Read(_, whole) => whole.forget(cx),
         }
-    }
-}
-
-pub(crate) const fn painted(format: ImageFormat) -> gpui::ImageFormat {
-    match format {
-        ImageFormat::Jpeg => gpui::ImageFormat::Jpeg,
-        ImageFormat::Png => gpui::ImageFormat::Png,
-        ImageFormat::Webp => gpui::ImageFormat::Webp,
-        ImageFormat::Gif => gpui::ImageFormat::Gif,
-        ImageFormat::Bmp => gpui::ImageFormat::Bmp,
     }
 }
 

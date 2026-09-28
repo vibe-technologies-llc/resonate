@@ -525,7 +525,11 @@ fn cutoff_share(analysis: &Analysis, nyquist_hz: f32) -> Option<f32> {
     (nyquist_hz > 0.0).then(|| (cutoff.hz as f32 / nyquist_hz).clamp(0.0, 1.0))
 }
 
-fn spectrogram_card(analysis: &Analysis, painted: Option<Arc<gpui::Image>>, played: f32) -> Div {
+fn spectrogram_card(
+    analysis: &Analysis,
+    painted: Option<crate::models::Picture>,
+    played: f32,
+) -> Div {
     let nyquist = analysis.spectrogram.nyquist_hz();
     let marks = frequency_marks(nyquist);
     let cutoff = cutoff_share(analysis, nyquist as f32);

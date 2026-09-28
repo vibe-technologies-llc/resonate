@@ -23,7 +23,7 @@ pub use resonate_analysis::{
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,
     FormatHint, Hinting, ImageFormat, LocalFiles, Media, MediaInfo, MediaProvider, MediaStream,
-    PacketSpan, Packing, Percentiles, Reading, ReplayGain, Sources, StreamProfile, TagSet,
+    PacketSpan, Packing, Percentiles, Raster, Reading, ReplayGain, Sources, StreamProfile, TagSet,
     TopLevelBox, Variability, WINDOW,
 };
 pub use resonate_core::{

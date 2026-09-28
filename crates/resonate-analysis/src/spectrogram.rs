@@ -1,16 +1,9 @@
-use std::io::Cursor;
-
-use image::{
-    ExtendedColorType, ImageEncoder,
-    codecs::png::{CompressionType, FilterType, PngEncoder},
-};
-use resonate_codec::{CoverArt, ImageFormat};
+use resonate_codec::Raster;
 use resonate_core::Frames;
 
-use crate::{
-    Error, Result,
-    reduce::{Absorbs, Doubling},
-};
+use crate::reduce::{Absorbs, Doubling};
+
+const OPAQUE_BGRA: [u8; 4] = [0, 0, 0, u8::MAX];
 
 pub const SPECTROGRAM_COLUMNS: usize = 1_024;
 
@@ -175,35 +168,21 @@ impl Spectrogram {
             .flatten()
     }
 
-    pub fn painted(&self, ramp: &Ramp) -> Result<CoverArt> {
+    pub fn painted(&self, ramp: &Ramp) -> Raster {
         let width = self.columns.max(1);
-        let mut pixels = Vec::with_capacity(width * SPECTROGRAM_ROWS * 3);
+        let mut bgra = Vec::with_capacity(width * SPECTROGRAM_ROWS * OPAQUE_BGRA.len());
         for row in (0..SPECTROGRAM_ROWS).rev() {
             for column in 0..width {
-                pixels.extend(ramp.colour(self.level(column, row).unwrap_or(0)));
+                let [red, green, blue] = ramp.colour(self.level(column, row).unwrap_or(0));
+                bgra.extend([blue, green, red, OPAQUE_BGRA[3]]);
             }
         }
 
-        let mut bytes = Vec::new();
-        PngEncoder::new_with_quality(
-            Cursor::new(&mut bytes),
-            CompressionType::Fast,
-            FilterType::Adaptive,
-        )
-        .write_image(
-            &pixels,
-            width as u32,
-            SPECTROGRAM_ROWS as u32,
-            ExtendedColorType::Rgb8,
-        )
-        .map_err(|source| Error::Painted {
-            source: Box::new(source),
-        })?;
-
-        Ok(CoverArt {
-            format: ImageFormat::Png,
-            bytes,
-        })
+        Raster {
+            width: u32::try_from(width).unwrap_or(u32::MAX),
+            height: SPECTROGRAM_ROWS as u32,
+            bgra,
+        }
     }
 }
 
@@ -250,11 +229,19 @@ mod tests {
         assert_eq!(spectrogram.level(3, 200), Some(0));
         assert_eq!(spectrogram.level(3, SPECTROGRAM_ROWS), None);
 
-        let painted = spectrogram
-            .painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]))
-            .expect("a picture");
-        assert_eq!(painted.format, ImageFormat::Png);
-        let read = image::load_from_memory(&painted.bytes).expect("a readable picture");
-        assert_eq!((read.width(), read.height()), (10, SPECTROGRAM_ROWS as u32));
+        let painted = spectrogram.painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]));
+        assert_eq!(
+            (painted.width, painted.height),
+            (10, SPECTROGRAM_ROWS as u32)
+        );
+        assert_eq!(painted.bgra.len(), 10 * SPECTROGRAM_ROWS * 4);
+        assert!(
+            painted
+                .bgra
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[3] == u8::MAX)
+        );
     }
 }

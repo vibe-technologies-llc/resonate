@@ -44,16 +44,12 @@ that no listener is waiting on, and is worked only once the categories above it 
   analysis plots, the equaliser curve — through a window-sized 4× MSAA texture it clears and
   resolves each frame, which costs an integrated GPU far more than the paths themselves. Only a
   newer gpui or drawing those plots without `paint_path` avoids it
-- A picture the caches let go of leaves its tile in gpui's sprite atlas, so GPU memory grows with
-  every distinct cover drawn in a run. Freeing it means drawing covers from a `RenderImage` the
-  caches own rather than from encoded bytes
 - Every line of a lyric set is laid out on every frame, including the ones faded to nothing; gpui's
   variable-height `list` is the virtualising element that would fix it
-- A cover is decoded once and resized to all three drawn sizes whether or not the grid is opened,
-  at a fixed twice-the-cell that is exact only at a scale factor of 1 or 2
 - A track is opened on the engine thread, so a provider that is not the filesystem can still hold
   a track change for up to `Sources::OPENED_WITHIN`; a stream's reads have no deadline; and a
   picture asked for after its tags landed opens the file a second time
+
 ## Library
 - A file moved by hand and retagged past every name it had, or a cue-cut file, starts again at
   nothing. A file no scan has seen counts nothing — a queue of unscanned files plays and is

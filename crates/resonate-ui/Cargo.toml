@@ -9,6 +9,7 @@ ahash.workspace = true
 crossbeam-channel.workspace = true
 futures-channel.workspace = true
 gpui.workspace = true
+image.workspace = true
 parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-engine.workspace = true

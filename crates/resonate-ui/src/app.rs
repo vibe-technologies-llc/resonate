@@ -9,8 +9,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use gpui::{
-    App, AppContext as _, Application, Bounds, Context, Global, Image, KeyBinding, Task,
-    TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
+    App, AppContext as _, Application, Bounds, Context, Global, KeyBinding, Task, TitlebarOptions,
+    WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId};
 use resonate_engine::{
@@ -26,7 +26,10 @@ use crate::{
     drawing::Drawer,
     format, icons,
     listening::Listens,
-    models::{Art, Drawn, FirstRead, Forget, Magnifying, held, whole_of},
+    models::{
+        AtSide, Drawn, FirstRead, Forget, Magnifying, Picture, Scale, drawn_within, held,
+        magnified_of,
+    },
     recent::Recent,
     settings::{
         Online, Places, Present, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons,
@@ -234,9 +237,10 @@ pub struct PlayerModel {
     carried_lines: Option<usize>,
     queued: Queued,
     reads: u64,
-    pictures: Recent<MediaLocation, Option<Art>>,
-    decoding: AHashSet<MediaLocation>,
-    unsettled: AHashMap<MediaLocation, u64>,
+    pictures: Recent<AtSide<MediaLocation>, Option<Picture>>,
+    decoding: AHashSet<AtSide<MediaLocation>>,
+    unsettled: AHashMap<AtSide<MediaLocation>, u64>,
+    scale: Scale,
     magnified: Option<Magnifying<MediaLocation>>,
     grain: Grain,
     moved: Moved,
@@ -267,6 +271,7 @@ impl PlayerModel {
             pictures: Recent::new(PICTURES_HELD),
             decoding: AHashSet::new(),
             unsettled: AHashMap::new(),
+            scale: Scale::ONE,
             magnified: None,
             grain: Grain::default(),
             moved: Moved::default(),
@@ -365,75 +370,39 @@ impl PlayerModel {
         self.player.media(location, span)
     }
 
+    pub fn scaled_by(&mut self, scale: Scale) {
+        self.scale = scale;
+    }
+
     pub fn art(
         &mut self,
         location: &MediaLocation,
         drawn: Drawn,
         cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
-        self.art_of(location, cx).map(|art| art.drawn(drawn))
-    }
-
-    pub fn whole_art(
-        &mut self,
-        location: &MediaLocation,
-        cx: &mut Context<Self>,
-    ) -> Option<Arc<Image>> {
-        if let Some(magnified) = &self.magnified
-            && magnified.names(location)
-        {
-            return magnified.whole();
-        }
-        self.magnified
-            .replace(Magnifying::Reading(location.clone()))
-            .forget(cx);
-
-        let player = Arc::clone(&self.player);
-        let wanted = location.clone();
-        let asked = location.clone();
-        cx.spawn(async move |this, cx| {
-            let read = cx
-                .background_executor()
-                .spawn(async move { player.art(&asked).map(|art| whole_of(art.as_ref())) })
-                .await;
-            let landed = this.update(cx, |this, cx| {
-                if this
-                    .magnified
-                    .as_ref()
-                    .is_some_and(|held| held.names(&wanted))
-                {
-                    this.magnified
-                        .replace(Magnifying::Read(wanted, read))
-                        .forget(cx);
-                    cx.notify();
-                }
-            });
-            let _ = landed;
-        })
-        .detach();
-        None
-    }
-
-    fn art_of(&mut self, location: &MediaLocation, cx: &mut Context<Self>) -> Option<Art> {
-        if let Some(held) = self.pictures.get(location) {
+    ) -> Option<Picture> {
+        let wanted = AtSide {
+            key: location.clone(),
+            side: drawn.side(self.scale),
+        };
+        if let Some(held) = self.pictures.get(&wanted) {
             return held.clone();
         }
-        if self.decoding.contains(location)
+        if self.decoding.contains(&wanted)
             || self.decoding.len() >= DECODES_AT_ONCE
-            || self.unsettled.get(location) == Some(&self.reads)
+            || self.unsettled.get(&wanted) == Some(&self.reads)
         {
             return None;
         }
-        self.decoding.insert(location.clone());
+        self.decoding.insert(wanted.clone());
 
         let player = Arc::clone(&self.player);
-        let wanted = location.clone();
         let asked = location.clone();
         let asked_at = self.reads;
+        let side = wanted.side;
         let drawing = cx
             .global::<Drawer>()
             .draw(move || match player.art_read(&asked) {
-                ArtRead::Answered(art) => Some(Some(Art::of(art.as_ref()))),
+                ArtRead::Answered(art) => Some(drawn_within(art.as_ref(), side)),
                 ArtRead::Nothing => Some(None),
                 ArtRead::NotYet => None,
             });
@@ -451,6 +420,50 @@ impl PlayerModel {
                     }
                 }
                 cx.notify();
+            });
+            let _ = landed;
+        })
+        .detach();
+        None
+    }
+
+    pub fn whole_art(
+        &mut self,
+        location: &MediaLocation,
+        cx: &mut Context<Self>,
+    ) -> Option<Picture> {
+        if let Some(magnified) = &self.magnified
+            && magnified.names(location)
+        {
+            return magnified.whole();
+        }
+        self.magnified
+            .replace(Magnifying::Reading(location.clone()))
+            .forget(cx);
+
+        let player = Arc::clone(&self.player);
+        let wanted = location.clone();
+        let asked = location.clone();
+        let drawing = cx.global::<Drawer>().draw(move || {
+            player
+                .art(&asked)
+                .and_then(|art| magnified_of(art.as_ref()))
+        });
+        cx.spawn(async move |this, cx| {
+            let read = drawing.await.flatten();
+            let landed = this.update(cx, |this, cx| {
+                if this
+                    .magnified
+                    .as_ref()
+                    .is_some_and(|held| held.names(&wanted))
+                {
+                    this.magnified
+                        .replace(Magnifying::Read(wanted, read))
+                        .forget(cx);
+                    cx.notify();
+                } else {
+                    read.forget(cx);
+                }
             });
             let _ = landed;
         })

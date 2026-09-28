@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf, sync::Arc, time::SystemTime};
 
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, Image, MouseButton,
+    AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
     PathPromptOptions, Pixels, Point, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
     uniform_list,
 };
@@ -13,6 +13,7 @@ use smallvec::smallvec;
 use crate::{
     Drawn, Notice, Selection, format,
     icons::{self, Icon},
+    models::Picture,
     theme,
     views::{
         browser::{self, OPEN_ARTIST_HINT, row_controls},
@@ -1861,7 +1862,7 @@ impl RootView {
         side: f32,
         cx: &mut Context<Self>,
     ) -> Div {
-        let drawn: Vec<Arc<Image>> = albums
+        let drawn: Vec<Picture> = albums
             .iter()
             .filter_map(|album| {
                 self.library

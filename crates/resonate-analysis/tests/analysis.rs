@@ -160,10 +160,10 @@ fn band_limited_noise_reaching_the_top_is_genuine_and_everything_is_drawn() {
     assert_eq!(analysis.envelope.condensed(1, 300).len(), 300);
     assert!(analysis.spectrogram.columns() > 100);
     assert_eq!(analysis.spectrogram.nyquist_hz(), RATE / 2);
-    analysis
+    let painted = analysis
         .spectrogram
-        .painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]))
-        .expect("a painted spectrogram");
+        .painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]));
+    assert_eq!(painted.width as usize, analysis.spectrogram.columns());
 }
 
 #[test]

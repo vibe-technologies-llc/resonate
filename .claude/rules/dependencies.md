@@ -26,8 +26,11 @@ paths:
   none of gpui, the engine or the library — and `resonate-dsp` on neither of those two, because
   the equaliser's arithmetic is in `resonate-core::eq` precisely so the resampler's test cycle
   stays short — `resonate-mpris` on neither gpui nor the library, and `resonate-ui` on
-  neither `resonate-codec` nor any image crate — gpui draws the cover art and
-  `resonate-codec::Drawing` scales it, reached through the engine's and the library's re-exports.
+  neither `resonate-codec` nor any image decoding — `resonate-codec::Drawing` decodes and scales
+  the cover art into a `Raster`, reached through the engine's and the library's re-exports, and
+  gpui draws it. `resonate-ui` does name `image`, for the `RgbaImage` and `Frame` gpui's
+  `RenderImage` is built out of and nothing else; it is the workspace's one version, which gpui's
+  own requirement resolves to, so the type is the one gpui takes.
   `resonate-online` is reached by the binary alone, as an optional dependency behind its `online`
   feature, so `cargo tree -p resonate-library` stays free of `ureq`, `serde` and `serde_json` and
   the `--exclude resonate-ui --no-default-features` build links no HTTP client. `resonate-mcp`
@@ -81,8 +84,9 @@ paths:
   worth of room. It is not `unicode-segmentation`, which counts graphemes and would still put a
   CJK name one column short per character.
 - `image` carries exactly the five formats `CoverArt` can name — `bmp`, `gif`, `jpeg`, `png`,
-  `webp` — and `png` is load-bearing twice over, because a scaled cover is written back as one. It
-  is `resonate-codec`'s, so the audio-only build compiles it; `resonate-ui` has none of its own.
+  `webp`. It is `resonate-codec`'s, so the audio-only build compiles it; `resonate-ui` names it
+  for the two container types above and decodes nothing through it, and `resonate-analysis`
+  names it not at all, a spectrogram being painted straight into a `Raster`.
 - `proptest` is a dev-dependency of `resonate-core`, `resonate-library` and `resonate-ui` and of
   nothing else, and it drops the default set for `std` alone: the defaults bring `fork` and
   `timeout`, which pull `rusty-fork`, `tempfile` and `wait-timeout` in to run each case in a child

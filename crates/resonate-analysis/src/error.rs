@@ -19,12 +19,6 @@ pub enum Error {
 
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
-
-    #[error("the spectrogram could not be painted")]
-    Painted {
-        #[source]
-        source: Box<image::ImageError>,
-    },
 }
 
 impl Error {

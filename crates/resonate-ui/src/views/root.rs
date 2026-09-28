@@ -8,8 +8,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use gpui::{
     AnyElement, App, BoxShadow, Canvas, Context, Div, ElementId, Entity, FocusHandle, Focusable,
-    Image, KeyDownEvent, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ObjectFit,
-    Pixels, Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ObjectFit, Pixels,
+    Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
     UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{AlbumId, MediaLocation, PlaylistId, Span, Volume};
@@ -36,6 +36,7 @@ use crate::{
     format,
     icons::{self, Icon},
     listening::ListenModel,
+    models::{Picture, Scale},
     theme,
     toast::{self, Toaster},
     views::{
@@ -477,6 +478,7 @@ pub struct RootView {
     typing_stops: Task<()>,
     pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
+    scale: Scale,
     pub(crate) resolved: RefCell<Option<Resolved>>,
     pub(crate) focus: FocusHandle,
     search: Entity<Field>,
@@ -488,7 +490,7 @@ pub struct RootView {
     parts: Parts,
 }
 
-pub(crate) fn framed_cover(art: Option<Arc<Image>>, side: f32) -> Div {
+pub(crate) fn framed_cover(art: Option<Picture>, side: f32) -> Div {
     let frame = div()
         .flex()
         .flex_none()
@@ -847,6 +849,7 @@ impl RootView {
             typing_stops: Task::ready(()),
             queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
+            scale: Scale::ONE,
             resolved: RefCell::new(None),
             focus,
             search,
@@ -3182,7 +3185,7 @@ impl RootView {
         pictured: Pictured<'_>,
         drawn: Drawn,
         cx: &mut Context<Self>,
-    ) -> Option<(Arc<Image>, Magnified)> {
+    ) -> Option<(Picture, Magnified)> {
         let (album, file) = match pictured {
             Pictured::Album(album) => (Some(album), None),
             Pictured::Track { album, file } => (album, Some(file)),
@@ -3203,7 +3206,7 @@ impl RootView {
         Some((art, Magnified::File(file.clone())))
     }
 
-    fn magnified_art(&self, magnified: &Magnified, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    fn magnified_art(&self, magnified: &Magnified, cx: &mut Context<Self>) -> Option<Picture> {
         match magnified {
             Magnified::Album(album) => self
                 .library
@@ -3308,10 +3311,24 @@ impl Focusable for RootView {
     }
 }
 
+impl RootView {
+    fn follow_the_scale(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let scale = Scale::of(window.scale_factor());
+        if scale == self.scale {
+            return;
+        }
+        self.scale = scale;
+        self.library
+            .update(cx, |library, _| library.scaled_by(scale));
+        self.player.update(cx, |player, _| player.scaled_by(scale));
+    }
+}
+
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         hint::asking(self.hints_are_wanted(cx));
         self.drawn_at = SystemTime::now();
+        self.follow_the_scale(window, cx);
         self.player
             .read(cx)
             .listen_in(self.pane == Pane::Visualiser);

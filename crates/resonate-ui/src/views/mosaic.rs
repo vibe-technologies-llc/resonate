@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use gpui::{
-    Background, Div, FontWeight, Image, ObjectFit, SharedString, div, img, linear_color_stop,
+    Background, Div, FontWeight, ObjectFit, SharedString, div, img, linear_color_stop,
     linear_gradient, prelude::*, px, rgb,
 };
 use resonate_core::Accent;
 
 use crate::{
     icons::{self, Icon},
+    models::Picture,
     theme,
 };
 
@@ -36,7 +37,7 @@ const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 pub(crate) struct Mosaic<'a> {
-    pub(crate) drawn: &'a [Arc<Image>],
+    pub(crate) drawn: &'a [Picture],
     pub(crate) ground: (Accent, Accent),
     pub(crate) mark: Icon,
     pub(crate) name: &'a str,
@@ -140,7 +141,7 @@ fn ground(from: u32, to: u32) -> Background {
     )
 }
 
-fn tiled(drawn: &[Arc<Image>], side: f32, (from, to): (u32, u32), framed: Framed) -> Div {
+fn tiled(drawn: &[Picture], side: f32, (from, to): (u32, u32), framed: Framed) -> Div {
     let mut grid = div().flex().flex_wrap().size(px(side));
     for at in 0..TILES {
         let corner = Corner::of_tile(at, framed);

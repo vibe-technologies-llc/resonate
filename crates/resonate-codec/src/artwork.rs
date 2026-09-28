@@ -1,4 +1,4 @@
-use std::{io::Cursor, num::NonZeroU32, sync::LazyLock};
+use std::{num::NonZeroU32, sync::LazyLock};
 
 use image::{DynamicImage, RgbImage, RgbaImage};
 
@@ -37,6 +37,28 @@ type Linear = [f32; RGBA];
 pub struct Drawing(Decoded);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Raster {
+    pub width: u32,
+    pub height: u32,
+    pub bgra: Vec<u8>,
+}
+
+impl Raster {
+    pub fn of(rgba: RgbaImage) -> Self {
+        let (width, height) = rgba.dimensions();
+        let mut bgra = rgba.into_raw();
+        for pixel in bgra.as_chunks_mut::<RGBA>().0 {
+            pixel.swap(0, 2);
+        }
+        Self {
+            width,
+            height,
+            bgra,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Likeness([u8; LIKENESS_BYTES]);
 
 impl Likeness {
@@ -72,14 +94,20 @@ impl Drawing {
         })
     }
 
-    pub fn no_larger_than(&self, side: NonZeroU32) -> Option<CoverArt> {
+    pub fn no_larger_than(&self, side: NonZeroU32) -> Option<Raster> {
         let plane = self.plane();
-        let (width, height) = sides_within(plane.width, plane.height, side.get())?;
-
-        written_as_png(&drawn_smaller(plane, width, height))
+        if plane.width == 0 || plane.height == 0 {
+            return None;
+        }
+        Some(Raster::of(
+            match sides_within(plane.width, plane.height, side.get()) {
+                Some((width, height)) => drawn_smaller(plane, width, height),
+                None => plane.to_rgba(),
+            },
+        ))
     }
 
-    pub fn squared(&self, side: NonZeroU32) -> Option<CoverArt> {
+    pub fn squared(&self, side: NonZeroU32) -> Option<Raster> {
         let plane = self.plane();
         let square = plane.width.min(plane.height);
         if square == 0 {
@@ -96,7 +124,7 @@ impl Drawing {
             cropped.to_rgba()
         };
 
-        written_as_png(&drawn)
+        Some(Raster::of(drawn))
     }
 
     pub fn likeness(&self) -> Option<Likeness> {
@@ -368,20 +396,6 @@ fn eight_bit(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * EIGHT_BIT_FULL_SCALE).round() as u8
 }
 
-fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {
-    let mut bytes = Vec::new();
-    match drawn.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) {
-        Ok(()) => Some(CoverArt {
-            format: ImageFormat::Png,
-            bytes,
-        }),
-        Err(error) => {
-            tracing::warn!(%error, "cover art could not be written for drawing");
-            None
-        }
-    }
-}
-
 const fn read_as(format: ImageFormat) -> image::ImageFormat {
     match format {
         ImageFormat::Jpeg => image::ImageFormat::Jpeg,
@@ -394,15 +408,25 @@ const fn read_as(format: ImageFormat) -> image::ImageFormat {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
+    use std::{io::Cursor, num::NonZeroU32};
 
     use image::{RgbImage, Rgba, Rgba32FImage, RgbaImage, imageops::FilterType};
 
     use super::{
         CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LINEAR_FROM_EIGHT_BIT,
         Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb, sides_within, srgb_from_linear,
-        written_as_png,
     };
+
+    fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {
+        let mut bytes = Vec::new();
+        drawn
+            .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .ok()?;
+        Some(CoverArt {
+            format: ImageFormat::Png,
+            bytes,
+        })
+    }
 
     fn speckled(width: u32, height: u32) -> RgbaImage {
         let mut state = 0x2545_f491_u32;
@@ -469,12 +493,8 @@ mod tests {
             .no_larger_than(side)
             .expect("the cover shrinks");
 
-        assert_eq!(drawn.format, ImageFormat::Png);
-
-        let read = image::load_from_memory_with_format(&drawn.bytes, image::ImageFormat::Png)
-            .expect("the cover reads back");
-
-        assert_eq!((read.width(), read.height()), (128, 64));
+        assert_eq!((drawn.width, drawn.height), (128, 64));
+        assert_eq!(drawn.bgra.len(), 128 * 64 * 4);
     }
 
     #[test]
@@ -484,10 +504,8 @@ mod tests {
             .expect("a flat image reads back")
             .squared(side)
             .expect("the picture is cropped");
-        let read = image::load_from_memory_with_format(&drawn.bytes, image::ImageFormat::Png)
-            .expect("the picture reads back");
 
-        assert_eq!((read.width(), read.height()), (64, 64));
+        assert_eq!((drawn.width, drawn.height), (64, 64));
     }
 
     #[test]
@@ -497,10 +515,8 @@ mod tests {
             .expect("a flat image reads back")
             .squared(side)
             .expect("the picture is cropped");
-        let read = image::load_from_memory_with_format(&drawn.bytes, image::ImageFormat::Png)
-            .expect("the picture reads back");
 
-        assert_eq!((read.width(), read.height()), (40, 40));
+        assert_eq!((drawn.width, drawn.height), (40, 40));
     }
 
     #[test]
@@ -510,13 +526,28 @@ mod tests {
             .expect("a flat image reads back")
             .no_larger_than(side)
             .expect("the cover shrinks");
-        let read = image::load_from_memory_with_format(&drawn.bytes, image::ImageFormat::Png)
-            .expect("the cover reads back")
-            .to_rgba8();
 
-        for pixel in read.pixels() {
-            assert_eq!(pixel.0, [137, 137, 137, 255]);
+        for pixel in drawn.bgra.as_chunks::<4>().0 {
+            assert_eq!(pixel, &[137, 137, 137, 255]);
         }
+    }
+
+    #[test]
+    fn a_drawn_cover_is_handed_over_blue_first_as_the_atlas_holds_it() {
+        let red = RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
+        let drawn = Drawing::of(&written_as_png(&red).expect("a red square is written"))
+            .expect("a red square reads back")
+            .no_larger_than(NonZeroU32::new(8).expect("8 is not zero"))
+            .expect("a red square is drawn");
+
+        assert!(
+            drawn
+                .bgra
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel == &[0, 0, 255, 255])
+        );
     }
 
     #[test]

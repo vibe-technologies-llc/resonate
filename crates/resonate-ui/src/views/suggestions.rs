@@ -350,7 +350,7 @@ impl RootView {
         on_a_card: bool,
         cx: &mut Context<Self>,
     ) -> Div {
-        let drawn: Vec<Arc<gpui::Image>> = suggestion
+        let drawn: Vec<crate::models::Picture> = suggestion
             .pictured_by
             .iter()
             .take(PICTURED_BY_AT_MOST)
@@ -376,7 +376,7 @@ impl RootView {
         album: AlbumId,
         drawn: Drawn,
         cx: &mut Context<Self>,
-    ) -> Option<Arc<gpui::Image>> {
+    ) -> Option<crate::models::Picture> {
         self.library
             .update(cx, |library, cx| library.cover(album, drawn, cx))
     }

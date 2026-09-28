@@ -4967,7 +4967,6 @@ dependencies = [
 name = "resonate-analysis"
 version = "0.1.0"
 dependencies = [
- "image",
  "resonate-codec",
  "resonate-core",
  "resonate-dsp",
@@ -5188,6 +5187,7 @@ dependencies = [
  "crossbeam-channel",
  "futures-channel",
  "gpui",
+ "image",
  "parking_lot",
  "proptest",
  "resonate-core",

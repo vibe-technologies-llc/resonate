@@ -6,7 +6,8 @@ paths:
 # The window
 
 `resonate-ui` is GPUI on Wayland. It depends on the engine, the library, the lyrics and `resonate-listen`, and on
-neither `resonate-codec` nor any image crate; a `Reference` reaches it only as the trait object
+neither `resonate-codec` nor any image decoding — it names `image` for the frame gpui's
+`RenderImage` is built out of and nothing more; a `Reference` reaches it only as the trait object
 the binary hands `run` inside `Lookups`, so it never names the online crate either.
 
 ## Chrome and input
@@ -644,26 +645,27 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   catalog, the first frame with the albums in it finished 105 ms after `main` where it had
   finished at 112 to 122, and no frame is drawn empty first; the rest of that start is gpui's own
   font scan and device creation, which nothing here reaches.
-- **gpui draws cover art and `resonate-codec` is what scales one, so `resonate-ui` still carries no
-  image crate.** `gpui::Image::from_bytes` takes the format and the bytes the library already
-  stored, which is why `resonate-library` records the format on scan rather than leaving a decoder
-  to sniff it. A picture out of the tag catalog arrives the same way, through `CoverArt` re-exported
-  by `resonate-engine`, so `resonate-ui` takes no dependency on `resonate-codec` — it reaches
-  `Drawing` through the same two re-exports. Each is read once and held in a `Recent` keyed by the
-  album or the file, because a fresh `Arc<Image>` every frame would defeat gpui's own cache. The
-  read and the decode run on `Drawer`'s two threads rather than on the background executor: a miss
-  puts the key in the model's `decoding` set and hands the work over, the cell draws its placeholder
-  disc until the picture lands,
+- **`resonate-codec` decodes and scales cover art, and gpui is handed the pixels.**
+  `Drawing::no_larger_than` and `Drawing::squared` answer a `Raster` — its width, its height and
+  its pixels already in the blue-first order gpui's atlas holds — and `models::picture_of` wraps it
+  in a `RenderImage`, so a cover is decoded once, by us, and never written back out as a PNG for
+  gpui to decode again. A picture out of the tag catalog arrives the same way, through `CoverArt`
+  re-exported by `resonate-engine`. Each is read once and held in a `Recent` keyed by the album,
+  the artist or the file *and the side it was drawn at*, because a fresh `Arc<RenderImage>` every
+  frame would be a new texture every frame. The read and the decode run on `Drawer`'s two threads
+  rather than on the background executor: a miss puts the key in the model's `decoding` set and
+  hands the work over, the cell draws its placeholder disc until the picture lands,
   and the landing notifies the model, so a screen of unread covers costs the render thread nothing
   and a picture a file does not carry is cached as a miss rather than asked for on every frame.
   **A file's picture is cached only once the engine has settled it.** `Player::art` answers nothing
-  on the ask that queues the read, so `PlayerModel::art_of` reads `Player::art_read` — `NotYet`,
+  on the ask that queues the read, so `PlayerModel::art` reads `Player::art_read` — `NotYet`,
   `Answered` or `Nothing`, the shape `TagsRead` has — and a `NotYet` is kept in `unsettled` against
   the `media_revision` it was asked at rather than in `pictures`, and asked again once the revision
   moves. Caching that first `None` as a miss is what left the playback bar's cover empty for any
   file the catalog does not cover, even one carrying its own picture.
   `LibraryModel::warm_the_covers` fills the album cache ahead of the grid once a run:
-  `COVERS_WARMED` albums that declare a picture, decoded one at a time in a task of its own, so a
+  `COVERS_WARMED` albums that declare a picture, drawn at the grid's side and decoded one at a
+  time in a task of its own, so a
   scroll into a library already has its covers rather than decoding them as the cells arrive. One at
   a time is the whole of how it stays out of the way — it never has more than one decode queued,
   so a cell actually on screen waits behind at most one warming cover —
@@ -686,31 +688,31 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   than dropping it. The allocator was weighed as well and lost: mimalloc (v3 and v2) and jemalloc
   each settled higher than glibc on this workload — 575, 470 and 345 MB — because a worker that
   decodes and then idles never gives back what its thread cache holds.
-- **What a cache lets go of, gpui is told to let go of too.** gpui decodes every `Arc<Image>` an
-  `img` is handed into its own asset cache, keyed by the image's bytes, and nothing in it ever
-  evicts: a cover the album cache had long dropped stayed decoded for the rest of the run, at three
-  sizes, beside every magnified picture and every painted spectrogram. `Recent::insert` hands back
-  what it pushed out or wrote over as a `Leaving`, and `Forget` turns that into `Image::remove_asset`
-  — for the album covers, the portraits, the per-file pictures, the magnified picture a new one
-  replaces and the spectrogram a new painting replaces — so what is decoded is bounded by what the
-  caches hold. A picture still on screen that is forgotten is only decoded again. The sprite
-  atlas's tile for it is not freed, because `drop_image` wants the `RenderImage`, which gpui hands
-  out only through a `Window` and only by starting a decode of whatever size was never drawn;
-  `docs/TODO.md` has it.
-- **A cover is drawn at twice the size it is shown, because the GPU's sampler is all that stands
-  between the texture and the cell.** gpui's atlas sampler is bilinear with no mipmaps, so it reads
-  four texels however far it is reducing: a 1280-pixel cover in a 22-pixel cell was point-sampled
-  and crawled. `Art` holds one image per cell a cover is drawn in — `Drawn::InARow` at twice
-  `ROW_COVER`, `Drawn::NowPlaying` at twice `NOW_PLAYING_COVER` and `Drawn::InAGrid` at twice
-  `GRID_COVER` — and `Drawing` decodes the cover once to write all three. Twice the cell is the
-  size that matters: at a scale factor of 1 the sampler's four texels are exactly the 2x2 it should
-  average, and at 2 the texture is drawn 1:1. Measured against a true area average over this
-  library's covers, that is about sixteen times closer than handing the sampler the whole cover,
-  where a 128-pixel thumbnail was only a third closer. The scaling is `CatmullRom`, run in linear
-  light rather than on the sRGB values, and a cover already
-  smaller than the cell is left alone rather than grown — the one case `Art` falls back to the
-  picture as it came, built once under a `OnceCell` and shared by whichever of the three wanted it,
-  so a cover large enough to scale copies its source bytes not at all.
+- **What a cache lets go of, gpui is told to let go of too.** A picture is a `RenderImage` the
+  cache owns, so `Recent::insert` hands back what it pushed out or wrote over as a `Leaving`, and
+  `Forget` turns that into `App::drop_image`, which takes the picture's tiles out of every window's
+  sprite atlas — for the album covers, the portraits, the per-file pictures, the magnified
+  picture a new one replaces and the spectrogram a new painting replaces — so what the GPU holds
+  is bounded by what the caches hold, where a cover drawn once stayed in the atlas for the rest of
+  the run. A picture still on screen that is forgotten is only decoded again. The one picture
+  still handed to gpui as encoded bytes is the Listen sheet's, which `Image::remove_asset`
+  forgets.
+- **A cover is drawn at twice the device pixels it is shown at, and at the side it is shown at
+  alone.** gpui's atlas sampler is bilinear with no mipmaps, so it reads four texels however far it
+  is reducing: a 1280-pixel cover in a 22-pixel cell was point-sampled and crawled. `Drawn` names
+  the cell — `InARow`, `NowPlaying`, `InAGrid`, `OnThePage` — and `Drawn::side` asks the window's
+  `Scale` for the texels, which are twice the cell's device pixels below a scale factor of two, so
+  the sampler's four texels are exactly the 2x2 it should average at 1, 1.25 and 1.5 alike, and the
+  device pixels themselves from two on, drawn 1:1. `RootView` hands the scale to both models
+  whenever the window's moves, and a picture is keyed by the side it was drawn at, so a window
+  dragged to another display draws its covers again at the new size rather than stretching the
+  old ones. Nothing is drawn at a size nothing asked for: a picture is decoded for the one cell
+  that wanted it, so a library browsed as rows never pays for the grid's covers, at the cost of a
+  second decode where one album is shown in two cells at once. Measured against a true area
+  average over this library's covers, twice the device pixels is about sixteen times closer than
+  handing the sampler the whole cover, where a 128-pixel thumbnail was only a third closer. The
+  scaling is `CatmullRom`, run in linear light rather than on the sRGB values, and a cover already
+  smaller than the cell is handed over as it came rather than grown.
 - **The resize is `image::imageops::resize`'s arithmetic walked in the order memory is laid
   out.** The crate's vertical pass fixes a column and walks down it, a strided read per tap per
   pixel, and converted every tap to linear light as it went; that was two thirds of a cover's
@@ -725,30 +727,29 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   channel per pixel, exact rather than approximate because the input is an 8-bit channel; what the
   8-bit hold costs is the intermediate precision of a 16-bit PNG, which is quantised on the way in
   and cannot show in a thumbnail written back out as 8-bit.
-- **What the magnifier shows is read when it opens, not kept beside every thumbnail.** `Art` held
-  the source bytes over again so a `whole()` could answer at once — a copy of the original picture
-  per cached entry, across 512 covers, 256 portraits and 256 file pictures, for a view that shows
-  one at a time. `LibraryModel::whole_cover` and `PlayerModel::whole_art` read it on the way in
-  instead and keep one `Magnifying`: the key being read, and then that key with what it read, so a
-  key that answered nothing is not asked again every frame, `magnified_art` being read once a
-  frame for as long as the magnifier is open. It draws its scrim and its title and no picture
-  until the read lands, and nothing else in the window pays for it. Nothing magnifies a portrait,
-  which is why `Portrait` never had a reader for the whole picture at all. The two
-  together take a window on a 435-track library of 1280-pixel covers from 689 MiB to 264.
-- **A portrait is a picture cut square, and it is held apart from the covers.** `Portrait::of`
+- **What the magnifier shows is read when it opens, not kept beside every thumbnail.** Holding the
+  source bytes beside each cached picture so the magnifier could answer at once was a copy of the
+  original per cached entry, for a view that shows one at a time. `LibraryModel::whole_cover` and
+  `PlayerModel::whole_art` read it on the way in instead, drawn no larger than `MAGNIFIED_AT_MOST`
+  on a `Drawer` thread, and keep one `Magnifying`: the key being read, and then that key with what
+  it read, so a key that answered nothing is not asked again every frame, `magnified_art` being
+  read once a frame for as long as the magnifier is open, and a read that lands after another
+  picture was asked for is dropped from the atlas rather than kept. It draws its scrim and its
+  title and no picture until the read lands, and nothing else in the window pays for it. Nothing
+  magnifies a portrait. Together with the covers no longer holding their source that took a
+  window on a 435-track library of 1280-pixel covers from 689 MiB to 264.
+- **A portrait is a picture cut square, and it is held apart from the covers.** `drawn_square`
   draws through `Drawing::squared` where a cover draws through `no_larger_than`: the centred
   square of the shorter side, scaled down to the side asked for and never grown, so what the
-  sampler is handed is already the square the round frame shows. It holds two images rather than
-  `Art`'s three, because a portrait is drawn in a row and in the scoped heading's grid-sized frame
-  and never as the playing track: `LibraryModel::portrait` takes a `Portrayed` — `InARow` or
-  `InAGrid` — so a now-playing size is neither asked for nor paid for, and both share `Sizing`,
-  the one decode and the one fallback to the picture as it came. `LibraryModel::portrait` reads
-  out of `portraits`, a `Recent<ArtistId, Option<Portrait>>` under `PORTRAITS_HELD` of 256 beside the
-  512 covers, decoded on the background executor under the same `DECODES_AT_ONCE` bound with
-  `decoding_portraits` as its in-flight set, and only where `Artist::has_portrait` says there are
-  bytes to read. `browser::portrait_frame` is the round frame — `ObjectFit::Cover` inside a
-  `rounded` div — at `theme::avatar()` in the artists list and `theme::scope_cover()` in the scoped
-  heading, and `kit::avatar` is what draws where there is none.
+  sampler is handed is already the square the round frame shows. `LibraryModel::portrait` takes a
+  `Portrayed` — `InARow`, `InAGrid` or `OnThePage` — whose `Drawn` sets the side, so a
+  now-playing size is never asked for, and reads out of `portraits`, a
+  `Recent<AtSide<ArtistId>, Option<Picture>>` under `PORTRAITS_HELD` of 256 beside the 512
+  covers, drawn on `Drawer` under the same `DECODES_AT_ONCE` bound with `decoding_portraits` as
+  its in-flight set, and only where `Artist::has_portrait` says there are bytes to read.
+  `browser::portrait_frame` is the round frame — `ObjectFit::Cover` inside a `rounded` div — at
+  `theme::avatar()` in the artists list and `theme::scope_cover()` in the scoped heading, and
+  `kit::avatar` is what draws where there is none.
 - **The magnifier's scrim occludes, so the press that closes it closes it and nothing else.** It
   is an `absolute` child painted over the whole app, and without `occlude` its hitbox was one more
   hitbox rather than a wall: the press that shrank the cover also landed on whatever row, cell or
