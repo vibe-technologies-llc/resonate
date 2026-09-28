@@ -72,8 +72,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Search
 - A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
-- The MusicBrainz search for a song not held shares the enrichment's paced client, so a running
-  lookup holds it behind its queue, and nothing says why *Asking MusicBrainz…* stands so long
 
 ## UI
 - A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks

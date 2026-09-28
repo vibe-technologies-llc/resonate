@@ -60,7 +60,14 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   song at most every few seconds, `AUDD_INTERVAL` one second, and `OTHERS_INTERVAL` is 250 ms for
   the rest. The clock is a `Clock` trait — `WallClock`
   in a run, `Faked` under test through `Client::on_clock` — so the pacing is asserted on a fake
-  clock's record of what it was asked to sleep rather than by timing a test.
+  clock's record of what it was asked to sleep rather than by timing a test. **The window's
+  search waits its turn and says so.** A lookup's pass asks MusicBrainz one request at a time and
+  reserves one slot at a time, so a song searched for from the window takes the slot after the
+  one the pass holds — at most an interval and the request in flight behind it, or a busy
+  service's cooling-off where one is under way — rather than a place behind the pass's queue,
+  there being none. What was missing was the reason: the tracks pane's *Asking MusicBrainz…*
+  heading reads `ASKING_BESIDE_A_LOOKUP` wherever the library is enriching, which is the one case
+  the wait is longer than a request.
 - **A 503 or a 429 is asked three more times with the wait doubling, and `Retry-After` is read in
   seconds and capped.** `Client::fetch` retries `SERVICE_UNAVAILABLE` — MusicBrainz's answer to a
   client going too fast — and `TOO_MANY_REQUESTS`, HTTP's own word for it, up to `BUSY_RETRIES`,

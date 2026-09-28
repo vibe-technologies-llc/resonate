@@ -52,6 +52,8 @@ const FIND_THE_RECORD_HINT: &str = "Ask MusicBrainz for the releases named like 
                                     take the one these files are";
 const ASKING_FOR_RELEASES: &str = "Asking MusicBrainz for releases named like this…";
 const NO_RELEASES: &str = "MusicBrainz named no release like this";
+const ASKING_BESIDE_A_LOOKUP: &str = "Asking MusicBrainz, which answers one request a second and \
+                                      is answering the running lookup too…";
 const TAKE_THE_PRESSING_HINT: &str = "Take this pressing for the album in place of the one in use";
 const PRESSING_IN_USE_HINT: &str = "The pressing the album is matched to now";
 const PRESSINGS_SHOWN: usize = 12;
@@ -663,6 +665,7 @@ impl RootView {
         let release_tracks = self.library.read(cx).release_tracks();
         let unheld = self.library.read(cx).unheld();
         let found = self.library.read(cx).found();
+        let shared_with_a_lookup = self.library.read(cx).is_enriching();
         let media: Arc<[HeldMedium]> = self
             .library
             .read(cx)
@@ -766,7 +769,10 @@ impl RootView {
                                             );
                                         }
                                         Some(ListedRow::Beyond(beyond)) => {
-                                            drawn.push(beyond_heading(beyond).into_any_element());
+                                            drawn.push(
+                                                beyond_heading(beyond, shared_with_a_lookup)
+                                                    .into_any_element(),
+                                            );
                                         }
                                         Some(ListedRow::Unheld(at)) => {
                                             let Some(row) = unheld.get(at) else {
@@ -2435,7 +2441,7 @@ fn pressing_note(said: &str) -> Div {
         .child(SharedString::from(said.to_owned()))
 }
 
-fn beyond_heading(beyond: Beyond) -> Div {
+fn beyond_heading(beyond: Beyond, shared_with_a_lookup: bool) -> Div {
     let said = match beyond {
         Beyond::InTheCatalog(rows) => format!(
             "Not in the library · {}",
@@ -2445,6 +2451,7 @@ fn beyond_heading(beyond: Beyond) -> Div {
             "Found on MusicBrainz · {}",
             format::counted(rows, "song", "songs")
         ),
+        Beyond::Asking if shared_with_a_lookup => ASKING_BESIDE_A_LOOKUP.to_owned(),
         Beyond::Asking => "Asking MusicBrainz…".to_owned(),
     };
 
