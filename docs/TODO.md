@@ -113,4 +113,3 @@ that no listener is waiting on, and is worked only once the categories above it 
   warning becomes a hard error in a future rustc. Only a `[patch]` or a newer gpui fixes it
 
 ## Later: Polish
-- A tooltip whose control moved under a perfectly still pointer stays up

@@ -1,11 +1,12 @@
 use std::{
     cell::{Cell, RefCell},
+    hash::{Hash as _, Hasher as _},
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::{AHashMap, AHashSet, AHasher};
 use gpui::{
     AnyElement, App, BoxShadow, Canvas, Context, Div, ElementId, Entity, FocusHandle, Focusable,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ObjectFit, Pixels,
@@ -145,7 +146,7 @@ pub(crate) enum Magnified {
     File(MediaLocation),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Pane {
     Albums,
     Artists,
@@ -200,6 +201,18 @@ impl LeftAt {
 
     fn offset_at(self, row_height: f32) -> Pixels {
         px(-(row_height * (self.row as f32 + self.into_the_row)))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct UnderThePointer {
+    at: Point<Pixels>,
+    laid_out: u64,
+}
+
+impl UnderThePointer {
+    fn moved_since(self, last: Option<Self>) -> bool {
+        last.is_some_and(|last| last.at == self.at && last.laid_out != self.laid_out)
     }
 }
 
@@ -489,6 +502,7 @@ pub struct RootView {
     pub(crate) missing_shows: MissingShows,
     pub(crate) playlists_drawn: PlaylistsDrawn,
     pub(crate) landing_on: Option<LeftAt>,
+    under_the_pointer: Option<UnderThePointer>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
@@ -877,6 +891,7 @@ impl RootView {
             missing_shows: MissingShows::default(),
             playlists_drawn: PlaylistsDrawn::default(),
             landing_on: None,
+            under_the_pointer: None,
             menu: None,
             record: None,
             left_at: AHashMap::new(),
@@ -2141,6 +2156,35 @@ impl RootView {
         if self.controls.lets_go(window) {
             cx.notify();
         }
+    }
+
+    fn laid_out(&self, cx: &App) -> u64 {
+        let library = self.library.read(cx);
+        let mut stamp = AHasher::default();
+        self.pane.hash(&mut stamp);
+        self.settings_category.hash(&mut stamp);
+        self.player.read(cx).queued().revision.hash(&mut stamp);
+        Arc::as_ptr(&library.albums()).cast::<()>().hash(&mut stamp);
+        Arc::as_ptr(&library.artists())
+            .cast::<()>()
+            .hash(&mut stamp);
+        Arc::as_ptr(&library.tracks()).cast::<()>().hash(&mut stamp);
+        library.playlists().len().hash(&mut stamp);
+        if self.pane.lands_where_it_was_left() {
+            let offset = self.scroll_of(self.pane).0.borrow().base_handle.offset();
+            f32::from(offset.y).to_bits().hash(&mut stamp);
+        }
+        stamp.finish()
+    }
+
+    fn moved_under_a_still_pointer(&mut self, window: &Window, cx: &App) -> bool {
+        let under = UnderThePointer {
+            at: window.mouse_position(),
+            laid_out: self.laid_out(cx),
+        };
+        let moved = under.moved_since(self.under_the_pointer);
+        self.under_the_pointer = Some(under);
+        moved
     }
 
     fn hints_are_wanted(&self, cx: &App) -> bool {
@@ -3429,7 +3473,8 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        hint::asking(self.hints_are_wanted(cx));
+        let moved = self.moved_under_a_still_pointer(window, cx);
+        hint::asking(self.hints_are_wanted(cx) && !moved);
         self.drawn_at = SystemTime::now();
         self.follow_the_scale(window, cx);
         self.player
@@ -3673,7 +3718,9 @@ mod tests {
     use gpui::px;
     use resonate_core::{AlbumId, ArtistId};
 
-    use super::{Following, Landing, LeftAt, Pane, Step, in_front_of, landing, stepped_pane};
+    use super::{
+        Following, Landing, LeftAt, Pane, Step, UnderThePointer, in_front_of, landing, stepped_pane,
+    };
     use crate::{Selection, Tabs};
 
     const EVERY_TAB: Tabs = Tabs {
@@ -3692,6 +3739,22 @@ mod tests {
 
     fn an_artist() -> Selection {
         Selection::Artist(ArtistId::new(5).expect("a non-zero id"))
+    }
+
+    #[test]
+    fn a_hint_is_dropped_only_where_what_is_under_a_still_pointer_moved() {
+        let at = gpui::point(px(40.0), px(80.0));
+        let before = UnderThePointer { at, laid_out: 1 };
+        let moved = UnderThePointer { at, laid_out: 2 };
+        let pointer_moved = UnderThePointer {
+            at: gpui::point(px(41.0), px(80.0)),
+            laid_out: 2,
+        };
+
+        assert!(moved.moved_since(Some(before)));
+        assert!(!before.moved_since(Some(before)));
+        assert!(!pointer_moved.moved_since(Some(before)));
+        assert!(!before.moved_since(None));
     }
 
     #[test]

@@ -861,8 +861,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   is scrolled. `hint::asking` is the other half — one atomic, written once a frame by
   `RootView::render` — and where it says no, no builder is attached at all, which is what gpui reads
   as an instruction to drop a live tooltip on its next prepaint. It says no while a slider is grabbed,
-  while the picker or a magnified cover is up, while a row is being dragged, and while the pointer is
-  outside the window. That last one is the reported defect: gpui's `MouseExited` arm is the one that
+  while the picker or a magnified cover is up, while a row is being dragged, while the pointer is
+  outside the window, and for the one frame in which what lies under a pointer that has not moved
+  did: `RootView::laid_out` stamps the pane, the settings category, the queue's revision, the
+  three listings by their `Arc`s, the playlists and the landing list's scroll offset, and
+  `UnderThePointer::moved_since` weighs the stamp and the pointer's position against the frame
+  before — so a row removed from under a still pointer, a pane stepped to from the keyboard or a
+  list scrolled by a key takes the hint that named what used to be there down with it, where gpui,
+  which hit-tests only on a mouse event, would have left it up over the control that took its
+  place. That last one is the reported defect: gpui's `MouseExited` arm is the one that
   does not update `Window::mouse_position`, so a pointer that leaves the window leaves the hint
   believing it is still hovered, and the 16 ms poll draws it there for the rest of the run.
   `RootView::pointer_watch` is a zero-size canvas registering `MouseExitEvent` and `MouseMoveEvent`
