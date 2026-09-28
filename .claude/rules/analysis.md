@@ -115,6 +115,19 @@ it answers could change, because it is what a stored study is weighed against.
   condition is what keeps a gentle slope from reading as a wall, because a slope's loudest band
   above the edge is the one just past it. The highest run of walled edges is taken and the steepest
   in it is the cutoff, so a wall is found where content ends rather than where it first thins.
+- **A wall is looked for twice: in the average and in what a quarter of the windows stay under.**
+  A loud master decoded from a lossy encode clips wherever its overs came back over full scale,
+  and the splatter a clipped run throws across the spectrum fills the average above the
+  encoder's lowpass, so the averaged spectrum of a clipped 128 kbps AAC read *fades out by
+  21.9 kHz* — the wall was still in every window that did not clip. `Transforming` therefore
+  keeps, beside the running sum, a histogram of every loud window's level in each 100 Hz band —
+  a decibel a bucket from the floor to full scale — and `Spectrum::typical` is each band's
+  `TYPICAL_QUANTILE`, a quarter, read back out of it: a level only a window's worth of transient
+  splatter rises above. `judged` runs `wall_in` over both and `lower_of` takes the lower wall where
+  both find one, the one there is where only one does, so a burst no longer hides a cutoff and a
+  steady wall is read where it always was. The histogram is `BUCKETS` counters a band — 350 kB
+  at 44.1 kHz, a megabyte and a half at 192 kHz — and a stored study is judged again under
+  `JUDGED_UNDER` 2. `a_transcode_splattered_above_its_wall_by_clipping_is_still_fake` is the claim.
 - **Where the wall stands is what it means.** At or under `LOSSY_CEILING_HZ`, 19.5 kHz, it is where
   a lossy encoder cuts and the file is `Fake`, with a `LossyGuess` read off LAME's own lowpass
   table; up to `SUSPECT_CEILING_HZ`, 20.7 kHz, it is `Suspect`, the band where a high-bitrate
@@ -136,6 +149,14 @@ it answers could change, because it is what a stored study is weighed against.
   walled at 21.4; a FLAC put through LAME at 128 kbps walled at 16.6 kHz and at 320 kbps at
   20.3; a copy sold as 96/24 walled at 21.9 kHz and read as upsampled from 44.1. Thirty real FLACs
   gave one fake — a web rip walled at 15 kHz — and two suspects at 20.0 and 20.7.
+  **Then against every other encoder there is.** Sixteen CD-rate FLACs, ninety seconds of each,
+  put through ffmpeg's AAC at 128 and 256 kbps, libopus at 96 and 160, libvorbis at q3 and q6 and
+  LAME V0 and decoded back to 16-bit FLAC: before the typical spectrum, AAC 128 was caught 13
+  times in 16, Vorbis q3 12, Opus 96 7 as suspect, Vorbis q6 3 and V0 2; after it, AAC 128 15,
+  Vorbis q3 15, Opus 96 14 and Opus 160 12 as suspect — Opus lowpasses at 20 kHz whatever the
+  bitrate, which lands in the suspect band — Vorbis q6 11 and V0 9. AAC at 256 kbps has no lowpass
+  a wall can find and was never caught. Sixty random FLACs of the library read the same under both
+  but three, each now suspect with a wall at 19.x or 20.x kHz, and all three a web or scene rip.
 
 ## Studies in the catalog
 

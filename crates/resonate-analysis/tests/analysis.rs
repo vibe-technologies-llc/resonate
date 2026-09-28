@@ -199,6 +199,47 @@ fn a_flac_that_was_once_a_128_kbps_mp3_is_fake() {
 }
 
 #[test]
+fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
+    const SPLATTERED_EVERY_THIRD_WINDOW: usize = 3;
+    const WINDOW: usize = 4_096;
+    const SPLATTER: f32 = 900.0;
+    let transcoded = music(RATE, 16_000.0, 20_000.0);
+    let mut state = 0x9e37_79b9_u32;
+    let splattered: Vec<i32> = transcoded
+        .chunks(2)
+        .enumerate()
+        .flat_map(|(frame, pair)| {
+            let burst = (frame / WINDOW).is_multiple_of(SPLATTERED_EVERY_THIRD_WINDOW);
+            pair.iter()
+                .map(|sample| {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    let noise = (state as f32 / u32::MAX as f32 - 0.5) * 2.0 * SPLATTER;
+                    if burst {
+                        (*sample as f32 + noise) as i32
+                    } else {
+                        *sample
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let tree = Tree::new();
+    let location = tree.wave("splattered.wav", RATE, 16, &splattered);
+    let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+
+    assert_eq!(
+        study.judgement.verdict,
+        Verdict::Fake,
+        "{:?}",
+        study.judgement
+    );
+    let cutoff = study.judgement.cutoff.expect("a wall");
+    assert!((15_700..=16_300).contains(&cutoff.hz), "{}", cutoff.hz);
+}
+
+#[test]
 fn sixteen_bit_audio_padded_into_twenty_four_bits_is_fake() {
     let tree = Tree::new();
     let padded: Vec<i32> = music(RATE, 21_700.0, 32_767.0)

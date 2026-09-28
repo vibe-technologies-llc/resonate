@@ -6,6 +6,14 @@ pub const FLOOR_DB: f32 = -160.0;
 
 const SILENT_BELOW_DB: f32 = -60.0;
 
+pub(crate) const BAND_HZ: f32 = 100.0;
+
+const TYPICAL_QUANTILE: f64 = 0.25;
+
+const DECIBELS_A_BUCKET: f32 = 1.0;
+
+const BUCKETS: usize = (-FLOOR_DB / DECIBELS_A_BUCKET) as usize + 1;
+
 const POINTS_AT_48_KHZ: usize = 4_096;
 const POINTS_AT_96_KHZ: usize = 8_192;
 const POINTS_AT_192_KHZ: usize = 16_384;
@@ -35,6 +43,7 @@ fn decibels(power: f64) -> f32 {
 pub struct Spectrum {
     bin_hz: f32,
     levels: Vec<f32>,
+    typical: Vec<f32>,
     heard: Duration,
 }
 
@@ -43,8 +52,17 @@ impl Spectrum {
         Self {
             bin_hz,
             levels,
+            typical: Vec::new(),
             heard,
         }
+    }
+
+    pub fn with_typical(self, typical: Vec<f32>) -> Self {
+        Self { typical, ..self }
+    }
+
+    pub fn typical(&self) -> &[f32] {
+        &self.typical
     }
 
     pub const fn bin_hz(&self) -> f32 {
@@ -86,6 +104,8 @@ pub(crate) struct Transforming {
     scratch: Vec<Complex<f32>>,
     powers: Vec<f32>,
     sums: Vec<f64>,
+    bands: Vec<(usize, usize)>,
+    counted: Vec<u32>,
     loud: u64,
     rate: u32,
     full_scale_power: f64,
@@ -100,6 +120,18 @@ impl Transforming {
             .map(|nth| 0.5 - 0.5 * (2.0 * PI * nth as f32 / points as f32).cos())
             .collect();
         let quarter = points as f64 / 4.0;
+        let bin_hz = rate as f32 / points as f32;
+        let bins = points / 2 + 1;
+        let bands: Vec<(usize, usize)> = (0..)
+            .map(|band| band as f32 * BAND_HZ)
+            .take_while(|from| *from < rate as f32 / 2.0)
+            .map(|from| {
+                let first = ((from / bin_hz).ceil() as usize).min(bins);
+                let past = (((from + BAND_HZ) / bin_hz).ceil() as usize).min(bins);
+                (first, past.max(first))
+            })
+            .collect();
+        let counted = vec![0; bands.len() * BUCKETS];
         Self {
             points,
             fft,
@@ -109,6 +141,8 @@ impl Transforming {
             scratch,
             powers: vec![0.0; points / 2 + 1],
             sums: vec![0.0; points / 2 + 1],
+            bands,
+            counted,
             loud: 0,
             rate,
             full_scale_power: quarter * quarter,
@@ -158,7 +192,44 @@ impl Transforming {
         }
         if loud {
             self.loud += 1;
+            self.count_the_bands();
         }
+    }
+
+    fn count_the_bands(&mut self) {
+        for (band, (first, past)) in self.bands.iter().enumerate() {
+            let Some(held) = self
+                .powers
+                .get(*first..*past)
+                .filter(|held| !held.is_empty())
+            else {
+                continue;
+            };
+            let power = held.iter().map(|power| f64::from(*power)).sum::<f64>() / held.len() as f64;
+            let bucket = ((decibels(power) - FLOOR_DB) / DECIBELS_A_BUCKET) as usize;
+            self.counted[band * BUCKETS + bucket.min(BUCKETS - 1)] += 1;
+        }
+    }
+
+    fn typical(&self) -> Vec<f32> {
+        let wanted = ((self.loud as f64 * TYPICAL_QUANTILE).ceil() as u64).max(1);
+        self.counted
+            .as_chunks::<BUCKETS>()
+            .0
+            .iter()
+            .map(|buckets| {
+                let mut reached = 0_u64;
+                buckets
+                    .iter()
+                    .position(|count| {
+                        reached += u64::from(*count);
+                        reached >= wanted
+                    })
+                    .map_or(FLOOR_DB, |bucket| {
+                        FLOOR_DB + bucket as f32 * DECIBELS_A_BUCKET
+                    })
+            })
+            .collect()
     }
 
     pub(crate) fn finished(self) -> Spectrum {
@@ -174,10 +245,16 @@ impl Transforming {
             })
             .collect();
         let heard_frames = self.loud * self.points as u64;
+        let typical = if self.loud == 0 {
+            Vec::new()
+        } else {
+            self.typical()
+        };
 
         Spectrum {
             bin_hz: self.rate as f32 / self.points as f32,
             levels,
+            typical,
             heard: Duration::from_secs_f64(heard_frames as f64 / f64::from(self.rate)),
         }
     }

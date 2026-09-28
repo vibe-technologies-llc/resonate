@@ -4,9 +4,9 @@ use resonate_codec::Codec;
 
 use crate::{Levels, Spectrum};
 
-pub const JUDGED_UNDER: u32 = 1;
+pub const JUDGED_UNDER: u32 = 2;
 
-const BAND_HZ: f32 = 100.0;
+use crate::spectrum::BAND_HZ;
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
 const BELOW_WALL_FROM_HZ: f32 = 1_000.0;
@@ -285,7 +285,10 @@ pub(crate) struct Weighed<'a> {
 pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let spectrum = weighed.spectrum;
     let bands = banded(spectrum);
-    let cutoff = wall_in(&bands);
+    let cutoff = lower_of(
+        wall_in(&bands),
+        wall_in(typical_bands(spectrum, bands.len())),
+    );
     let extent_hz = extent_of(spectrum, &bands);
     let mut findings = Vec::new();
 
@@ -361,6 +364,19 @@ fn banded(spectrum: &Spectrum) -> Vec<f32> {
                 .unwrap_or(crate::spectrum::FLOOR_DB)
         })
         .collect()
+}
+
+fn typical_bands(spectrum: &Spectrum, count: usize) -> &[f32] {
+    let typical = spectrum.typical();
+    &typical[..count.min(typical.len())]
+}
+
+fn lower_of(averaged: Option<Cutoff>, typical: Option<Cutoff>) -> Option<Cutoff> {
+    match (averaged, typical) {
+        (Some(averaged), Some(typical)) if typical.hz < averaged.hz => Some(typical),
+        (None, typical) => typical,
+        (averaged, _) => averaged,
+    }
 }
 
 fn mean(levels: &[f32]) -> Option<f32> {
