@@ -244,6 +244,10 @@ fn refuse_what_the_caf_reader_would_overflow_on(
         Some(caf::Overflow::PacketOffset { packets }) => {
             Err(Error::PacketOffsetNotRepresentable { location, packets })
         }
+        Some(caf::Overflow::PacketFrames { frames_per_packet }) => Err(Error::PacketTooLong {
+            location,
+            frames_per_packet,
+        }),
     }
 }
 

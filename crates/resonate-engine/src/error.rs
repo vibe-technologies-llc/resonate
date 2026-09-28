@@ -154,6 +154,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::DsdChunkMissing { .. }
         | Read::DsdFieldNotUsable { .. }
         | Read::PacketTooLarge { .. }
+        | Read::PacketTooLong { .. }
         | Read::FrameCountNotRepresentable { .. }
         | Read::PacketOffsetNotRepresentable { .. }
         | Read::SheetTooLarge { .. }

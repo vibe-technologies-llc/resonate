@@ -28,7 +28,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   the side channel to 32 bits before undoing it
 - A hybrid WavPack is taken for lossless: nothing reads the flag that says a block was coded lossy,
   and a `.wvc` correction file beside it is never opened
-- DST-compressed DSDIFF is refused rather than decoded
 - A source that cannot seek is prescanned only through its first `MAX_PRESCAN_HEAD` bytes, so over
   a pipe an `.m4a` with a trailing `moov` plays its priming, a WAV with `LIST INFO` after `data`
   loses those tags, and an Opus or FLAC track in Matroska falls back to millisecond timestamps

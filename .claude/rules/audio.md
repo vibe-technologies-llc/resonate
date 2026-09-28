@@ -546,6 +546,25 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   there until the next track, so `retune` asks it first — the source is DSD, the open plan is
   samples on the carrier's own spec, and `dop_survives` against the bound sink — and rebinds into
   the marked plan where it holds.
+- **A DST-compressed DSDIFF is unpacked into the stream an uncompressed one would be.** The
+  `DST ` chunk's `FRTE` says how many frames there are — each 1/75 s of every channel — so the
+  layout is known from the header alone and a scan pays nothing for the compression. Only a decode
+  walks the chunk: `dsd::unpacked` collects every `DSTF`, passing `DSTC` checksums by, and hands
+  the DSD path `dst::Unpacked`, a `MediaStream` over the frames that decodes whichever one a read
+  lands in and holds it, so the reader, DoP, the decimator and a seek all see an interleaved,
+  most-significant-first DSDIFF sound chunk and nothing else changed. A frame decodes on its own —
+  every channel's history starts from `0xAA` each frame — so a seek costs one frame. `dst.rs` is
+  ISO/IEC 14496-3 subpart 10 as FFmpeg's decoder reads it: the channel-to-filter and
+  channel-to-probability maps, the filter coefficients and probability tables plain or predicted
+  and Rice-coded, the 12-bit arithmetic decoder, and a prediction that sums sixteen 256-entry
+  lookups built per filter from its coefficients, wrapped to 16 bits as the reference does; a
+  plain frame is copied and padded with DSD silence. Six channels at most, and a frame whose
+  segmentation is not the one the reference encoder writes is refused as FFmpeg refuses it.
+  Checked against FFmpeg on its own DST sample: the unpacked bits, written as an uncompressed
+  DSDIFF, decode to PCM bit for bit identical to FFmpeg's decode of the DST file. The tests carry
+  an encoder of their own — the arithmetic coder's inverse with its carry, the tables written
+  plain and predicted — so `a_coded_frame_unpacks_to_exactly_the_bits_that_were_packed` and
+  `a_dst_dsdiff_plays_exactly_what_the_same_bits_uncompressed_play` need no fixture on disc.
 - **A DSDIFF file is tagged the two ways its writers tag it.** The `ID3 ` chunk a tagger appends
   after the sound is read by the same ID3v2 reader a DSF's metadata block goes through, and the
   `DIIN` chunk's `DIAR` and `DITI` — the edited master's artist and title — fill only what the ID3

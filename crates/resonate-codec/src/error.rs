@@ -82,6 +82,14 @@ pub enum Error {
     },
 
     #[error(
+        "{location} declares packets of {frames_per_packet} frames, more than a decoder is sized for"
+    )]
+    PacketTooLong {
+        location: MediaLocation,
+        frames_per_packet: u32,
+    },
+
+    #[error(
         "{location} declares {packets} packets of {frames_per_packet} frames, more than a frame count holds"
     )]
     FrameCountNotRepresentable {
@@ -223,6 +231,7 @@ impl Error {
             | Self::TooManyChannels { location, .. }
             | Self::ChannelMaskNotRepresentable { location, .. }
             | Self::PacketTooLarge { location, .. }
+            | Self::PacketTooLong { location, .. }
             | Self::FrameCountNotRepresentable { location, .. }
             | Self::PacketOffsetNotRepresentable { location, .. }
             | Self::NoDecoder { location, .. }

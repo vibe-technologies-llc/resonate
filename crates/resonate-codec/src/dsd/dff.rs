@@ -5,8 +5,8 @@ use resonate_core::MediaLocation;
 use crate::{
     Error, Result,
     dsd::{
-        BitOrder, Container, DsdChunk, Edited, Interleave, Layout, MAX_DSD_CHANNELS, channels,
-        rate::DsdRate,
+        BitOrder, Compressed, Container, DsdChunk, Edited, Interleave, Layout, MAX_DSD_CHANNELS,
+        channels, dst, rate::DsdRate,
     },
     prescan::read_exact,
     source::MediaStream,
@@ -20,6 +20,9 @@ const MAX_CHUNKS: usize = 4_096;
 const MAX_PROP_BYTES: u64 = 1 << 16;
 const MAX_EDITED_TEXT_BYTES: u32 = 1 << 12;
 const EDITED_COUNT_BYTES: u64 = 4;
+const FRAME_INFO_BYTES: u64 = 6;
+const MOST_FRAMES_RESERVED: u64 = 1 << 20;
+const DST: &[u8; 4] = b"DST ";
 
 pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Result<Layout> {
     bytes.seek(SeekFrom::Start(0)).map_err(|source| Error::Io {
@@ -54,10 +57,11 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
             }
             b"ID3 " | b"id3 " => found.metadata_at = Some(body),
             b"DIIN" => read_edited(bytes, body, size, &mut found.edited),
-            b"DST " | b"DSTI" => {
-                return Err(Error::DsdCompressed {
-                    location: location.clone(),
-                    compression: id,
+            b"DST " => {
+                found.packed = Some(Compressed {
+                    at: body,
+                    bytes: size,
+                    frames: frame_count(bytes, body, size),
                 });
             }
             _ => {}
@@ -72,6 +76,18 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     let count = found
         .channels
         .ok_or_else(|| missing(location, DsdChunk::Channels))?;
+
+    if let Some(packed) = found.packed {
+        return packed_layout(
+            packed,
+            rate,
+            count,
+            found.metadata_at,
+            found.edited,
+            location,
+        );
+    }
+
     let data_at = found
         .data_at
         .ok_or_else(|| missing(location, DsdChunk::Data))?;
@@ -95,7 +111,78 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         bits: BitOrder::MostSignificantFirst,
         metadata_at: found.metadata_at,
         edited: found.edited,
+        packed: None,
     })
+}
+
+fn packed_layout(
+    packed: Compressed,
+    rate: DsdRate,
+    count: u32,
+    metadata_at: Option<u64>,
+    edited: Edited,
+    location: &MediaLocation,
+) -> Result<Layout> {
+    let channels = channels(count, location)?;
+    let lanes = u64::from(channels.count().get());
+    let samples_a_frame = u64::from(rate.hz()) / dst::FRAMES_A_SECOND;
+    if lanes as usize > dst::MOST_CHANNELS || !samples_a_frame.is_multiple_of(8) {
+        return Err(Error::DsdCompressed {
+            location: location.clone(),
+            compression: *DST,
+        });
+    }
+    let frames = packed
+        .frames
+        .ok_or_else(|| missing(location, DsdChunk::Data))?;
+
+    Ok(Layout {
+        container: Container::Dff,
+        rate,
+        channels,
+        samples: frames.saturating_mul(samples_a_frame),
+        data_at: 0,
+        data_bytes: frames
+            .saturating_mul(samples_a_frame / 8)
+            .saturating_mul(lanes),
+        order: Interleave::PerByte,
+        bits: BitOrder::MostSignificantFirst,
+        metadata_at,
+        edited,
+        packed: Some(packed),
+    })
+}
+
+fn frame_count(bytes: &mut dyn MediaStream, body: u64, size: u64) -> Option<u64> {
+    let (id, held) = header(bytes, body)?;
+    if &id != b"FRTE" || held < FRAME_INFO_BYTES {
+        return None;
+    }
+    read_exact::<4, _>(bytes)
+        .map(|count| u64::from(u32::from_be_bytes(count)))
+        .filter(|_| size > held)
+}
+
+pub(crate) fn packed_frames(bytes: &mut dyn MediaStream, packed: Compressed) -> Vec<dst::Packed> {
+    let end = packed.at.saturating_add(packed.bytes);
+    let end = bytes.byte_len().map_or(end, |len| end.min(len));
+    let mut frames =
+        Vec::with_capacity(packed.frames.unwrap_or(0).min(MOST_FRAMES_RESERVED) as usize);
+    let mut at = packed.at;
+    while at < end {
+        let Some((id, held)) = header(bytes, at) else {
+            break;
+        };
+        let body = at + CHUNK_HEADER_BYTES;
+        if &id == b"DSTF" {
+            frames.push(dst::Packed {
+                at: body,
+                bytes: held.min(end.saturating_sub(body)),
+            });
+        }
+        at = body.saturating_add(held).saturating_add(held % 2);
+    }
+    frames
 }
 
 #[derive(Default)]
@@ -106,6 +193,7 @@ struct Found {
     data_bytes: Option<u64>,
     metadata_at: Option<u64>,
     edited: Edited,
+    packed: Option<Compressed>,
 }
 
 fn read_edited(bytes: &mut dyn MediaStream, body: u64, size: u64, edited: &mut Edited) {
@@ -194,6 +282,7 @@ fn read_property(
             b"CMPR" => {
                 if let Some(kind) = read_exact::<4, _>(bytes)
                     && &kind != b"DSD "
+                    && &kind != DST
                 {
                     return Err(Error::DsdCompressed {
                         location: location.clone(),

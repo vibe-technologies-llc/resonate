@@ -109,6 +109,7 @@ impl Failure {
             | Codec::DsdChunkMissing { .. }
             | Codec::DsdFieldNotUsable { .. }
             | Codec::PacketTooLarge { .. }
+            | Codec::PacketTooLong { .. }
             | Codec::FrameCountNotRepresentable { .. }
             | Codec::PacketOffsetNotRepresentable { .. } => Self::Undecodable,
             Codec::Io { .. }

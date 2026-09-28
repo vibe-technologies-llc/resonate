@@ -1,6 +1,7 @@
 mod dff;
 mod dop;
 mod dsf;
+mod dst;
 mod pcm;
 mod rate;
 mod window;
@@ -53,6 +54,28 @@ pub(crate) struct Layout {
     pub(crate) bits: BitOrder,
     pub(crate) metadata_at: Option<u64>,
     pub(crate) edited: Edited,
+    pub(crate) packed: Option<Compressed>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Compressed {
+    pub(crate) at: u64,
+    pub(crate) bytes: u64,
+    pub(crate) frames: Option<u64>,
+}
+
+pub(crate) fn unpacked(mut bytes: Box<dyn MediaStream>, layout: &Layout) -> Box<dyn MediaStream> {
+    let Some(packed) = layout.packed else {
+        return bytes;
+    };
+    let frames = dff::packed_frames(bytes.as_mut(), packed);
+    let samples_a_frame = (u64::from(layout.rate.hz()) / dst::FRAMES_A_SECOND) as usize;
+    Box::new(dst::Unpacked::over(
+        bytes,
+        frames,
+        layout.lanes(),
+        samples_a_frame,
+    ))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -541,6 +564,7 @@ mod tests {
             bits: BitOrder::MostSignificantFirst,
             metadata_at: None,
             edited: Edited::default(),
+            packed: None,
         };
         Stream::over(
             Box::new(Reading::new(Cursor::new(bytes))),

@@ -19,6 +19,7 @@ const VARIABLE_LENGTH_BYTES_AT_MOST: usize = 9;
 const VARIABLE_LENGTH_MORE: u8 = 0x80;
 const VARIABLE_LENGTH_BITS: u8 = 0x7f;
 const VARIABLE_LENGTH_SHIFT: u32 = 7;
+const MOST_FRAMES_A_PACKET: u32 = 1 << 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Overflow {
@@ -31,6 +32,9 @@ pub(crate) enum Overflow {
     },
     PacketOffset {
         packets: u64,
+    },
+    PacketFrames {
+        frames_per_packet: u32,
     },
 }
 
@@ -71,6 +75,11 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
     if desc.bytes_per_packet.checked_mul(BITS_PER_BYTE).is_none() {
         return Some(Overflow::PacketBits {
             bytes_per_packet: desc.bytes_per_packet,
+        });
+    }
+    if desc.frames_per_packet > MOST_FRAMES_A_PACKET {
+        return Some(Overflow::PacketFrames {
+            frames_per_packet: desc.frames_per_packet,
         });
     }
 
@@ -251,13 +260,25 @@ mod tests {
 
     #[test]
     fn a_data_chunk_holding_more_frames_than_a_u64_counts_is_named() {
-        let file = caf(1, u32::MAX, &data(i64::MAX));
+        let file = caf(1, MOST_FRAMES_A_PACKET, &data(i64::MAX));
 
         assert_eq!(
             read(&mut Cursor::new(file)),
             Some(Overflow::FrameCount {
                 packets: i64::MAX as u64 - 4,
-                frames_per_packet: u32::MAX,
+                frames_per_packet: MOST_FRAMES_A_PACKET,
+            })
+        );
+    }
+
+    #[test]
+    fn packets_longer_than_a_decoder_is_sized_for_are_named() {
+        let file = caf(1, 0xfffb_0001, &data(12));
+
+        assert_eq!(
+            read(&mut Cursor::new(file)),
+            Some(Overflow::PacketFrames {
+                frames_per_packet: 0xfffb_0001
             })
         );
     }
@@ -265,7 +286,11 @@ mod tests {
     #[test]
     fn a_data_chunk_of_unknown_size_counts_no_frames() {
         assert_eq!(
-            read(&mut Cursor::new(caf(1, u32::MAX, &data(UNKNOWN_SIZE)))),
+            read(&mut Cursor::new(caf(
+                1,
+                MOST_FRAMES_A_PACKET,
+                &data(UNKNOWN_SIZE)
+            ))),
             None
         );
     }

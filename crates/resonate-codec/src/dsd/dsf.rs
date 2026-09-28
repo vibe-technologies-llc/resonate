@@ -94,6 +94,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         bits,
         metadata_at: (metadata_at > 0).then_some(metadata_at),
         edited: Edited::default(),
+        packed: None,
     })
 }
 

@@ -849,7 +849,10 @@ the header, a slice of the window the prescan already holds, so the search costs
 CAF reader overflows the same way on three declared values, and `caf.rs` reads them before
 symphonia does: packets whose size in bits a `u32` cannot hold are `Error::PacketTooLarge`, a
 `data` chunk declaring more frames than a `u64` counts is `Error::FrameCountNotRepresentable`,
-and a packet table whose offsets run past one is `Error::PacketOffsetNotRepresentable`.
+and a packet table whose offsets run past one is `Error::PacketOffsetNotRepresentable`. A
+`desc` naming more than `MOST_FRAMES_A_PACKET` frames a packet is `Error::PacketTooLong`, because
+symphonia's PCM decoder allocates a buffer that long before it reads a byte, and a declared four
+billion is an out-of-memory abort in a release build.
 **The two third-party decoders' arithmetic is written to wrap.** `ape-decoder` wraps the way the
 reference encoder's SIMD does, and `symphonia-codec-wavpack` reads a header's fields into widths
 it wraps on a malformed file, so each has its overflow checks turned off in `[profile.dev]` and a
