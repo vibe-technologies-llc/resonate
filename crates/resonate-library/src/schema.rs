@@ -85,6 +85,8 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE retagged ADD COLUMN picture BLOB;",
     "UPDATE tracks SET probe_again = 1
       WHERE packets IS NULL AND span_frames IS NULL AND root_id IS NOT NULL;",
+    "ALTER TABLE playlist_queries ADD COLUMN reading INTEGER NOT NULL DEFAULT 0;
+     UPDATE playlist_queries SET reading = 1, sort = sort - 16 WHERE sort >= 16;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -843,6 +845,37 @@ mod tests {
                 ("undigested.flac".to_owned(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own() {
+        let connection = opened();
+        let parting = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("playlist_queries ADD COLUMN reading"))
+            .expect("the step that parts the direction from the order");
+        lay_out_through(&connection, V1, &MIGRATIONS[..parting])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO playlists (id, name, folded, created, modified) VALUES
+                     (1, 'Forwards', 'forwards', 1, 1), (2, 'Backwards', 'backwards', 1, 1);
+                 INSERT INTO playlist_queries (playlist_id, text, sort) VALUES
+                     (1, 'genre:rock', 6), (2, 'genre:jazz', 22);",
+            )
+            .expect("the queries are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let parted: Vec<(i64, i64, i64)> = connection
+            .prepare("SELECT playlist_id, sort, reading FROM playlist_queries ORDER BY playlist_id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                    .collect()
+            })
+            .expect("the queries read back");
+        assert_eq!(parted, [(1, 6, 0), (2, 6, 1)]);
     }
 
     #[test]

@@ -105,11 +105,6 @@ through `Player::media` like any other unscanned row.
   taken off after an edit survives walking that edit back.
   `undoing_an_edit_keeps_a_playlist_pinned` and
   `a_pin_made_after_an_edit_survives_walking_the_edit_back` are the guards.
-- **A ninth sort order did not fit.** `store::sort_code` packs a saved query's `SortOrder` and its
-  `Direction` into the one `playlist_queries.sort` column as `order + READ_BACKWARDS`, and
-  `READ_BACKWARDS` was 8 against exactly eight orders — so `SortOrder::Favourited` at code 8 would
-  have read back as *Relevance, descending*. It is 16 now, which re-encodes every descending saved
-  query and is therefore only safe because the fingerprint was breaking in the same pass.
 - **What was listened to is three reads over `listens` and `passes`.**
   `listens.heard` is the nanoseconds of that visit actually listened to and `listens_by_time` is
   what every window reads off; `passes` — the ninth step in `MIGRATIONS`, a stamp and a heard
@@ -245,10 +240,14 @@ through `Player::media` like any other unscanned row.
   those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
   B-tree over one is cheaper than an index would be — `SCHEMA_FINGERPRINT` covers the index list,
   so adding one is a step in `MIGRATIONS` and a rebuild of that index in every catalog it opens.
-- **A saved query's direction rides in the column it already had.** `store::sort_code` writes the
-  eight orders as before and adds `READ_BACKWARDS`, eight, for a descending reading, and
-  `sort_of` reads the pair back out; `playlist_queries.sort` is untouched and a catalog written
-  before this reads exactly as it did.
+- **A saved query's direction is a column of its own.** `playlist_queries.sort` holds the order
+  alone, through `store::sort_code` and `sort_of`, and `playlist_queries.reading` the direction,
+  through the `direction_code` and `direction_of` the kept order of a playlist already went
+  through — `OrderedColumn::Reading` naming it in a refusal. It rode in the sort column once, as
+  the order plus a `READ_BACKWARDS` of sixteen, which an older build read as whatever order the
+  sum landed on rather than refusing; the step in `MIGRATIONS` that adds the column carries every
+  such code out of the sum —
+  `a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own`.
   `schema::restate_the_statistics` is the other half — `PRAGMA analysis_limit` and
   `PRAGMA optimize` on the writer once a scan has pruned — because with no `sqlite_stat1` the
   planner picks its join order from hardcoded guesses; and `configure` hands a connection a page

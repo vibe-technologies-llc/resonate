@@ -13,9 +13,9 @@ use rusqlite::{
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
-    Clause, Cut, Direction, Error, Exported, Imported, Kept, NamedPlaylist, Playlist,
-    PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search, Sources,
-    StoreOp, Track, TrackQuery,
+    Clause, Cut, Direction, Error, Exported, Imported, Kept, NamedPlaylist, OrderedColumn,
+    Playlist, PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search,
+    Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
     store,
@@ -24,7 +24,7 @@ use crate::{
 
 const COLUMNS: &str = "p.id, p.name, p.created, p.modified, p.played, p.plays,
      count(e.path), sum(t.duration * 1.0 / t.sample_rate), q.text, q.sort, q.max_rows,
-     p.kept_order, p.kept_reading, p.pinned";
+     p.kept_order, p.kept_reading, p.pinned, q.reading";
 
 const COUNTED: &str = "FROM playlists p
      LEFT JOIN playlist_entries e ON e.playlist_id = p.id
@@ -452,13 +452,14 @@ pub(crate) fn write_query(
 ) -> Result<()> {
     transaction
         .execute(
-            "INSERT INTO playlist_queries (playlist_id, text, sort, max_rows)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO playlist_queries (playlist_id, text, sort, max_rows, reading)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 id.get() as i64,
                 query.text.as_deref(),
-                store::sort_code(query.sort, query.reading),
-                query.limit.map(|limit| limit as i64)
+                store::sort_code(query.sort),
+                query.limit.map(|limit| limit as i64),
+                store::direction_code(query.reading)
             ],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
@@ -472,13 +473,14 @@ pub fn revise(inner: &Inner, id: PlaylistId, name: &str, query: &SavedQuery) -> 
     undo::edited(inner, id, Edit::Revised, |transaction| {
         let revised = transaction
             .execute(
-                "UPDATE playlist_queries SET text = ?2, sort = ?3, max_rows = ?4
+                "UPDATE playlist_queries SET text = ?2, sort = ?3, max_rows = ?4, reading = ?5
                  WHERE playlist_id = ?1",
                 params![
                     id.get() as i64,
                     query.text.as_deref(),
-                    store::sort_code(query.sort, query.reading),
-                    query.limit.map(|limit| limit as i64)
+                    store::sort_code(query.sort),
+                    query.limit.map(|limit| limit as i64),
+                    store::direction_code(query.reading)
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -1072,29 +1074,31 @@ fn listed(position: usize, track: Track) -> PlaylistEntry {
 pub(crate) fn asked_in(connection: &Connection, id: PlaylistId) -> Result<Option<SavedQuery>> {
     connection
         .query_row(
-            "SELECT text, sort, max_rows FROM playlist_queries WHERE playlist_id = ?1",
+            "SELECT text, sort, reading, max_rows FROM playlist_queries WHERE playlist_id = ?1",
             params![id.get() as i64],
             |row| {
                 Ok((
                     row.get::<_, Option<String>>(0)?,
                     row.get::<_, i64>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
                 ))
             },
         )
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?
-        .map(|(text, sort, max_rows)| wanted_query(id, text, sort, max_rows))
+        .map(|(text, sort, reading, max_rows)| wanted_query(id, text, (sort, reading), max_rows))
         .transpose()
 }
 
 fn wanted_query(
     id: PlaylistId,
     text: Option<String>,
-    sort: i64,
+    (sort, reading): (i64, i64),
     max_rows: Option<i64>,
 ) -> Result<SavedQuery> {
-    let (sort, reading) = store::sort_of(id, sort)?;
+    let sort = store::sort_of(id, sort)?;
+    let reading = store::direction_of(id, OrderedColumn::Reading, reading)?;
 
     Ok(SavedQuery {
         text,
@@ -1158,7 +1162,7 @@ fn kept_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<Kept>
 pub(crate) fn wanted_kept(id: PlaylistId, order: i64, reading: i64) -> Result<Kept> {
     Ok(Kept {
         order: store::row_order_of(id, order)?,
-        reading: store::direction_of(id, reading)?,
+        reading: store::direction_of(id, OrderedColumn::KeptReading, reading)?,
     })
 }
 
@@ -1496,6 +1500,7 @@ fn read(row: &SqlRow<'_>) -> rusqlite::Result<Result<Playlist>> {
     let kept_order: Option<i64> = row.get(11)?;
     let kept_reading: Option<i64> = row.get(12)?;
     let pinned: Option<i64> = row.get(13)?;
+    let reading: Option<i64> = row.get(14)?;
 
     Ok(PlaylistId::new(id as u64)
         .map_err(Error::from)
@@ -1512,7 +1517,8 @@ fn read(row: &SqlRow<'_>) -> rusqlite::Result<Result<Playlist>> {
                 played: played.map(store::from_nanos),
                 plays,
                 query: sort
-                    .map(|sort| wanted_query(id, text, sort, max_rows))
+                    .zip(reading)
+                    .map(|ordered| wanted_query(id, text, ordered, max_rows))
                     .transpose()?,
                 kept: kept_order
                     .zip(kept_reading)

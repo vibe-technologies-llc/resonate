@@ -121,5 +121,3 @@ that no listener is waiting on, and is worked only once the categories above it 
 - An icon already in `$XDG_DATA_HOME/icons/hicolor` that this build did not draw is never
   replaced, and only KDE's caches are flushed
 - The album grid draws one frame at the old column count on a resize
-- A saved query's direction is written into the `sort` column above the order codes, so an older
-  build reads it as the wrong order rather than refusing it

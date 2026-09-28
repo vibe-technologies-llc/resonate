@@ -323,10 +323,8 @@ pub const fn codec_code(codec: Codec) -> i64 {
     }
 }
 
-const READ_BACKWARDS: i64 = 16;
-
-pub const fn sort_code(sort: SortOrder, reading: Direction) -> i64 {
-    let order = match sort {
+pub const fn sort_code(sort: SortOrder) -> i64 {
+    match sort {
         SortOrder::Relevance => 0,
         SortOrder::AlbumThenTrack => 1,
         SortOrder::Title => 2,
@@ -337,21 +335,11 @@ pub const fn sort_code(sort: SortOrder, reading: Direction) -> i64 {
         SortOrder::Played => 7,
         SortOrder::Favourited => 8,
         SortOrder::PlaysThisMonth => 9,
-    };
-
-    match reading {
-        Direction::Ascending => order,
-        Direction::Descending => order + READ_BACKWARDS,
     }
 }
 
-pub const fn sort_of(playlist: PlaylistId, code: i64) -> Result<(SortOrder, Direction)> {
-    let reading = if code >= READ_BACKWARDS {
-        Direction::Descending
-    } else {
-        Direction::Ascending
-    };
-    let sort = match code % READ_BACKWARDS {
+pub const fn sort_of(playlist: PlaylistId, code: i64) -> Result<SortOrder> {
+    Ok(match code {
         0 => SortOrder::Relevance,
         1 => SortOrder::AlbumThenTrack,
         2 => SortOrder::Title,
@@ -369,17 +357,7 @@ pub const fn sort_of(playlist: PlaylistId, code: i64) -> Result<(SortOrder, Dire
                 code,
             });
         }
-    };
-
-    if code < 0 || code >= READ_BACKWARDS * 2 {
-        return Err(Error::UnknownOrder {
-            playlist,
-            column: OrderedColumn::Sort,
-            code,
-        });
-    }
-
-    Ok((sort, reading))
+    })
 }
 
 pub const fn row_order_code(order: RowOrder) -> i64 {
@@ -414,13 +392,17 @@ pub const fn direction_code(direction: Direction) -> i64 {
     }
 }
 
-pub const fn direction_of(playlist: PlaylistId, code: i64) -> Result<Direction> {
+pub const fn direction_of(
+    playlist: PlaylistId,
+    column: OrderedColumn,
+    code: i64,
+) -> Result<Direction> {
     match code {
         0 => Ok(Direction::Ascending),
         1 => Ok(Direction::Descending),
         code => Err(Error::UnknownOrder {
             playlist,
-            column: OrderedColumn::KeptReading,
+            column,
             code,
         }),
     }

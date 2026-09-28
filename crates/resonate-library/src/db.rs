@@ -5122,7 +5122,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::SchemaFingerprint;
+    use crate::{OrderedColumn, SchemaFingerprint};
 
     const A_TEMPORARY_SORT: &str = "TEMP B-TREE";
 
@@ -5216,16 +5216,24 @@ mod tests {
 
     #[test]
     fn a_saved_query_remembers_which_way_round_it_was_read() {
+        let playlist = PlaylistId::new(1).expect("one names a playlist");
         for sort in SortOrder::ALL {
-            for reading in Direction::ALL {
-                let code = store::sort_code(sort, reading);
-                let playlist = PlaylistId::new(1).expect("one names a playlist");
-
-                assert_eq!(
-                    store::sort_of(playlist, code).expect("a code this build wrote reads back"),
-                    (sort, reading)
-                );
-            }
+            assert_eq!(
+                store::sort_of(playlist, store::sort_code(sort))
+                    .expect("a code this build wrote reads back"),
+                sort
+            );
+        }
+        for reading in Direction::ALL {
+            assert_eq!(
+                store::direction_of(
+                    playlist,
+                    OrderedColumn::Reading,
+                    store::direction_code(reading)
+                )
+                .expect("a code this build wrote reads back"),
+                reading
+            );
         }
     }
 

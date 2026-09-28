@@ -641,8 +641,8 @@ Invariants the layering exists to protect:
   tracks. `playlists.pinned` is prefixed onto every `PlaylistOrder`, and the place it has to be
   threaded through that is easy to miss is `undo.rs`, which re-creates the whole row: a column
   missed in `Held`, `held_in` and `rewritten` is lost the first time somebody undoes an edit.
-  `store::READ_BACKWARDS` went from 8 to 16 in the same pass, because it was exactly the count of
-  sort orders and a ninth would have been read back as the direction bit.
+  A saved query's direction has since left the sort code for `playlist_queries.reading`, so a
+  tenth order needs no room made for it.
 - **A play is told to ListenBrainz by reading the history, not by being handed over.**
   `Library::submit_listens` walks `listens` past the mark `submissions` holds for the service and
   hands the rows to a `Scrobbler` — the seam the library owns, the way it owns `Reference` — which

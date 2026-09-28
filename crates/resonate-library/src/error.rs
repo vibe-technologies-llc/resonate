@@ -77,6 +77,7 @@ pub enum LayoutFault {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OrderedColumn {
     Sort,
+    Reading,
     KeptOrder,
     KeptReading,
 }
