@@ -63,8 +63,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   only under a pointer — the menus, drags, the pickers, the equaliser curve, *Take this name*, a
   suggestion card, the Listen card and its microphone chips, the Scope segment, scrolling the
   settings body — has been checked by eye alone
-- `cargo bench -p resonate-dsp --bench stages` is run by nobody but a person, so a regression in a
-  figure the rules quote is noticed only when somebody looks
 - A microphone recording has not been proved against real sound reaching a microphone
 
 ## Later: Sources and providers

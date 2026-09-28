@@ -1,0 +1,50 @@
+0.320	resample fast 44.1k to 48k
+0.296	resample fast 48k to 44.1k
+0.408	resample fast 96k to 48k
+0.620	resample fast 192k to 48k
+0.580	resample fast 176.4k to 48k
+0.628	resample fast 44.1k to 96k
+0.408	resample balanced 44.1k to 48k
+0.384	resample balanced 48k to 44.1k
+0.584	resample balanced 96k to 48k
+0.976	resample balanced 192k to 48k
+0.940	resample balanced 176.4k to 48k
+0.804	resample balanced 44.1k to 96k
+0.992	resample high 44.1k to 48k
+0.964	resample high 48k to 44.1k
+1.660	resample high 96k to 48k
+3.136	resample high 192k to 48k
+3.048	resample high 176.4k to 48k
+2.024	resample high 44.1k to 96k
+2.112	resample very high 44.1k to 48k
+2.204	resample very high 48k to 44.1k
+3.924	resample very high 96k to 48k
+7.740	resample very high 192k to 48k
+7.516	resample very high 176.4k to 48k
+4.680	resample very high 44.1k to 96k
+2.140	resample very high minimum 44.1k to 48k
+3.912	resample very high minimum 96k to 48k
+3.644	resample very high intermediate 44.1k to 48k
+6.368	resample very high intermediate 96k to 48k
+0.312	equalise 10 bands at 48k
+0.976	equalise 32 bands at 48k
+1.248	equalise 10 bands at 192k
+3.912	equalise 32 bands at 192k
+2.440	true peak guard at 48k
+2.536	true peak guard limiting at 48k
+0.224	true peak guard at half volume at 48k
+9.808	true peak guard at 192k
+10.092	true peak guard limiting at 192k
+0.900	true peak guard at half volume at 192k
+2.308	restore a lossy source
+0.108	dither flat to 16 bits
+0.156	dither lipshitz to 16 bits
+0.228	dither threshold to 16 bits
+0.912	dither threshold to 16 bits at 192k
+0.050	gain at half volume
+0.076	remix 5.1 to stereo
+1.596	chain 5.1 44.1k to stereo 48k, eq, gain, dither
+3.608	chain stereo 44.1k to 48k, gain, guard, dither
+0.050	narrow f64 to s16
+0.050	narrow f64 to s24
+0.050	narrow f64 to s32

@@ -784,6 +784,8 @@ cargo test -p resonate-codec --test encoded    # needs ffmpeg, metaflac for the 
                                                #   a skip without each
 cargo test -p resonate-library --test library  # one embedded-sheet test needs ffmpeg and skips
 cargo clippy --workspace --all-targets -- -D warnings
+RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages   # every DSP stage under
+                                                                       #   its ceiling
 cargo tree -p resonate-core                # must stay free of symphonia, pipewire, gpui, serde
 cargo tree -p resonate-library             # must stay free of ureq, serde
 cargo tree -p resonate-eq                  # must stay free of gpui, the engine, the library, ureq
@@ -873,17 +875,22 @@ all the same, so an overflow panic inside either is its wrapping rather than a f
 `cargo +nightly fuzz run -O probe …` — no debug assertions, no overflow checks — is the run that
 says what a release build, which aborts on a panic, would do.
 
-**A cost is measured rather than guessed, and neither measure is a check.**
+**A cost is measured rather than guessed, and the DSP's is held to a ceiling.**
 `cargo bench -p resonate-dsp --bench stages [<words>]` runs every DSP stage, and two whole chains,
 over four seconds of audio and prints each as a share of a core; any word narrows it to the runs
-whose names hold it. It plays a hot signal through the true-peak guard as well as the usual one,
+whose names hold it. With `RESONATE_BENCH_CEILINGS` set it also weighs each against
+`benches/ceilings.tsv` — four times what the run cost built for the baseline CPU on this
+machine, and never under 0.05 % of a core, which is room for a slower runner and no room for a
+stage made several times dearer — and exits 1 naming whatever went over, which is what the CI's
+*DSP costs* job runs. A stage added to the bench is added to the file, and a stage made
+deliberately dearer moves its line. It plays a hot signal through the true-peak guard as well as the usual one,
 because a guard that never limits never pays for limiting.
 `cargo bench -p resonate-library --bench spelling` builds the search vocabulary of a synthetic
 500 000-track catalog and times the corrections and completions a listener asks of it.
 `cargo build --profile profiling` is
 the release build with its symbols and line tables kept, which `perf record` and
-`cargo flamegraph` need and `strip = "symbols"` takes away. Neither asserts anything, so the CI
-runs neither.
+`cargo flamegraph` need and `strip = "symbols"` takes away. The spelling bench asserts nothing,
+so the CI runs it no more than it runs a profile.
 
 **A debug build is optimised, because an unoptimised resampler cannot keep up with the music.** At
 `opt-level = 0` a 96 kHz 24-bit source pegged a whole core to reach a 48 kHz sink and the ring

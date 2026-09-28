@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     env,
     f64::consts::TAU,
     hint::black_box,
@@ -44,8 +45,12 @@ const RATE_PAIRS: [(SampleRate, SampleRate); 6] = [
     (SampleRate::HZ_44100, SampleRate::HZ_96000),
 ];
 
+const HELD_TO_THE_CEILINGS: &str = "RESONATE_BENCH_CEILINGS";
+const CEILINGS: &str = include_str!("ceilings.tsv");
+
 struct Bench {
     wanted: Vec<String>,
+    measured: RefCell<Vec<(String, f64)>>,
 }
 
 impl Bench {
@@ -55,7 +60,44 @@ impl Bench {
                 .skip(1)
                 .filter(|argument| !argument.starts_with("--"))
                 .collect(),
+            measured: RefCell::new(Vec::new()),
         }
+    }
+
+    fn report(&self, name: &str, elapsed: Duration) {
+        let per_second = elapsed.as_secs_f64() / f64::from(AUDIO_SECONDS);
+        println!(
+            "{name:<52} {:>12.1} µs per s {:>9.3} % of a core",
+            per_second * 1e6,
+            per_second * 100.0
+        );
+        self.measured
+            .borrow_mut()
+            .push((name.to_owned(), per_second * 100.0));
+    }
+
+    fn held_under_the_ceilings(&self) -> bool {
+        if env::var_os(HELD_TO_THE_CEILINGS).is_none() {
+            return true;
+        }
+        let ceilings: Vec<(f64, &str)> = CEILINGS
+            .lines()
+            .filter_map(|line| {
+                let (ceiling, name) = line.split_once('\t')?;
+                Some((ceiling.trim().parse().ok()?, name.trim()))
+            })
+            .collect();
+        let mut held = true;
+        for (name, share) in self.measured.borrow().iter() {
+            let Some((ceiling, _)) = ceilings.iter().find(|(_, held)| held == name) else {
+                continue;
+            };
+            if share > ceiling {
+                println!("{name} costs {share:.3} % of a core, over its ceiling of {ceiling:.3} %");
+                held = false;
+            }
+        }
+        held
     }
 
     fn runs(&self, name: &str) -> bool {
@@ -64,25 +106,25 @@ impl Bench {
 
     fn stage(&self, name: &str, spec: StreamSpec, build: impl FnOnce() -> Box<dyn Processor>) {
         if self.runs(name) {
-            report(name, through_stage(build(), spec, &signal(spec)));
+            self.report(name, through_stage(build(), spec, &signal(spec)));
         }
     }
 
     fn hot_stage(&self, name: &str, spec: StreamSpec, build: impl FnOnce() -> Box<dyn Processor>) {
         if self.runs(name) {
-            report(name, through_stage(build(), spec, &hot(signal(spec))));
+            self.report(name, through_stage(build(), spec, &hot(signal(spec))));
         }
     }
 
     fn chain(&self, name: &str, spec: StreamSpec, build: impl FnOnce() -> Chain) {
         if self.runs(name) {
-            report(name, through_chain(build(), spec));
+            self.report(name, through_chain(build(), spec));
         }
     }
 
     fn conversion(&self, name: &str, format: SampleFormat) {
         if self.runs(name) {
-            report(name, converting_into(format));
+            self.report(name, converting_into(format));
         }
     }
 
@@ -146,15 +188,6 @@ fn built_for() -> &'static str {
     } else {
         "sse2"
     }
-}
-
-fn report(name: &str, elapsed: Duration) {
-    let per_second = elapsed.as_secs_f64() / f64::from(AUDIO_SECONDS);
-    println!(
-        "{name:<52} {:>12.1} µs per s {:>9.3} % of a core",
-        per_second * 1e6,
-        per_second * 100.0
-    );
 }
 
 fn fastest(mut run: impl FnMut() -> Duration) -> Duration {
@@ -515,4 +548,8 @@ fn main() {
     bench.conversion("narrow f64 to s16", SampleFormat::S16);
     bench.conversion("narrow f64 to s24", SampleFormat::S24);
     bench.conversion("narrow f64 to s32", SampleFormat::S32);
+
+    if !bench.held_under_the_ceilings() {
+        std::process::exit(1);
+    }
 }

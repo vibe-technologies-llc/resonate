@@ -63,6 +63,22 @@ jobs:
       - run: cargo build --locked --workspace
       - run: cargo test --locked --workspace
 
+  costs:
+    name: DSP costs under their ceilings
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 30
+    steps:
+      - name: Install the build dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --locked -p resonate-dsp --bench stages
+        env:
+          RESONATE_BENCH_CEILINGS: "1"
+
   layering:
     name: Crate layering
     runs-on: ubuntu-latest
