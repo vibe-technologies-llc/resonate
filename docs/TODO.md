@@ -106,8 +106,8 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## UI
 - A session with no XDG portal can add a library root only with `resonate scan`, and a scan blocks
   a second settings edit until it finishes
-- What the queue was cleared of can be put back only while nothing has been queued since, and the
-  queue has no redo
+- What the queue was cleared of can be put back, or taken out again, only while nothing has been
+  queued since, and neither walk has a key of its own: ctrl+z and its redo reach the playlists
 - A name clipped by a fixed-width cell is sliced through a glyph rather than elided wherever an
   ancestor, not the text, is the box that runs out of room
 

@@ -116,6 +116,8 @@ const CLEAR_HINT: &str = "Take every row out of the queue and stop";
 
 const PUT_BACK_HINT: &str = "Put the rows last taken out of the queue back where they were";
 
+const TAKE_AGAIN_HINT: &str = "Take the rows last put back out of the queue again";
+
 const KEPT_GESTURES: usize = 16;
 
 const HEARD_FADED: f32 = 0.55;
@@ -292,11 +294,33 @@ impl TakenOut {
                 .map(|item| item.id)
                 .eq(self.left.iter().copied())
     }
+
+    fn stands_under(&self, queue: &[QueueItem]) -> bool {
+        let (before, after) = self.left.split_at(self.at.min(self.left.len()));
+        let restored = before
+            .iter()
+            .copied()
+            .chain(self.rows.iter().map(|item| item.id))
+            .chain(after.iter().copied());
+
+        queue.len() == self.left.len() + self.rows.len()
+            && queue.iter().map(|item| item.id).eq(restored)
+    }
+
+    fn rows(&self) -> Span {
+        Span::between(self.at, self.at + self.rows.len().saturating_sub(1))
+    }
+}
+
+struct PuttingBack {
+    rows: Vec<QueueItem>,
+    at: usize,
 }
 
 #[derive(Default)]
 pub(crate) struct TakenBack {
     steps: Vec<TakenOut>,
+    put_back: Vec<TakenOut>,
 }
 
 impl TakenBack {
@@ -306,15 +330,26 @@ impl TakenBack {
         if self.standing(queue).is_none() {
             self.steps.clear();
         }
+        self.put_back.clear();
+        self.stack(taken);
+        Some(kept)
+    }
+
+    fn stack(&mut self, taken: TakenOut) {
         if self.steps.len() == KEPT_GESTURES {
             self.steps.remove(0);
         }
         self.steps.push(taken);
-        Some(kept)
     }
 
     fn standing(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
         self.steps.last().filter(|taken| taken.stands_over(queue))
+    }
+
+    fn standing_again(&self, queue: &[QueueItem]) -> Option<&TakenOut> {
+        self.put_back
+            .last()
+            .filter(|taken| taken.stands_under(queue))
     }
 
     fn offered(&self, queue: &[QueueItem]) -> Option<Offer> {
@@ -324,9 +359,30 @@ impl TakenBack {
         })
     }
 
-    fn take(&mut self, queue: &[QueueItem]) -> Option<TakenOut> {
+    fn offered_again(&self, queue: &[QueueItem]) -> Option<Offer> {
+        self.standing_again(queue).map(|taken| Offer {
+            rows: taken.rows.len(),
+            behind: self.put_back.len().saturating_sub(1),
+        })
+    }
+
+    fn take(&mut self, queue: &[QueueItem]) -> Option<PuttingBack> {
         self.standing(queue)?;
-        self.steps.pop()
+        let taken = self.steps.pop()?;
+        let putting = PuttingBack {
+            rows: taken.rows.clone(),
+            at: taken.at,
+        };
+        self.put_back.push(taken);
+        Some(putting)
+    }
+
+    fn take_again(&mut self, queue: &[QueueItem]) -> Option<Span> {
+        self.standing_again(queue)?;
+        let taken = self.put_back.pop()?;
+        let rows = taken.rows();
+        self.stack(taken);
+        Some(rows)
     }
 }
 
@@ -718,6 +774,7 @@ impl RootView {
         }
 
         let taken_out = self.took_out.offered(queue);
+        let put_back = self.took_out.offered_again(queue);
         let queued = !queue.is_empty();
 
         kit::heading()
@@ -810,6 +867,27 @@ impl RootView {
                                                 },
                                                 cx,
                                             );
+                                        },
+                                    )),
+                                )
+                            })
+                            .when(put_back.is_some(), |bar| {
+                                bar.child(
+                                    kit::button(
+                                        "take-the-queue-out-again",
+                                        Some(Icon::Redo),
+                                        "Take out again",
+                                        takes_out_again(put_back),
+                                        Tone::Ghost,
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
+                                            let queued = this.player.read(cx).queue();
+                                            let Some(rows) = this.took_out.take_again(&queued)
+                                            else {
+                                                return;
+                                            };
+                                            this.send(Command::Remove(rows), cx);
                                         },
                                     )),
                                 )
@@ -1019,13 +1097,24 @@ fn puts_back(offer: Option<Offer>) -> SharedString {
     SharedString::from(format!("{PUT_BACK_HINT}. {more}"))
 }
 
+fn takes_out_again(offer: Option<Offer>) -> SharedString {
+    let behind = offer.map_or(0, |offer| offer.behind);
+    let more = match behind {
+        0 => "It is the last one there is to take out again",
+        1 => "One more put back is behind it",
+        _ => "More put backs are behind it",
+    };
+
+    SharedString::from(format!("{TAKE_AGAIN_HINT}. {more}"))
+}
+
 #[cfg(test)]
 mod tests {
     use resonate_core::{MediaLocation, Span, TrackId};
 
     use super::{
         KEPT_GESTURES, Line, Offer, Part, QueueItem, QueueParts, Run, TakenBack, puts_back,
-        took_out,
+        takes_out_again, took_out,
     };
 
     fn queued(ids: &[u64]) -> Vec<QueueItem> {
@@ -1054,6 +1143,14 @@ mod tests {
             return false;
         };
         queue.splice(taken.at..taken.at, taken.rows);
+        true
+    }
+
+    fn take_again(kept: &mut TakenBack, queue: &mut Vec<QueueItem>) -> bool {
+        let Some(rows) = kept.take_again(queue) else {
+            return false;
+        };
+        queue.drain(rows.range());
         true
     }
 
@@ -1180,6 +1277,50 @@ mod tests {
     }
 
     #[test]
+    fn a_walk_put_back_is_taken_out_again_the_last_put_back_first() {
+        let mut queue = queued(&[1, 2, 3, 4, 5]);
+        let mut kept = TakenBack::default();
+
+        back(&mut kept, &mut queue, Span::between(4, 4));
+        back(&mut kept, &mut queue, Span::between(0, 1));
+        assert!(put_back(&mut kept, &mut queue));
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 2, 3, 4, 5]));
+
+        assert!(take_again(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 2, 3, 4]));
+        assert!(take_again(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[3, 4]));
+        assert!(!take_again(&mut kept, &mut queue), "a step was taken twice");
+
+        assert!(put_back(&mut kept, &mut queue));
+        assert_eq!(queue, queued(&[1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn a_fresh_gesture_or_a_moved_queue_leaves_nothing_to_take_out_again() {
+        let mut queue = queued(&[1, 2, 3]);
+        let mut kept = TakenBack::default();
+
+        back(&mut kept, &mut queue, Span::between(0, 0));
+        assert!(put_back(&mut kept, &mut queue));
+        let offer = kept.offered_again(&queue).expect("the put back is offered");
+        assert_eq!((offer.rows, offer.behind), (1, 0));
+
+        queue.push(queued(&[9])[0].clone());
+        assert_eq!(kept.offered_again(&queue), None);
+        queue.pop();
+        assert!(kept.offered_again(&queue).is_some());
+
+        back(&mut kept, &mut queue, Span::between(2, 2));
+        assert_eq!(
+            kept.offered_again(&queue),
+            None,
+            "a fresh gesture kept what was put back before it"
+        );
+    }
+
+    #[test]
     fn the_offer_counts_what_is_behind_it() {
         let mut queue = queued(&[1, 2, 3, 4]);
         let mut kept = TakenBack::default();
@@ -1226,6 +1367,11 @@ mod tests {
         assert!(
             puts_back(Some(Offer { rows: 1, behind: 1 }))
                 .ends_with("One more gesture is behind it")
+        );
+        assert!(takes_out_again(None).ends_with("the last one there is to take out again"));
+        assert!(
+            takes_out_again(Some(Offer { rows: 1, behind: 2 }))
+                .ends_with("More put backs are behind it")
         );
     }
 

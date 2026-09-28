@@ -509,6 +509,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   queue is what says the two gestures are consecutive. `KEPT_GESTURES` bounds it at sixteen, the
   oldest going first, and the button's hint says how many are behind — so a walk is as visible as the playlists pane's `Undoable`
   makes its own.
+- **What was put back can be taken out again, walked forward the way it was walked back.**
+  *Put back* moves the step it pops onto a second stack beside the first, and *Take out again*
+  pops that one: it sends `Command::Remove` over the rows the step put back and stacks the step
+  where it was, so its `left` is again the queue the step stands over and *Put back* offers it
+  once more. A put-back step stands while the queue is the one it left — `TakenOut::stands_under`
+  weighs the ids against `left` with the step's own rows spliced back in at `at`, which is what
+  `Unclaimed::claim` handing each row its id back makes exact — and a fresh gesture clears the
+  whole forward walk, as a new edit clears any redo. It goes through neither `drop_rows` nor a
+  toast, because it is the gesture already told about being made again.
 - **The offer stands while the queue is what the gesture left, and `TakenOut::stands_over` is that
   reading.** It weighs the ids the queue holds now against the ids it held once the rows were out,
   so anything that queues, loads, moves or takes away a row takes the offer with it — the row the
