@@ -804,8 +804,8 @@ cd fuzz && cargo +nightly fuzz run probe corpus/probe seeds/probe -- -max_total_
 
 **The CI runs what the list above runs, and nothing the list does not.** `.github/workflows/ci.yml`
 takes every push to `master` and every pull request through clippy with `-D warnings`, the headless
-build and tests, the whole workspace's build and tests, the `cargo tree` refusals above and
-`cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
+build and tests, the whole workspace's build and tests, the DSP bench held to its ceilings, the
+`cargo tree` refusals above and `cargo +nightly fuzz build`, each in an `archlinux` container holding the PKGBUILD's dependencies
 plus ffmpeg, `metaflac`, `wavpack` and `mac`, so the tests that want them run rather than skip. There is no daemon and
 no session bus there, so the PipeWire and bus tests print their skip — all but the two reconnect
 tests, which start a daemon of their own, and the notification press, which starts a bus of its own under
