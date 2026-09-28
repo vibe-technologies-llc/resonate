@@ -1165,6 +1165,16 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   clears. A wheel over the pane marks it `led_by_hand` and the pane stops following for `HANDS_OFF`;
   the heading grows a *Follow* button while it is held off, and that press, a press on a line or a
   track change is what resumes it.
+- **The pane reads a clock of its own rather than the engine's position.** `PlayerState`'s
+  position is what was decoded less what the ring and the device still hold, so it climbs a
+  decoded block at a time — some 90 ms for FLAC — and drains in quanta between: a sawtooth, and
+  everything keyed off it, the word sweep and the filling dots and the moment a line lights,
+  moved in those steps. `LyricsModel::keep_time` runs a `Clock` on the wall from the last sample
+  instead and pulls it `PULLED_IN_A_FRAME` of the way towards each new one, so the published
+  position steers the clock without its steps showing; a seek (`Seeks` moved), a new track, a
+  pause, or a drift past `DRIFTS_AT_MOST` takes the published position as it stands. While a
+  synced set plays the pane asks for every frame, so it is drawn on the display's clock rather
+  than on the 16 ms poll's, which beats against it.
 - **A gap breathes, mid-song as well as before the first line.** `Lyrics::waiting_at` answers only
   where no line is in play: which line the gap is waiting on and how far through the wait the
   transport is, counting from the start of the track before the first line and from the moment

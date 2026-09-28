@@ -8,7 +8,7 @@ use gpui::{
     Bounds, Context, Pixels, Point, ScrollHandle, SharedString, Size, Task, ease_in_out, point, px,
 };
 use resonate_core::{Frames, TrackId};
-use resonate_engine::{PlayerState, StreamDigest};
+use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
 use crate::theme;
@@ -45,6 +45,10 @@ const RISES_AT_MOST: usize = 8;
 const LOOKS_QUIETLY_FOR: Duration = Duration::from_millis(450);
 
 const BREATH: Duration = Duration::from_millis(2400);
+
+const DRIFTS_AT_MOST: Duration = Duration::from_millis(250);
+
+const PULLED_IN_A_FRAME: f32 = 0.03;
 
 const HANDS_OFF: Duration = Duration::from_secs(6);
 
@@ -231,6 +235,62 @@ impl FadingBreath {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Heard {
+    pub track: TrackId,
+    pub seeks: Seeks,
+    pub at: Duration,
+    pub playing: bool,
+}
+
+impl Heard {
+    pub fn of(state: &PlayerState) -> Option<Self> {
+        let current = state.current?;
+        Some(Self {
+            track: current.id,
+            seeks: state.seeks,
+            at: current.position.to_duration(current.source.rate),
+            playing: state.playback == PlaybackState::Playing,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Clock {
+    track: TrackId,
+    seeks: Seeks,
+    from: Duration,
+    at: Instant,
+}
+
+impl Clock {
+    fn started(heard: Heard, now: Instant) -> Self {
+        Self {
+            track: heard.track,
+            seeks: heard.seeks,
+            from: heard.at,
+            at: now,
+        }
+    }
+
+    fn keeps_time_with(self, heard: Heard) -> bool {
+        heard.playing && self.track == heard.track && self.seeks == heard.seeks
+    }
+
+    fn runs_to(self, now: Instant) -> Duration {
+        self.from
+            .saturating_add(now.saturating_duration_since(self.at))
+    }
+}
+
+fn pulled_towards(from: Duration, to: Duration) -> Duration {
+    if to >= from {
+        from.saturating_add((to - from).mul_f32(PULLED_IN_A_FRAME))
+    } else {
+        from.saturating_sub((from - to).mul_f32(PULLED_IN_A_FRAME))
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Breathing {
     line: usize,
@@ -395,6 +455,7 @@ pub struct LyricsModel {
     hand_at: Option<Instant>,
     breathing_for: Option<Breathing>,
     fading_breath: Option<FadingBreath>,
+    clock: Option<Clock>,
     _find: Task<()>,
 }
 
@@ -421,6 +482,7 @@ impl LyricsModel {
             hand_at: None,
             breathing_for: None,
             fading_breath: None,
+            clock: None,
             _find: Task::ready(()),
         }
     }
@@ -463,6 +525,26 @@ impl LyricsModel {
 
     pub fn waiting_at(&self, position: Duration) -> Option<Waiting> {
         self.found()?.waiting_at(position)
+    }
+
+    pub fn keep_time(&mut self, heard: Heard, now: Instant) -> Duration {
+        let running = self
+            .clock
+            .filter(|clock| clock.keeps_time_with(heard))
+            .map(|clock| clock.runs_to(now))
+            .filter(|ran| ran.abs_diff(heard.at) <= DRIFTS_AT_MOST);
+        let Some(ran) = running else {
+            self.clock = heard.playing.then(|| Clock::started(heard, now));
+            return heard.at;
+        };
+        let kept = pulled_towards(ran, heard.at);
+        self.clock = Some(Clock {
+            from: kept,
+            at: now,
+            ..Clock::started(heard, now)
+        });
+
+        kept
     }
 
     pub fn in_play(&self, position: Duration) -> [Option<usize>; 2] {
@@ -1318,6 +1400,53 @@ mod tests {
         }
         assert_eq!(a_pause(&model, at(60), sung + TURN), None);
         assert_eq!(model.breathes().as_ref(), [true, true]);
+    }
+
+    #[test]
+    fn the_clock_runs_smoothly_through_a_position_that_arrives_a_decoded_block_at_a_time() {
+        let mut model = model();
+        let track = TrackId::new(1).expect("a track id");
+        let heard = |at: Duration, seeks: Seeks, playing: bool| Heard {
+            track,
+            seeks,
+            at,
+            playing,
+        };
+        let block = Duration::from_millis(93);
+        let frame = Duration::from_micros(16_667);
+        let began = Instant::now();
+        let starts = at(10);
+
+        let mut was = model.keep_time(heard(starts, Seeks::default(), true), began);
+        assert_eq!(was, starts);
+        for step in 1..=240_u32 {
+            let elapsed = frame * step;
+            let blocks = u32::try_from(elapsed.as_nanos() / block.as_nanos()).expect("few");
+            let sampled = starts + block * blocks;
+            let kept = model.keep_time(heard(sampled, Seeks::default(), true), began + elapsed);
+            let stepped = kept.saturating_sub(was);
+            assert!(kept >= was, "the clock ran backwards at frame {step}");
+            assert!(
+                stepped.abs_diff(frame) < Duration::from_millis(4),
+                "a frame moved the clock by {stepped:?}"
+            );
+            assert!((starts + elapsed).abs_diff(kept) < block);
+            was = kept;
+        }
+
+        let later = began + frame * 241;
+        let sought = model.keep_time(heard(at(90), Seeks::default().stepped(), true), later);
+        assert_eq!(sought, at(90), "a seek was smoothed rather than followed");
+        let paused = model.keep_time(heard(at(91), Seeks::default().stepped(), false), later);
+        assert_eq!(paused, at(91));
+        assert_eq!(
+            model.keep_time(
+                heard(at(91), Seeks::default().stepped(), false),
+                later + at(5)
+            ),
+            at(91),
+            "a paused clock ran on"
+        );
     }
 
     #[test]

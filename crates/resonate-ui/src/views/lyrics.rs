@@ -11,7 +11,7 @@ use resonate_lyrics::{Credits, Detail, Sweep, Voice, Wanted};
 use crate::{
     Selection, clipboard,
     icons::Icon,
-    lyrics::{Asked, Look, Reading, rising},
+    lyrics::{Asked, Heard, Look, Reading, rising},
     theme,
     views::{
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
@@ -147,8 +147,15 @@ impl RootView {
             return kit::empty(Icon::Lyrics, NOTHING_PLAYING, None);
         };
         let playing = self.playing(&state, digest.as_deref(), cx);
-        let position = current.position.to_duration(current.source.rate);
         let now = Instant::now();
+        let heard = Heard::of(&state);
+        let position = match heard {
+            Some(heard) => self
+                .lyrics
+                .update(cx, |model, _| model.keep_time(heard, now)),
+            None => current.position.to_duration(current.source.rate),
+        };
+        let sounding = heard.is_some_and(|heard| heard.playing);
 
         let moving = self.lyrics.update(cx, |model, _| {
             model.follow_the_track(position, now);
@@ -177,7 +184,9 @@ impl RootView {
             }
             Look::Nothing | Look::Missing => kit::empty(Icon::Lyrics, UNSOURCED, None),
             Look::Refused(notice) => notice_of(notice.clone()),
-            Look::Found(_) => self.lyric_lines(position, now, synced, moving, cx),
+            Look::Found(_) => {
+                self.lyric_lines(position, now, synced, moving || (synced && sounding), cx)
+            }
         };
 
         div()
