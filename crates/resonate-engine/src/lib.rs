@@ -5,6 +5,7 @@ mod engine;
 mod error;
 mod heard;
 mod kept;
+mod measure;
 mod pipeline;
 mod player;
 mod queue;

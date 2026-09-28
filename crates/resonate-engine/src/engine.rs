@@ -27,6 +27,7 @@ use crate::{
     ReplayGainMode, Reply, Request, Result, Seeks, SkipUnderRepeat, Sleeping, StreamDigest, Tapped,
     Tapping, TrackState, TransportState,
     backend::Surveyor,
+    measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{Queue, Queued, Removal},
     ring::{RingConsumer, RingMonitor, RingProducer, ring},
@@ -61,6 +62,7 @@ struct Track {
     layout: Option<Arc<BoxLayout>>,
     hints: TrackHints,
     replay_gain: AppliedGain,
+    measuring: Option<Measuring>,
     decoded: AudioBuffer,
     decoded_at: usize,
     profile: ProfileBuilder,
@@ -74,7 +76,7 @@ impl Track {
         id: TrackId,
         location: &MediaLocation,
         span: Option<FrameSpan>,
-        sources: &Sources,
+        sources: &Arc<Sources>,
         config: &EngineConfig,
     ) -> resonate_codec::Result<Self> {
         let (decoder, info) = match span {
@@ -83,11 +85,12 @@ impl Track {
         };
         let hints = sources.hints(location, span);
         let replay_gain = levelled(config, &info, hints);
-        Ok(Self {
+        let mut track = Self {
             id,
             location: location.clone(),
             span,
             hints,
+            measuring: None,
             decoded: AudioBuffer::empty(info.spec),
             layout: inspected(sources, location).map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
@@ -98,7 +101,30 @@ impl Track {
             profiled_from: Frames::ZERO,
             sampled: None,
             published: None,
-        })
+        };
+        track.measure_where_wanted(sources, config);
+        Ok(track)
+    }
+
+    fn measure_where_wanted(&mut self, sources: &Arc<Sources>, config: &EngineConfig) {
+        if self.measuring.is_some() || !Measuring::wanted(config, &self.info, self.replay_gain) {
+            return;
+        }
+        self.measuring = Measuring::start(Arc::clone(sources), self.location.clone(), self.span);
+    }
+
+    fn heed_what_was_measured(&mut self, config: &EngineConfig) -> bool {
+        let Some(measured) = self.measuring.as_ref().and_then(Measuring::landed) else {
+            return false;
+        };
+        self.measuring = None;
+        let Measured::Peaking(peak) = measured else {
+            return false;
+        };
+        self.hints.true_peak = Some(peak);
+        self.replay_gain = levelled(config, &self.info, self.hints);
+        self.published = None;
+        true
     }
 
     fn source(&self) -> StreamSpec {
@@ -570,6 +596,7 @@ impl Engine {
                 self.watch_graph();
                 self.settle();
                 self.let_the_link_rest();
+                self.heed_the_measured_peak();
                 self.doze();
                 self.publish();
                 self.answer();
@@ -901,6 +928,7 @@ impl Engine {
                 if let Some(track) = self.track.as_mut() {
                     track.replay_gain = levelled(&self.config, &track.info, track.hints);
                     track.published = None;
+                    track.measure_where_wanted(&self.sources, &self.config);
                 }
                 let at = self.position();
                 self.rebind(Some(at), None)
@@ -980,8 +1008,22 @@ impl Engine {
         if let Some(track) = self.track.as_mut() {
             track.replay_gain = levelled(&self.config, &track.info, track.hints);
             track.published = None;
+            track.measure_where_wanted(&self.sources, &self.config);
         }
         self.retune()
+    }
+
+    fn heed_the_measured_peak(&mut self) {
+        let heeded = self
+            .track
+            .as_mut()
+            .is_some_and(|track| track.heed_what_was_measured(&self.config));
+        if !heeded {
+            return;
+        }
+        if let Err(error) = self.retune() {
+            tracing::warn!(%error, "the peak measured for the playing track could not be heeded");
+        }
     }
 
     fn hear(&mut self, row: usize) -> Result<()> {

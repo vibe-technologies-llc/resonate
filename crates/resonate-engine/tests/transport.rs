@@ -5115,6 +5115,102 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
     Ok(())
 }
 
+fn floating_wave(amplitude: f32, frames: usize) -> Vec<u8> {
+    const IEEE_FLOAT: u16 = 3;
+    const FLOAT_BITS: u16 = 32;
+    let block_align = CHANNELS * FLOAT_BITS / 8;
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&IEEE_FLOAT.to_le_bytes());
+    fmt.extend_from_slice(&CHANNELS.to_le_bytes());
+    fmt.extend_from_slice(&RATE.to_le_bytes());
+    fmt.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    fmt.extend_from_slice(&block_align.to_le_bytes());
+    fmt.extend_from_slice(&FLOAT_BITS.to_le_bytes());
+
+    let data: Vec<u8> = (0..frames)
+        .flat_map(|frame| {
+            let phase = frame as f32 * 1_000.0 / RATE as f32 * std::f32::consts::TAU;
+            let sample = amplitude * phase.sin();
+            [sample, sample]
+        })
+        .flat_map(f32::to_le_bytes)
+        .collect();
+
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &fmt);
+    chunk(&mut body, b"data", &data);
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    file
+}
+
+fn loudest_float(bytes: &[u8]) -> f32 {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|word| f32::from_le_bytes(*word).abs())
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_under_it() -> Result<()>
+{
+    let tree = Tree::new();
+    let path = tree.write("hot.wav", &floating_wave(2.0, 10 * RATE as usize));
+    let rate = SampleRate::HZ_44100;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::F32);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[rate], &[SampleFormat::F32])],
+        Arc::new(Sources::local()),
+        ring_deep(),
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut first_mode = None;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |player, graph| {
+            let mode = player.state().output.map(|output| output.mode);
+            if first_mode.is_none() {
+                first_mode = mode;
+            }
+            mode == Some(OutputMode::Converted) && !graph.played.is_empty()
+        },
+        "the measured peak to turn the stream down",
+    );
+    assert_eq!(
+        first_mode,
+        Some(OutputMode::BitPerfect),
+        "the unstudied track did not open bit-perfect"
+    );
+
+    let heard_before = graph.lock().played.len();
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= heard_before + 64 * block,
+        "the turned-down stream to play on",
+    );
+    let graph = graph.lock();
+    let settled = graph.played.len() - 16 * block..graph.played.len();
+    let loudest = loudest_float(&graph.played[settled]);
+    assert!(
+        loudest <= 1.0,
+        "a sample of {loudest} reached the device after the peak was measured"
+    );
+    Ok(())
+}
+
 fn turning_its_own_volume(at: f32) -> SinkInfo {
     SinkInfo {
         port: Some(SinkPort {

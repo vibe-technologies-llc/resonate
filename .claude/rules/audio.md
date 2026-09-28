@@ -1567,6 +1567,20 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Command::SetTruePeak` run again; a row with no study answers nothing and plays as it did.
   `a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it` plays a file the hints
   say peaks at 2.0 and hears it at half level, and at full level with the key off.
+- **A track nobody studied is measured where its peak would matter.** Where `true-peak` is on,
+  the gain in force has no peak — neither a tag nor a study — and either asks for a boost or the
+  source is float, which is the one word that can carry an over into a bit-perfect stream,
+  `measure::Measuring` decodes the row whole on a `resonate-peak` thread of its own through a
+  `TruePeakMeter`, and each pass of the run loop asks whether it has landed:
+  `Track::heed_what_was_measured` puts the peak into the track's hints, `levelled` runs again and
+  `retune` reshapes the chain in place, so the boost is capped at the peak rather than ridden by
+  the per-sample clamp for the rest of the track, and a float file that passes full scale grows a
+  gain stage rather than reaching the device as the file has it. Dropping the track drops the
+  `Measuring`, which tells the thread to stop at its next block, so a run of skips leaves no
+  decode behind; `re_level` and `SetTruePeak` start one where a changed setting now wants it. The
+  measurement is the engine's alone and is not kept — the study the lookup takes is what the
+  catalog keeps. `a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_under_it`
+  opens a 2.0-peaking float file bit-perfect and hears it no louder than full scale once measured.
 - **The true-peak guard is a lookahead gain, not a clipper, and it touches nothing under the
   ceiling.** `resonate-dsp`'s `TruePeak` is pushed after the gain stage and before the dither
   wherever `true-peak` is on and the plan converts — any stage, or a float source narrowed to an

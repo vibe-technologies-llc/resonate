@@ -9,9 +9,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and
   so does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
   ring's depth
-- A track the lookup has not studied is turned down only by the peak its tags declare, so a boost
-  with no peak tag leans on the per-sample limiter until the study lands, and a bit-perfect stream
-  of a file that is itself over full scale reaches the device as the file has it
 - A stream's reported delay misses the frames in buffers it has already queued — `pw_time.queued`
   has no safe setter in pipewire-rs 0.10 — so the position and the visualiser's frame are short by
   up to one cycle
