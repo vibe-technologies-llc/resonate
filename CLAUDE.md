@@ -1021,7 +1021,8 @@ cargo run -- playlist <name>          # plays one; --add <files> appends, --into
                                       #   the rows a file is already named by, --query <text>
                                       #   saves one that fills itself, with --sort <order> for the
                                       #   order it hands rows back in — relevance, album, title,
-                                      #   artist, added, length, plays or played — and --limit
+                                      #   artist, added, length, plays, played or
+                                      #   plays-this-month — and --limit
                                       #   <rows> for its cap, --matching <text> plays only the
                                       #   rows that search matches, copies only those, or with
                                       #   --drop takes only those out, --rename <new> renames it

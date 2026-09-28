@@ -3528,6 +3528,34 @@ fn a_playlist_that_is_played_records_when_and_how_often() -> Result<()> {
 }
 
 #[test]
+fn the_playlists_most_played_this_month_are_ordered_by_what_the_month_played() -> Result<()> {
+    const TWO_MONTHS: i64 = 60 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    let anthems = library.create_playlist("Anthems")?;
+    let carols = library.create_playlist("Carols")?;
+
+    for _ in 0..3 {
+        library.set_playing_playlist(loaded(carols));
+    }
+    beside(&database)
+        .execute_batch(&format!("UPDATE playlist_plays SET at = at - {TWO_MONTHS};"))
+        .expect("the plays are moved back two months");
+    library.set_playing_playlist(loaded(anthems));
+
+    assert_eq!(
+        read_as(&library, PlaylistOrder::Plays, Direction::Descending)?,
+        vec!["Carols", "Anthems"]
+    );
+    assert_eq!(
+        read_as(&library, PlaylistOrder::PlaysThisMonth, Direction::Descending)?,
+        vec!["Anthems", "Carols"]
+    );
+    Ok(())
+}
+
+#[test]
 fn the_playlists_are_listed_in_whatever_order_is_asked_for() -> Result<()> {
     let library = Library::open_in_memory()?;
     let anthems = library.create_playlist("Anthems")?;
@@ -4693,6 +4721,45 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
         2,
         "forgetting the history took the count with it"
     );
+    Ok(())
+}
+
+#[test]
+fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Result<()> {
+    const TWO_MONTHS: i64 = 60 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let heat = MediaLocation::local(tree.write(
+        "heat.wav",
+        &Wav::new().text(TITLE, "Heat").text(ARTIST, "Ben").build(),
+    ));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    for _ in 0..3 {
+        library.track_played(&cold, None)?;
+    }
+    beside(&database)
+        .execute_batch(&format!("UPDATE listens SET at = at - {TWO_MONTHS};"))
+        .expect("the plays are moved back two months");
+    library.track_played(&heat, None)?;
+
+    let titles = |sort| -> Result<Vec<String>> {
+        Ok(library
+            .tracks(&TrackQuery {
+                sort,
+                reading: sort.reads(),
+                ..TrackQuery::default()
+            })?
+            .into_iter()
+            .map(|track| track.title)
+            .collect())
+    };
+    assert_eq!(titles(SortOrder::Plays)?, vec!["Cold", "Heat"]);
+    assert_eq!(titles(SortOrder::PlaysThisMonth)?, vec!["Heat", "Cold"]);
     Ok(())
 }
 

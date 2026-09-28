@@ -140,6 +140,7 @@ pub enum SortArg {
     Duration,
     Plays,
     Played,
+    PlaysThisMonth,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -169,6 +170,7 @@ pub enum PlaylistOrderArg {
     Modified,
     Played,
     Plays,
+    PlaysThisMonth,
 }
 
 #[derive(Debug, Args)]

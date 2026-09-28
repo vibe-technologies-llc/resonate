@@ -49,6 +49,13 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tracks ADD COLUMN named_by_its_stem INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE artist_releases ADD COLUMN song TEXT;
      ALTER TABLE artists ADD COLUMN releases_unread INTEGER NOT NULL DEFAULT 0;",
+    "CREATE TABLE playlist_plays (
+         playlist_id INTEGER NOT NULL,
+         at          INTEGER NOT NULL
+     ) STRICT;
+     CREATE INDEX playlist_plays_by_playlist ON playlist_plays(playlist_id, at);
+     INSERT INTO playlist_plays (playlist_id, at)
+          SELECT id, played FROM playlists WHERE played IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

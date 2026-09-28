@@ -20,6 +20,8 @@ const FORGET_THE_PASSES: &str = "DELETE FROM passes WHERE at < ?1";
 
 const FORGET_THE_UNHELD: &str = "DELETE FROM unheld_listens WHERE at < ?1";
 
+const FORGET_THE_PLAYLIST_PLAYS: &str = "DELETE FROM playlist_plays WHERE at < ?1";
+
 const CREDIT_THE_UNHELD: &str = "INSERT INTO listens (track_id, at)
      SELECT t.id, u.at FROM unheld_listens u
        JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
@@ -117,9 +119,11 @@ fn forgotten_before(transaction: &Transaction<'_>, before: i64) -> Result<Aged> 
     let passes = transaction
         .execute(FORGET_THE_PASSES, params![before])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
-    transaction
-        .execute(FORGET_THE_UNHELD, params![before])
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    for forgetting in [FORGET_THE_UNHELD, FORGET_THE_PLAYLIST_PLAYS] {
+        transaction
+            .execute(forgetting, params![before])
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
     Ok(Aged {
         listens: listens as u64,
         passes: passes as u64,

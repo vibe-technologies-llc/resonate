@@ -635,8 +635,18 @@ through `Player::media` like any other unscanned row.
   forgetting a root takes the plays counted under it away with the rows — which matters because
   SQLite reuses a deleted `tracks.id` and an orphan would be re-attributed to whatever was
   rescanned into its place. The count is what a pane draws and the history is what `plays:@`
-  narrows on; nothing orders on the history, because an order is an index and a correlated
-  `count(*)` is not one.
+  narrows on. **One order is read off the history on purpose**: `SortOrder::PlaysThisMonth` —
+  *Most played this month* — ranks by a correlated `count(*)` of the listens since
+  `unixepoch()` less thirty days, the whole count as its tie-break, so it is a sort rather than an
+  index walk and `SortOrder::HELD_BY_AN_INDEX` is what the index guard walks, every other order
+  still held to it. It is saved in a query's `sort` column as code 9, and a playlist has its twin:
+  `playlist_plays` holds one row per play a playlist was loaded for — a step in `MIGRATIONS` that
+  seeds each played playlist with its last play — and `PlaylistOrder::PlaysThisMonth` counts it
+  the same way, so a playlist's plays are a history rather than one date and a total. It is kept
+  apart from the playlist's row, with no cascade, because `undo.rs` re-creates a playlist from
+  what it held and a cascade would lose the history on every undo; the history's span ages it
+  with the listens. `the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard` and
+  `the_playlists_most_played_this_month_are_ordered_by_what_the_month_played` are the claims.
 - **A file that moved is followed, not forgotten and found again.** A rename or a move by hand —
   anything but `organise`, which rewrites the rows itself — reads to a scan as a row whose file
   has gone and a file no row names. `moves::follow_the_moved` runs before the prune and pairs the

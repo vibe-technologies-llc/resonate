@@ -333,6 +333,7 @@ pub const fn sort_code(sort: SortOrder, reading: Direction) -> i64 {
         SortOrder::Plays => 6,
         SortOrder::Played => 7,
         SortOrder::Favourited => 8,
+        SortOrder::PlaysThisMonth => 9,
     };
 
     match reading {
@@ -357,6 +358,7 @@ pub const fn sort_of(playlist: PlaylistId, code: i64) -> Result<(SortOrder, Dire
         6 => SortOrder::Plays,
         7 => SortOrder::Played,
         8 => SortOrder::Favourited,
+        9 => SortOrder::PlaysThisMonth,
         _ => {
             return Err(Error::UnknownOrder {
                 playlist,

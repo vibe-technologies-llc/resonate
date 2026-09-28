@@ -89,11 +89,14 @@ impl Ordering for PlaylistOrder {
             Self::Modified => "Last changed",
             Self::Played => "Last played",
             Self::Plays => "Most played",
+            Self::PlaysThisMonth => "Most played this month",
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
+            (Self::PlaysThisMonth, Direction::Descending) => "Most played first",
+            (Self::PlaysThisMonth, Direction::Ascending) => "Least played first",
             (Self::Name, Direction::Ascending) => "A to Z",
             (Self::Name, Direction::Descending) => "Z to A",
             (Self::Created | Self::Modified, Direction::Descending) => "Newest first",
@@ -145,6 +148,7 @@ impl Ordering for SortOrder {
             Self::Plays => "Most played",
             Self::Played => "Last played",
             Self::Favourited => "Favourited",
+            Self::PlaysThisMonth => "Most played this month",
         }
     }
 
@@ -152,6 +156,8 @@ impl Ordering for SortOrder {
         match (self, reading) {
             (Self::Relevance, Direction::Ascending) => "Best first",
             (Self::Relevance, Direction::Descending) => "Worst first",
+            (Self::PlaysThisMonth, Direction::Descending) => "Most played first",
+            (Self::PlaysThisMonth, Direction::Ascending) => "Least played first",
             (Self::AlbumThenTrack, Direction::Ascending) => "First album first",
             (Self::AlbumThenTrack, Direction::Descending) => "Last album first",
             (Self::Title | Self::Artist, Direction::Ascending) => "A to Z",
@@ -268,9 +274,11 @@ const fn row_order(column: Sortable) -> RowOrder {
 
 const fn track_column(sort: SortOrder) -> Option<Sortable> {
     match sort {
-        SortOrder::Relevance | SortOrder::DateAdded | SortOrder::Played | SortOrder::Favourited => {
-            None
-        }
+        SortOrder::Relevance
+        | SortOrder::DateAdded
+        | SortOrder::Played
+        | SortOrder::Favourited
+        | SortOrder::PlaysThisMonth => None,
         SortOrder::AlbumThenTrack => Some(Sortable::Number),
         SortOrder::Title => Some(Sortable::Title),
         SortOrder::Artist => Some(Sortable::Artist),

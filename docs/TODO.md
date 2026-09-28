@@ -53,8 +53,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
   popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
   rating at all
-- No listing orders on a count inside a window, only the Statistics pane's own reads; a playlist's
-  count is one date and one total with no history
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification
@@ -72,8 +70,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 
 ## Search
 - A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
-
-## UI
 
 ## Testing
 - The prescan guards what symphonia's WAVE and CAF readers overflow on only where the header

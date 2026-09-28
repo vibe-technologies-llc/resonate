@@ -388,13 +388,23 @@ fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
 }
 
 pub fn played_now(inner: &Inner, id: PlaylistId) -> Result<()> {
+    let now = store::to_nanos(SystemTime::now());
     let played = inner.write(|transaction| {
-        transaction
+        let played = transaction
             .execute(
                 "UPDATE playlists SET played = ?2, plays = plays + 1 WHERE id = ?1",
-                params![id.get() as i64, store::to_nanos(SystemTime::now())],
+                params![id.get() as i64, now],
             )
-            .map_err(|source| Error::store(StoreOp::Update, source))
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+        if played > 0 {
+            transaction
+                .execute(
+                    "INSERT INTO playlist_plays (playlist_id, at) VALUES (?1, ?2)",
+                    params![id.get() as i64, now],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+        Ok(played)
     })?;
 
     if played == 0 {
@@ -1451,6 +1461,11 @@ fn order_by(order: PlaylistOrder, direction: Direction) -> String {
         PlaylistOrder::Modified => "p.modified",
         PlaylistOrder::Played => "p.played",
         PlaylistOrder::Plays => "p.plays",
+        PlaylistOrder::PlaysThisMonth => {
+            "(SELECT count(*) FROM playlist_plays pp
+               WHERE pp.playlist_id = p.id
+                 AND pp.at >= (unixepoch() - 2592000) * 1000000000)"
+        }
     };
 
     format!(

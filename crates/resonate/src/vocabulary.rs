@@ -96,6 +96,7 @@ impl From<SortArg> for resonate_library::SortOrder {
             SortArg::Duration => Self::Duration,
             SortArg::Plays => Self::Plays,
             SortArg::Played => Self::Played,
+            SortArg::PlaysThisMonth => Self::PlaysThisMonth,
         }
     }
 }
@@ -120,6 +121,7 @@ impl From<PlaylistOrderArg> for resonate_library::PlaylistOrder {
             PlaylistOrderArg::Modified => Self::Modified,
             PlaylistOrderArg::Played => Self::Played,
             PlaylistOrderArg::Plays => Self::Plays,
+            PlaylistOrderArg::PlaysThisMonth => Self::PlaysThisMonth,
         }
     }
 }

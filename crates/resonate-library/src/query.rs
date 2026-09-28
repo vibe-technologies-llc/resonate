@@ -14,10 +14,11 @@ pub enum SortOrder {
     Plays,
     Played,
     Favourited,
+    PlaysThisMonth,
 }
 
 impl SortOrder {
-    pub const ALL: [Self; 9] = [
+    pub const HELD_BY_AN_INDEX: [Self; 9] = [
         Self::Relevance,
         Self::AlbumThenTrack,
         Self::Title,
@@ -29,6 +30,19 @@ impl SortOrder {
         Self::Favourited,
     ];
 
+    pub const ALL: [Self; 10] = [
+        Self::Relevance,
+        Self::AlbumThenTrack,
+        Self::Title,
+        Self::Artist,
+        Self::DateAdded,
+        Self::Duration,
+        Self::Plays,
+        Self::Played,
+        Self::Favourited,
+        Self::PlaysThisMonth,
+    ];
+
     pub const fn reads(self) -> Direction {
         match self {
             Self::Relevance
@@ -36,9 +50,11 @@ impl SortOrder {
             | Self::Title
             | Self::Artist
             | Self::Duration => Direction::Ascending,
-            Self::DateAdded | Self::Plays | Self::Played | Self::Favourited => {
-                Direction::Descending
-            }
+            Self::DateAdded
+            | Self::Plays
+            | Self::Played
+            | Self::Favourited
+            | Self::PlaysThisMonth => Direction::Descending,
         }
     }
 }
@@ -131,21 +147,25 @@ pub enum PlaylistOrder {
     Modified,
     Played,
     Plays,
+    PlaysThisMonth,
 }
 
 impl PlaylistOrder {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Name,
         Self::Created,
         Self::Modified,
         Self::Played,
         Self::Plays,
+        Self::PlaysThisMonth,
     ];
 
     pub const fn reads(self) -> Direction {
         match self {
             Self::Name => Direction::Ascending,
-            Self::Created | Self::Modified | Self::Played | Self::Plays => Direction::Descending,
+            Self::Created | Self::Modified | Self::Played | Self::Plays | Self::PlaysThisMonth => {
+                Direction::Descending
+            }
         }
     }
 }

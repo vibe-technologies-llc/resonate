@@ -155,6 +155,14 @@ macro_rules! artist_tracks {
     };
 }
 
+macro_rules! heard_this_month {
+    () => {
+        "(SELECT count(*) FROM listens l
+           WHERE l.track_id = tracks.id
+             AND l.at >= (unixepoch() - 2592000) * 1000000000)"
+    };
+}
+
 macro_rules! unheld_by_any_album {
     () => {
         "NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)
@@ -4093,6 +4101,16 @@ const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static
             up: "tracks.favourite, tracks.title COLLATE NOCASE DESC",
             down: "tracks.favourite DESC, tracks.title COLLATE NOCASE",
         },
+        SortOrder::PlaysThisMonth => Reading {
+            up: concat!(
+                heard_this_month!(),
+                ", tracks.plays, tracks.title COLLATE NOCASE DESC"
+            ),
+            down: concat!(
+                heard_this_month!(),
+                " DESC, tracks.plays DESC, tracks.title COLLATE NOCASE"
+            ),
+        },
     };
 
     read_as(reading, order)
@@ -4997,7 +5015,7 @@ mod tests {
     fn every_order_the_panes_offer_is_read_off_an_index_either_way_round() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
 
-        for sort in SortOrder::ALL {
+        for sort in SortOrder::HELD_BY_AN_INDEX {
             for reading in Direction::ALL {
                 let steps = plan(
                     &library,
