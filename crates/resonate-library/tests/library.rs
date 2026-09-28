@@ -14800,7 +14800,7 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
     );
     assert_eq!(
         shared.written().as_deref(),
-        Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c4d5e")
+        Some("https://song.link/s/1a2b3c4d5e")
     );
     Ok(())
 }
@@ -14913,7 +14913,7 @@ fn a_share_with_no_service_linked_asks_where_the_track_streams_and_hands_that_to
     assert!(asked.length.is_some(), "the share asked with no length");
     assert_eq!(
         shared.written().as_deref(),
-        Some("https://song.link/https%3A%2F%2Fwww.deezer.com%2Ftrack%2F677241")
+        Some("https://song.link/d/677241")
     );
     Ok(())
 }
@@ -14939,7 +14939,7 @@ fn a_share_already_linked_to_a_service_asks_nothing() -> Result<()> {
     );
     assert_eq!(
         shared.written().as_deref(),
-        Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c4d5e")
+        Some("https://song.link/s/1a2b3c4d5e")
     );
     Ok(())
 }

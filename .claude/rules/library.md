@@ -175,11 +175,16 @@ through `Player::media` like any other unscanned row.
   `one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once` are the claims.
 - **A share is the link alone, because three callers want the same one.** `Library::shareable`
   reads the track and the `release_track_links` and `album_links` rows, and `Shared::written` is
-  a pure function over them — one URL, or nothing. It is `https://song.link/` with the service
-  URL percent-encoded as a single path segment. Appending the URL raw is what the service used
-  to be asked, and it is broken: the server collapses the unescaped `//` and answers 308 to
-  `https:/…`, and a `?` — an Apple `i=` or a YouTube `v=` — is read as song.link's own query, so
-  the track id never arrives. Encoded, the same address answers 302 with the short form.
+  a pure function over them — one URL, or nothing. **It is song.link's own short page wherever
+  the service has one**: `ShortForm::of` reads the service's id out of its URL and writes
+  `https://song.link/<letter>/<id>` for a song and `https://album.link/<letter>/<id>` for an
+  album — `s` Spotify, `d` Deezer, `t` Tidal, `i` Apple Music, whose song is the `i=` of an album
+  URL, and `y` YouTube and YouTube Music — which is the address song.link itself redirects the
+  long form to, so the link is short and says nothing of where it was found. A service with no
+  short page — Amazon, SoundCloud, Bandcamp, Qobuz — or a URL naming no id it can read is
+  `https://song.link/` with the service URL percent-encoded as a single path segment. Appended
+  raw, the server collapses the unescaped `//` and answers 308 to `https:/…`, and a `?` is read
+  as song.link's own query, so the track id never arrives.
   The candidates are the `Relation`s `RELATIONS_SONG_LINK_TAKES` names crossed with
   `SERVICES_SONG_LINK_RESOLVES`, a recording's own links ahead of its release's and the
   providers weighed in the order they are declared, so one track shares identically twice

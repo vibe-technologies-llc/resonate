@@ -674,9 +674,11 @@ Invariants the layering exists to protect:
   bare word, and a plain-word search some track sings is offered as `lyrics:"…"`.
 - **A share is the link alone, and the catalog already held it.** `Shared::written` is the
   whole of it, in `resonate-library` because the window, `resonate share` and anything else
-  that wants it must say the same thing. It is `https://song.link/` with the service URL
-  percent-encoded as one path segment — appended raw, the server collapses `//` into a 308 to
-  `https:/…` and reads a `?` as its own query — and the URL comes from the
+  that wants it must say the same thing. It is song.link's short page — `song.link/s/<id>`,
+  `album.link/d/<id>` and so on, the service's own id under its letter — wherever the service has
+  one, and `https://song.link/` with the service URL percent-encoded as one path segment for the
+  few that do not; appended raw, the server collapses `//` into a 308 to `https:/…` and reads a
+  `?` as its own query. The URL comes from the
   `release_track_links` and `album_links` MusicBrainz enrichment already wrote, a recording's
   preferred over its release's and the providers weighed in a declared order so one track shares
   the same way twice running. Where no service is linked the reference is asked where the track

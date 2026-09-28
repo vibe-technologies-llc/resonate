@@ -9,6 +9,7 @@ use crate::{
 };
 
 const SONG_LINK: &str = "https://song.link/";
+const ALBUM_LINK: &str = "https://album.link/";
 const MUSICBRAINZ_RECORDING: &str = "https://musicbrainz.org/recording/";
 const HEX: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -63,7 +64,12 @@ pub struct Shared {
 impl Shared {
     pub fn written(&self) -> Option<String> {
         self.through_song_link()
-            .map(|link| format!("{SONG_LINK}{}", escaped_for_a_path(&link.url)))
+            .map(|link| {
+                ShortForm::of(&link.url).map_or_else(
+                    || format!("{SONG_LINK}{}", escaped_for_a_path(&link.url)),
+                    |short| short.written(),
+                )
+            })
             .or_else(|| {
                 self.recording
                     .as_ref()
@@ -108,6 +114,122 @@ impl Shared {
             .iter()
             .find(|link| resolved_by_song_link(link).is_some())
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Page {
+    Song,
+    Album,
+}
+
+impl Page {
+    fn of(kind: &str) -> Option<Self> {
+        match kind {
+            "track" | "song" => Some(Self::Song),
+            "album" => Some(Self::Album),
+            _ => None,
+        }
+    }
+
+    const fn host(self) -> &'static str {
+        match self {
+            Self::Song => SONG_LINK,
+            Self::Album => ALBUM_LINK,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShortService {
+    Spotify,
+    Deezer,
+    Tidal,
+    AppleMusic,
+    Youtube,
+}
+
+impl ShortService {
+    const fn letter(self) -> char {
+        match self {
+            Self::Spotify => 's',
+            Self::Deezer => 'd',
+            Self::Tidal => 't',
+            Self::AppleMusic => 'i',
+            Self::Youtube => 'y',
+        }
+    }
+
+    fn at(host: &str) -> Option<Self> {
+        match host {
+            "open.spotify.com" | "play.spotify.com" => Some(Self::Spotify),
+            "deezer.com" => Some(Self::Deezer),
+            "tidal.com" | "listen.tidal.com" => Some(Self::Tidal),
+            "music.apple.com" | "itunes.apple.com" => Some(Self::AppleMusic),
+            "youtube.com" | "m.youtube.com" | "music.youtube.com" | "youtu.be" => {
+                Some(Self::Youtube)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShortForm<'a> {
+    service: ShortService,
+    page: Page,
+    id: &'a str,
+}
+
+impl<'a> ShortForm<'a> {
+    fn of(url: &'a str) -> Option<Self> {
+        let rest = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
+        let rest = rest.split('#').next().unwrap_or(rest);
+        let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let (host, path) = address.split_once('/').unwrap_or((address, ""));
+        let host = host.to_ascii_lowercase();
+        let service = ShortService::at(host.strip_prefix("www.").unwrap_or(&host))?;
+        let segments: Vec<&str> = path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+
+        let (page, id) = match service {
+            ShortService::Spotify | ShortService::Deezer | ShortService::Tidal => segments
+                .windows(2)
+                .find_map(|pair| Some((Page::of(pair[0])?, pair[1])))?,
+            ShortService::AppleMusic => match asked_for(query, "i") {
+                Some(track) => (Page::Song, track),
+                None => {
+                    let page = segments.iter().find_map(|segment| Page::of(segment))?;
+                    let last = segments.last()?;
+                    (page, last.strip_prefix("id").unwrap_or(last))
+                }
+            },
+            ShortService::Youtube if host == "youtu.be" => (Page::Song, *segments.first()?),
+            ShortService::Youtube => {
+                (segments.first() == Some(&"watch")).then_some(())?;
+                (Page::Song, asked_for(query, "v")?)
+            }
+        };
+        let names_one = !id.is_empty()
+            && id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+
+        names_one.then_some(Self { service, page, id })
+    }
+
+    fn written(&self) -> String {
+        format!("{}{}/{}", self.page.host(), self.service.letter(), self.id)
+    }
+}
+
+fn asked_for<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
 }
 
 fn escaped_for_a_path(url: &str) -> String {
@@ -261,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn a_service_link_is_handed_to_song_link_escaped_and_a_recording_is_not() {
+    fn a_service_link_is_handed_to_song_link_by_its_own_id_and_a_recording_is_not() {
         let shared = Shared {
             recording: Some(mbid()),
             links: vec![Link {
@@ -274,24 +396,98 @@ mod tests {
 
         assert_eq!(
             shared.written().as_deref(),
-            Some("https://song.link/https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1a2b3c")
+            Some("https://song.link/s/1a2b3c")
         );
     }
 
     #[test]
-    fn a_query_in_a_service_url_stays_part_of_the_path_song_link_reads() {
+    fn every_service_song_link_has_a_short_page_for_is_written_by_its_id() {
+        for (url, written) in [
+            (
+                "https://open.spotify.com/intl-de/track/4uLU6hMCjMI75M1A2tKUQC?si=abc",
+                "https://song.link/s/4uLU6hMCjMI75M1A2tKUQC",
+            ),
+            (
+                "https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4",
+                "https://album.link/s/6N9PS4QXF1D0OWPk0Sxtb4",
+            ),
+            (
+                "https://www.deezer.com/en/track/781592622",
+                "https://song.link/d/781592622",
+            ),
+            (
+                "https://www.deezer.com/album/119606",
+                "https://album.link/d/119606",
+            ),
+            (
+                "https://tidal.com/browse/track/77640618",
+                "https://song.link/t/77640618",
+            ),
+            (
+                "https://listen.tidal.com/album/77640617",
+                "https://album.link/t/77640617",
+            ),
+            (
+                "https://music.apple.com/us/album/never-gonna/1559523357?i=1559523359",
+                "https://song.link/i/1559523359",
+            ),
+            (
+                "https://music.apple.com/us/album/3-originals/1559523357",
+                "https://album.link/i/1559523357",
+            ),
+            (
+                "https://itunes.apple.com/gb/album/meddle/id1065975633",
+                "https://album.link/i/1065975633",
+            ),
+            (
+                "https://music.apple.com/us/song/never-gonna/1559523359",
+                "https://song.link/i/1559523359",
+            ),
+            (
+                "https://www.youtube.com/watch?feature=share&v=dQw4w9WgXcQ",
+                "https://song.link/y/dQw4w9WgXcQ",
+            ),
+            (
+                "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+                "https://song.link/y/dQw4w9WgXcQ",
+            ),
+            (
+                "https://youtu.be/dQw4w9WgXcQ",
+                "https://song.link/y/dQw4w9WgXcQ",
+            ),
+        ] {
+            assert_eq!(
+                ShortForm::of(url).map(|short| short.written()).as_deref(),
+                Some(written),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_service_with_no_short_page_or_a_url_naming_no_id_is_handed_over_whole() {
+        for url in [
+            "https://music.amazon.com/albums/B00ZZZ?trackAsin=B01",
+            "https://pinkfloyd.bandcamp.com/track/echoes",
+            "https://open.spotify.com/artist/0k17h0D3J5VfsdmQ1iZtE9",
+            "https://open.spotify.com/track/",
+            "https://www.youtube.com/channel/UC1",
+            "https://open.spotify.com/track/1a2b%2F..",
+        ] {
+            assert_eq!(ShortForm::of(url), None, "{url}");
+        }
+
         let shared = Shared {
             links: vec![Link {
                 relation: Relation::Streaming,
-                service: Service::AppleMusic,
-                url: "https://music.apple.com/us/album/time/1?i=2".to_owned(),
+                service: Service::Qobuz,
+                url: "https://open.qobuz.com/track/1?x=y".to_owned(),
             }],
             ..echoes()
         };
-
         assert_eq!(
             shared.written().as_deref(),
-            Some("https://song.link/https%3A%2F%2Fmusic.apple.com%2Fus%2Falbum%2Ftime%2F1%3Fi%3D2")
+            Some("https://song.link/https%3A%2F%2Fopen.qobuz.com%2Ftrack%2F1%3Fx%3Dy")
         );
     }
 
