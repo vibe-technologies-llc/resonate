@@ -41,9 +41,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   newer gpui or drawing those plots without `paint_path` avoids it
 
 ## Library
-- A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
-  popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
-  rating at all
 - A cue row exported to PLS is its whole file, the format having no word for a region
 
 ## Identification

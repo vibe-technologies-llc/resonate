@@ -969,7 +969,7 @@ fn rated(popularity: Popularity) -> String {
     if popularity.favourite {
         format!("favourite · {plays}")
     } else {
-        "not a favourite".to_owned()
+        format!("not a favourite · {plays}")
     }
 }
 

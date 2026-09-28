@@ -725,24 +725,26 @@ pub(crate) fn files_retagged(
     note_what_was_there(tx, undoing, begins)
 }
 
-const UNRATED: i64 = -1;
-
 fn rating_kept(rated: Option<Rated>) -> Option<i64> {
+    let counted = |plays: Option<u64>| i64::try_from(plays.unwrap_or(0)).unwrap_or(i64::MAX - 1);
     match rated? {
         Rated::Unrateable => None,
-        Rated::Unrated => Some(UNRATED),
-        Rated::Favourite { plays } => Some(i64::try_from(plays.unwrap_or(0)).unwrap_or(i64::MAX)),
+        Rated::Unrated { plays } => Some(-counted(plays) - 1),
+        Rated::Favourite { plays } => Some(counted(plays)),
     }
 }
 
 fn rating_read(kept: Option<i64>) -> Option<Popularity> {
     let kept = kept?;
-    Some(if kept == UNRATED {
-        Popularity::default()
+    Some(if kept < 0 {
+        Popularity {
+            favourite: false,
+            plays: (-(kept + 1)).unsigned_abs(),
+        }
     } else {
         Popularity {
             favourite: true,
-            plays: u64::try_from(kept).unwrap_or(0),
+            plays: kept.unsigned_abs(),
         }
     })
 }
@@ -1039,7 +1041,15 @@ mod tests {
         assert_eq!(rating_kept(None), None);
         assert_eq!(rating_kept(Some(Rated::Unrateable)), None);
         for (rated, back) in [
-            (Rated::Unrated, Popularity::default()),
+            (Rated::Unrated { plays: None }, Popularity::default()),
+            (Rated::Unrated { plays: Some(0) }, Popularity::default()),
+            (
+                Rated::Unrated { plays: Some(4) },
+                Popularity {
+                    favourite: false,
+                    plays: 4,
+                },
+            ),
             (
                 Rated::Favourite { plays: Some(7) },
                 Popularity {

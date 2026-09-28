@@ -3,6 +3,7 @@ mod artwork;
 mod boxes;
 mod caf;
 mod container;
+mod counted;
 mod cue;
 mod decoder;
 mod dsd;

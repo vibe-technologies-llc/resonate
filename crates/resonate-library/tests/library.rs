@@ -14502,7 +14502,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
         FileTags::default()
             .rated(&location)
             .expect("a rating that reads back"),
-        Rated::Unrated
+        Rated::Unrated { plays: Some(0) }
     );
     assert_eq!(
         stored(&database, &file).tagged_title.as_deref(),
@@ -14690,7 +14690,39 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
         FileTags::default()
             .rated(&location)
             .expect("a rating that reads back"),
-        Rated::Unrated
+        Rated::Unrated { plays: Some(2) }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_play_count_is_written_into_a_file_nobody_marked_a_favourite() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(&library, &options(&tree))?;
+    let location = MediaLocation::local(&file);
+    for _ in 0..3 {
+        library.track_played(&location, None, Duration::ZERO)?;
+    }
+
+    let applied = retagged(&library, true)?;
+    assert_eq!(applied.stats.ratings, 1);
+    assert_eq!(
+        FileTags::default()
+            .rated(&location)
+            .expect("a count that reads back"),
+        Rated::Unrated { plays: Some(3) }
+    );
+    assert!(
+        retagged(&library, false)?.retagging.writes.is_empty(),
+        "the count did not stick"
     );
     Ok(())
 }

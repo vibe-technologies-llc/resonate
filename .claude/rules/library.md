@@ -1492,23 +1492,35 @@ through `Player::media` like any other unscanned row.
   as it weighs each field, so a container that quietly drops one is `Unwritten::Unconfirmed` and the
   catalog is not moved. `RetagStats::pictures` counts them apart from `fields`, because a picture is
   not a field and a write of one alone is still a write.
-- **A favourite and its plays are written as this build's own rating, beside anybody else's.**
-  `TrackToTag::popularity` is the row's favourite and its play count, and `Writing::popularity`
-  rides them into the same write as the fields: lofty's generic popularimeter under the name
-  `resonate_codec::RATED_BY` — `resonate`, the software and nothing about the listener — five
-  stars for a favourite, the play counter beside it, and for a row that is not one, this build's
-  rating taken away. It lands wherever lofty maps one: an ID3v2 `POPM`, which keeps the counter,
-  a Vorbis `RATING:resonate`, MP4's `rate` and RIFF's `IRTD`; APE carries none, so a WavPack or a
-  Monkey's Audio answers `Rated::Unrateable` and is never offered one. A rating another player
-  wrote under its own name is left where it stands, and where a format names nobody — MP4 and
-  RIFF hold one rating — that one is ours. What the file holds is read through `TagSink::rated`
-  rather than the `TagSet`, because symphonia reads `POPM` and ignores a Vorbis rating, so the
-  comparison and the read-back go through the writer that wrote it: `Rated::differs_from` weighs
-  the favourite always and the plays only where the tag keeps a counter, so a play counted since
-  the last run rewrites an MP3's `POPM` and never a FLAC's comment. A row that is no favourite is
-  written no rating at all, because a popularimeter has no word for *unrated* but a star count, so
-  a play count reaches a file only beside a favourite. `RetagStats::ratings` counts them and
-  `a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again` is the claim.
+- **A favourite is written as this build's own rating, and the plays as the count every player
+  reads, beside anybody else's.** `TrackToTag::popularity` is the row's favourite and its play
+  count, and `Writing::popularity` rides them into the same write as the fields. The favourite is
+  lofty's generic popularimeter under the name `resonate_codec::RATED_BY` — `resonate`, the
+  software and nothing about the listener — five stars, and for a row that is not one, this
+  build's rating taken away. It lands wherever lofty maps one: an ID3v2 `POPM`, which keeps the
+  counter beside it, a Vorbis `RATING:resonate`, MP4's `rate` and RIFF's `IRTD`. An APE tag has
+  no popularimeter, so a WavPack or a Monkey's Audio carries its favourite as FMPS's
+  `FMPS_RATING` of `1.0`, taken away with the favourite. A rating another player wrote under its
+  own name is left where it stands, and where a format names nobody — MP4, RIFF and APE hold one
+  rating — that one is ours. **The plays are written whether or not the row is a favourite**,
+  under the name the FMPS convention gives each tag — `FMPS_PLAYCOUNT` in a Vorbis comment and an
+  APE tag, a `TXXX` of `FMPS_PlayCount` in ID3v2 and `----:com.apple.iTunes:FMPS_Playcount` in
+  MP4 — and a count of nothing is taken away rather than written. lofty's generic `Tag` drops a
+  name it has no `ItemKey` for, so `counted.rs` converts the generic tag into the format's own —
+  `VorbisComments`, `ApeTag`, `Ilst` or `Id3v2Tag`, the conversion lofty's own save makes — sets
+  the count on it and saves that, and reads the count back off the same concrete tag. What the
+  file holds is read through `TagSink::rated` rather than the `TagSet`, because symphonia reads
+  `POPM` and ignores a Vorbis rating: `Rated::Unrated` and `Rated::Favourite` each carry the
+  count the tag keeps — an MP3 written before the count was, whose only count is our `POPM`'s,
+  reads that one — and `Rated::differs_from` weighs the favourite always and the plays wherever
+  the tag keeps a count, so a play counted since the last run rewrites the count and a RIFF
+  `INFO` list, which keeps none, is weighed on the favourite alone. The undo record keeps both in
+  one integer: a favourite's plays as they are, and an unfavoured row's as their negation less
+  one, which is what the `-1` an older build wrote for *unrated* already reads as.
+  `RetagStats::ratings` counts them;
+  `a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again`,
+  `a_play_count_is_written_into_a_file_nobody_marked_a_favourite` and
+  `a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes` are the claims.
 - **A write never touches the file it is writing until it is whole.** lofty's `save_to_path`
   splices a FLAC's metadata and shifts the audio behind it in place, so a full disc or a run killed
   halfway left a truncated file. `FileTags::write` copies the file to a staged sibling —

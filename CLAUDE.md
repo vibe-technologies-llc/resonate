@@ -1015,7 +1015,7 @@ cargo run -- forget <roots>           # drops roots and every track scanned from
 cargo run -- tag                      # the tags that would be written into every scanned file to
                                       #   say what the catalog was told about it, one row per
                                       #   field, with the album's cover where the file carries
-                                      #   none and a favourite as a rating with its plays;
+                                      #   none, a favourite as a rating and the plays as a count;
                                       #   --apply writes them, reads each file back and has
                                       #   the catalog follow what it now says, and --root <root>
                                       #   writes only the files scanned from that root; --undo

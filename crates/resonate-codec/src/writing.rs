@@ -17,7 +17,9 @@ use lofty::{
 use resonate_core::MediaLocation;
 
 use crate::{
-    CoverArt, Error, Picturing, Result, TagSet, probe_pictured,
+    CoverArt, Error, Picturing, Result, TagSet,
+    counted::{Counted, counts},
+    probe_pictured,
     source::Sources,
     tags::{TagSource, Tagged},
 };
@@ -176,7 +178,9 @@ pub struct Popularity {
 pub enum Rated {
     #[default]
     Unrateable,
-    Unrated,
+    Unrated {
+        plays: Option<u64>,
+    },
     Favourite {
         plays: Option<u64>,
     },
@@ -184,12 +188,12 @@ pub enum Rated {
 
 impl Rated {
     pub fn differs_from(self, wanted: Popularity) -> bool {
+        let counted_otherwise =
+            |plays: Option<u64>| plays.is_some_and(|plays| plays != wanted.plays);
         match self {
             Self::Unrateable => false,
-            Self::Unrated => wanted.favourite,
-            Self::Favourite { plays } => {
-                !wanted.favourite || plays.is_some_and(|plays| plays != wanted.plays)
-            }
+            Self::Unrated { plays } => wanted.favourite || counted_otherwise(plays),
+            Self::Favourite { plays } => !wanted.favourite || counted_otherwise(plays),
         }
     }
 }
@@ -368,8 +372,9 @@ impl FileTags {
             tag.remove_picture_type(PictureType::CoverFront);
             tag.push_picture(front_cover(picture));
         }
+        let counting = writing.popularity.filter(|_| counts(tag.tag_type()));
         if let Some(popularity) = writing.popularity
-            && rates(tag.tag_type())
+            && keeps_popularimeters(tag.tag_type())
         {
             rate(tag, popularity);
         }
@@ -385,11 +390,10 @@ impl FileTags {
                 source,
             })
             .and_then(|()| {
-                tag.save_to_path(&staged, WriteOptions::default())
-                    .map_err(|source| Error::TagsUnwritten {
-                        location: location.clone(),
-                        source,
-                    })
+                saved(tag, counting, &staged).map_err(|source| Error::TagsUnwritten {
+                    location: location.clone(),
+                    source,
+                })
             })
             .and_then(|()| {
                 settled_over(&staged, path).map_err(|source| Error::Io {
@@ -410,18 +414,39 @@ impl FileTags {
         if !rates(kind) {
             return Ok(Rated::Unrateable);
         }
-        let Some(tag) = tagged.primary_tag() else {
-            return Ok(Rated::Unrated);
+        let counted = if counts(kind) {
+            Counted::read(path, tagged.file_type()).map_err(|source| Error::TagsUnread {
+                location: location.clone(),
+                source,
+            })?
+        } else {
+            None
         };
-        let plays_kept = kind == TagType::Id3v2;
-        Ok(tag
-            .get_strings(ItemKey::Popularimeter)
-            .filter_map(Popularimeter::read)
-            .find(|popularimeter| popularimeter.is_ours(kind))
-            .filter(|popularimeter| popularimeter.stars == FAVOURITE_STARS)
-            .map_or(Rated::Unrated, |popularimeter| Rated::Favourite {
-                plays: plays_kept.then_some(popularimeter.plays),
-            }))
+        let ours = tagged.primary_tag().and_then(|tag| {
+            tag.get_strings(ItemKey::Popularimeter)
+                .filter_map(Popularimeter::read)
+                .find(|popularimeter| popularimeter.is_ours(kind))
+                .map(|popularimeter| (popularimeter.stars, popularimeter.plays))
+        });
+        let favourite = match counted.as_ref().and_then(Counted::favoured_in_ape) {
+            Some(favoured) => favoured,
+            None => ours.is_some_and(|(stars, _)| stars == FAVOURITE_STARS),
+        };
+        let popularimeter_plays = ours
+            .filter(|_| kind == TagType::Id3v2 && favourite)
+            .map(|(_, plays)| plays);
+        let plays = counts(kind).then(|| {
+            counted
+                .as_ref()
+                .and_then(Counted::plays)
+                .or(popularimeter_plays)
+                .unwrap_or(0)
+        });
+        Ok(if favourite {
+            Rated::Favourite { plays }
+        } else {
+            Rated::Unrated { plays }
+        })
     }
 }
 
@@ -446,10 +471,31 @@ impl<'a> Popularimeter<'a> {
 }
 
 const fn rates(kind: TagType) -> bool {
+    keeps_popularimeters(kind) || counts(kind)
+}
+
+const fn keeps_popularimeters(kind: TagType) -> bool {
     matches!(
         kind,
         TagType::Id3v2 | TagType::VorbisComments | TagType::Mp4Ilst | TagType::RiffInfo
     )
+}
+
+fn saved(
+    tag: &Tag,
+    counting: Option<Popularity>,
+    staged: &Path,
+) -> std::result::Result<(), lofty::error::FileEncodingError> {
+    let counted = counting
+        .and_then(|popularity| Counted::of(tag.clone()).map(|counted| (counted, popularity)));
+    match counted {
+        Some((mut counted, popularity)) => {
+            counted.count(popularity.plays);
+            counted.favour_in_ape(popularity.favourite);
+            counted.save(staged)
+        }
+        None => tag.save_to_path(staged, WriteOptions::default()),
+    }
 }
 
 const fn names_who_rated(kind: TagType) -> bool {
@@ -549,6 +595,8 @@ mod tests {
         process,
         sync::atomic::{AtomicU64, Ordering},
     };
+
+    use lofty::ogg::tag::VorbisComments;
 
     use super::*;
     use crate::{ImageFormat, Pictured};
@@ -969,14 +1017,16 @@ mod tests {
     fn a_favourite_is_written_as_our_rating_and_taken_away_again() {
         let folder = Folder::new();
         let tags = FileTags::default();
-        for (name, bytes, plays_kept) in [
-            ("echoes.flac", flac(), None),
-            ("echoes.aiff", aiff(), Some(12)),
+        for (name, bytes) in [
+            ("echoes.flac", flac()),
+            ("echoes.aiff", aiff()),
+            ("echoes.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
             assert_eq!(
                 tags.rated(&location).expect("a readable file"),
-                Rated::Unrated
+                Rated::Unrated { plays: Some(0) },
+                "{name}"
             );
 
             let favoured = Popularity {
@@ -986,7 +1036,7 @@ mod tests {
             tags.write(&location, rating(favoured))
                 .expect("a rated file");
             let held = tags.rated(&location).expect("a readable file");
-            assert_eq!(held, Rated::Favourite { plays: plays_kept }, "{name}");
+            assert_eq!(held, Rated::Favourite { plays: Some(12) }, "{name}");
             assert!(!held.differs_from(favoured), "{name} did not read back");
             assert!(
                 held.differs_from(Popularity {
@@ -1006,10 +1056,67 @@ mod tests {
             .expect("a file unrated");
             assert_eq!(
                 tags.rated(&location).expect("a readable file"),
-                Rated::Unrated,
+                Rated::Unrated { plays: Some(12) },
                 "{name} kept the rating it was unfavoured of"
             );
         }
+    }
+
+    #[test]
+    fn a_play_count_reaches_a_file_nobody_marked_a_favourite() {
+        let folder = Folder::new();
+        let tags = FileTags::default();
+        for (name, bytes) in [
+            ("echoes.flac", flac()),
+            ("echoes.aiff", aiff()),
+            ("echoes.wav", wave()),
+        ] {
+            let location = folder.holding(name, &bytes);
+            let heard = Popularity {
+                favourite: false,
+                plays: 3,
+            };
+            assert!(
+                tags.rated(&location)
+                    .expect("a readable file")
+                    .differs_from(heard),
+                "{name} read as already counted"
+            );
+
+            tags.write(&location, rating(heard))
+                .expect("a counted file");
+
+            let held = tags.rated(&location).expect("a readable file");
+            assert_eq!(held, Rated::Unrated { plays: Some(3) }, "{name}");
+            assert!(!held.differs_from(heard), "{name} did not read back");
+
+            tags.write(&location, rating(Popularity::default()))
+                .expect("a count taken away");
+            assert_eq!(
+                tags.rated(&location).expect("a readable file"),
+                Rated::Unrated { plays: Some(0) },
+                "{name} kept a count of nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn a_count_another_player_wrote_is_read_as_the_files_own() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut comments = VorbisComments::default();
+        comments.insert("FMPS_PLAYCOUNT".to_owned(), "9.0".to_owned());
+        comments
+            .save_to_path(&path, WriteOptions::default())
+            .expect("a counted FLAC");
+
+        assert_eq!(
+            FileTags::default()
+                .rated(&location)
+                .expect("a readable FLAC"),
+            Rated::Unrated { plays: Some(9) }
+        );
     }
 
     #[test]

@@ -8,7 +8,8 @@ use std::{
 
 use resonate_codec::{
     Codec, Container, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags, Picturing,
-    Sources, TagEdit, TagField, TagSink, TagSource, Writing, probe, probe_cover_art, probe_stream,
+    Popularity, Rated, Sources, TagEdit, TagField, TagSink, TagSource, Writing, probe,
+    probe_cover_art, probe_stream,
 };
 use resonate_core::{
     AudioBuffer, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat, SampleRate,
@@ -2227,6 +2228,86 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         before,
         "writing the tags moved the audio"
     );
+}
+
+fn rated_as(popularity: Popularity) -> Writing<'static> {
+    Writing {
+        edits: &[],
+        taken: &[],
+        picture: None,
+        unpictured: false,
+        popularity: Some(popularity),
+    }
+}
+
+fn counted_and_favoured_through(path: &Path) {
+    let name = path.display();
+    let before = decode(path).samples;
+    let location = MediaLocation::local(path);
+    let tags = FileTags::default();
+    assert!(tags.writes(&location), "{name} was not offered for writing");
+
+    let favoured = Popularity {
+        favourite: true,
+        plays: 5,
+    };
+    tags.write(&location, rated_as(favoured))
+        .expect("a favoured file");
+    assert_eq!(
+        tags.rated(&location).expect("a readable file"),
+        Rated::Favourite { plays: Some(5) },
+        "{name}"
+    );
+
+    let heard = Popularity {
+        favourite: false,
+        plays: 6,
+    };
+    tags.write(&location, rated_as(heard))
+        .expect("a counted file");
+    let held = tags.rated(&location).expect("a readable file");
+    assert_eq!(held, Rated::Unrated { plays: Some(6) }, "{name}");
+    assert!(!held.differs_from(heard), "{name} did not read back");
+    assert_eq!(
+        decode(path).samples,
+        before,
+        "counting the plays of {name} moved the audio"
+    );
+}
+
+#[test]
+fn a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes() {
+    for (name, codec) in [
+        ("counted.mp3", &["-c:a", "libmp3lame"][..]),
+        ("counted.m4a", &["-c:a", "aac", "-b:a", "128k"][..]),
+        ("counted.ogg", &["-c:a", "libvorbis"][..]),
+        ("counted.opus", &["-c:a", "libopus", "-b:a", "128k"][..]),
+        ("counted.wv", &["-c:a", "wavpack"][..]),
+    ] {
+        let tree = Tree::new();
+        let Some((path, _)) = fixture(&tree, name, codec) else {
+            continue;
+        };
+        counted_and_favoured_through(&path);
+    }
+}
+
+#[test]
+fn a_favourite_reaches_a_monkeys_audio_file_as_its_ape_tag_says_one() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+    wav(&source, CD, &tone(CD));
+    let target = tree.at("counted.ape");
+    assert!(
+        monkeyed(&source, &target, "-c2000"),
+        "mac would not write it"
+    );
+
+    counted_and_favoured_through(&target);
 }
 
 #[test]
