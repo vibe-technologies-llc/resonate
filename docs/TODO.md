@@ -113,7 +113,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   warning becomes a hard error in a future rustc. Only a `[patch]` or a newer gpui fixes it
 
 ## Later: Polish
-- A tooltip names its key in no one wording
 - A tooltip whose control moved under a perfectly still pointer stays up
 - The search caret's blink ignores the desktop's cursor-blink setting
 - `Wayback` restores a row rather than a pixel, so a list whose rows changed height lands a row out

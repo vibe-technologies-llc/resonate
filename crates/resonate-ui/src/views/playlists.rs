@@ -116,9 +116,15 @@ const REMOVE_HINT: &str = "Take this row out of the playlist";
 
 const REMOVE_REACHED_HINT: &str = "Take every reached row out of the playlist";
 
-const UNDO_KEY: &str = "ctrl-z does the same, and each press walks back one more edit";
+const UNDO_KEY: &str = concat!(
+    keyed!("Undo", key!(undo)),
+    ". Each press walks back one more edit"
+);
 
-const REDO_KEY: &str = "ctrl-shift-z does the same, and each press puts back one more edit";
+const REDO_KEY: &str = concat!(
+    keyed!("Redo", key!(redo)),
+    ". Each press puts back one more edit"
+);
 
 pub(crate) const ROW_GROUP: &str = "listed-row";
 

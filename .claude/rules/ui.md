@@ -829,6 +829,15 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   pressed to go somewhere is taken away while it is still pointed at and never hears the pointer
   leave, and the pointer leaving the window empties it through `pointer_watch`. Where a control
   has a background it keeps its `hover` for that, and only the text goes through `pointed`.
+- **A hint names its key one way, and the key is the one bound.** `keys.rs` is `key!`, the
+  spelling of every key a hint names — `key!(play_pause)` is `space`, `key!(raise_row)` is
+  `alt-up` — and `app::bindings` binds through the same `key!`, so a hint cannot name a key the
+  window does not answer to. `keyed!` writes the one wording: what the key does, an em dash and
+  the ways to do it, the last two joined by *or* and any before them by commas —
+  `Louder — the wheel or ctrl-up` — and a hint that says more than one thing is such sentences
+  joined by full stops, a state it describes coming first: `Repeat is off. Repeat the queue — r`.
+  Both are `concat!` all the way down, so every hint stays a `&'static str`.
+  `every_key_a_hint_names_is_a_key_something_is_bound_to` walks the bindings for each.
 - **A control names itself through one seam, and the seam is what lets go.** `hint::Names` is the
   only place a tooltip is attached and a test walks the crate's own sources to keep it that way. It
   is gpui's plain `tooltip` and never `hoverable_tooltip`, because

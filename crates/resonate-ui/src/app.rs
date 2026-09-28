@@ -647,45 +647,45 @@ fn answering_anywhere() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-tab", NextPane, None),
         KeyBinding::new("ctrl-shift-tab", PreviousPane, None),
         KeyBinding::new("ctrl-comma", FocusFilter, None),
-        KeyBinding::new("ctrl-l", Listen, None),
-        KeyBinding::new("ctrl-q", Quit, None),
+        KeyBinding::new(key!(listen), Listen, None),
+        KeyBinding::new(key!(quit), Quit, None),
     ]
 }
 
 fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new("space", TogglePlayPause, typed),
+        KeyBinding::new(key!(play_pause), TogglePlayPause, typed),
         KeyBinding::new("s", Stop, typed),
         KeyBinding::new("right", SeekForward, typed),
         KeyBinding::new("left", SeekBackward, typed),
-        KeyBinding::new("ctrl-right", Next, typed),
-        KeyBinding::new("ctrl-left", Previous, typed),
-        KeyBinding::new("h", ToggleShuffle, typed),
-        KeyBinding::new("r", CycleRepeat, typed),
-        KeyBinding::new("ctrl-up", VolumeUp, typed),
-        KeyBinding::new("ctrl-down", VolumeDown, typed),
-        KeyBinding::new("up", ReachAbove, typed),
-        KeyBinding::new("down", ReachBelow, typed),
-        KeyBinding::new("shift-up", WidenAbove, typed),
-        KeyBinding::new("shift-down", WidenBelow, typed),
-        KeyBinding::new("home", ReachFirst, typed),
-        KeyBinding::new("end", ReachLast, typed),
-        KeyBinding::new("pageup", ReachPageAbove, typed),
-        KeyBinding::new("pagedown", ReachPageBelow, typed),
-        KeyBinding::new("ctrl-a", ReachEverything, typed),
-        KeyBinding::new("delete", DropReached, typed),
-        KeyBinding::new("alt-up", RaiseRow, typed),
-        KeyBinding::new("alt-down", LowerRow, typed),
-        KeyBinding::new("enter", PlayReached, typed),
-        KeyBinding::new("ctrl-z", UndoEdit, typed),
-        KeyBinding::new("ctrl-shift-z", RedoEdit, typed),
+        KeyBinding::new(key!(next), Next, typed),
+        KeyBinding::new(key!(previous), Previous, typed),
+        KeyBinding::new(key!(shuffle), ToggleShuffle, typed),
+        KeyBinding::new(key!(repeat), CycleRepeat, typed),
+        KeyBinding::new(key!(louder), VolumeUp, typed),
+        KeyBinding::new(key!(quieter), VolumeDown, typed),
+        KeyBinding::new(key!(reach_above), ReachAbove, typed),
+        KeyBinding::new(key!(reach_below), ReachBelow, typed),
+        KeyBinding::new(key!(widen_above), WidenAbove, typed),
+        KeyBinding::new(key!(widen_below), WidenBelow, typed),
+        KeyBinding::new(key!(reach_first), ReachFirst, typed),
+        KeyBinding::new(key!(reach_last), ReachLast, typed),
+        KeyBinding::new(key!(reach_page_above), ReachPageAbove, typed),
+        KeyBinding::new(key!(reach_page_below), ReachPageBelow, typed),
+        KeyBinding::new(key!(reach_everything), ReachEverything, typed),
+        KeyBinding::new(key!(drop_reached), DropReached, typed),
+        KeyBinding::new(key!(raise_row), RaiseRow, typed),
+        KeyBinding::new(key!(lower_row), LowerRow, typed),
+        KeyBinding::new(key!(play_reached), PlayReached, typed),
+        KeyBinding::new(key!(undo), UndoEdit, typed),
+        KeyBinding::new(key!(redo), RedoEdit, typed),
         KeyBinding::new("ctrl-y", RedoEdit, typed),
     ]
 }
 
 fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new("escape", LeaveSearch, Some(SEARCH_CONTEXT)),
+        KeyBinding::new(key!(leave), LeaveSearch, Some(SEARCH_CONTEXT)),
         KeyBinding::new("down", GoToTheResults, Some(SEARCH_CONTEXT)),
         KeyBinding::new("tab", TabOnward, Some(SEARCH_CONTEXT)),
         KeyBinding::new("space", PressControl, on_a_control),
@@ -696,12 +696,12 @@ fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
 
 fn answering_on_a_band(on_a_band: Option<&str>) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new("right", BandHigher, on_a_band),
-        KeyBinding::new("left", BandLower, on_a_band),
-        KeyBinding::new("up", BandLouder, on_a_band),
-        KeyBinding::new("down", BandQuieter, on_a_band),
-        KeyBinding::new("shift-up", BandNarrower, on_a_band),
-        KeyBinding::new("shift-down", BandWider, on_a_band),
+        KeyBinding::new(key!(band_higher), BandHigher, on_a_band),
+        KeyBinding::new(key!(band_lower), BandLower, on_a_band),
+        KeyBinding::new(key!(band_louder), BandLouder, on_a_band),
+        KeyBinding::new(key!(band_quieter), BandQuieter, on_a_band),
+        KeyBinding::new(key!(band_narrower), BandNarrower, on_a_band),
+        KeyBinding::new(key!(band_wider), BandWider, on_a_band),
     ]
 }
 

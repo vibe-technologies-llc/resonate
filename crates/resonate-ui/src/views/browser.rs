@@ -66,7 +66,7 @@ const FORGET_THE_MATCH_ARMED_HINT: &str = "Takes away the release, its rows and 
 const OTHER_COPIES_HINT: &str =
     "Also held in other formats; this is the best of them, and the row's menu plays the others";
 
-const WAY_BACK_HINT: &str = "Back to where this was opened from — escape";
+const WAY_BACK_HINT: &str = keyed!("Back to where this was opened from", key!(leave));
 
 const ORDER_HINT: &str = "Choose what this listing is put in order by";
 

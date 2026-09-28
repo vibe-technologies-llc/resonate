@@ -35,13 +35,13 @@ use crate::{
 
 const CONTROL_GROUP: &str = "transport-control";
 
-const PREVIOUS_HINT: &str = "Previous track — ctrl-left";
+const PREVIOUS_HINT: &str = keyed!("Previous track", key!(previous));
 
-const NEXT_HINT: &str = "Next track — ctrl-right";
+const NEXT_HINT: &str = keyed!("Next track", key!(next));
 
-const PLAY_HINT: &str = "Play — space";
+const PLAY_HINT: &str = keyed!("Play", key!(play_pause));
 
-const PAUSE_HINT: &str = "Pause — space";
+const PAUSE_HINT: &str = keyed!("Pause", key!(play_pause));
 
 const QUEUE_HINT: &str = "Show what is queued";
 
@@ -49,9 +49,21 @@ const QUEUE_OPEN_HINT: &str = "Back to the pane the queue covered";
 
 pub(crate) const COVER_HINT: &str = "See the cover full size";
 
-const VOLUME_HINT: &str = "Mute — click. Volume — ctrl-up and ctrl-down";
+const VOLUME_HINT: &str = concat!(
+    keyed!("Mute", "click"),
+    ". ",
+    keyed!("Louder", key!(louder)),
+    ". ",
+    keyed!("Quieter", key!(quieter))
+);
 
-const VOLUME_HINT_WHEELED: &str = "Mute — click. Volume — the wheel, ctrl-up and ctrl-down";
+const VOLUME_HINT_WHEELED: &str = concat!(
+    keyed!("Mute", "click"),
+    ". ",
+    keyed!("Louder", "the wheel", key!(louder)),
+    ". ",
+    keyed!("Quieter", "the wheel", key!(quieter))
+);
 
 const VOLUME_ICON_GROUP: &str = "volume-icon";
 
@@ -65,7 +77,10 @@ const BY_LINE_SEPARATOR: &str = "·";
 
 const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
 
-const UNMUTE_HINT: &str = "Muted — click, the wheel or ctrl-up to hear it again";
+const UNMUTE_HINT: &str = concat!(
+    "Muted. ",
+    keyed!("Hear it again", "click", "the wheel", key!(louder))
+);
 
 const VOLUME_A_NOTCH: f32 = 0.05;
 
@@ -1026,17 +1041,26 @@ const fn sleeping_says(sleeping: Option<Asleep>) -> &'static str {
 
 const fn shuffling(shuffle: bool) -> &'static str {
     if shuffle {
-        "Shuffle is on — h plays the queue in its load order again"
+        concat!(
+            "Shuffle is on. ",
+            keyed!("Play the queue in its load order again", key!(shuffle))
+        )
     } else {
-        "Shuffle the play order — h"
+        keyed!("Shuffle the play order", key!(shuffle))
     }
 }
 
 const fn repeating(repeat: RepeatMode) -> &'static str {
     match repeat {
-        RepeatMode::Off => "Repeat is off — r repeats the queue",
-        RepeatMode::Queue => "Repeating the queue — r repeats the track",
-        RepeatMode::Track => "Repeating the track — r turns repeat off",
+        RepeatMode::Off => concat!("Repeat is off. ", keyed!("Repeat the queue", key!(repeat))),
+        RepeatMode::Queue => concat!(
+            "Repeating the queue. ",
+            keyed!("Repeat the track", key!(repeat))
+        ),
+        RepeatMode::Track => concat!(
+            "Repeating the track. ",
+            keyed!("Turn repeat off", key!(repeat))
+        ),
     }
 }
 

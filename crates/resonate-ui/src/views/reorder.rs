@@ -16,10 +16,30 @@ use crate::{
     },
 };
 
-pub(crate) const MOVING_HINT: &str = "Drag a row to where it should play. From the keyboard, up and down reach a row, shift-up and \
-     shift-down reach more of them, home, end, page up and page down reach further, ctrl-a reaches \
-     every row, alt-up and alt-down move whatever is reached, enter plays it and delete takes it \
-     away. Shift-click reaches every row between";
+pub(crate) const MOVING_HINT: &str = concat!(
+    "Drag a row to where it should play. ",
+    keyed!("Reach a row", key!(reach_above), key!(reach_below)),
+    ". ",
+    keyed!("Reach more of them", key!(widen_above), key!(widen_below)),
+    ". ",
+    keyed!(
+        "Reach further",
+        key!(reach_first),
+        key!(reach_last),
+        key!(reach_page_above),
+        key!(reach_page_below)
+    ),
+    ". ",
+    keyed!("Reach every row", key!(reach_everything)),
+    ". ",
+    keyed!("Move what is reached", key!(raise_row), key!(lower_row)),
+    ". ",
+    keyed!("Play it", key!(play_reached)),
+    ". ",
+    keyed!("Take it away", key!(drop_reached)),
+    ". ",
+    keyed!("Reach every row between", "shift-click")
+);
 
 const DRAGGING_EDGE: f32 = 36.0;
 
@@ -89,8 +109,8 @@ impl Step {
 
     const fn saying(self) -> &'static str {
         match self {
-            Self::Above => "Play what is reached one place sooner — alt-up",
-            Self::Below => "Play what is reached one place later — alt-down",
+            Self::Above => keyed!("Play what is reached one place sooner", key!(raise_row)),
+            Self::Below => keyed!("Play what is reached one place later", key!(lower_row)),
         }
     }
 }

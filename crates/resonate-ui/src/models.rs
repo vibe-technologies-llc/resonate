@@ -83,7 +83,7 @@ pub const PICTURED_AT_MOST: usize = 4;
 
 pub const PINNED_IN_THE_SIDEBAR: usize = 5;
 
-const TAKEN_BACK: &str = " · ctrl-z puts it back";
+const TAKEN_BACK: &str = concat!(" · ", keyed!("Put it back", key!(undo)));
 
 const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 

@@ -1,3 +1,5 @@
+#[macro_use]
+mod keys;
 mod analysis;
 mod analysis_plot;
 mod app;

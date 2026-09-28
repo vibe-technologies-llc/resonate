@@ -64,8 +64,22 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
 const FOLLOWS_THE_DEFAULT: &str = "follows the default";
 const BOUND_TO_NOTHING: &str = "nothing";
 const ITS_OWN_CURVE: &str = "own curve";
-const BAND_KEYS_HINT: &str = "Choose this band on the curve. Once reached: left and right move it a \
-     semitone, up and down half a decibel, shift-up and shift-down narrow and widen it";
+const BAND_KEYS_HINT: &str = concat!(
+    "Choose this band on the curve. ",
+    keyed!(
+        "A semitone lower or higher",
+        key!(band_lower),
+        key!(band_higher)
+    ),
+    ". ",
+    keyed!(
+        "Half a decibel quieter or louder",
+        key!(band_quieter),
+        key!(band_louder)
+    ),
+    ". ",
+    keyed!("Narrower or wider", key!(band_narrower), key!(band_wider))
+);
 const EVERY_OTHER_DEVICE: &str = "Every other device";
 
 impl RootView {

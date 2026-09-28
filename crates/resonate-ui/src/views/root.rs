@@ -80,7 +80,10 @@ const WORDMARK_CAPITALS_CENTRED_BY: f32 = 1.0;
 pub(crate) const SETTING_UNSAVED: &str =
     "Couldn't save that setting — the settings file couldn't be written";
 
-const LISTEN_BUTTON_HINT: &str = "Listen for a song on the desktop or a microphone — ctrl-l";
+const LISTEN_BUTTON_HINT: &str = keyed!(
+    "Listen for a song on the desktop or a microphone",
+    key!(listen)
+);
 
 const SEARCH_PLACEHOLDER: &str = "Type to search title, artist or album";
 
@@ -106,7 +109,7 @@ const JUMPED_TO: &str = "JUMP TO";
 
 const JUMPED_NOWHERE: &str = "NO MATCH";
 
-const CLEAR_SEARCH_HINT: &str = "Clear the search — escape";
+const CLEAR_SEARCH_HINT: &str = keyed!("Clear the search", key!(leave));
 
 const PINNED_HINT: &str = "Open this pinned playlist";
 

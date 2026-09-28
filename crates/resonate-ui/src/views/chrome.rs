@@ -60,7 +60,7 @@ impl Control {
             Self::Minimise => "Minimise the window",
             Self::Maximise => "Fill the screen",
             Self::Restore => "Back to the window's own size",
-            Self::Close => "Close Resonate — ctrl-q",
+            Self::Close => keyed!("Close Resonate", key!(quit)),
         }
     }
 
