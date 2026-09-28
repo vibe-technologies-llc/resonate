@@ -7,7 +7,9 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_codec::{Codec, ImageFormat, ReplayGain, Sources, TagSet, probe_cover_art};
+use resonate_codec::{
+    Codec, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
+};
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
     StreamSpec, TrackId,
@@ -79,6 +81,7 @@ pub struct TrackRecord {
     pub tags: TagSet,
     pub embeds_a_picture: bool,
     pub named_by_its_stem: bool,
+    pub packets: Option<PacketDigest>,
 }
 
 #[derive(Clone, Copy)]
@@ -1629,11 +1632,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
-             genre, lyrics, release_title, asked, answered, named_by_its_stem
+             genre, lyrics, release_title, asked, answered, named_by_its_stem, packets
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
@@ -1693,6 +1696,7 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              tagged_title       = excluded.tagged_title,
              tagged_artist      = excluded.tagged_artist,
              named_by_its_stem  = excluded.named_by_its_stem,
+             packets            = excluded.packets,
              genre              = excluded.genre,
              lyrics             = excluded.lyrics,
              probe_again        = 0,
@@ -1775,6 +1779,7 @@ fn track(
             record.tags.genre,
             record.tags.lyrics,
             record.named_by_its_stem,
+            record.packets.map(|digest| digest.0.cast_signed()),
         ],
         |row| {
             Ok(Stored {
@@ -2089,6 +2094,7 @@ mod tests {
             },
             embeds_a_picture: false,
             named_by_its_stem: false,
+            packets: None,
         }
     }
 

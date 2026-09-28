@@ -137,6 +137,7 @@ impl Drop for Tree {
 struct Wav {
     bits: u16,
     frames: usize,
+    from: usize,
     id3: Vec<u8>,
     id3_in_a_chunk: bool,
 }
@@ -146,9 +147,15 @@ impl Wav {
         Self {
             bits: 16,
             frames: 4_410,
+            from: 0,
             id3: Vec::new(),
             id3_in_a_chunk: false,
         }
+    }
+
+    fn sounding_from(mut self, from: usize) -> Self {
+        self.from = from;
+        self
     }
 
     fn id3_in_a_chunk(mut self) -> Self {
@@ -212,7 +219,7 @@ impl Wav {
         let stride = usize::from(self.bits / 8);
         let span = 1_i64 << (self.bits - 1);
         let mut data = Vec::with_capacity(self.frames * usize::from(CHANNELS) * stride);
-        for n in 0..self.frames * usize::from(CHANNELS) {
+        for n in self.from..self.from + self.frames * usize::from(CHANNELS) {
             let sample = ((n as i64 % (2 * span - 1)) - span + 1) as i32;
             data.extend_from_slice(&sample.to_le_bytes()[..stride]);
         }
@@ -17528,6 +17535,9 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
             rusqlite::params![heard.id.get() as i64, print.encoded(), SECONDS_HEARD as i64],
         )
         .expect("the study is kept");
+    beside(&database)
+        .execute("UPDATE tracks SET packets = NULL", [])
+        .expect("the row reads as one scanned before its packets were digested");
 
     fs::remove_file(&before).expect("the file is taken away");
     let after = tree.write(
@@ -17541,6 +17551,42 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 1);
+    let row = library
+        .track_at(&after, None)?
+        .expect("the row followed the file");
+    assert_eq!(row.id, heard.id);
+    assert_eq!(row.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested()
+-> Result<()> {
+    let tree = Tree::new();
+    let before = tree.write(
+        "incoming/track01.wav",
+        &Wav::new().frames(9_973).text(TITLE, "Echoes").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let heard = library
+        .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
+        .expect("a counted play")
+        .track
+        .expect("the play was counted against a row");
+
+    fs::remove_file(&before).expect("the file is taken away");
+    let after = tree.write(
+        "Pink Floyd/Meddle/06 Money.wav",
+        &Wav::new()
+            .frames(9_973)
+            .text(TITLE, "Money")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 1, "a file nobody studied was not followed");
     let row = library
         .track_at(&after, None)?
         .expect("the row followed the file");
@@ -17701,7 +17747,11 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
     fs::remove_file(&gone).expect("the file is taken away");
     tree.write(
         "new.wav",
-        &Wav::new().frames(7_919).text(TITLE, "Seamus").build(),
+        &Wav::new()
+            .frames(7_919)
+            .sounding_from(1)
+            .text(TITLE, "Seamus")
+            .build(),
     );
     let stats = scan(&library, &options(&tree))?;
 

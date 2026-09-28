@@ -16,7 +16,7 @@ use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
-    Codec, CueFile, CueSheet, MediaInfo, Picturing, Sources, TagSet, probe_pictured, read_cue,
+    Codec, CueFile, CueSheet, MediaInfo, Scanned, Sources, TagSet, probe_scanned, read_cue,
 };
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::params;
@@ -1490,23 +1490,26 @@ fn cut_into_rows(
             tags: track.titled(),
             embeds_a_picture,
             named_by_its_stem: false,
+            packets: None,
         });
     }
 
     records
 }
 
-fn probed(sources: &Sources, path: &Path) -> resonate_codec::Result<(MediaInfo, bool)> {
-    probe_pictured(sources, &MediaLocation::local(path), Picturing::Whether)
-        .map(|(info, pictured)| (info, pictured.carries_one()))
+fn probed(sources: &Sources, path: &Path) -> resonate_codec::Result<Scanned> {
+    probe_scanned(sources, &MediaLocation::local(path))
 }
 
 fn read_cut(sources: &Sources, candidate: &SheetCandidate) -> Result<Vec<TrackRecord>> {
-    let (info, embeds_a_picture) =
-        probed(sources, &candidate.file).map_err(|source| Error::Tags {
-            path: candidate.file.clone(),
-            source: Box::new(source),
-        })?;
+    let Scanned {
+        info,
+        carries_a_picture: embeds_a_picture,
+        ..
+    } = probed(sources, &candidate.file).map_err(|source| Error::Tags {
+        path: candidate.file.clone(),
+        source: Box::new(source),
+    })?;
 
     Ok(cut_into_rows(
         &Cutting {
@@ -1558,11 +1561,14 @@ fn name_from_stem(path: &Path, tags: &mut TagSet) -> bool {
 }
 
 fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackRecord>> {
-    let (mut info, embeds_a_picture) =
-        probed(sources, &candidate.path).map_err(|source| Error::Tags {
-            path: candidate.path.clone(),
-            source: Box::new(source),
-        })?;
+    let Scanned {
+        mut info,
+        carries_a_picture: embeds_a_picture,
+        packets,
+    } = probed(sources, &candidate.path).map_err(|source| Error::Tags {
+        path: candidate.path.clone(),
+        source: Box::new(source),
+    })?;
 
     let cutting = Cutting {
         root_id: candidate.root_id,
@@ -1597,6 +1603,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
         tags: info.tags,
         embeds_a_picture,
         named_by_its_stem,
+        packets,
     }])
 }
 

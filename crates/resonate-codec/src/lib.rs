@@ -38,8 +38,8 @@ pub use crate::{
     dsd::{DsdChunk, DsdField, DsdRate, Packing},
     error::{CodecOp, Error, Result, StreamTrackId, TrackProperty},
     probe::{
-        CoverArt, ImageFormat, Pictured, Picturing, probe, probe_cover_art, probe_pictured,
-        probe_span,
+        CoverArt, ImageFormat, PacketDigest, Pictured, Picturing, Scanned, probe, probe_cover_art,
+        probe_pictured, probe_scanned, probe_span,
     },
     source::{
         FormatHint, Hinting, LocalFiles, Media, MediaProvider, MediaStream, Reading, Sources,

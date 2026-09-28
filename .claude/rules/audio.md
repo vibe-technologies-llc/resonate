@@ -343,9 +343,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the caller's `Picturing` says how much of the picture: `Whether` answers `Pictured::Carried` or
   `Bare` and copies nothing, `Copied` answers the bytes as `Pictured::Copied`, and a row the
   sources stand in for answers `StoodIn`, because the vault's object carries no picture and the
-  row's own file is not what was opened. The library scan reads every file through `Whether` —
-  `library.md` has why the bytes are deliberately left to be read later — and so does
-  `resonate tag`'s plan, which only ever wanted to know whether a file already carries a cover;
+  row's own file is not what was opened. The library scan reads every file through
+  `probe_scanned`, which asks `Whether` of the picture — `library.md` has why the bytes are
+  deliberately left to be read later — and then digests the first `PACKETS_DIGESTED` packets of
+  the audio track into a `PacketDigest` on the same open, which is what a moved file is known by
+  once every name it had has been retagged away; `resonate tag`'s plan asks `Whether` as well, which only ever wanted to know whether a file already carries a cover;
   its read-back asks `Copied`, so a written picture is weighed off the same open as the fields.
   `TagSource::read` takes the `Picturing` and answers a `Tagged`, so no implementation can answer
   the two through separate opens.

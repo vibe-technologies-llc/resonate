@@ -41,8 +41,8 @@ that no listener is waiting on, and is worked only once the categories above it 
   newer gpui or drawing those plots without `paint_path` avoids it
 
 ## Library
-- A file moved by hand and retagged past every name it had starts again at nothing unless a study
-  kept its print
+- A file moved by hand and retagged past every name it had, scanned before `tracks.packets` was
+  there and never studied, starts again at nothing until something reads it again
 - A play count reaches a file only beside a favourite and only in an ID3v2 `POPM`: lofty's generic
   popularimeter has no word for an unrated row and no counter outside ID3v2, and an APE tag holds no
   rating at all

@@ -155,6 +155,65 @@ pub fn probe_pictured(
     Ok((info, pictured))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PacketDigest(pub u64);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scanned {
+    pub info: MediaInfo,
+    pub carries_a_picture: bool,
+    pub packets: Option<PacketDigest>,
+}
+
+const PACKETS_DIGESTED: usize = 48;
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+pub fn probe_scanned(sources: &Sources, location: &MediaLocation) -> Result<Scanned> {
+    let mut opened = container::open_media(sources, location)?;
+    let info = opened.media_info(location)?;
+    let carries_a_picture = opened
+        .pictures_mut()
+        .is_some_and(|(reader, chunk)| carries_cover_art(reader, chunk));
+    let packets = opened
+        .into_coded()
+        .and_then(|coded| digest_of_the_first_packets(coded.reader, location));
+
+    Ok(Scanned {
+        info,
+        carries_a_picture,
+        packets,
+    })
+}
+
+fn digest_of_the_first_packets(
+    mut reader: Box<dyn FormatReader>,
+    location: &MediaLocation,
+) -> Option<PacketDigest> {
+    let (track, _) = container::audio_track(reader.as_ref(), location).ok()?;
+    let track = track.id;
+    let mut digest = FNV_OFFSET_BASIS;
+    let mut digested = 0;
+    while digested < PACKETS_DIGESTED {
+        let packet = match reader.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            Err(error) => {
+                tracing::debug!(%error, %location, "the packets a scan digests stopped early");
+                break;
+            }
+        };
+        if packet.track_id != track {
+            continue;
+        }
+        for byte in packet.data.iter() {
+            digest = (digest ^ u64::from(*byte)).wrapping_mul(FNV_PRIME);
+        }
+        digested += 1;
+    }
+    (digested > 0).then_some(PacketDigest(digest))
+}
+
 pub fn probe_cover_art(sources: &Sources, location: &MediaLocation) -> Result<Option<CoverArt>> {
     let mut opened = container::open_media(sources, location)?;
     Ok(opened

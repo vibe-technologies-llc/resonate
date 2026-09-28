@@ -35,6 +35,7 @@ struct Row {
     rate: i64,
     channels: i64,
     cut: (i64, Option<i64>),
+    packets: Option<i64>,
     print: Option<String>,
 }
 
@@ -232,7 +233,7 @@ fn rows(tx: &Transaction<'_>, narrowed: &str, generation: i64) -> Result<Vec<Row
         .prepare(&format!(
             "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,
                     t.tagged_title, t.tagged_artist, t.sample_rate, t.channels, t.span_start,
-                    t.span_frames, s.print
+                    t.span_frames, s.print, t.packets
                FROM tracks t
                LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE {narrowed}"
@@ -256,6 +257,7 @@ fn rows(tx: &Transaction<'_>, narrowed: &str, generation: i64) -> Result<Vec<Row
                 channels: row.get(9)?,
                 cut: (row.get(10)?, row.get(11)?),
                 print: row.get(12)?,
+                packets: row.get(13)?,
             })
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -320,6 +322,9 @@ fn pairs_by_sound(
 }
 
 fn sounds_alike(from: &Row, to: &Row, heard: &dyn Fn(&Path) -> Option<String>) -> bool {
+    if from.packets.is_some() && to.packets.is_some() {
+        return from.packets == to.packets;
+    }
     let Some(studied) = from.print.as_deref() else {
         return false;
     };

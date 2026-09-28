@@ -670,7 +670,16 @@ through `Player::media` like any other unscanned row.
   agree on the tagged title, the tagged artist or the file's own name. The frame count is what
   makes the pairing safe and the uniqueness what keeps two rips of one length from being guessed
   between; the agreement is what keeps a file deleted and an unrelated one of the same length
-  added from being taken for one moved file. **Where no name agrees, the print decides.** A gone
+  added from being taken for one moved file. **Where no name agrees, the packets decide.** The
+  scan reads every whole file through `probe_scanned`, which digests the first
+  `PACKETS_DIGESTED` packets of its audio track as symphonia's reader hands them out — the coded
+  bytes, before any decode, with FNV-1a — into `tracks.packets`. A tagger rewrites what sits
+  around the audio and never a packet, so a gone row and the one new row of its sound whose
+  digests agree are one file however it was renamed and retagged, and two whose digests differ
+  are not, with no decode and no study behind either.
+  `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested` is
+  the claim. A row scanned before the column was there holds none until its file is read again,
+  and for it **the print decides.** A gone
   row whose study kept a Chromaprint is paired with the one new row of its sound where
   `resonate_analysis::print` — the first two minutes decoded exactly as the study decodes them,
   and nothing past them — writes the same print, so a file retagged past every name it had and
