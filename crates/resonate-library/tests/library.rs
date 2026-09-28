@@ -12722,10 +12722,24 @@ fn applied(library: &Library) -> Result<OrganiseSummary> {
         summary.plan.files_moving(),
         "the run counted moves it does not name"
     );
+    let landings: Vec<&Path> = summary
+        .plan
+        .moves
+        .iter()
+        .flat_map(|planned| planned.files().map(|(_, to)| to))
+        .collect();
     for planned in &summary.plan.moves {
         for (from, to) in planned.files() {
-            assert!(to.exists(), "{} did not land", to.display());
-            assert!(!from.exists(), "{} is still where it stood", from.display());
+            assert!(
+                planned.parks() || to.exists(),
+                "{} did not land",
+                to.display()
+            );
+            assert!(
+                landings.contains(&from) || !from.exists(),
+                "{} is still where it stood",
+                from.display()
+            );
         }
         for sidecar in &planned.sidecars {
             assert!(sidecar.to.exists(), "{} did not land", sidecar.to.display());
@@ -13400,6 +13414,56 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
         .expect("the row outlived the scan that walked past it");
     assert_eq!(settled.id, before.id);
     assert_eq!(settled.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -> Result<()> {
+    let tree = Tree::new();
+    let echoes = meddle("Echoes", "2");
+    let days = meddle("One of These Days", "1");
+    tree.write("Pink Floyd/Meddle/01 One of These Days.wav", &echoes);
+    tree.write("Pink Floyd/Meddle/02 Echoes.wav", &days);
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let first = root.join("Pink Floyd/Meddle/01 One of These Days.wav");
+    let second = root.join("Pink Floyd/Meddle/02 Echoes.wav");
+    let heard = library
+        .track_played(&MediaLocation::local(&first), None, Duration::ZERO)?
+        .expect("the file holding Echoes was counted");
+
+    let summary = applied(&library)?;
+
+    assert!(
+        summary.plan.refused.is_empty(),
+        "{:?}",
+        summary.plan.refused
+    );
+    assert_eq!(
+        fs::read(&second).expect("Echoes where it was filed"),
+        echoes
+    );
+    assert_eq!(
+        fs::read(&first).expect("the other where it was filed"),
+        days
+    );
+    let moved = library
+        .track_at(&second, None)?
+        .expect("Echoes is named where it now stands");
+    assert_eq!(moved.id, heard.track.id);
+    assert_eq!(moved.plays, 1);
+    assert_eq!(
+        library.track_at(&first, None)?.map(|track| track.plays),
+        Some(0)
+    );
+    let left: Vec<_> = fs::read_dir(root.join("Pink Floyd/Meddle"))
+        .expect("the album's folder")
+        .flatten()
+        .map(|entry| entry.file_name())
+        .collect();
+    assert_eq!(left.len(), 2, "a parked name was left behind: {left:?}");
     Ok(())
 }
 

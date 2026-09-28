@@ -1622,9 +1622,20 @@ the pass.
   `Planner::order_the_chains` is where it is decided: a planned move waits on at most one other, so
   the graph is functional and `walked` follows each chain to its end and emits the deepest first,
   which puts `B → C` in front of `A → B` and lands both in one run rather than converging over two.
-  A chain that closes on itself is `Collided`, and so is every move leading into one and every move
-  waiting on a row that turned out to be staying: breaking a cycle needs a temporary name, and a
-  crash between the renames would leave a file under a name nothing knows. A move refused there
+  **A chain that closes on itself is broken through a parked name.** `parked_out_of_their_cycles`
+  finds each cycle of single-file moves — each waiting on exactly one other — and splits one move
+  of it in two: its file goes first to `<stem>.resonate-parked-<pid>.<ext>` beside where it stood,
+  which waits on nothing, and from there to where it was going, which waits on what it waited on;
+  the walk then orders the rest of the cycle between the two, so two files filed under each
+  other's names trade places in one run —
+  `two_files_filed_under_each_others_names_trade_places_and_keep_their_plays`. The catalog follows
+  each step in the batch's one transaction, so the row is at the parked name for no longer than
+  the batch. `Move::parks` names the first half, which the preview lists and no count counts as a
+  file moved. What a failure between the halves leaves is a file under a visible name the catalog
+  already follows, which the next run files where it belongs; a run killed between a rename and
+  its commit leaves a file the next scan follows by `moves::follow_the_moved` like any file moved
+  by hand. A move leading into a cycle a unit sits in, and every move waiting on a row that turned
+  out to be staying, is still `Collided`. A move refused there
   gives its source and its sidecars back out of `going`, so `empties` still counts only the folders
   every file of which is really leaving. `Refusal` is `Unidentified`, `Loose` — a destination with
   no folder between it and the root — `Collided`, `SharesASheet` and `SourceGone`, and every one of

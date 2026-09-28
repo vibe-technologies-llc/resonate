@@ -34,6 +34,7 @@ const MOVES_PER_BATCH: usize = 256;
 const COMPONENT_BYTES: usize = 255;
 const SHEET_EXTENSION: &str = "cue";
 const STAGED: &str = ".resonate-staging";
+const PARKED: &str = "resonate-parked";
 const RUNNING_PROCESSES: &str = "/proc";
 const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
@@ -475,6 +476,13 @@ pub struct Move {
 }
 
 impl Move {
+    pub fn parks(&self) -> bool {
+        self.to
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name.contains(&format!(".{PARKED}-")))
+    }
+
     pub fn files(&self) -> impl Iterator<Item = (&Path, &Path)> {
         iter::once((self.from.as_path(), self.to.as_path())).chain(
             self.companions
@@ -512,6 +520,7 @@ impl Plan {
     pub fn files_moving(&self) -> usize {
         self.moves
             .iter()
+            .filter(|planned| !planned.parks())
             .map(|planned| planned.files().count())
             .sum()
     }
@@ -1340,7 +1349,7 @@ impl<'a> Planner<'a> {
     }
 
     fn order_the_chains(&mut self) {
-        let asked = mem::take(&mut self.moves);
+        let asked = parked_out_of_their_cycles(mem::take(&mut self.moves));
         let mut waits = Vec::with_capacity(asked.len());
         let mut state = vec![Step::Unwalked; asked.len()];
         {
@@ -1410,6 +1419,83 @@ impl<'a> Planner<'a> {
             beside.nothing_but_files && beside.files.iter().all(|file| self.going.contains(file))
         })
     }
+}
+
+fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
+    let one_step: Vec<Option<usize>> = {
+        let by_source: AHashMap<&Path, usize> = asked
+            .iter()
+            .enumerate()
+            .flat_map(|(at, held)| held.planned.files().map(move |(from, _)| (from, at)))
+            .collect();
+        asked
+            .iter()
+            .map(|held| match held.waits_for.as_slice() {
+                [standing] if held.planned.companions.is_empty() => {
+                    by_source.get(standing.as_path()).copied().filter(|mover| {
+                        asked[*mover].planned.companions.is_empty()
+                            && asked[*mover].waits_for.len() == 1
+                    })
+                }
+                _ => None,
+            })
+            .collect()
+    };
+
+    let mut seen = vec![0_usize; asked.len()];
+    let mut broken = Vec::new();
+    for start in 0..asked.len() {
+        if seen[start] != 0 {
+            continue;
+        }
+        let walk = start + 1;
+        let mut at = start;
+        loop {
+            if seen[at] == walk {
+                broken.push(at);
+                break;
+            }
+            if seen[at] != 0 {
+                break;
+            }
+            seen[at] = walk;
+            match one_step[at] {
+                Some(next) => at = next,
+                None => break,
+            }
+        }
+    }
+
+    for at in broken {
+        let Some(parking) = a_place_to_park(&asked[at].planned.from) else {
+            continue;
+        };
+        let held = &mut asked[at];
+        let landing = Planned {
+            planned: Move {
+                from: parking.clone(),
+                to: held.planned.to.clone(),
+                rows: held.planned.rows,
+                companions: Vec::new(),
+                sidecars: mem::take(&mut held.planned.sidecars),
+            },
+            waits_for: mem::take(&mut held.waits_for),
+        };
+        held.planned.to = parking;
+        asked.push(landing);
+    }
+
+    asked
+}
+
+fn a_place_to_park(from: &Path) -> Option<PathBuf> {
+    let stem = from.file_stem()?.to_str()?;
+    let named = match from.extension().and_then(OsStr::to_str) {
+        Some(extension) => format!("{stem}.{PARKED}-{}.{extension}", process::id()),
+        None => format!("{stem}.{PARKED}-{}", process::id()),
+    };
+    let parking = from.with_file_name(named);
+    fs::symlink_metadata(&parking).is_err().then_some(parking)
 }
 
 fn walked(waits: &[Vec<usize>], state: &mut [Step]) -> Vec<usize> {
@@ -1631,6 +1717,7 @@ fn batch_landing(
     sheets_follow_their_audio(library, &landed);
     let files = landed
         .iter()
+        .filter(|planned| !planned.parks())
         .map(|planned| planned.files().count())
         .sum::<usize>();
     progress.moved.fetch_add(files as u64, Ordering::Relaxed);
@@ -3001,7 +3088,7 @@ mod tests {
     }
 
     #[test]
-    fn two_tracks_moving_onto_each_other_are_both_left_where_they_stand() {
+    fn two_tracks_moving_onto_each_other_trade_places_through_a_parked_name() {
         let folder = a_folder_of_its_own();
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         for named in ["Echoes", "Fearless"] {
@@ -3020,28 +3107,22 @@ mod tests {
 
         let (plan, stats) = preview(&[one.clone(), other.clone()], "{album}/{title}");
 
-        assert!(
-            plan.moves.is_empty(),
-            "a cycle was ordered rather than refused"
-        );
+        assert!(plan.refused.is_empty(), "{:?}", plan.refused);
+        assert_eq!(stats.collided, 0);
+        let parked = folder.join(format!("Meddle/Echoes.{PARKED}-{}.wav", process::id()));
+        let steps: Vec<(PathBuf, PathBuf)> = plan
+            .moves
+            .iter()
+            .map(|planned| (planned.from.clone(), planned.to.clone()))
+            .collect();
         assert_eq!(
-            plan.refused,
+            steps,
             vec![
-                Refused {
-                    from: one.path.clone(),
-                    refusal: Refusal::Collided {
-                        with: other.path.clone()
-                    },
-                },
-                Refused {
-                    from: other.path.clone(),
-                    refusal: Refusal::Collided {
-                        with: one.path.clone()
-                    },
-                },
+                (one.path.clone(), parked.clone()),
+                (other.path.clone(), one.path.clone()),
+                (parked, other.path.clone()),
             ]
         );
-        assert_eq!(stats.collided, 2);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

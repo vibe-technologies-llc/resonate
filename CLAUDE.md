@@ -580,7 +580,7 @@ Invariants the layering exists to protect:
   name a path outside the root the file came from — which is why `Refusal` has no `Escapes`
   variant, nothing being able to construct one. One `Plan` is built and then handed to the apply or
   not, so a preview and an `--apply` cannot disagree about what would happen; the moves are ordered
-  so that a chain lands in one run and only a cycle is `Collided`, the files move in batches of 256
+  so that a chain lands in one run and a cycle is broken through a parked name, the files move in batches of 256
   with a rollback that renames back what was renamed and removes what a cross-device copy wrote,
   and the catalog follows each batch, because a moved file the catalog has not followed is what the
   next scan already reconciles while the reverse is a catalog naming files that are not there.

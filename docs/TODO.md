@@ -95,7 +95,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   cover, and an album landed as a release group gets no totals
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer, and a WAV with ID3v2 before `RIFF`
   is refused
-- A move cycle is refused rather than broken through a temporary name
 - A disc numbered in words is composed only in English beyond the flat tables of twelve
 
 ## Later: Equaliser and DSP extras
