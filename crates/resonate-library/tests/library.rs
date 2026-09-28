@@ -14525,6 +14525,114 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     Ok(())
 }
 
+fn drawn_png(side: u32) -> Vec<u8> {
+    let mut written = std::io::Cursor::new(Vec::new());
+    image::RgbImage::from_pixel(side, side, image::Rgb([200, 40, 40]))
+        .write_to(&mut written, image::ImageFormat::Png)
+        .expect("a picture drawn in memory");
+    written.into_inner()
+}
+
+fn front_cover_side(file: &Path) -> Option<u32> {
+    FileTags::default()
+        .read(&MediaLocation::local(file), Picturing::Copied)
+        .expect("a file whose tags read back")
+        .picture
+        .into_copied()
+        .and_then(|picture| picture.shorter_side())
+}
+
+#[test]
+fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result<()> {
+    let tree = Tree::new();
+    let thumbnail = drawn_png(120);
+    let mut files = Vec::new();
+    for (file, title, number) in [
+        ("1.wav", "One of These Days", "1"),
+        ("2.wav", "A Pillow of Winds", "2"),
+        ("3.wav", "Fearless!", "3"),
+    ] {
+        files.push(
+            tree.write(
+                file,
+                &Wav::new()
+                    .text(TITLE, title)
+                    .text(ARTIST, "The Orbiters")
+                    .text(ALBUM, "Orbits")
+                    .text(TRACK, number)
+                    .picture(&thumbnail)
+                    .id3_in_a_chunk()
+                    .build(),
+            ),
+        );
+    }
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(&library, &options(&tree))?;
+    let album = only_album(&library)?;
+    assert_eq!(
+        library
+            .cover_art(album.id)?
+            .and_then(|art| art.shorter_side()),
+        Some(120)
+    );
+
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        covers: vec![(
+            mbid(RELEASE),
+            CoverArt {
+                format: ImageFormat::Png,
+                bytes: drawn_png(600),
+            },
+        )],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    assert_eq!(
+        library
+            .cover_art(album.id)?
+            .and_then(|art| art.shorter_side()),
+        Some(600),
+        "the archive's cover did not take the thumbnail's place"
+    );
+
+    scan(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+    assert_eq!(
+        library
+            .cover_art(album.id)?
+            .and_then(|art| art.shorter_side()),
+        Some(600),
+        "a rescan put the thumbnail back over the better cover"
+    );
+
+    let planned = retagged(&library, false)?;
+    assert!(
+        planned
+            .retagging
+            .writes
+            .iter()
+            .all(|write| write.picture.is_some()),
+        "a file's thumbnail was not offered the better cover"
+    );
+    retagged(&library, true)?;
+    assert_eq!(front_cover_side(&files[0]), Some(600));
+
+    walked_back(&library, true)?;
+    assert_eq!(
+        front_cover_side(&files[0]),
+        Some(120),
+        "putting the run back did not put the thumbnail back"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() -> Result<()> {
     let tree = Tree::new();

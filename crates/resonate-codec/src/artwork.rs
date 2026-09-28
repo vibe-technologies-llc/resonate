@@ -347,6 +347,19 @@ fn drawn_smaller(plane: Plane<'_>, width: u32, height: u32) -> RgbaImage {
     drawn
 }
 
+impl CoverArt {
+    pub fn shorter_side(&self) -> Option<u32> {
+        let (width, height) = image::ImageReader::with_format(
+            std::io::Cursor::new(&self.bytes),
+            read_as(self.format),
+        )
+        .into_dimensions()
+        .inspect_err(|error| tracing::debug!(%error, "a picture's size could not be read"))
+        .ok()?;
+        Some(width.min(height))
+    }
+}
+
 fn read_art(art: &CoverArt) -> Option<DynamicImage> {
     match image::load_from_memory_with_format(&art.bytes, read_as(art.format)) {
         Ok(read) => Some(read),

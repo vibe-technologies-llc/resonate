@@ -82,6 +82,7 @@ const MIGRATIONS: &[&str] = &[
          was   TEXT,
          PRIMARY KEY (path, field)
      ) STRICT, WITHOUT ROWID;",
+    "ALTER TABLE retagged ADD COLUMN picture BLOB;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

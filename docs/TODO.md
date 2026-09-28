@@ -74,8 +74,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz rip is never a FLAC
 
 ## Later: Tagging and organising
-- A cue-cut row is never written, a thumbnail a ripper embedded is never replaced by a better
-  cover, and an album landed as a release group gets no totals
+- A cue-cut row is never written, and an album landed as a release group gets no totals
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer, and a WAV with ID3v2 before `RIFF`
   is refused
 - A disc numbered in words is composed only in English beyond the flat tables of twelve

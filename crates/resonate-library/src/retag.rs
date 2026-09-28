@@ -10,7 +10,8 @@ use std::{
 };
 
 use resonate_codec::{
-    CoverArt, Pictured, Picturing, Popularity, Rated, TagEdit, TagField, TagSet, TagSink, Writing,
+    CoverArt, ImageFormat, Pictured, Picturing, Popularity, Rated, TagEdit, TagField, TagSet,
+    TagSink, Writing,
 };
 use resonate_core::{AlbumId, MediaLocation, TrackId};
 use rusqlite::{Transaction, params};
@@ -68,6 +69,7 @@ pub struct Written {
 pub struct Held {
     pub fields: Vec<(TagField, Option<String>)>,
     pub rated: Option<Rated>,
+    pub picture: Option<Arc<CoverArt>>,
 }
 
 impl Held {
@@ -78,6 +80,7 @@ impl Held {
                 .map(|field| (field, field.read(tags)))
                 .collect(),
             rated,
+            picture: None,
         }
     }
 }
@@ -347,7 +350,12 @@ fn planned(
             continue;
         }
 
-        let held = match tags.read(&location, Picturing::Whether) {
+        let sleeved = row.album_id.and_then(|album| sleeve.of(library, album));
+        let picturing = match sleeved {
+            Some(_) => Picturing::Copied,
+            None => Picturing::Whether,
+        };
+        let held = match tags.read(&location, picturing) {
             Ok(held) => held,
             Err(source) => {
                 tracing::debug!(
@@ -361,18 +369,21 @@ fn planned(
         };
 
         let edits = wanted(row, &held.tags);
-        let picture = offered_picture(library, &held.picture, row, sleeve);
+        let (picture, replaced) = offered_picture(held.picture, sleeved);
         let (popularity, rated) = rated_otherwise(tags, &location, row.popularity);
         if edits.is_empty() && picture.is_none() && popularity.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;
         }
 
-        let was = Held::of(
-            &held.tags,
-            edits.iter().map(|edit| edit.field),
-            popularity.and(rated),
-        );
+        let was = Held {
+            picture: replaced,
+            ..Held::of(
+                &held.tags,
+                edits.iter().map(|edit| edit.field),
+                popularity.and(rated),
+            )
+        };
         retagging.writes.push(Written {
             track: row.id,
             path: row.path.clone(),
@@ -407,15 +418,20 @@ fn rated_otherwise(
 }
 
 fn offered_picture(
-    library: &Library,
-    carried: &Pictured,
-    row: &TrackToTag,
-    sleeve: &mut Sleeve,
-) -> Option<Arc<CoverArt>> {
-    if carried.carries_one() {
-        return None;
+    carried: Pictured,
+    sleeved: Option<Arc<CoverArt>>,
+) -> (Option<Arc<CoverArt>>, Option<Arc<CoverArt>>) {
+    match carried {
+        Pictured::Copied(held) if bettered(&held, sleeved.as_deref()) => {
+            (sleeved, Some(Arc::new(held)))
+        }
+        Pictured::Copied(_) | Pictured::Carried => (None, None),
+        Pictured::Bare | Pictured::StoodIn => (sleeved, None),
     }
-    sleeve.of(library, row.album_id?)
+}
+
+fn bettered(held: &CoverArt, sleeved: Option<&CoverArt>) -> bool {
+    sleeved.is_some_and(|sleeved| store::betters(sleeved, held))
 }
 
 fn wanted(row: &TrackToTag, held: &TagSet) -> Vec<TagEdit> {
@@ -739,8 +755,17 @@ fn note_what_was_there(tx: &Transaction<'_>, undoing: &[Undoing], begins: bool) 
     for held in undoing {
         let path = store::path_text(&held.path)?;
         tx.execute(
-            "INSERT OR REPLACE INTO retagged (path, pictured, rated) VALUES (?1, ?2, ?3)",
-            params![path, held.pictured, rating_kept(held.was.rated)],
+            "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                path,
+                held.pictured,
+                rating_kept(held.was.rated),
+                held.was
+                    .picture
+                    .as_ref()
+                    .map(|picture| picture.bytes.as_slice())
+            ],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
         for (field, was) in &held.was.fields {
@@ -759,6 +784,7 @@ pub(crate) struct KeptRetag {
     pub path: PathBuf,
     pub pictured: bool,
     pub rated: Option<i64>,
+    pub picture: Option<CoverArt>,
     pub fields: Vec<(TagField, Option<String>)>,
 }
 
@@ -811,8 +837,8 @@ fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Re
                 })
                 .collect(),
             taken: taken.into_iter().map(|(field, _)| *field).collect(),
-            picture: None,
-            unpictured: kept.pictured,
+            unpictured: kept.pictured && kept.picture.is_none(),
+            picture: kept.picture.map(Arc::new),
             popularity,
         });
     }
@@ -822,7 +848,7 @@ fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Re
 pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRetag>> {
     let mut statement = connection
         .prepare(
-            "SELECT r.path, r.pictured, r.rated, f.field, f.was
+            "SELECT r.path, r.pictured, r.rated, f.field, f.was, r.picture
                FROM retagged r LEFT JOIN retagged_fields f ON f.path = r.path
               ORDER BY r.path, f.field",
         )
@@ -835,19 +861,26 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
                 row.get::<_, Option<i64>>(2)?,
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<Vec<u8>>>(5)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut kept: Vec<KeptRetag> = Vec::new();
-    for (path, pictured, rated, field, was) in rows {
+    for (path, pictured, rated, field, was, picture) in rows {
         let path = PathBuf::from(path);
         if kept.last().is_none_or(|last| last.path != path) {
             kept.push(KeptRetag {
                 path,
                 pictured,
                 rated,
+                picture: picture.and_then(|bytes| {
+                    Some(CoverArt {
+                        format: ImageFormat::sniff(&bytes)?,
+                        bytes,
+                    })
+                }),
                 fields: Vec::new(),
             });
         }

@@ -1540,7 +1540,7 @@ impl Pass<'_> {
         self.library.land_release(album.id, &release)?;
         self.progress.releases.fetch_add(1, Ordering::Relaxed);
         self.rematch(album.id)?;
-        if !album.has_cover {
+        if self.wants_a_cover(album)? {
             self.cover(album, &release);
         }
         self.credits(&release.credit)
@@ -1592,10 +1592,14 @@ impl Pass<'_> {
         if album.has_release_rows {
             self.rematch(album.id)?;
         }
-        if !album.has_cover {
+        if self.wants_a_cover(album)? {
             self.group_cover(album, group);
         }
         self.credits(&group.credit)
+    }
+
+    fn wants_a_cover(&self, album: &AlbumToAsk) -> Result<bool> {
+        Ok(!album.has_cover || self.library.covered_by_a_thumbnail(album.id)?)
     }
 
     fn want(&self, picture: Picture) {

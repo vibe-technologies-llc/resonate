@@ -613,7 +613,10 @@ through `Player::media` like any other unscanned row.
   it reads `cover_art IS NOT NULL AND cover_source = 0` first, so an album already holding the
   file's own picture costs a query and no probe, while one holding a picture the archive gave —
   `CoverSource::Archive`, code 1 — is probed again and the file's replaces it, because the file's is
-  the deliberate one and the archive's was only ever a stand-in. The year is the same shape: `Grouped` carries it, and a cache hit
+  the deliberate one and the archive's was only ever a stand-in. **A thumbnail is not
+  deliberate**: where `store::betters` says the archive's picture is at least twice the width of
+  a file's whose shorter side is under `A_THUMBNAIL_BELOW`, the archive's stays and the album
+  counts as covered. The year is the same shape: `Grouped` carries it, and a cache hit
   whose album has none runs `fill_year` rather than skipping the upsert that would have coalesced
   it. `store::year` reads a date written with no separators too, so `19750601` and `197506`
   name 1975 where only `1975-06-01` and `1975` used to.
@@ -1347,9 +1350,11 @@ through `Player::media` like any other unscanned row.
   and `an_unheld_release_is_found_by_a_name_spelt_either_way` are the claims.
 - **A cover from the archive lands only where the files embedded none, and the archive is asked
   until it has answered.** `land_archive_cover` writes `cover_art`, `cover_format` and
-  `cover_source` under `WHERE cover_art IS NULL`, so a file's picture is never overwritten, and
-  `Pass::album` asks the reference for a cover in the pass that landed the release, where
-  `has_cover` is false. `albums.cover_asked` — the first step in `MIGRATIONS` — is stamped once the
+  `cover_source` under `WHERE cover_art IS NULL`, so a file's picture is never overwritten — but
+  for a thumbnail the archive's `betters` — and `Pass::album` asks the reference for a cover in
+  the pass that landed the release, where `has_cover` is false or
+  `Library::covered_by_a_thumbnail` reads the held picture's header and finds it under
+  `A_THUMBNAIL_BELOW`. A cover the vault holds is not weighed, its bytes being JXL. `albums.cover_asked` — the first step in `MIGRATIONS` — is stamped once the
   archive has *answered*, with a picture that landed or with none, and never where the fetch
   failed, was refused or was cut off by a pass ending under it; `Pass::look_again_for_covers` asks
   at the end of every run for each album holding a release or a group, no picture and no stamp,
@@ -1466,11 +1471,14 @@ through `Player::media` like any other unscanned row.
   `Writing` carries the edits and an optional front cover, so a file that wants both costs one
   `save_to_path` rather than two rewrites of its whole tag; `offered_picture` is what fills the
   second half, and the rule is the mirror of `albums.cover_source`'s — the album's cover is offered
-  only where the file's own read answers that it carries none, so an archive cover reaches a file
-  that carries none and a file with a picture of its own is left with it. The plan reads each file
-  **once**, through `TagSource::read` under `Picturing::Whether`, so the fields it weighs and
-  whether a picture is there come off one open and the picture is never copied out to answer a
-  `bool`. The catalog's cover is asked for only where the file carries none, and `Sleeve` holds one
+  where the file's own read answers that it carries none, or where what it carries is a thumbnail
+  the album's cover `betters`, so an archive cover reaches a file that carries none and a file
+  with a picture of its own is left with it unless that picture is a ripper's thumbnail. What a
+  write replaced is noted with the run, so putting the run back writes the thumbnail back —
+  `a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size`. The plan reads each file
+  **once**, through `TagSource::read` — under `Picturing::Copied` where the album holds a cover to
+  weigh the file's against, and `Whether` where it holds none — so the fields it weighs and the
+  picture come off one open. `Sleeve` holds one
   album's bytes at a time while `TRACKS_TO_TAG` reads in path order, so a run of tracks out of one
   folder shares one read of the blob. `written` reads the file back once as well, under
   `Picturing::Copied` where a picture went in, so the fields and the picture are weighed off the

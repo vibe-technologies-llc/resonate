@@ -3063,6 +3063,11 @@ impl Library {
             .write(|transaction| enriched::land_vault_cover(transaction, album, kept.key, &within))
     }
 
+    pub(crate) fn covered_by_a_thumbnail(&self, album: AlbumId) -> Result<bool> {
+        self.inner
+            .read(|connection| enriched::covered_by_a_thumbnail(connection, album))
+    }
+
     pub fn land_artist(&self, artist: ArtistId, profile: &ArtistProfile) -> Result<()> {
         self.inner.write(|transaction| {
             enriched::land_artist(transaction, artist, profile, SystemTime::now())

@@ -750,18 +750,30 @@ pub(crate) fn land_archive_cover(
     album: AlbumId,
     art: &CoverArt,
 ) -> Result<bool> {
+    let bettering = store::held_picture(tx, album.get() as i64, None)?
+        .is_some_and(|held| store::betters(art, &held));
     tx.execute(
         "UPDATE albums SET cover_art = ?1, cover_format = ?2, cover_source = ?3
-          WHERE id = ?4 AND cover_art IS NULL AND cover_path IS NULL",
+          WHERE id = ?4 AND (cover_art IS NULL OR ?5) AND cover_path IS NULL",
         params![
             art.bytes,
             store::image_format_code(art.format),
             store::cover_source_code(CoverSource::Archive),
             album.get() as i64,
+            bettering,
         ],
     )
     .map(|changed| changed > 0)
     .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+pub(crate) fn covered_by_a_thumbnail(
+    connection: &rusqlite::Connection,
+    album: AlbumId,
+) -> Result<bool> {
+    Ok(store::held_picture(connection, album.get() as i64, None)?
+        .and_then(|held| held.shorter_side())
+        .is_some_and(|side| side < store::A_THUMBNAIL_BELOW))
 }
 
 pub(crate) fn note_cover_asked(tx: &Transaction<'_>, album: AlbumId, at: SystemTime) -> Result<()> {

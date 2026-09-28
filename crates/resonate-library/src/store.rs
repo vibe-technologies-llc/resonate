@@ -8,7 +8,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
-    Codec, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
+    Codec, CoverArt, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
@@ -1572,6 +1572,39 @@ fn fill_declared(tx: &Transaction<'_>, album: i64, declared: &Declaration<'_>) -
     .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
+pub(crate) const A_THUMBNAIL_BELOW: u32 = 300;
+const BETTERED_BY_AT_LEAST: u32 = 2;
+
+pub(crate) fn betters(candidate: &CoverArt, held: &CoverArt) -> bool {
+    let (Some(held), Some(candidate)) = (held.shorter_side(), candidate.shorter_side()) else {
+        return false;
+    };
+    held < A_THUMBNAIL_BELOW && candidate >= held.saturating_mul(BETTERED_BY_AT_LEAST)
+}
+
+pub(crate) fn held_picture(
+    connection: &rusqlite::Connection,
+    album: i64,
+    source: Option<CoverSource>,
+) -> Result<Option<CoverArt>> {
+    let held = connection
+        .query_row(
+            "SELECT cover_art FROM albums
+              WHERE id = ?1 AND cover_path IS NULL AND cover_art IS NOT NULL
+                AND (?2 IS NULL OR cover_source = ?2)",
+            params![album, source.map(cover_source_code)],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(held.and_then(|bytes| {
+        Some(CoverArt {
+            format: ImageFormat::sniff(&bytes)?,
+            bytes,
+        })
+    }))
+}
+
 fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool> {
     let present = tx
         .query_row(
@@ -1597,6 +1630,11 @@ fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool>
             return Ok(false);
         }
     };
+    if held_picture(tx, album, Some(CoverSource::Archive))?
+        .is_some_and(|archived| betters(&archived, &art))
+    {
+        return Ok(true);
+    }
 
     tx.execute(
         "UPDATE albums SET cover_art = ?1, cover_format = ?2, cover_source = ?3

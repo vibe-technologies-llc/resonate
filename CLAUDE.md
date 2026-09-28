@@ -561,8 +561,11 @@ Invariants the layering exists to protect:
   `CoverSource::File` or `Archive`: `land_archive_cover` writes only where `cover_art IS NULL`,
   and `store::cover` on a rescan probes again wherever the held picture is not the file's, so
   one the archive gave is replaced by one a file turns out to carry and never the other way
-  round. The pass asks the archive only in the pass that landed the release or its release group,
-  and only where the album held none.
+  round — **unless the file's is a thumbnail**: `store::betters` is a picture whose shorter side
+  is at least twice that of one whose shorter side is under `A_THUMBNAIL_BELOW`, 300 px, and such
+  an archive cover takes a thumbnail's place, is kept through a rescan and is what `resonate tag`
+  writes over the thumbnail in the file. The pass asks the archive only in the pass that landed
+  the release or its release group, and only where the album held none or held a thumbnail.
 - **A track is asked about in its own right, and what a lookup may overwrite is a type.** A file
   carrying no `ALBUM` tag is under no album, so the enrichment reached it through nothing at all
   until `Ask::Track` joined the queue between the albums and the artists. `Pass::track` walks four
