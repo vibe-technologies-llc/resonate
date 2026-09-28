@@ -77,7 +77,7 @@ pub(crate) fn eyebrow(text: impl Into<SharedString>) -> Div {
 }
 
 pub(crate) fn title(text: impl IntoElement) -> Div {
-    title_face().truncate().child(text)
+    title_face().truncate().ends_in_an_ellipsis().child(text)
 }
 
 pub(crate) fn linked_title(link: Stateful<Div>) -> Div {
@@ -100,6 +100,7 @@ pub(crate) fn subtitle(text: impl IntoElement) -> Div {
         .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::muted()))
         .truncate()
+        .ends_in_an_ellipsis()
         .child(text)
 }
 

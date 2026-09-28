@@ -22,7 +22,7 @@ use crate::{
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
         inspector::{beside, card, fields},
-        kit,
+        kit::{self, EndsInAnEllipsis as _},
         root::RootView,
         scrollbar::Scrollbars,
         transport::Playing,
@@ -895,6 +895,7 @@ fn heard_row(heard: &HeardAs) -> Div {
                     div()
                         .text_color(rgb(theme::text()))
                         .truncate()
+                        .ends_in_an_ellipsis()
                         .child(heard.title.clone()),
                 )
                 .child(
@@ -902,6 +903,7 @@ fn heard_row(heard: &HeardAs) -> Div {
                         .text_size(px(theme::text_sm()))
                         .text_color(rgb(theme::faint()))
                         .truncate()
+                        .ends_in_an_ellipsis()
                         .child(heard.artist.clone().unwrap_or_default()),
                 ),
         )

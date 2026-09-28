@@ -293,6 +293,7 @@ pub(crate) fn artist_cell(artist: impl IntoElement) -> Div {
         .flex()
         .text_color(rgb(theme::muted()))
         .truncate()
+        .ends_in_an_ellipsis()
         .child(artist)
 }
 

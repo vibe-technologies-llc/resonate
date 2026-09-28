@@ -74,8 +74,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
 
 ## UI
-- A name clipped by a fixed-width cell is sliced through a glyph rather than elided wherever an
-  ancestor, not the text, is the box that runs out of room
 
 ## Testing
 - The prescan guards what symphonia's WAVE and CAF readers overflow on only where the header

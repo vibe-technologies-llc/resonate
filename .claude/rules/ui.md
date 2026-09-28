@@ -1274,7 +1274,11 @@ the binary hands `run` inside `Lookups`, so it never names the online crate eith
   glyph, so the three go together and the trait is where they are written. `opens` takes it, so
   every link this window draws ends in one — the playback bar's title, artist and album, the
   inspector's and the lyrics pane's headings, the artist cell of every row, the grid's caption
-  and the Missing pane's headings alike — and no call site adds it a second time.
+  and the Missing pane's headings alike — and no call site adds it a second time. **No
+  `truncate` stands alone any more**: every other one in the window — the inspector's values, a
+  menu's entries, a sidebar tab, a pressing's line, a device's label, a settings row — is
+  `truncate().ends_in_an_ellipsis()`, so a name whose room runs out because an *ancestor* is the
+  box that ran out ends in an ellipsis rather than a glyph sliced in half.
 
 ## Panes
 

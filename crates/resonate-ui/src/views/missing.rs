@@ -13,7 +13,7 @@ use crate::{
         browser::{
             OPEN_ALBUM_HINT, OPEN_ARTIST_HINT, Unheld, controls_place, portrait_frame, year_of,
         },
-        kit::{self, KeepsItsWidth},
+        kit::{self, EndsInAnEllipsis as _, KeepsItsWidth},
         listing::{self, Pictured},
         reorder::{self, Listed, Shift},
         root::{RootView, empty, row},
@@ -448,6 +448,7 @@ fn release_row(release: &UnheldRelease) -> Div {
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .text_color(rgb(theme::muted()))
                 .child(release.title.clone()),
         )

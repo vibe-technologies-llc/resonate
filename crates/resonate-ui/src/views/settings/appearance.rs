@@ -5,7 +5,7 @@ use crate::{
     ResonateApp, Setting, SettingKey, Tabs, WindowButtons, WindowSize, theme,
     views::{
         hint::Names,
-        kit,
+        kit::{self, EndsInAnEllipsis as _},
         root::{Pane, RootView},
         settings::{Choice, find::Category, note, switch_row},
     },
@@ -149,6 +149,7 @@ impl RootView {
                     div()
                         .text_size(px(theme::text_xs()))
                         .truncate()
+                        .ends_in_an_ellipsis()
                         .when_else(
                             chosen,
                             |name| {

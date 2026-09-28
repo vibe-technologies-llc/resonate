@@ -1581,6 +1581,7 @@ impl RootView {
                                 .child(
                                     div()
                                         .truncate()
+                                        .ends_in_an_ellipsis()
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(rgb(if playing {
                                             theme::accent()
@@ -1601,6 +1602,7 @@ impl RootView {
                                 .text_size(px(theme::text_xs()))
                                 .text_color(rgb(theme::muted()))
                                 .truncate()
+                                .ends_in_an_ellipsis()
                                 .child(counted(playlist)),
                         ),
                 )
@@ -2077,6 +2079,7 @@ fn picked(playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .child(SharedString::from(playlist.name.clone())),
         )
         .child(kit::figure(counted(playlist)))

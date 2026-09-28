@@ -23,7 +23,7 @@ use crate::{
     theme, toast,
     views::{
         hint::Names as _,
-        kit::{self, Tone},
+        kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
         settings::{
             action,
@@ -667,7 +667,12 @@ impl RootView {
                     .min_w(px(0.0))
                     .items_center()
                     .gap_2()
-                    .child(div().truncate().child(device.label.clone()))
+                    .child(
+                        div()
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(device.label.clone()),
+                    )
                     .child(kit::badge(device.measured_by.clone(), theme::muted()))
                     .when_some(device.rig.clone(), |row, rig| row.child(kit::figure(rig))),
             )

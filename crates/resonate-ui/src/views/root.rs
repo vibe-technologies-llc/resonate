@@ -2169,6 +2169,7 @@ impl RootView {
             .id(id.clone())
             .min_w(px(0.0))
             .truncate()
+            .ends_in_an_ellipsis()
             .child(label)
             .when_some(selection, |named, selection| {
                 named
@@ -3201,7 +3202,13 @@ impl RootView {
                 icons::icon(pane.icon(), theme::pane_icon(), mark),
                 PANE_GROUP,
             ))
-            .child(div().flex_1().truncate().child(pane.label()))
+            .child(
+                div()
+                    .flex_1()
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(pane.label()),
+            )
             .names(pane.about())
             .when_some(count, |row, count| {
                 row.child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))

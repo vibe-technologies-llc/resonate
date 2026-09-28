@@ -205,6 +205,7 @@ impl RootView {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
+                    .ends_in_an_ellipsis()
                     .text_size(px(theme::text_sm()))
                     .child(shown),
             )
@@ -1351,6 +1352,7 @@ fn inbox_row(folder: &Path) -> Div {
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .text_size(px(theme::text_sm()))
                 .child(SharedString::from(folder.display().to_string())),
         )

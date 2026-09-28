@@ -677,7 +677,12 @@ pub(crate) fn fields<'a, Told: Into<Cow<'a, str>>>(
                         .whitespace_nowrap()
                         .child(name),
                 )
-                .child(kit::figure(value).text_color(rgb(theme::text())).truncate()),
+                .child(
+                    kit::figure(value)
+                        .text_color(rgb(theme::text()))
+                        .truncate()
+                        .ends_in_an_ellipsis(),
+                ),
         )
     })
 }

@@ -588,6 +588,7 @@ impl RootView {
                                                     .flex_1()
                                                     .min_w(px(0.0))
                                                     .truncate()
+                                                    .ends_in_an_ellipsis()
                                                     .font_weight(FontWeight::MEDIUM)
                                                     .child(listing::matched(
                                                         artist.name.clone().into(),
@@ -1076,8 +1077,12 @@ impl RootView {
                     Beside::AnAlbum => Some(listing::format_cell(None)),
                     Beside::ARun => None,
                     Beside::ASearch { on, .. } => Some(
-                        listing::format_cell(None)
-                            .child(kit::figure(on).text_color(rgb(theme::faint())).truncate()),
+                        listing::format_cell(None).child(
+                            kit::figure(on)
+                                .text_color(rgb(theme::faint()))
+                                .truncate()
+                                .ends_in_an_ellipsis(),
+                        ),
                     ),
                 },
                 |row, format| row.child(format).child(listing::unheard()),
@@ -1868,7 +1873,11 @@ impl RootView {
                     } else {
                         TAKE_THE_PRESSING_HINT
                     })
-                    .child(kit::figure(pressing_line(pressing)).truncate())
+                    .child(
+                        kit::figure(pressing_line(pressing))
+                            .truncate()
+                            .ends_in_an_ellipsis(),
+                    )
                     .when(in_use, |row| {
                         row.child(kit::badge("IN USE", theme::accent()))
                     }),

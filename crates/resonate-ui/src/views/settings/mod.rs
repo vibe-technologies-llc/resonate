@@ -32,7 +32,7 @@ use crate::{
     theme,
     views::{
         hint::{self, Names},
-        kit::{self, Press, Tone},
+        kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::{RootView, SETTING_UNSAVED},
         scrollbar::Scrollbars,
         settings::{
@@ -792,6 +792,7 @@ fn named(title: impl Into<SharedString>, under: impl Into<SharedString>) -> Div 
                 .text_size(px(theme::text_sm()))
                 .font_weight(FontWeight::MEDIUM)
                 .truncate()
+                .ends_in_an_ellipsis()
                 .child(title.into()),
         )
         .child(
@@ -799,6 +800,7 @@ fn named(title: impl Into<SharedString>, under: impl Into<SharedString>) -> Div 
                 .text_size(px(theme::text_xs()))
                 .text_color(rgb(theme::faint()))
                 .truncate()
+                .ends_in_an_ellipsis()
                 .child(under.into()),
         )
 }

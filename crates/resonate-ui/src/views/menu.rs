@@ -13,7 +13,11 @@ use crate::{
     Selection, clipboard, format,
     icons::{self, Icon},
     theme,
-    views::{kit, playlists::Held, root::RootView},
+    views::{
+        kit::{self, EndsInAnEllipsis as _},
+        playlists::Held,
+        root::RootView,
+    },
 };
 
 const MENU_GROUP: &str = "menu-entry";
@@ -296,6 +300,7 @@ impl RootView {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
+                    .ends_in_an_ellipsis()
                     .child(entry.label.clone()),
             )
             .when_some(entry.key.clone(), |row, key| {

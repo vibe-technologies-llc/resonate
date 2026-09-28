@@ -10,7 +10,10 @@ use resonate_core::{PlaylistId, Span};
 use crate::{
     icons::{self, Icon},
     theme,
-    views::{kit, root::RootView},
+    views::{
+        kit::{self, EndsInAnEllipsis as _},
+        root::RootView,
+    },
 };
 
 pub(crate) const MOVING_HINT: &str = "Drag a row to where it should play. From the keyboard, up and down reach a row, shift-up and \
@@ -174,7 +177,13 @@ impl Render for Ghost {
                 .font_family(theme::ui_face())
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::text()))
-                .child(div().flex_1().truncate().child(self.title.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .ends_in_an_ellipsis()
+                        .child(self.title.clone()),
+                )
                 .when_some(self.beside.clone(), |ghost, beside| {
                     ghost.child(
                         div()
