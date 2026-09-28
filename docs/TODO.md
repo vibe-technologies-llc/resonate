@@ -58,9 +58,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
 
 ## Testing
-- The prescan's reading of which container symphonia opens first counts two MPEG layer III frames
-  in a row as a stream; symphonia's own scoring of a sync word, and of MPEG-2 and layer I and II
-  frames, is not reproduced
 - Nothing drives `resonate-ui`'s panes: KWin offers no synthetic input without the remote-desktop
   portal, so a pane is seen only by making it the default and rebuilding. Everything that appears
   only under a pointer — the menus, drags, the pickers, the equaliser curve, *Take this name*, a

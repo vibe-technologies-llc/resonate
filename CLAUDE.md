@@ -852,7 +852,10 @@ start where the tag's size cannot be read — as far as symphonia's own probe do
 a megabyte, a chunk at a time and no further than the first marker it finds, and answers which
 container that marker is: a `RIFF … WAVE` or a `caff` is what the two guards weigh, and any other
 container symphonia registers — `fLaC`, `OggS`, EBML, `FORM`, `wvpk`, `MAC `, a DSD file, an
-MP4's `ftyp`, or two MPEG frames in a row — means symphonia opens that one first and the guards
+MP4's `ftyp`, or two frames in a row that symphonia's own scoring takes — MPEG-1, 2 or 2.5 at
+any of the three layers, read through its bitrate tables, its reserved rates and its refusals
+of a layer II rate the channel mode forbids, or ADTS carrying one block a frame — means
+symphonia opens that one first and the guards
 stand aside rather than refusing a WAVE it never reaches. A file whose marker is at its start,
 which is every file but a broken one, costs the one read it always did. The
 CAF reader overflows the same way on three declared values, and `caf.rs` reads them before

@@ -14,7 +14,7 @@ use crate::{
 const PRESCAN_WINDOW: usize = 4 * 1024;
 pub(crate) const PROBED_WITHIN: u64 = 1024 * 1024;
 const SEARCHED_AT_ONCE: usize = 16 * 1024;
-const LOOKED_PAST: usize = 2 * 1024;
+const LOOKED_PAST: usize = 9 * 1024;
 const OTHER_CONTAINERS: [&[u8; 4]; 9] = [
     b"fLaC",
     b"OggS",
@@ -271,48 +271,160 @@ fn container_at(from: &[u8]) -> Option<Opened> {
         .iter()
         .any(|other| marker == other.as_slice())
         || from.get(MP4_TYPE_AT..MP4_TYPE_AT + 4) == Some(MP4_TYPE.as_slice())
-        || mpeg_frames_at(from)
+        || mpeg_audio_at(from)
     {
         return Some(Opened::Another);
     }
     None
 }
 
-fn mpeg_frames_at(from: &[u8]) -> bool {
-    let Some(length) = mpeg_frame_length(from) else {
-        return false;
-    };
-    from.get(length..).and_then(mpeg_frame_length).is_some()
+fn mpeg_audio_at(from: &[u8]) -> bool {
+    if let Some(length) = mpeg_frame_length(from) {
+        return from.get(length..).and_then(mpeg_frame_length).is_some();
+    }
+    if let Some(length) = adts_frame_length(from) {
+        return from.get(length..).and_then(adts_frame_length).is_some();
+    }
+    false
 }
 
-fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
-    const BITRATES_KBPS: [u32; 15] = [
-        0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
-    ];
-    const RATES_HZ: [u32; 3] = [44_100, 48_000, 32_000];
-    const LAYER_THREE: u8 = 0b01;
-    const MPEG_ONE: u8 = 0b11;
-    const SAMPLES_A_FRAME_OVER_BITS: u32 = 144;
-    const BITS_A_KILOBIT: u32 = 1_000;
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MpegVersion {
+    One,
+    Two,
+    TwoAndAHalf,
+}
 
-    let [sync, flags, rates, ..] = *header else {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MpegLayer {
+    One,
+    Two,
+    Three,
+}
+
+const BITRATES_MPEG_ONE_LAYER_ONE: [u32; 15] = [
+    0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448,
+];
+const BITRATES_MPEG_ONE_LAYER_TWO: [u32; 15] = [
+    0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384,
+];
+const BITRATES_MPEG_ONE_LAYER_THREE: [u32; 15] = [
+    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+];
+const BITRATES_MPEG_TWO_LAYER_ONE: [u32; 15] = [
+    0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256,
+];
+const BITRATES_MPEG_TWO_LAYERS_TWO_AND_THREE: [u32; 15] =
+    [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+const LAYER_TWO_REFUSED_IN_MONO_KBPS: [u32; 4] = [224, 256, 320, 384];
+const LAYER_TWO_REFUSED_BESIDE_MONO_KBPS: [u32; 4] = [32, 48, 56, 80];
+const MONO: u8 = 0b11;
+const FREE_BITRATE: u8 = 0b0000;
+const BAD_BITRATE: u8 = 0b1111;
+const BITS_A_KILOBIT: u32 = 1_000;
+
+fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
+    let [sync, flags, rates, mode, ..] = *header else {
         return None;
     };
     if sync != MPEG_SYNC || flags & MPEG_SYNC_HIGH != MPEG_SYNC_HIGH {
         return None;
     }
-    let version = (flags >> 3) & 0b11;
-    let layer = (flags >> 1) & 0b11;
-    if version != MPEG_ONE || layer != LAYER_THREE {
+    let version = match (flags >> 3) & 0b11 {
+        0b00 => MpegVersion::TwoAndAHalf,
+        0b10 => MpegVersion::Two,
+        0b11 => MpegVersion::One,
+        _ => return None,
+    };
+    let layer = match (flags >> 1) & 0b11 {
+        0b01 => MpegLayer::Three,
+        0b10 => MpegLayer::Two,
+        0b11 => MpegLayer::One,
+        _ => return None,
+    };
+    let bitrate_index = rates >> 4;
+    if bitrate_index == FREE_BITRATE || bitrate_index == BAD_BITRATE {
         return None;
     }
-    let bitrate = *BITRATES_KBPS.get(usize::from(rates >> 4))?;
-    let rate = *RATES_HZ.get(usize::from((rates >> 2) & 0b11))?;
-    if bitrate == 0 {
-        return None;
+    let bitrates = match (version, layer) {
+        (MpegVersion::One, MpegLayer::One) => &BITRATES_MPEG_ONE_LAYER_ONE,
+        (MpegVersion::One, MpegLayer::Two) => &BITRATES_MPEG_ONE_LAYER_TWO,
+        (MpegVersion::One, MpegLayer::Three) => &BITRATES_MPEG_ONE_LAYER_THREE,
+        (_, MpegLayer::One) => &BITRATES_MPEG_TWO_LAYER_ONE,
+        (_, MpegLayer::Two | MpegLayer::Three) => &BITRATES_MPEG_TWO_LAYERS_TWO_AND_THREE,
+    };
+    let kbps = *bitrates.get(usize::from(bitrate_index))?;
+    let rate = match ((rates >> 2) & 0b11, version) {
+        (0b00, MpegVersion::One) => 44_100,
+        (0b01, MpegVersion::One) => 48_000,
+        (0b10, MpegVersion::One) => 32_000,
+        (0b00, MpegVersion::Two) => 22_050,
+        (0b01, MpegVersion::Two) => 24_000,
+        (0b10, MpegVersion::Two) => 16_000,
+        (0b00, MpegVersion::TwoAndAHalf) => 11_025,
+        (0b01, MpegVersion::TwoAndAHalf) => 12_000,
+        (0b10, MpegVersion::TwoAndAHalf) => 8_000,
+        _ => return None,
+    };
+    if layer == MpegLayer::Two {
+        let refused = if mode >> 6 == MONO {
+            &LAYER_TWO_REFUSED_IN_MONO_KBPS
+        } else {
+            &LAYER_TWO_REFUSED_BESIDE_MONO_KBPS
+        };
+        if refused.contains(&kbps) {
+            return None;
+        }
     }
+    let (slots_a_frame, bytes_a_slot) = match (layer, version) {
+        (MpegLayer::One, _) => (12, 4),
+        (MpegLayer::Two, _) | (MpegLayer::Three, MpegVersion::One) => (144, 1),
+        (MpegLayer::Three, _) => (72, 1),
+    };
     let padding = u32::from((rates >> 1) & 1);
-    usize::try_from(SAMPLES_A_FRAME_OVER_BITS * bitrate * BITS_A_KILOBIT / rate + padding).ok()
+    let slots = slots_a_frame * kbps * BITS_A_KILOBIT / rate + padding;
+    usize::try_from(slots * bytes_a_slot).ok()
+}
+
+const ADTS_SYNC_MASK: u8 = 0xf6;
+const ADTS_SYNC: u8 = 0xf0;
+const ADTS_SAMPLE_RATES: u8 = 13;
+const ADTS_HEADER_BYTES: usize = 7;
+const ADTS_CHECKED_HEADER_BYTES: usize = 9;
+
+fn adts_frame_length(header: &[u8]) -> Option<usize> {
+    let [
+        sync,
+        flags,
+        profile,
+        channels,
+        length_high,
+        length_low,
+        blocks,
+        ..,
+    ] = *header
+    else {
+        return None;
+    };
+    if sync != MPEG_SYNC || flags & ADTS_SYNC_MASK != ADTS_SYNC {
+        return None;
+    }
+    if (profile >> 2) & 0b1111 >= ADTS_SAMPLE_RATES {
+        return None;
+    }
+    if blocks & 0b11 != 0 {
+        return None;
+    }
+    let length = (usize::from(channels & 0b11) << 11)
+        | (usize::from(length_high) << 3)
+        | usize::from(length_low >> 5);
+    let checked = flags & 1 == 0;
+    let header_bytes = if checked {
+        ADTS_CHECKED_HEADER_BYTES
+    } else {
+        ADTS_HEADER_BYTES
+    };
+    (length >= header_bytes).then_some(length)
 }
 
 fn filled<S: Read + ?Sized>(source: &mut S, buf: &mut [u8]) -> usize {
@@ -449,5 +561,89 @@ mod tests {
             Prescan::buffered(&mut counting),
             Prescan::read(&mut Cursor::new(flac))
         );
+    }
+
+    fn frames(header: [u8; 4], length: usize, count: usize) -> Vec<u8> {
+        let mut held = Vec::new();
+        for _ in 0..count {
+            held.extend_from_slice(&header);
+            held.resize(held.len() + length - header.len(), 0);
+        }
+        held
+    }
+
+    fn adts(length: usize, count: usize) -> Vec<u8> {
+        let header = [
+            MPEG_SYNC,
+            0xf1,
+            0x50,
+            0x80 | ((length >> 11) as u8 & 0b11),
+            (length >> 3) as u8,
+            ((length & 0b111) as u8) << 5 | 0x1f,
+            0xfc,
+        ];
+        let mut held = Vec::new();
+        for _ in 0..count {
+            held.extend_from_slice(&header);
+            held.resize(held.len() + length - header.len(), 0);
+        }
+        held
+    }
+
+    fn behind(stream: &[u8]) -> Vec<u8> {
+        let mut file = stream.to_vec();
+        file.extend_from_slice(b"RIFF\x24\x00\x00\x00WAVE");
+        file
+    }
+
+    fn opened(file: Vec<u8>) -> Option<(Opened, u64)> {
+        opened_first(&mut Cursor::new(file), 0)
+    }
+
+    #[test]
+    fn two_frames_of_every_mpeg_layer_and_version_symphonia_reads_are_a_stream() {
+        let streams = [
+            ("MPEG-1 layer III", frames([0xff, 0xfb, 0x90, 0x00], 417, 2)),
+            ("MPEG-2 layer III", frames([0xff, 0xf3, 0x80, 0xc0], 208, 2)),
+            (
+                "MPEG-2.5 layer III",
+                frames([0xff, 0xe3, 0x88, 0x00], 576, 2),
+            ),
+            ("MPEG-1 layer II", frames([0xff, 0xfd, 0xc0, 0x00], 835, 2)),
+            ("MPEG-1 layer I", frames([0xff, 0xff, 0x90, 0x00], 312, 2)),
+            ("ADTS", adts(371, 2)),
+        ];
+        for (named, stream) in streams {
+            assert_eq!(
+                opened(behind(&stream)),
+                Some((Opened::Another, 0)),
+                "{named} was not read as the stream symphonia opens"
+            );
+        }
+    }
+
+    #[test]
+    fn a_frame_symphonia_would_refuse_leaves_the_wave_behind_it_to_be_weighed() {
+        let refused = [
+            ("a lone frame", frames([0xff, 0xfb, 0x90, 0x00], 417, 1)),
+            ("a free bitrate", frames([0xff, 0xfb, 0x00, 0x00], 417, 2)),
+            (
+                "layer II mono at 320",
+                frames([0xff, 0xfd, 0xd0, 0xc0], 1_044, 2),
+            ),
+            (
+                "layer II stereo at 32",
+                frames([0xff, 0xfd, 0x10, 0x00], 104, 2),
+            ),
+            ("a reserved rate", frames([0xff, 0xfb, 0x9c, 0x00], 417, 2)),
+        ];
+        for (named, junk) in refused {
+            let at = junk.len() as u64;
+            assert_eq!(
+                opened(behind(&junk)),
+                Some((Opened::Wave, at)),
+                "{named} was taken for a stream"
+            );
+        }
     }
 }
