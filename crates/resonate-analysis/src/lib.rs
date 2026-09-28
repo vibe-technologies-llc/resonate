@@ -1,6 +1,7 @@
 mod analysis;
 mod envelope;
 mod error;
+mod kept;
 mod levels;
 mod loudness;
 mod print;
@@ -15,6 +16,7 @@ pub use crate::{
     analysis::{Analysis, Examined, Study, analyse, print, study},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
+    kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
     levels::{Levels, Stereo},
     loudness::Loudness,
     print::{PRINTED_FOR, print_clip},

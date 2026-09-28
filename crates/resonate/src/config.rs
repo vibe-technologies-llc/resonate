@@ -69,6 +69,11 @@ pub fn library_path() -> Result<PathBuf> {
     Ok(dir.join("library.db"))
 }
 
+#[cfg(feature = "ui")]
+pub fn analyses_dir() -> Option<PathBuf> {
+    xdg_dir("XDG_CACHE_HOME", ".cache").map(|dir| dir.join("resonate").join("analyses"))
+}
+
 pub fn vault_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("vault"))
 }

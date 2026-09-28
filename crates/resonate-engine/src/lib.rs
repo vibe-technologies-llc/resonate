@@ -18,8 +18,9 @@ mod tap;
 
 pub use resonate_analysis::{
     Analysis, AnalysisOp, Cutoff, ENVELOPE_LANES, Envelope, Error as AnalysisError, Examined,
-    FLOOR_DB, Finding, Judgement, Levels, LossyGuess, Loudness, Ramp, Reach, SPECTROGRAM_ROWS,
-    Spectrogram, Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse, study,
+    FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels, LossyGuess, Loudness, Ramp, Reach,
+    SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse,
+    study,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,

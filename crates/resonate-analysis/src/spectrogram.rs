@@ -134,11 +134,11 @@ impl Ramp {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spectrogram {
-    columns: usize,
-    levels: Vec<u8>,
-    nyquist_hz: u32,
-    frames_per_column: u64,
-    frames: u64,
+    pub(crate) columns: usize,
+    pub(crate) levels: Vec<u8>,
+    pub(crate) nyquist_hz: u32,
+    pub(crate) frames_per_column: u64,
+    pub(crate) frames: u64,
 }
 
 impl Spectrogram {

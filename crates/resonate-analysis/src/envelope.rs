@@ -143,10 +143,10 @@ impl Enveloping {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Envelope {
-    lanes: usize,
-    frames_per_column: u64,
-    frames: u64,
-    columns: Vec<[Reach; ENVELOPE_LANES]>,
+    pub(crate) lanes: usize,
+    pub(crate) frames_per_column: u64,
+    pub(crate) frames: u64,
+    pub(crate) columns: Vec<[Reach; ENVELOPE_LANES]>,
 }
 
 impl Envelope {

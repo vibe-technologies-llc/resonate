@@ -68,8 +68,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 - The verdict reads only the lowpass wall, the upsampled wall and the padded bits — not an MP3's
   frame-to-frame holes, sfb21 content or pre-echo — so an encode with no lowpass a wall can find,
   ffmpeg's AAC at 256 kbps among them, reads as lossless; no FhG encode was weighed
-- The Analysis pane's waveform and spectrogram are not kept, so a track is decoded whole again
-  after a restart
 - AcoustID has never been reached with a real key; its fixture is written from the documentation
 
 ## Search

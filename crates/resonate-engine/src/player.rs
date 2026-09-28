@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use resonate_analysis::{Analysis, Watching};
+use resonate_analysis::{Analysis, KeptAnalyses, Watching};
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation};
 use resonate_pipewire::{PipeWire, SinkInfo};
@@ -25,6 +25,7 @@ pub struct Player {
     published: Published,
     catalog: Catalog,
     sources: Arc<Sources>,
+    kept: Option<KeptAnalyses>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -96,6 +97,7 @@ impl Player {
                 published,
                 catalog: Catalog::new(Arc::clone(&sources)),
                 sources,
+                kept: None,
                 thread: Some(thread),
             }),
             Ok(Err(error)) => {
@@ -201,7 +203,23 @@ impl Player {
         span: Option<FrameSpan>,
         watch: &dyn Watching,
     ) -> resonate_analysis::Result<Analysis> {
-        resonate_analysis::analyse(&self.sources, location, span, watch)
+        if let Some(recalled) = self
+            .kept
+            .as_ref()
+            .and_then(|kept| kept.recalled(location, span))
+        {
+            return Ok(recalled);
+        }
+        let analysis = resonate_analysis::analyse(&self.sources, location, span, watch)?;
+        if let Some(kept) = &self.kept {
+            kept.keep(location, span, &analysis);
+        }
+        Ok(analysis)
+    }
+
+    pub fn keeping_analyses(mut self, kept: KeptAnalyses) -> Self {
+        self.kept = Some(kept);
+        self
     }
 
     pub fn media_revision(&self) -> u64 {

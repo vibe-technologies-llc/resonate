@@ -2073,10 +2073,11 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     };
     let settings = settings::File::at(places.config.clone());
     let sources = playing_from(Some(&library));
-    let player = Arc::new(Player::with_sources(
-        engine_config(&cli, &config),
-        Arc::clone(&sources),
-    )?);
+    let player = Player::with_sources(engine_config(&cli, &config), Arc::clone(&sources))?;
+    let player = Arc::new(match config::analyses_dir() {
+        Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
+        None => player,
+    });
     confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
     let keeps = resuming(&config, Some(&library));
     queue(&player, &cli.files, keeps.then(|| library.as_ref()))?;

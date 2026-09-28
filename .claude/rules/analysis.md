@@ -102,6 +102,26 @@ enrichment's studies.
   stand out in time as well as frequency; `a_tone_leaves_its_peaks_in_the_band_it_sounds_in` plays
   notes that start and stop.
 
+## What the window drew is kept
+
+- **An analysis is kept against the file it was taken of, and a changed file forgets it.**
+  `KeptAnalyses` is a folder of one file per analysis — `$XDG_CACHE_HOME/resonate/analyses`,
+  which the binary hands the window's `Player` through `Player::keeping_analyses` — named by an
+  FNV-1a of the path, the span, the size and the modification time, so a file rewritten or a
+  cut taken again is a name nothing answers to. `Player::analyse` asks it before it decodes and
+  keeps what it decoded, so the Analysis pane opens on a track it drew before a restart without
+  reading the file again. What is written is `kept::written`'s own layout — a magic, a version,
+  every field of the study, the envelope and the spectrogram little-endian — and what is *not*
+  written is the judgement: `read` runs `judged` over the kept spectrum and levels, so a kept
+  analysis is weighed under this build's verdict rather than the one it was drawn under. A file
+  that will not read back is deleted where it stands, a write lands through a staged name and a
+  rename, a recall touches the file's modification time, and past `KEPT_BYTES_AT_MOST` — 256 MiB,
+  some four hundred tracks — the least lately used go first. It is a cache: every failure is a
+  debug record and a decode, never an error. The headless commands keep nothing.
+  `an_analysis_reads_back_as_it_was_written_and_a_truncated_one_does_not`,
+  `an_analysis_is_kept_against_the_file_as_it_stands_and_forgotten_once_it_changes` and
+  `what_is_kept_is_trimmed_to_its_bound_the_least_lately_used_first` are the claims.
+
 ## The verdict
 
 `verdict.rs` is pure: a `Weighed` of the codec, the rate, the declared depth, the spectrum and the
