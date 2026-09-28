@@ -83,6 +83,8 @@ const MIGRATIONS: &[&str] = &[
          PRIMARY KEY (path, field)
      ) STRICT, WITHOUT ROWID;",
     "ALTER TABLE retagged ADD COLUMN picture BLOB;",
+    "UPDATE tracks SET probe_again = 1
+      WHERE packets IS NULL AND span_frames IS NULL AND root_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -799,6 +801,47 @@ mod tests {
         assert_eq!(
             marked,
             [("packed.wv".to_owned(), 1), ("song.flac".to_owned(), 0)]
+        );
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for() {
+        let connection = opened();
+        let marking = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("packets IS NULL"))
+            .expect("the step that marks undigested rows");
+        lay_out_through(&connection, V1, &MIGRATIONS[..marking])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen, packets)
+                 VALUES (1, 'digested.flac', NULL, 'Digested', 44100, 2, 1, 1, 10, 1, 1, 1, 7),
+                        (1, 'undigested.flac', NULL, 'Undigested', 44100, 2, 1, 1, 10, 1, 1, 1, NULL),
+                        (1, 'cut.flac', 441, 'Cut', 44100, 2, 1, 1, 10, 1, 1, 1, NULL),
+                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1, NULL);",
+            )
+            .expect("the tracks are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64)> = connection
+            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        assert_eq!(
+            marked,
+            [
+                ("cut.flac".to_owned(), 0),
+                ("delivered.flac".to_owned(), 0),
+                ("digested.flac".to_owned(), 0),
+                ("undigested.flac".to_owned(), 1),
+            ]
         );
     }
 

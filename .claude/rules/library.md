@@ -681,8 +681,11 @@ through `Player::media` like any other unscanned row.
   digests agree are one file however it was renamed and retagged, and two whose digests differ
   are not, with no decode and no study behind either.
   `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested` is
-  the claim. A row scanned before the column was there holds none until its file is read again,
-  and for it **the print decides.** A gone
+  the claim. A row scanned before the column was there held none until its file was read again,
+  so the step in `MIGRATIONS` that follows the column's marks every whole file with a root and no
+  digest `probe_again`, and the first scan after it reads each of them once whatever its size and
+  mtime say — `a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for`.
+  For a row whose file moved before that scan could read it, **the print decides.** A gone
   row whose study kept a Chromaprint is paired with the one new row of its sound where
   `resonate_analysis::print` — the first two minutes decoded exactly as the study decodes them,
   and nothing past them — writes the same print, so a file retagged past every name it had and
