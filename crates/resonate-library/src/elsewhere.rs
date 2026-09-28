@@ -26,6 +26,31 @@ pub struct Found {
     pub artist: String,
     pub length: Option<Duration>,
     pub release: Option<RecordingRelease>,
+    pub releases: Vec<RecordingRelease>,
+}
+
+impl Found {
+    pub fn from(&self, release: &RecordingRelease) -> Self {
+        Self {
+            release: Some(release.clone()),
+            ..self.clone()
+        }
+    }
+
+    pub fn in_the_order_worth_offering(&self) -> Vec<&RecordingRelease> {
+        let mut offered: Vec<&RecordingRelease> = self.releases.iter().collect();
+        offered.sort_by_key(|release| worth(release));
+        offered
+    }
+}
+
+fn worth(release: &RecordingRelease) -> (Standing, Meant, bool, String) {
+    (
+        standing_of(&release.issued),
+        meant_as(&release.issued),
+        release.date.is_none(),
+        release.date.clone().unwrap_or_default(),
+    )
 }
 
 pub(crate) fn words_asked(text: &str) -> Vec<String> {
@@ -72,6 +97,7 @@ pub(crate) fn found_among(
         }
         found.push(Found {
             release: meant_release(&matched.releases).cloned(),
+            releases: matched.releases,
             recording: matched.recording,
             title: matched.title,
             artist,
@@ -127,14 +153,7 @@ fn meant_as(issued: &Issued) -> Meant {
 }
 
 pub(crate) fn meant_release(releases: &[RecordingRelease]) -> Option<&RecordingRelease> {
-    releases.iter().min_by_key(|release| {
-        (
-            standing_of(&release.issued),
-            meant_as(&release.issued),
-            release.date.is_none(),
-            release.date.as_deref().unwrap_or_default(),
-        )
-    })
+    releases.iter().min_by_key(|release| worth(release))
 }
 
 pub(crate) fn album_of_release(
@@ -350,6 +369,44 @@ mod tests {
             meant_release(&releases).map(|release| release.id.as_str()),
             Some(THREE)
         );
+    }
+
+    #[test]
+    fn a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first() {
+        let found = found_among(
+            vec![matched(
+                ONE,
+                "Echoes",
+                "Pink Floyd",
+                vec![
+                    issued(ONE, "1971-01-01", "Single", &[], "Official"),
+                    issued(TWO, "1970-06-01", "Album", &["Compilation"], "Official"),
+                    issued(THREE, "1971-10-30", "Album", &[], "Official"),
+                ],
+            )],
+            |_| false,
+        );
+        let [found] = found.as_slice() else {
+            panic!("one song was found");
+        };
+
+        let offered: Vec<&str> = found
+            .in_the_order_worth_offering()
+            .into_iter()
+            .map(|release| release.id.as_str())
+            .collect();
+        assert_eq!(offered, vec![THREE, ONE, TWO]);
+        assert_eq!(
+            found.release.as_ref().map(|release| release.id.as_str()),
+            Some(THREE)
+        );
+
+        let chosen = found.from(&found.releases[0]);
+        assert_eq!(
+            chosen.release.as_ref().map(|release| release.id.as_str()),
+            Some(ONE)
+        );
+        assert_eq!(chosen.recording, found.recording);
     }
 
     #[test]

@@ -1173,6 +1173,14 @@ fn recognised(found: Vec<RecordingMatch>) -> Option<RecordingMatch> {
     None
 }
 
+fn needs_its_releases_told(named: &Recording) -> bool {
+    match named.releases.as_slice() {
+        [] => true,
+        [_] => false,
+        releases => releases.iter().all(|release| release.issued.kind.is_none()),
+    }
+}
+
 fn best_release<'a>(
     recording: &'a Recording,
     album: Option<&AlbumToAsk>,
@@ -1641,7 +1649,7 @@ impl Pass<'_> {
     }
 
     fn told_where_it_sits(&self, named: Recording) -> Result<Recording> {
-        if !named.releases.is_empty() {
+        if !needs_its_releases_told(&named) {
             return Ok(named);
         }
 
@@ -2742,6 +2750,37 @@ mod tests {
             isrcs: Vec::new(),
             releases,
         }
+    }
+
+    #[test]
+    fn a_recording_is_asked_after_again_where_its_releases_say_nothing_to_choose_between() {
+        const FIRST: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
+        const SECOND: &str = "2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e";
+        let unkinded = |id| recording_release(id, "Meddle", Some("1971"));
+        let kinded = |id| RecordingRelease {
+            issued: crate::Issued {
+                kind: Some("Album".to_owned()),
+                ..crate::Issued::default()
+            },
+            ..unkinded(id)
+        };
+
+        assert!(needs_its_releases_told(&take(FIRST, None, Vec::new())));
+        assert!(!needs_its_releases_told(&take(
+            FIRST,
+            None,
+            vec![unkinded(FIRST)]
+        )));
+        assert!(needs_its_releases_told(&take(
+            FIRST,
+            None,
+            vec![unkinded(FIRST), unkinded(SECOND)]
+        )));
+        assert!(!needs_its_releases_told(&take(
+            FIRST,
+            None,
+            vec![kinded(FIRST), unkinded(SECOND)]
+        )));
     }
 
     fn recording_release(id: &str, title: &str, date: Option<&str>) -> RecordingRelease {

@@ -1148,7 +1148,12 @@ through `Player::media` like any other unscanned row.
   carries the credit and the `RecordingRelease`s the search named as well as the score, the title
   and the length, and `RecordingMatch::into_recording` is what `take_match` lands — through
   `told_where_it_sits`, the same rule the ISRC route takes, so the `/recording` lookup is made
-  only where the answer named no release at all. MusicBrainz's search index carries a recording's
+  only where the answer named no release at all — or, which is the ISRC route's case, named more
+  than one and not one kind between them: MusicBrainz's `/isrc` lookup refuses `release-groups`
+  among its includes, so its releases arrive with no primary or secondary type, and
+  `needs_its_releases_told` asks the recording whole wherever `meant_release` would otherwise be
+  choosing between them by date alone. A recording on one release has nothing to choose between
+  and costs nothing more. MusicBrainz's search index carries a recording's
   releases in full, and places the match on each by the medium's `track-offset` where the
   document gives no `position`, which is what the search shape names it; it carries the
   recording's `isrcs` as well, so `RecordingMatch` reaches `land_recording` with the code and the
@@ -1822,7 +1827,13 @@ the pass.
   one, because `HOLDS_A_BEST_COPY` already asks for a track.
   `a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on` and
   `a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_out_on` are the
-  claims.
+  claims. **Which release is the listener's to say as well.** A `Found` carries every release
+  its recording is on, and `Found::in_the_order_worth_offering` lists them the way
+  `meant_release` weighs them; the found row's *Want* mark opens them as a menu under the right
+  button — title, year and kind — and a press is `want_found` with `Found::from` that release, so
+  a song wanted for its single or its compilation lands there rather than on the album the rule
+  would have chosen. `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first`
+  is the claim.
 - **A word that stands alone is ranked; one that is denied or alternated is looked up.** The
   unnegated, unalternated words are what `indexed` folds into the single FTS5 `MATCH` the index is
   joined for, so `rank` and `SortOrder::Relevance` mean what they always did. Any other word reaches

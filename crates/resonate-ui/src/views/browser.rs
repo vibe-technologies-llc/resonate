@@ -15,7 +15,7 @@ use resonate_engine::Placement;
 use resonate_library::{
     Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, GroupRelease,
     HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry,
-    ReleaseDetail, Service, Track,
+    RecordingRelease, ReleaseDetail, Service, Track,
 };
 use smallvec::smallvec;
 
@@ -84,8 +84,10 @@ const WANT_HINT: &str = "Mark this track wanted, so a provider can be asked for 
 
 const UNWANT_HINT: &str = "Stop wanting this track";
 
-const WANT_FOUND_HINT: &str =
-    "Mark this song wanted: its release is added to the catalog and the providers are asked for it";
+const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to the catalog and the \
+                               providers are asked for it. Right-click to choose the release";
+
+const RELEASES_OFFERED: usize = 10;
 
 const WANTING_HINT: &str = "Adding its release to the catalog";
 
@@ -1104,7 +1106,8 @@ impl RootView {
                         ROW_GROUP,
                     );
                 }
-                kit::icon_button(
+                let offered = Found::clone(&found);
+                let wanting = kit::icon_button(
                     listing::keyed_by("want-found", &found.recording),
                     Icon::Want,
                     WANT_FOUND_HINT,
@@ -1113,7 +1116,8 @@ impl RootView {
                     let wanted = Found::clone(&found);
                     this.library
                         .update(cx, |library, cx| library.want_found(wanted, cx));
-                }))
+                }));
+                menu::opens_a_menu(wanting, move |_, at, _| releases_to_want(at, &offered), cx)
             }
         }
     }
@@ -2544,6 +2548,36 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
         1 => format.to_owned(),
         held => format!("{held} × {format}"),
     })
+}
+
+fn releases_to_want(at: Point<Pixels>, found: &Found) -> Menu {
+    let mut menu = Menu::at(at);
+    for release in found
+        .in_the_order_worth_offering()
+        .into_iter()
+        .take(RELEASES_OFFERED)
+    {
+        let wanted = found.from(release);
+        menu = menu.does(Icon::Disc, release_line(release), move |this, _, cx| {
+            let wanted = wanted.clone();
+            this.library
+                .update(cx, |library, cx| library.want_found(wanted, cx));
+        });
+    }
+    menu
+}
+
+fn release_line(release: &RecordingRelease) -> String {
+    let mut line = release.title.clone();
+    if let Some(year) = release.date.as_deref().and_then(|date| date.get(..4)) {
+        line.push_str(" · ");
+        line.push_str(year);
+    }
+    if let Some(kind) = release.issued.kind.as_deref() {
+        line.push_str(" · ");
+        line.push_str(kind);
+    }
+    line
 }
 
 fn record_of(release: &ReleaseDetail) -> Option<Record> {
