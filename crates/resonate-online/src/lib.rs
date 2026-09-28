@@ -18,6 +18,7 @@ mod shazam;
 mod soundcloud;
 mod spotify;
 mod wikidata;
+mod wikipedia;
 
 pub use crate::{
     acoustid::AcoustId,

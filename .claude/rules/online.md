@@ -290,6 +290,15 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   of a URL already being escaped.
   Measured over a 435-track scan: 8 artists of 50 had a portrait before the three changes above
   and 25 after, with a second pass asking for nothing more.
+- **A Wikipedia article leads to the entity it is about.** An artist linked to an article and to
+  no entity is asked about through the article: `wikipedia::page` reads the language off the host
+  — the `m.` of a mobile link passed over, a `zh-yue` written `zh_yue` — and the title off
+  `/wiki/`, percent-decoded, and `wbgetentities` on `Host::Wikidata`, with `sites` the language's
+  wiki and `titles` the article, answers the entity carrying that sitelink in the same narrowed
+  `EntityDoc` — so the `P18` it answers goes through `commons::scaled` like any other. It is walked
+  after Wikidata and before Apple Music, it is a Wikimedia host rather than a new one, and a
+  `wikipedia` relation counts towards `may_be_pictured`. `wikipedia.json` is a captured answer
+  for *Pink Floyd* on `enwiki`, narrowed to the claim this build reads.
 
 ## Apple Music
 
@@ -316,7 +325,7 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
 - **A portrait nobody on Commons has taken is asked of Deezer, by the link MusicBrainz holds.**
   Composers and small acts rarely carry an `image` relation or a `P18`, but MusicBrainz links most
   of them to a Deezer artist page, and Deezer's public API answers that page's picture with no key.
-  `Reference::portrait` walks the Commons links, then Wikidata, then Apple Music, then `resonate_library::deezer_urls`
+  `Reference::portrait` walks the Commons links, then Wikidata, then Wikipedia, then Apple Music, then `resonate_library::deezer_urls`
   — every link whose `Service` is Deezer — and `deezer::artist` reads the artist number out of a
   `deezer.com/[lang/]artist/<n>` URL and nothing else. `Host::Deezer` asks `/artist/<n>` and
   `picture_big`, 500 pixels square, is fetched from `Host::DeezerPictures` only where it is served
@@ -480,7 +489,7 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   `release_linked.json`, `release_search.json`, `recording.json`, `isrc.json`,
   `recording_search.json`, `release_group.json`, `release_group_search.json`,
   `release_group_browse.json`, `artist.json`, `artist_search.json`, `coverart.json`,
-  `wikidata.json`,
+  `wikidata.json`, `wikipedia.json`,
   `coverart_group.json`, `lrclib_get.json`, `lrclib_search.json`, `autoeq_index.md`,
   `autoeq_parametric.txt`, `shazam_match.json` and `shazam_nothing.json` — the last two captured
   from the live service with a signature this build took of a track in the library and of a run

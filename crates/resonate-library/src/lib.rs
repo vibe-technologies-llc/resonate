@@ -100,7 +100,7 @@ pub use crate::{
         Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
         ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked, Wording,
         apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
-        spotify_urls, wikidata_urls,
+        spotify_urls, wikidata_urls, wikipedia_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,

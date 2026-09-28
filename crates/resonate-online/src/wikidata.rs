@@ -24,6 +24,13 @@ pub(crate) fn pictured(client: &Client, url: &str) -> Result<Option<String>> {
         .and_then(commons::scaled))
 }
 
+pub(crate) fn pictured_among(held: &EntityDoc) -> Option<String> {
+    held.entities
+        .values()
+        .find_map(|held| held.claims.pictured.iter().find_map(named))
+        .and_then(commons::scaled)
+}
+
 fn named(claim: &ClaimDoc) -> Option<&str> {
     Some(claim.mainsnak.datavalue.as_ref()?.value.as_str())
 }
@@ -48,7 +55,7 @@ pub(crate) fn entity(url: &str) -> Option<String> {
 }
 
 #[derive(Debug, Deserialize)]
-struct EntityDoc {
+pub(crate) struct EntityDoc {
     #[serde(default)]
     entities: HashMap<String, HeldDoc>,
 }

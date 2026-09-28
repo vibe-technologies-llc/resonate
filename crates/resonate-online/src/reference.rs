@@ -10,7 +10,7 @@ use resonate_library::{
 
 use crate::{
     Client, Identity, apple, commons, coverart, deezer, lrclib, musicbrainz, soundcloud, spotify,
-    wikidata,
+    wikidata, wikipedia,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -118,6 +118,15 @@ impl Reference for Online {
 
         for url in resonate_library::wikidata_urls(links) {
             let Some(scaled) = wikidata::pictured(&self.client, url)? else {
+                continue;
+            };
+            if let Some(held) = commons::fetch(&self.client, &scaled)? {
+                return Ok(Some(held));
+            }
+        }
+
+        for url in resonate_library::wikipedia_urls(links) {
+            let Some(scaled) = wikipedia::pictured(&self.client, url)? else {
                 continue;
             };
             if let Some(held) = commons::fetch(&self.client, &scaled)? {

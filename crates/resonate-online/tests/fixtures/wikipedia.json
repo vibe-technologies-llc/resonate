@@ -1,0 +1,51 @@
+{
+ "entities": {
+  "Q2306": {
+   "type": "item",
+   "id": "Q2306",
+   "claims": {
+    "P18": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "property": "P18",
+       "hash": "1262ff8d924d5dd55d1ccfd935ff378c31f81f1e",
+       "datavalue": {
+        "value": "Pink Floyd, 1971 (HQ).jpg",
+        "type": "string"
+       },
+       "datatype": "commonsMedia"
+      },
+      "type": "statement",
+      "qualifiers": {
+       "P585": [
+        {
+         "snaktype": "value",
+         "property": "P585",
+         "hash": "1352bdeb838297fa29fe19919ed606650db92b6f",
+         "datavalue": {
+          "value": {
+           "time": "+1971-00-00T00:00:00Z",
+           "timezone": 0,
+           "before": 0,
+           "after": 0,
+           "precision": 9,
+           "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+          },
+          "type": "time"
+         },
+         "datatype": "time"
+        }
+       ]
+      },
+      "qualifiers-order": [
+       "P585"
+      ],
+      "id": "Q2306$D3EE8EE8-89F9-4CBC-92DF-EAA9752EC128",
+      "rank": "normal"
+     }
+    ]
+   }
+  }
+ }
+}
