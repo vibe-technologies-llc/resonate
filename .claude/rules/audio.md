@@ -602,6 +602,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   their own encoder — the arithmetic coder's inverse with its carry, tables written plain and
   predicted — so `a_coded_frame_unpacks_to_exactly_the_bits_that_were_packed` and
   `a_dst_dsdiff_plays_exactly_what_the_same_bits_uncompressed_play` need no fixture on disc.
+- **A packet that will not decode is played as the silence it would have lasted.** symphonia's
+  `DecodeError` on one packet — a spoiled frame in an otherwise good file — hands `fill` the
+  packet's own length through its `PacketSpan`, and the pending frames are marked `silent`, so
+  `coded_block` writes zeros for them rather than skipping the packet; the stream keeps its length,
+  the position its clock, and a cut whose limit counts delivered frames ends where its row does. A
+  packet whose length the container never said is still passed over, there being nothing to fill.
+  `an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted` spoils one MP3 frame's side
+  information and weighs the decode against the pristine file's.
 - **A DSD read that fails is an error, as a PCM codec's is.** `Planes` holds the location, and a
   seek or read the stream refuses — an `EIO`, a DST frame `dst::Unpacked` cannot decode — reaches
   `next_block` as `Error::Io`, so the engine reports and skips the row rather than taking it as

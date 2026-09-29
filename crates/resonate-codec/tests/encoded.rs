@@ -736,6 +736,76 @@ fn a_lossy_stream_decodes_to_the_same_signal_it_encoded() {
     );
 }
 
+const MPEG_ONE_LAYER_THREE_KBPS: [u32; 15] = [
+    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+];
+const MPEG_ONE_RATES: [u32; 3] = [44_100, 48_000, 32_000];
+const SIDE_INFO_AFTER: usize = 4;
+const BIG_VALUES_PAST_THE_GREATEST: u8 = 0xff;
+
+fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
+    let kbps = *MPEG_ONE_LAYER_THREE_KBPS.get(usize::from(header.get(2)? >> 4))?;
+    let rate = *MPEG_ONE_RATES.get(usize::from((header.get(2)? >> 2) & 0b11))?;
+    let padding = usize::from((header.get(2)? >> 1) & 1);
+    (kbps > 0).then(|| (144_000 * kbps / rate) as usize + padding)
+}
+
+fn frame_at(stream: &[u8], nth: usize) -> Option<usize> {
+    let mut at = 0;
+    for _ in 0..nth {
+        at += mpeg_frame_length(stream.get(at..at + 4)?)?;
+    }
+    (stream.get(at) == Some(&0xff)).then_some(at)
+}
+
+fn frames_decoded(path: &Path) -> usize {
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("the file opens");
+    let mut block = AudioBuffer::empty(info.spec);
+    let mut frames = 0;
+    while decoder.next_block(&mut block).expect("a decode") == DecodeStatus::Decoded {
+        frames += block.frames();
+    }
+    frames
+}
+
+#[test]
+fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted() {
+    const SPOILED: usize = 20;
+
+    let tree = Tree::new();
+    let codec = [
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",
+        "-write_xing",
+        "0",
+        "-id3v2_version",
+        "0",
+    ];
+    let Some((pristine, _)) = fixture(&tree, "tone.mp3", &codec) else {
+        return;
+    };
+    let mut bytes = fs::read(&pristine).expect("the encoded file");
+    let Some(header) = frame_at(&bytes, SPOILED) else {
+        eprintln!("skipped: ffmpeg wrote frames this walk does not read");
+        return;
+    };
+    let protected = bytes[header + 1] & 1 == 0;
+    let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
+    bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
+    bytes[side + 5] |= 0x80;
+    let spoiled = tree.at("spoiled.mp3");
+    fs::write(&spoiled, &bytes).expect("a writable temporary file");
+
+    assert_eq!(
+        frames_decoded(&spoiled),
+        frames_decoded(&pristine),
+        "a packet that would not decode left the stream short by its length"
+    );
+}
+
 #[test]
 fn a_lossy_stream_holds_its_signal_past_the_cd_shape() {
     let cases: [(&str, Shape, ChannelLayout, &[&str]); 4] = [

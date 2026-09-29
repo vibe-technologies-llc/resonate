@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- An undecodable packet is dropped with no silence in its place, so the output is short by the
-  packet and a cut whose limit counts delivered frames runs that far into the next row
 - The float WavPack restore calls `ones(shifted)` unmasked once `shifted` has climbed towards
   `max_exponent`, so a crafted `.wv` panics a debug or fuzz build on the shift; the extended path
   masks it

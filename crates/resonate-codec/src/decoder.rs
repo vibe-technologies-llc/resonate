@@ -266,6 +266,7 @@ struct Coded {
     track: StreamTrackId,
     pending: usize,
     consumed: usize,
+    silent: bool,
     ahead: Option<Packet>,
     trailing: usize,
     first_ts: Option<Timestamp>,
@@ -454,6 +455,7 @@ impl Decoder {
                         track: id,
                         pending: 0,
                         consumed: 0,
+                        silent: false,
                         ahead: None,
                         trailing: padding_past_an_open_window(&info),
                         first_ts: None,
@@ -621,12 +623,17 @@ impl Decoder {
             None => coded.pending,
         };
 
-        let decoded = coded.decoder.last_decoded();
-        let block = decoded.slice(coded.consumed..coded.consumed + taking);
-        let frames = block.frames();
-
-        out.set_frames(frames);
-        copy_out(&block, out.data_mut());
+        let frames = if coded.silent {
+            out.set_frames(taking);
+            silence_out(out.data_mut());
+            taking
+        } else {
+            let decoded = coded.decoder.last_decoded();
+            let block = decoded.slice(coded.consumed..coded.consumed + taking);
+            out.set_frames(block.frames());
+            copy_out(&block, out.data_mut());
+            block.frames()
+        };
 
         coded.consumed = coded.consumed.saturating_add(frames);
         coded.pending = coded.pending.saturating_sub(frames);
@@ -680,6 +687,7 @@ impl Decoder {
                 coded.decoder.reset();
                 coded.pending = 0;
                 coded.consumed = 0;
+                coded.silent = false;
                 coded.ahead = None;
             }
             Held::Dsd(held) => held.reset(),
@@ -732,25 +740,35 @@ impl Decoder {
             };
             let span = PacketSpan::of(&packet, &timeline);
 
-            let decoded = match coded.decoder.decode(&packet) {
-                Ok(decoded) => decoded,
+            let (mut frames, silent) = match coded.decoder.decode(&packet) {
+                Ok(decoded) => {
+                    if decoded.frames() == 0 {
+                        continue;
+                    }
+                    if decoded.spec().rate() != rate.hz()
+                        || decoded.spec().channels().count() != channels
+                    {
+                        return Err(Error::ResetRequired {
+                            location: location.clone(),
+                        });
+                    }
+                    (decoded.frames(), false)
+                }
                 Err(errors::Error::DecodeError(reason)) => {
-                    tracing::debug!(reason, "discarding an undecodable packet");
-                    continue;
+                    let lasted = usize::try_from(span.frames.get()).unwrap_or(usize::MAX);
+                    tracing::debug!(
+                        reason,
+                        lasted,
+                        "an undecodable packet is played as the silence it would have lasted"
+                    );
+                    (lasted, true)
                 }
                 Err(source) => {
                     return Err(Error::from_symphonia(source, CodecOp::Decode, location));
                 }
             };
-
-            let mut frames = decoded.frames();
             if frames == 0 {
                 continue;
-            }
-            if decoded.spec().rate() != rate.hz() || decoded.spec().channels().count() != channels {
-                return Err(Error::ResetRequired {
-                    location: location.clone(),
-                });
             }
             if coded.trailing > 0 && coded.is_last(location) {
                 frames = frames.saturating_sub(coded.trailing);
@@ -761,6 +779,7 @@ impl Decoder {
 
             coded.pending = frames;
             coded.consumed = 0;
+            coded.silent = silent;
             *last_packet = Some(span);
             return Ok(DecodeStatus::Decoded);
         }
@@ -866,6 +885,14 @@ fn padding_past_an_open_window(info: &MediaInfo) -> usize {
 
 fn untrimmed() -> AudioDecoderOptions {
     AudioDecoderOptions::default().gapless(false)
+}
+
+fn silence_out(data: &mut SampleData) {
+    match data {
+        SampleData::S16(samples) => samples.fill(0),
+        SampleData::S24(samples) | SampleData::S32(samples) => samples.fill(0),
+        SampleData::F32(samples) => samples.fill(0.0),
+    }
 }
 
 fn copy_out(block: &GenericAudioSlice<'_>, data: &mut SampleData) {
