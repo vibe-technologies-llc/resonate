@@ -199,7 +199,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   packet first — the checksum taken off an integer block's extended bits, and a floating block's
   `FLOAT_INFO` and extended bits taken out and its `FLOAT_DATA` flag cleared — hands it on, and turns
   the answered integers into floats itself, a port of libwavpack's `float_values` over the stereo
-  pair in written order. A Matroska packet, carrying no block headers, is given them first.
+  pair in written order. A Matroska packet, carrying no block headers, is given them first. Both
+  restores hold the shift they fill with ones to a word (`SHIFTED_WITHIN_A_WORD`), as the reference's
+  32-bit shift does: a sample shifted to nothing under the greatest exponent counts some 254 places,
+  and `restore` handing that to `ones` unmasked panicked a debug or fuzz build
+  (`a_sample_shifted_to_nothing_under_the_greatest_exponent_is_restored_without_overflowing`).
   `wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in`,
   `a_floating_wavpack_decodes_to_every_bit_that_went_in` (zeros, negative zeros, subnormals and values
   a hundred binades under the peak among them) and

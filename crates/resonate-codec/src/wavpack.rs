@@ -64,6 +64,7 @@ const OVERFLOW_BITS: u32 = 0x0f00_0000;
 const SIGN: u32 = 1 << 31;
 const EXPONENT_SENT_FROM: u32 = 25;
 const WIDTH_BITS: u32 = 5;
+const SHIFTED_WITHIN_A_WORD: u32 = 0x1f;
 
 const MOST_FRAMES_A_BLOCK: u64 = 1 << 20;
 
@@ -535,6 +536,7 @@ fn restore(stored: &mut [i32], info: FloatInfo) {
                 shifted += 1;
                 magnitude <<= 1;
             }
+            shifted &= SHIFTED_WITHIN_A_WORD;
             if shifted != 0 && info.flags & SHIFT_ONES != 0 {
                 magnitude |= ones(shifted);
             }
@@ -603,7 +605,7 @@ fn restore_extended(
                     magnitude <<= 1;
                 }
             }
-            shifted &= 0x1f;
+            shifted &= SHIFTED_WITHIN_A_WORD;
 
             if shifted != 0 {
                 if info.flags & SHIFT_ONES != 0 || (info.flags & SHIFT_SAME != 0 && bits.one()?) {
@@ -714,6 +716,20 @@ mod tests {
     use symphonia::core::codecs::audio::well_known::CODEC_ID_FLAC;
 
     use super::*;
+
+    #[test]
+    fn a_sample_shifted_to_nothing_under_the_greatest_exponent_is_restored_without_overflowing() {
+        let info = FloatInfo {
+            flags: SHIFT_ONES,
+            shift: 24,
+            max_exponent: u8::MAX,
+        };
+        let mut stored = [0x100, 1, -1];
+
+        restore(&mut stored, info);
+
+        assert_eq!(stored[0] as u32, MANTISSA, "{:#x}", stored[0]);
+    }
 
     fn header(flags: u32) -> Vec<u8> {
         let mut header = vec![0; HEADER_BYTES + 3];

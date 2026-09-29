@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The float WavPack restore calls `ones(shifted)` unmasked once `shifted` has climbed towards
-  `max_exponent`, so a crafted `.wv` panics a debug or fuzz build on the shift; the extended path
-  masks it
 - The kept analysis cache trusts its own structure: `lanes` past `ENVELOPE_LANES` indexes out of
   bounds and a `frames_per_column` of nothing divides by zero in `Envelope::condensed`
 - One NaN or infinite sample poisons the K-weighting filter's state for the rest of the track, so
