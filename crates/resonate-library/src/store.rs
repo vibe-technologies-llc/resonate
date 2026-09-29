@@ -17,7 +17,8 @@ use resonate_core::{
 };
 use resonate_vault::{Form, VaultKey};
 use rusqlite::{
-    Connection, OptionalExtension, Transaction, params, params_from_iter, types::Value,
+    Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
+    types::Value,
 };
 
 use crate::{
@@ -183,7 +184,7 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
     }
 
     let tx = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
     let mut merged = 0;
     for (key, mut sharing) in unsettled {
@@ -949,7 +950,7 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
 
 pub fn settle_the_credits(connection: &mut Connection) -> Result<()> {
     let tx = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
     sweep_orphans(&tx)?;
     tx.commit()

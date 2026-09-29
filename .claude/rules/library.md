@@ -252,6 +252,14 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   The wait is safe because no reader is taken while another is held — every `Inner::read` closure
   queries and returns, and a caller needing two reads takes them one after the other — so a nested
   checkout can never be what the pool waits for.
+- **Every write begins `IMMEDIATE`.** `Inner::write`, `reconcile_artists` and `settle_the_credits`
+  take the write lock as the transaction opens, so a second process waits its `busy_timeout` for it.
+  A deferred transaction reading before it wrote — every undo-wrapped playlist edit — held a snapshot
+  another process could commit past, and its first write then failed at once with
+  `SQLITE_BUSY_SNAPSHOT`, which no timeout waits out
+  (`an_edit_that_reads_before_it_writes_is_not_torn_by_another_process_committing`). Within one
+  process the writer's `Mutex` already serialised them, so the only cost is a write that ends up
+  writing nothing holding the lock for its read.
 - **A cue sheet claims the file it names, and the scan reads sheets before audio.** A `.cue` is not
   audio and not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet in a
   directory first, resolves each `FILE` against the sheet's own folder, and only then sends a probe job

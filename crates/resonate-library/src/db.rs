@@ -21,7 +21,8 @@ use resonate_core::{
 use resonate_providers::Providers;
 use resonate_vault::{Encoding, Kept as VaultKept, VaultFiles};
 use rusqlite::{
-    Connection, OptionalExtension as _, Row, hooks::Action, params, params_from_iter, types::Value,
+    Connection, OptionalExtension as _, Row, TransactionBehavior, hooks::Action, params,
+    params_from_iter, types::Value,
 };
 
 use crate::{
@@ -667,7 +668,7 @@ impl Inner {
     ) -> Result<T> {
         let mut connection = self.writer.lock();
         let transaction = connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Transaction, source))?;
 
         let value = change(&transaction)?;
@@ -5661,6 +5662,45 @@ mod tests {
             .expect("the tree is walkable once the other process let it go")
             .join()
             .expect("the scan finished");
+    }
+
+    #[test]
+    fn an_edit_that_reads_before_it_writes_is_not_torn_by_another_process_committing() {
+        let scratch = Scratch::new("read-then-written");
+        let catalog = scratch.path.join("library.db");
+        let here = Library::open(&catalog).expect("a catalog opens on disc");
+        let elsewhere = Library::open(&catalog).expect("a catalog opens twice on disc");
+        let first = scratch.path.join("first");
+        let second = scratch.path.join("second");
+
+        let (go, going) = mpsc::channel();
+        let committing = thread::spawn(move || {
+            going.recv().expect("the edit under way says when");
+            elsewhere
+                .inner
+                .write(|transaction| store::register_root(transaction, &second))
+        });
+        let written = here.inner.write(|transaction| {
+            transaction
+                .query_row("SELECT count(*) FROM roots", [], |row| row.get::<_, i64>(0))
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            go.send(()).expect("the other process is waiting");
+            thread::sleep(Duration::from_millis(200));
+            store::register_root(transaction, &first)
+        });
+
+        assert!(
+            written.is_ok(),
+            "an edit reading before it wrote was torn: {written:?}"
+        );
+        assert!(
+            committing
+                .join()
+                .expect("the other process did not panic")
+                .is_ok(),
+            "the other process's edit failed rather than waiting its turn"
+        );
+        assert_eq!(here.roots().expect("the roots read back").len(), 2);
     }
 
     #[test]
