@@ -1,5 +1,5 @@
 use std::{
-    io::{self, BufRead as _, Read as _},
+    io::{self, BufRead as _, ErrorKind},
     panic, thread,
     time::Duration,
 };
@@ -196,10 +196,18 @@ pub fn lines() -> Receiver<Pressed> {
 
 pub fn keys() -> Receiver<Pressed> {
     listening(|send| {
-        let mut bytes = io::stdin().lock().bytes().map_while(Result::ok);
+        let mut stdin = io::stdin().lock();
         let mut keyed = Keyed::default();
-        while let Some(byte) = bytes.next() {
-            for pressed in keyed.pressed(byte, &mut bytes) {
+        loop {
+            let (pressed, taken) = match stdin.fill_buf() {
+                Ok([]) => return,
+                Ok(read) => (keyed.read(read), read.len()),
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(_) => return,
+            };
+            stdin.consume(taken);
+
+            for pressed in pressed {
                 if send.send(pressed).is_err() {
                     return;
                 }
@@ -226,6 +234,15 @@ struct Keyed {
 }
 
 impl Keyed {
+    fn read(&mut self, read: &[u8]) -> Vec<Pressed> {
+        let mut rest = read.iter().copied();
+        let mut pressed = Vec::new();
+        while let Some(byte) = rest.next() {
+            pressed.extend(self.pressed(byte, &mut rest));
+        }
+        pressed
+    }
+
     fn pressed(&mut self, byte: u8, rest: &mut impl Iterator<Item = u8>) -> Vec<Pressed> {
         if byte == ESCAPE {
             let cancelled = self.typing.take().map(|_| Pressed::Typing(String::new()));
@@ -393,13 +410,20 @@ mod tests {
     }
 
     fn keyed(bytes: &[u8]) -> Vec<Pressed> {
+        Keyed::default().read(bytes)
+    }
+
+    #[test]
+    fn a_lone_escape_cancels_the_line_before_the_next_key_arrives() {
         let mut keyed = Keyed::default();
-        let mut rest = bytes.iter().copied();
-        let mut pressed = Vec::new();
-        while let Some(byte) = rest.next() {
-            pressed.extend(keyed.pressed(byte, &mut rest));
-        }
-        pressed
+
+        let typed = keyed.read(b":f 4");
+        let escaped = keyed.read(b"\x1b");
+        let after = keyed.read(b"n");
+
+        assert_eq!(typed.last(), Some(&Pressed::Typing(":f 4".to_owned())));
+        assert_eq!(escaped, vec![Pressed::Typing(String::new())]);
+        assert_eq!(after, vec![Pressed::Acted(Action::Next)]);
     }
 
     #[test]

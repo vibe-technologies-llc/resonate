@@ -170,7 +170,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
 ## Command line
-- Escape on `play`'s line is read only when the next key arrives, which is then taken as a command
 - `resonate playlist --reverse` is ignored everywhere but `--order` and `--query`, and `resonate eq
   --off --for <sink>` switches the equaliser off for every device
 - `info`, `explain`, `share <file>` and `playlist --add` take no `file://` URI where `play` and

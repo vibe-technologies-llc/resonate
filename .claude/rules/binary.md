@@ -83,8 +83,11 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   end's exit runs no destructor. A panic runs none either — the release profile aborts — so the
   first `KeyAtATime` installs a panic hook, once, that puts the saved modes back (through
   `try_lock`, a panic under the lock not deadlocking it) before the hook it replaced reports the
-  panic. `input::keys` reads bytes: a letter acts when pressed, the arrows
-  seek and turn the volume, and a digit or `:` starts a line drawn in the readout and read through
+  panic. `input::keys` reads bytes a terminal read at a time, so an Escape ending a read is a lone
+  Escape — the typed line cancelled that moment — while one with more behind it in the same read
+  opens an arrow's sequence or an Alt chord
+  (`a_lone_escape_cancels_the_line_before_the_next_key_arrives`). A letter acts when pressed, the
+  arrows seek and turn the volume, and a digit or `:` starts a line drawn in the readout and read through
   the same `parse` a piped line is (`90` enter seeks, `:z track` sets the timer). Where stdout is a
   terminal too, `readout::Readout` redraws one line — the transport's glyph, position out of
   length, volume, shuffle, repeat, the sleep timer and what is being typed — every 500 ms sample
