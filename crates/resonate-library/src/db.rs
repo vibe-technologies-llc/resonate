@@ -1,4 +1,5 @@
 use std::{
+    fs::{File, OpenOptions, TryLockError},
     num::NonZeroU32,
     ops::Deref,
     path::{Path, PathBuf},
@@ -438,11 +439,38 @@ struct Reader<'a> {
 
 pub(crate) struct Walk {
     inner: Arc<Inner>,
+    _across_processes: Option<File>,
 }
 
 impl Drop for Walk {
     fn drop(&mut self) {
         self.inner.walking.store(false, Ordering::Release);
+    }
+}
+
+const WALK_LOCK_SUFFIX: &str = ".walk";
+
+fn walk_lock_beside(catalog: &Path) -> PathBuf {
+    let mut named = catalog.as_os_str().to_owned();
+    named.push(WALK_LOCK_SUFFIX);
+    PathBuf::from(named)
+}
+
+fn locked_across_processes(catalog: &Path) -> Result<File> {
+    let path = walk_lock_beside(catalog);
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+    match lock.try_lock() {
+        Ok(()) => Ok(lock),
+        Err(TryLockError::WouldBlock) => Err(Error::AlreadyWalking),
+        Err(TryLockError::Error(source)) => Err(Error::Io { path, source }),
     }
 }
 
@@ -542,10 +570,14 @@ impl Inner {
         {
             return Err(Error::AlreadyWalking);
         }
-
-        Ok(Walk {
+        let mut walk = Walk {
             inner: Arc::clone(self),
-        })
+            _across_processes: None,
+        };
+        if let Source::File(catalog) = &self.source {
+            walk._across_processes = Some(locked_across_processes(catalog)?);
+        }
+        Ok(walk)
     }
 
     pub(crate) fn playlists_revision(&self) -> u64 {
@@ -5603,6 +5635,32 @@ mod tests {
             .expect("the tree is walkable once the scan has gone")
             .join()
             .expect("the organise finished");
+    }
+
+    #[test]
+    fn a_walk_in_one_process_refuses_a_walk_in_another_on_the_same_catalog() {
+        let scratch = Scratch::new("walked-across-processes");
+        let catalog = scratch.path.join("library.db");
+        let here = Library::open(&catalog).expect("a catalog opens on disc");
+        let elsewhere = Library::open(&catalog).expect("a catalog opens twice on disc");
+
+        let walking = here
+            .walk_the_tree()
+            .expect("nothing else is walking the tree");
+        assert!(
+            matches!(
+                elsewhere.scan(nothing_to_walk()),
+                Err(Error::AlreadyWalking)
+            ),
+            "a second process walked a catalog the first was walking"
+        );
+
+        drop(walking);
+        elsewhere
+            .scan(nothing_to_walk())
+            .expect("the tree is walkable once the other process let it go")
+            .join()
+            .expect("the scan finished");
     }
 
     #[test]

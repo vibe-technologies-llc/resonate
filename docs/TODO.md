@@ -9,11 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- The `Walk` guard is an `AtomicBool` inside one process, so `resonate scan` beside the window's
-  scan or organise prunes the rows the other wrote, and `resonate vault --prune` beside the
-  window's import sweeps its staging files and deletes a cover landed but not yet noted, after
-  which `vault_the_cover` points the album at nothing. A lock every process on the catalog shares
-  is what the guard's promise needs
 - `schema.rs` reads the stamp before it opens the migration transaction, so two processes opening
   an old catalog both migrate and the second refuses to start on a duplicate column
 - `Inner::write` opens a deferred transaction, so an edit that reads before it writes — every

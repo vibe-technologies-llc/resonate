@@ -294,7 +294,14 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and the prune taking the rewritten row — its `id`, `added`, counts and `listens` — away. Two scans at
   once are worse: each stamps its own `generation` and prunes `WHERE seen != ?`, so the first to finish
   deletes every row the second wrote. `enrich` and `poll` stay outside it, neither walking the tree nor
-  rewriting a path.
+  rewriting a path. **The guard holds across processes.** `resonate scan` beside the window's scan,
+  or `resonate vault --prune` beside its import, are two `Inner`s and two flags, so a catalog on disc
+  also takes an exclusive `File::try_lock` on `<catalog>.walk` (`locked_across_processes`), held by
+  the `Walk` and released as its `File` closes — on a panic or a killed process alike, the kernel
+  letting an advisory lock go with its descriptor. A lock another process holds is the same
+  `Error::AlreadyWalking`. The lock file stays where it is: removing it would race a process that has
+  opened it and not yet locked it. An in-memory catalog has no file and no second process, so takes
+  the flag alone (`a_walk_in_one_process_refuses_a_walk_in_another_on_the_same_catalog`).
 - **An album grouped by its folder is re-keyed to the folder it moved into, in place on its row.** Only
   the third tier embeds a path, so only it can be left naming a vanished folder; one file of such an
   album re-probed later would be keyed onto the new folder, insert a second `albums` row and take its
