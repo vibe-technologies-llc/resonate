@@ -154,7 +154,10 @@ settings pane and the file:
 What some of them mean:
 
 - `listen-from` is `desktop`, `microphone` or a microphone's node name; `listen-for` a whole number
-  of seconds. `resonate listen --microphone` and `--seconds` outrank them for one run; the Online
+  of seconds from 4 to 60, `cli::LISTENS_FOR_SECONDS`, which `--seconds`' value parser holds it to
+  as well — `Recording::holding` lays the whole clip out up front, so an unbounded `--seconds`
+  aborted on a large value (`a_length_to_listen_for_is_held_to_what_the_setting_takes`).
+  `resonate listen --microphone` and `--seconds` outrank them for one run; the Online
   category's *Listening* group and the Listen sheet's chips write them.
 - `history-kept` is `forever` (default) or a whole number of days; every command opening the
   catalog first forgets listens and skipped time older than that, and the Library category's

@@ -1,6 +1,6 @@
 #[cfg(feature = "ui")]
 use std::sync::Arc;
-use std::{num::NonZeroU64, time::Duration};
+use std::time::Duration;
 
 #[cfg(feature = "ui")]
 use resonate_codec::{CoverArt, ImageFormat};
@@ -18,7 +18,7 @@ const APP_NAME: &str = "Resonate";
 pub fn run(
     config: &Config,
     microphone: Option<&str>,
-    seconds: Option<NonZeroU64>,
+    seconds: Option<u64>,
     microphones: bool,
 ) -> Result<()> {
     let listener = Listener::new(APP_NAME);
@@ -41,7 +41,7 @@ pub fn run(
     };
     let length = seconds.map_or_else(
         || config.listen_for.unwrap_or(CLIP_BY_DEFAULT),
-        |seconds| Duration::from_secs(seconds.get()),
+        Duration::from_secs,
     );
     let heard_from = match &from {
         Listening::Desktop => "what the desktop plays".to_owned(),

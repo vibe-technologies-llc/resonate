@@ -28,10 +28,8 @@ use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
     ConfigKey, Error, Result, ValueKind,
-    cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
+    cli::{DitherArg, FilterPhaseArg, LISTENS_FOR_SECONDS, NoiseShapingArg, QualityArg},
 };
-
-const LISTENS_FOR_SECONDS: std::ops::RangeInclusive<u64> = 4..=60;
 
 const LOCK_SUFFIX: &str = ".lock";
 

@@ -2543,6 +2543,25 @@ mod tests {
     }
 
     #[test]
+    fn a_length_to_listen_for_is_held_to_what_the_setting_takes() {
+        let listened = |seconds: &str| {
+            Cli::try_parse_from(["resonate", "listen", "--seconds", seconds]).map(|cli| {
+                match cli.command {
+                    Some(Sub::Listen { seconds, .. }) => seconds,
+                    _ => None,
+                }
+            })
+        };
+
+        assert_eq!(listened("12").ok().flatten(), Some(12));
+        assert_eq!(listened("4").ok().flatten(), Some(4));
+        assert_eq!(listened("60").ok().flatten(), Some(60));
+        assert!(listened("3").is_err());
+        assert!(listened("61").is_err());
+        assert!(listened("18446744073709551615").is_err());
+    }
+
+    #[test]
     fn a_uri_a_file_manager_passes_names_the_file_it_points_at() {
         assert_eq!(
             located("file:///music/Pink%20Floyd/Echoes.flac"),

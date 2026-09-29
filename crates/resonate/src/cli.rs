@@ -1,12 +1,10 @@
-use std::{
-    ffi::OsString,
-    num::{NonZeroU64, NonZeroUsize},
-    path::PathBuf,
-};
+use std::{ffi::OsString, num::NonZeroUsize, ops::RangeInclusive, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 const MOST_LISTENED: NonZeroUsize = NonZeroUsize::new(10).unwrap();
+
+pub const LISTENS_FOR_SECONDS: RangeInclusive<u64> = 4..=60;
 
 const SLEEP_SPEC_MEANS: &str = "How much longer to play: a bare number of minutes, track to stop \
                                 at the end of the one playing, queue to stop at the end of the \
@@ -960,9 +958,11 @@ pub enum Sub {
         #[arg(
             long,
             value_name = "SECONDS",
-            help = "How long to listen for; twelve seconds is what the signature is taken over"
+            value_parser = clap::value_parser!(u64).range(LISTENS_FOR_SECONDS),
+            help = "How long to listen for, from 4 to 60 seconds; twelve is what the signature \
+                    is taken over"
         )]
-        seconds: Option<NonZeroU64>,
+        seconds: Option<u64>,
 
         #[arg(
             long,
