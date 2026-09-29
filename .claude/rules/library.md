@@ -1430,6 +1430,14 @@ under Library is the window's way in, with the same preview-then-arm shape *Orga
   `a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again`,
   `a_play_count_is_written_into_a_file_nobody_marked_a_favourite` and
   `a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes` are the claims.
+- **A field cleared is cleared from every tag the file holds.** lofty edits one tag, the file's
+  primary — a WAV's `id3 ` chunk, an MP3's ID3v2 — while the reader takes a name from whichever tag
+  still says it, so a title taken out of a WAV's ID3 chunk came back from its `INFO` list on the next
+  read, and an MP3's from its ID3v1. `writing::cleared_elsewhere` copies every other tag holding a
+  field in `Writing::taken`, takes the field out and saves each into the same staged copy after the
+  primary, one settle for the lot (`a_field_cleared_from_a_wave_file_is_gone_from_its_info_list_too`).
+  A field *set* needs no such pass: the primary tag outranks the rest wherever the reader weighs them
+  (`audio.md`).
 - **A write never touches its file until it is whole.** lofty's `save_to_path` splices a FLAC's
   metadata and shifts the audio behind it in place, so a full disc or a killed run left a truncated
   file. `FileTags::write` copies the file to a staged sibling — `.<stem>.<pid>-<n>.<ext>`

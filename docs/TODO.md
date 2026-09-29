@@ -37,8 +37,6 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
-- Clearing a field in a WAV removes it from the ID3 chunk alone while the reader takes `INFO`
-  first, so the old value comes back on the next read
 - `unpictured` removes the front cover alone where the reader falls back to any picture, so a cover
   typed `Other` survives its removal, and the reader can pick an icon or a leaflet ahead of a cover
 - Every tag write copies the whole file and renames the copy over it, so a symlinked track becomes

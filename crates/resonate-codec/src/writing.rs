@@ -351,6 +351,7 @@ impl FileTags {
         writing: Writing<'_>,
     ) -> Result<()> {
         let mut tagged = opened(rechunked.unwrap_or(path), location)?;
+        let others = cleared_elsewhere(&tagged, writing.taken);
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
             tagged.insert_tag(Tag::new(kind));
@@ -390,10 +391,16 @@ impl FileTags {
                 source,
             })
             .and_then(|()| {
-                saved(tag, counting, &staged).map_err(|source| Error::TagsUnwritten {
-                    location: location.clone(),
-                    source,
-                })
+                saved(tag, counting, &staged)
+                    .and_then(|()| {
+                        others.iter().try_for_each(|other| {
+                            other.save_to_path(&staged, WriteOptions::default())
+                        })
+                    })
+                    .map_err(|source| Error::TagsUnwritten {
+                        location: location.clone(),
+                        source,
+                    })
             })
             .and_then(|()| {
                 settled_over(&staged, path).map_err(|source| Error::Io {
@@ -468,6 +475,23 @@ impl<'a> Popularimeter<'a> {
     fn is_ours(&self, kind: TagType) -> bool {
         !names_who_rated(kind) || self.by == RATED_BY
     }
+}
+
+fn cleared_elsewhere(tagged: &lofty::file::TaggedFile, taken: &[TagField]) -> Vec<Tag> {
+    let primary = tagged.primary_tag_type();
+    tagged
+        .tags()
+        .iter()
+        .filter(|held| held.tag_type() != primary)
+        .filter(|held| taken.iter().any(|field| held.get(field.key()).is_some()))
+        .map(|held| {
+            let mut cleared = held.clone();
+            for field in taken {
+                cleared.remove_key(field.key());
+            }
+            cleared
+        })
+        .collect()
 }
 
 const fn rates(kind: TagType) -> bool {
@@ -1344,6 +1368,36 @@ mod tests {
             .expect("a readable WAV");
         assert_read_back(&read.tags, &edits);
         assert_eq!(read.picture, Pictured::Copied(cover));
+    }
+
+    #[test]
+    fn a_field_cleared_from_a_wave_file_is_gone_from_its_info_list_too() {
+        let folder = Folder::new();
+        let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Pink Floyd")]);
+        let location = folder.holding("echoes.wav", &listed);
+        let tags = FileTags::default();
+
+        tags.write(&location, just(&[edited(TagField::Album, "Meddle")]))
+            .expect("a written WAV");
+        tags.write(
+            &location,
+            Writing {
+                edits: &[],
+                taken: &[TagField::Title],
+                picture: None,
+                unpictured: false,
+                popularity: None,
+            },
+        )
+        .expect("a WAV with a field cleared");
+
+        let read = tags
+            .read(&location, Picturing::Whether)
+            .expect("a readable WAV")
+            .tags;
+        assert_eq!(read.title, None, "the INFO list's title came back");
+        assert_eq!(read.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(read.album.as_deref(), Some("Meddle"));
     }
 
     #[test]
