@@ -24,6 +24,7 @@ const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
 const R128_ALBUM_GAIN: &str = "R128_ALBUM_GAIN";
 const R128_STEPS_PER_DB: f32 = 256.0;
 const R128_BELOW_REPLAY_GAIN_DB: f32 = 5.0;
+pub const LISTED_APART_BY: &str = "; ";
 
 const VORBIS_COMMENT_ONLY: [&str; 28] = [
     "ALBUM",
@@ -381,10 +382,32 @@ struct Builder {
     tags: TagSet,
     date: Option<(DateRank, String)>,
     synced_lyrics: Option<String>,
+    listed_in_this_revision: u16,
+}
+
+#[derive(Clone, Copy)]
+enum Listed {
+    Artist,
+    AlbumArtist,
+    Genre,
+    Composer,
+    Conductor,
+    Lyricist,
+    Performer,
+    Remixer,
+    Engineer,
+    Producer,
+}
+
+impl Listed {
+    const fn bit(self) -> u16 {
+        1 << self as u16
+    }
 }
 
 impl Builder {
     fn absorb_info(&mut self, info: &[InfoTag]) {
+        self.listed_in_this_revision = 0;
         for entry in info {
             if let Some(std) = standard_info(entry.name.as_str(), &entry.value) {
                 self.absorb_one(&std);
@@ -396,8 +419,12 @@ impl Builder {
     }
 
     fn absorb(&mut self, tags: &[&Tag]) {
+        self.listed_in_this_revision = 0;
         let naming = Naming::of(tags);
         for tag in tags {
+            for std in id3_list(tag) {
+                self.absorb_one(&std);
+            }
             if let Some(std) = naming
                 .standard(tag)
                 .or_else(|| musicbrainz_identifier(tag))
@@ -419,10 +446,10 @@ impl Builder {
 
         match tag {
             T::TrackTitle(value) => given(&mut self.tags.title, value),
-            T::Artist(value) => given(&mut self.tags.artist, value),
+            T::Artist(value) => self.listed(Listed::Artist, value),
             T::Album(value) => given(&mut self.tags.album, value),
-            T::AlbumArtist(value) => given(&mut self.tags.album_artist, value),
-            T::Genre(value) => given(&mut self.tags.genre, value),
+            T::AlbumArtist(value) => self.listed(Listed::AlbumArtist, value),
+            T::Genre(value) => self.listed(Listed::Genre, value),
             T::Grouping(value) => given(&mut self.tags.grouping, value),
             T::CollectionTitle(value) => given(&mut self.tags.collection, value),
             T::EditionTitle(value) => given(&mut self.tags.edition, value),
@@ -432,15 +459,13 @@ impl Builder {
             T::Encoder(value) => given(&mut self.tags.encoder, value),
             T::Comment(value) => given(&mut self.tags.comment, value),
 
-            T::Composer(value) => given(&mut self.tags.credits.composer, value),
-            T::Conductor(value) => given(&mut self.tags.credits.conductor, value),
-            T::Lyricist(value) | T::Writer(value) => {
-                given(&mut self.tags.credits.lyricist, value);
-            }
-            T::Performer(value) => given(&mut self.tags.credits.performer, value),
-            T::Remixer(value) => given(&mut self.tags.credits.remixer, value),
-            T::Engineer(value) => given(&mut self.tags.credits.engineer, value),
-            T::Producer(value) => given(&mut self.tags.credits.producer, value),
+            T::Composer(value) => self.listed(Listed::Composer, value),
+            T::Conductor(value) => self.listed(Listed::Conductor, value),
+            T::Lyricist(value) | T::Writer(value) => self.listed(Listed::Lyricist, value),
+            T::Performer(value) => self.listed(Listed::Performer, value),
+            T::Remixer(value) => self.listed(Listed::Remixer, value),
+            T::Engineer(value) => self.listed(Listed::Engineer, value),
+            T::Producer(value) => self.listed(Listed::Producer, value),
 
             T::Bpm(value) => self.tags.beats_per_minute = count(*value),
             T::TrackNumber(value) => self.tags.track_number = count(*value),
@@ -493,6 +518,38 @@ impl Builder {
             }
 
             _ => {}
+        }
+    }
+
+    fn listed(&mut self, which: Listed, value: &str) {
+        let value = value.trim();
+        if value.is_empty() {
+            return;
+        }
+        let first_here = self.listed_in_this_revision & which.bit() == 0;
+        self.listed_in_this_revision |= which.bit();
+
+        let credits = &mut self.tags.credits;
+        let slot = match which {
+            Listed::Artist => &mut self.tags.artist,
+            Listed::AlbumArtist => &mut self.tags.album_artist,
+            Listed::Genre => &mut self.tags.genre,
+            Listed::Composer => &mut credits.composer,
+            Listed::Conductor => &mut credits.conductor,
+            Listed::Lyricist => &mut credits.lyricist,
+            Listed::Performer => &mut credits.performer,
+            Listed::Remixer => &mut credits.remixer,
+            Listed::Engineer => &mut credits.engineer,
+            Listed::Producer => &mut credits.producer,
+        };
+        match slot {
+            Some(held) if !first_here => {
+                if !held.split(LISTED_APART_BY).any(|named| named == value) {
+                    held.push_str(LISTED_APART_BY);
+                    held.push_str(value);
+                }
+            }
+            _ => *slot = Some(value.to_owned()),
         }
     }
 
@@ -559,6 +616,26 @@ impl Naming {
             _ => None,
         }
     }
+}
+
+fn id3_list(tag: &Tag) -> Vec<StandardTag> {
+    let (None, RawValue::StringList(values)) = (&tag.std, &tag.raw.value) else {
+        return Vec::new();
+    };
+    let listed: fn(Arc<String>) -> StandardTag = match tag.raw.key.as_str() {
+        "TPE1" => StandardTag::Artist,
+        "TPE2" => StandardTag::AlbumArtist,
+        "TCON" => StandardTag::Genre,
+        "TCOM" => StandardTag::Composer,
+        "TPE3" => StandardTag::Conductor,
+        "TEXT" => StandardTag::Lyricist,
+        "TPE4" => StandardTag::Remixer,
+        _ => return Vec::new(),
+    };
+    values
+        .iter()
+        .map(|value| listed(Arc::new(value.clone())))
+        .collect()
 }
 
 fn musicbrainz_identifier(tag: &Tag) -> Option<StandardTag> {
@@ -1342,6 +1419,62 @@ mod tests {
             tag(StandardTag::TrackTitle(text("Fearless"))),
         ]);
         assert_eq!(named_after.title.as_deref(), Some("Fearless"));
+    }
+
+    #[test]
+    fn a_name_a_revision_gives_twice_keeps_both_and_a_newer_revision_replaces_them() {
+        let listed = absorb(&[
+            tag(StandardTag::Artist(text("Daft Punk"))),
+            tag(StandardTag::Genre(text("House"))),
+            tag(StandardTag::Artist(text("Pharrell Williams"))),
+            tag(StandardTag::Genre(text("Disco"))),
+            tag(StandardTag::Genre(text("House"))),
+            tag(StandardTag::Composer(text("Thomas Bangalter"))),
+            tag(StandardTag::Composer(text("Nile Rodgers"))),
+            tag(StandardTag::TrackTitle(text("Get Lucky"))),
+            tag(StandardTag::TrackTitle(text("Get Lucky (Radio Edit)"))),
+        ]);
+        assert_eq!(
+            listed.artist.as_deref(),
+            Some("Daft Punk; Pharrell Williams")
+        );
+        assert_eq!(listed.genre.as_deref(), Some("House; Disco"));
+        assert_eq!(
+            listed.credits.composer.as_deref(),
+            Some("Thomas Bangalter; Nile Rodgers")
+        );
+        assert_eq!(listed.title.as_deref(), Some("Get Lucky (Radio Edit)"));
+
+        let mut builder = Builder::default();
+        let older = [
+            tag(StandardTag::Artist(text("Daft Punk"))),
+            tag(StandardTag::Artist(text("Pharrell Williams"))),
+        ];
+        let newer = [tag(StandardTag::Artist(text(
+            "Daft Punk feat. Pharrell Williams",
+        )))];
+        builder.absorb(&older.iter().collect::<Vec<_>>());
+        builder.absorb(&newer.iter().collect::<Vec<_>>());
+        assert_eq!(
+            builder.finish().artist.as_deref(),
+            Some("Daft Punk feat. Pharrell Williams")
+        );
+    }
+
+    #[test]
+    fn an_id3_frame_holding_several_names_is_read_as_all_of_them() {
+        let listed = absorb(&[Tag::new(RawTag::new(
+            "TPE1",
+            RawValue::StringList(Arc::new(vec![
+                "Daft Punk".to_owned(),
+                "Pharrell Williams".to_owned(),
+            ])),
+        ))]);
+
+        assert_eq!(
+            listed.artist.as_deref(),
+            Some("Daft Punk; Pharrell Williams")
+        );
     }
 
     #[test]

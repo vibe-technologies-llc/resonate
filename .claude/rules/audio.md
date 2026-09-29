@@ -81,6 +81,18 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the file; and RIFF `INFO` defines no album artist, so a WAV tagged through `INFO` alone leaves
   `album_artist` empty — `store::attribution` falling back to the track artist is the whole answer,
   and a compilation tagged that way still splits.
+- **A name a revision gives twice is every one of them.** A tagger writes two `ARTIST` comments for a
+  duet and several `GENRE`, and an ID3v2.4 text frame holds its names null-separated; one slot each
+  kept the last. `Builder::listed` is the door for the fields that are lists — artist, album artist,
+  genre and the seven credits: the first a revision gives replaces what an older revision left, as
+  every tag does, and each later one in the same revision is appended after `LISTED_APART_BY` (`; `)
+  unless already held, so `Daft Punk; Pharrell Williams` reads as both and a newer revision naming one
+  artist still wins. symphonia hands a multi-valued ID3 frame over as a `RawValue::StringList` with
+  no standard tag — an ID3v2.4 duet read as no artist at all — so `id3_list` maps `TPE1`, `TPE2`,
+  `TCON`, `TCOM`, `TPE3`, `TEXT` and `TPE4` itself. A title, album, id or number is not a list and
+  keeps the last. The catalog stores the joined text as it stores any name, one artist row for the
+  pair, and the search index splits its words, so `genre:disco` still finds `House; Disco`; a catalog
+  scanned before holds the last name until the file is read again.
 - **A text tag blank once trimmed is no tag, and what is stored is trimmed.** `tags::given` is the
   one door every text `StandardTag` takes into a `TagSet` slot — names, credits, the six MusicBrainz
   ids, barcode, catalogue number, lyrics — trimming the value and leaving the slot as it was where

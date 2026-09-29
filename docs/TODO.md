@@ -25,8 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Formats
 - `INDEX 00` is thrown away, so a pregap between two tracks of one file plays as the tail of the row
   before it
-- A tag given twice collapses to its last value, so two `ARTIST` or several `GENRE` entries show
-  one
 - Chapters — an m4b's, MP3 `CHAP`, Matroska's — are never read, so only a `CUESHEET` cuts a file
   into rows
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
