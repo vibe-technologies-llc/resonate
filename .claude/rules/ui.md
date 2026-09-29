@@ -392,8 +392,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   and *Refresh all* and the Library card's *Enrich* through `held_back`, and a scan can still start under
   one. The run is visible from every pane: `RootView::enrichment_status` sits above the sidebar's
   *Settings* row only while `LibraryModel::is_enriching`, drawing the globe in `theme::faint()`,
-  *Enriching…* and the albums, tracks, artists and lyrics asked so far off `enrich_stats`, both lines
-  ending in an ellipsis where the sidebar is narrower, and a press opens `Category::Online`.
+  and *Enriching…* alone — no counts, which the listener asked to be taken off — ending in an ellipsis
+  where the sidebar is narrower, and a press opens `Category::Online`. The Online card's *Look up*
+  group says *Looking up…* on its button and nothing more while the lookup runs; what it found is
+  the toast `looked_up` tells as it joins.
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`, so a nudge made while nothing runs is still there when a run
   starts. Three gestures put something on it, all through `LibraryModel::ask_about`: scoping the tracks
@@ -859,8 +861,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `cx`, so the notice is an outbox `RootView` drains into the toaster (`take_notice`) whenever the model
   notifies. One line stays in place, belonging to its control rather than the moment: the Library card's
   refusal of a typed layout field. **A finished pass is a toast too, never a line left standing.** A scan,
-  a lookup, an organise, a retag, a vault import and an inbox poll draw their counts in their settings
-  group only while they run — `stats`, `enrich_stats` and `poll_stats` answer `None` once over — and the
+  an organise, a retag, a vault import and an inbox poll draw their counts in their settings
+  group only while they run — `stats` and `poll_stats` answer `None` once over, a lookup drawing none
+  — and the
   model tells what came of it as it joins: `scanned`, `looked_up`, `filed`, `retagged`, `vaulted` and
   `polled` in `models.rs`. A scan or poll the window started on its own is told only where it brought
   something, so a watch rescan finding nothing stays quiet. A *preview* keeps its summary in the group,

@@ -3,7 +3,6 @@ use std::{sync::atomic::Ordering, time::Duration};
 use gpui::{
     ClickEvent, Context, Div, Entity, SharedString, Stateful, Window, div, prelude::*, rgb,
 };
-use resonate_library::EnrichStats;
 use resonate_listen::Listening;
 
 use crate::{
@@ -365,20 +364,17 @@ impl RootView {
         let reachable = library.has_reference();
         let enriching = library.is_enriching();
         let stopping = library.is_stopping_enrich();
-        let stats = library.enrich_stats();
         let held_back = enriching || !(on && reachable);
 
-        kit::section_body()
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .child(self.look_up(held_back, enriching, cx))
-                    .child(self.refresh_all(held_back, cx))
-                    .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
-            )
-            .when_some(stats, |body, stats| body.child(note(asked_so_far(stats))))
+        kit::section_body().child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_2()
+                .child(self.look_up(held_back, enriching, cx))
+                .child(self.refresh_all(held_back, cx))
+                .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
+        )
     }
 
     fn look_up(&self, held_back: bool, enriching: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -459,20 +455,4 @@ impl RootView {
             .update(cx, |library, cx| library.set_lyrics(lyrics, cx));
         self.store(&Setting::FetchLyrics(lyrics), cx);
     }
-}
-
-fn asked_so_far(stats: EnrichStats) -> String {
-    format!(
-        "albums {} · covers {} · tracks {} · named {} · artists {} · portraits {} · lyrics {} · \
-         releases found {} · refused {}",
-        stats.albums,
-        stats.covers,
-        stats.tracks,
-        stats.named,
-        stats.artists,
-        stats.portraits,
-        stats.lyrics,
-        stats.releases_found,
-        stats.refused
-    )
 }

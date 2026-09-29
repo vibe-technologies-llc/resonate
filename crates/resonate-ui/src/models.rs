@@ -20,16 +20,15 @@ use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
     CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
-    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
-    Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack,
-    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
-    PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder,
-    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
-    Window, Wording, asks_elsewhere,
+    EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
+    HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout,
+    Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
+    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
+    Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress,
+    RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions,
+    ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -3230,10 +3229,6 @@ impl LibraryModel {
         self.enriching
             .as_ref()
             .is_some_and(|progress| progress.is_cancelled())
-    }
-
-    pub fn enrich_stats(&self) -> Option<EnrichStats> {
-        self.enriching.as_ref().map(|progress| progress.snapshot())
     }
 
     pub fn enrich(&mut self, refresh: bool, cx: &mut Context<Self>) {

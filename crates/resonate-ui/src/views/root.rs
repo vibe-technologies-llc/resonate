@@ -18,8 +18,8 @@ use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, QueueItem, RepeatMode, stamp_of,
 };
 use resonate_library::{
-    Cut, Direction, EnrichStats, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
-    SavedQuery, SortOrder, Track,
+    Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
+    SortOrder, Track,
 };
 
 use crate::{
@@ -3144,10 +3144,7 @@ impl RootView {
         let offered = library.suggestions().len();
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
-        let enriching = library
-            .is_enriching()
-            .then(|| library.enrich_stats())
-            .flatten();
+        let enriching = library.is_enriching();
 
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
@@ -3201,9 +3198,7 @@ impl RootView {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .when_some(enriching, |column, stats| {
-                        column.child(self.enrichment_status(stats, cx))
-                    })
+                    .when(enriching, |column| column.child(self.enrichment_status(cx)))
                     .child(self.pane_row(Pane::Settings, None, cx)),
             )
     }
@@ -3260,7 +3255,7 @@ impl RootView {
             .collect()
     }
 
-    fn enrichment_status(&self, stats: EnrichStats, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         div()
             .id("enriching")
             .flex()
@@ -3279,29 +3274,13 @@ impl RootView {
             .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(theme::text_sm()))
-                            .text_color(rgb(theme::muted()))
-                            .truncate()
-                            .ends_in_an_ellipsis()
-                            .child("Enriching…"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(theme::text_xs()))
-                            .text_color(rgb(theme::faint()))
-                            .truncate()
-                            .ends_in_an_ellipsis()
-                            .child(format!(
-                                "albums {} · tracks {} · artists {} · lyrics {}",
-                                stats.albums, stats.tracks, stats.artists, stats.lyrics
-                            )),
-                    ),
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::muted()))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child("Enriching…"),
             )
     }
 
