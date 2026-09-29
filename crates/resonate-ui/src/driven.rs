@@ -562,6 +562,40 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let mut every: Vec<TrackId> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(|track| track.id)
+            .collect();
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+        let root = driven.root.clone();
+        let first = driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| {
+                let listing = root.library.read(cx).listing();
+                root.play_the_listing_from(&listing[1..2], 0, window, cx);
+                listing[1].id
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+
+        let mut queued = driven.queue();
+        let at = driven.read(|root, cx| root.player.read(cx).state().queue_position);
+
+        assert_eq!(at.and_then(|at| queued.get(at)), Some(&first));
+        queued.sort_unstable();
+        every.sort_unstable();
+        assert_eq!(queued, every);
+    }
+
+    #[gpui::test]
     fn the_playlist_picker_puts_a_track_into_the_playlist_pressed(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);

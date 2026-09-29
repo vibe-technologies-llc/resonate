@@ -1821,7 +1821,7 @@ impl RootView {
                 let Some((played, start)) = self.library.read(cx).played_from(row) else {
                     return;
                 };
-                self.play(&played, start, cx);
+                self.play_the_listing_from(&played, start, window, cx);
             }
             Shift::Listing(Listed::Albums) => {
                 let Some(album) = self.library.read(cx).albums().get(row).map(|held| held.id)
@@ -1915,6 +1915,29 @@ impl RootView {
                 Err(error) => tracing::error!(%error, "the whole listing could not be read"),
             });
             let _ = outcome;
+        });
+    }
+
+    pub(crate) fn play_the_listing_from(
+        &mut self,
+        held: &[Track],
+        start: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.library.read(cx).is_the_whole_listing(held) {
+            self.play(held, start, cx);
+            return;
+        }
+        let Some(pressed) = held.get(start).map(|track| track.id) else {
+            return;
+        };
+        self.with_everything_listed(window, cx, move |this, listing, _, cx| {
+            let Some(start) = listing.iter().position(|track| track.id == pressed) else {
+                tracing::warn!(%pressed, "the row pressed is not in the listing read whole");
+                return;
+            };
+            this.play(&listing, start, cx);
         });
     }
 

@@ -1681,6 +1681,10 @@ impl LibraryModel {
         self.read(Wanted::Everything, cx);
     }
 
+    pub(crate) fn is_the_whole_listing(&self, played: &[Track]) -> bool {
+        played.len() as u64 >= u64::from(self.listed().rows)
+    }
+
     pub fn played_from(&self, row: usize) -> Option<(Arc<[Track]>, usize)> {
         if self.rows.is_empty() {
             return Some((self.listing(), row));

@@ -416,7 +416,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the suggestions page uses too. **Play beside it plays in order**: every whole-list Play — the tracks,
   album and artist headings, an opened playlist, a playlist's index row and card, and a suggestion — sends
   `SetShuffle(false)` through `RootView::plays_in_order` before it loads, so a shuffle left on does not
-  scramble the album pressed Play on. A row pressed to play from leaves shuffle as it is. An album adds
+  scramble the album pressed Play on. A row pressed to play from leaves shuffle as it is, and queues
+  what Play would: `RootView::play_the_listing_from` plays the rows held where they are the whole
+  listing (`is_the_whole_listing`, weighed against `listed()`) and otherwise reads it whole through
+  `with_everything_listed` and starts at the pressed track, where a press or an Enter on row 1 990 of a
+  20 000-track library once queued only the pages read so far
+  (`a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row`). An album adds
   the info mark; an artist adds one where it has genres, and where it holds albums the Albums and Tracks
   choice sits at that row's right, so the listing follows the title with no band between. The releases it
   does not hold stay on the row too. Play next, Add to queue and Add to playlist are not on the page. The

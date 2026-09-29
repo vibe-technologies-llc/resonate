@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A press or an Enter on a Tracks row queues only the pages already loaded where the heading's
-  *Play* queues the whole listing, so a 20 000-track library played from row 1 990 stops some
-  two thousand rows later
 - A *Listening history* chip ages the catalog the moment it is pressed, for good, while its note
   says listens are forgotten as the library opens; every other destructive setting is armed by a
   first press

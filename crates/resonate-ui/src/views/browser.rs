@@ -951,13 +951,13 @@ impl RootView {
                             }),
                     ),
             )
-            .on_click(cx.listener(move |this, _, _, cx| match plays {
+            .on_click(cx.listener(move |this, _, window, cx| match plays {
                 Plays::TheseRows => this.play(&played, index, cx),
                 Plays::AsTheListingIsDrawn { .. } => {
                     let Some((drawn, start)) = this.library.read(cx).played_from_held(index) else {
                         return;
                     };
-                    this.play(&drawn, start, cx);
+                    this.play_the_listing_from(&drawn, start, window, cx);
                 }
             }));
 
