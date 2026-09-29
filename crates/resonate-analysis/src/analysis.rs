@@ -316,8 +316,14 @@ fn normalise(native: &SampleData, into: &mut Vec<f32>) {
         SampleData::S24(samples) | SampleData::S32(samples) => {
             into.extend(samples.iter().map(|sample| *sample as f32 / scale));
         }
-        SampleData::F32(samples) => into.extend_from_slice(samples),
+        SampleData::F32(samples) => {
+            into.extend(samples.iter().map(|sample| finite_or_silent(*sample)))
+        }
     }
+}
+
+const fn finite_or_silent(sample: f32) -> f32 {
+    if sample.is_finite() { sample } else { 0.0 }
 }
 
 fn mix_down(interleaved: &[f32], channels: usize, into: &mut Vec<f32>) {
@@ -328,4 +334,21 @@ fn mix_down(interleaved: &[f32], channels: usize, into: &mut Vec<f32>) {
             .chunks_exact(channels.max(1))
             .map(|frame| frame.iter().sum::<f32>() * share),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sample_that_is_not_a_number_is_weighed_as_silence() {
+        let mut into = Vec::new();
+
+        normalise(
+            &SampleData::F32(vec![0.5, f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.25]),
+            &mut into,
+        );
+
+        assert_eq!(into, vec![0.5, 0.0, 0.0, 0.0, -0.25]);
+    }
 }

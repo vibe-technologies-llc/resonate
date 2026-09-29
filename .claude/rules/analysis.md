@@ -29,6 +29,12 @@ object; the library reaches `study` for the enrichment's studies.
   their low bits, and hands every block to the builders. `Drawing` is the seam: `Unseen` for a
   `study`, `Drawn` — envelope and spectrogram — for an `analyse`, so a library-wide study builds
   neither thing only a screen wants. DSD is decoded to F32 PCM through its decimator, not as DoP.
+- **A sample that is not a number is weighed as silence.** `normalise` hands every builder the
+  block as `f32`, and a float file's NaN or infinity becomes 0 there, as the engine's equaliser
+  guards its own state — one such sample once rode the K-weighting's history to the end of the
+  track, leaving loudness and range `None` and the spectrum's sums non-finite
+  (`a_sample_that_is_not_a_number_is_weighed_as_silence`). The bit reading keeps the native
+  samples, where one only reads as off every grid.
 - **`Watching` is how a caller stops and follows a pass.** `Watch` is the window's — atomics for
   frames done and expected and a stop flag — and `EnrichProgress` implements the same trait, so
   cancelling a lookup stops every study at its next block. A stopped pass is `Error::Stopped`,
