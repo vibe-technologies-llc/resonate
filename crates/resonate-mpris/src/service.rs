@@ -822,13 +822,14 @@ fn publish_playlists(
         report(zbus::block_on(iface.active_playlist_changed(emitter)));
     }
 
-    for row in now.rows.iter() {
-        if unheard_of(&before.rows, row) {
-            report(zbus::block_on(PlaylistsInterface::playlist_changed(
-                emitter,
-                listed(row.clone()),
-            )));
-        }
+    if Arc::ptr_eq(&before.rows, &now.rows) {
+        return;
+    }
+    for row in unheard_of(&before.rows, &now.rows) {
+        report(zbus::block_on(PlaylistsInterface::playlist_changed(
+            emitter,
+            listed(row.clone()),
+        )));
     }
 }
 

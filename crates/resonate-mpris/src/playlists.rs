@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use ahash::AHashMap;
+use resonate_core::PlaylistId;
 use zbus::{
     fdo, interface,
     object_server::SignalEmitter,
@@ -88,11 +90,17 @@ pub(crate) fn listed(playlist: PlaylistInfo) -> Listed {
     (playlist_path(playlist.id), playlist.name, String::new())
 }
 
-pub(crate) fn unheard_of(before: &[PlaylistInfo], row: &PlaylistInfo) -> bool {
-    before
+pub(crate) fn unheard_of<'a>(
+    before: &[PlaylistInfo],
+    now: &'a [PlaylistInfo],
+) -> Vec<&'a PlaylistInfo> {
+    let named: AHashMap<PlaylistId, &str> = before
         .iter()
-        .find(|held| held.id == row.id)
-        .is_none_or(|held| held.name != row.name)
+        .map(|held| (held.id, held.name.as_str()))
+        .collect();
+    now.iter()
+        .filter(|row| named.get(&row.id) != Some(&row.name.as_str()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -115,7 +123,7 @@ mod tests {
     fn a_playlist_the_listing_already_held_under_that_name_is_announced_as_nothing() {
         let held = listing(&[(1, "Evening jazz"), (2, "Workout")]);
 
-        assert!(held.iter().all(|row| !unheard_of(&held, row)));
+        assert!(unheard_of(&held, &held).is_empty());
     }
 
     #[test]
@@ -124,8 +132,8 @@ mod tests {
         let now = listing(&[(1, "Evening jazz"), (3, "Road trip")]);
 
         assert_eq!(
-            now.iter()
-                .filter(|row| unheard_of(&before, row))
+            unheard_of(&before, &now)
+                .into_iter()
                 .map(|row| row.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["Road trip"],
@@ -138,6 +146,6 @@ mod tests {
         let before = listing(&[(1, "Evening jazz")]);
         let now = listing(&[(1, "Late night jazz")]);
 
-        assert!(unheard_of(&before, &now[0]));
+        assert_eq!(unheard_of(&before, &now), vec![&now[0]]);
     }
 }

@@ -109,7 +109,9 @@ property changes.
   The map the poll diffs is an `Arc`, rebuilt only where its parts moved — the row, its length, the
   `MediaInfo` the digest shares, the cover URI and that reading — so an unchanged poll neither
   rebuilds nor compares it, and the listed playlists are an `Arc<[PlaylistInfo]>` carried poll to
-  poll.
+  poll: `publish_playlists` compares none of them where the poll holds the very `Arc` it held
+  before, and where the listing moved, `unheard_of` weighs it against a map of the last one's names
+  in one pass rather than every playlist against every other.
 
 ## The name
 

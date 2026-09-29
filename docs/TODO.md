@@ -51,8 +51,6 @@ service or a format — and is not worked until that moves; everything else is o
   stream again for any seek backwards
 - MCP's `add_to_queue` costs one `AddTrack` round trip — and a settle of up to 500 ms — per row,
   a hundred by default
-- The MPRIS playlists poll compares every playlist with every other every 200 ms, even where the
-  `Arc` it reads is the one it read last time
 - A cover for `mpris:artUrl` is written and `sync_all`ed on the poll thread, under the lock every
   `Metadata` read takes
 - `submitting.rs` builds a new ListenBrainz client every two seconds, throwing its connections and
