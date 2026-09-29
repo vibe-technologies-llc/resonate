@@ -7,62 +7,59 @@ paths:
 
 # Realtime discipline
 
-The PipeWire `process` callback is a realtime thread. With `StreamFlags::RT_PROCESS` it runs on
-PipeWire's data thread, not the loop thread. Its only job is to move bytes out of the ring and into
-the graph buffer. Decode, resample and dither all run on the engine thread — a sinc resampler of
-the length the top quality level builds cannot fit in a 256-frame callback budget, so this split is
-forced by the quality goal, not merely by hygiene.
+The PipeWire `process` callback is a realtime thread: with `StreamFlags::RT_PROCESS` it runs on
+PipeWire's data thread, not the loop thread (playback sets the flag from `StreamRequest::realtime`,
+which the engine sets; capture always sets it). Its only job is to move bytes from the ring into
+the graph buffer. Decode, resample and dither run on the engine thread — a sinc resampler as long
+as the top quality level builds cannot fit a 256-frame callback budget, so the split is forced by
+the quality goal, not hygiene.
 
-The engine thread is therefore where the music is kept up with, and it has no slack to give away:
-a 96 kHz 24-bit source reaching a 48 kHz sink took a whole core at `opt-level = 0` and starved the
-ring. That is why `[profile.dev]` optimises the workspace's own crates — see `CLAUDE.md`. Anything
-measured for cost here is meaningless against an unoptimised build.
+The engine thread is where the music is kept up with, with no slack to give away: a 96 kHz 24-bit
+source reaching a 48 kHz sink took a whole core at `opt-level = 0` and starved the ring, which is
+why `[profile.dev]` optimises the workspace (`CLAUDE.md`). A cost measured against an unoptimised
+build means nothing.
 
 Inside the RT module and everything it calls:
 
 - No allocation, and no `Drop` that allocates or frees.
-- No lock acquisition, **including `parking_lot`'s**, which may spin then futex-wait. RT-visible
-  state must be atomics — encode a `Gain` with `f32::to_bits`.
+- No lock, **including `parking_lot`'s**, which may spin then futex-wait. RT-visible state is
+  atomics — encode a `Gain` with `f32::to_bits`.
 - No `unwrap`, `expect`, `panic!`, `unreachable!` or `assert!`; `debug_assert!` only.
 - No `[i]` indexing or `[a..b]` slicing — use `get`, `get_mut`, `chunks_exact`.
 - No division or `%` by a value that is not a `NonZero`.
 - Fallible operations return `RtFault`: `Copy`, no heap pointer, no `Drop`, escalated off-thread
-  through an SPSC queue with an atomic overflow counter surfaced in-band as `RtFault::Dropped`.
-  It holds `Underrun` and `Dropped` and nothing else, because those are the two the ring raises and
-  a variant nothing constructs is a variant to take out — so `collect_faults` matches exhaustively
-  and has no arm for a fault that cannot arrive.
+  through an SPSC queue whose atomic overflow counter surfaces in-band as `RtFault::Dropped`. It
+  holds `Underrun` and `Dropped` alone — the two the ring raises — so `collect_faults` matches
+  exhaustively with no arm for a fault that cannot arrive.
 
-Three modules are the RT path and each carries that `#![deny(...)]` list at its head:
-`resonate-engine/src/ring.rs`, which is what the graph pulls from,
-`resonate-pipewire/src/process.rs`, which is the callback itself — the playback `Cycle` and the
-capture `Hearing`, which reads each quantum's chunk by its own offset and size and hands the bytes
-to an `AudioSink` — and `resonate-listen/src/recording.rs`, the `AudioSink` a recording is kept in:
-a preallocated run of `AtomicU32` holding f32 bits and an atomic count, filled with `Relaxed`
-stores and published with one `Release`, so taking a quantum neither locks nor allocates and the
-listener's thread reads it back with `Acquire`. Scope the list to the module
-rather than the crate — the rest of the engine should not have to fight those lints — and put
-anything the callback does inside `process.rs` rather than in the closure `client.rs` registers,
-which is a closure precisely so that the lints reach its body. What the list cannot reach is
-libspa's own code: `Data::data` is an `unwrap` inside the dependency, and no scoping of ours
-changes that.
+Three modules are the RT path, each with that `#![deny(...)]` list at its head:
+`resonate-engine/src/ring.rs`, what the graph pulls from; `resonate-pipewire/src/process.rs`, the
+callback itself — the playback `Cycle` and the capture `Hearing`, which reads each quantum's chunk by
+its own offset and size and hands the bytes to an `AudioSink`; and `resonate-listen/src/recording.rs`,
+the `AudioSink` a recording is kept in — a preallocated run of `AtomicU32` holding f32 bits and an
+atomic count, filled with `Relaxed` stores and published with one `Release`, so a quantum is taken
+without locking or allocating and the listener reads it back with `Acquire`. Scope the list to the
+module, not the crate — the rest of the engine should not fight those lints — and put whatever the
+callback does in `process.rs` rather than the closure `client.rs` registers, which is a closure so
+the lints reach its body. The list cannot reach libspa's own code: `Data::data` is an `unwrap`
+inside the dependency.
 
-The callback writes what the source filled and sets `chunk.size` to exactly that, so the bytes past
-a short read never reach the graph and there is nothing to zero. A memset there is work the graph
-was already told to ignore.
+The callback writes what the source filled and sets `chunk.size` to exactly that, so bytes past a
+short read never reach the graph and nothing needs zeroing; a memset there is work the graph was
+already told to ignore.
 
-`panic = "abort"` is not a substitute. Since Rust 1.81 `extern "C"` functions abort on unwind
-anyway, and pipewire-rs's trampolines are `extern "C"`, so a panic aborts in every profile. The
-profile converts undefined behaviour into a crash; only this discipline converts a crash into a
-glitch. It also means `catch_unwind` is unavailable, so a malformed file must return `Err` rather
-than panic — a corrupt track in a scanned library must not be able to abort the player.
+`panic = "abort"` is no substitute. Since Rust 1.81 `extern "C"` functions abort on unwind, and
+pipewire-rs's trampolines are `extern "C"`, so a panic aborts in every profile. The profile turns
+undefined behaviour into a crash; only this discipline turns a crash into a glitch. `catch_unwind`
+is therefore unavailable, so a malformed file must return `Err` rather than panic — a corrupt track
+in a scanned library must not abort the player.
 
 ## DSP stages
 
-`Processor::process` returns `ProcessCount`, never `Result`. An RT function must have no fallible
-path, because the error path is where allocation and formatting live; everything that can fail has
-already failed in `prepare`. `prepare` allocates every buffer the stage will ever need.
+`Processor::process` returns `ProcessCount`, never `Result`: an RT function has no fallible path,
+the error path being where allocation and formatting live; everything that can fail has failed in
+`prepare`, which allocates every buffer the stage will need.
 
-`Frames` is always at the decoded source rate, and `resonate-dsp` is the only crate permitted to
-reinterpret it at the sink rate. `ProcessCount::frames_out` is the one crossing point — the one
-value in the workspace expressed at the sink rate — and the engine must never let it escape into
-transport state.
+`Frames` is always at the decoded source rate, and only `resonate-dsp` may reinterpret it at the
+sink rate. `ProcessCount::frames_out` is the one crossing point — the one value in the workspace at
+the sink rate — and the engine never lets it escape into transport state.

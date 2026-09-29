@@ -65,7 +65,7 @@ update-desktop-database ~/.local/share/applications
 kbuildsycoca6 --noincremental
 ```
 
-They are installed on this machine already. Reinstall after either file changes — the entry is
+Reinstall after either file changes — the entry is
 copied, not linked, so an edit in `packaging/` does not reach the launcher on its own. A copy of
 the packaged icon standing there takes the accent and is put back when the accent is Resonate's
 own again; to read what the window writes without touching that copy, run with `XDG_DATA_HOME`

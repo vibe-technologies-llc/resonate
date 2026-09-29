@@ -141,11 +141,10 @@ grammar at build time.
 
 ## Formats
 
-FLAC, ALAC, AAC (bare ADTS included), MP3, Vorbis, Opus, uncompressed PCM in WAV, AIFF and CAF,
-Matroska and MP4 (fragmented included), and DSD in DSF and DFF — decoded to PCM or carried over DoP
-where the device takes it. Cue sheets are read beside a single-file rip or out of a FLAC's own
-`CUESHEET`, so one file is an album's worth of tracks. There is no WavPack or Monkey's Audio decoder
-in the tree, so neither is offered anywhere.
+FLAC, ALAC, AAC (bare ADTS included), MP3, Vorbis, Opus, WavPack, Monkey's Audio, uncompressed PCM in
+WAV, AIFF and CAF, Matroska and MP4 (fragmented included), and DSD in DSF and DFF — decoded to PCM or
+carried over DoP where the device takes it. Cue sheets are read beside a single-file rip or out of a
+FLAC's own `CUESHEET`, so one file is an album's worth of tracks.
 
 ## Settings
 
@@ -166,11 +165,15 @@ where `contact` holds one.
 
 `online` is on by default, and so is looking the library up after a scan. While online is on,
 that lookup can reach MusicBrainz, the Cover Art Archive, Wikimedia Commons, Wikidata, LRCLIB,
-AutoEq, Deezer and Apple Music. `online = false` stops every one of those.
+AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops every one of those.
 
 Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
 yours. AudD is sent the clip only where `audd-token` is set, and AcoustID is asked only where
 `acoustid-key` is set.
+
+ListenBrainz is sent what was heard only where `listenbrainz-token` is set, and a Subsonic server is
+asked for wanted tracks only where `subsonic`, `subsonic-user` and `subsonic-password` name one of
+yours; `online = false` stops both.
 
 Discord is told nothing unless `discord` is on and names an application of yours. What it is
 told is handed to the Discord client on this machine, and the cover is a public Cover Art

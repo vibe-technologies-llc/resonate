@@ -9,2511 +9,2228 @@ paths:
 # The catalog and its playlists
 
 `resonate-library` is the local source's catalog and nothing else's. It walks directories, so it
-stores paths and hands them back as local `MediaLocation`s; nothing in the schema is keyed by
-source. A source that is not the filesystem brings its own catalog, and a queue row from one is read
-through `Player::media` like any other unscanned row.
+stores paths and hands them back as local `MediaLocation`s; nothing in the schema is keyed by source.
+A non-filesystem source brings its own catalog, and a queue row from one is read through
+`Player::media` like any unscanned row.
 
 ## Schema and grouping
 
-- **The schema is `V1` and then `MIGRATIONS`, and a catalog is carried forward wherever it can
-  be rather than thrown away.** A change to what the catalog holds is a new SQL step appended to
-  `MIGRATIONS` — an `ALTER TABLE`, a new table or index, a rewrite of the rows the change moves —
-  and never an edit to `V1` or to a step already written, because either strands every catalog
-  stamped before it. The stamp in `PRAGMA user_version` is `fingerprint_after`: an FNV-1a over the
-  `V1` text and then each step's in turn, taken at compile time, so every point in the history has
-  a stamp of its own and `SCHEMA_FINGERPRINT` is the last. `lay_out` writes `V1` and every step
-  where the stamp is `UNSTAMPED`, opens where it is this build's, and otherwise finds which prefix
-  of the steps the stamp names and applies the rest in one transaction that restamps as it
-  commits — a step that fails is `StoreOp::Migrate` and leaves the catalog, stamp and all, exactly
-  as it was. Only a stamp no prefix names is `Error::SchemaMismatch`: a catalog written before the
-  history began, or by a build with a history this one does not share, which is the one case left
-  where the catalog is deleted and scanned again. A counted version was weighed and refused before:
-  it cannot tell a build with the same count and a different schema from ours, so the stamp stays a
-  hash. `the_first_schema_is_never_edited_where_it_stands` pins `V1`'s own fingerprint, so an edit
-  in place fails a test that says to write a step instead, and `never_unstamped` keeps a schema
-  that hashed to zero from reading as a catalog nothing has stamped. **Migrate wherever the rows
-  can be carried**; break only where they cannot be — an index whose meaning changed in a way no
-  SQL can recompute, say — and then say so in the step's absence rather than by editing `V1`. The
-  history begins at `0ca1e683`, the `V1` that stood when the policy changed, so a catalog written
-  by any build since opens and is carried forward.
+- **The schema is `V1` then `MIGRATIONS`, and a catalog is carried forward wherever it can be.** A
+  change to what the catalog holds is a new SQL step appended to `MIGRATIONS` — an `ALTER TABLE`, a
+  new table or index, a rewrite of the rows the change moves — never an edit to `V1` or a written
+  step, either of which strands every catalog stamped before it. The stamp in `PRAGMA user_version`
+  is `fingerprint_after`: an FNV-1a over the `V1` text then each step's in turn, taken at compile
+  time, so every point in the history has its own stamp and `SCHEMA_FINGERPRINT` is the last.
+  `lay_out` writes `V1` and every step where the stamp is `UNSTAMPED`, opens where it is this build's,
+  and otherwise finds which prefix of the steps the stamp names and applies the rest in one
+  transaction that restamps as it commits — a failing step is `StoreOp::Migrate` and leaves the
+  catalog, stamp and all, as it was. Only a stamp no prefix names is `Error::SchemaMismatch`: a
+  catalog from before the history began, or from a build with a history this one does not share —
+  the one case left where the catalog is deleted and scanned again. A counted version was weighed and
+  refused: it cannot tell a build with the same count and a different schema from ours, so the stamp
+  stays a hash. `the_first_schema_is_never_edited_where_it_stands` pins `V1`'s fingerprint, so an edit
+  in place fails a test saying to write a step, and `never_unstamped` keeps a schema hashing to zero
+  from reading as unstamped. **Migrate wherever the rows can be carried**; break only where they
+  cannot — an index whose meaning changed in a way no SQL can recompute — and then say so by the
+  step's absence, not by editing `V1`. The history begins at `0ca1e683` (`V1_AS_FIRST_STAMPED`), the
+  `V1` standing when the policy changed, so a catalog from any build since opens and is carried
+  forward.
 - **A change to what a probe reads is carried forward by marking the rows it moves.**
-  `tracks.probe_again` is set by a migration step over the rows whose billing the new probe
-  would change — the first such step marks every WavPack, because a hybrid one was billed
-  lossless until the flag was read — and an incremental scan weighs a marked row as changed
-  though its size and its mtime have not moved, and the upsert clears the mark. Nothing else about
-  the row moves: the vault link and what a lookup wrote are kept on the size and the mtime, which
-  have not changed, so a marked row is re-read rather than re-imported or asked about again —
-  `a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved`. A later probe
-  change is another step that sets the mark on the rows it concerns, never a rescan of the whole
-  catalog.
-- **What the transport was doing is three tables, because the rows, their order and the place each
-  move at a rate of their own.** `resume` is a singleton row — the row the queue was on, the frame
-  into it, whether it was shuffled and when it was taken. `resume_rows` is the queue itself, one
-  row per position in the order it was *loaded*. `resume_order` is one row per position in the
-  order it was *playing*, naming which loaded row sits there. `Keeping` decides which of the three
-  to write, and the three are what let each be written alone: a queue that has not changed costs
-  one `UPDATE`, a queue dragged into another order or reshuffled costs `resume_order` and not a
-  URI, and only rows arriving or leaving rewrite `resume_rows`. `keep_place` names neither
-  `shuffle` nor a row, so a place written five seconds into a track cannot lose the order the rows
-  were kept under; `keep_order` writes the order, the place and the shuffle together, because a
-  toggle moves all three.
-  The rows carry `MediaLocation::to_uri` rather than a path, which is the
-  one place the catalog stores something that is not the local source's: a queue row may come from
-  any source the build registers, and `Library::track_played` keys on a path precisely because it
-  means a *scanned* row while this does not. `span_start` and `span_frames` sit beside it under the
-  same `store::span` convention `tracks` uses, so a cue row resumes as the cut it was rather than as
-  the file it came out of. The order is what lets a shuffled queue come back playing as it played
-  and unshuffle into the album it came from, and `resonate-core::plays_in` is the whole of how it
-  is trusted: an order naming each row exactly once is taken as it stands and anything else — the
-  wrong length, a repeat, a row the queue does not hold — gives back the order the rows were
-  loaded in, so no reading of it can refuse a queue. A URI that no longer names a location does
-  refuse the whole resumption rather than dropping a row, because a queue one row short is a queue
-  whose kept position now names the wrong track. `keep_resumption` replaces the rows, the order and
-  the place together in one transaction, so a queue is never half of one run and half of another,
-  and writing no rows is how the queue is discarded — `resumption` answers `None` for an empty one,
-  which is the same answer it gives before anything has played.
-
+  `tracks.probe_again` is set by a migration step over the rows whose billing the new probe would
+  change — the first such step marks every WavPack (`codec = 11`), a hybrid one having been billed
+  lossless until the flag was read — and an incremental scan weighs a marked row as changed though
+  its size and mtime have not moved, the upsert clearing the mark. Nothing else about the row moves:
+  the vault link and what a lookup wrote are kept on the unchanged size and mtime, so a marked row is
+  re-read, not re-imported or asked about again
+  (`a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved`). A later probe change
+  is another step setting the mark on the rows it concerns, never a rescan of the whole catalog.
+- **What the transport was doing is three tables, the rows, their order and the place each moving at
+  a rate of their own.** `resume` is a singleton row — the row the queue was on, the frame into it,
+  whether it was shuffled, when it was taken, and `next_first`/`next_last`, the span of the queued
+  rows in the drawn list. `resume_rows` is the queue, one row per position in the order it was
+  *loaded*; `resume_order` one row per position in the order it was *playing*, naming the loaded row
+  there. `Keeping` decides which to write, and the three let each be written alone: an unchanged queue
+  costs one `UPDATE`, a queue reordered or reshuffled costs `resume_order` and no URI, and only rows
+  arriving or leaving rewrite `resume_rows`. `keep_place` names neither `shuffle` nor a row, so a
+  place written seconds into a track cannot lose the order the rows were kept under; `keep_order`
+  writes order, place and shuffle together, a toggle moving all three. The rows carry
+  `MediaLocation::to_uri` rather than a path — the one place the catalog stores something not the
+  local source's, a queue row coming from any registered source, while `Library::track_played` keys
+  on a path precisely because it means a *scanned* row. `span_start` and `span_frames` sit beside it
+  under `tracks`' `store::span` convention, so a cue row resumes as its cut. The order is what lets a
+  shuffled queue come back playing as it played and unshuffle into its album, and
+  `resonate-core::plays_in` is the whole of how it is trusted: an order naming each row exactly once
+  is taken as it stands, and anything else — wrong length, a repeat, a row the queue lacks — gives
+  back the load order, so no reading of it refuses a queue. A URI no longer naming a location does
+  refuse the whole resumption rather than dropping a row, a queue one row short being one whose kept
+  position names the wrong track. `keep_resumption` replaces rows, order and place in one
+  transaction, so a queue is never half of one run and half of another, and writing no rows discards
+  the queue — `resumption` answers `None` for an empty one, as before anything has played.
 - **A favourite is when, not whether.** `tracks.favourite`, `albums.favourite` and
-  `artists.favourite` are nullable nanosecond stamps, so the column that says a row is a
-  favourite is also the column that orders the favourites by when they were marked, and a
-  boolean would have bought nothing and cost a second column to sort on. `Library::favour` takes
-  one `Favoured` — `Track`, `Album` or `Artist` — rather than three functions, because the three
-  writes differ only in the table and a caller choosing between three names would have to know
-  which. It answers whether the value moved: the write is guarded on the column standing the
-  other way, so favouring a favourite keeps the stamp it was marked with — and with it its place
-  in *recently favourited* — writes nothing and answers false, and so does an id no row holds. `is:favourite` is a `Shape` beside `is:hires`;
-  `SortOrder::Favourited` needs `tracks_by_favourite` declared `favourite DESC, title COLLATE
-  NOCASE`, exactly as its `ORDER BY` reads, while `AlbumOrder` and `ArtistOrder` need nothing,
-  having no indexes by design.
-- **A genre is the track's and its artist's at once, folded into one column.** `tracks.genre` is
-  what the scan always read into `TagSet::genre` and dropped on the floor; the fourth
-  `tracks_fts` column is that, folded through `folded_letters` and joined with the names
-  `artist_genres` holds for the track's artist, so `genre:` is an ordinary scoped word against
-  the index and reaches a file whose tagger named no genre at all. What it costs is that
-  enrichment has to re-index: `land_artist` writes `artist_genres` long after the scan wrote the
-  row, so `store::reindex_the_tracks_of` runs beside it, and `NAMED_TABLES` learned
-  `artist_genres` or a landed genre would leave the spelling vocabulary stale.
+  `artists.favourite` are nullable nanosecond stamps, so the column saying a row is a favourite also
+  orders the favourites by when they were marked; a boolean would buy nothing and cost a second
+  column to sort on. `Library::favour` takes one `Favoured` — `Track`, `Album` or `Artist` — rather
+  than three functions, the writes differing only in the table. It answers whether the value moved:
+  the write is guarded on the column standing the other way, so favouring a favourite keeps its stamp
+  — and its place in *recently favourited* — writes nothing and answers false, as does an id no row
+  holds. `is:favourite` is a `Shape` beside `is:hires`; `SortOrder::Favourited` needs
+  `tracks_by_favourite` declared `favourite DESC, title COLLATE NOCASE`, exactly as its `ORDER BY`
+  reads, while `AlbumOrder::Favourited` and `ArtistOrder::Favourited` need nothing, those orders having
+  no indexes by design.
+- **A genre is the track's and its artist's at once, folded into one column.** `tracks.genre` is what
+  the scan always read into `TagSet::genre` and dropped; the fourth `tracks_fts` column is that,
+  folded through `folded_letters` and joined with the names `artist_genres` holds for the track's
+  artist, so `genre:` is an ordinary scoped word against the index and reaches a file whose tagger
+  named no genre. The cost is that enrichment re-indexes: `land_artist` writes `artist_genres` long
+  after the scan wrote the row, so `store::reindex_the_tracks_of` runs beside it, and `NAMED_TABLES`
+  learned `artist_genres` or a landed genre would leave the spelling vocabulary stale.
 - **A pinned playlist leads every order, and `undo.rs` is where that is easy to lose.**
   `playlists.pinned` is the same nullable stamp a favourite is, and `order_by` prefixes
-  `CASE WHEN p.pinned IS NULL THEN 1 ELSE 0 END, p.pinned DESC` onto every `PlaylistOrder`, so
-  pinning is one rule rather than five. It has to be threaded through `COLUMNS` and `read`, and
-  then through `undo.rs`'s `Held`, `held_in` and `rewritten` — because an undo re-creates the
-  whole row from what was held, so a column added to `playlists` and missed there is silently
-  dropped the first time somebody walks an edit back. A pin is not an edit any more than a play
-  is, so `rewritten` reads it off the live row through `unedited_in` beside `played` and `plays`,
-  and only a playlist the walk re-creates from nothing takes the one `Held` kept — a pin made or
-  taken off after an edit survives walking that edit back.
-  `undoing_an_edit_keeps_a_playlist_pinned` and
-  `a_pin_made_after_an_edit_survives_walking_the_edit_back` are the guards.
-- **What was listened to is three reads over `listens` and `passes`.**
-  `listens.heard` is the nanoseconds of that visit actually listened to and `listens_by_time` is
-  what every window reads off; `passes` — the ninth step in `MIGRATIONS`, a stamp and a heard
-  time, indexed by `passes_by_time` — is the time spent on visits that never earned a play, and
-  `statistics` adds it to what was listened to and `listening_by_day` adds it to each day's
-  listening, while the plays, the tracks heard and the three most-heard lists read `listens`
-  alone, because a pass is time and not a play; `Library::statistics`, `most_listened` and `listening_by_day` are
-  bounded by `listens.at >= ?` so the index serves each, and `most_listened` answers the three
-  lists from one `read` so a pane costs one connection rather than three. A day is bucketed by
-  dividing the stamp rather than by a calendar, because there is no date crate in the tree and
-  one civil-from-days is cheaper than one; a day nothing was played on is written as a zero row,
-  so nothing downstream has to draw around a gap. `most_listened` is free to sort on a
-  `count(*)` precisely because it is its own read and not a `SortOrder` — which is why the
-  Statistics pane can answer what was heard most this month and the tracks pane still cannot.
-- **The history is kept for as long as the listener says, and never past what a service was
-  told.** `HistoryKept` is `Forever` — the default — or a span of days, and
-  `Library::age_the_history` deletes the `listens` and the `passes` older than it; a listen is
-  forgotten only where its id is at or behind the lowest mark `submissions` holds, so a history
-  aged while ListenBrainz could not be reached is still told in full when it can. What it takes is
-  the history alone: `tracks.plays` and `tracks.played` are counters of their own and stay, so a
-  track's count and the order *most played* reads off are what they were, and only the
-  Statistics pane's reads — every one of them over `listens` — reach back no further than the
-  span. The binary ages the catalog in `open_library_with`, so every command that opens it does,
-  and the settings pane's *Listening history* ages it the moment a span is chosen.
+  `CASE WHEN p.pinned IS NULL THEN 1 ELSE 0 END, p.pinned DESC` onto every `PlaylistOrder`, one rule
+  rather than six. It is threaded through `COLUMNS` and `read`, then `undo.rs`'s `Held`, `held_in` and
+  `rewritten` — an undo re-creates the whole row from what was held, so a column added to `playlists`
+  and missed there is silently dropped the first time an edit is walked back. A pin is no more an edit
+  than a play, so `rewritten` reads it off the live row through `unedited_in` beside `played` and
+  `plays`, and only a playlist the walk re-creates from nothing takes the one `Held` kept — a pin made
+  or taken off after an edit survives walking the edit back. `undoing_an_edit_keeps_a_playlist_pinned`
+  and `a_pin_made_after_an_edit_survives_walking_the_edit_back` are the guards. `resonate playlist
+  --pin` and `--unpin` make and take off a pin.
+- **What was listened to is three reads over `listens` and `passes`.** `listens.heard` is the
+  nanoseconds of that visit actually listened to and `listens_by_time` what every window reads off;
+  `passes` — the ninth `MIGRATIONS` step, a stamp and a heard time, indexed by `passes_by_time` — is
+  the time spent on visits that never earned a play (`Library::passed`). `statistics` adds it to what
+  was listened to and `listening_by_day` to each day's listening, while the plays, the tracks heard
+  and the three most-heard lists read `listens` alone, a pass being time and not a play.
+  `Library::statistics`, `most_listened` and `listening_by_day` are bounded by `listens.at >= ?` so
+  the index serves each, and `most_listened` answers the three lists from one `read`, a pane costing
+  one connection, not three. A day is bucketed by dividing the stamp rather than by a calendar, no
+  date crate being in the tree and one civil-from-days being cheaper than one; a day nothing was played
+  on is written as a zero row, so nothing downstream draws around a gap. Nothing is stored that the
+  history does not already say. `most_listened` may sort on a `count(*)` because it is its own read,
+  not a `SortOrder` — why the Statistics pane can answer what was heard most this month and the tracks
+  pane still cannot.
+- **The history is kept as long as the listener says, never past what a service was told.**
+  `HistoryKept` is `Forever` (default) or a span of days, and `Library::age_the_history` deletes the
+  `listens`, `unheld_listens`, `passes` and `playlist_plays` older than it (`forgotten_before`); a
+  listen is forgotten only where its id is at or behind the lowest mark `submissions` holds, so a
+  history aged while ListenBrainz was unreachable is still told in full when it can be. It takes the
+  history alone: `tracks.plays` and `tracks.played` are counters of their own and stay, so a track's
+  count and the *most played* order are as they were, and only the Statistics pane's reads — every one
+  over `listens` — reach back no further than the span. The binary ages the catalog in
+  `open_library_with`, so every command opening it does, and the settings pane's *Listening history*
+  ages it the moment a span is chosen.
   `a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told` is the claim.
 - **What a service has been told is a mark in the history, and the history is what is told.**
-  `submissions` — the sixth step in `MIGRATIONS` — holds one row per `ListeningService`, the id of
-  the last `listens` row that service has been told of, and `scrobble.rs` is the pass:
-  `Library::submit_listens` reads the listens past the mark in id order, `SUBMITTED_AT_ONCE` — a
-  hundred — at a time, each at `listens.began` — the moment it counted less what `track_played`
-  was told had been heard of the visit, a step in `MIGRATIONS` that the unheld plays carry too — joined to the track, its album and its artist for the names and the
-  MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` and moves the mark past the
-  batch in a `max` so it never goes back. A listen of a row naming no title or no artist is a
-  `Submitted::unnamed` and passed over, because a service can file nothing under a blank name. A
-  batch the service refuses as malformed — `Refused` with a 400 — is told again a listen at a
-  time, so one bad row costs itself rather than every play after it, and a listen refused alone is
-  `Submitted::refused` and passed over; any other failure moves the mark only past what was told
-  and answers the error, so the rest is told on the next ask. A service with no row yet is marked
-  at the last listen the history holds and told nothing — `Submitted::started` — which is what
-  keeps a token given today from sending ten years of history. Nothing is written when a play is
-  counted, so it does not matter which process counted it, and a listen whose track leaves the
-  catalog before it is told leaves with it on the cascade. The claims are
+  `submissions` — the sixth `MIGRATIONS` step — holds one row per `ListeningService`, the id of the
+  last `listens` row that service was told of, and `scrobble.rs` is the pass: `Library::submit_listens`
+  reads the listens past the mark in id order, `SUBMITTED_AT_ONCE` (100) at a time, each at
+  `listens.began` — the moment it counted less what `track_played` was told had been heard of the
+  visit, a `MIGRATIONS` step the unheld plays carry too — joined to track, album and artist for the
+  names and MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` (the seam the library
+  owns, as it owns `Reference`; `resonate-online`'s `ListenBrainz` fills it) and moves the mark past
+  the batch in a `max` so it never goes back. A listen of a row naming no title or artist is a
+  `Submitted::unnamed` and passed over, a service filing nothing under a blank name. A batch refused as
+  malformed — `Refused` with a 400 — is told again a listen at a time, so one bad row costs itself,
+  and a listen refused alone is `Submitted::refused` and passed over; any other failure moves the mark
+  only past what was told and answers the error, the rest told next ask. A service with no row yet is
+  marked at the last listen held and told nothing — `Submitted::started` — which keeps a token given
+  today from sending ten years of history. Nothing is written when a play is counted, so any process
+  may have counted it, offline or before a restart, and whichever run submits next tells it; a listen
+  whose track leaves the catalog before it is told leaves with it on the cascade. The claims are
   `a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once`,
   `a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told`,
   `a_play_a_service_could_not_be_reached_for_is_told_the_next_time` and
-  `a_listen_is_told_as_when_it_began_rather_than_when_it_counted`. `Library::billed_as` is the
-  same names for one row, which is what a `playing_now` is told —
-  `what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold_is_not`. Two runs submitting at once
-  may tell the same batch twice; ListenBrainz keeps one listen per moment and name, so nothing
-  guards against it.
-- **A suggestion is a saved query with a name on it.** `suggest.rs` answers
-  `Suggestion { name, reason, query, rows, length, pictured_by }`, and the query is written through
-  `Display for Search` rather than as a literal, so a suggestion and what the search box would
-  have parsed cannot drift — `every_suggestion_reads_back_through_the_grammar_it_was_written_in`
-  is the claim. Saving one is `Library::save_query` and no new code at all, because a saved query
-  playlist is already a thing that fills itself. Nothing is persisted until it is saved, and
-  nothing is offered whose count does not clear `ENOUGH_TO_OFFER`, so a thin catalog offers few
-  suggestions rather than a screen of empty ones. Two rules came from the real data rather than
-  from the design: `names_a_decade` drops a genre that is only a decade, because MusicBrainz
-  hands out `2010s` as one and it stood beside the decade built from `albums.year` saying the
-  same thing worse; and `billed_as` capitalises a lower-cased genre after any mark and not only
-  after a space, or `contemporary r&b` is billed *Contemporary R&b*.
-  `Library::suggestions` answers an `Arc<[Suggestion]>` kept beside the search vocabulary and
-  under a counter of its own: the same `update_hook` steps `written` for any row written in
-  `tracks`, `albums`, `artists` or `artist_genres`, which are every table a suggestion is read
-  from, so a reload that moved none of them — a settled search, a scroll, a playlist edited — is
-  handed the kept answer rather than a pass of `measured` per candidate. It is per table rather
-  than per name because a suggestion counts plays and favourites as well as names: a counted play
-  is a `tracks` write and drops it where it leaves the vocabulary standing, and a catalog written
-  by another process drops both through the data version, whatever table that process wrote. `length` is the same `measured` read's total, and
-  `pictured_by` is `db::pictured_by`: the albums holding a picture that the search's rows fall on,
-  most rows first, up to `PICTURED_BY_AT_MOST`, with an album whose picture — its vault key, or
-  its bytes' length and first 256 bytes — another already stood for passed over, and then one
-  whose picture merely *looks like* one already standing, so one sleeve saved at two resolutions
-  is not two tiles. `store::the_picture_of!` is that identity, written once for the query and for
-  the sweep. What a picture looks like is `resonate_codec::Likeness`: the cover averaged in linear
-  light onto eight by eight cells and kept as their sRGB bytes, and two are alike where they
-  differ by a root mean square of `ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF` — 12 of 255 — where one
-  sleeve at a quarter of its size measures about 1 and 3 re-encoded as JPEG, and a sleeve mirrored
-  or a banner across its top about 80. A likeness costs a decode, so `likeness::of` keeps it in
-  `likenesses`, the fifth step in `MIGRATIONS`, under the picture's identity — a picture that
-  cannot be read is kept as `NULL` so it is not decoded again, and a cover that failed to reach
-  the reader is kept as nothing at all and tried again — and `ORPHANS` takes away every row no
-  album's picture names any more. The table is not one the `update_hook` counts, so weighing a
-  cover never drops the suggestions it is weighed for. `Reason::kind` sorts a suggestion under a
-  `SuggestionKind`, which is how the pane shelves them.
+  `a_listen_is_told_as_when_it_began_rather_than_when_it_counted`. `Library::billed_as` is the same
+  names for one row, what a `playing_now` is told
+  (`what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold_is_not`). Two runs
+  submitting at once may tell a batch twice; ListenBrainz keeps one listen per moment and name, so
+  nothing guards against it. The binary's `submitting.rs` is the thread that asks (`online.md`).
+- **A suggestion is a saved query with a name on it, which is why it costs almost nothing.**
+  `suggest.rs` answers `Suggestion { name, reason, query, rows, length, pictured_by }`, the query
+  written through `Display for Search` rather than as a literal, so a suggestion and what the search
+  box would parse cannot drift (`every_suggestion_reads_back_through_the_grammar_it_was_written_in`).
+  Saving one is `Library::save_query` and no new code, a saved-query playlist already filling itself.
+  Nothing is persisted until saved, and nothing is offered whose count does not clear
+  `ENOUGH_TO_OFFER`, so a thin catalog offers few rather than a screen of empty ones. Two rules came
+  from real data: `names_a_decade` drops a genre that is only a decade, MusicBrainz handing out `2010s`
+  as one, which stood beside the decade built from `albums.year` saying the same worse; and
+  `billed_as` capitalises a lower-cased genre after any mark, not only a space, or `contemporary r&b`
+  is billed *Contemporary R&b*. `Library::suggestions` answers an `Arc<[Suggestion]>` kept beside the
+  search vocabulary under a counter of its own: the same `update_hook` steps `written` for any row
+  written in `tracks`, `albums`, `artists` or `artist_genres` — every table a suggestion reads — so a
+  reload that moved none of them (a settled search, a scroll, a playlist edited) gets the kept answer
+  rather than a `measured` pass per candidate. Per table rather than per name because a suggestion
+  counts plays and favourites as well as names: a counted play is a `tracks` write and drops it where
+  the vocabulary stands, and a catalog written by another process drops both through the data
+  version, whatever table it wrote. `length` is the same `measured` read's total, and `pictured_by` is
+  `db::pictured_by`: the albums holding a picture that the search's rows fall on, most rows first, up
+  to `PICTURED_BY_AT_MOST` (4), passing over an album whose picture — its vault key, or its bytes'
+  length and first 256 bytes — another already stood for, then one whose picture merely *looks like*
+  one standing, so one sleeve at two resolutions is not two tiles. `store::the_picture_of!` is that
+  identity, written once for the query and the sweep. What a picture looks like is
+  `resonate_codec::Likeness`: the cover averaged in linear light onto eight-by-eight cells kept as sRGB
+  bytes; two are alike within a root mean square of `ALIKE_WITHIN_A_ROOT_MEAN_SQUARE_OF` (12 of 255),
+  where one sleeve at a quarter its size measures ~1 and re-encoded as JPEG ~3, and a mirrored sleeve
+  or one with a banner across its top ~80. A likeness costs a decode, so `likeness::of` keeps it in
+  `likenesses`, the fifth `MIGRATIONS` step, under the picture's identity — an unreadable picture kept
+  as `NULL` so it is not decoded again, a cover that failed to reach the reader kept as nothing and
+  tried again — and `ORPHANS` removes every row no album's picture names. The table is not one the
+  `update_hook` counts, so weighing a cover never drops the suggestions it is weighed for.
+  `Reason::kind` sorts a suggestion under a `SuggestionKind`, how the pane shelves them.
   `a_suggestion_says_how_long_it_runs_and_which_covers_picture_it` and
   `one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once` are the claims.
-- **A share is the link alone, because three callers want the same one.** `Library::shareable`
-  reads the track and the `release_track_links` and `album_links` rows, and `Shared::written` is
-  a pure function over them — one URL, or nothing. **It is song.link's own short page wherever
-  the service has one**: `ShortForm::of` reads the service's id out of its URL and writes
-  `https://song.link/<letter>/<id>` for a song and `https://album.link/<letter>/<id>` for an
-  album — `s` Spotify, `d` Deezer, `t` Tidal, `i` Apple Music, whose song is the `i=` of an album
-  URL, and `y` YouTube and YouTube Music — which is the address song.link itself redirects the
-  long form to, so the link is short and says nothing of where it was found. A service with no
-  short page — Amazon, SoundCloud, Bandcamp, Qobuz — or a URL naming no id it can read is
-  `https://song.link/` with the service URL percent-encoded as a single path segment. Appended
-  raw, the server collapses the unescaped `//` and answers 308 to `https:/…`, and a `?` is read
-  as song.link's own query, so the track id never arrives.
-  The candidates are the `Relation`s `RELATIONS_SONG_LINK_TAKES` names crossed with
-  `SERVICES_SONG_LINK_RESOLVES`, a recording's own links ahead of its release's and the
-  providers weighed in the order they are declared, so one track shares identically twice
-  running. **Where the catalog holds nothing song.link opens, the reference is asked where the
-  track streams**: `Shared::streamed_where_asked` hands `Reference::streamed_at` a `StreamAsked` —
-  the title, the artist, the ISRC and the length, which `Shared` now carries — and puts what it
-  answers ahead of the rest, so it is written like any held link; a track already linked asks
-  nothing, and a reference that fails is a warning and the share goes on as it would have. The
-  window's *Share* asks only while `online` is on and `resonate share` only where
-  `online::reference` answers, and what is found is not stored, a share being a gesture made
-  once. Failing all that it is the MusicBrainz recording, and failing that there is nothing to
-  copy. It is not in the window because `resonate share` and anything else that shares must say
-  the same thing.
-- **Every order a pane offers is read off an index, and what the planner knows about the table is
-  written after a scan.** `tracks_by_album` carries the trailing `title COLLATE NOCASE` the album
-  order ends on, and `tracks_by_title`, `tracks_by_artist_name`, `tracks_by_added`,
-  `tracks_by_duration`, `tracks_by_plays` and `tracks_by_played` are the other six `SortOrder`s,
-  each declared the way its `ORDER BY` reads — the collation included, because no ordinary index
-  serves a `COLLATE NOCASE` order unless it is declared that way, and the `DESC` included, because
-  SQLite walks an index backwards only where the whole order runs one way and
-  `plays DESC, title` does not. **A reversed order needs no index of its own**, because SQLite
-  scans one backwards: `order_by` is a `Reading` of the natural spelling and its mirror — every
-  term flipped, so `plays DESC, title` becomes `plays, title DESC` — and
-  `db::tests::every_order_the_panes_offer_is_read_off_an_index_either_way_round` is the claim
-  rather than the prose: it plans `SortOrder::ALL` crossed with `Direction::ALL` through
-  `db::listing` and refuses a plan holding a temporary B-tree, which is what a full sort before
-  the `LIMIT` lands reads as. What it costs is nine indexes on `tracks` written per row a scan
-  stores where there were three.
-- **The albums and artists panes have orders too, and deliberately no index behind them.**
-  `AlbumOrder` is relevance, title, artist, year, track count and when a track of it was last
-  added; `ArtistOrder` is relevance, name, album count and track count, and `album_order_by` and
-  `artist_order_by` are the two counterparts to `order_by`. Neither is held to the index guard:
-  those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
-  B-tree over one is cheaper than an index would be — `SCHEMA_FINGERPRINT` covers the index list,
-  so adding one is a step in `MIGRATIONS` and a rebuild of that index in every catalog it opens.
-- **A saved query's direction is a column of its own.** `playlist_queries.sort` holds the order
-  alone, through `store::sort_code` and `sort_of`, and `playlist_queries.reading` the direction,
-  through the `direction_code` and `direction_of` the kept order of a playlist already went
-  through — `OrderedColumn::Reading` naming it in a refusal. It rode in the sort column once, as
-  the order plus a `READ_BACKWARDS` of sixteen, which an older build read as whatever order the
-  sum landed on rather than refusing; the step in `MIGRATIONS` that adds the column carries every
-  such code out of the sum —
-  `a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own`.
-  `schema::restate_the_statistics` is the other half — `PRAGMA analysis_limit` and
-  `PRAGMA optimize` on the writer once a scan has pruned — because with no `sqlite_stat1` the
-  planner picks its join order from hardcoded guesses; and `configure` hands a connection a page
-  cache and a 256 MiB memory map, where the 2 MB default had each pooled reader reading the pages
-  it had just read back off the disk. **The cache is sized by what the connection is for**, because
-  a page cache is per connection and `READER_POOL` is eight: `schema::Role::Writing` takes
-  `WRITER_PAGE_CACHE_KIB` of 8 MiB, which is the one that batches inserts and maintains indexes,
-  and `Role::Reading` takes `READER_PAGE_CACHE_KIB` of 2 MiB, so a library with every reader
-  checked out bounds its page cache at 24 MiB rather than the 72 MiB one size for all of them
-  allowed. It is a bound rather than a measured saving — SQLite fills a page cache lazily, so a
-  small catalog never reached either figure — and it is the writer that has the working set worth
-  keeping.
-- **A reader is checked out and handed back, and `READER_POOL` is how many there may be rather
-  than how many are kept.** `Inner::checkout` parks a connection where one is free, opens one where
-  the pool is under the count, and otherwise waits on `Inner::freed` until a caller is done, so
-  eight is the number of SQLite connections a 500k-track scan can have open at once rather than the
-  number of callers at once. `Reader` is what hands one back: the connection goes home from its
-  `Drop` rather than on the normal path alone, so a query that panics costs the pool nothing. The
-  discipline that makes the wait safe is that no reader is taken while another is held — every one
-  of `Inner::read`'s closures queries and returns, and a caller that needs two reads takes them one
-  after the other — so a nested checkout can never be the thing the pool is waiting for.
-- **A cue sheet claims the file it names, and the scan reads sheets before audio.** A `.cue` is
-  not audio and is not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet
-  in a directory first, resolves each `FILE` against that sheet's own folder, and only then sends
-  a probe job for the audio files no sheet claimed. That is what stops one FLAC being stored both
-  as an album's worth of rows and as one whole-file row. A `FILE` naming anything outside the
-  sheet's own folder is refused and logged, because that is what the format means and no ripper
-  writes otherwise. Incrementality weighs the two mtimes apart rather than
-  folding them: `tracks.modified` is the audio file's own and `tracks.sheet_modified` is the
-  sidecar's, NULL where no sidecar cut the row. A row is unchanged only where both agree with what
-  the walk found, so editing a sheet rescans the rows it cuts, and taking the sheet away reprobes
-  the file and prunes the rows the cut no longer names *whichever* of the two was the later —
-  where the later of the two was one stored number, a sheet older than the audio it cut left its
-  rows standing when it went, the audio's mtime alone still matching what had been stored.
-  `a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone` is that claim, and it
-  needs an mtime set by hand, a sheet written after the file it names being the newer of the two.
-- **A sheet the file itself carries is the probe worker's to see, so the cut is decided there
-  rather than in the walk.** A sidecar is visible from a directory listing and an embedded
-  `CUESHEET` is not, so `read_candidate` probes and then cuts on `MediaInfo::cue` where it names
-  audio tracks, sharing `cut_into_rows` with `read_cut` so the arithmetic is written once. The
-  sidecar still wins, and it wins by the walk: `claimed` takes the audio file out of the audio pass
-  before `whole_file_job` ever sees it, so the embedded sheet is never read for a file a `.cue`
-  beside it already cuts. What that costs is a count the walker cannot take: one file is one
-  `discovered` until the probe says otherwise, and `rows_past_the_first` is what the worker adds
-  once it knows — the same number the incremental path adds when it sends one `Job::Known` per
-  stored row, so `discovered` ends at the rows either way.
-- **The walk reads what the catalog already holds once, and the roots are what bound the read.**
-  `Known::under` takes `(path, id, file_size, modified, sheet_modified)` for the rows under each
-  root being
-  walked — one indexed range query per root, where a 500k-file tree used to interleave 500k point
-  queries with the writer's own commits. It is a snapshot taken before the walker starts, and
-  what makes a snapshot safe is that no path is walked twice in one scan: a root inside a root is
-  refused, a directory reached through a second link is stepped past, and a sheet claims its file
-  before the audio pass sees it. `Known::rows` is the whole of how it is read back — every stored
-  row for a path, in `span_start` order — because a path is a cut file as readily as a whole one:
-  unchanged means there is at least one row and every one of them matches the size, the mtime and
-  the sheet that cut it,
-  and `Candidate::existing` carries the lot so a probe that answers with N rows can claim the N
-  that were there. What it costs is the paths under the roots being walked held in memory for the
-  length of the walk.
+- **A share is the link alone, three callers wanting the same one.** `Library::shareable` reads the
+  track and its `release_track_links` and `album_links` rows, and `Shared::written` is a pure function
+  over them — one URL or nothing — in `resonate-library` so the window, `resonate share` and anything
+  else say the same thing. **It is song.link's own short page wherever the service has one**:
+  `ShortForm::of` reads the service's id from its URL and writes `https://song.link/<letter>/<id>` for
+  a song and `https://album.link/<letter>/<id>` for an album — `s` Spotify, `d` Deezer, `t` Tidal, `i`
+  Apple Music (whose song is the `i=` of an album URL), `y` YouTube and YouTube Music — the address
+  song.link itself redirects the long form to, short and saying nothing of where it was found. A
+  service with no short page — Amazon, SoundCloud, Bandcamp, Qobuz — or a URL naming no readable id is
+  `https://song.link/` with the service URL percent-encoded as one path segment; appended raw, the
+  server collapses the unescaped `//` and answers 308 to `https:/…`, and a `?` is read as song.link's
+  own query, so the track id never arrives. The candidates are the `Relation`s
+  `RELATIONS_SONG_LINK_TAKES` names crossed with `SERVICES_SONG_LINK_RESOLVES`, a recording's own
+  links ahead of its release's and the providers weighed in declared order, so one track shares the
+  same way twice running. **Where the catalog holds nothing song.link opens, the reference is asked
+  where the track streams**: `Shared::streamed_where_asked` hands `Reference::streamed_at` a
+  `StreamAsked` — title, artist, ISRC and length, which `Shared` carries — and puts what it answers
+  first, written like any held link; a track already linked asks nothing, and a failing reference is a
+  warning and the share goes on. The window's *Share* asks only while `online` is on and `resonate
+  share` only where `online::reference` answers, and what is found is not stored, a share being a
+  gesture made once. Failing all that it is the MusicBrainz recording, and failing that nothing to
+  copy.
+- **Every order a pane offers is read off an index, and what the planner knows is written after a
+  scan.** `tracks_by_album` carries the trailing `title COLLATE NOCASE` the album order ends on, and
+  `tracks_by_title`, `tracks_by_artist_name`, `tracks_by_added`, `tracks_by_duration`,
+  `tracks_by_plays`, `tracks_by_played` and `tracks_by_favourite` serve the other `SortOrder`s
+  (`SortOrder::HELD_BY_AN_INDEX` lists the nine, `Relevance` needing none), each declared as its
+  `ORDER BY` reads — collation included, no ordinary index serving a `COLLATE NOCASE` order unless
+  declared so, and `DESC` included, SQLite walking an index backwards only where the whole order runs
+  one way and `plays DESC, title` does not. **A reversed order needs no index of its own**, SQLite
+  scanning one backwards: `order_by` is a `Reading` of the natural spelling and its mirror — every term
+  flipped, `plays DESC, title` becoming `plays, title DESC` — and
+  `db::tests::every_order_the_panes_offer_is_read_off_an_index_either_way_round` is the claim: it plans
+  `SortOrder::ALL` crossed with `Direction::ALL` through `db::listing` and refuses a plan holding a
+  temporary B-tree, what a full sort before the `LIMIT` reads as. The cost is eight order indexes on
+  `tracks` written per stored row where there were three. `resonate playlist --reverse` turns `--sort`
+  round as well as `--order`.
+- **The albums and artists panes have orders too, deliberately with no index behind them.**
+  `AlbumOrder` is relevance, title, artist, year, track count, when a track of it was last added and
+  favourited; `ArtistOrder` is relevance, name, album count, track count and favourited;
+  `album_order_by` and `artist_order_by` are `order_by`'s counterparts. Neither is held to the index
+  guard: those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
+  B-tree over one is cheaper than an index — and `SCHEMA_FINGERPRINT` covers the index list, so adding
+  one is a `MIGRATIONS` step and a rebuild in every catalog. There is no `resonate albums` or `resonate
+  artists`, so neither enum has a CLI argument: a variant nothing constructs is one to leave out.
+- **A saved query's direction is a column of its own.** `playlist_queries.sort` holds the order alone,
+  through `store::sort_code` and `sort_of`, and `playlist_queries.reading` the direction, through the
+  `direction_code` and `direction_of` a playlist's kept order already used — `OrderedColumn::Reading`
+  naming it in a refusal. It once rode in the sort column as the order plus a `READ_BACKWARDS` of
+  sixteen, which an older build read as whatever order the sum landed on rather than refusing; the
+  `MIGRATIONS` step adding the column carries every such code out of the sum
+  (`a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own`).
+  `schema::restate_the_statistics` is the other half — `PRAGMA analysis_limit` and `PRAGMA optimize`
+  on the writer once a scan has pruned — since with no `sqlite_stat1` the planner picks join order from
+  hardcoded guesses; and `configure` hands a connection a page cache and a 256 MiB memory map
+  (`MEMORY_MAPPED_BYTES`), where the 2 MB default had each pooled reader re-reading pages it had just
+  read off the disk. **The cache is sized by what the connection is for**, a page cache being per
+  connection and `READER_POOL` eight: `schema::Role::Writing` takes `WRITER_PAGE_CACHE_KIB` (8 MiB), the
+  one batching inserts and maintaining indexes, and `Role::Reading` `READER_PAGE_CACHE_KIB` (2 MiB), so
+  a library with every reader checked out bounds its page cache at 24 MiB, not the 72 MiB one size for
+  all allowed. A bound, not a measured saving — SQLite fills a page cache lazily, so a small catalog
+  never reached either figure — and the writer has the working set worth keeping.
+- **A reader is checked out and handed back, `READER_POOL` being how many there may be, not how many
+  are kept.** `Inner::checkout` takes a free parked connection, opens one where the pool is under the
+  count, and otherwise waits on `Inner::freed` until a caller is done, so eight is how many SQLite
+  connections a 500k-track scan can have open at once, not how many callers. `Reader` hands one back
+  from its `Drop` rather than on the normal path alone, so a panicking query costs the pool nothing.
+  The wait is safe because no reader is taken while another is held — every `Inner::read` closure
+  queries and returns, and a caller needing two reads takes them one after the other — so a nested
+  checkout can never be what the pool waits for.
+- **A cue sheet claims the file it names, and the scan reads sheets before audio.** A `.cue` is not
+  audio and not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet in a
+  directory first, resolves each `FILE` against the sheet's own folder, and only then sends a probe job
+  for audio no sheet claimed — which stops one FLAC being stored as an album's worth of rows and as one
+  whole-file row. A `FILE` naming anything outside the sheet's folder is refused and logged, that being
+  what the format means and what no ripper writes otherwise. Incrementality weighs the two mtimes
+  apart: `tracks.modified` is the audio file's and `tracks.sheet_modified` the sidecar's, NULL where no
+  sidecar cut the row. A row is unchanged only where both agree with the walk, so editing a sheet
+  rescans its rows, and taking the sheet away reprobes the file and prunes the rows the cut no longer
+  names *whichever* of the two was later — when the later was one stored number, a sheet older than
+  its audio left its rows standing when it went, the audio's mtime alone still matching.
+  `a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone` is that claim, needing an
+  mtime set by hand, a sheet written after the file it names being the newer.
+- **A sheet the file itself carries is the probe worker's to see, so the cut is decided there, not in
+  the walk.** A sidecar shows in a directory listing and an embedded `CUESHEET` does not, so
+  `read_candidate` probes then cuts on `MediaInfo::cue` where it names audio tracks, sharing
+  `cut_into_rows` with `read_cut` so the arithmetic is written once. The sidecar still wins, by the
+  walk: `claimed` takes the audio file out of the audio pass before `whole_file_job` sees it, so the
+  embedded sheet is never read for a file a `.cue` beside it cuts. The cost is a count the walker
+  cannot take: one file is one `discovered` until the probe says otherwise, and `rows_past_the_first`
+  is what the worker adds once it knows — the number the incremental path adds when it sends one
+  `Job::Known` per stored row, so `discovered` ends at the rows either way.
+- **The walk reads what the catalog already holds once, and the roots bound the read.**
+  `Known::under` takes `(path, id, file_size, modified, sheet_modified, probe_again)` for the rows
+  under each root walked — one indexed range query per root, where a 500k-file tree used to interleave
+  500k point queries with the writer's own commits. It is a snapshot taken before the walker starts,
+  safe because no path is walked twice in one scan: a root inside a root is refused, a directory
+  reached through a second link is stepped past, and a sheet claims its file before the audio pass sees
+  it. `Known::rows` is the whole read-back — every stored row for a path, in `span_start` order — a path
+  being a cut file as readily as a whole one: unchanged means at least one row and every one matching
+  the size, the mtime and the sheet that cut it (and none marked `probe_again`), and
+  `Candidate::existing` carries them all so a probe answering N rows can claim the N there. The cost is
+  the paths under the walked roots held in memory for the walk.
 - **One pass walks the tree at a time, and a second is refused rather than queued.**
-  `Inner::walking` is the flag and `Walk` is the guard that holds it: `Library::scan` and
-  `Library::organise` each take one in `start`, before the thread is spawned, and the thread owns it
-  for its whole life, so it is handed back from `Drop` on a panic the way `Reader` hands back a
-  pooled connection. Taking it never waits — a caller that finds the tree being walked gets
-  `Error::AlreadyWalking` at once, because a pass that blocks for minutes is not a pass a window or
-  a command line can start. What it protects is `Known::under`: the snapshot is taken before the
-  walker starts, so an organise that commits a path rewrite after it and before the walker reaches
-  that directory leaves the walker probing the file as new and the prune taking the rewritten row —
-  its `id`, its `added`, its counts and its `listens` — away. Two scans at once are the same
-  hazard and worse: each stamps its own `generation` and each prunes `WHERE seen != ?`, so the
-  first to finish deletes every row the second wrote. `enrich` and `poll` are deliberately outside
-  it, because neither walks the tree nor rewrites a path.
-
-- **An album grouped by its folder is re-keyed to the folder it moved into, in place on the row it
-  already had.** Only the third tier embeds a path, so only it can be left naming a folder that has
-  gone; one file of such an album re-probed later would be keyed onto the new folder, insert a
-  second `albums` row and take its tracks with it, and once nothing pointed at the old row `ORPHANS`
-  would sweep its cover, its `mbid`, its `release_group`, its `release_tracks` and, through the
-  cascades, its `wants`. `organise::re_key_the_sleeves` runs in a transaction of its own once every
-  batch has landed: it takes the albums the moved files name, keeps the ones
-  `store::is_keyed_by_its_folder` answers for, and writes `store::sleeve_key` of the row's title and
-  the folder its tracks now share. It changes no membership: `tracks.album_id` references
-  `albums(id)` and nothing joins on a key, so rewriting the key on the row that already holds it
-  orphans nothing. The folder is `scan::sleeve` of each track read together — the same reading the
-  scan would take, disc folders and all — so an album whose tracks landed in more than one folder,
-  or any of whose tracks sits directly in a root, keeps the key it had and says so in a debug
-  record rather than guessing. An album `album_keys` names more than once is left alone for the
-  same reason, and it is the same case: an album gathered onto a release is named by the key of
-  every folder it was gathered from, so its tracks do not share one folder either.
-  `album_keys.key` is a primary key, so an album moving into a folder another album already names
-  keeps its old key too: merging two albums *by where they landed* is a decision nobody asked for,
-  where merging two that turn out to be one release is one the pass can make on evidence.
-  **What the re-key leaves alone, a probe keeps.** A whole rescan, or any probe of a file whose
-  size or mtime moved, computes the new folder's key afresh, and that key naming another album —
-  or nothing — used to file the track there and let `ORPHANS` take the album it left, its release,
-  cover and wants with it. `store::kept_where_it_was` answers first: where the row already belongs
-  to an album of the same title, none of its other names finds an album, and its folder's key
-  names another album or none, the row stays where it is and `lend_the_free_names` gives the
-  album whichever of its keys nobody holds. `a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_was`
-  is the claim.
-
-- **A row names what it is billed to, because a listing beside it is narrowed and capped.**
-  `ALBUM_COLUMNS` reads the artist's name by id — `(SELECT r.name FROM artists r WHERE r.id =
-  a.artist_id)`, a correlated scalar beside the three that already count an album's tracks, its
-  distinct track artists and what its release is missing — so `Album::artist` sits on the row next
-  to the `artist_id` that names it, and `ArtistDetail::name` does the same for the artist pane. It
-  is a subquery rather than a `JOIN` because `ALBUM_COLUMNS` is read by `Library::album` and
-  `Library::albums` against `FROM albums a` plus a `scoped.from` that varies, and a join would be
-  written twice and could collide with the aliases `Matching::grouped` brings. What it replaces is
-  the window resolving a name through `LibraryModel::artist_names`, a map built from the artists
-  *listing* — which `ArtistQuery` narrows by the typed text and caps at `PAGE` — so the name went
-  missing exactly where the search was doing its job, and an album cell drew its year alone while
-  the scoped heading's artist line vanished and the artist heading fell back to the literal
-  `artist <id>`. `browsed` reads the scoped album by id the way it already reads the release, its
-  tracks and the artist's detail, so `LibraryModel::album_of` answers for the album being scoped to
-  whether or not the listing holds it; the map and its getter are gone, having lost every caller.
-
-- **A scan says what went wrong with a file, not merely that something did.** `ScanStats::failed`
-  is a `Failures` of four counts rather than one number, and `Failure` is what decides which:
-  `Unnamed` for a path that is not UTF-8, which is counted before anything is opened; `Misnamed`
-  for `UnrecognisedContainer` and `NoAudioTrack`, which is the bytes not being the container the
-  extension promised; `Undecodable` for a container this build reads holding audio it cannot —
-  `NoDecoder`, `DsdCompressed` and the properties it cannot represent; and `Unreadable` for
-  everything else, `Io` and the `Symphonia` residual being where a corrupt file lands. The match
-  on `resonate_codec::Error` is exhaustive and the enum carries no `#[non_exhaustive]`, so a
-  variant added to the codec fails to compile here rather than falling quietly into whichever
-  count a catch-all named. It is worth telling apart now that `AUDIO_EXTENSIONS` advertises
-  nothing undecodable: what reaches the tally is a file whose extension promised a container its
-  bytes are not, which is a retagging or a bad rip rather than a format this build declined. Both
-  presenters print the total and append only the counts that are not zero, so a clean scan reads
-  as it always did.
-
+  `Inner::walking` is the flag and `Walk` the guard holding it: every pass walking or rewriting the
+  tree — `Library::scan`, `organise`, `retag`, `import`, `prune_the_vault` and `release_from_vault` —
+  takes one (the first two in `start`, before the thread is spawned), and the thread owns it for its
+  life, so it is handed back from `Drop` on a panic as `Reader` hands back a pooled connection. Taking
+  it never waits — a caller finding the tree walked gets `Error::AlreadyWalking` at once, a pass
+  blocking for minutes being no pass a window or command line can start. What it protects is
+  `Known::under`: the snapshot is taken before the walker starts, so an organise committing a path
+  rewrite after it and before the walker reaches that directory left the walker probing the file as new
+  and the prune taking the rewritten row — its `id`, `added`, counts and `listens` — away. Two scans at
+  once are worse: each stamps its own `generation` and prunes `WHERE seen != ?`, so the first to finish
+  deletes every row the second wrote. `enrich` and `poll` stay outside it, neither walking the tree nor
+  rewriting a path.
+- **An album grouped by its folder is re-keyed to the folder it moved into, in place on its row.** Only
+  the third tier embeds a path, so only it can be left naming a vanished folder; one file of such an
+  album re-probed later would be keyed onto the new folder, insert a second `albums` row and take its
+  tracks, and once nothing pointed at the old row `ORPHANS` would sweep its cover, `mbid`,
+  `release_group`, `release_tracks` and, through the cascades, `wants`. `organise::re_key_the_sleeves`
+  runs in a transaction of its own once every batch has landed: it takes the albums the moved files
+  name, keeps those `store::is_keyed_by_its_folder` answers for, and writes `store::sleeve_key` of the
+  row's title and the folder its tracks now share. It changes no membership: `tracks.album_id`
+  references `albums(id)` and nothing joins on a key, so rewriting the key on its row orphans nothing.
+  The folder is `scan::sleeve` of each track read together — the scan's reading, disc folders and all —
+  so an album whose tracks landed in several folders, or with any track directly in a root, keeps its
+  key and says so in a debug record. An album `album_keys` names more than once is left alone for the
+  same reason — an album gathered onto a release is named by the key of every folder it was gathered
+  from, so its tracks do not share one folder either. `album_keys.key` is a primary key, so an album
+  moving into a folder another album names keeps its old key too: merging two albums *by where they
+  landed* is a decision nobody asked for, where merging two that prove one release is one the pass
+  makes on evidence. **What the re-key leaves alone, a probe keeps.** A whole rescan, or any probe of a
+  file whose size or mtime moved, computes the new folder's key afresh, and that key naming another
+  album — or nothing — filed the track there and let `ORPHANS` take the album it left, release, cover
+  and wants with it. `store::kept_where_it_was` answers first: where the row already belongs to an
+  album of the same title, none of its other names finds an album, and its folder's key names another
+  album or none, the row stays and `lend_the_free_names` gives the album whichever of its keys nobody
+  holds. `a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_was` is the claim.
+- **A row names what it is billed to, a listing beside it being narrowed and capped.** `ALBUM_COLUMNS`
+  reads the artist's name by id — `(SELECT r.name FROM artists r WHERE r.id = a.artist_id)`, written
+  through the `album_owner!` macro beside `album_title!` and `album_tracks!`, a correlated scalar beside
+  the three counting an album's tracks, distinct track artists and what its release is missing — so
+  `Album::artist` sits by the `artist_id` naming it, and `ArtistDetail::name` likewise for the artist
+  pane. A subquery, not a `JOIN`, because `ALBUM_COLUMNS` is read by `Library::album` and
+  `Library::albums` against `FROM albums a` plus a varying `scoped.from`, and a join would be written
+  twice and could collide with the aliases `Matching::grouped` brings. It replaced the window resolving
+  a name through `LibraryModel::artist_names`, a map built from the artists *listing* — which
+  `ArtistQuery` narrows by the typed text and caps at `PAGE` — so the name went missing exactly where
+  the search did its job: an album cell drew its year alone, the scoped heading's artist line vanished
+  and the artist heading fell back to the literal `artist <id>`. `browsed` reads the scoped album by id
+  as it reads the release, tracks and artist's detail, so `LibraryModel::album_of` answers for the
+  scoped album whether or not the listing holds it; the map and its getter are gone, having lost every
+  caller.
+- **A scan says what went wrong with a file, not merely that something did.** `ScanStats::failed` is a
+  `Failures` of four counts, and `Failure` decides which: `Unnamed` for a non-UTF-8 path, counted before
+  anything opens; `Misnamed` for `UnrecognisedContainer` and `NoAudioTrack`, the bytes not being the
+  container the extension promised; `Undecodable` for a container this build reads holding audio it
+  cannot — `NoDecoder`, `DsdCompressed` and properties it cannot represent; `Unreadable` for all else,
+  `Io` and the `Symphonia` residual being where a corrupt file lands. The match on
+  `resonate_codec::Error` is exhaustive and the enum has no `#[non_exhaustive]`, so a variant added to
+  the codec fails to compile here rather than falling into a catch-all's count. Worth telling apart now
+  that `AUDIO_EXTENSIONS` advertises nothing undecodable: what reaches the tally is a file whose
+  extension promised a container its bytes are not — a retagging or bad rip, not a declined format.
+  Both presenters print the total and append only the non-zero counts, so a clean scan reads as always.
 - **A root may not be inside a root, and a wider one takes in what it covers.**
   `store::register_root` is the one way a root is written, so `Library::add_root` and the scan's own
   `roots` refuse and absorb alike: a path inside a registered root is `Error::RootInsideRoot`, and a
   path containing registered roots re-parents their tracks onto itself and drops those rows from
-  `roots`. Re-parented rather than deleted, because `tracks.root_id` cascades and widening a root
-  must not cost a play counted against a track under it. Nesting was never only untidy: the overlap
-  was walked twice with `root_id` flipping on the second upsert.
-- **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned
-  over and skipped the way an unreadable one is, rather than failing the scan and taking the prune
-  with it. A symlink is weighed only where it names a directory, and one naming a directory this
-  walk has already been down is stepped past rather than read as a cycle, so two albums linked to
-  one shared folder walk it once instead of aborting the scan — the set is what a cycle runs into
-  on its second pass through the same link, so skipping still terminates. What is not stepped past
-  is a probe worker that panicked: `run` joins every one of them and answers `Error::ScanStopped`
-  before the prune, because a scan whose counts are short would prune the rows it never reached.
-  A commit that fails drops the result channel's receiver before anything is joined, so the probe
-  workers blocked sending into it wake to a closed channel, their exit closes the job channel under
-  the walker, and the scan answers the store's error and hands the `Walk` guard back rather than
-  waiting on a pipeline nothing is draining.
-- **Every root is tidied by a scan and only the walked ones are pruned, and a root that is not
-  there is neither.** The prune is `WHERE seen != ?` over the roots the walk stamped, so
-  `resonate scan <root>` used to leave every other root holding rows for files that had gone —
-  the catalog was honest only about what had just been walked. `tidy_the_roots_beside` is the
-  other half: for each registered root this scan did not walk it reads the distinct paths under it
-  through `store::paths_under`, keeps the ones that are no longer there and hands them to
-  `store::forget_paths`, and `store::sweep_orphans` — the batch the prune already ran, lifted out
-  of it — runs once at the end where anything went. It costs one `stat` per path of a root nobody
-  asked about, which is why it is a tidy rather than a walk: no file is opened, no tag is read and
-  nothing new is found. A bare `resonate scan` walks every root, so it has nothing beside to tidy.
-  `is_there` is the guard over both: a registered root whose directory is not there is dropped
-  from the bare scan's walk and stepped over by the tidy, because an unmounted drive is not an
-  empty one and pruning it would take every play counted under it. A root named on the command
-  line is still `Error::RootNotADirectory` where it is missing, that being a thing somebody asked
-  for rather than a thing found in the table. A scan the window's watch asks for is the other
-  kind: `Library::scan_what_is_held` walks only the roots it names that `roots` still holds and
-  that are there, registers nothing, and settles them before the thread starts — answering `None`
-  where none is left — so a drive unplugged after its root was queued costs the roots queued
-  beside it nothing, and the window takes a root off what it owes only once a scan has taken it.
-- **A track is keyed by `(path, span_start)`, not by path.** N cue rows share one path, so the
-  `UNIQUE` is on the pair and `span_start` is `NOT NULL DEFAULT 0` rather than nullable — SQLite
-  treats NULLs as distinct in a unique index, which would let one file insert twice. Every lookup
-  that means *this row* takes the span beside the path: `Library::track_at` and
-  `Library::track_played`, the latter because keying a play on the path alone counts every track
-  of an album against one row. A playlist entry stores a path alone, so the three joins reaching
-  `tracks` from `playlist_entries` take the row with the lowest `span_start` — without that the
-  join multiplies one entry into one row per cue track and inflates a playlist's count and length.
-- **A `Track` names its artist by id as well as by name.** `tracks.artist_id` is the column the
-  artists listing has always counted against, and `Track::artist_id` is that column read back
-  beside `album_id`, so a row says who made it rather than only what they are called — which is
-  what lets the window open an artist from the row playing without weighing a name against a
-  listing that a search may have narrowed. It is the last name in `TRACK_COLUMNS` on purpose:
-  `BESIDE_A_TRACK` counts that list, so appending leaves every joined read's own columns where
-  they were.
-- **Each MusicBrainz id is weighed against the column that holds one of its kind.** `tracks.mbid`
-  is the *recording* id, because that is what `TagSet::musicbrainz_track_id` carries: a tagger
-  writes it in `MUSICBRAINZ_TRACKID` for a Vorbis comment and in the `UFID` frame MusicBrainz owns
-  for ID3, and `release_track_mbid` is `MUSICBRAINZ_RELEASETRACKID` beside it, which names the
-  track's place on one release rather than the recording it is of. The two are different
-  identifiers for different things, so `rematch_release_tracks` weighs each against its own — the
-  release row's `recording_mbid` against the first column and its `track_mbid` against the second —
-  where one column weighed against both could only ever have paired the second by accident.
-- **An artist is keyed by the fold of its name, so one spelling is one artist.**
-  `store::folded_letters` lowercases, decomposes and drops the combining marks, and spells out the
-  letters Unicode does not decompose — `ł`, `ø`, `đ`, `ð`, `þ`, `ß`, `æ`, `œ`, the dotless `ı` and
-  the rest — so
-  *Marcin Przybyłowicz* and *Marcin Przybylowicz* are `artists.key` `marcin przybylowicz` either
-  way, where `name.to_lowercase()` made them two artists with two listings, two portraits and two
-  halves of a discography. It is not `enriched::folded_title`, which keeps its marks: that one
-  weighs a MusicBrainz title against a tag, where a mark is evidence, and this one gathers
-  spellings of one name, where a mark is noise. `enriched::stripped_title` is the two read
-  together — the letter fold put through the title fold — and it is what the enrichment falls back
-  to below. **Which spelling is billed is the one that carries
-  the marks**, counted by `marks_in` and applied on the cache hit as well as the row, so a scan
-  that meets the stripped spelling later does not undo the accented one, and the display name
-  settles rather than following the scan order. `folded_letters` is exported from the crate for
-  that reason: `resonate missing --artist` and the window's type-ahead weigh a typed name through
-  it, so a name spelt either way reaches the artist the catalog files under the marked spelling.
-- **A catalog keyed before the fold is folded back when it is opened, not when it is next
-  scanned.** `store::reconcile_artists` runs once in `Library::build`, after `schema::lay_out`:
-  it reads every artist, groups them by `folded_letters` of the *name*, and leaves a group alone
-  where its one row is already keyed by its own fold. Where it is not, one row is kept — the one
-  carrying an `mbid`, then the lowest id, because that is the row the enrichment, the portrait,
-  the genres and the links hang off — the rest hand over their tracks, albums, genres, links and
-  the releases kept for them through `store::take_over_artist`'s `UPDATE OR IGNORE` and are
-  deleted, and the survivor is rekeyed and renamed to the most
-  marked spelling in the group. It needs no sentinel key to avoid colliding with a row it has not
-  reached yet: every key in the table is either a fold or a `to_lowercase` of the same name, and
-  folding is idempotent, so two rows whose keys could collide always fold into the same group.
-  It is an invariant the catalog keeps rather than a migration it ran, which is why there is no
-  schema step for it and why running it twice is a no-op.
-- **An album is whatever a grouping key names, and one album may be named by several.** `album_keys`
-  is the table — a key is its primary key and an album may hold any number of rows — which is what
-  makes a grouping a *name* for an album rather than a property of it. `store::album` reads it
-  rather than upserting on a column, so a scan that computes a key an album already holds fills
-  that album and a key nothing holds makes a new one. `ORPHANS` is unchanged, and the keys of an
-  album nothing points at go with it on the cascade.
-- **One song held more than once is listed once, as the best copy.** `alternatives.rs`
-  runs at the end of every scan: it groups the rows by the fold of the album title, the
-  album's owner or else the track's artist, the disc, the track number and the title — the album's
-  *title* rather than its row, so two folders of one album still meet — and inside a group
-  gathers the rows whose lengths are within `THE_SAME_LENGTH_WITHIN`, two seconds, of one
-  another, or which both have no length at all. An album is named both ways a row can be billed
-  under — the release title the enrichment gave it and the title its tags gave — and two rows
-  sharing either are one song, so a copy MusicBrainz billed as *Meddle* meets an untouched copy
-  tagged *Meddle* although its own tags said *Meddle (Remastered)*; `one_song_apiece` joins the
-  names through a union-find. A row with no title or no artist names nothing, because a loose
-  *Intro* with nothing else on it is not evidence of being any other *Intro*. The best of a
-  gathering is lossless over lossy, then the wider word, then the higher rate, then the higher
-  bitrate, then whichever row the catalog held first; every other copy names it in
-  `tracks.alternative_of` — *whatever* its format, so two identical rips in two folders are one
-  row with a `+1` rather than a duplicate, and a copy in the best copy's own format is hidden
-  beside one in another. The row's menu tells two copies of one kind apart by the folder and file
-  each is in. The copies are kept whole — their plays, their playlists, their
-  files — and only the listings step past them: `scoped` filters every track listing and saved
-  query on `+tracks.alternative_of IS NULL`, the unary plus keeping that term off
-  `tracks_by_alternative` so the order indexes still lead, the album and artist counts count the
-  best copy alone, and an album whose every track is another copy's alternative leaves the albums
-  pane. `Track::alternatives` is how many copies a row stands for, which the tracks pane draws as
-  `+N` beside the title, and `Library::alternatives_of` is what the row's menu offers to play
-  instead. A best copy that goes puts `ON DELETE SET NULL` on the rows under it and the pass at the
-  end of the scan crowns the next.
-- **A hidden track is kept and only stepped past.** `tracks.hidden` is the second step in
-  `MIGRATIONS`, and `Library::hide_track` sets it either way and answers whether it moved. The row,
-  its file, its plays, its playlists and its favourite are all kept, and a scan never touches the
-  column, so a hidden track stays hidden however often its root is read again. `scoped` adds
-  `tracks.hidden = 0` beside the best-copy term, and the album and artist counts and
-  `HOLDS_A_BEST_COPY` weigh it the same way, so a hidden row leaves the listings, the counts and an
-  album holding nothing else. `is:hidden` is a `Shape`, and a search that *insists* on it — a
-  clause of that one alternative, not denied — lifts the visibility term, which is the one way a
-  hidden row is listed again; `Clause::insists_on` is that reading, and `-is:hidden` or an
-  alternative beside it lifts nothing. `Track::hidden` is what the row's menu reads to offer *Hide
-  from library* or *Show in library*.
+  `roots` — re-parented, not deleted, because `tracks.root_id` cascades and widening a root must not
+  cost a play counted under it. Nesting was never only untidy: the overlap was walked twice with
+  `root_id` flipping on the second upsert.
+- **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned over
+  and skipped as an unreadable one is, rather than failing the scan and the prune with it. A symlink is
+  weighed only where it names a directory, and one naming a directory this walk has been down is
+  stepped past rather than read as a cycle, so two albums linked to one shared folder walk it once
+  instead of aborting — the set is what a cycle runs into on its second pass through the link, so
+  skipping still terminates. Not stepped past is a probe worker that panicked: `run` joins every one
+  and answers `Error::Stopped` naming the scan's `PassKind` before the prune, a scan with short counts
+  pruning rows it never reached. A failing commit drops the result channel's receiver before anything
+  is joined, so probe workers blocked sending wake to a closed channel, their exit closes the job
+  channel under the walker, and the scan answers the store's error and hands the `Walk` guard back
+  rather than waiting on a pipeline nothing drains.
+- **Every root is tidied by a scan and only the walked ones pruned, and a root not there is neither.**
+  The prune is `WHERE seen != ?` over the roots the walk stamped, so `resonate scan <root>` used to
+  leave every other root holding rows for vanished files. `tidy_the_roots_beside` is the other half: for
+  each registered root this scan did not walk it reads the distinct paths under it through
+  `store::paths_under`, keeps those no longer there and hands them to `store::forget_paths`, and
+  `store::sweep_orphans` — the prune's batch, lifted out — runs once at the end where anything went. It
+  costs one `stat` per path of a root nobody asked about — a tidy, not a walk: no file opened, no tag
+  read, nothing new found. A bare `resonate scan` walks every root, so has nothing beside to tidy.
+  `is_there` guards both: a registered root whose directory is missing is dropped from the bare scan's
+  walk and stepped over by the tidy, an unmounted drive not being an empty one and pruning it taking
+  every play counted under it. A root named on the command line is still `Error::RootNotADirectory`
+  where missing, being something asked for. A scan the window's watch asks for is the other kind:
+  `Library::scan_what_is_held` walks only the named roots `roots` still holds and that are there,
+  registers nothing, and settles them before the thread starts — answering `None` where none is left —
+  so a drive unplugged after its root was queued costs the roots queued beside it nothing, and the
+  window takes a root off what it owes only once a scan has taken it.
+- **A track is keyed by `(path, span_start)`, not path.** N cue rows share one path, so the `UNIQUE` is
+  on the pair and `span_start` is `NOT NULL DEFAULT 0`, not nullable — SQLite treats NULLs as distinct
+  in a unique index, letting one file insert twice. Every lookup meaning *this row* takes the span
+  beside the path: `Library::track_at` and `Library::track_played`, the latter because keying a play on
+  the path alone counts every track of an album against one row. A playlist entry stores a path alone,
+  so the three joins reaching `tracks` from `playlist_entries` take the row with the lowest
+  `span_start` — without it the join multiplies an entry into one row per cue track and inflates a
+  playlist's count and length.
+- **A `Track` names its artist by id as well as name.** `tracks.artist_id` is the column the artists
+  listing always counted against, and `Track::artist_id` reads it back beside `album_id`, so a row says
+  who made it, not only what they are called — letting the window open an artist from the playing row
+  without weighing a name against a search-narrowed listing. `TRACK_COLUMNS` is append-only (it was
+  appended as the last name then): `BESIDE_A_TRACK` counts that list, so appending leaves every joined
+  read's own columns where they were.
+- **Each MusicBrainz id is weighed against the column holding one of its kind.** `tracks.mbid` is the
+  *recording* id, what `TagSet::musicbrainz_track_id` carries — a tagger writes it in
+  `MUSICBRAINZ_TRACKID` for a Vorbis comment and in the `UFID` frame MusicBrainz owns for ID3 — and
+  `release_track_mbid` is `MUSICBRAINZ_RELEASETRACKID` beside it, naming the track's place on one
+  release, not the recording. Different identifiers for different things, so `rematch_release_tracks`
+  weighs each against its own — the release row's `recording_mbid` against the first and `track_mbid`
+  against the second — where one column weighed against both could pair the second only by accident.
+- **An artist is keyed by the fold of its name, so one spelling is one artist however it is
+  spelled.** `resonate_core::folded_letters` (re-exported by `store` and the crate) lowercases,
+  decomposes and drops combining marks, and spells out the letters Unicode does not decompose — `ł`,
+  `ø`, `đ`, `ð`, `þ`, `ß`, `æ`, `œ`, the dotless `ı`, `ħ`, `ŋ`, `ŧ`, `ĸ` and the rest — so *Marcin
+  Przybyłowicz* and *Marcin Przybylowicz* are both `artists.key` `marcin przybylowicz`, where
+  `name.to_lowercase()` made them two artists with two listings, two portraits and half a discography
+  each. The same fold is what `tracks_fts` is written in and a typed word is folded through, because
+  SQLite's tokenizer folds `İ` to `i` and leaves the dotless `ı` alone, so *Kıskanç* and *KISKANÇ* were
+  two different searches (an index written before the fold needed the catalog scanned again). It is not
+  `enriched::folded_title`, which keeps marks: that weighs a MusicBrainz title against a tag, where a
+  mark is evidence, and this gathers spellings of one name, where a mark is noise.
+  `enriched::stripped_title` is the two together — the letter fold put through the title fold — which
+  the enrichment falls back to below. **The billed spelling is the one carrying the marks**, counted by
+  `marks_in` and applied on the cache hit as on the row, so a scan meeting the stripped spelling later
+  does not undo the accented one and the display name settles rather than following scan order.
+  `resonate missing --artist` and the window's type-ahead weigh a typed name through the fold, so a
+  name spelt either way reaches the artist filed under the marked spelling.
+- **A catalog keyed before the fold is folded back when opened, not when next scanned.**
+  `store::reconcile_artists` runs once in `Library::build`, after `schema::lay_out`: it reads every
+  artist, groups them by `folded_letters` of the *name*, and leaves a group alone where its one row is
+  already keyed by its own fold. Otherwise one row is kept — the one with an `mbid`, then the lowest id,
+  the row enrichment, portrait, genres and links hang off — the rest hand over their tracks, albums,
+  genres, links and kept releases through `store::take_over_artist`'s `UPDATE OR IGNORE` and are
+  deleted, and the survivor is rekeyed and renamed to the group's most marked spelling. It needs no
+  sentinel key to avoid colliding with an unreached row: every key is a fold or a `to_lowercase` of the
+  same name, and folding is idempotent, so two rows whose keys could collide always fold into one
+  group. An invariant the catalog keeps rather than a migration it ran — hence no schema step, and
+  running it twice is a no-op.
+- **An album is whatever a grouping key names, and several may name one.** `album_keys` is the table —
+  a key its primary key, an album holding any number — making a grouping a *name* for an album rather
+  than a property of it. `store::album` reads it rather than upserting on a column, so a scan computing
+  a key an album holds fills that album and a key nothing holds makes a new one. `ORPHANS` is
+  unchanged, an unreferenced album's keys going with it on the cascade.
+- **One song held more than once is listed once, as the best copy.** `alternatives.rs` runs at the end
+  of every scan: it groups rows by the fold of the album title, the album's owner or else the track's
+  artist, the disc, the track number and the title — the album's *title* rather than its row, so two
+  folders of one album meet — and within a group gathers rows whose lengths are within
+  `THE_SAME_LENGTH_WITHIN` (2 s) of one another, or both lengthless. An album is named both ways a row
+  can be billed — the release title the enrichment gave and the title its tags gave — and two rows
+  sharing either are one song, so a copy MusicBrainz billed *Meddle* meets an untouched copy tagged
+  *Meddle* though its own tags said *Meddle (Remastered)*; `one_song_apiece` joins the names through a
+  union-find. A row with no title or artist names nothing, a loose *Intro* being no evidence of any
+  other *Intro*. The best of a gathering is lossless over lossy, then the wider word, the higher rate,
+  the higher bitrate, then the row held first; every other copy names it in `tracks.alternative_of` —
+  *whatever* its format, so two identical rips in two folders are one row with a `+1` rather than a
+  duplicate, and a copy in the best copy's own format is hidden beside one in another. The row's menu
+  tells two copies of one kind apart by folder and file. The copies are kept whole — plays, playlists,
+  files — and only the listings step past them: `scoped` filters every track listing and saved query on
+  `+tracks.alternative_of IS NULL` (the unary plus keeping that term off `tracks_by_alternative` so the
+  order indexes still lead), the album and artist counts count the best copy alone (`HOLDS_A_BEST_COPY`),
+  and an album whose every track is another's alternative leaves the albums pane. `Track::alternatives`
+  is how many copies a row stands for, drawn as `+N` beside the title, and `Library::alternatives_of`
+  what the menu offers to play instead. A best copy that goes puts `ON DELETE SET NULL` on the rows
+  under it, and the end-of-scan pass crowns the next.
+- **A hidden track is kept and only stepped past.** `tracks.hidden` is the second `MIGRATIONS` step,
+  and `Library::hide_track` sets it either way and answers whether it moved. The row, file, plays,
+  playlists and favourite are kept, and a scan never touches the column, so a hidden track stays hidden
+  however often its root is read. `scoped` adds `tracks.hidden = 0` beside the best-copy term, and the
+  album and artist counts and `HOLDS_A_BEST_COPY` weigh it the same, so a hidden row leaves the
+  listings, the counts and an album holding nothing else. `is:hidden` is a `Shape`, and a search
+  *insisting* on it — a clause of that one alternative, not denied — lifts the visibility term, the one
+  way a hidden row is listed again (`Clause::insists_on`); `-is:hidden` or an alternative beside it lifts
+  nothing. `Track::hidden` is what the menu reads to offer *Hide from library* or *Show in library*.
 - **A track names its album every way it can, and joins the album the first of those names finds.**
-  `grouping_keys` answers a *run* of keys in precedence order rather than one. A MusicBrainz
-  release id is on its own and nothing else is written beside it, so two releases sharing a title
-  and an artist stay two. Otherwise an `ALBUMARTIST` the tagger wrote, on anything not flagged a
-  compilation, is one name, and the folder the track sits in — `TrackRecord::sleeve` — is another,
-  with `album_key(title, owner)` as the fallback where a track has neither. A track joins the album
-  the first of its names already finds and then lends the album the rest, which is what makes both
-  gatherings hold at once: an `ALBUMARTIST` gathers discs the folders keep apart, and a folder
-  gathers an album its files bill to different owners — the Cyberpunk 2077 soundtrack, whose three
-  album artists used to make three albums under one sleeve, because the owner outranked the folder
-  and the loser had nowhere to go. Every key carries the title, so nothing gathers two albums that
-  are not called the same thing. Where two of a track's names find *different* albums the first
-  wins and the second is left where it is, which is the reading it has always had rather than a
-  merge nobody asked for — the pass gathers on a release, and only on a release. Where the tracks
-  under one album disagree about the album artist the album keeps none, which is what the
-  `COMPILATION` flag already meant, and `Album::artist_count` is what lets a pane draw that as
-  *Various artists* rather than as a bare year.
-- **A sleeve is a folder that was made to hold an album, which is why it is not simply the parent.**
-  `scan::sleeve` answers `None` for a track sitting directly in a root, because a root holding loose
-  files is a dumping ground rather than an album and two albums sharing a title in one are still two
-  — the third tier then falls back to the track artist, as it always did. **A record filed loose in
-  a root is gathered back once the scan has written it.** A compilation with no `ALBUMARTIST` and
-  no `COMPILATION` flag, filed with the root as its folder, would otherwise stand as one album per
-  track artist. `loose::gather_the_loose` runs after the prune on every root the scan walked: it
-  takes the albums whose tracks all sit in that root and whose keys are all the fallback tier —
-  none a folder's or a release's — groups them by their lowercased title, and gathers a group
-  through `enriched::gather` only where `one_record` says the numbering makes one: every track
-  numbered, no disc and number taken twice, the years and the declared `TRACKTOTAL`s agreeing where
-  stated, and no more tracks than a declared total. Two *Greatest Hits* each numbered from one,
-  or files carrying no numbers, stay apart, which is the reading the rule above protects. The
-  loser's keys name the survivor, so a file read again joins it rather than splitting it off.
-  A folder named `CD2`,
-  `Disc 3` or `disk-01` is read as one disc of a set and answers with its parent, so a set filed
-  that way is one album without an `ALBUMARTIST` to say so.
-- **The word a disc is filed under is read in ten spellings, and the longest match is the one
-  taken.** `SPELLINGS` carries `cd`, `disc`, `disk`, `disque`, `disco`, `dysk`, `platte`, `schijf`,
-  `skiva` and `диск`, so a set filed `Disque 2`, `Disco 3` or `Платте`-style in digits gathers the
-  way `CD2` always did. The match is by the *shortest remainder* rather than the first hit, which
-  is what the longer spellings cost: `disc` is a prefix of `disco`, so a first-hit walk would strip
-  `disc` from `disco 2`, find `o 2` with no separator in front of it and read no disc at all.
-  `Discovery` and `Disconnected` are still albums of their own, because the longest spelling they
-  match leaves no separator either.
-- **A disc numbered in words is the same disc, and `ONES`, `TEENS` and `TENS` are the tables that
-  say so.** `disc_in_folder` reads the number on either side of the word it numbers: a cardinal
-  after it — `Disc One`, `CD Two`, `disk_three` — and an ordinal before it — `Second Disc`,
-  `First CD`. The three tables compose rather than run on, so a tens word joined to a ones word is
-  read as the number it spells — `Disc Twenty One` after the word and `Twenty-First Disc` before
-  it — and ninety-nine is where it stops, a set past that being filed in digits by anyone who has
-  the patience to file it at all. A word form wants a separator between the two
-  words, which is the whole of what keeps `Discovery` and `Disconnected` albums of their own where
-  a bare prefix match would have made `Discone` a disc, and is what makes `Twentyfirst Disc`
-  nothing; the digit form does not, because `CD1` is how half of them are written. `a_word_run_together_with_the_one_beside_it_names_no_disc` is that
-  claim, and `scan::disc_in_folder` having two callers means `{disc}` in an organise layout reads
-  a set filed this way the same as `organise::disc_of` always read `CD1`. What it costs is a key
-  format change: a set already scanned under `Second Disc` is named by a key naming that folder,
-  so it stays two albums until the catalog is deleted and scanned again.
-- **A number word in another language is composed the way that language writes it, up to
-  ninety-nine.** `numerals.rs` spells every number from one to ninety-nine in French, Spanish,
-  Italian, German, Dutch and Portuguese — cardinals and ordinals, each language's own rules:
-  `vingt-et-un` and `quatre-vingt-onze`, `treinta y uno` and `veintidós`, `ventuno` with the
-  vowel elided and `ventitré`, `einundzwanzig`, `tweeëntwintig`, `vinte e um` and Portugal's
-  `dezasseis`; `vingt-et-unième`, `vigésimo primero` in two words and in one, `ventunesimo`,
-  `einundzwanzigste` with each of its endings, `eenentwintigste`, and the feminine of every
-  Romance ordinal — and `ELSEWHERE` is the table built from them once, on first use.
-  `numerals::plainly` is what both sides are read through: the name is folded by
-  `store::folded_letters`, so a mark, an `ß` and a `ë` cost no second spelling, and every run of
-  separators is one space, so `Disque Vingt-et-un`, `disque_vingt_et_un` and `DISQUE.VINGT ET UN`
-  are one disc. `numbered_after_the_word` looks a cardinal up whole and
-  `ordinal_elsewhere_at_the_front` takes the longest ordinal the name begins with, so
-  `Vigésimo Primero Disco` is the twenty-first rather than the twentieth with `primero disco`
-  left over. English keeps the composed tables above, because its idiom is the one they were
-  written for. `a_spelling_names_one_number_whichever_language_spells_it` holds every spelling
-  to one number across the six, and
+  `grouping_keys` answers a *run* of keys in precedence order. A MusicBrainz release id stands alone
+  with nothing beside it, so two releases sharing a title and artist stay two. Otherwise an
+  `ALBUMARTIST` the tagger wrote, on anything not flagged a compilation, is one name, the folder the
+  track sits in — `TrackRecord::sleeve` — another, and `album_key(title, owner)` the fallback where a
+  track has neither. A track joins the album the first of its names finds and lends it the rest, so both
+  gatherings hold at once: an `ALBUMARTIST` gathers discs the folders keep apart, and a folder gathers an
+  album its files bill to different owners — the Cyberpunk 2077 soundtrack, whose three album artists
+  made three albums under one sleeve when the owner outranked the folder and the loser had nowhere to
+  go. Every key carries the title, so nothing gathers two albums not called the same thing. Where two of
+  a track's names find *different* albums the first wins and the second is left, not merged — the pass
+  gathers on a release, and only on a release. Where the tracks under one album disagree about the album
+  artist, the album keeps none (what `COMPILATION` already meant), and `Album::artist_count` lets a pane
+  draw that as *Various artists* rather than a bare year.
+- **A sleeve is a folder made to hold an album, which is why it is not simply the parent.**
+  `scan::sleeve` answers `None` for a track directly in a root, a root of loose files being a dumping
+  ground and two albums sharing a title there still two — the third tier then falls back to the track
+  artist. **A record filed loose in a root is gathered back once the scan has written it.** A
+  compilation with no `ALBUMARTIST` or `COMPILATION` flag, filed with the root as its folder, would
+  otherwise stand as one album per track artist. `loose::gather_the_loose` runs after the prune on every
+  walked root: it takes the albums whose tracks all sit in that root and whose keys are all the fallback
+  tier — none a folder's or release's — groups them by lowercased title, and gathers a group through
+  `enriched::gather` only where `one_record` says the numbering makes one: every track numbered, no disc
+  and number taken twice, the years and declared `TRACKTOTAL`s agreeing where stated, and no more tracks
+  than a declared total. Two *Greatest Hits* each numbered from one, or files with no numbers, stay
+  apart — the reading the rule above protects. The loser's keys name the survivor, so a file read again
+  joins it rather than splitting off. A folder named `CD2`, `Disc 3` or `disk-01` is read as one disc of
+  a set and answers with its parent, so a set filed that way is one album without an `ALBUMARTIST`
+  saying so.
+- **The word a disc is filed under is read in ten spellings, the longest match taken.** `SPELLINGS`
+  carries `cd`, `disc`, `disk`, `disque`, `disco`, `dysk`, `platte`, `schijf`, `skiva` and `диск`, so a
+  set filed `Disque 2`, `Disco 3` or `Платте`-style in digits gathers as `CD2` always did. The match is
+  by the *shortest remainder*, not the first hit, which the longer spellings require: `disc` prefixes
+  `disco`, so a first-hit walk would strip `disc` from `disco 2`, find `o 2` with no separator before
+  it and read no disc. `Discovery` and `Disconnected` stay albums, the longest spelling they match
+  leaving no separator either.
+- **A disc numbered in words is the same disc, and `ONES`, `TEENS` and `TENS` say so.**
+  `disc_in_folder` reads the number on either side of the word it numbers: a cardinal after it — `Disc
+  One`, `CD Two`, `disk_three` — and an ordinal before it — `Second Disc`, `First CD`. The tables
+  compose rather than run on, so a tens word joined to a ones word is read as the number it spells —
+  `Disc Twenty One` after, `Twenty-First Disc` before — up to ninety-nine, a set past that being filed
+  in digits by anyone patient enough to file it. A word form wants a separator between the two words,
+  which keeps `Discovery` and `Disconnected` albums where a bare prefix match would make `Discone` a
+  disc, and makes `Twentyfirst Disc` nothing; the digit form does not, `CD1` being how half are written.
+  `a_word_run_together_with_the_one_beside_it_names_no_disc` is that claim, and `scan::disc_in_folder`
+  having two callers means `{disc}` in an organise layout reads such a set as `organise::disc_of`
+  always read `CD1`. The cost was a key format change: a set scanned under `Second Disc` is named by a
+  key naming that folder, so it stays two albums until the catalog is scanned again.
+- **A number word in another language is composed as that language writes it, up to ninety-nine.**
+  `numerals.rs` spells every number from one to ninety-nine in French, Spanish, Italian, German, Dutch
+  and Portuguese — cardinals and ordinals, by each language's rules: `vingt-et-un` and
+  `quatre-vingt-onze`, `treinta y uno` and `veintidós`, `ventuno` with the vowel elided and
+  `ventitré`, `einundzwanzig`, `tweeëntwintig`, `vinte e um` and Portugal's `dezasseis`;
+  `vingt-et-unième`, `vigésimo primero` in two words and one, `ventunesimo`, `einundzwanzigste` with
+  each ending, `eenentwintigste`, and the feminine of every Romance ordinal — and `ELSEWHERE` is the
+  table built from them once, on first use. `numerals::plainly` is what both sides are read through:
+  folded by `folded_letters`, so a mark, an `ß` and a `ë` cost no second spelling, and every run of
+  separators one space, so `Disque Vingt-et-un`, `disque_vingt_et_un` and `DISQUE.VINGT ET UN` are one
+  disc. `numbered_after_the_word` looks a cardinal up whole and `ordinal_elsewhere_at_the_front` takes
+  the longest ordinal the name begins with, so `Vigésimo Primero Disco` is the twenty-first, not the
+  twentieth with `primero disco` left over. English keeps the composed tables above, its idiom being
+  the one they were written for. `a_spelling_names_one_number_whichever_language_spells_it` holds every
+  spelling to one number across the six, and
   `a_disc_past_twelve_is_composed_in_every_language_it_is_numbered_in` is the claim.
-  `named_before_the_word` weighs the English reading and the composed one side by side and takes
-  whichever leaves a separator and a disc word behind it, because an English ordinal is a prefix
-  of some of theirs: `second` begins `Secondo Disco` and leaves `o disco`, which names nothing,
-  where `secondo` leaves the disc. The composed table is read at its longest match for the same
-  reason — `primer` begins `primera`. A set already scanned under `Zweite CD` is keyed by that
-  folder, the way one under `Second Disc` was, so it stays one album a disc until it is scanned
-  again from nothing. What it
-  cannot do is tell one language from another: a folder is a string, so a word that numbers in one
-  language numbers here whatever the rest of the name is in.
+  `named_before_the_word` weighs the English and composed readings side by side and takes whichever
+  leaves a separator and a disc word behind, an English ordinal prefixing some of theirs: `second`
+  begins `Secondo Disco` and leaves `o disco`, naming nothing, where `secondo` leaves the disc. The
+  composed table is read at its longest match likewise — `primer` begins `primera`. A set scanned under
+  `Zweite CD` is keyed by that folder, as one under `Second Disc` was, so it stays one album a disc until
+  scanned again from nothing. What it cannot do is tell one language from another: a folder is a
+  string, so a word that numbers in one language numbers here whatever the rest of the name is in.
 - **The key format is what `album_keys.key` holds**, so changing it means an existing library reads
-  back under keys nothing matches any more and wants a rescan; `ORPHANS` is what takes the albums
-  nothing points at any more away.
-- **Two albums that turn out to share a release are gathered, and both their keys name what is
-  left.** A release id the *pass* finds arrives after the grouping was made, so until it lands two
-  albums scanned under different keys — a rip split across two folders, a set whose halves declare
-  different owners — each held the same release and the same rows. `gather_under` runs inside
-  `land_release`, after the release columns are written and before the wants are read: it finds
-  every other album holding that `mbid` or already named by `release_key`, hands each one's tracks,
-  release rows and *keys* to the album being landed, fills what the survivor holds nothing of — the
-  cover, the year, the declared count, and the owner where the two agree — and deletes it.
-  What makes it stick is that the keys move rather than being rewritten: the next scan computes the
-  same key each folder was grouped under, finds it in `album_keys` naming the gathered album, and
-  fills that album rather than making the row again. A single `key` column could not do that, which
-  is why re-keying used to be refused outright.
-  `gather_under` then names the survivor by `release_key` as well, so a file later tagged with the
-  id lands on it through the first tier. Nothing joins on a key — `tracks.album_id` is the only
-  membership there is — so the move is three `UPDATE`s and a `DELETE` whose cascade takes the
-  loser's links and media.
-- **An album takes the cover and the year any of its tracks carries, not the first one's.**
-  `Cache::covered` holds the albums that hold a picture rather than the albums that were asked, so
-  `store::cover` answers whether one landed and is asked again for the next track until one does;
-  it reads `cover_art IS NOT NULL AND cover_source = 0` first, so an album already holding the
-  file's own picture costs a query and no probe, while one holding a picture the archive gave —
-  `CoverSource::Archive`, code 1 — is probed again and the file's replaces it, because the file's is
-  the deliberate one and the archive's was only ever a stand-in. **A thumbnail is not
-  deliberate**: where `store::betters` says the archive's picture is at least twice the width of
-  a file's whose shorter side is under `A_THUMBNAIL_BELOW`, the archive's stays and the album
-  counts as covered. The year is the same shape: `Grouped` carries it, and a cache hit
-  whose album has none runs `fill_year` rather than skipping the upsert that would have coalesced
-  it. `store::year` reads a date written with no separators too, so `19750601` and `197506`
-  name 1975 where only `1975-06-01` and `1975` used to.
+  back under keys nothing matches and wants a rescan; `ORPHANS` takes away the albums nothing points at.
+- **Two albums proving to share a release are gathered, and both their keys name what is left.** A
+  release id the *pass* finds arrives after the grouping was made, so until it lands two albums
+  scanned under different keys — a rip split across two folders, a set whose halves declare different
+  owners — each held the same release and rows. `gather_under` runs inside `land_release`, after the
+  release columns are written and before the wants are read: it finds every other album holding that
+  `mbid` or already named by `release_key`, hands each one's tracks, release rows and *keys* to the
+  album being landed, fills what the survivor holds nothing of — the cover, the year, the declared
+  count, and the owner where the two agree — and deletes it. What makes it stick is that the keys move
+  rather than being rewritten: the next scan computes the same key each folder was grouped under, finds
+  it in `album_keys` naming the gathered album, and fills that album rather than making the row again
+  — which a single `key` column could not do, why re-keying was once refused outright. `gather_under`
+  then names the survivor by `release_key` too, so a file later tagged with the id lands on it through
+  the first tier. Nothing joins on a key — `tracks.album_id` is the only membership — so the move is
+  three `UPDATE`s and a `DELETE` whose cascade takes the loser's links and media.
+- **An album takes the cover and year any of its tracks carries, not the first one's.**
+  `Cache::covered` holds the albums holding a picture rather than the albums asked, so `store::cover`
+  answers whether one landed and is asked again for the next track until one does; it reads
+  `cover_art IS NOT NULL AND cover_source = 0` first, so an album holding the file's own picture costs
+  a query and no probe, while one holding the archive's — `CoverSource::Archive`, code 1 — is probed
+  again and the file's replaces it, the file's being deliberate and the archive's only a stand-in. **A
+  thumbnail is not deliberate**: where `store::betters` says the archive's picture's shorter side is at
+  least twice that of a file's whose shorter side is under `A_THUMBNAIL_BELOW` (300 px), the archive's
+  stays and the album counts as covered. The year is the same shape: `Grouped` carries it, and a cache
+  hit whose album has none runs `fill_year` rather than skipping the upsert that would have coalesced
+  it. `store::year` reads a date with no separators too, so `19750601` and `197506` name 1975 where
+  only `1975-06-01` and `1975` used to.
 - **A file is asked whether it has a picture on the open its tags came off; the picture itself is
   still read at commit.** `probe_pictured` under `Picturing::Whether` answers the `MediaInfo` and
-  whether there is a picture off one open, and `TrackRecord::embeds_a_picture` is what the answer rides on, so `store::cover` opens a
-  file again only where there is something to find. What that takes away is the old price — one
-  extra `probe_cover_art` per track of an album that embeds none, and it really was every track of
-  it, because an album with no cover never sets `Cache::covered` and so asks again at the next
-  row. An album that *does* embed one still costs one extra open, at its first
-  committed row, and that is deliberate: carrying the bytes out of the probe instead was measured
-  and rejected. Copying a picture per file and claiming one per album key took a 1 200-track scan
-  of 120 albums from 41 MiB of peak RSS to 111 MiB — a shelf of one cover per album stays alive
-  from the moment a worker probes it until that album's row commits, and a `BATCH` of a thousand
-  rows means nearly all of them are alive at once — to save 120 opens out of 1 320. Bytes held
-  across threads to save an open is the wrong trade; the `bool` is the whole of what was worth
-  carrying.
-- **A play is a count, a date and a row of its own.** `Library::track_played` writes all three in
-  one transaction: `tracks.plays` stepped, `tracks.played` set, and one `listens (track_id, at)`
-  row stamped with the same nanos, so the two columns stay the cheap answer every listing already
-  reads while the history is there to be asked a question the columns cannot answer. `listens`
-  hangs off `tracks(id) ON DELETE CASCADE` and `configure` has `PRAGMA foreign_keys = ON`, so
-  forgetting a root takes the plays counted under it away with the rows — which matters because
-  SQLite reuses a deleted `tracks.id` and an orphan would be re-attributed to whatever was
-  rescanned into its place. The count is what a pane draws and the history is what `plays:@`
-  narrows on. **One order is read off the history on purpose**: `SortOrder::PlaysThisMonth` —
-  *Most played this month* — ranks by a correlated `count(*)` of the listens since
-  `unixepoch()` less thirty days, the whole count as its tie-break, so it is a sort rather than an
-  index walk and `SortOrder::HELD_BY_AN_INDEX` is what the index guard walks, every other order
-  still held to it. It is saved in a query's `sort` column as code 9, and a playlist has its twin:
-  `playlist_plays` holds one row per play a playlist was loaded for — a step in `MIGRATIONS` that
-  seeds each played playlist with its last play — and `PlaylistOrder::PlaysThisMonth` counts it
-  the same way, so a playlist's plays are a history rather than one date and a total. It is kept
-  apart from the playlist's row, with no cascade, because `undo.rs` re-creates a playlist from
-  what it held and a cascade would lose the history on every undo; the history's span ages it
-  with the listens. `the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard` and
+  whether there is a picture off one open, `TrackRecord::embeds_a_picture` carrying the answer, so
+  `store::cover` reopens a file only where there is something to find. That removes the old price —
+  one extra `probe_cover_art` per track of an album embedding none, and really every track, since an
+  uncovered album never sets `Cache::covered` and asks again at the next row. An album that *does*
+  embed one still costs one extra open, at its first committed row, deliberately: carrying the bytes
+  out of the probe instead was measured and rejected. Copying a picture per file and claiming one per
+  album key took a 1 200-track scan of 120 albums from 41 MiB of peak RSS to 111 MiB — a shelf of one
+  cover per album alive from a worker's probe until that album's row commits, and a `BATCH` of a
+  thousand rows keeping nearly all alive at once — to save 120 opens of 1 320. Bytes held across
+  threads to save an open is the wrong trade; the `bool` is all that was worth carrying.
+- **A play is a count, a date and a row of its own.** `Library::track_played` writes all three in one
+  transaction: `tracks.plays` stepped, `tracks.played` set, and one `listens (track_id, at)` row
+  stamped with the same nanos, so the two columns stay the cheap answer every listing reads while the
+  history answers what the columns cannot. `listens` hangs off `tracks(id) ON DELETE CASCADE` and
+  `configure` has `PRAGMA foreign_keys = ON`, so forgetting a root takes its plays with the rows —
+  necessary because SQLite reuses a deleted `tracks.id` and an orphan would be re-attributed to
+  whatever was rescanned into its place. The count is what a pane draws, the history what `plays:@`
+  narrows on. **One order is read off the history on purpose**: `SortOrder::PlaysThisMonth` — *Most
+  played this month* — ranks by a correlated `count(*)` of the listens since `unixepoch()` less thirty
+  days, the whole count as tie-break, so it is a sort rather than an index walk, and
+  `SortOrder::HELD_BY_AN_INDEX` is what the index guard walks, every other order still held to it.
+  It is saved in a query's `sort` column as code 9, and a playlist has its twin: `playlist_plays`
+  holds a row per play a playlist was loaded for — a `MIGRATIONS` step seeding each played playlist
+  with its last play — and `PlaylistOrder::PlaysThisMonth` counts it the same way, so a playlist's
+  plays are a history, not one date and a total. It is apart from the playlist's row, with no cascade,
+  since `undo.rs` re-creates a playlist from what it held and a cascade would lose the history on every
+  undo; the history's span ages it with the listens.
+  `the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard` and
   `the_playlists_most_played_this_month_are_ordered_by_what_the_month_played` are the claims.
-- **A file that moved is followed, not forgotten and found again.** A rename or a move by hand —
-  anything but `organise`, which rewrites the rows itself — reads to a scan as a row whose file
-  has gone and a file no row names. `moves::follow_the_moved` runs before the prune and pairs the
-  two: a whole-file row, the only row at its path, whose file is not there, with a row this scan
-  added — `added` at or past the generation — that is alike in `file_size`, `duration`, `codec`,
-  `tagged_title` and `tagged_artist`. Where more than one on either side is alike — two identical
-  rips moved at once — `moves::told_apart` weighs each gone path against each new one by how many
-  names they share from the end, the file's own and then its folders', and pairs two only where
-  each is the other's one best and that best shares at least the file name: `vinyl/echoes.wav`
-  and `tape/echoes.wav` filed under `filed/` are each followed to their own folder, while the
-  same two moved to `c/` and `d/` share the file name alone with both and are left to be
-  forgotten and found rather than guessed between. **What the first pass leaves is weighed again
-  by how it sounds.** A tagger that files as it tags changes the size and the tagged names in the
-  same stroke, so `pairs_by_sound` takes what is left on both sides and pairs a gone row with a new
-  one only where they share a `Sound` — the exact decoded length in frames, the codec, the rate and
-  the channels — where each is the *only* row on its side with that sound, and where they still
-  agree on the tagged title, the tagged artist or the file's own name. The frame count is what
-  makes the pairing safe and the uniqueness what keeps two rips of one length from being guessed
-  between; the agreement is what keeps a file deleted and an unrelated one of the same length
-  added from being taken for one moved file. **Where no name agrees, the packets decide.** The
-  scan reads every whole file through `probe_scanned`, which digests the first
-  `PACKETS_DIGESTED` packets of its audio track as symphonia's reader hands them out — the coded
-  bytes, before any decode, with FNV-1a — into `tracks.packets`. A tagger rewrites what sits
-  around the audio and never a packet, so a gone row and the one new row of its sound whose
-  digests agree are one file however it was renamed and retagged, and two whose digests differ
-  are not, with no decode and no study behind either.
-  `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested` is
-  the claim. A row scanned before the column was there held none until its file was read again,
-  so the step in `MIGRATIONS` that follows the column's marks every whole file with a root and no
-  digest `probe_again`, and the first scan after it reads each of them once whatever its size and
-  mtime say — `a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for`.
-  For a row whose file moved before that scan could read it, **the print decides.** A gone
-  row whose study kept a Chromaprint is paired with the one new row of its sound where
-  `resonate_analysis::print` — the first two minutes decoded exactly as the study decodes them,
-  and nothing past them — writes the same print, so a file retagged past every name it had and
-  renamed as it moved is still the row it was; a row nobody studied, or a print that differs, is
-  forgotten and found as before. The decode happens inside the scan's write, which is why it is
-  asked only of the few rows a unique sound leaves unnamed.
+- **A file that moved is followed, not forgotten and found again.** A rename or move by hand —
+  anything but `organise`, which rewrites the rows itself — reads to a scan as a row whose file has
+  gone and a file no row names. `moves::follow_the_moved` runs before the prune and pairs the two: a
+  whole-file row, the only row at its path, whose file is missing, with a row this scan added —
+  `added` at or past the generation — alike in `file_size`, `duration`, `codec`, `tagged_title` and
+  `tagged_artist`. Where more than one on either side is alike — two identical rips moved at once —
+  `moves::told_apart` weighs each gone path against each new one by how many names they share from
+  the end, the file's own then its folders', and pairs two only where each is the other's one best and
+  that best shares at least the file name: `vinyl/echoes.wav` and `tape/echoes.wav` filed under
+  `filed/` are each followed to their own folder, while the same two moved to `c/` and `d/` share only
+  the file name with both and are left to be forgotten and found rather than guessed between. **What
+  the first pass leaves is weighed again by how it sounds.** A tagger filing as it tags changes the
+  size and tagged names in one stroke, so `pairs_by_sound` takes what is left on both sides and pairs a
+  gone row with a new one only where they share a `Sound` — the exact decoded length in frames, the
+  codec, the rate and the channels — each being the *only* row on its side with that sound, and where
+  they still agree on the tagged title, the tagged artist or the file's own name. The frame count makes
+  the pairing safe and the uniqueness keeps two rips of one length from being guessed between; the
+  agreement keeps a file deleted and an unrelated one of the same length added from being taken for one
+  moved file. **Where no name agrees, the packets decide.** The scan reads every whole file through
+  `probe_scanned`, which digests the first `PACKETS_DIGESTED` (48) packets of its audio track as
+  symphonia's reader hands them out — the coded bytes, before any decode, with FNV-1a — into
+  `tracks.packets`. A tagger rewrites what sits around the audio, never a packet, so a gone row and the
+  one new row of its sound whose digests agree are one file however renamed and retagged, and two whose
+  digests differ are not, with no decode or study behind either
+  (`a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested`). A row
+  scanned before the column held none until read again, so the `MIGRATIONS` step after the column's
+  marks every rooted whole file with no digest `probe_again`, and the first scan after it reads each
+  once whatever its size and mtime say
+  (`a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for`). For a row whose
+  file moved before that scan could read it, **the print decides.** A gone row whose study kept a
+  Chromaprint is paired with the one new row of its sound where `resonate_analysis::print` — the first
+  two minutes decoded exactly as the study decodes them, nothing past — writes the same print, so a file
+  retagged past every name and renamed as it moved is still its row; an unstudied row, or a differing
+  print, is forgotten and found as before. The decode happens inside the scan's write, so it is asked
+  only of the few rows a unique sound leaves unnamed.
   `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_study_took`,
   `a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like` and
   `a_file_taken_away_and_another_of_its_length_added_are_not_one_file` are the claims. A pair is
-  followed through `organise::files_moved`, so the new row is dropped and the old one takes its
-  path, its root and the generation, keeping its id, plays, listens, favourite, enrichment, vault
-  object, playlist rows, kept lyric and queue row. The album is `settle_the_album`'s: where the
-  album the scan made for the new folder holds nothing else and every row that moved into it came
-  out of one album, it is gathered into that album through `enriched::gather`, so the new folder's
-  key names the album the rows always had and a release, a cover and a favourite are not left
-  behind; otherwise the moved row joins the album the scan filed it under. **A file a sheet cuts
-  is followed whole.** `cuts_moved` groups the rows sharing a path on either side — every row
-  gone where the file is not there, every row new where none of the path's rows is older than
-  the scan — and pairs two groups that are alike in size, codec and every cut's start and length,
-  where each is the one group on its side of that shape and the titles the sheet gave or the
-  file's own name agree; `files_moved` moves every row of the path at once.
-  `a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays` is the claim.
-  `ScanStats::moved` counts the rows followed and `added` leaves them out. `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist`,
+  followed through `organise::files_moved`, so the new row is dropped and the old one takes its path,
+  root and generation, keeping its id, plays, listens, favourite, enrichment, vault object, playlist
+  rows, kept lyric and queue row. The album is `settle_the_album`'s: where the album the scan made for
+  the new folder holds nothing else and every row moved into it came out of one album, it is gathered
+  into that album through `enriched::gather`, so the new folder's key names the album the rows always
+  had and a release, cover and favourite are not left behind; otherwise the moved row joins the album
+  the scan filed it under. **A file a sheet cuts is followed whole.** `cuts_moved` groups the rows
+  sharing a path on either side — every row gone where the file is missing, every row new where none of
+  the path's rows is older than the scan — and pairs two groups alike in size, codec and every cut's
+  start and length, each the one group of that shape on its side, where the titles the sheet gave or
+  the file's own name agree; `files_moved` moves every row of the path at once
+  (`a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays`). `ScanStats::moved` counts the
+  rows followed and `added` leaves them out.
+  `a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlist`,
   `an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was` and
   `two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with` are the claims.
-- **A track's count is the catalog's and a rescan leaves it where it stands.** `tracks.plays` and
-  `tracks.played` are absent from the upsert's `DO UPDATE SET` the way `added` is, so a rescan keeps
-  both; forgetting a root drops the rows and the counts with them. It is kept against the path, so a
-  file no scan has seen is not counted against a row — `Library::track_played` answers `None`
-  rather than refusing where a location that is not local has no row here — **but the play is
-  kept against the path.** `unheld_listens` holds the path, the span's start, the moment and how
-  long it was heard, and
-  `history::credit_the_unheld` runs after every scan's prune: a play whose path and start now
-  name a row becomes a `listens` row stamped when it was heard, the row's `plays` and `played`
-  follow, and the unheld play goes, so a queue of files played before the folder was ever
-  scanned is counted the moment it is —
-  `a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does`.
+- **A track's count is the catalog's, and a rescan leaves it where it stands.** `tracks.plays` and
+  `tracks.played` are absent from the upsert's `DO UPDATE SET`, as `added` is, so a rescan keeps both;
+  forgetting a root drops the rows and counts. It is kept against the row, so a file no scan has seen is
+  not counted against one — `Library::track_played` answers `None` rather than refusing where a
+  non-local location has no row — **but the play is kept against the path.** `unheld_listens` holds
+  the path, the span's start, the moment and how long it was heard, and `history::credit_the_unheld`
+  runs after every scan's prune: a play whose path and start now name a row becomes a `listens` row
+  stamped when heard, the row's `plays` and `played` follow, and the unheld play goes, so files played
+  before their folder was ever scanned are counted the moment it is
+  (`a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does`).
   A `Counted` carries a `Listen` — `Held` naming a `listens` row, `Unheld` the rowid of an
-  `unheld_listens` one — and `Library::listened` spends either, so the settle of such a visit
-  keeps what it heard: the statistics count an unheld play and its time beside the held ones, and
-  the credit carries `heard` onto the listen it becomes. The history's span ages the unheld plays
-  with the rest. It answers with the row it
-  counted where there was one, read back inside the same transaction so the caller has the count it
-  now stands at without a read of its own. `plays:` and `played:` narrow on
-  the two columns and `SortOrder::Plays` and `Played` order on them, so *Top 25 most played* is a
-  saved query rather than a feature, and the count is drawn through `listing::times` wherever a row
-  names a track — the tracks pane, the queue, an opened playlist and the playlists index, which is
-  where those words started.
+  `unheld_listens` one — and `Library::listened` spends either, so a settle keeps what it heard: the
+  statistics count an unheld play and its time beside the held, and the credit carries `heard` onto the
+  listen it becomes. The history's span ages the unheld plays too. It answers with the row it counted
+  where there was one, read back inside the same transaction so the caller has the new count without a
+  read of its own. `plays:` and `played:` narrow on the two columns and `SortOrder::Plays` and `Played`
+  order on them, so *Top 25 most played* is a saved query rather than a feature, and the count is drawn
+  through `listing::times` wherever a row names a track — the tracks pane, the queue, an opened playlist
+  and the playlists index, where those words started.
 
 ## Enrichment
 
 - **What a reference says lands beside what the scan read, in columns the scan never rewrites.**
   `artists` carries `mbid`, `sort_name`, `kind`, `gender`, `country`, `area`, `began_in`, `began`,
   `ended`, `has_ended`, `disambiguation`, `portrait`, `portrait_format`, `asked` and `answered`;
-  `albums` carries `cover_source`, `mbid`, `release_group`, `release_title`, `date`, `country`,
-  `label`, `catalog_number`, `barcode`, `kind`, `disambiguation`, `asked`, `asks` and `answered`;
-  `tracks` carries
-  `mbid`, `artist_mbid`, `release_track_mbid`, `isrc`, `tagged_title`, `tagged_artist`,
-  `release_title`, `asked`, `asks` and `answered`. Beside them are `release_tracks`, one row per
-  track of the release with `release_tracks_by_album` and `release_tracks_in_order` over it,
-  `artist_genres`, the three link tables `artist_links`, `album_links` and `release_track_links`
-  — a `relation`, a `provider` and a `url`, the first two as codes through `store::relation_code`
-  and `service_code` and read back through `relation_of` and `service_of`, which refuse a code
-  from a later build with `Error::UnknownLinkCode` — `artist_releases`, the discography bullet
-  below, and `wants` and `lyrics_kept`. Of all of that the scan's upserts touch the ids, the two
-  `tagged_` columns and what the tags *declare* about a release — `barcode`, `catalog_number`,
-  `label` and `albums.tagged_tracks`, which is `TRACKTOTAL` — `release_media` being the one table
-  beside `release_tracks` that a landing writes and a scan never sees: `coalesce(excluded.mbid,
-  albums.mbid)` on an album, `coalesce(excluded.mbid, artists.mbid)` on an artist with
-  `fill_artist_mbid` for one the cache already held, `store::Declaration` coalesced the same way
-  on an album — the file's where it names one, what is held otherwise, which is the rule `mbid`
-  and `release_group` follow — with `fill_declared` for one the cache already held, filling only
-  what `Declared` says the row is still without, so a file that stopped carrying its barcode
-  leaves the one held, which `a_scan_stores_what_the_tags_declare_about_the_release` and
-  `a_rescan_keeps_a_barcode_the_file_no_longer_carries` are the claims of — and `tracks.mbid`,
-  `artist_mbid`, `release_track_mbid` and `isrc` taken from the tags wherever the file names one,
-  and kept where it names none unless the file was retagged — the same weighing of the two
-  `tagged_` columns the names take — because those four are also what a lookup and a pairing
-  *find*, and a whole rescan used to write the file's silence over a recording a search had
-  identified, which the lookup would not ask about again for a month;
-  `a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_retagged` is the
-  claim. An *answered* row whose file is unchanged — the same size, mtime, sheet mtime and span —
-  keeps all four and its `track_number` and `disc_number` as they stand whatever the file says,
-  because the one write that replaces what a file carried is a listener taking the name its audio
-  was heard as, which `analysis.md` has, and a rescan of the same bytes putting the file's word
-  back would undo the gesture; a lookup otherwise only fills, so for every other answered row the
-  file's value and the held one are the same. So a rescan leaves every other enrichment column where it stood, which
-  `a_rescan_leaves_every_enrichment_column_where_it_stood` in `tests/library.rs` is the claim of —
-  the one exception being the retagging rule below, which is the only place a scan writes
-  `tracks.answered`. The four declared columns are what the ask is built from: `asking_albums`
-  hands `catalog_number`, `tagged_tracks` and the owner's `artists.mbid` to `AlbumToAsk` beside
-  the barcode, so a search names what the tagger knew about the pressing. It is still one `V1`,
-  edited where it stands.
-- **`tagged_title` and `tagged_artist` are what the *file* was read as, and they are the whole of
-  how a rescan tells a retagging from an identification.** An enrichment writes `tracks.title` and
-  `tracks.artist`; the scan writes those two columns as well, so without a record of what the file
-  said the next rescan would put the tagger's spelling back over the reference's. The upsert
-  therefore keeps an answered row's `title`, `artist` and `artist_id` where both `tagged_`
-  columns come back unchanged, takes the file's where either has moved, and sets `answered` to `NULL` in that same
-  `CASE` so the row is asked about again — which
-  `a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged` is the claim of.
-  A row that has never been answered takes the file's names as it always did. What the two columns
-  hold is what `scan::name_from_stem` left in the `TagSet`, not the tag alone: a file naming no
-  title in its tags is read through `stem.rs` first, so `tagged_title IS NULL` means neither the
-  tags nor the file name said anything, and `title` is then the bare stem `store::title` falls back
-  to. **A name the file's *name* gave is not a tag, so renaming the file is not retagging it.**
-  `tracks.named_by_its_stem` — a step in `MIGRATIONS`, nothing before it having kept the fact —
-  says the scan's reading took its title or its artist off the stem, and `store::RETAGGED` is the
-  one reading of *the file said something else* every column of the upsert weighs: the tagged
-  names moved, and not between two readings that both came off the stem. A stem-named row a
-  lookup answered therefore keeps what it was told when it is renamed by hand, edited or both,
-  while a tag written into it, or taken out of it, is still a retagging —
-  `a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed`. A row
-  scanned before the column holds nothing, so it is weighed the old way until it is next read.
-  `store::index_row` is shared between the scan and `land_recording` for that reason — a
-  corrected title is what `tracks_fts` holds a moment later rather than at the next scan — and
-  the upsert answers the title, artist and artist id it *left* on the row, so a rescan indexes
-  those rather than the file's; `a_rescan_indexes_and_bills_the_names_the_lookup_kept` is the
-  claim.
-- **The seam is `Reference`, and `Library::enrich` is the pass that walks it.** It speaks in
-  `Mbid`, which is the dashed lowercase text or `resonate_core::Error::NotAnMbid`, and `Isrc`,
-  which is the twelve characters shouted and stripped of their dashes or
-  `resonate_core::Error::NotAnIsrc`, each a shape the type refuses to hold anything else in — both
-  in `resonate-core` now, because a provider crate names them and may not see the library, and
-  re-exported here. `reference.rs` carries the rest of the vocabulary — `Release`, `Medium`, `ReleaseTrack` and
-  `Credit`; `Wording`, which is `Phrase` or `Words` and says how a search is put; `ReleaseAsked`
-  and `ReleaseMatch`, the second carrying the hit's `group` and its whole `credit`; `Recording`,
-  `RecordingRelease`, `RecordingAsked` and `RecordingMatch`; `ReleaseGroup`, `GroupRelease`,
-  `GroupAsked` and `GroupMatch`; `ArtistProfile`, `LifeSpan`, `Genre`, `ArtistRelease` and
-  `ArtistMatch`; `Link`, `Relation` and `Service`, which are core's and re-exported; and `LookupOp`, the seventeen things a service
-  can be asked for, twelve of them a reference's and the rest the lyric provider's, the correction
-  source's, a recogniser's and a scrobbler's — and the `Reference` trait itself, whose thirteen methods answer `Option`s
-  and `Vec`s in that vocabulary and nothing about how they were reached. `enrich.rs` is the pass:
-  a thread named `resonate-enrich` behind an `EnrichHandle`, with `EnrichProgress` counting
-  albums, releases, matched rows, covers, tracks, the tracks a lookup renamed, artists,
-  portraits, the releases found for an artist and refusals and answering `is_cancelled` between
-  requests,
-  and `EnrichSummary` carrying the stats, whether it was cancelled and `stopped_by`.
-  `EnrichOptions` is `refresh`, which asks again about
-  what was answered, `at_most`, which caps the albums, the tracks and the artists each to that
-  many, and `sought`, the cell below. The rematch-only albums are walked first, so a run with a
-  cap set still pairs every album's rows; what is left is one queue of `Ask`s — the due albums,
-  then the due tracks, then the due artists — walked in order, albums first because an album that
-  lands retires every track under it before the track pass reaches one.
-  `crates/resonate-library/tests/library.rs` drives the
-  whole of it through a `Fake` that answers canned releases, recordings, groups and profiles and
-  faults on the call it is told to, which is where the rules below are proved.
-- **A picture is fetched beside the pass, never in it.** `Pictures` is two threads named
-  `resonate-pictures-<n>` reading a bounded channel of `Picture`s — a cover, a release group's
-  cover or a portrait — and `Pass::want` is the whole of how one is asked for; `Pictures::rest`
-  drops the sender and joins them before the summary is taken, so what the stats say is what
-  landed. The archive and Wikimedia Commons are not MusicBrainz, and `Client::pace` keeps a slot
-  per host, so a picture costs the pass nothing but the handover while the next MusicBrainz
-  request waits out its second. A picture that cannot be fetched is a warning and a `refused`
-  count rather than the end of a pass — the pass finds out for itself at its next request — and
-  where no reader thread started, `want` fetches on the spot. A call to a picture therefore has no
-  place in the order the pass asks in, which is why `asked_in_order` leaves it out of the
-  sequences the tests assert, and
-  `a_picture_is_fetched_beside_the_pass_rather_than_in_it` holds a cover and watches the pass ask
-  the next question anyway.
-- **What a listener has just reached for is asked about next, and a seek is spent once.** `Sought`
-  is a `Mutex<Vec<Seek>>` shared with whoever started the pass — `Sought::album` and
-  `Sought::artist` are the whole of how something is put on it, newest last and each held once —
-  and `Sought::taken` drains it at the top of every turn of the queue. `Pass::lift` is what reads
-  it: `rotated` moves a named `Ask` to the front of what is *left*, and the newest therefore
-  leads, because each seek rotates its match to index zero over the one before it. A seek naming
+  `albums` carries `cover_source`, `mbid`, `release_group`, `release_title`, `date`, `country`, `label`,
+  `catalog_number`, `barcode`, `kind`, `disambiguation`, `asked`, `asks` and `answered`; `tracks`
+  carries `mbid`, `artist_mbid`, `release_track_mbid`, `isrc`, `tagged_title`, `tagged_artist`,
+  `release_title`, `asked`, `asks` and `answered`. Beside them: `release_tracks`, a row per release
+  track with `release_tracks_by_album` and `release_tracks_in_order` over it; `artist_genres`; the three
+  link tables `artist_links`, `album_links` and `release_track_links` — a `relation`, a `provider` and a
+  `url`, the first two as codes through `store::relation_code` and `service_code`, read back through
+  `relation_of` and `service_of`, which refuse a later build's code with `Error::UnknownLinkCode`;
+  `artist_releases` (the discography, below); `wants`; `lyrics_kept`. Those were laid into `V1` as first
+  written; what came later — `cover_asked`, `track_credits`, `refused_releases`,
+  `lyrics_kept.lyricsfile`, `releases_unread` among them — arrived as `MIGRATIONS` steps. Of all of it
+  the scan's upserts touch only the ids, the two `tagged_` columns and what the tags *declare* about a
+  release — `barcode`, `catalog_number`, `label` and `albums.tagged_tracks` (`TRACKTOTAL`) —
+  `release_media` being the one table beside `release_tracks` a landing writes and a scan never sees:
+  `coalesce(excluded.mbid, albums.mbid)` on an album, `coalesce(excluded.mbid, artists.mbid)` on an
+  artist with `fill_artist_mbid` for one the cache held, `store::Declaration` coalesced the same way on
+  an album — the file's where it names one, the held otherwise, as `mbid` and `release_group` go — with
+  `fill_declared` for one the cache held, filling only what `Declared` says the row still lacks, so a
+  file that stopped carrying its barcode leaves the one held
+  (`a_scan_stores_what_the_tags_declare_about_the_release`,
+  `a_rescan_keeps_a_barcode_the_file_no_longer_carries`); and `tracks.mbid`, `artist_mbid`,
+  `release_track_mbid` and `isrc` taken from the tags wherever the file names one and kept where it
+  names none unless the file was retagged — the weighing of the two `tagged_` columns the names take —
+  since those four are also what a lookup and a pairing *find*, and a whole rescan once wrote the file's
+  silence over a recording a search had identified, which the lookup would not ask about for a month
+  (`a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_retagged`). An
+  *answered* row whose file is unchanged — same size, mtime, sheet mtime and span — keeps all four and
+  its `track_number` and `disc_number` whatever the file says, the one write replacing what a file
+  carried being a listener taking the name its audio was heard as (`analysis.md`), which a rescan of the
+  same bytes putting the file's word back would undo; a lookup otherwise only fills, so for every other
+  answered row the file's value and the held one agree. So a rescan leaves every other enrichment column
+  where it stood (`a_rescan_leaves_every_enrichment_column_where_it_stood` in `tests/library.rs`), the
+  one exception being the retagging rule below, the only place a scan writes `tracks.answered`. The four
+  declared columns build the ask: `asking_albums` hands `catalog_number`, `tagged_tracks` and the
+  owner's `artists.mbid` to `AlbumToAsk` beside the barcode, so a search names what the tagger knew
+  about the pressing.
+- **`tagged_title` and `tagged_artist` are what the *file* was read as — the whole of how a rescan
+  tells a retagging from an identification.** An enrichment writes `tracks.title` and `tracks.artist`,
+  as the scan does, so without a record of what the file said the next rescan would put the tagger's
+  spelling back over the reference's. The upsert keeps an answered row's `title`, `artist` and
+  `artist_id` where both `tagged_` columns come back unchanged, takes the file's where either moved,
+  and sets `answered` to `NULL` in that `CASE` so the row is asked again
+  (`a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged`). A never-answered row
+  takes the file's names as always. The two columns hold what `scan::name_from_stem` left in the
+  `TagSet`, not the tag alone: a file naming no title is read through `stem.rs` first, so
+  `tagged_title IS NULL` means neither tags nor file name said anything, and `title` is then the bare
+  stem `store::title` falls back to. **A name the file's *name* gave is not a tag, so renaming the file
+  is not retagging it.** `tracks.named_by_its_stem` — a `MIGRATIONS` step, nothing before having kept
+  the fact — says the scan's reading took its title or artist off the stem, and `store::RETAGGED` is the
+  one reading of *the file said something else* every upsert column weighs: the tagged names moved, and
+  not between two readings both off the stem. A stem-named row a lookup answered keeps what it was told
+  when renamed by hand, edited or both, while a tag written into it or taken out is still a retagging
+  (`a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed`). A row scanned before
+  the column holds nothing and is weighed the old way until next read. `store::index_row` is shared by
+  the scan and `land_recording` so a corrected title is in `tracks_fts` a moment later, not at the next
+  scan, and the upsert answers the title, artist and artist id it *left* on the row, so a rescan indexes
+  those rather than the file's (`a_rescan_indexes_and_bills_the_names_the_lookup_kept`).
+- **The seam is `Reference`, and `Library::enrich` is the pass that walks it.** It speaks in `Mbid` —
+  the dashed lowercase text or `resonate_core::Error::NotAnMbid` — and `Isrc` — twelve characters,
+  upper-cased and stripped of dashes, or `resonate_core::Error::NotAnIsrc` — each a shape the type
+  refuses anything else in, both in `resonate-core` because a provider crate names them and may not see
+  the library, and re-exported here. `reference.rs` carries the rest of the vocabulary — `Release`,
+  `Medium`, `ReleaseTrack` and `Credit`; `Wording` (`Phrase` or `Words`, how a search is put);
+  `ReleaseAsked` and `ReleaseMatch` (the latter with the hit's `group` and whole `credit`);
+  `Recording`, `RecordingRelease`, `RecordingAsked` and `RecordingMatch`; `ReleaseGroup`,
+  `GroupRelease`, `GroupAsked` and `GroupMatch`; `ArtistProfile`, `LifeSpan`, `Genre`, `ArtistRelease`
+  and `ArtistMatch`; core's re-exported `Link`, `Relation` and `Service`; and `LookupOp`, the eighteen
+  things a service can be asked for — twelve a reference's, the rest the lyric provider's (`Lyrics`),
+  the AutoEq catalogue's (`Devices`), the correction source's (`Correction`), a recogniser's
+  (`Recognise`), a scrobbler's (`Submit`) and the stream lookup's (`StreamLink`) — and the `Reference`
+  trait, whose sixteen methods (beside `source`) answer `Option`s and `Vec`s in that vocabulary and
+  nothing about how they were reached. `resonate-online`'s `Online` is the one implementation, only the
+  binary reaching it behind `online`, so `cargo tree -p resonate-library` stays free of `ureq` and
+  `serde`. `enrich.rs` is the pass: a `resonate-enrich` thread behind an `EnrichHandle`, with
+  `EnrichProgress` counting albums, releases, matched rows, covers, tracks, the tracks a lookup renamed
+  (`named`), artists, portraits, releases found for an artist, refusals, studies, fakes, recognitions,
+  misnamed tracks and lyrics, answering `is_cancelled` between requests, and `EnrichSummary` carrying
+  the stats, whether it was cancelled and `stopped_by`. `EnrichOptions` is `refresh` (ask again about
+  what was answered), `at_most` (capping albums, tracks and artists each to that many), `sought` (the
+  cell below), `studies` and `lyrics` (the `study` and `fetch-lyrics` keys). The rematch-only albums are
+  walked first, so a capped run still pairs every album's rows; what is left is one queue of `Ask`s —
+  due albums, then due tracks, then due artists — walked in order, albums first because a landing
+  album retires every track under it before the track pass reaches one.
+  `crates/resonate-library/tests/library.rs` drives it all through a `Fake` answering canned releases,
+  recordings, groups and profiles and faulting on the call it is told to — where the rules below are
+  proved; the online crate proves its mapping over captured fixtures and reaches the services only
+  under `RESONATE_ONLINE_TESTS`.
+- **A picture is fetched beside the pass, never in it.** `Pictures` is two threads (`PICTURE_READERS`)
+  named `resonate-pictures-<n>` reading a bounded channel of `Picture`s — a cover, a release group's
+  cover or a portrait — and `Pass::want` is the whole of how one is asked for; `Pictures::rest` drops
+  the sender and joins them before the summary is taken, so the stats say what landed. The archive and
+  Wikimedia Commons are not MusicBrainz, and `Client::pace` keeps a slot per host, so a picture costs
+  the pass only the handover while the next MusicBrainz request waits out its second — that service's
+  one request a second being what a pass is really made of. A picture that cannot be fetched is a
+  warning and a `refused` count, not the end of a pass (which finds out for itself at its next
+  request), and where no reader thread started `want` fetches on the spot. A picture call therefore has
+  no place in the order the pass asks in, so `asked_in_order` leaves it out of the sequences the tests
+  assert, and `a_picture_is_fetched_beside_the_pass_rather_than_in_it` holds a cover and watches the pass
+  ask the next question anyway.
+- **What a listener has just reached for is asked next, and a seek is spent once.** `Sought` is a
+  `Mutex<Vec<Seek>>` shared with whoever started the pass — `Sought::album` and `Sought::artist` put
+  something on it, newest last, each held once — and `Sought::taken` drains it at the top of every turn
+  of the queue. `Pass::lift` reads it: `rotated` moves a named `Ask` to the front of what is *left*, so
+  the newest leads, each seek rotating its match to index zero over the one before. A seek naming
   nothing the queue still holds is not dropped but *read back* — `Library::album_if_due` and
-  `Library::artist_is_due` weigh the row against the same `Waits` the queue was built from — and where it is still due the `Ask` is inserted at the front instead. So
-  an album a scan landed while the lookup was running is reached by a click, which a rotation over
-  a slice could never do, and an album the reference has already answered still is not: it is not
-  due, and the read answers `None`. What a pass has already asked *this run* is refused by the
-  `spent` set rather than by the clocks, because `refresh` makes every row due and a click on the
-  album being asked about would otherwise ask for it twice. `LibraryModel` holds one `Sought` for
-  the whole run of the window and hands it to every `enrich`, so a row reached while nothing is
-  running is still at the front when a run starts.
-- **The window seeks what it has drawn, front-most last.** `LibraryModel::select` seeks the album
-  and its owner, and `ask_about_what_is_drawn` runs where a listing lands: an artist selection
-  seeks every album the drawn tracks belong to and then the artist, in reverse of the order they
-  are listed in, because `lift` rotates each seek to index zero in turn and the last one pushed is
-  therefore the first one asked. The artist leads, then the first album on the screen, then the
-  rest down the pane.
-- **An artist's row is read at the moment it is asked, not when the queue was built.**
-  `artists_to_ask` answers the ids that are due, `Ask::Artist` carries one, and
-  `Library::artist_to_ask` is what reads the row — so the `artists.mbid` that `Pass::credits` wrote
-  while a *later* album was landing is the one `profile_of` sees. The pass used to get that for nothing, by reading `artists_to_ask` only
-  after the album loop had finished; one queue holding both cannot, and reading the row where it is
-  used is what makes that ordering irrelevant rather than load-bearing — which
-  `an_artist_named_in_a_release_credit_is_looked_up_by_the_credit_id_and_never_searched` is the
-  claim of. **An artist the pass itself brings into the catalog is asked before the pass ends.** A
-  recording or a release that lands can bill somebody no row named yet — the Witcher 2 score's
-  tracks landed crediting Adam Skorupa, Krzysztof Wierzynkiewicz and Oleksa Lozowchuk by id — and
-  that row was due only on the *next* pass, so it sat with an mbid, no profile and no portrait.
-  `Pass::run` reads `artists_to_ask` again once the queue is walked and walks whatever it names
-  that the pass has not spent, until nothing new is due; a capped run (`--albums`) does not, the
-  cap being a promise about how much is asked.
-  `an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass` is the claim.
-- **`asked` and `answered` are the two clocks, `asks` and `refusals` are the columns they are read
-  with, and `Waits` is the three waits in one value.** `due_again` writes the clause for a
-  table's alias and `albums`, `tracks` and `artists` are each read through it: never asked, asked
-  and unanswered longer ago than the wait its `asks` has earned, answered more than
-  `REFRESH_AFTER` — thirty days — ago, or
-  anything at all under `refresh`. `Waits` carries `retry_after`, `refused_again_after` and
-  `refresh_after` together rather than as three `Duration`s a caller could hand over in the wrong
-  order, `WAITS` is what this build runs on, and a test builds its own. What a failure does
-  depends on which it is, through
-  `Pass::heard`: `Error::Unreachable` ends the pass and stamps nothing, so
-  `EnrichSummary::stopped_by` names the `LookupOp` and a run with no network asks the same albums
-  again next time rather than
-  writing a day's silence into every one of them; `Refused` and `Unreadable` count in `refusals`,
-  stamp `asked` and carry on, because one refused album says nothing about the next. Landing a
-  release or a profile stamps both, inside the transaction that writes it.
-- **A row that answers nothing is asked again half as often each time, and an answer puts the wait
-  back.** `asks` counts the stampings a row has taken without an answer — every `stamp_*_asked`
-  carrying `Fruitless::Missed` steps it — and `due_again` waits `RETRY_AFTER` doubled that many
-  times, `WAITS_DOUBLE_AT_MOST`
-  capping it at thirty-two days, so a library of files the reference cannot name costs one pass
-  rather than one a day for ever. Every landing writes `asks = 0` beside the `answered` it
-  stamps, and a retagging is the scan's own reset: `store::apply` puts `asks` back to nothing
-  wherever it nulls `answered`, so a file whose tags moved is asked about at once rather than a
-  month later. `refresh` still reaches every row, which is what `resonate enrich --refresh` is
-  for.
-- **A refusal is bounded the way a miss is, by a count of its own.** `refusals` is the asks in a
-  row that ended in `Fruitless::Refused`, stepped by the same `stamp_*_asked` that steps `asks`
-  and put back to nothing by a miss or a landing, and `waited_its_turn` reads whichever of the two
-  counts the last ask left standing: `doubled` writes one clause for both, so a refused row waits
-  `REFUSED_AGAIN_AFTER` doubled per refusal under the same `WAITS_DOUBLE_AT_MOST` and a missed one
-  waits `RETRY_AFTER` doubled per ask. A service that refuses one row for ever is therefore asked
-  about it every thirty-two hours rather than every hour for ever, and a service having one bad
-  minute still comes back to the row an hour later. The two counts are exclusive rather than added:
-  the last answer is what says which wait the row is serving, which is why a miss after a refusal
-  waits the day a first miss earns rather than the hour the refusal had reached.
-- **A pass says it is running, so the next launch can carry it on.** The `enrichment` table holds
-  one row while a pass is under way, carrying the `refresh` it was started with:
-  `note_began` writes it as `run` starts and `note_finished` takes it away where the pass reached
-  the end of its queue or the listener stopped it. A pass the reference ended — `stopped_by` is
-  `Some` — and a pass that was never ended at all, because the process went away, both leave the
-  row standing, and `Library::unfinished_enrichment` is what reads it back. `LibraryModel::new`
-  asks at start and, where a row stands and the build can reach the network,
-  carries the pass on with the refresh it was asked for; the mark cannot fail a pass, so a library
-  written before the table warns through `tracing` and enriches as it always did. Nothing else
-  needs picking up: a row the interrupted pass never reached was never stamped, so it is due.
-  Headless, the binary's `carrying_on` is the same reading, and both ways in take it —
-  `resonate enrich` and a scan handing over — because an ordinary pass that runs to the end takes
-  the mark away with it, so a scan's handover would otherwise *discard* an interrupted refresh
-  rather than carry it. A run that asked for `--refresh` itself is already doing the wider pass
-  and reads nothing.
-- **A release is taken by tag or by a strict match, an artist by tag or by an exact one, and a
-  near miss writes nothing.** `Identified` is `Found`, `Group` or `Nothing`. An album whose
-  `albums.mbid` is set is asked for directly, and where the reference answers `None` under it the
-  album goes on to the search rather than stopping — a `Refused` under a tagged id stops it, one
-  bad minute saying nothing about the tag — which
-  `a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands` is the
-  claim of, and a tagged `albums.release_group` the reference holds nothing under falls through
-  to `find_group` the same way, which
-  `a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_search` is the
-  claim of. `find_release` is asked with the title, the owner and the owner's `mbid`, the
-  barcode and the catalogue number the tags gave, and `top_release` takes the top of `top_of`
-  weighing `weighed_release` — `(agreed_owner, count_fits, year_agrees, score)`, in that order —
-  and lands it only where `matches_strictly`: `agreed_owner`, which is a score of
-  `STRICT_SCORE`, 95, or over with a credit the owner agrees with, and `count_fits`, a
-  `track_count` equal to `declared_count` — `tagged_tracks`, the `TRACKTOTAL` the files
-  declared, or the rows held where none did, so a rip short a track is weighed against the
-  pressing it was ripped from rather than against its own hole. A top hit that agrees on the
-  owner and the score but not on the count, and carries a `group`, is `Identified::Group` — the
-  group is fetched with no `find_group` between, the bullet below being what it lands — and
-  anything short of that is `Nothing`;
-  `a_hit_is_weighed_on_its_owner_its_count_its_year_and_then_its_score`
-  and `a_strict_hit_of_the_wrong_count_names_its_group_and_one_without_a_group_names_nothing`
-  in `enrich.rs` are the claims of the weighing. An album with no owner is weighed on the score
-  and the count alone, which is what a compilation has to offer. An artist is `profile_of`: a
-  tagged `artists.mbid` is asked for directly and falls through to `find_artist` where the
-  reference holds nothing under it, which
-  `a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands` is the
-  claim of, and a search hit is `matches_exactly`: `EXACT_SCORE`, 100, and the same name,
-  because a name has nothing but itself to be checked against. A hit that falls short is a debug
-  record naming what it was and how it fell, and the album or artist is stamped `asked` alone,
-  so nothing a person did not tag is ever written on a guess.
+  `Library::artist_is_due` weigh the row against the queue's `Waits` — and where still due the `Ask` is
+  inserted at the front. So an album a scan landed while the lookup ran is reached by a click, which a
+  rotation over a slice never could, and an album already answered is not: not due, the read answers
+  `None`. What a pass already asked *this run* is refused by the `spent` set rather than the clocks,
+  since `refresh` makes every row due and a click on the album being asked would ask it twice.
+  `LibraryModel` holds one `Sought` for the window's run and hands it to every `enrich`, so a row
+  reached while nothing runs is still at the front when a run starts.
+- **The window seeks what it has drawn, front-most last.** `LibraryModel::select` seeks the album and
+  its owner, and `ask_about_what_is_drawn` runs where a listing lands: an artist selection seeks every
+  album the drawn tracks belong to then the artist, in reverse of listing order, since `lift` rotates
+  each seek to index zero in turn and the last pushed is the first asked. The artist leads, then the
+  first album on screen, then the rest down the pane.
+- **An artist's row is read when it is asked, not when the queue was built.** `artists_to_ask` answers
+  the due ids, `Ask::Artist` carries one, and `Library::artist_to_ask` reads the row — so the
+  `artists.mbid` `Pass::credits` wrote while a *later* album was landing is the one `profile_of` sees.
+  The pass once got that for nothing by reading `artists_to_ask` only after the album loop; one queue
+  holding both cannot, and reading the row where it is used makes the ordering irrelevant rather than
+  load-bearing (`an_artist_named_in_a_release_credit_is_looked_up_by_the_credit_id_and_never_searched`).
+  **An artist the pass itself brings into the catalog is asked before the pass ends.** A landing can
+  bill somebody no row named yet — the Witcher 2 score's tracks landed crediting Adam Skorupa, Krzysztof
+  Wierzynkiewicz and Oleksa Lozowchuk by id — and that row was due only next pass, sitting with an mbid,
+  no profile and no portrait. `Pass::run` reads `artists_to_ask` again once the queue is walked and
+  walks whatever it names that the pass has not spent, until nothing new is due; a capped run
+  (`--albums`) does not, the cap being a promise about how much is asked
+  (`an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass`).
+- **`asked` and `answered` are the two clocks, `asks` and `refusals` the columns they are read with,
+  and `Waits` the three waits in one value.** `due_again` writes the clause for a table's alias, and
+  `albums`, `tracks` and `artists` are each read through it: never asked, asked and unanswered longer
+  ago than the wait its `asks` earned, answered more than `REFRESH_AFTER` (thirty days) ago, or anything
+  under `refresh`. `Waits` carries `retry_after`, `refused_again_after` and `refresh_after` together
+  rather than as three `Duration`s a caller could swap; `WAITS` is this build's, and a test builds its
+  own. What a failure does depends on which it is, through `Pass::heard`: `Error::Unreachable` ends the
+  pass and stamps nothing, so `EnrichSummary::stopped_by` names the `LookupOp` and a run with no network
+  asks the same albums next time rather than writing a day's silence into every one; `Refused` and
+  `Unreadable` count in `refusals`, stamp `asked` and carry on, one refused album saying nothing about
+  the next. Landing a release or profile stamps both, inside the transaction writing it.
+- **A row answering nothing is asked half as often each time, and an answer puts the wait back.**
+  `asks` counts the stampings a row took without an answer — every `stamp_*_asked` carrying
+  `Fruitless::Missed` steps it — and `due_again` waits `RETRY_AFTER` (24 h) doubled that many times,
+  `WAITS_DOUBLE_AT_MOST` (5) capping it at thirty-two days, so a library of files the reference cannot
+  name costs one pass, not one a day for ever. Every landing writes `asks = 0` beside its `answered`,
+  and a retagging is the scan's own reset: `store::apply` puts `asks` back to nothing wherever it nulls
+  `answered`, so a file whose tags moved is asked at once, not a month later. `refresh` still reaches
+  every row (`resonate enrich --refresh`).
+- **A refusal is bounded like a miss, by a count of its own.** `refusals` is the asks in a row that
+  ended `Fruitless::Refused`, stepped by the same `stamp_*_asked` and put back to nothing by a miss or a
+  landing, and `waited_its_turn` reads whichever count the last ask left standing: `doubled` writes one
+  clause for both, so a refused row waits `REFUSED_AGAIN_AFTER` (1 h) doubled per refusal under the same
+  cap and a missed one `RETRY_AFTER` doubled per ask. A service refusing one row for ever is asked about
+  it every thirty-two hours, not hourly for ever, and a service with one bad minute comes back to the row
+  an hour later. The counts are exclusive, not added: the last answer says which wait the row serves, so
+  a miss after a refusal waits the day a first miss earns, not the hour the refusal had reached.
+- **A pass says it is running, so the next launch carries it on.** The `enrichment` table holds one row
+  while a pass runs, carrying the `refresh` it started with: `note_began` writes it as `run` starts and
+  `note_finished` removes it where the pass reached the end of its queue or the listener stopped it. A
+  pass the reference ended (`stopped_by` `Some`) and one never ended, the process having gone, both
+  leave the row standing, read back by `Library::unfinished_enrichment`. `LibraryModel::new` asks at
+  start and, where a row stands and the build can reach the network, carries the pass on with its
+  refresh; the mark cannot fail a pass, so a library written before the table warns through `tracing`
+  and enriches as always. Nothing else needs picking up: a row the interrupted pass never reached was
+  never stamped, so it is due. Headless, the binary's `carrying_on` is the same reading, and both ways
+  in take it — `resonate enrich` and a scan handing over — because an ordinary pass running to the end
+  removes the mark, so a scan's handover would otherwise *discard* an interrupted refresh. A run asking
+  `--refresh` itself already does the wider pass and reads nothing.
+- **A release is taken by tag or strict match, an artist by tag or exact one, and a near miss writes
+  nothing.** `Identified` is `Found`, `Group` or `Nothing`. An album with `albums.mbid` set is asked for
+  directly, and where the reference answers `None` under it the album goes on to the search — a
+  `Refused` under a tagged id stops it, one bad minute saying nothing of the tag
+  (`a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands`); a tagged
+  `albums.release_group` the reference holds nothing under falls through to `find_group` likewise
+  (`a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_search`). `find_release`
+  is asked with the title, the owner and owner's `mbid`, and the tags' barcode and catalogue number, and
+  `top_release` takes the top of `top_of` weighing `weighed_release` — `(agreed_owner, count_fits,
+  year_agrees, score)`, in that order — landing it only where `matches_strictly`: `agreed_owner` (a
+  score of `STRICT_SCORE`, 95, or over, with a credit the owner agrees with — by the id the tags gave or
+  a name that agrees) and `count_fits`, a `track_count` equal to `declared_count` — `tagged_tracks`, the
+  `TRACKTOTAL` the files declared, or the rows held where none did, so a rip short a track is weighed
+  against the pressing it was ripped from, not its own hole. A top hit agreeing on owner and score but
+  not count, carrying a `group`, is `Identified::Group` — the group fetched with no `find_group` between,
+  landed as the bullet below says — and anything short is `Nothing`
+  (`a_hit_is_weighed_on_its_owner_its_count_its_year_and_then_its_score`,
+  `a_strict_hit_of_the_wrong_count_names_its_group_and_one_without_a_group_names_nothing` in
+  `enrich.rs`). An album with no owner is weighed on score and count alone — what a compilation offers.
+  An artist is `profile_of`: a tagged `artists.mbid` is asked for directly and falls through to
+  `find_artist` where the reference holds nothing
+  (`a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands`), and a search hit
+  must `matches_exactly`: `EXACT_SCORE` (100) and the same name, a name having nothing but itself to be
+  checked against. A hit falling short is a debug record naming what it was and how it fell, and the
+  album or artist is stamped `asked` alone, so nothing a person did not tag is written on a guess.
 - **A match the listener says is wrong is taken away and never landed again.**
-  `Library::forget_the_match` is the gesture: it records the album's release — or its release
-  group, where the album was landed as a group alone — in `refused_releases`, the eighth step in
-  `MIGRATIONS`, clears what the landing wrote (the ids, the release's title, date, country, kind
-  and disambiguation, a cover the archive gave), takes away the release's rows, its media and its
-  links, and puts `asked` back to nothing so the next lookup asks at once. **What the match wrote
-  on the tracks goes with it**: each of the album's tracks takes back the title and the artist
-  its file gave — `tagged_title` and `tagged_artist` — loses the release's title and a release
-  track id that named one of the rows taken away, is put back to never asked so the next lookup
-  identifies it afresh, and is indexed again under the name it now bears, so a track renamed by a
-  wrong pressing is not left billed and found as that pressing had it —
-  `forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again`. The label, the
-  catalogue number and the barcode stay, because the tags may have given them. `take_release`
-  and `take_group` are where every route lands, a tagged id and a search alike, and both ask
-  `Library::refuses` first and pass a refused id over as `nothing_landed`, so the next lookup
-  settles on another pressing or on nothing rather than on the same wrong one. Only the release is
-  refused, not its group, so a wrong *edition* is put right by another pressing of the same
-  record. A gathering carries the loser's refusals onto the survivor.
-  `a_match_the_listener_forgets_is_taken_away_and_never_landed_again` is the claim.
-  **The listener can choose the pressing too.** `Library::take_pressing` asks the reference for the
-  release named, lifts any refusal of it for that album — `enriched::forgive`, because a pressing
-  chosen by hand outranks one said to be wrong — lands it through the same `land_release` a lookup
-  uses and pairs the rows again, so a strict match on the wrong edition is put right without
-  forgetting anything. `a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took`
-  is the claim.
-- **A name agrees in one of six ways, and `Spelling`'s derived `Ord` is the whole of the
-  ranking.** `same_name` answers `Marked` where the two `folded_title`s agree, marks and all,
-  `Stripped` where only the `stripped_title`s do, and `Dequalified` where they agree only once
-  `dequalified` has taken a version qualifier off the end of each; `names_it` weighs a MusicBrainz
-  artist's aliases the same way and lowers each answer through `as_an_alias` to `AliasMarked` or
-  `AliasStripped`; and `same_credit` answers `ById` above them all where a credited artist's
-  `mbid` is the one the tags gave, because an id the tagger wrote is the one thing no spelling
-  can outweigh. The order the variants are written in is the order they rank —
-  `Dequalified < AliasStripped < AliasMarked < Stripped < Marked < ById` — so a real name beats
-  an alias however well the alias is spelled, and a title that had to give up a qualifier is the
-  last thing taken. All six are an agreement, so a tagger who wrote
-  *Marcin Przybylowicz* is identified against the *Marcin Przybyłowicz* MusicBrainz answers with,
-  where the marked fold alone left that artist stamped `asked` and asked again every `RETRY_AFTER`
-  for ever. Which of the answers is taken is `top_of` weighing `(Option<Spelling>, score)`, so an
-  agreement beats none, a better spelling beats a worse one whatever either scored, and the
-  score decides between two of the same kind — two artists who differ only by a mark therefore
-  stay two, the marked tag taking the marked row and never the other way round. Nothing else
-  moves: where no answer agrees at all, the weight is `(None, score)` for every one of them and
-  the debug record still names the highest-scored. A credit is weighed by `same_credit` twice
-  over — the names joined the way MusicBrainz bills them, and each credited artist singly — and
-  the better of the two is the answer, so *The Weeknd with JENNIE & Lily-Rose Depp* agrees with
-  a file tagged *The Weeknd* alone, which
-  `a_credit_agrees_where_any_one_of_its_names_does_and_an_id_beats_every_spelling`,
-  `a_release_owned_by_the_tagged_id_agrees_however_the_credit_spells_it` and
-  `a_collaboration_credit_agrees_where_the_file_names_one_of_its_artists` in `enrich.rs` are the
-  claims of and `an_album_whose_owner_holds_an_id_is_searched_for_by_that_id_and_agrees_by_it`
-  proves through the pass. Only the artist routes read aliases: `owned_by` weighs a release's or
-  a group's credit against the album's owner and `matches_a_recording` a recording's against
-  what the track was asked with, both through `same_credit`, and where a recording's title and
-  its credit agree by different spellings the weaker of the two is what the match is weighed as.
-- **A version qualifier is a closed list, because everything outside it names a different
-  recording.** `VERSION_QUALIFIERS` is the fourteen spellings `dequalified` will take off the end
-  of a bracketed title — *Album Version*, *Radio Edit*, *Explicit*, *Clean*, *Remastered*,
-  *Bonus Track*, *Original Mix* and the rest — each weighed through `folded_title`, so the case
-  and the punctuation inside the bracket do not matter, and `a_dated_qualifier` adds a remaster
-  carrying a four-digit year on either side of it, so *(Remastered 2011)* and *(2011 Remaster)*
-  both go while *(Remastered by Ada)* stays. `(with Justin Bieber)`, `(Live)`, `(Remix)`,
-  `(feat. …)`, `(Acoustic)`, `(Demo)` and anything the list does not name are left where they
-  stand, because those are a different recording rather than a different pressing of one and
-  taking them off would pair the wrong take. It strips from the end inwards, in `(` `)` and
-  `[` `]` alike, repeats until nothing more comes off and refuses to leave nothing behind, so
-  *Know (Album Version) (Radio Edit)* folds to *Know* while *Explicit* stays a title of its own.
-- **An album no pressing matches is still an album, and the release group is what it is landed
-  as.** `Pass::album` reads four routes in order: `albums.mbid`, which the tags gave;
-  `find_release`; `albums.release_group`, which `MUSICBRAINZ_RELEASEGROUPID` gave; and
-  `find_group`. The group is the answer to a release search that keeps failing on the
-  count — a rip missing a track, a bonus disc, a reissue with two more — because
-  `matches_as_a_group` weighs the score and the folded owner and **no track count at all**, a
-  group having none, which is the whole reason it can answer where `matches_strictly` cannot;
-  and it is reached from the release search too, where the top hit is strict in every way but
-  the count and names its group. What it costs is that a group names many pressings and the
-  catalog wants one, and `settle_group` is where that is decided: `closest_release` answers a
-  pressing and a `Fit` — `Fit::Exact` for one whose `track_count` *is* the `declared_count`,
-  then `Fit::Wider` for the smallest pressing holding more tracks than the album does, and where
-  there is none `Fit::Narrower` for the widest holding no more than it, the earliest dated among
-  equals every way, `earliest` sorting an undated release last so a dated pressing is preferred
-  and an undated one is taken only where nothing else fits — and `land_release` then runs on that
-  id as though the search had found it. A wider
-  pressing is landed rather than refused because what it costs is honest: the rows the rip lacks
-  are release rows with no `track_id`, so `Album::missing` counts them and the Missing pane
-  lists them, where a rip weighed against its own hole was landed as nothing at all — which
-  `a_group_with_no_exact_pressing_lands_the_smallest_wider_one_or_the_widest_narrower_one` in
-  `enrich.rs` and `a_hit_one_track_short_lands_the_pressing_its_group_names_and_lists_the_missing_row`
-  through the pass are the claims of. A narrower one is landed for the same reason read the other
-  way: a rip carrying bonus tracks no pressing has is short of nothing, so the widest pressing is
-  the most of it the reference can account for, and landing it writes the release columns, the
-  links and the rows it *does* name rather than leaving the album with a group id and nothing
-  else — the count the fallback weighs is the rip's own rather than the `declared_count`, so a
-  `TRACKTOTAL` naming more tracks than the files hold still lands the pressing as wide as the rip,
-  which `an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one` is the claim of.
-  Only where no pressing in the group declares a count at all does `take_group` run
-  `land_release_group`, and what it writes is deliberately thin:
-  `albums.release_group`, and `kind`, `date`, `year` and `disambiguation` coalesced so the
-  release columns a pressing would have filled are never guessed at. It writes no `albums.mbid`
-  and no `release_tracks`, because a pressing that cannot hold the rip is not the one it came
-  from. It is therefore half an answer, and the pass goes on asking: `album_due` is
-  `due_again` with `HOLDS_A_GROUP_ALONE` beside it — a `release_group` and no `mbid` — under the
-  same `waited_its_turn` a fruitless ask waits out, and the landing leaves `asks` where
-  `stamp_album_asked` put it rather than zeroing it, so the retries spread a day, two, four and
-  on to the `WAITS_DOUBLE_AT_MOST` ceiling. What makes a retry worth taking is that the album
-  moves under it: a rip finished, a track retagged, a count that now matches a pressing the group
-  already held — where the month `REFRESH_AFTER` names was the only thing that would look again.
-  A pressing that lands puts `asks` back to nothing, which is what takes the album out of the
-  retry.
+  `Library::forget_the_match` records the album's release — or its release group, where it was landed
+  as a group alone — in `refused_releases`, the eighth `MIGRATIONS` step, clears what the landing wrote
+  (ids, release title, date, country, kind, disambiguation, an archive cover), removes the release's
+  rows, media and links, and puts `asked` back to nothing so the next lookup asks at once. **What the
+  match wrote on the tracks goes with it**: each track takes back the title and artist its file gave —
+  `tagged_title` and `tagged_artist` — loses the release's title and a release-track id naming a removed
+  row, is put back to never asked so the next lookup identifies it afresh, and is re-indexed under its
+  name, so a track renamed by a wrong pressing is not left billed and found as that pressing had it
+  (`forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again`). Label,
+  catalogue number and barcode stay, the tags perhaps having given them. `take_release` and `take_group`
+  are where every route lands, tagged id and search alike, and both ask `Library::refuses` first and pass
+  a refused id over as `nothing_landed`, so the next lookup settles on another pressing or nothing. Only
+  the release is refused, not its group, so a wrong *edition* is put right by another pressing. A
+  gathering carries the loser's refusals onto the survivor
+  (`a_match_the_listener_forgets_is_taken_away_and_never_landed_again`). **The listener can choose the
+  pressing too.** `Library::take_pressing` asks the reference for the named release, lifts any refusal
+  of it for that album — `enriched::forgive`, a hand-chosen pressing outranking one said to be wrong —
+  lands it through the lookup's `land_release` and pairs the rows again, so a strict match on the wrong
+  edition is put right without forgetting anything
+  (`a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took`).
+- **A name agrees in one of six ways, and `Spelling`'s derived `Ord` is the whole ranking.** `same_name`
+  answers `Marked` where the two `folded_title`s agree, marks and all, `Stripped` where only the
+  `stripped_title`s do, and `Dequalified` where they agree only once `dequalified` took a version
+  qualifier off the end of each; `names_it` weighs a MusicBrainz artist's aliases the same way and
+  lowers each answer through `as_an_alias` to `AliasMarked` or `AliasStripped`; `same_credit` answers
+  `ById` above them all where a credited artist's `mbid` is the one the tags gave, an id the tagger
+  wrote being the one thing no spelling outweighs. Declaration order is rank — `Dequalified <
+  AliasStripped < AliasMarked < Stripped < Marked < ById` — so a real name beats an alias however well
+  spelled, and a title that gave up a qualifier is taken last. All six are an agreement, so a tagger who
+  wrote *Marcin Przybylowicz* is identified against the *Marcin Przybyłowicz* MusicBrainz answers with,
+  where the marked fold alone left that artist stamped `asked` and asked again every `RETRY_AFTER` for
+  ever. Which answer is taken is `top_of` weighing `(Option<Spelling>, score)`, so an agreement beats
+  none, a better spelling beats a worse whatever either scored, and the score decides between two of a
+  kind — two artists differing only by a mark stay two, the marked tag taking the marked row and never
+  the reverse. Where no answer agrees, the weight is `(None, score)` for all and the debug record names
+  the highest-scored. A credit is weighed by `same_credit` twice — the names joined as MusicBrainz bills
+  them, and each credited artist singly — and the better is the answer, so *The Weeknd with JENNIE &
+  Lily-Rose Depp* agrees with a file tagged *The Weeknd* alone
+  (`a_credit_agrees_where_any_one_of_its_names_does_and_an_id_beats_every_spelling`,
+  `a_release_owned_by_the_tagged_id_agrees_however_the_credit_spells_it`,
+  `a_collaboration_credit_agrees_where_the_file_names_one_of_its_artists` in `enrich.rs`;
+  `an_album_whose_owner_holds_an_id_is_searched_for_by_that_id_and_agrees_by_it` through the pass). Only
+  the artist routes read aliases: `owned_by` weighs a release's or group's credit against the album's
+  owner and `matches_a_recording` a recording's against what the track was asked with, both through
+  `same_credit`, and where a recording's title and credit agree by different spellings the weaker is
+  what the match is weighed as.
+- **A version qualifier is a closed list, everything outside it naming a different recording.**
+  `VERSION_QUALIFIERS` is the fourteen spellings `dequalified` takes off a bracketed title's end —
+  *Album Version*, *Radio Edit*, *Explicit*, *Clean*, *Remastered*, *Bonus Track*, *Original Mix* and
+  the rest — each weighed through `folded_title`, so case and punctuation inside the bracket do not
+  matter, and `a_dated_qualifier` adds a remaster with a four-digit year either side, so *(Remastered
+  2011)* and *(2011 Remaster)* both go while *(Remastered by Ada)* stays. `(with Justin Bieber)`,
+  `(Live)`, `(Remix)`, `(feat. …)`, `(Acoustic)`, `(Demo)` and anything unlisted stay, being a different
+  recording rather than a different pressing, and taking them off would pair the wrong take. It strips
+  from the end inwards, in `(` `)` and `[` `]` alike, repeats until nothing more comes off and refuses to
+  leave nothing, so *Know (Album Version) (Radio Edit)* folds to *Know* while *Explicit* stays a title.
+- **An album no pressing matches is still an album, landed as its release group.** `Pass::album` reads
+  four routes in order: `albums.mbid` (the tags'), `find_release`, `albums.release_group`
+  (`MUSICBRAINZ_RELEASEGROUPID`'s) and `find_group`. The group answers a release search that keeps
+  failing on the count — a rip missing a track, a bonus disc, a reissue with two more — because
+  `matches_as_a_group` weighs the score and the folded owner and **no track count**, a group having
+  none, which is why it can answer where `matches_strictly` cannot; it is also reached from the release
+  search where the top hit is strict in all but the count and names its group. The cost is that a group
+  names many pressings and the catalog wants one, decided in `settle_group`: `closest_release` answers a
+  pressing and a `Fit` — `Fit::Exact` whose `track_count` *is* the `declared_count`, then `Fit::Wider`
+  for the smallest pressing holding more tracks than the album, and where there is none `Fit::Narrower`
+  for the widest holding no more, the earliest dated among equals every way (`earliest` sorting an
+  undated release last, taken only where nothing else fits) — and `land_release` runs on that id as
+  though the search had found it. A wider pressing is landed rather than refused because the cost is
+  honest: the rows the rip lacks are release rows with no `track_id`, so `Album::missing` counts them
+  and the Missing pane lists them, where a rip weighed against its own hole was landed as nothing
+  (`a_group_with_no_exact_pressing_lands_the_smallest_wider_one_or_the_widest_narrower_one` in
+  `enrich.rs`, `a_hit_one_track_short_lands_the_pressing_its_group_names_and_lists_the_missing_row`
+  through the pass). A narrower one is landed for the same reason read the other way: a rip carrying
+  bonus tracks no pressing has is short of nothing, so the widest pressing is the most the reference can
+  account for, and landing it writes the release columns, links and the rows it *does* name rather than
+  leaving the album with a group id and nothing else — the fallback weighing the rip's own count, not
+  `declared_count`, so a `TRACKTOTAL` naming more tracks than the files hold still lands the pressing as
+  wide as the rip (`an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one`). Only where no
+  pressing in the group declares a count does `take_group` run `land_release_group`, deliberately thin:
+  `albums.release_group`, with `kind`, `date`, `year` and `disambiguation` coalesced so the release
+  columns a pressing would fill are never guessed. It writes no `albums.mbid` and no `release_tracks`, a
+  pressing unable to hold the rip not being its source. Half an answer, so the pass goes on asking:
+  `album_due` is `due_again` with `HOLDS_A_GROUP_ALONE` — a `release_group` and no `mbid` — under the
+  same `waited_its_turn` a fruitless ask waits, and the landing leaves `asks` where `stamp_album_asked`
+  put it rather than zeroing it, so the retries spread a day, two, four and on to the
+  `WAITS_DOUBLE_AT_MOST` ceiling. A retry is worth taking because the album moves under it: a rip
+  finished, a track retagged, a count now matching a pressing the group held — where the month
+  `REFRESH_AFTER` names was the only thing that would look again. A pressing that lands puts `asks` back
+  to nothing, taking the album out of the retry. The archive is asked for a cover only in the pass that
+  landed the release or its group, and only where the album held none or held a thumbnail.
 - **A search is asked as a phrase, and as words wherever the phrase *landed* nothing.**
   `found_either_way` is how `find_release`, `find_group` and `Route::Search` all ask: once with
-  `Wording::Phrase`, the fielded query the online crate writes, and once more with
-  `Wording::Words`, the loose dismax one, wherever weighing the first answer took nothing. What
-  lets one function serve three is that it weighs as well as asks — it takes the `weigh` its
-  caller would have applied and answers what that answered — and `Landed` is the one thing the
-  three results have in common, `Identified::Nothing` and two `None`s being three spellings of
-  nothing landing. An empty answer and a near miss are therefore one case, which is the
-  correction: a phrase that found the wrong pressing used to be left there, on the argument that
-  the strict rule had already weighed it, but the two queries are not the same query — the fielded
-  phrase matches a title exactly and the dismax words match it loosely, so a pressing the phrase
-  ranked under the wrong one, or missed over a subtitle the tagger dropped, is reachable only by
-  asking again. A refusal is still not asked again, being the service's bad day rather than an
-  answer. What it costs is one more search per album the phrase could not settle, which the
-  doubling retry already bounds.
+  `Wording::Phrase`, the online crate's fielded query, and again with `Wording::Words`, the loose dismax
+  one, wherever weighing the first answer took nothing. It serves three by weighing as well as asking —
+  taking the caller's `weigh` and answering what it answered — and `Landed` is what the three results
+  share, `Identified::Nothing` and two `None`s being three spellings of nothing landing. An empty answer
+  and a near miss are therefore one case — the correction: a phrase finding the wrong pressing was once
+  left there, since the strict rule had weighed it, but the queries differ — the fielded phrase matches
+  a title exactly and the dismax words loosely — so a pressing the phrase ranked under the wrong one, or
+  missed over a subtitle the tagger dropped, is reachable only by asking again. A refusal is still not
+  asked again, being the service's bad day. The cost is one more search per album the phrase could not
+  settle, bounded by the doubling retry.
   `a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_strict_rule`,
   `a_phrase_that_answers_a_near_miss_is_asked_again_in_words_and_lands_there` and
-  `a_track_the_phrase_answered_nothing_for_is_searched_again_in_words` are the three claims, and
-  the group searches standing beside them are each asked once, which is the fourth: a phrase that
-  lands is never asked again. `Looking` is what keeps one `found_either_way` for all three — a
-  matchable pair of an id and a title, so the record saying the words are being asked names an
-  album or a track rather than either being spelled into a string.
-- **An album is billed by the release where one landed, and by the tags until then.**
-  `albums.title` is what the scan read the files as and no landing ever rewrites it, because it is
-  half of `store::album_key` and of `sleeve_key` and rewriting it would move an album's grouping
-  key under it. `albums.release_title` is what the reference answered, written by `land_release`
-  alone, and the `album_title!` macro in `db.rs` — `coalesce(a.release_title, a.title)` — is the
-  billed title every listing, sort, want and `organise` destination reads. A macro rather than a
-  `const` because three of those four are `const` SQL built with `concat!`, which takes literals.
-  What it buys is the two discs of a set: they share a release id, so they group as one album
-  whose `title` is whichever disc the walk reached first, and the release's own title is what the
-  pane and the layout then say. A rescan cannot undo it, `release_title` being a column the scan
-  does not name.
-- **A medium is a row, because a disc is a thing rather than a number on a track.**
-  `release_media` is `(album_id, position)` with the `format` and the `title` MusicBrainz answers,
-  written by `land_release` and read back as `ReleaseDetail::media`; `release_tracks.disc` stays
-  what says which medium a row sits on. `models::album_rows` puts an `AlbumRow::Disc` above each
-  run of rows where the album spans more than one disc — read off the rows themselves, so a set
-  the reference never answered for still heads its discs — and `browser::disc_heading` names it
-  from the medium where one landed, preferring its title over its format. The heading is drawn
-  with the same `row` every track row takes, because the tracks pane is a `uniform_list` and a
-  taller row would lay the whole list out wrong. `browser::pressings` is the other reader: the
-  release line says `2 × CD` where every medium agrees and `N discs` where they do not.
-- **Landing a release is one transaction, and pairing its rows is a second.** `land_release`
-  writes the release columns on the album, fills `year` only where the scan left none, stamps
-  `answered`, deletes and reinserts `release_tracks`, `release_media` and `album_links` and writes
-  each row's `release_track_links`; the wants under the album are read first through `wants_under`
-  and put back once the rows exist again, so a want survives a refresh that changed the row ids.
-  `Carried` is what a want is put back *by*, most exact first: `Carried::Track` is the release track's own
-  mbid, `Recording` the recording's, and `Seat` the `(disc, position)` it used to sit at —
-  because a reference that re-edited a release moves a track to another seat, and the seat alone
-  would carry the want to whatever now sits there. `want_again` lands the exact ones first and the
-  insert is `ON CONFLICT DO NOTHING`, so two wants that would land on one row leave it to the
-  better-carried of the two, and a want whose track the release no longer holds is dropped as it
-  always was. `rematch_release_tracks` then pairs release rows with catalog rows in four passes,
-  each taking only rows the earlier passes left and catalog rows not yet taken: the recording
-  mbid against `tracks.mbid`, the track mbid against `tracks.release_track_mbid`, the disc and
-  position
-  against `disc_number` and `track_number` — with a missing disc read as 1 only on a one-medium
-  release, so a two-disc set never pairs a disc-less row with the wrong disc — and last the
-  `folded_title`. It writes `release_tracks.track_id` where the pairing *moved* and answers how
-  many rows it moved, so `EnrichStats::matched` says what a pass changed rather than what was
-  already true; and for every row it paired, moved or not, it fills `tracks.mbid`,
-  `release_track_mbid` and `isrc` by `coalesce` from the release row, so a file tagged with no
-  identifier learns the ones its seat on the release carries, which
-  `a_paired_track_receives_the_identifiers_its_release_row_holds` is the claim of. It is a fill
-  and not a correction — a code the file itself carries stands — and a rescan
-  overwrites the three only where the file names one, so the scan rule above holds.
-  `AlbumToAsk::rematch_only` is what makes an album holding release rows rematch
-  whether or not it is due, so a rescan that added a file pairs it without asking the network —
-  but only where a pairing could change anything: `albums_to_ask` offers such an album only where
-  `HOLDS_AN_UNPAIRED_ROW` or `HOLDS_AN_UNPAIRED_TRACK`, because an album whose every row and every
-  track are already paired has nothing for the four passes to find and would cost a read and a
-  write transaction each time a pass ran.
-- **An album is not the only thing a file belongs to, so a track is asked about in its own right.**
-  A file carrying no `ALBUM` tag has `album_id = NULL`, is under no album the pass could reach and
-  was therefore enriched by nothing at all — which is a whole shape of library, the singles and
-  the loose rips a tagger never filed. `Ask::Track` is the answer: `tracks_to_ask` is
-  `WHERE NOT IS_PAIRED AND TRACK_DUE`, so a row `rematch_release_tracks` has already paired to a
-  release row is never in the queue, and `release_tracks_by_track` is the index that keeps
-  `IS_PAIRED` a lookup rather than a read of every release row in the catalog per track. The row
-  itself is read at the moment it is asked, through `Library::track_to_ask`, which asks
-  `NOT IS_PAIRED` a second time — an album landing earlier in the same pass pairs the tracks under
-  it, so those rows retire from the queue silently instead of being asked about over the network a
-  moment after the answer arrived, which
-  `a_track_the_album_pass_already_paired_is_never_asked_about` is the claim of. It is the same
-  discipline `Library::artist_to_ask` already followed for a credit, and the reason the queue is
-  albums, then tracks, then artists.
-- **Four routes, most exact first, and the first that answers ends the track.** `Route::ALL` is
-  `Isrc`, `Recording`, `Search`, `Fingerprint`, and `Pass::track` walks them in that order until
-  one answers, stamping `asked` alone where none does. An ISRC the file carries is asked through
-  `recordings_of_isrc`, which answers a *list* and not one recording, because a code names every
-  take released under it — so `best_recording` tells them apart by length and answers the take
-  with a `Certainty`: one answer is `Exactly` where the lengths agree or either is unmeasured,
-  and `Nearly` where the length disagrees but the title agrees by some `Spelling`
-  (`the_only_take`), because a code the file carries under a title it also carries is evidence
-  of the recording and not of which take, which
-  `an_isrcs_only_take_is_nearly_the_file_where_the_title_agrees_and_the_length_does_not` in
-  `enrich.rs` is the claim of; several are narrowed to those within `RECORDING_MAY_DIFFER_BY`,
-  five seconds, of the file and then to the closest, `Exactly`. A `MUSICBRAINZ_TRACKID` is the
-  recording id and is asked for directly. A search is `find_recording` with the title, the
-  length and what `asked_with` answers — the track's artist and its `artists.mbid`, or where the
-  file names none the album owner's and its — and the album's billed title as `release` only
-  where neither is known; it is weighed by `matches_a_recording`: `STRICT_SCORE`, a title
-  agreeing by some `Spelling`, a credit agreeing through `same_credit` with whatever was asked
-  with, and a length inside the same five seconds. It is refused before the request where
-  `tagged_title` is missing, because a title that is only the file's own name is the one thing a
-  text search must not be handed on its own — **unless the file vouches for the rest**:
-  `named_enough_by_its_file` lets a plain stem be asked with where the file's own tags name an
-  artist, its length is measured and the stem `names_something` — three letters or more once its
-  digits and punctuation are taken off, and not one of `PLACEHOLDER_NAMES`, so *Track 07*,
-  *Audio_03* and *1* ask nothing while *One of These Days.wav* by a tagged artist is searched for,
-  and still has to agree on the title, the credit and the length before it lands, `Nearly`.
-  `a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_name` is the claim.
-  It is refused too where no artist, no owner and no album is known, because
-  a bare title names nothing;
-  `a_track_that_names_no_artist_is_never_searched_for` is the claim of both halves, and
+  `a_track_the_phrase_answered_nothing_for_is_searched_again_in_words` are the three claims, and the
+  group searches beside them are each asked once — the fourth: a phrase that lands is never asked again.
+  `Looking` keeps one `found_either_way` for all three — a matchable pair of an id and a title, so the
+  record saying the words are asked names an album or track rather than a spelled string.
+- **An album is billed by the release where one landed, and by the tags until then.** `albums.title`
+  is what the scan read and no landing rewrites it, being half of `store::album_key` and `sleeve_key`,
+  whose rewriting would move an album's grouping key under it. `albums.release_title` is the
+  reference's answer, written by `land_release` alone, and the `album_title!` macro in `db.rs` —
+  `coalesce(a.release_title, a.title)` — is the billed title listings, sorts, wants and `organise`
+  destinations read (some sites in `alternatives.rs`, `sung.rs`, `vaulted.rs` and `enriched.rs` spell the
+  same `coalesce` by hand). A macro rather than a `const` because such SQL is `const` built with
+  `concat!`, which takes literals. It buys the two discs of a set: they share a release id and group as
+  one album whose `title` is whichever disc the walk reached first, and the release's own title is what
+  the pane and layout say. A rescan cannot undo it, `release_title` being a column the scan does not name.
+- **A medium is a row, a disc being a thing rather than a number on a track.** `release_media` is
+  `(album_id, position)` with the `format` and `title` MusicBrainz answers, written by `land_release` and
+  read back as `ReleaseDetail::media`; `release_tracks.disc` says which medium a row sits on.
+  `models::album_rows` pushes a `ListedRow::Disc` (through `headed_by_disc`) above each run of rows
+  where the album spans more than one disc — read off the rows, so a set the reference never answered
+  for still heads its discs — and `browser::disc_heading` names it from the medium where one landed,
+  title over format. The heading is drawn with the `row` every track row takes, the tracks pane being a
+  `uniform_list` where a taller row lays the whole list out wrong. `browser::pressings` is the other
+  reader: the release line says `2 × CD` where every medium agrees and `N discs` where they do not.
+- **Landing a release is one transaction, and pairing its rows a second.** `land_release` writes the
+  release columns on the album, fills `year` only where the scan left none, stamps `answered`, deletes
+  and reinserts `release_tracks`, `release_media` and `album_links` and writes each row's
+  `release_track_links`; the wants under the album are read first through `wants_under` and put back
+  once the rows exist again, so a want survives a refresh that changed row ids. `Carried` is what a
+  want is put back *by*, most exact first: `Carried::Track` the release track's own mbid, `Recording`
+  the recording's, `Seat` the `(disc, position)` it sat at — a re-edited release moving a track to
+  another seat, where the seat alone would carry the want to whatever sits there now. `want_again` lands
+  the exact ones first and the insert is `ON CONFLICT DO NOTHING`, so two wants landing on one row leave
+  it to the better-carried, and a want whose track the release no longer holds is dropped as always.
+  `rematch_release_tracks` then pairs release rows with catalog rows in four passes, each taking only
+  rows the earlier left and catalog rows not yet taken: the recording mbid against `tracks.mbid`, the
+  track mbid against `tracks.release_track_mbid`, disc and position against `disc_number` and
+  `track_number` — a missing disc read as 1 only on a one-medium release, so a two-disc set never pairs
+  a disc-less row with the wrong disc — and last the `folded_title`. It writes `release_tracks.track_id`
+  where the pairing *moved* and answers how many moved, so `EnrichStats::matched` says what a pass
+  changed, not what was already true; and for every row it paired, moved or not, it fills
+  `tracks.mbid`, `release_track_mbid` and `isrc` by `coalesce` from the release row, so a file tagged
+  with no identifier learns its seat's (`a_paired_track_receives_the_identifiers_its_release_row_holds`)
+  — a fill, not a correction: a code the file carries stands, and a rescan overwrites the three only
+  where the file names one. `AlbumToAsk::rematch_only` makes an album holding release rows rematch
+  whether or not it is due, so a rescan adding a file pairs it without asking the network — but only
+  where a pairing could change anything: `albums_to_ask` offers such an album only where
+  `HOLDS_AN_UNPAIRED_ROW` or `HOLDS_AN_UNPAIRED_TRACK`, an album fully paired having nothing for the four
+  passes to find at the cost of a read and a write transaction each pass.
+- **An album is not the only thing a file belongs to, so a track is asked about in its own right.** A
+  file carrying no `ALBUM` tag has `album_id = NULL`, under no album the pass could reach, and was
+  enriched by nothing — a whole shape of library, the singles and loose rips a tagger never filed.
+  `Ask::Track` is the answer, joining the queue between albums and artists: `tracks_to_ask` is
+  `WHERE NOT IS_PAIRED AND due_again("t")`, so a row `rematch_release_tracks` already paired is never
+  queued, and `release_tracks_by_track` keeps `IS_PAIRED` a lookup rather than a read of every release
+  row per track. The row is read when asked, through `Library::track_to_ask`, which asks `NOT IS_PAIRED`
+  again — an album landing earlier in the pass pairs its tracks, so those rows retire silently rather
+  than being asked over the network a moment after the answer arrived
+  (`a_track_the_album_pass_already_paired_is_never_asked_about`) — the discipline
+  `Library::artist_to_ask` follows for a credit, and why the queue is albums, tracks, then artists.
+- **Four routes, most exact first, and the first answering ends the track.** `Route::ALL` is `Isrc`,
+  `Recording`, `Search`, `Fingerprint`, and `Pass::track` walks them in order until one answers,
+  stamping `asked` alone where none does. An ISRC the file carries is asked through
+  `recordings_of_isrc`, which answers a *list*, a code naming every take released under it — so
+  `best_recording` tells them apart by length and answers the take with a `Certainty`: a lone answer is
+  `Exactly` where the lengths agree or either is unmeasured, and `Nearly` where the length disagrees but
+  the title agrees by some `Spelling` (`the_only_take`), a code the file carries under a title it also
+  carries being evidence of the recording, not of which take
+  (`an_isrcs_only_take_is_nearly_the_file_where_the_title_agrees_and_the_length_does_not` in
+  `enrich.rs`); several are narrowed to those within `RECORDING_MAY_DIFFER_BY` (5 s) of the file, then
+  the closest, `Exactly`. A `MUSICBRAINZ_TRACKID` is the recording id and asked for directly. A search
+  is `find_recording` with the title, the length and what `asked_with` answers — the track's artist and
+  its `artists.mbid`, or where the file names none the album owner's name and mbid — and the album's
+  billed title as `release` only where neither is known; it is weighed by `matches_a_recording`:
+  `STRICT_SCORE`, a title agreeing by some `Spelling`, a credit agreeing through `same_credit` with
+  whatever was asked, and a length inside the same five seconds. It is refused before the request where
+  `tagged_title` is missing, a title that is only the file's name being the one thing a text search must
+  not be handed alone — **unless the file vouches for the rest**: `named_enough_by_its_file` lets a
+  plain stem be asked where the file's tags name an artist, its length is measured and the stem
+  `names_something` — three letters or more (`LETTERS_A_FILE_NAME_HOLDS_AT_LEAST`) once digits and
+  punctuation are off, and not one of `PLACEHOLDER_NAMES` — so *Track 07*, *Audio_03* and *1* ask
+  nothing while *One of These Days.wav* by a tagged artist is searched, still having to agree on title,
+  credit and length to land, `Nearly`
+  (`a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_name`). It is refused too
+  where no artist, owner or album is known, a bare title naming nothing
+  (`a_track_that_names_no_artist_is_never_searched_for` claims both halves), and
   `a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_lands` and
-  `a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release` are what the
-  two fallbacks buy: a file naming no artist under an album that names one is asked about as
-  that artist's, and one under an album nobody owns is asked about by the album's name.
+  `a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release` are what the two
+  fallbacks buy: a file naming no artist under an album naming one is asked as that artist's, and one
+  under an unowned album by the album's name.
 - **A search answer says where the recording sits, so nothing is asked twice.** `RecordingMatch`
-  carries the credit and the `RecordingRelease`s the search named as well as the score, the title
-  and the length, and `RecordingMatch::into_recording` is what `take_match` lands — through
-  `told_where_it_sits`, the same rule the ISRC route takes, so the `/recording` lookup is made
-  only where the answer named no release at all — or, which is the ISRC route's case, named more
-  than one and not one kind between them: MusicBrainz's `/isrc` lookup refuses `release-groups`
-  among its includes, so its releases arrive with no primary or secondary type, and
-  `needs_its_releases_told` asks the recording whole wherever `meant_release` would otherwise be
-  choosing between them by date alone. A recording on one release has nothing to choose between
-  and costs nothing more. MusicBrainz's search index carries a recording's
-  releases in full, and places the match on each by the medium's `track-offset` where the
-  document gives no `position`, which is what the search shape names it; it carries the
-  recording's `isrcs` as well, so `RecordingMatch` reaches `land_recording` with the code and the
-  `coalesce(isrc, ?8)` fills the column. That is the trade come good: one request a track rather
-  than two, on the route a library of loose files spends nearly all of its pass in, and the code
-  an *identifier* route would have written arrives on it anyway. A recording registered under no
-  code writes none, which is a different answer from not having asked.
-- **What a lookup may overwrite is `Certainty`, and it is a type rather than a rule each caller
-  remembers.** `Exactly` is a recording id the *file itself* named, or an ISRC it named whose
-  take is as long as the file; `Nearly` is a text search, a fingerprint, or an ISRC whose only
-  take is another length under the same title. `land_recording` reads it in one `CASE` per
-  column: a name is filled
-  wherever the file named none — `tagged_title IS NULL`, `tagged_artist IS NULL` — whatever the
-  certainty, and a name the file *did* carry is corrected only under `Exactly`. So a lookup tidies
-  *one of these days* into *One of These Days* on the strength of an identifier a tagger wrote,
-  and can never rename a track on the strength of a score, which
-  `an_exact_identification_corrects_a_title_the_file_carried` and
-  `a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_alone` are the two
-  halves of. Everything else it writes fills and never replaces — `track_number` and `disc_number`
-  from where the recording sits on the release, `mbid` and `isrc`, all `coalesce`d — except
-  `release_title`, which is whichever release the route chose, and `artist_id`, which is repointed
-  through `store::artist_named_in` so the row is billed to the artist the catalog already holds
-  under that fold. `asked` and `answered` are stamped in the same statement, whose `RETURNING` is
-  what `EnrichStats::named` counts a moved name off and what `store::index_row` rewrites
-  `tracks_fts` from, so a corrected title is searchable at once rather than at the next scan.
-- **A track that names its release lands the album its own pass never reached.** `best_release` is
-  which of a recording's releases the row is filed under: the album's `albums.mbid` where it has
-  one, then a release whose `folded_title` is the album's, then `elsewhere::meant_release`.
-  Where the album has never been answered — `TrackToAsk::album_answered` is false —
-  `take_recording` goes on to `land_release` on that id, so identifying one track of an untagged
-  album lands the whole release and pairs every row of it in the same turn. Where the album *has*
-  answered, the track stops at its own row, because the album's identification was the more
-  considered of the two and a recording's idea of which pressing it belongs to is not.
+  carries the credit and the `RecordingRelease`s the search named beside score, title and length, and
+  `RecordingMatch::into_recording` is what `take_match` lands — through `told_where_it_sits`, the ISRC
+  route's rule, so the `/recording` lookup is made only where the answer named no release — or, the ISRC
+  route's case, named several and no kind between them: MusicBrainz's `/isrc` lookup refuses
+  `release-groups` among its includes, so its releases arrive untyped, and `needs_its_releases_told`
+  asks the recording whole wherever `meant_release` would otherwise choose between them by date alone. A
+  recording on one release costs nothing more. MusicBrainz's search index carries a recording's releases
+  in full, placing the match on each by the medium's `track-offset` where the document gives no
+  `position`; it carries the `isrcs` too, so `RecordingMatch` reaches `land_recording` with the code and
+  `coalesce(isrc, ?8)` fills the column. The trade come good: one request a track rather than two, on
+  the route a library of loose files spends nearly all its pass in, and the code an *identifier* route
+  would write arrives anyway. A recording registered under no code writes none — a different answer from
+  not having asked.
+- **What a lookup may overwrite is `Certainty`, a type rather than a rule each caller remembers.**
+  `Exactly` is a recording id the *file itself* named, or a named ISRC whose take is as long as the file;
+  `Nearly` is a text search, a fingerprint, or an ISRC whose only take is another length under the same
+  title. `land_recording` reads it in one `CASE` per column: a name is filled wherever the file named
+  none — `tagged_title IS NULL`, `tagged_artist IS NULL` — whatever the certainty, and a name the file
+  *did* carry is corrected only under `Exactly`. So a lookup tidies *one of these days* into *One of
+  These Days* on an identifier a tagger wrote, and never renames a track on a score
+  (`an_exact_identification_corrects_a_title_the_file_carried`,
+  `a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_alone`). Everything else
+  it writes fills and never replaces — `track_number` and `disc_number` from the recording's seat on the
+  release, `mbid` and `isrc`, all `coalesce`d — except `release_title`, the release the route chose, and
+  `artist_id`, repointed through `store::artist_named_in` so the row is billed to the artist the catalog
+  holds under that fold. `asked` and `answered` are stamped in the same statement, whose `RETURNING` is
+  what `EnrichStats::named` counts a moved name off and `store::index_row` rewrites `tracks_fts` from, so
+  a corrected title is searchable at once.
+- **A track naming its release lands the album its own pass never reached.** `best_release` is which
+  of a recording's releases the row is filed under: the album's `albums.mbid` where it has one, then a
+  release whose `folded_title` is the album's, then `elsewhere::meant_release`. Where the album was never
+  answered (`TrackToAsk::album_answered` false), `take_recording` goes on to `land_release` on that id,
+  so identifying one track of an untagged album lands the whole release and pairs every row in the same
+  turn. Where the album *has* answered, the track stops at its own row, the album's identification being
+  the more considered and a recording's idea of its pressing not.
 - **Which release a held track is on is the listener's to say, over whatever the rule chose.**
-  `Library::recording_of` reads the recording a track is identified as — its `tracks.mbid`, from
-  the tags, a lookup or a name taken from its audio — and asks the reference for it whole, so its
-  releases arrive with their kinds; `in_the_order_worth_offering` lists them the way
-  `meant_release` weighs them, the order a found song's releases are offered in. `Library::place_on`
-  lands the recording with the release chosen, under `Certainty::Nearly`, so the release's title
-  and a position the file never gave are written and no name the file carried is touched; where
-  the track is under an album, the album is then given that release through `take_pressing`, the
-  gesture the album card makes, because a folder's tracks are on the release the folder is, and
-  what the rule seated is replaced rather than weighed against. A release the recording is not on
-  answers `false` and writes nothing. The track's menu offers it as *Place on a release…*
-  wherever the reference can be reached.
-  `a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_one_a_rule_would`
-  is the claim.
-- **`fingerprint.rs` is the seam a recogniser fills.** `Fingerprints` answers
-  a `Printed` — `Nothing`, or `Recognised` with `RecordingMatch`es — for a `Sounded`, which is the
-  location, the span, the length, what the *file* said its title and artist were rather than
-  what the catalog settled on, and the `Chromaprint` the study took of it, so no printer decodes.
-  `resonate-online`'s `AcoustId` is the one this build registers, where an `acoustid-key` is set;
-  `analysis.md` has the studies the print comes out of and how a recognition is weighed. `NoFingerprints` is the stub, registered under the source name
-  `unprinted`; `Fingerprinters::none()` is the registry holding it alone, `and` registers one per
-  name the way `Providers::and` and `Lyricists::and` do, and `has_a_source` is how a caller asks
-  whether anything real is behind it. `Library::enrich` takes one beside the `Reference`, and
-  `Fingerprinters::recognise` asks each printer in turn for the first answer that is not empty,
-  answering a `Recognition` that says whether any printer refused, which the pass counts in
-  `refused` and carries on past rather than ending. **A fingerprint is weighed on
-  its score alone**: `recognised` takes the top match at `STRICT_SCORE` and asks nothing about the
-  title or the artist, because the audio is the evidence and a file worth fingerprinting is
-  exactly one whose name is not.
-- **A collaboration is listed under every artist it credits, and never as an artist of its own.**
+  `Library::recording_of` reads the recording a track is identified as — its `tracks.mbid`, from tags,
+  a lookup or a name taken from its audio — and asks the reference for it whole, so its releases arrive
+  with their kinds; `in_the_order_worth_offering` lists them as `meant_release` weighs them, the order a
+  found song's releases are offered in. `Library::place_on` lands the recording with the chosen release
+  under `Certainty::Nearly`, so the release title and a position the file never gave are written and no
+  name the file carried is touched; where the track is under an album, the album is then given that
+  release through `take_pressing` (the album card's gesture), a folder's tracks being on the release the
+  folder is, and what the rule seated is replaced rather than weighed against. A release the recording is
+  not on answers `false` and writes nothing. The track's menu offers it as *Place on a release…* wherever
+  the reference can be reached
+  (`a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_one_a_rule_would`).
+- **`fingerprint.rs` is the seam a recogniser fills.** `Fingerprints` answers a `Printed` — `Nothing`,
+  or `Recognised` with `RecordingMatch`es — for a `Sounded`: the location, the span, the length, what
+  the *file* said its title and artist were (not what the catalog settled on) and the `Chromaprint` the
+  study took, so no printer decodes. `resonate-online`'s `AcoustId` is the one this build registers,
+  where an `acoustid-key` is set; `analysis.md` has the studies the print comes from and how a
+  recognition is weighed. `NoFingerprints` is the stub, registered under `unprinted`;
+  `Fingerprinters::none()` holds it alone, `and` registers one per name as `Providers::and` and
+  `Lyricists::and` do, and `has_a_source` asks whether anything real is behind it. `Library::enrich`
+  takes one beside the `Reference`, and `Fingerprinters::recognise` asks each printer in turn for the
+  first non-empty answer, answering a `Recognition` saying whether any refused, which the pass counts in
+  `refused` and carries on past. **A fingerprint is weighed on its score alone**: `recognised` takes the
+  top match at `STRICT_SCORE` and asks nothing of title or artist, the audio being the evidence and a
+  file worth fingerprinting exactly one whose name is not.
+- **A collaboration is listed under every artist it credits, never as an artist of its own.**
   `track_credits` — a migration step — holds each member of a track's credit, and
-  `credits::credit_the_members` rebuilds it from `tracks.artist` every time the orphans are swept:
-  `members_of` splits the text on the joins a credit is written with — `&`, `and`, a comma, a
-  semicolon, `/`, `+`, `x`, `with`, `feat.`, `ft.`, `featuring`, `vs.` — and the split is taken
-  **only where every part names an artist the catalog already holds**, so *Adam Skorupa &
-  Krzysztof Wierzynkiewicz* becomes the two composers while *Simon & Garfunkel*, whose halves
-  name nobody, stays one artist. A split track's `artist_id` is its first member unless it already
-  names one of them, the text stays the credit the file gave, and the row the whole credit was
+  `credits::credit_the_members` rebuilds it from `tracks.artist` whenever the orphans are swept:
+  `members_of` splits on the joins a credit is written with (`JOINS`: `&`, `and`, a comma, a semicolon,
+  `/`, `+`, `x`, `×`, `with`, `feat.`, `ft.`, `featuring`, `vs.` and the dotless `feat`, `ft`, `vs`,
+  each space-delimited) and takes the split **only where every part names an artist the catalog
+  holds**, so *Adam Skorupa & Krzysztof Wierzynkiewicz* becomes the two composers while *Simon &
+  Garfunkel*, whose halves name nobody, stays one artist. A split track's `artist_id` is its first member
+  unless it already names one of them, the text stays the file's credit, and the row the whole credit was
   filed under is swept once nothing names it. The artist scope, `artist_albums`, `artist_tracks`,
-  `WHAT_AN_ARTIST_HOLDS` and `BY_OR_HOLDING_THE_ARTIST` read a credit beside `artist_id`, the
-  sweep keeps an artist a credit names, and `take_over_artist` carries its credits across a merge.
-  The members come from two places. A landed recording now makes a row for *every* artist it
-  credits, not only the first, so the split has names to find; and where an artist's own lookup
-  lands nothing and its name splits, `Pass::bill_the_members` searches each member not already
-  held under the same exact-name rule and `Library::bill_an_artist` makes a row for each one
-  found, which the pass then asks about like any artist it brought in. Before, the Witcher 2
-  score's tracks were split between *Adam Skorupa*, where a recording had been identified, and a
-  row for the whole credit, where none had, and neither composer's page held the other half.
-  `a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own`,
+  `WHAT_AN_ARTIST_HOLDS` and `BY_OR_HOLDING_THE_ARTIST` read a credit beside `artist_id`, the sweep keeps
+  an artist a credit names, and `take_over_artist` carries its credits across a merge. The members come
+  from two places: a landed recording makes a row for *every* artist it credits, not only the first, so
+  the split has names to find; and where an artist's own lookup lands nothing and its name splits,
+  `Pass::bill_the_members` searches each unheld member under the same exact-name rule and
+  `Library::bill_an_artist` makes a row for each found, which the pass then asks about like any artist it
+  brought in. Before, the Witcher 2 score's tracks were split between *Adam Skorupa*, where a recording
+  had been identified, and a row for the whole credit, where none had, neither composer's page holding
+  the other half. `a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own`,
   `a_name_whose_halves_name_nobody_held_is_one_artist` and
   `a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time` are the claims.
-- **A credit names an artist the catalog may already hold, and it is identified rather than
-  asked.** `Pass::credits` walks the `Credit`s of a landed release or, through `take_group`, of a
-  landed release group: where one carries an mbid and
-  `Library::artist_named` finds the folded name, `write_artist_mbid` fills `artists.mbid` where
-  it was empty, so the artist ask that follows reads the row afresh, asks for that artist's profile
-  by id and spends no search on a name the release already settled. The fold it looks the name up
-  by has to be the one the column holds: `artist_named` keyed on `name.to_lowercase()` where
-  `artists.key` is `store::folded_letters(name)`, so every marked spelling missed silently and
-  *Marcin Przybyłowicz* was searched for by name after the release had just named him by id.
-  `an_artist_is_found_by_the_fold_of_a_credit_name_however_it_is_spelled` is what holds the two
-  together now.
-- **An artist's discography is kept once its profile lands, and what the catalog is short of is
-  read off it.** `Pass::artist` calls `discography` after `land_artist`: `release_groups_of` is
-  asked for every release group the artist is credited on, `worth_keeping` keeps those whose
-  primary type is one of `KEPT_KINDS` — `Album`, `EP` and `Single` — and whose secondary types are
-  none or `Soundtrack` alone, so a live album, a compilation, a remix and a group with no type
-  are left out, which `an_album_an_ep_and_a_single_are_worth_keeping_and_a_soundtrack_is_still_one` and
-  `a_live_album_a_compilation_a_remix_and_an_unkinded_group_are_left_out` in
-  `enrich.rs` are the claims of; and `land_artist_releases` deletes and reinserts
-  `artist_releases` — `(artist_id, mbid)` with the title, the kind, the first release date and
-  the `folded` haystack `spelt_out` writes, which is those three run through
-  `store::folded_letters` — answering how many rows it wrote, which
-  `EnrichStats::releases_found` counts. A release is
-  *unheld* where no album's `release_group` is its mbid — `unheld_by_any_album!` in `db.rs`,
-  read off `albums_by_release_group` — so a landed pressing takes its group out of the list and
-  a group landed thin does the same. **A single is held wherever its song is**: its title is kept
-  as `artist_releases.song`, the words of it — `store::words_of`, the letter fold with every run
-  of what is not a letter or a digit made one space — and the macro weighs it against the words
-  of every title the artist's tracks carry through `words_of`, which `schema::configure`
-  registers on each connection as a deterministic SQLite function, so *Fearless* on the album
-  holds the *Fearless* single however either is punctuated, and only a single whose song the
-  catalog has nowhere is listed as not held —
-  `a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`,
-  which reads the rest as well.
-  **What was not read is said rather than logged.** `Reference::release_groups_of` answers a
-  `Discography` — the releases and how many more the service credits than the browse's cap
-  read — and `land_artist_releases` keeps that as `artists.releases_unread`, and where the
-  browse stopped as `artists.releases_read_to`, a step in `MIGRATIONS` that sets the thousand the
-  cap always was on every artist a read had fallen short on. **The rest is read when the
-  listener asks**: `Library::read_the_rest_of` asks the reference for the next groups from that
-  offset and lands them `Discographed::Further` — beside what the first read kept rather than
-  over it — with the unread count and the offset moved on, so the artist page's *Read the rest*
-  and `resonate missing --artist <NAME> --read-the-rest` each read one more thousand and a
-  discography read to its end is not asked about again, which
-  `ArtistDetail::releases_unread` carries to the artist page's *N releases not held* button and
-  `resonate missing --artist` prints; `Library::unheld_releases` lists them under a cap by artist
-  and first release date, `ArtistDetail::releases_unheld` counts one artist's and
-  `Library::missing_counted` answers a `Missing` — those beside the release rows with no
-  `track_id`, which `Library::missing_tracks` lists in album order with each row's `WantId`.
-  `an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_what_it_does_not_hold`
-  and `the_rows_an_album_is_short_of_are_listed_with_their_wants` are the claims of the readers.
-- **What the catalog is short of is narrowed by the words typed, and each half answers with what
-  it has.** All three readers take an `Option<&str>`, so the pane's list, its counts and the
-  sidebar's figure narrow together. A missing track belongs to an album the catalog *holds*, so
-  it is narrowed through `narrowed_onto("album_id", "a.id")` — the same grouped `tracks_fts`
-  join the albums pane takes, so the whole search grammar reaches it and typing an album, its
-  owner or a track it holds brings up what that album lacks. An unheld release is in no catalog
-  and has only its own row, so `unheld_holding` writes one
-  `r.folded LIKE ? OR ar.key LIKE ?` per lone word of the search, each folded through
-  `store::folded_letters` the way `artists.key` already is — which is how a title, a kind, a
-  year and an artist's name all narrow it, and how *przybylowicz* finds *Przybyłowicz*. Only the
-  lone words are read: a `plays:>20` term says nothing about a release nobody holds, and
-  `playlist::words_of` is where that reading already lived. `what_the_catalog_is_short_of_is_narrowed_by_the_words_typed`
-  and `an_unheld_release_is_found_by_a_name_spelt_either_way` are the claims.
-- **A cover from the archive lands only where the files embedded none, and the archive is asked
-  until it has answered.** `land_archive_cover` writes `cover_art`, `cover_format` and
-  `cover_source` under `WHERE cover_art IS NULL`, so a file's picture is never overwritten — but
-  for a thumbnail the archive's `betters` — and `Pass::album` asks the reference for a cover in
-  the pass that landed the release, where `has_cover` is false or
-  `Library::covered_by_a_thumbnail` reads the held picture's header and finds it under
-  `A_THUMBNAIL_BELOW`. A cover the vault holds is not weighed, its bytes being JXL. `albums.cover_asked` — the first step in `MIGRATIONS` — is stamped once the
-  archive has *answered*, with a picture that landed or with none, and never where the fetch
-  failed, was refused or was cut off by a pass ending under it; `Pass::look_again_for_covers` asks
-  at the end of every run for each album holding a release or a group, no picture and no stamp,
-  passing over those `Pass::covered` says the run already asked about. Before it, one failed fetch
-  left an album with its release and no sleeve for good, while Discord drew the same release's
-  cover off its id. A cover the archive answered it does not hold is not asked for again
-  inside `COVERS_ASKED_AGAIN_AFTER` — thirty days — unless the release is refreshed or
-  `Library::ask_again_for_covers` clears the stamps, which is the settings pane's *Look for missing
-  covers*; past it `albums_wanting_a_cover` reads the stamp as none, because somebody may have
-  uploaded the sleeve since, and the answer stamps it for another month either way. At the
-  archive's pace that is one request a month per uncovered album, which a library of hundreds
-  spends in a few minutes. `a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again`
-  is the claim. An album landed as its release group asks `group_cover` under those same two
-  conditions, so what the group route is short of is a release's rows and never a sleeve. A
-  portrait is the same shape: `land_portrait` writes under `portrait IS NULL`, and it
-  is asked for only where the profile's links name a picture and none is held.
-- **A portrait that missed is looked for again out of the links already held.** `land_artist`
-  stamps `answered` and zeroes `asks` *before* the picture is asked for, and the picture is
-  fetched on a thread whose outcome feeds back into no column — so a fetch that failed on a bad
-  day used to wait out the thirty-day `REFRESH_AFTER` with nothing recording that it had.
-  `Library::artists_wanting_a_portrait` reads every artist with `portrait IS NULL` whose stored
-  `artist_links` name a picture, and `Pass::look_again_for_portraits` asks for each at the end of
-  the run. It needs no column and no MusicBrainz request — the links have been stored since
-  enrichment landed and nothing read them back — and `Pass::pictured` is what keeps it from
-  asking twice, an artist the pass itself already asked about not being asked again by the sweep.
-  Without that set the pictures, being fetched on their own threads, would race the sweep's read
-  of `portrait IS NULL`.
-- **A link is a relation, a service and a URL, and both names are read off the reference's own
-  words.** `Relation::of_type` matches the exact type string MusicBrainz writes — `streaming`,
-  `free streaming`, `official homepage`, `image` and the rest of `Relation::TYPES` — and anything
-  else is `Relation::Other`; `Service::of_url` reads the host, folds it to lowercase, drops a
-  leading `www.`, and matches it or a parent domain against `Service::HOSTS`, with `x.com` and
-  `twitter.com` both `Twitter` and any host carrying an `amazon` label `AmazonMusic`, and anything
-  else `Service::Other`, which keeps the URL. `Service::name` is the lowercase figure a pane
-  draws. All three live in `resonate-core`'s `link.rs`; the tables still name the column
-  `provider` and `store::service_code` and `store::service_of` are its encoding.
-- **A want is a release row the catalog holds no file for, and a provider is what fills one.**
-  `wants` is one row per `release_track_id`, so `Library::want` refuses a row it does not hold
-  with `Error::UnknownReleaseTrack` and answers the same `WantId` twice for the same row; `unwant`
-  drops it and `wants` reads them all, newest first, each a `Want` carrying the album's title, the
-  row's title and artist, its recording and track MBIDs, the album's release MBID, its ISRC,
-  length, disc and position, its own links and the release's. An identifier that does not parse
-  is read as absent through `store::mbid_in` and `store::isrc_in`, the readers a tag goes through.
-  `Want::identity` is the turn from a want into the `resonate_providers::Identity` a provider is
-  handed, and `supply.rs` is the pass: `Library::poll` walks the wants due under
-  `PollOptions::again_after` — `POLL_AGAIN_AFTER`, six hours — on a thread named `resonate-poll`,
-  asks `Providers::first`, and lands what it answers. A `Delivery::File` goes through
-  `Vault::keep` and a `Delivery::Stream` through `Vault::keep_delivered`; either kept writes the
-  `vault_objects` row through `note_supplied` with `taken_from` the file's URI or
-  `<provider>:<key>`, and `wants.offered` is the vault object's URI. With no vault a file's own URI
-  is written as the offer and a stream is dropped, because it has nowhere to be kept; that, a vault
-  refusal and a vault failure are each counted `unkept` and offer nothing, so `offered` never names
-  what cannot be opened. `note_tried` keeps an earlier offer where the new pass found none.
-- **A lyric fetched once is kept, and so is a miss.** `lyrics_kept` is keyed by `(path,
-  span_start)` the way `tracks` is, so a cue row keeps its own words apart from the file's;
-  `text` is `NULL` for a remembered miss and `taken` says when it was last asked. A kept row is a
-  `KeptLyrics` holding an `Option<LyricText>` — the text, `synced`, and the `lyricsfile` column a
-  migration step added, the Lyricsfile document kept only where it says more than its lines. Its
-  `LyricDetail` is `Plain`, `Lines` or `Lyricsfile` in that order, and `sung::keep` never trades
-  a richer set for a plainer one or for a miss: it keeps the richer of what it held and what it
-  was told, stamps `taken` either way and answers whether what it holds got better, which is the
-  enrichment's `lyrics` count. `KeptLyrics::is_due` is the one rule both askers follow: a miss is
-  due after `MISSED_AGAIN_AFTER` of a week, a set short of a Lyricsfile after `BETTERED_AFTER` of
-  a month — in case a synced or a word-timed set has been written since — and a Lyricsfile
-  never. `Library::kept_lyrics` and `keep_lyrics` take the `MediaLocation` and the
-  `Option<FrameSpan>` and refuse a location that is not local through `playlist::local_path`,
-  because a row here is a path like every other; the search index is written from `text`, so a
+- **A credit names an artist the catalog may hold, and it is identified rather than asked.**
+  `Pass::credits` walks the `Credit`s of a landed release or, through `take_group`, a landed release
+  group: where one carries an mbid and `Library::artist_named` finds the folded name,
+  `write_artist_mbid` fills an empty `artists.mbid`, so the following artist ask reads the row afresh,
+  asks for the profile by id and spends no search on a name the release settled. The lookup fold must be
+  the column's: `artist_named` keyed on `name.to_lowercase()` where `artists.key` is
+  `folded_letters(name)`, so every marked spelling missed silently and *Marcin Przybyłowicz* was searched
+  by name right after the release named him by id.
+  `an_artist_is_found_by_the_fold_of_a_credit_name_however_it_is_spelled` holds the two together.
+- **An artist's discography is kept once its profile lands, and what the catalog is short of is read off
+  it.** `Pass::artist` calls `discography` after `land_artist`: `release_groups_of` is asked for every
+  release group the artist is credited on, `worth_keeping` keeps those whose primary type is one of
+  `KEPT_KINDS` — `Album`, `EP`, `Single` — and whose secondary types are none or `Soundtrack` alone, so
+  a live album, compilation, remix or untyped group is left out
+  (`an_album_an_ep_and_a_single_are_worth_keeping_and_a_soundtrack_is_still_one`,
+  `a_live_album_a_compilation_a_remix_and_an_unkinded_group_are_left_out` in `enrich.rs`); and
+  `land_artist_releases` deletes and reinserts `artist_releases` — `(artist_id, mbid)` with title, kind,
+  first release date and the `folded` haystack `spelt_out` writes (those three through `folded_letters`)
+  — answering how many rows it wrote, which `EnrichStats::releases_found` counts. A release is *unheld*
+  where no album's `release_group` is its mbid — `unheld_by_any_album!` in `db.rs`, read off
+  `albums_by_release_group` — so a landed pressing, or a group landed thin, takes its group out of the
+  list. **A single is held wherever its song is**: its title is kept as `artist_releases.song`, the
+  words of it — `store::words_of`, the letter fold with every run of non-letters-or-digits one space —
+  and the macro weighs it against the words of every title the artist's tracks carry through `words_of`,
+  registered by `schema::configure` on each connection as a deterministic SQLite function, so *Fearless*
+  on the album holds the *Fearless* single however either is punctuated, and only a single whose song
+  the catalog has nowhere is listed as not held
+  (`a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_it_did_not_read`, which
+  reads the rest as well). **What was not read is said rather than logged.**
+  `Reference::release_groups_of` answers a `Discography` — the releases and how many more the service
+  credits than the browse's cap read — and `land_artist_releases` keeps that as
+  `artists.releases_unread`, and where the browse stopped as `artists.releases_read_to` (a `MIGRATIONS`
+  step setting the thousand the cap always was on every artist a read fell short on). **The rest is read
+  when the listener asks**: `Library::read_the_rest_of` asks for the next groups from that offset and
+  lands them `Discographed::Further` — beside, not over, what the first read kept — moving the unread
+  count and offset on, so the artist page's *Read the rest* and `resonate missing --artist <NAME>
+  --read-the-rest` each read a thousand more and a discography read to its end is not asked again.
+  `ArtistDetail::releases_unread` carries it to the artist page's *N releases not held* button and
+  `resonate missing --artist` prints it; `Library::unheld_releases` lists them under a cap by artist and
+  first release date, `ArtistDetail::releases_unheld` counts one artist's, and
+  `Library::missing_counted` answers a `Missing` — those beside the release rows with no `track_id`,
+  which `Library::missing_tracks` lists in album order with each row's `WantId`.
+  `an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_what_it_does_not_hold` and
+  `the_rows_an_album_is_short_of_are_listed_with_their_wants` are the readers' claims.
+- **What the catalog is short of is narrowed by the words typed, each half answering with what it
+  has.** All three readers take an `Option<&str>`, so the pane's list, counts and sidebar figure narrow
+  together. A missing track belongs to a *held* album, so it is narrowed through
+  `narrowed_onto("album_id", "a.id")` — the grouped `tracks_fts` join the albums pane takes — so the
+  whole grammar reaches it and typing an album, its owner or a track it holds brings up what it lacks.
+  An unheld release is in no catalog and has only its own row, so `unheld_holding` writes one
+  `r.folded LIKE ? OR ar.key LIKE ?` per lone search word, each folded through `folded_letters` as
+  `artists.key` is — how a title, kind, year and artist's name all narrow it, and how *przybylowicz*
+  finds *Przybyłowicz*. Only lone words are read: a `plays:>20` term says nothing about a release nobody
+  holds, and `playlist::words_of` is where that reading already lived.
+  `what_the_catalog_is_short_of_is_narrowed_by_the_words_typed` and
+  `an_unheld_release_is_found_by_a_name_spelt_either_way` are the claims.
+- **A cover says where it came from, the file's wins, and the archive is asked until it has
+  answered.** `albums.cover_source` is `CoverSource::File` or `Archive` (and `Vault`, `vault.md`).
+  `land_archive_cover` writes `cover_art`, `cover_format` and `cover_source` under
+  `WHERE cover_art IS NULL`, so a file's picture is never overwritten — except a thumbnail the archive's
+  `betters` — and `Pass::album` asks for a cover in the pass that landed the release, where `has_cover`
+  is false or `Library::covered_by_a_thumbnail` reads the held picture's header and finds it under
+  `A_THUMBNAIL_BELOW`; such an archive cover is kept through a rescan and is what `resonate tag` writes
+  over the thumbnail in the file. A vault-held cover is not weighed, its bytes being JXL.
+  `albums.cover_asked` — the first `MIGRATIONS` step — is stamped once the archive has *answered*, with
+  a picture or with none, never where the fetch failed, was refused or was cut off by a pass ending
+  under it; `Pass::look_again_for_covers` asks at the end of every run for each album holding a release
+  or group, no picture and no stamp, passing over those `Pass::covered` says the run asked. Before, one
+  failed fetch left an album with its release and no sleeve for good while Discord drew the same
+  release's cover off its id. A cover the archive answered it lacks is not asked again within
+  `COVERS_ASKED_AGAIN_AFTER` (30 days) unless the release is refreshed or
+  `Library::ask_again_for_covers` clears the stamps (the settings pane's *Look for missing covers*);
+  past it `albums_wanting_a_cover` reads the stamp as none, somebody perhaps having uploaded the sleeve,
+  and the answer stamps it for another month either way — at the archive's pace one request a month per
+  uncovered album, a library of hundreds spending a few minutes
+  (`a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again`). An album landed as its group
+  asks `group_cover` under the same two conditions, so what the group route lacks is a release's rows,
+  never a sleeve. A portrait is the same shape: `land_portrait` writes under `portrait IS NULL`, asked
+  only where the profile's links name a picture and none is held.
+- **A portrait that missed is looked for again from the links already held.** `land_artist` stamps
+  `answered` and zeroes `asks` *before* the picture is asked, and the picture is fetched on a thread
+  whose outcome feeds no column — so a fetch failing on a bad day waited out the thirty-day
+  `REFRESH_AFTER` with nothing recording it. `Library::artists_wanting_a_portrait` reads every artist
+  with `portrait IS NULL` whose stored `artist_links` name a picture, and
+  `Pass::look_again_for_portraits` asks for each at run's end — no column and no MusicBrainz request,
+  the links having been stored since enrichment landed and never read back — and `Pass::pictured`
+  keeps it from asking twice, an artist the pass already asked about not asked again by the sweep.
+  Without that set the pictures, fetched on their own threads, would race the sweep's read of
+  `portrait IS NULL`.
+- **A link is a relation, a service and a URL, both names read off the reference's own words.**
+  `Relation::of_type` matches the exact type string MusicBrainz writes — `streaming`, `free
+  streaming`, `official homepage`, `image` and the rest of `Relation::TYPES` — else `Relation::Other`;
+  `Service::of_url` reads the host, lowercases it, drops a leading `www.`, and matches it or a parent
+  domain against `Service::HOSTS`, `x.com` and `twitter.com` both `Twitter` and any host with an
+  `amazon` label `AmazonMusic`, else `Service::Other`, keeping the URL. `Service::name` is the lowercase
+  figure a pane draws. All three live in `resonate-core`'s `link.rs` (what was the library's `Provider`
+  enum, renamed so *provider* means only a plugin that obtains media); the tables still name the column
+  `provider`, and `store::service_code` and `store::service_of` are its encoding.
+- **A want is a release row the catalog holds no file for, and a provider fills one.** `wants` is one
+  row per `release_track_id`, so `Library::want` refuses an unheld row with
+  `Error::UnknownReleaseTrack` and answers the same `WantId` twice for the same row; `unwant` drops it and
+  `wants` reads them all, newest first, each a `Want` carrying the album's title, the row's title and
+  artist, recording and track MBIDs, the album's release MBID, ISRC, length, disc and position, its own
+  links and the release's. An unparsable identifier reads as absent through `store::mbid_in` and
+  `store::isrc_in`, the readers a tag goes through. `Want::identity` turns a want into the
+  `resonate_providers::Identity` a provider is handed, and `supply.rs` is the pass: `Library::poll`
+  walks the wants due under `PollOptions::again_after` — `POLL_AGAIN_AFTER`, six hours — on a
+  `resonate-poll` thread, asks `Providers::first`, and lands what it answers. A `Delivery::File` goes
+  through `Vault::keep` and a `Delivery::Stream` through `Vault::keep_delivered`; either kept writes the
+  `vault_objects` row through `note_delivered` with `taken_from` the file's URI or `<provider>:<key>`,
+  and `wants.offered` is the vault object's URI. With no vault a file's own URI is the offer and a stream
+  is dropped, having nowhere to be kept; that, a vault refusal and a vault failure each count `unkept`
+  and offer nothing, so `offered` never names what cannot be opened. `note_tried` keeps an earlier offer
+  where the new pass found none. `providers.md` has the rest.
+- **A lyric fetched once is kept, and so is a miss; what is kept only gets better.** `lyrics_kept` is
+  keyed by `(path, span_start)` as `tracks` is, so a cue row keeps its words apart from the file's;
+  `text` is `NULL` for a remembered miss and `taken` says when last asked. A kept row is a `KeptLyrics`
+  holding an `Option<LyricText>` — the text, `synced`, and the `lyricsfile` a migration step added, the
+  Lyricsfile document kept only where it says more than its lines (a set timed word by word or sung by
+  two overlapping voices). Its `LyricDetail` is `Plain`, `Lines` or `Lyricsfile` in that order, and
+  `sung::keep` never trades a richer set for a plainer one or a miss: it keeps the richer of held and
+  told, stamps `taken` either way and answers whether what it holds improved (the enrichment's `lyrics`
+  count). `KeptLyrics::is_due` is the one rule both askers follow: a miss is due after
+  `MISSED_AGAIN_AFTER` (a week), a set short of a Lyricsfile after `BETTERED_AFTER` (a month) — a synced
+  or word-timed set perhaps written since — and a Lyricsfile never. `Library::kept_lyrics` and
+  `keep_lyrics` take the `MediaLocation` and `Option<FrameSpan>` and refuse a non-local location through
+  `playlist::local_path`, a row here being a path; the search index is written from `text`, so a
   Lyricsfile's YAML is never what `lyrics:` reaches. The catalog holds words it never parses: the
   reading is the online crate's.
 - **The lookup asks for every track's words beside the pass.** `Reference::lyrics` takes a
-  `LyricsAsked` — the title, the artist or the album's owner, the album and the length, read off
-  the row the moment it is asked so a name the pass has just corrected is the one sent — and
-  answers an `Option<LyricText>`, `None` for an instrumental or a song the service does not hold.
-  `Library::lyrics_to_ask` is every row with no kept row or a due one, all of them under
-  `refresh`, cut to `at_most` like the other queues, and `EnrichOptions::lyrics` turns the walk
-  off, which is the `fetch-lyrics` key. `Verses` is one thread, the way `Pictures` is two:
-  LRCLIB is paced apart from MusicBrainz, so the words cost the pass nothing but the wait at its
-  end. A refusal is counted and the row is left unkept so it is asked again; an unreachable
-  service ends the walk and not the pass. A delivered row is a row like any other here, so it
-  has its words fetched too.
+  `LyricsAsked` — title, artist or the album's owner, album and length, read off the row when asked so
+  a name the pass just corrected is the one sent — and answers an `Option<LyricText>`, `None` for an
+  instrumental or a song the service lacks (`Online` answers it through the same `lrclib::told` the
+  window's `Lrclib` asks). `Library::lyrics_to_ask` is every row with no kept row or a due one — all
+  under `refresh` — cut to `at_most` like the other queues, and `EnrichOptions::lyrics` turns the walk
+  off (the `fetch-lyrics` key). `Verses` is one thread, as `Pictures` is two: LRCLIB is paced apart from
+  MusicBrainz, so the words cost the pass nothing but the wait at its end. A refusal is counted and the
+  row left unkept to be asked again; an unreachable service ends the walk, not the pass. A delivered row
+  is a row like any other here and has its words fetched too. `Lyricists::find` walking every provider
+  for the most finely timed answer is why a file's plain words give way to a synced set fetched for it
+  (`lyrics.md`).
 - **The panes read what landed through seven calls, and two counts ride on the listings.**
-  `Library::release_of` answers a `ReleaseDetail` — the release columns, the `CoverSource`, the
-  two clocks and the album's links — `release_tracks` the `HeldReleaseTrack`s with each row's links
-  and the `TrackId` it paired with, `artist_detail` an `ArtistDetail` with the genres, the links
-  and `releases_unheld`, `portrait` the `CoverArt`, sniffed where the stored format code is
-  missing, and `missing_tracks`, `unheld_releases` and `missing_counted` what the discography
-  bullet above describes, the first two under an `Option<usize>` cap.
-  `Album::missing` is the count of release rows whose `track_id` is `NULL` and `Album::mbid` and
-  `Artist::mbid` are read off the same listing rows, so an album grid says which albums are short
-  a track without a second read; `Artist::has_portrait` is what lets a list draw a placeholder
-  without asking for bytes.
+  `Library::release_of` answers a `ReleaseDetail` — release columns, `CoverSource`, the two clocks and
+  the album's links; `release_tracks` the `HeldReleaseTrack`s with each row's links and paired
+  `TrackId`; `artist_detail` an `ArtistDetail` with genres, links and `releases_unheld`; `portrait` the
+  `CoverArt`, sniffed where the stored format code is missing; and `missing_tracks`, `unheld_releases`
+  and `missing_counted` as the discography bullet says, the first two under an `Option<usize>` cap.
+  `Album::missing` counts release rows whose `track_id` is `NULL`, and `Album::mbid` and `Artist::mbid`
+  are read off the same listing rows, so an album grid says which albums are short a track without a
+  second read; `Artist::has_portrait` lets a list draw a placeholder without asking for bytes.
 
 ## Writing the catalog back into the files
 
-- **A guess is never written, which is why a name is written only where a lookup answered for the
-  row that holds it.** `tracks.title` falls back to the file's stem where the tags named nothing
-  and `albums.title` to whatever grouped the folder, so writing either back would put this build's
-  own reading into the file as though a reference had said it. `offered` therefore gates the track
-  name and artist on `tracks.answered`, the album name and its two totals on `albums.answered` —
-  and it is `albums.release_title` rather than `albums.title` that is offered, because only a
-  landed release names a pressing, an album settled as its release group alone naming none — and
-  the album artist and its id on the *artist's* own `answered`, since `land_release` never
-  repoints `albums.artist_id` and the credit there is the scan's attribution. An identifier is
-  never a guess: `tracks.mbid`, `release_track_mbid`, `artist_mbid`, `isrc`, `albums.mbid`,
-  `release_group` and what the tags declared about the pressing are offered whatever answered,
-  because each of them is either the file's own or a strict match's.
+What the catalog was told is written back through a seam of its own, and this build writes only
+what it will read back. `resonate-codec` carries the writing beside the reading: `TagField` is the
+vocabulary of a writable field, `TagEdit` one of them with its value, `Writing` the run of edits and
+the optional front cover riding into one call, `TagSink` the seam over `TagSource`, and `FileTags`
+the whole of what is behind it — lofty writes and symphonia still reads, because what a write is
+weighed against must be what the rest of this build sees. A format whose tags this build would not
+read back is refused rather than written: AAC, AIFF, Monkey's Audio, FLAC, MP3, MP4, Ogg Vorbis,
+Opus, WAV and WavPack are what `FileTags::writes` answers for — a WAV because `riff.rs` reads the
+`id3 ` chunk lofty writes into, which symphonia's reader skips — and `.caf`, `.mka`, `.oga` and the
+two DSD containers, which lofty cannot write, are passed over. `Library::retag` is the pass behind
+`resonate tag`, a preview until `--apply`, as `organise` is; the settings pane's *Tagging* group
+under Library is the window's way in, with the same preview-then-arm shape *Organising* has.
+
+- **A guess is never written, so a name is written only where a lookup answered for the row holding
+  it.** `tracks.title` falls back to the stem where the tags named nothing and `albums.title` to
+  whatever grouped the folder, so writing either back would put this build's own reading into the
+  file as though a reference said it. `offered` therefore gates the track name and artist on
+  `tracks.answered`, the album name and its two totals on `albums.answered` — offering
+  `albums.release_title`, not `albums.title`, since only a landed release names a pressing and an
+  album settled as its group alone names none — and the album artist and its id on the *artist's* own
+  `answered`, `land_release` never repointing `albums.artist_id`, the credit there being the scan's
+  attribution. An identifier is never a guess: `tracks.mbid`, `release_track_mbid`, `artist_mbid`,
+  `isrc`, `albums.mbid`, `release_group` and what the tags declared about the pressing are offered
+  whatever answered, each being the file's own or a strict match's.
 - **What is written is the difference, so a file already saying it is left alone.** `wanted` reads
-  the file's own `TagSet` through the same `TagSource` the rest of the build reads it through and
-  keeps only the fields whose value differs, so a run over a library that has already been written
-  costs one probe a file and no writes at all, and `RetagStats::unchanged` is how many said so. A
-  blank value names nothing and is dropped before the comparison, the same rule `tags::given`
-  applies on the way in.
-- **A picture is the catalog's to give and the file's to keep, and it rides into the same write.**
-  `Writing` carries the edits and an optional front cover, so a file that wants both costs one
-  `save_to_path` rather than two rewrites of its whole tag; `offered_picture` is what fills the
-  second half, and the rule is the mirror of `albums.cover_source`'s — the album's cover is offered
-  where the file's own read answers that it carries none, or where what it carries is a thumbnail
-  the album's cover `betters`, so an archive cover reaches a file that carries none and a file
-  with a picture of its own is left with it unless that picture is a ripper's thumbnail. What a
-  write replaced is noted with the run, so putting the run back writes the thumbnail back —
-  `a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size`. The plan reads each file
+  the file's own `TagSet` through the build's `TagSource` and keeps only the fields whose value
+  differs, so a run over an already-written library costs one probe a file and no writes, and
+  `RetagStats::unchanged` counts them. A blank value names nothing and is dropped before comparing, as
+  `tags::given` does on the way in.
+- **A picture is the catalog's to give and the file's to keep, riding into the same write.**
+  `Writing` carries the edits and an optional front cover, so a file wanting both costs one
+  `save_to_path`, not two rewrites of its whole tag; `offered_picture` fills the second half, the
+  mirror of `albums.cover_source`'s rule — the album's cover is offered where the file's own read says
+  it carries none, or carries a thumbnail the album's cover `betters` — so an archive cover reaches a
+  coverless file and a file with its own picture keeps it unless it is a ripper's thumbnail. What a
+  write replaced is noted with the run, so putting the run back writes the thumbnail back
+  (`a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size`). The plan reads each file
   **once**, through `TagSource::read` — under `Picturing::Copied` where the album holds a cover to
-  weigh the file's against, and `Whether` where it holds none — so the fields it weighs and the
-  picture come off one open. `Sleeve` holds one
-  album's bytes at a time while `TRACKS_TO_TAG` reads in path order, so a run of tracks out of one
-  folder shares one read of the blob. `written` reads the file back once as well, under
-  `Picturing::Copied` where a picture went in, so the fields and the picture are weighed off the
-  same open. A file under no album is offered nothing, having no
-  cover to be given one from. What is written is a `PictureType::CoverFront` under the format's own
-  media type, and it *replaces* the front cover rather than standing beside it, so a file cannot
-  collect two. `written` weighs the picture that reads back against the bytes that went in, exactly
-  as it weighs each field, so a container that quietly drops one is `Unwritten::Unconfirmed` and the
-  catalog is not moved. `RetagStats::pictures` counts them apart from `fields`, because a picture is
-  not a field and a write of one alone is still a write.
+  weigh against, `Whether` where it holds none — so fields and picture come off one open. `Sleeve`
+  holds one album's bytes at a time while `TRACKS_TO_TAG` reads in path order, so tracks from one
+  folder share one read of the blob. `written` reads the file back once too, under
+  `Picturing::Copied` where a picture went in. A file under no album is offered nothing. What is
+  written is a `PictureType::CoverFront` under the format's own media type, *replacing* the front cover
+  rather than standing beside it, so a file cannot collect two. `written` weighs the picture read back
+  against the bytes sent, as each field, so a container quietly dropping one is
+  `Unwritten::Unconfirmed` and the catalog is not moved. `RetagStats::pictures` counts them apart from
+  `fields`, a picture not being a field and a write of one alone still a write.
 - **A favourite is written as this build's own rating, and the plays as the count every player
-  reads, beside anybody else's.** `TrackToTag::popularity` is the row's favourite and its play
-  count, and `Writing::popularity` rides them into the same write as the fields. The favourite is
-  lofty's generic popularimeter under the name `resonate_codec::RATED_BY` — `resonate`, the
-  software and nothing about the listener — five stars, and for a row that is not one, this
-  build's rating taken away. It lands wherever lofty maps one: an ID3v2 `POPM`, which keeps the
-  counter beside it, a Vorbis `RATING:resonate`, MP4's `rate` and RIFF's `IRTD`. An APE tag has
-  no popularimeter, so a WavPack or a Monkey's Audio carries its favourite as FMPS's
-  `FMPS_RATING` of `1.0`, taken away with the favourite. A rating another player wrote under its
-  own name is left where it stands, and where a format names nobody — MP4, RIFF and APE hold one
-  rating — that one is ours. **The plays are written whether or not the row is a favourite**,
-  under the name the FMPS convention gives each tag — `FMPS_PLAYCOUNT` in a Vorbis comment and an
-  APE tag, a `TXXX` of `FMPS_PlayCount` in ID3v2 and `----:com.apple.iTunes:FMPS_Playcount` in
-  MP4 — and a count of nothing is taken away rather than written. lofty's generic `Tag` drops a
-  name it has no `ItemKey` for, so `counted.rs` converts the generic tag into the format's own —
-  `VorbisComments`, `ApeTag`, `Ilst` or `Id3v2Tag`, the conversion lofty's own save makes — sets
-  the count on it and saves that, and reads the count back off the same concrete tag. What the
-  file holds is read through `TagSink::rated` rather than the `TagSet`, because symphonia reads
-  `POPM` and ignores a Vorbis rating: `Rated::Unrated` and `Rated::Favourite` each carry the
-  count the tag keeps — an MP3 written before the count was, whose only count is our `POPM`'s,
-  reads that one — and `Rated::differs_from` weighs the favourite always and the plays wherever
-  the tag keeps a count, so a play counted since the last run rewrites the count and a RIFF
-  `INFO` list, which keeps none, is weighed on the favourite alone. The undo record keeps both in
-  one integer: a favourite's plays as they are, and an unfavoured row's as their negation less
-  one, which is what the `-1` an older build wrote for *unrated* already reads as.
-  `RetagStats::ratings` counts them;
+  reads, beside anybody else's.** `TrackToTag::popularity` is the row's favourite and play count, and
+  `Writing::popularity` rides them into the same write. The favourite is lofty's generic popularimeter
+  under the name `resonate_codec::RATED_BY` — `resonate`, the software, nothing about the listener —
+  five stars, and for a non-favourite this build's rating taken away. It lands wherever lofty maps one:
+  an ID3v2 `POPM` (keeping the counter beside it), a Vorbis `RATING:resonate`, MP4's `rate` and RIFF's
+  `IRTD`. An APE tag has no popularimeter, so a WavPack or Monkey's Audio carries its favourite as
+  FMPS's `FMPS_RATING` of `1.0`, taken away with it. A rating another player wrote under its own name
+  stays, and where a format names nobody — MP4, RIFF and APE hold one rating — that one is ours.
+  **The plays are written whether or not the row is a favourite**, under the FMPS name each tag uses —
+  `FMPS_PLAYCOUNT` in a Vorbis comment and APE tag, a `TXXX` of `FMPS_PlayCount` in ID3v2 and
+  `----:com.apple.iTunes:FMPS_Playcount` in MP4 — and a count of nothing is taken away, not written.
+  lofty's generic `Tag` drops a name with no `ItemKey`, so `counted.rs` converts the generic tag into
+  the format's own — `VorbisComments`, `ApeTag`, `Ilst` or `Id3v2Tag`, the conversion lofty's save
+  makes — sets the count there, saves that, and reads the count back off the same concrete tag. What
+  the file holds is read through `TagSink::rated`, not the `TagSet`, symphonia reading `POPM` and
+  ignoring a Vorbis rating: `Rated::Unrated` and `Rated::Favourite` each carry the count the tag keeps
+  — an MP3 written before counts were, whose only count is our `POPM`'s, reads that — and
+  `Rated::differs_from` weighs the favourite always and the plays wherever the tag keeps a count, so a
+  play counted since the last run rewrites the count and a RIFF `INFO` list, keeping none, is weighed
+  on the favourite alone. The undo record keeps both in one integer: a favourite's plays as they are,
+  an unfavoured row's as their negation less one — which the `-1` an older build wrote for *unrated*
+  already reads as. `RetagStats::ratings` counts them;
   `a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again`,
   `a_play_count_is_written_into_a_file_nobody_marked_a_favourite` and
   `a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes` are the claims.
-- **A write never touches the file it is writing until it is whole.** lofty's `save_to_path`
-  splices a FLAC's metadata and shifts the audio behind it in place, so a full disc or a run killed
-  halfway left a truncated file. `FileTags::write` copies the file to a staged sibling —
-  `.<stem>.<pid>-<n>.<ext>`, the extension kept because lofty reads the kind off it — writes the
-  tags into the copy, `sync_all`s it, renames it over the file and syncs the folder, and takes the
-  copy away again wherever any of that failed. What it costs is a copy of the file per write, which
-  is the price `config::edited` and `organise`'s sheets already pay for the same promise.
-- **A row cut out of a file it shares is never written to.** Twelve cue rows are twelve readings
-  of one file and there is one set of tags between them, so a path holding more than one row — or
-  one row carrying a span — is `Unwritten::Cut` and passed over whole. That is the same reason
-  `Library::track_played` keys a play on the pair: a cut is a row of its own everywhere but in the
-  file.
-- **The catalog follows the file, because the file is what the next scan will read.** A write
-  changes the size and the mtime, which is exactly what `Known::under` compares, so
-  `files_retagged` writes both back and the next walk reads the row as unchanged rather than
-  re-probing it. It writes `tagged_title` and `tagged_artist` too, and only for the names it
-  actually wrote: those two columns are how a rescan tells a retagging from an identification, so
-  a corrected title written into the file and not recorded here reads as the tagger having moved
-  it, takes the file's names back over the reference's and nulls `answered` — the whole library
-  asked about again on the next non-incremental scan.
-  `a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew` is that claim.
+- **A write never touches its file until it is whole.** lofty's `save_to_path` splices a FLAC's
+  metadata and shifts the audio behind it in place, so a full disc or a killed run left a truncated
+  file. `FileTags::write` copies the file to a staged sibling — `.<stem>.<pid>-<n>.<ext>`
+  (`staged_beside`), the extension kept since lofty reads the kind off it — writes the tags into the
+  copy, `sync_all`s it, renames it over the file and syncs the folder, removing the copy wherever any
+  of that failed. The cost is a copy per write, the price `config::edited` and `organise`'s sheets pay
+  for the same promise.
+- **A row cut out of a shared file is never written to.** Twelve cue rows are twelve readings of one
+  file with one set of tags between them, so a path holding more than one row — or one row carrying a
+  span — is `Unwritten::Cut` and passed over whole: the reason `Library::track_played` keys a play on
+  the pair, a cut being a row of its own everywhere but in the file.
+- **The catalog follows the file, the file being what the next scan reads.** A write changes size and
+  mtime, exactly what `Known::under` compares, so `files_retagged` writes both back and the next walk
+  reads the row as unchanged. It writes `tagged_title` and `tagged_artist` too, only for names it
+  actually wrote: those columns tell a retagging from an identification, so a corrected title written
+  into the file and not recorded here reads as the tagger having moved it, takes the file's names back
+  over the reference's and nulls `answered` — the whole library asked again on the next non-incremental
+  scan (`a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew`).
 - **A write is confirmed by reading it back, and an unconfirmed one is not followed.** `written`
-  re-reads the file through the `TagSource` after `TagSink::write` and weighs every edit against
-  what now comes back; a field that does not read back leaves the row `Unwritten::Unconfirmed` and
-  the catalog is not moved, so a format quirk shows up as a refusal rather than as a preview that
-  offers the same edit for ever. It is what `FileTags::writes` refusing a format lofty cannot
-  write is the cheap half of. **A WAV whose ID3v2 tag stands in front of its `RIFF` header has
-  the tag moved into the RIFF on the way**: lofty does not recognise such a file, so
-  `FileTags::write` first stages a copy that is the RIFF with the leading tag's bytes appended as
-  an `id3 ` chunk and the header's size grown to hold it — whatever followed the RIFF following it
-  still — and edits and settles that copy in place of the file, so every field the tag carried
-  beside the ones written is kept and the audio is copied byte for byte.
-  `a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_and_written` is the
+  re-reads the file through the `TagSource` after `TagSink::write` and weighs every edit against what
+  comes back; a field not reading back leaves the row `Unwritten::Unconfirmed` and the catalog unmoved,
+  so a format quirk shows as a refusal rather than a preview offering the same edit for ever —
+  `FileTags::writes` refusing a format being the cheap half. **A WAV whose ID3v2 tag stands before its
+  `RIFF` header has the tag moved into the RIFF on the way**: lofty does not recognise such a file, so
+  `FileTags::write` first stages a copy that is the RIFF with the leading tag's bytes appended as an
+  `id3 ` chunk and the header's size grown to hold it — whatever followed the RIFF still following — and
+  edits and settles that copy in the file's place, so every field the tag carried is kept and the audio
+  copied byte for byte
+  (`a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_and_written`).
+- **`Library::retag` takes the `Walk` guard**, so a scan and a write-back cannot run at once: the pass
+  rewrites the sizes and mtimes a scan's snapshot was taken against — `organise`'s hazard — and a second
+  caller gets `Error::AlreadyWalking`. A vaulted row is passed over as `Unwritten::Vaulted` (`vault.md`).
+- **The preview is the plan.** One `Retagging` is built then handed to the apply or not, so
+  `resonate tag` and `resonate tag --apply` cannot disagree; a failing write moves out of
+  `Retagging::writes` into `passed_over`, so what prints after an apply is what was done, not intended.
+  The settings pane's *Tagging* group draws the same plan (`ui.md`), so command line and window are two
+  presenters of one pass.
+- **The last applied run can be put back.** Every write carries a `Held` — what each touched field read
+  before, `None` where the file carried none, and the rating where it changes one — and the apply notes
+  it in `retagged` and `retagged_fields` (a `MIGRATIONS` step) beside whether the write added the
+  album's cover; the first page of a run writing anything clears what the previous run noted, so the
+  record is the last run's alone. `RetagOptions::undo` plans from that record instead of the catalog:
+  each field read before is written back, one the run added is removed (`Writing::taken`, removing the
+  key), an added cover is taken out (`Writing::unpictured`, the front cover alone) and the rating put
+  back, all handed to the same `apply`, which reads every file back, has the catalog follow
+  `tagged_title` and `tagged_artist` as they now stand and notes what it replaced in turn, so putting
+  the walk back writes the run again — only a cover is not rewritten, the walk back having nothing to
+  put back but its absence. `resonate tag --undo` previews it and `--undo --apply` writes it, and the
+  *Tagging* group offers *Put the last run back* behind a second press wherever
+  `Library::retag_walks_back` says a run is noted. A file gone since is passed over as unreadable, and
+  one that moved is not found by its old path.
+  `an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again` is the
   claim.
-- **`Library::retag` takes the `Walk` guard, so a scan and a write-back cannot run at once.** The
-  pass rewrites the sizes and mtimes a scan's snapshot was taken against, which is the same hazard
-  `organise` has, and a second caller gets `Error::AlreadyWalking`.
-- **The preview is the plan.** One `Retagging` is built and then handed to the apply or not, so
-  `resonate tag` and `resonate tag --apply` cannot disagree about what would happen; a write that
-  fails moves out of `Retagging::writes` and into `passed_over`, so what is printed after an apply
-  is what was done rather than what was intended. The settings pane's *Tagging* group draws that
-  same plan — see `ui.md` — so the command line and the window are two presenters of one pass.
-- **The last applied run can be put back.** Every write carries a `Held` — what each field it
-  touches read as before, `None` where the file carried none, and the rating where it changes
-  one — and the apply notes it in `retagged` and `retagged_fields`, a step in `MIGRATIONS`, beside
-  whether the write added the album's cover; the first page of a run that writes anything clears
-  what the run before noted, so the record is the last run's alone. `RetagOptions::undo` plans
-  out of that record instead of the catalog: each field read before is written back, one the run
-  added is taken away — `Writing::taken`, which removes the key — a cover it added is taken out —
-  `Writing::unpictured`, the front cover alone — and the rating is put back as it was, and it is
-  handed to the same `apply`, which reads every file back, has the catalog follow `tagged_title`
-  and `tagged_artist` as they now stand and notes what it replaced in turn, so putting the walk
-  back writes the run again. Only a cover is not written again, the walk back having nothing to
-  put back but its absence. `resonate tag --undo` previews it and `--undo --apply` writes it, and
-  the settings pane's *Tagging* group offers *Put the last run back* behind a second press
-  wherever `Library::retag_walks_back` says a run is noted. A file that has gone since is passed
-  over as unreadable, and one that moved is not found by its old path.
-  `an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again` is
-  the claim.
-- **The rows are read a page at a time, and a file is never split across two.** Planning a file
-  needs that file's rows and nothing else, so `retag::run` walks the catalog through `paged::Paging`
-  — `ROWS_A_PAGE` rows in path order past the last path handed out, with the rows of the file the
-  page ended in held back for the next one, and the page doubled where one file's cue rows fill it
-  — and plans, and under `--apply` writes and follows, each page before reading the next. The
-  release totals every row is weighed against are read once. What stays in memory is the plan's
-  writes, which the preview prints; a catalog of 500 000 rows is no longer held whole to decide
-  them. `every_row_is_handed_out_once_and_no_file_is_split_across_two_pages` holds the paging to
-  every page size from one row up.
+- **The rows are read a page at a time, and a file is never split across two.** Planning a file needs
+  its rows alone, so `retag::run` walks the catalog through `paged::Paging` — `ROWS_A_PAGE` (2 048) rows
+  in path order past the last path handed out, the rows of the file a page ended in held back for the
+  next, and the page doubled where one file's cue rows fill it — and plans, and under `--apply` writes
+  and follows, each page before reading the next. The release totals every row is weighed against are
+  read once. What stays in memory is the plan's writes, which the preview prints; a 500 000-row catalog
+  is no longer held whole to decide them.
+  `every_row_is_handed_out_once_and_no_file_is_split_across_two_pages` holds the paging to every page
+  size from one row up.
 
 ## Organising
 
-`Library::organise` files every scanned track under a layout, and `resonate organise` and the
-settings pane's *Organising* group under Library are the two ways in. It takes the same `Walk`
-guard `Library::scan` does and re-keys a sleeve-keyed album after the moves land; both of those
-are under *Schema and grouping* above, because they are facts about the catalog rather than about
-the pass.
+`Library::organise` files every scanned track under a layout — the `organise-as` key, or `--as` for
+one run — and `resonate organise` and the settings pane's *Organising* group under Library are the two
+ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed album after the moves land
+(both under *Schema and grouping*, being facts about the catalog, not the pass).
 
-- **A `Layout` is segments of pieces, and the segments are split before the pieces are read.**
-  `Layout::read` splits the template on `/` first and only then reads each part into
-  `Piece::Literal`s and `Piece::Named(Field)`s, which is why a `/` can never reach a literal or a
-  field: by the time pieces exist there is no separator left to put in one. An empty segment is
-  `LayoutFault::EmptySegment`, so a leading `/` is refused rather than making the path absolute,
-  and a segment that is `.` or `..` is `Error::LayoutEscapes` naming its index. That, with
-  `as_one_component` writing every `/` a *value* holds as a `-`, is the whole of the guard:
-  neither what a tagger wrote nor what the template says can name a path outside the root the file
-  came from, which is why `Refusal` has no `Escapes` variant — nothing could construct one.
-  `{{` and `}}` write a brace, an unclosed `{` is `LayoutFault::Unclosed` at its own byte offset,
-  and a name `Field::read` does not know is `Error::UnknownLayoutField` carrying it as a
-  `FieldName` rather than as prose. All of it is refused when `organise-as` is *read*, so a
-  mistyped template is a startup error and never a half-moved library. `Display for Layout` writes
-  the template back as it was read, which is what the settings pane's field draws and what
-  `DEFAULT_LAYOUT` — `{albumartist}/{album}/{disc}{track} {title}` — is asserted against.
+- **A `Layout` is segments of pieces, the segments split before the pieces are read.** `Layout::read`
+  splits the template on `/` first and only then reads each part into `Piece::Literal`s and
+  `Piece::Named(Field)`s, so a `/` can never reach a literal or field: by the time pieces exist no
+  separator is left to put in one. An empty segment is `LayoutFault::EmptySegment`, so a leading `/` is
+  refused rather than making the path absolute, and a `.` or `..` segment is `Error::LayoutEscapes`
+  naming its index. That, with `as_one_component` writing every `/` a *value* holds as `-`, is the whole
+  guard: neither a tagger's text nor the template can name a path outside the file's root — why
+  `Refusal` has no `Escapes` variant, nothing able to construct one. `{{` and `}}` write a brace, an
+  unclosed `{` is `LayoutFault::Unclosed` at its byte offset, and a name `Field::read` does not know is
+  `Error::UnknownLayoutField` carrying it as a `FieldName`, not prose. All of it is refused when
+  `organise-as` is *read*, so a mistyped template is a startup error, never a half-moved library.
+  `Display for Layout` writes the template back as read — what the settings pane's field draws and
+  `DEFAULT_LAYOUT` (`{albumartist}/{album}/{disc}{track} {title}`) is asserted against.
 - **A component is what a filesystem will take, and a segment resolving to nothing is dropped.**
-  `as_one_component` maps `/` to `-`, drops the control characters and the delete, trims leading
-  whitespace and trailing whitespace and dots — so *...And Justice for All* keeps its dots while
-  `..` resolves to nothing — and cuts what is left to `COMPONENT_BYTES`, 255, on a character
-  boundary. The extension is appended only where the layout does not name `{ext}` itself, and the
-  last segment's budget is 255 less what that extension will take, so a name cut to the limit
-  still ends in `.flac`. A middle segment that resolves to nothing is skipped and the path closes
-  up; the *last* one answers `None`, which the planner reads as `Refusal::Unidentified`, because a
-  file with no name to be given is one to leave where it stands. **What a volume takes is read
-  per root**: `Naming::of` finds the root's mount in `/proc/self/mounts` — the deepest mount point
-  it sits under, the table's octal escapes read back — and a root on vfat, exFAT or NTFS is
-  `Naming::Portable`, which writes `\ : * ? " < > |` as `-` as well, so a title ending in a
-  question mark is a file such a drive will take rather than a rename refused on every run. A
-  root anywhere else keeps every character but the separator.
-- **`{albumartist}` falls back to nothing and never to `{artist}`.** The column behind it is the
-  album's own owner, and an album whose tracks disagree about one has none — which is what the
-  `COMPILATION` flag already meant. Falling back to the track artist would scatter a compilation
-  into one folder per singer, which is the split the grouping's third tier exists to prevent, so
-  the segment resolves to nothing and the album folder sits directly under the root instead.
-  `{disc}` is the same judgement in miniature: it writes `N-` only where the album has more than
-  one disc, so a single-disc album is never filed under a number it does not need.
-- **Which disc a set is on is read the way the scan reads it, and `max(disc_number)` alone is not
-  enough.** `scan::disc_in_folder` is one reading with two callers — `scan::sleeve`, which gathers
-  `CD1` and `CD2` into one album, and `organise::disc_of`, which names a row's disc where no tag
-  does. A set filed that way with no disc tags has no `disc_number` at all, so `{disc}` would write
-  nothing and both discs' track 1 would name one file; `Planner::over` therefore raises each
-  album's count to the larger of its stored `max(disc_number)` and what the folders spell, and
-  holds it per album rather than per row so every track of a set agrees about how many discs there
-  are.
+  `as_one_component` maps `/` to `-`, drops control characters and delete, trims leading whitespace and
+  trailing whitespace and dots — so *...And Justice for All* keeps its dots while `..` resolves to
+  nothing — and cuts what is left to `COMPONENT_BYTES` (255) on a character boundary. The extension is
+  appended only where the layout does not name `{ext}`, and the last segment's budget is 255 less that
+  extension, so a name cut to the limit still ends in `.flac`. A middle segment resolving to nothing is
+  skipped and the path closes up; the *last* answers `None`, read by the planner as
+  `Refusal::Unidentified`, a file with no name to give being left where it stands. **What a volume
+  takes is read per root**: `Naming::of` finds the root's mount in `/proc/self/mounts` — the deepest
+  mount point above it, the table's octal escapes read back — and a root on vfat, exFAT or NTFS is
+  `Naming::Portable`, which writes `\ : * ? " < > |` as `-` too, so a title ending in a question mark
+  becomes a file such a drive takes rather than a rename refused every run. Any other root keeps every
+  character but the separator.
+- **`{albumartist}` falls back to nothing, never `{artist}`.** Its column is the album's own owner, and
+  an album whose tracks disagree about one has none (what `COMPILATION` meant). Falling back to the
+  track artist would scatter a compilation into a folder per singer — the split the grouping's third
+  tier prevents — so the segment resolves to nothing and the album folder sits directly under the
+  root. `{disc}` is the same judgement in miniature: `N-` only where the album has more than one disc.
+- **Which disc a set is on is read as the scan reads it; `max(disc_number)` alone is not enough.**
+  `scan::disc_in_folder` has two callers — `scan::sleeve`, gathering `CD1` and `CD2` into one album, and
+  `organise::disc_of`, naming a row's disc where no tag does. A set so filed with no disc tags has no
+  `disc_number`, so `{disc}` would write nothing and both discs' track 1 would name one file;
+  `Planner::knows` therefore raises each album's count to the larger of its stored `max(disc_number)`
+  and what the folders spell, per album rather than per row, so every track of a set agrees how many
+  discs there are.
 - **What filing weighs across the library is read lean, and the rows are paged.** A destination is
-  checked against every source path, a layout needs its root's `Naming` and an album's disc count,
-  and nothing else is library-wide, so `Planner::knows` is fed `Filing`s — the path, the root, the
-  album and the disc — by a cursor that collects nothing, and the rows that name a file are read
-  through the same `paged::Paging` retag uses. A sheet that ties files together is followed across
-  a page: the members the page does not hold are read by their paths, the whole set is filed
-  together, and each member's own page later passes it by. The plan itself is still whole, because
-  the preview lists every move and the chains are ordered across all of them.
+  checked against every source path, a layout needs its root's `Naming` and an album's disc count, and
+  nothing else is library-wide, so `Planner::knows` is fed `Filing`s — path, root, album, disc — by a
+  cursor collecting nothing, and the rows naming a file are read through retag's `paged::Paging`. A
+  sheet tying files together is followed across a page: members the page lacks are read by their paths,
+  the set filed together, and each member's own page later passes it by. The plan itself is still
+  whole, the preview listing every move and the chains ordered across all of them.
   `files_one_sheet_names_are_filed_together_even_when_a_page_holds_only_one_of_them` is the claim.
-- **The preview is the plan the apply performs, not a description of it.** `organise::run` builds
-  one `Plan` and hands that same `Plan` to `apply` only where `OrganiseOptions::apply` says so, so
-  there is no second walk and no second set of rules for the two to disagree about, and
-  `Pass::Preview` and `Pass::Apply` in the settings pane are one call with one flag. What a
-  preview still does is read the filesystem — `symlink_metadata` on every destination, `read_dir`
-  on every source folder — because a collision and a sidecar are facts about the disc rather than
-  about the catalog. `Plan::folders` is what those listings answer with: the folders every file of
-  which is going, deepest first. An apply does not read that list — `prune` takes the source
-  folders of the moves that actually landed and `climb_out_of` walks each upward, removing a
-  folder while it is empty and stopping at the first one that still holds something or at the root
-  itself — but both are sorted `deepest_first`, so a preview names the folders an apply would take
-  away and in the order it would take them.
+- **The preview is the plan the apply performs, not a description of it.** `organise::run` builds one
+  `Plan` and hands that `Plan` to `apply` only where `OrganiseOptions::apply` says so — no second walk,
+  no second rule set — and the settings pane's `Pass::Preview` and `Pass::Apply` are one call with one
+  flag. A preview still reads the filesystem — `symlink_metadata` on every destination, `read_dir` on
+  every source folder — collisions and sidecars being facts about the disc, not the catalog.
+  `Plan::folders` is what those listings answer: the folders all of whose files are going, deepest
+  first. An apply does not read that list — `prune` takes the source folders of the moves that landed
+  and `climb_out_of` walks each upward, removing a folder while empty and stopping at the first holding
+  something or at the root — but both sort `deepest_first`, so a preview names the folders an apply
+  would take, in its order.
 - **A file moves before the catalog does, in batches, and a batch that cannot finish is put back.**
-  `apply` walks the moves `MOVES_PER_BATCH` — 256 — at a time. Inside a batch, each move is
-  weighed against the disc once more (`standing`: a source that has gone is `SourceGone`, a
-  destination now taken is `Collided`), renamed with its sidecars and recorded in `done`; then
-  `settle` fsyncs every folder written and `Library::files_moved` rewrites `tracks.path`,
-  `playlist_entries.path`, `lyrics_kept.path` and `resume_rows.uri` in one transaction, so a play
-  count, a playlist row, a kept lyric and a kept queue all follow the file rather than being
-  rescanned into a new row. It deletes any `tracks` and `lyrics_kept` row standing at the
-  destination first, because both are keyed by the path and the `UPDATE` would otherwise be
-  refused: `standing` weighs the *file* at the destination, so a row whose file has gone —
-  a scan of another root having not yet tidied it — used to fail all 256 moves of its
-  batch for one row the prune should have taken. `playlist_entries` and `resume_rows` need no such
-  delete, neither being unique on the path. A rename that fails puts back only the steps of its
-  own move — the audio and whichever sidecars had already gone — and is refused as
-  `Refusal::Unmoved`, carrying the `io::ErrorKind` the volume answered, while the rest of the
-  batch goes on; a batch used to be put back whole for one refused file, and since the plan is
-  the same next time it failed the same way on every run. A catalog write that fails still runs
-  `put_back` over all of `done` in reverse and the whole batch counts `failed`. The order is the
-  point: a crash between the two leaves a moved file the catalog has not followed, which is
-  exactly what the next scan already reconciles, where the reverse would leave the catalog naming
-  files that are not there. `a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands`
-  is the claim, and the batch size is what bounds how much of a run a failed catalog write can
-  undo.
-- **A batch takes back the folders it made and did not fill.** `renamed_onto` calls
-  `create_dir_all`, which says nothing about which levels were new, so `not_there_yet` walks up
-  from the destination's parent first and records the ones that are not there; `batch_moved` runs
-  `take_back_the_empty` over that list whatever the outcome. `taken_away` only ever removes an
-  empty folder, so one a landed file is sitting in survives and one left behind by a rollback goes
-  — one path for both, rather than an unwind per exit.
-  Deepest first, so a tree comes away a level at a time. What it does *not* do is climb: only what
-  this batch made is taken, never a folder that was already standing and happened to be empty.
-- **A chain is ordered and only a cycle is refused.** `Planner::in_the_way` answers
-  `InTheWay::Stands` for a destination another planned move has already claimed and for one the
-  filesystem holds that no scanned row names — with the single exception of a file being moved onto
-  itself, which is the same device and inode — and `InTheWay::MayGo` for one that *is* a scanned
-  row, because whether that row is itself going cannot be known until every row has been read.
-  `Planner::order_the_chains` is where it is decided: a planned move waits on at most one other, so
-  the graph is functional and `walked` follows each chain to its end and emits the deepest first,
-  which puts `B → C` in front of `A → B` and lands both in one run rather than converging over two.
-  **A chain that closes on itself is broken through a parked name.** `parked_out_of_their_cycles`
-  finds each cycle of single-file moves — each waiting on exactly one other — and splits one move
-  of it in two: its file goes first to `<stem>.resonate-parked-<pid>.<ext>` beside where it stood,
-  which waits on nothing, and from there to where it was going, which waits on what it waited on;
-  the walk then orders the rest of the cycle between the two, so two files filed under each
-  other's names trade places in one run —
-  `two_files_filed_under_each_others_names_trade_places_and_keep_their_plays`. The catalog follows
-  each step in the batch's one transaction, so the row is at the parked name for no longer than
-  the batch. `Move::parks` names the first half, which the preview lists and no count counts as a
-  file moved. What a failure between the halves leaves is a file under a visible name the catalog
-  already follows, which the next run files where it belongs; a run killed between a rename and
-  its commit leaves a file the next scan follows by `moves::follow_the_moved` like any file moved
-  by hand. A move leading into a cycle a unit sits in, and every move waiting on a row that turned
-  out to be staying, is still `Collided`. A move refused there
-  gives its source and its sidecars back out of `going`, so `empties` still counts only the folders
-  every file of which is really leaving. `Refusal` is `Unidentified`, `Loose` — a destination with
-  no folder between it and the root — `Collided`, `SharesASheet` and `SourceGone`, and every one of
-  them is printed against the path it left standing.
-- **A rename that crosses a filesystem is a copy, and the source goes only once the catalog has
+  `apply` walks the moves `MOVES_PER_BATCH` (256) at a time. In a batch each move is weighed against the
+  disc again (`standing`: a vanished source is `SourceGone`, a destination now taken `Collided`), renamed
+  with its sidecars and recorded in `done`; then `settle` fsyncs every folder written and
+  `Library::files_moved` rewrites `tracks.path`, `playlist_entries.path`, `lyrics_kept.path` and
+  `resume_rows.uri` in one transaction, so a play count, playlist row, kept lyric and kept queue follow
+  the file rather than being rescanned into a new row. It first deletes any `tracks` and `lyrics_kept`
+  row standing at the destination, both keyed by path, else the `UPDATE` is refused: `standing` weighs
+  the *file* there, so a row whose file had gone — not yet tidied by a scan of another root — once
+  failed all 256 moves of its batch. `playlist_entries` and `resume_rows` need no such delete, neither
+  being unique on path. A failing rename puts back only its own move's steps — the audio and whichever
+  sidecars had gone — and is refused as `Refusal::Unmoved` with the volume's `io::ErrorKind`, the rest
+  of the batch going on; a batch was once put back whole for one refused file, and with the same plan
+  next time it failed the same way every run. A failing catalog write still runs `put_back` over all of
+  `done` in reverse and the whole batch counts `failed`. The order is the point: a crash between the
+  two leaves a moved file the catalog has not followed, which the next scan reconciles, where the
+  reverse would leave the catalog naming absent files.
+  `a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands` is the claim, and the
+  batch size bounds how much of a run a failed catalog write can undo.
+- **A batch takes back the folders it made and did not fill.** `renamed_onto` calls `create_dir_all`,
+  which says nothing of which levels were new, so `not_there_yet` walks up from the destination's
+  parent first recording those missing; `batch_moved` runs `take_back_the_empty` over that list whatever
+  the outcome. `taken_away` only removes an empty folder, so one holding a landed file survives and one
+  left by a rollback goes — one path for both. Deepest first, a tree coming away a level at a time. It
+  does *not* climb: only what this batch made goes, never an already-standing empty folder.
+- **A chain is ordered and only a cycle refused.** `Planner::in_the_way` answers `InTheWay::Stands` for
+  a destination another planned move claimed and for one the filesystem holds that no scanned row names
+  — except a file moved onto itself (same device and inode) — and `InTheWay::MayGo` for one that *is* a
+  scanned row, whether it is itself going being unknowable until every row is read.
+  `Planner::order_the_chains` decides: a planned move waits on at most one other, so the graph is
+  functional and `walked` follows each chain to its end and emits the deepest first, putting `B → C`
+  before `A → B` and landing both in one run. **A chain closing on itself is broken through a parked
+  name.** `parked_out_of_their_cycles` finds each cycle of single-file moves — each waiting on exactly
+  one other — and splits one move in two: its file goes first to `<stem>.resonate-parked-<pid>.<ext>`
+  (`PARKED`) beside where it stood, waiting on nothing, and from there to its destination, waiting on
+  what it waited on; the walk orders the rest of the cycle between, so two files filed under each other's
+  names trade places in one run
+  (`two_files_filed_under_each_others_names_trade_places_and_keep_their_plays`). The catalog follows each
+  step in the batch's one transaction, so the row is at the parked name no longer than the batch.
+  `Move::parks` names the first half, which the preview lists and no count counts as moved. A failure
+  between the halves leaves a file under a visible name the catalog follows, filed properly next run; a
+  run killed between a rename and its commit leaves a file the next scan follows by
+  `moves::follow_the_moved` like any hand-moved file. A move leading into a cycle a unit sits in, and
+  every move waiting on a row that turned out to stay, is still `Collided`. A move refused there gives
+  its source and sidecars back out of `going`, so `empties` counts only folders all of whose files
+  really leave. `Refusal` is `Unidentified`, `Loose` (a destination with no folder between it and the
+  root), `Collided`, `SharesASheet`, `SourceGone` and `Unmoved`, each printed against the path it left
+  standing.
+- **A rename crossing a filesystem is a copy, and the source goes only once the catalog has
   followed.** `landed_onto` reads `io::ErrorKind::CrossesDevices` off `fs::rename` and falls back to
-  `copying`, which copies the bytes, carries the source's modification time onto the copy — so the
-  next scan reads it as the file it already knows rather than as one to probe again, which would
-  re-identify a stem-named row against its new name — and `sync_all`s it before anything else
-  happens. It is written under the destination's name with `STAGED` after it and renamed into
-  place only once it is whole and synced, so a run killed mid-copy leaves a staging file beside
-  the destination rather than half a file under its name. The order is what makes it safe:
-  nothing is deleted inside the batch, so `put_back`
-  undoes a copy by *removing* the copy while the original is still standing, and `left_behind`
-  takes the sources away only after `Library::files_moved` has committed. A run killed after the
-  rename and before the commit leaves the whole copy standing on the other filesystem beside its
-  source, and `already_copied` is what the next run reads it as: another device, the same size,
-  the same modification time — the copy carries the source's — and the same bytes, read through
-  in `COMPARED_AT_ONCE` pieces only once the three cheap readings agree. Such a destination is
-  not in the way, is not copied again, and the move lands as `Landing::Copied` so the catalog
-  follows and the source goes as it would have.
-  `a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed` and
-  `a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way` are the claims. That is why `Refusal` has
-  no `AcrossDevices` variant any more — nothing constructs one.
-- **A staging file is written down before it is written, so a killed run's is swept by the next.**
-  A staging file stands beside a destination the next run may never plan again — the layout moved,
-  the file was retagged — so it cannot be found by walking what a plan names. `noted_staging`
-  writes its path and this process's pid into `staged_writes`, the fourth step in `MIGRATIONS`,
-  and commits that before a byte of the copy or the rewritten sheet is written; `staged_left`
-  takes the file away where it is still there and lets the row go once it is gone, landed or
-  not, and a file it could not take away keeps its row. A run that applies begins with
-  `sweep_what_a_killed_run_staged`, which takes each noted file away — but only a regular file
-  whose name ends in `STAGED`, so a row can never cost a file it did not name — and passes over a
-  row whose pid is another process `/proc` still holds, because the `Walk` guard is this
-  process's alone and a window and a `resonate organise --apply` beside it may each be copying.
-  A preview writes nothing and sweeps nothing.
-  `what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies` is the claim.
-- **The last applied run can be walked back.** `organised`, a step in `MIGRATIONS`, holds what
-  the last apply landed — every unit, its companions and its sidecars, in the order they landed —
-  and each apply that moved anything replaces it. `OrganiseOptions::walk_back` builds its plan out
-  of that rather than out of a layout: the units in reverse, each `Move::reversed`, so a chain and
-  a parked cycle undo in the order that makes room, and it is handed to the same `apply` — batches,
-  the catalog following, a sheet's `FILE` line renamed back, the folders the run made pruned. What
-  the walk back landed is noted in turn, so walking it back again files the tracks again.
-  `resonate organise --undo` previews it and `--undo --apply` makes it, and the settings pane's
-  *Organising* group offers *Put the last run back* behind a second press wherever
-  `Library::walks_back` says a run is kept.
-  `an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again` is the
-  claim. A file that moved or went since the run is refused at `standing` like any other.
+  `copying`, which copies the bytes, carries the source's modification time onto the copy — so the next
+  scan reads it as the known file rather than one to probe again, which would re-identify a stem-named
+  row against its new name — and `sync_all`s it before anything else. It is written under the
+  destination's name with `STAGED` appended and renamed into place only once whole and synced, so a run
+  killed mid-copy leaves a staging file beside the destination, not half a file under its name. The order
+  makes it safe: nothing is deleted inside the batch, so `put_back` undoes a copy by *removing* it while
+  the original stands, and `left_behind` removes the sources only after `Library::files_moved`
+  committed. A run killed after the rename and before the commit leaves the whole copy on the other
+  filesystem beside its source, and `already_copied` is how the next run reads it: another device, the
+  same size, the same modification time (the copy carries the source's) and the same bytes, read in
+  `COMPARED_AT_ONCE` pieces only once the three cheap readings agree. Such a destination is not in the
+  way, not copied again, and the move lands as `Landing::Copied`, the catalog following and the source
+  going as it would have. `a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed`
+  and `a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way` are the claims — why
+  `Refusal` has no `AcrossDevices` variant any more, nothing constructing one.
+- **A staging file is written down before it is written, so a killed run's is swept by the next.** A
+  staging file stands beside a destination the next run may never plan again — the layout moved, the
+  file retagged — so it cannot be found by walking what a plan names. `noted_staging` writes its path
+  and this process's pid into `staged_writes`, the fourth `MIGRATIONS` step, and commits that before a
+  byte of the copy or rewritten sheet is written; `staged_left` removes the file where it still stands
+  and lets the row go once it is gone, landed or not, and a file it could not remove keeps its row. A
+  run that applies begins with `sweep_what_a_killed_run_staged`, removing each noted file — only a
+  regular file whose name ends in `STAGED`, so a row can never cost a file it did not name — and passing
+  over a row whose pid is another process `/proc` still holds, the `Walk` guard being this process's
+  alone and a window and a `resonate organise --apply` beside it each possibly copying. A preview writes
+  and sweeps nothing. `what_a_run_that_was_killed_staged_is_taken_away_by_the_next_run_that_applies` is
+  the claim.
+- **The last applied run can be walked back.** `organised`, a `MIGRATIONS` step, holds what the last
+  apply landed — every unit, its companions and sidecars, in landing order — each moving apply replacing
+  it. `OrganiseOptions::walk_back` builds its plan from that rather than a layout: the units in reverse,
+  each `Move::reversed`, so a chain and a parked cycle undo in the order that makes room, handed to the
+  same `apply` — batches, the catalog following, a sheet's `FILE` line renamed back, the folders the run
+  made pruned. What the walk back landed is noted in turn, so walking it back again files the tracks
+  again. `resonate organise --undo` previews it and `--undo --apply` makes it, and *Organising* offers
+  *Put the last run back* behind a second press wherever `Library::walks_back` says a run is kept
+  (`an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again`). A file
+  moved or gone since is refused at `standing` like any other.
 - **A run files the roots it is given, and one the catalog does not hold is refused.**
-  `OrganiseOptions::roots` empty is every root, which is what the settings pane and a bare
-  `resonate organise` ask for; naming one puts a `roots.path IN (…)` on `TRACKS_TO_FILE`, so the
-  rows the run does not want never leave SQLite. The check that each named root is one the catalog
-  holds runs on the pass thread rather than in `organise::start`, because `start` may not read the
-  catalog before it has the `Walk` guard — a read there blocks behind a writer the guard is waiting
-  on, which `a_scan_refuses_to_start_while_an_organise_is_running` is what caught. `--as` is the
-  layout for one run, read through the same `Layout::read` `organise-as` is, so a mistyped template
-  is refused before anything moves.
-- **A file beside a track that shares its name travels with it.** `Planner::sidecars` takes the
-  files in the track's folder that are not scanned rows themselves, whose name is the track's stem
-  followed by a `.` and something more, and whose extension is not audio — so `Meddle.cue` and
-  `Meddle.wav.log` follow `Meddle.wav` onto the destination's stem. A cue-cut file is the exception
-  that proves the rule: the rows cut out of one file are filed by the folder their layouts agree
-  on and keep the name they already have, because the sheet beside them names that file by name, so
-  the sidecar lands under an unchanged stem and goes on naming its audio. Rows out of one file that
-  name two different folders are `Unidentified` rather than filed under whichever came first. A
-  sheet that cuts *one* row out of a file is the case that does not hold: the file is rendered by
-  the layout like any other, so `sheets_follow_their_audio` rewrites the landed sheet after the
-  batch's catalog write. `cue::renamed` is the whole of how — it reads the sheet to learn its
-  encoding and to check that exactly one `FILE` line names that file, encodes the old and the new
-  name in that encoding and splices the one byte run that follows a `FILE` command on its own line
-  — `the_run_on_the_file_line`, read a unit of the encoding at a time, so a UTF-16 sheet is walked
-  in pairs and a `REM` or a `TITLE` naming the same file is left as it was — so a BOM, a line
-  ending and every other byte survive; and `staged_over` renames a staged file over the sheet, so
-  a crash mid-write cannot truncate it. A file two `FILE` lines name leaves the sheet as it was.
-  A name the sheet's encoding cannot hold can only be Windows-1252's, UTF-8 and UTF-16 holding
-  every name, and that sheet is carried into UTF-8 with a byte-order mark rather than left naming
-  a file that has gone: `carried_into_unicode` reads every byte around the run through the same
-  `legacy` table the reader decodes with — one character a byte, so nothing is lost and every line
-  ending stays — and writes the new name between them. The mark is what tells a player that reads
-  a sheet without one as the system's code page that this one is not.
+  `OrganiseOptions::roots` empty is every root — what the settings pane and a bare `resonate organise`
+  ask; naming one puts a `roots.path IN (…)` on `TRACKS_TO_FILE`, so unwanted rows never leave SQLite.
+  The check that each named root is held runs on the pass thread, not in `organise::start`, because
+  `start` may not read the catalog before it has the `Walk` guard — a read there blocks behind a writer
+  the guard waits on, which `a_scan_refuses_to_start_while_an_organise_is_running` caught. `--as` is the
+  layout for one run, read through `organise-as`'s `Layout::read`, so a mistyped template is refused
+  before anything moves.
+- **A file beside a track sharing its name travels with it.** `Planner::sidecars` takes the files in
+  the track's folder that are not scanned rows, whose name is the track's stem followed by `.` and more,
+  and whose extension is not audio — so `Meddle.cue` and `Meddle.wav.log` follow `Meddle.wav` onto the
+  destination's stem. A cue-cut file is the exception proving the rule: the rows cut from one file are
+  filed by the folder their layouts agree on and keep their name, the sheet beside them naming that
+  file, so the sidecar lands under an unchanged stem and still names its audio. Rows of one file naming
+  two folders are `Unidentified`, not filed under whichever came first. A sheet cutting *one* row from a
+  file is the case that does not hold: the file is rendered by the layout like any other, so
+  `sheets_follow_their_audio` rewrites the landed sheet after the batch's catalog write. `cue::renamed`
+  is the whole of how — it reads the sheet to learn its encoding and check that exactly one `FILE` line
+  names that file, encodes old and new names in that encoding and splices the one byte run following a
+  `FILE` command on its own line (`the_run_on_the_file_line`, read a unit of the encoding at a time, so a
+  UTF-16 sheet is walked in pairs and a `REM` or `TITLE` naming the same file is left alone) — so a BOM,
+  a line ending and every other byte survive; and `staged_over` renames a staged file over the sheet, so
+  a crash cannot truncate it. A file two `FILE` lines name leaves the sheet alone. A name the sheet's
+  encoding cannot hold can only be Windows-1252's, UTF-8 and UTF-16 holding every name, and that sheet
+  is carried into UTF-8 with a byte-order mark rather than left naming a vanished file:
+  `carried_into_unicode` reads every byte around the run through the reader's `legacy` table — one
+  character a byte, nothing lost, every line ending kept — and writes the new name between. The mark
+  tells a player that reads a markless sheet as the system code page that this one is not.
   `a_sheet_whose_encoding_has_no_letters_for_the_new_name_is_carried_into_unicode` is the claim.
-- **A sheet that cuts a file travels with it whatever it is called, and one that names several
-  files takes them all as one move.** The stem rule above only finds `Meddle.cue` beside
-  `Meddle.wav`; a rip whose sheet is `Meddle.cue` and whose audio is `CDImage.wav` left the sheet
-  behind, and the next scan read the file whole and pruned every row it had cut — their plays,
-  their listens, their favourites and their vault links with them. `Planner::sheets_in` reads each
-  source folder's sheets once, through the scan's own `read_sheet` and `beside`, and
-  `sheets_travelling` weighs every one that names the file being moved: one naming only that file
-  is a sidecar that must land — under the renamed stem where it shared the audio's, under its own
-  name otherwise — and a destination it cannot take refuses the whole move as `Collided`, where a
-  loose sidecar is merely left behind. A sheet naming more than one file that exists — an EAC rip
-  with one `FILE` per track — ties them: `Planner::tied_by_sheets` gathers every file such a sheet
-  names, and every file any sheet naming one of those names, and `file_together` plans them as
-  **one `Move`**, the first file its `from` and `to` and the rest its `companions`, with the sheet
-  a sidecar landing under its own name. One move is what keeps them together through everything
-  after the plan: a batch never splits it, `renamed_onto` puts every file back where one of them
-  fails, `files_moved` has the catalog follow each file, and `sheets_follow_their_audio` renames
-  every `FILE` line in the sheet that landed. `Move::files` is the one walk all of them take, and
-  `Plan::files_moving` is what a preview counts. The layout must land every file in one folder
-  and every file must be one this pass files, or each file is `Refusal::SharesASheet`, the one
-  that failed on its own account taking its own refusal instead, and such a sheet is kept out of
-  the loose stem pass for the same reason. **A unit is a link in a chain like any move.** A
-  destination held by a file this pass moves on is not a refusal but something to wait for, and a
-  unit may wait on as many as it has members: `Planned::waits_for` is every source standing where
-  the move lands, and `order_the_chains` puts a move behind each move that vacates one of them.
-  `walked` is a depth-first topological order over those waits rather than the walk of one chain
-  it was, iterative so a long chain costs no stack: a move is ordered once everything it waits on
-  is, and a move that meets one still being walked — a cycle — or one already doomed dooms every
-  move on the walk with it, because each of those waits on it in turn. A move left out is refused
-  as `Collided` with the first source it waited on, each member of a unit alike. A unit whose
-  member lands where another member stands waits on itself and is doomed with it, which is the
-  refusal it always met: a rename inside one move cannot be ordered. At the apply, `standing`
-  weighs every file of a move, so a chain the disc has changed under since the plan is still
-  refused rather than renamed over.
-  `the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first` is the
-  claim.
+- **A sheet cutting a file travels with it whatever it is called, and one naming several files takes
+  them all as one move.** The stem rule finds only `Meddle.cue` beside `Meddle.wav`; a rip whose sheet
+  is `Meddle.cue` and audio `CDImage.wav` left the sheet behind, and the next scan read the file whole
+  and pruned every row it had cut — plays, listens, favourites and vault links with them.
+  `Planner::sheets_in` reads each source folder's sheets once, through the scan's `read_sheet` and
+  `beside`, and `sheets_travelling` weighs every one naming the file being moved: one naming only that
+  file is a sidecar that must land — under the renamed stem where it shared the audio's, under its own
+  name otherwise — and a destination it cannot take refuses the whole move as `Collided`, where a loose
+  sidecar is merely left. A sheet naming more than one existing file — an EAC rip with one `FILE` per
+  track — ties them: `Planner::tied_by_sheets` gathers every file such a sheet names, and every file
+  any sheet naming one of those names, and `file_together` plans them as **one `Move`**, the first file
+  its `from` and `to` and the rest its `companions`, the sheet a sidecar under its own name. One move
+  keeps them together through everything after the plan: a batch never splits it, `renamed_onto` puts
+  every file back where one fails, `files_moved` has the catalog follow each file, and
+  `sheets_follow_their_audio` renames every `FILE` line in the landed sheet. `Move::files` is the one
+  walk all of them take, and `Plan::files_moving` what a preview counts. The layout must land every file
+  in one folder and every file must be one this pass files, or each is `Refusal::SharesASheet`, the one
+  failing on its own account taking its own refusal, and such a sheet is kept out of the loose stem pass
+  likewise. **A unit is a link in a chain like any move.** A destination held by a file this pass moves
+  on is something to wait for, and a unit may wait on as many as it has members:
+  `Planned::waits_for` is every source standing where the move lands, and `order_the_chains` puts a move
+  behind each move vacating one. `walked` is a depth-first topological order over those waits,
+  iterative so a long chain costs no stack: a move is ordered once everything it waits on is, and a move
+  meeting one still being walked — a cycle — or one already doomed dooms every move on the walk, each
+  waiting on it in turn. A move left out is refused as `Collided` with the first source it waited on,
+  each member of a unit alike. A unit whose member lands where another member stands waits on itself and
+  is doomed with it, as always: a rename inside one move cannot be ordered. At the apply `standing`
+  weighs every file of a move, so a chain the disc changed under since the plan is still refused rather
+  than renamed over. `the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first`
+  is the claim.
 
 ## The search grammar
 
-- **A search is words and terms, and what a term means is typed.** `Search::read` is the whole of
-  the grammar: a token is a word unless it names a field, where `title:`, `artist:`, `album:`,
-  `genre:` and `lyrics:` (or `lyric:`) scope the words beside them and `year:`, `added:`, `plays:`, `played:`, `length:`, `rate:`,
-  `depth:`, `codec:` and `is:` are `Term`s — each with the aliases `KEYS` lists, `heard:`,
-  `duration:`, `samplerate:`, `bits:` and `format:`. A token naming no field, or one whose value the
-  grammar cannot read, is the words it was written as — the rule `lrc.rs` follows for a bracket that
-  is neither a moment nor an id tag — so a search never fails to parse and the box stays live as it
-  is typed, at the cost of a mistyped term going quietly. Every numeric reader in it is written to
-  be overflow-safe, so a value past what its type holds is one the grammar cannot read rather than
-  one it panics on: `length:400000000000000000:30` is three words. `Display for Term` is the canonical text
+- **A search is words and terms, and what a term means is typed.** `Search::read` is the whole
+  grammar: a token is a word unless it names a field, where `title:`, `artist:`, `album:`, `genre:` and
+  `lyrics:` (or `lyric:`, `LYRICS_ALIAS`) scope the words beside them and `year:`, `added:`, `plays:`,
+  `played:`, `length:`, `rate:`, `depth:`, `codec:` and `is:` are `Term`s — each with the aliases `KEYS`
+  lists: `heard:`, `duration:`, `samplerate:`, `bits:`, `format:`. A token naming no field, or whose
+  value the grammar cannot read, is the words it was written as — `lrc.rs`'s rule for a bracket neither
+  moment nor id tag — so a search never fails to parse and the box stays live as typed, a mistyped term
+  going quietly. Every numeric reader is overflow-safe, so a value past its type is unreadable rather
+  than a panic: `length:400000000000000000:30` is three words. `Display for Term` is the canonical text
   and reads back as the same term, so the window's *Reads* row, `resonate playlist --query` and the
-  grammar's own tests all say the same thing rather than each writing prose of its own. `is:hires`
-  is lossless above CD, so `CD_SAMPLE_RATE` and `CD_SAMPLE_DEPTH` in `db.rs` are where that claim
-  lives, and `depth:` reads the stored `SampleFormat`, which is 24 valid bits for a float file.
-- **What a term narrows on is what the catalog stored, and two of them are ages rather than dates.**
-  `added:` and `played:` are measured from the moment the query runs — a month is 30 days however
-  long the month was and a year is 365 — which is what makes "added this year" `added:<1y` and what
-  makes a saved query answer differently tomorrow. `plays:` is a count beside them, so `plays:0` is
-  what has never been heard and `plays:>5` what has, and `heard:` is the other spelling of
-  `played:`. A `@` after the count is a window over `listens` rather than the lifetime column:
-  `plays:>20@30d` is more than twenty plays inside the last thirty days, the age after it reads
-  exactly as `added:` and `played:` read theirs, a range carries the window on both bounds
-  (`plays:5-10@30d`), and two `Plays` terms fold back into a range only where their windows agree.
-  A window the grammar cannot read makes the whole token a plain word, as everywhere else. What it
-  costs is the one term no index serves — a correlated `count(*)` over `listens_by_track` per
-  candidate row — which is why it narrows and never orders. `year:` is the *album's*, so a track whose album declares no year answers no year term
-  at all and a single that was never grouped has nothing to answer with. `rate:` and `depth:` are
-  what the file is rather than what the sink is asked for, which is what the inspector reports
-  instead, so `depth:32` names the 32-bit integer files alone. `is:lossy` names the codecs known to
-  be lossy rather than everything that is not lossless, so a file whose codec the scan could not
-  name is in neither it nor `is:lossless`. Nothing narrows on a rating, because the catalog stores
-  none, and nothing sorts on a term either: a term narrows and `SortOrder` orders. A search is
-  parsed on every keystroke and a saved query parses its text on every read, and nothing caches
-  either, because it is a handful of tokens rather than a cost worth holding.
-- **Everything a search says has to hold at once, unless a `-` denies it or an `or` offers the
-  alternative.** `Search` is `Clause`s that all have to hold, a `Clause` is `Asked` alternatives one
-  of which must, and an `Asked` is the `Condition`s one token read together with whether it was
-  denied — which is why a range is a shape rather than two searches: `year:1970-1979` is the two
-  bounds that both hold, and `-year:1970-1979` is each bound denied in one clause, De Morgan done at
-  the parse so nothing downstream has to bracket. `Display for Asked` folds an undenied pair of
-  bounds back into the range it was typed as, so `year:1970-1979 or is:hires` reads back with the
-  alternation against the whole range rather than against its second bound, and a denied range is
-  already its two denials joined by `or` and reads back as itself. `-` denies only at the start of
-  an unquoted token, so `well-known` and `1970-1979` are untouched, and `or` joins only between two
-  tokens and only unquoted and undenied, so a dangling one is the word it was written as — the same
-  rule a mistyped term follows, and quoting is the way to search for either literally. There is no
-  bracketing: a denial reaches one token and an alternation one flat run of them, so `-a or b` is
-  "not a, or b" and `-(a b)` cannot be written — De Morgan by hand is what says it. `and` is not a
-  word the grammar knows, because everything is already joined by it.
-- **`tracks_fts` holds the fold of a name, not the name, and the query is folded with it.**
-  What is indexed is `store::folded_letters` of the title, the billed artist and the album, and
-  `db::indexed` folds every piece of a typed word the same way before it becomes a `MATCH`, so the
-  two sides can only ever disagree by being changed apart. What that buys is a letter with two
-  spellings: the tokenizer's `unicode61 remove_diacritics 2` folds `Ç` to `c` and even `İ` to `i`,
-  but it leaves `ı` alone, because a dotless i is a letter of its own rather than an i with
-  something taken off — so *Kıskanç* was reachable only by typing the dotless ı and *KISKANÇ* only
-  by not typing it. The same fold is what lets *Przybylowicz* find *Przybyłowicz*.
-  `remove_diacritics` stays on the tokenizer although the fold has already done its work, because
-  it costs nothing and the index should not rest on the fold being complete. Nothing reads a
-  column of `tracks_fts` back — only `MATCH` and `rank` — so there is no spelling to keep beside
-  the fold.
-- **What a search lights up is read off the name, not out of the index.** `Search::lit` answers the
-  byte runs of a display string a search matched, for one `Column`, which is what the panes draw in
-  the accent. It cannot come from FTS5: `highlight` and `snippet` answer with the *stored* column,
-  which here is the fold, so a row would read `bjork` where the pane draws *Björk*. So it folds the
-  other way round — the name is split into tokens on `char::is_alphanumeric` and each token is
-  folded whole, which keeps every run's byte range in the original — and weighs each token against
-  the same `search::pieces_of` that `db::indexed` builds the `MATCH` from, so what is lit is what
-  matched: a prefix for a bare word, consecutive tokens for a phrase, nothing for a denied word or
-  a term, and a word scoped to a column lights nothing in another. A whole token lights rather than
-  the matched prefix alone, because a half-lit word reads as a typo. Runs that meet are merged, so
-  a word typed three ways lights its token once. **The words are taken before the name is**, because
-  `lit` is called once per drawn cell per frame and the tokenising it used to do first — a `Vec`
-  and a `store::folded_letters` per token, each of which lowercases into one `String` and
-  NFD-normalises into a second — ran even where the search box was empty and no word could reach
-  that column. A pane of eighteen rows with two lit cells each was some five hundred `String`s and
-  as many normalising passes a frame, for nothing. **It is a schema break without a migration**: an index written before the fold holds
-  spellings no folded query will match, and the answer is to delete the catalog and scan again,
-  because an incremental rescan passes over a file it has already seen and never rewrites its row.
-- **What a track sings is indexed, and only a word that asks for it reaches it.** `tracks_fts`
-  holds a fifth column, `lyrics`, and `store::index_row` fills it itself — `sung_by` reads the
-  row's own `tracks.lyrics` or, where the file carried none, the `lyrics_kept` a provider fetched,
-  and `sung_words` drops every `[…]` and `<…>` run before folding, so an LRC's timestamps and a
-  karaoke line's word marks are not words to find. `Library::keep_lyrics` rewrites the column for
-  the rows at that path and span whose file carried none, in the transaction that keeps them, so a
-  lyric fetched while a track plays is searchable at once and a rescan indexes the same words
-  again. A bare word is written `{title artist album genre} : "…"*`, `Column::NAMES` being the
-  columns it reaches, so typing *love* does not bring back every song that sings it; `lyrics:` is
-  how a listener says they mean the words, and `Search::as_sung` is the turn from a search of
-  nothing but plain words into the one phrase `lyrics:"…"` — which `Library::sung` counts, so the
-  window can offer it. `spelling.rs` holds no vocabulary for the column and corrects no lyric
-  word. `a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for` and
-  `a_search_of_plain_words_is_offered_as_the_words_a_track_sings` are the claims. It is a schema
-  break, and a catalog written before it is deleted and scanned again.
-- **A search reaches what the catalog lacks as well as what it holds.** `release_tracks.folded`
-  is the row's title, its artist — the track's own credit, or the release's — and the release
-  title, run through `store::folded_letters` by `land_release`, and `Library::unheld_matching`
-  asks it one `LIKE` per piece of every word a search asks by name: the lone words, bare or
-  scoped to a title, an artist or an album, which is `elsewhere::words_asked`. A term, a denial, a
-  genre and a lyric have nothing to answer with on a row nobody holds, so a search of those alone
-  answers nothing. It lists wanted rows first, and it and the Missing pane read the same
-  `SHORT_OF_WHAT_IS_HELD_OR_WANTED` rule: a release row is missing where its album holds a track
-  or where the row itself is wanted, so a release landed for one song does not list the eleven
-  nobody asked for. `a_search_reaches_the_rows_the_catalog_knows_it_is_short_of` is the claim.
-- **A song is placed on the album it was meant for, not on whatever came out first.** A hit
-  single is dated before the album it was cut from, and a compilation often before both, so the
-  earliest release was the wrong answer for most songs. `elsewhere::meant_release` weighs each
-  release's `Issued` first — `Standing` puts an official release before one whose status is not
-  stated and both before a bootleg, a promotion or a withdrawn one, and `Meant` puts an album
-  (a soundtrack counts) before an EP, an EP before a single, and any of them before a release
-  whose kind is not stated and before a compilation, a live album or anything else with
-  secondary types — and only then the date, an undated release last. It is what `best_release`
-  falls back to and what a found song is wanted from.
-  `a_song_is_placed_on_its_album_before_a_single_or_a_compilation_that_came_out_first` is the
-  claim.
+  grammar's own tests say the same thing rather than each writing prose. `is:hires` is lossless above
+  CD, so `CD_SAMPLE_RATE` (44 100) and `CD_SAMPLE_DEPTH` (16) in `db.rs` are where that claim lives, and
+  `depth:` reads the stored `SampleFormat`, 24 valid bits for a float file.
+- **What a term narrows on is what the catalog stored, and two of them are ages, not dates.** `added:`
+  and `played:` are measured from the moment the query runs — a month 30 days whatever the month, a year
+  365 — which makes "added this year" `added:<1y` and a saved query answer differently tomorrow.
+  `plays:` is a count beside them, so `plays:0` has never been heard and `plays:>5` has, and `heard:` is
+  `played:`'s other spelling. A `@` after the count is a window over `listens` rather than the lifetime
+  column: `plays:>20@30d` is more than twenty plays in the last thirty days, the age after it read as
+  `added:` and `played:` read theirs, a range carrying the window on both bounds (`plays:5-10@30d`), and
+  two `Plays` terms folding back into a range only where their windows agree. An unreadable window makes
+  the whole token a plain word. It costs the one term no index serves — a correlated `count(*)` over the
+  listens per candidate row — which is why it narrows and never orders. `year:` is the *album's*, so a
+  track whose album declares no year answers no year term and an ungrouped single has nothing to
+  answer with. `rate:` and `depth:` are what the file is, not what the sink is asked for (the
+  inspector's report), so `depth:32` names the 32-bit integer files alone. `is:lossy` names the codecs
+  known lossy rather than everything not lossless, so a file whose codec the scan could not name is in
+  neither it nor `is:lossless`. Nothing narrows on a rating, the catalog storing none, and nothing sorts
+  on a term: a term narrows and `SortOrder` orders. A search is parsed every keystroke and a saved query
+  parses its text every read, nothing caching either, a handful of tokens being no cost worth holding.
+- **Everything a search says holds at once, unless a `-` denies it or an `or` offers an
+  alternative.** `Search` is `Clause`s that all hold, a `Clause` is `Asked` alternatives one of which
+  must, and an `Asked` is the `Condition`s one token read together with whether it was denied — so a
+  range is a shape, not two searches: `year:1970-1979` is two bounds that both hold, and
+  `-year:1970-1979` each bound denied in one clause, De Morgan done at the parse so nothing downstream
+  brackets. `Display for Asked` folds an undenied pair of bounds back into its typed range, so
+  `year:1970-1979 or is:hires` reads back with the alternation against the whole range, and a denied
+  range, already its two denials joined by `or`, reads back as itself. `-` denies only at the start of an
+  unquoted token, so `well-known` and `1970-1979` are untouched, and `or` joins only between two tokens,
+  unquoted and undenied, so a dangling one is the word written — a mistyped term's rule, quoting being
+  the way to search either literally. No bracketing: a denial reaches one token and an alternation one
+  flat run, so `-a or b` is "not a, or b" and `-(a b)` cannot be written — De Morgan by hand says it.
+  `and` is no word the grammar knows, everything being joined by it already.
+- **`tracks_fts` holds the fold of a name, not the name, and the query is folded with it.** What is
+  indexed is `folded_letters` of the title, the billed artist, the album and the genres (and, apart, the
+  lyrics), and `db::indexed` folds every piece of a typed word the same way before it becomes a `MATCH`,
+  so the two sides can disagree only by being changed apart. That buys a letter with two spellings: the
+  tokenizer's `unicode61 remove_diacritics 2` folds `Ç` to `c` and even `İ` to `i` but leaves `ı` alone,
+  a dotless i being a letter of its own — so *Kıskanç* was reachable only by typing the dotless ı and
+  *KISKANÇ* only by not. The same fold lets *Przybylowicz* find *Przybyłowicz*. `remove_diacritics`
+  stays on the tokenizer although the fold did the work, costing nothing, the index not resting on the
+  fold being complete. Nothing reads a `tracks_fts` column back — only `MATCH` and `rank` — so no
+  spelling is kept beside the fold. It is a schema break without a migration: an index written before
+  the fold holds spellings no folded query matches, and an incremental rescan never rewrites an
+  unchanged row, so such a catalog is deleted and scanned again.
+- **What a search lights up is read off the name, not the index.** `Search::lit` answers the byte runs
+  of a display string a search matched, for one `Column`, which the panes draw in the accent. It cannot
+  come from FTS5: `highlight` and `snippet` answer the *stored* column, the fold, so a row would read
+  `bjork` where the pane draws *Björk*. So it folds the other way — the name split into tokens on
+  `char::is_alphanumeric`, each folded whole, keeping every run's byte range in the original — and
+  weighs each token against the `search::pieces_of` that `db::indexed` builds the `MATCH` from, so what
+  is lit is what matched: a prefix for a bare word, consecutive tokens for a phrase, nothing for a
+  denied word or a term, and a word scoped to a column lights nothing in another. A whole token lights
+  rather than the matched prefix, a half-lit word reading as a typo. Meeting runs merge, so a word typed
+  three ways lights its token once. **The words are taken before the name**, since `lit` runs once per
+  drawn cell per frame and the tokenising it did first — a `Vec` and a `folded_letters` per token, each
+  lowercasing into one `String` and NFD-normalising into a second — ran even with an empty search box
+  and no word able to reach that column: a pane of eighteen rows with two lit cells each was some five
+  hundred `String`s and as many normalising passes a frame for nothing.
+- **What a track sings is indexed, and only a word asking for it reaches it.** `tracks_fts`' fifth
+  column, `lyrics`, is filled by `store::index_row` itself — `sung_by` reads the row's own
+  `tracks.lyrics` or, where the file carried none, the `lyrics_kept` a provider fetched, and
+  `sung_words` drops every `[…]` and `<…>` run before folding, so an LRC's timestamps and a karaoke
+  line's word marks are no words to find. `Library::keep_lyrics` rewrites the column for the rows at
+  that path and span whose file carried none, in the transaction keeping them, so a lyric fetched while
+  a track plays is searchable at once and a rescan indexes the same words. A bare word is written
+  `{title artist album genre} : "…"*` (`Column::NAMES`), so typing *love* does not bring back every
+  song singing it; `lyrics:` is how a listener says they mean the words, and `Search::as_sung` turns a
+  search of plain words alone into the one phrase `lyrics:"…"`, which `Library::sung` counts so the
+  window can offer it. `spelling.rs` holds no vocabulary for the column and corrects no lyric word.
+  `a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for` and
+  `a_search_of_plain_words_is_offered_as_the_words_a_track_sings` are the claims. It too is a schema
+  break without a migration, a catalog written before it deleted and scanned again.
+- **A search reaches what the catalog lacks as well as what it holds.** `release_tracks.folded` is the
+  row's title, its artist — the track's own credit or the release's — and the release title, through
+  `folded_letters` by `land_release`, and `Library::unheld_matching` asks it one `LIKE` per piece of
+  every word a search asks by name: the lone words, bare or scoped to a title, artist or album
+  (`elsewhere::words_asked`). A term, a denial, a genre and a lyric have nothing to answer with on a row
+  nobody holds, so a search of those alone answers nothing. Wanted rows come first, and it and the
+  Missing pane read the same `SHORT_OF_WHAT_IS_HELD_OR_WANTED` rule: a release row is missing where its
+  album holds a track or the row itself is wanted, so a release landed for one song does not list the
+  eleven nobody asked for. `a_search_reaches_the_rows_the_catalog_knows_it_is_short_of` is the claim.
+- **A song is placed on the album it was meant for, not whatever came out first.** A hit single is
+  dated before the album it was cut from, and a compilation often before both, so the earliest release
+  was wrong for most songs. `elsewhere::meant_release` weighs each release's `Issued` first — `Standing`
+  puts an official release before one of unstated status and both before a bootleg, promotion or
+  withdrawn one, and `Meant` puts an album (a soundtrack counts) before an EP, an EP before a single,
+  and any of them before a release of unstated kind and before a compilation, live album or anything
+  else with secondary types — and only then the date, undated last. It is what `best_release` falls
+  back to and what a found song is wanted from.
+  `a_song_is_placed_on_its_album_before_a_single_or_a_compilation_that_came_out_first` is the claim.
 - **A song the catalog has never heard of is found elsewhere and wanted by landing its release.**
-  `Library::found_elsewhere` sends the words a search asks by name to `Reference::find_songs`
-  and answers `Found`s: a recording, its title, its credit, its length and the release it first
-  was meant for — `elsewhere::meant_release` — with every recording the
-  catalog already names in `tracks.mbid` or `release_tracks.recording_mbid` left out and a second
-  recording of the same folded title by the same folded credit dropped, up to
-  `FOUND_ELSEWHERE_AT_MOST`. `asks_elsewhere` is the guard a caller weighs first: a search whose
-  words hold fewer than three letters is not sent. `Library::want_found` is the want: the release
-  the `Found` names, or the one its recording first came out on where the search answered none,
-  is read whole through `Reference::release`, an album already carrying that mbid is taken as it
-  stands, and otherwise a new one is made — billed to `store::artist_named`, stamped
-  `albums.found_elsewhere` — and `land_release` writes its rows the way the enrichment does, so
-  the want is an ordinary `wants` row a provider is asked for and a delivery lands on. A release
-  the reference does not know is `Error::UnknownRelease`, a recording with no release is
-  `Error::Unreleased`, and a release that turns out not to carry the recording is
-  `Error::NotOnTheRelease`. `store::ORPHANS` spares an album holding no track only where it was
-  found elsewhere and still wanted, so a scan keeps it while the want stands and takes it once it
-  goes, and an album scanned from a root still leaves with the root. The albums pane never shows
-  one, because `HOLDS_A_BEST_COPY` already asks for a track.
+  `Library::found_elsewhere` sends the words a search asks by name to `Reference::find_songs` and
+  answers `Found`s: a recording, its title, credit, length and the release it was meant for
+  (`meant_release`), leaving out every recording the catalog names in `tracks.mbid` or
+  `release_tracks.recording_mbid` and dropping a second recording of the same folded title by the same
+  folded credit, up to `FOUND_ELSEWHERE_AT_MOST` (12). `asks_elsewhere` is the guard weighed first: a
+  search whose words hold fewer than three letters is not sent. `Library::want_found` is the want: the
+  release the `Found` names, or the one its recording first came out on where the search answered none,
+  is read whole through `Reference::release`; an album already carrying that mbid is taken as it stands,
+  otherwise a new one is made — billed to `store::artist_named`, stamped `albums.found_elsewhere` — and
+  `land_release` writes its rows as the enrichment does, so the want is an ordinary `wants` row a
+  provider is asked for and a delivery lands on. A release the reference lacks is
+  `Error::UnknownRelease`, a recording with no release `Error::Unreleased`, and a release not carrying
+  the recording `Error::NotOnTheRelease`. `store::ORPHANS` spares a trackless album only where it was
+  found elsewhere and still wanted, so a scan keeps it while the want stands and removes it once it
+  goes, and an album scanned from a root still leaves with the root. The albums pane never shows one,
+  `HOLDS_A_BEST_COPY` asking for a track.
   `a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on` and
-  `a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_out_on` are the
-  claims. **Which release is the listener's to say as well.** A `Found` carries every release
-  its recording is on, and `Found::in_the_order_worth_offering` lists them the way
-  `meant_release` weighs them; the found row's *Want* mark opens them as a menu under the right
-  button — title, year and kind — and a press is `want_found` with `Found::from` that release, so
-  a song wanted for its single or its compilation lands there rather than on the album the rule
-  would have chosen. `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first`
-  is the claim.
-- **A word that stands alone is ranked; one that is denied or alternated is looked up.** The
-  unnegated, unalternated words are what `indexed` folds into the single FTS5 `MATCH` the index is
-  joined for, so `rank` and `SortOrder::Relevance` mean what they always did. Any other word reaches
-  the `WHERE` as `INDEX_LOOKUP`, a subquery against the same index that scores nothing, so a search
-  whose every word is denied or alternated has no join at all and relevance falls back to album
-  order. A denial is written `NOT coalesce(…, 0)`, so a row that cannot answer the condition — no
-  album for `year:`, no duration for `length:` — satisfies the denial rather than dropping out of
-  the search. `Matching::grouped` carries the lot into the album and artist listings, so one text
-  narrows every browse pane rather than the tracks pane alone.
+  `a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_out_on` are the claims.
+  **Which release is the listener's to say as well.** A `Found` carries every release its recording is
+  on, and `Found::in_the_order_worth_offering` lists them as `meant_release` weighs them; the found row's
+  *Want* mark opens them as a menu under the right button — title, year and kind — and a press is
+  `want_found` with `Found::from` that release, so a song wanted for its single or compilation lands
+  there rather than on the album the rule would choose.
+  `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first` is the claim.
+- **A lone word is ranked; a denied or alternated one is looked up.** The unnegated, unalternated words
+  are what `indexed` folds into the single FTS5 `MATCH` the index is joined for, so `rank` and
+  `SortOrder::Relevance` mean what they always did. Any other word reaches the `WHERE` as
+  `INDEX_LOOKUP`, a subquery against the same index scoring nothing, so a search whose every word is
+  denied or alternated has no join and relevance falls back to album order. A denial is written
+  `NOT coalesce(…, 0)`, so a row unable to answer — no album for `year:`, no duration for `length:` —
+  satisfies the denial rather than dropping out. `Matching::grouped` carries the lot into the album and
+  artist listings, so one text narrows every browse pane.
 - **A search that matched nothing is answered in the catalog's own spelling, and only then is the
-  catalog read for one.** `spelling.rs` is the whole of it. `Spellings` is three `Vocabulary`s —
-  titles, artists and albums, mirroring the three columns `tracks_fts` holds — each mapping a
-  folded word to the spelling it is drawn in and how many rows hold it, and `store::spellings`
-  fills them from `tracks.title`, `tracks.artist`, `artists.name` and `albums.title` through the
-  same `search::runs_in` splitting that lights a matched run, so a vocabulary word is exactly a
-  word a search could match. `Spellings::did_you_mean` then walks the parsed `Search` and corrects
-  the words in place, so a term, a denial, a phrase and a scope all survive: `year:1973` is carried
-  through untouched, `-floid` is left alone because a denial is not what a listener mistyped, and
-  `title:` weighs its word against the titles alone. What comes back is the whole query written
-  again through `Display for Search`, which is the same rendering the *Reads* chips already draw,
-  so what a press puts in the box reads as what the pane was already saying.
-- **A word is corrected only where the catalog cannot already match it, and never further than it
-  can afford.** `Vocabulary::holds` passes over a run the index would have found — one the
-  vocabulary holds outright *or* one that begins a word it holds, because a bare word is matched as
-  a prefix — so *floy* is not corrected to *Floyd* while *floid* is. `furthest_from` is the budget:
-  nothing under four letters is corrected at all, a word up to seven may be one letter wrong and a
-  longer one two, and `apart_by` is a bounded optimal-string-alignment distance, so two letters
-  typed the wrong way round cost one rather than two — which is what most mistypings are. The
-  nearest wins, then the word the most rows hold, then the spelling itself, so the answer is the
-  same twice running; among spellings of one word the marked one is drawn, the same rule
-  `folded_letters` follows for an artist. A suggestion is only ever a word the catalog holds, so it
-  cannot send a listener at a search that matches nothing in turn.
-- **A run-together and a split are corrections too, and neither invents a word.** `Spellings::whole`
-  is the *exact* reading of a vocabulary — the entry a folded run names, rather than the nearest one
-  — and it is what both rest on: `run_together` answers where two runs joined name one held word
-  and the two apart do not both name one, and `split_apart` answers where one run cuts into two
-  that each do. So *pinkfloyd* is **Pink Floyd** and *pink floy d* is **pink Floyd**, where a word
-  at a time could read neither — `floy` being a prefix `Vocabulary::holds` passes over, and
-  `pinkfloyd` being four letters from anything. The three readings are weighed in order: the join
-  first, because it explains two runs where the others explain one; the ordinary nearest word
-  second, because a mistyped letter is the commoner accident; the split last. A split cuts into as
-  many pieces as the run needs, up to `MOST_PIECES`, and it is a walk rather than a scan of the
-  cuts: `reached[to][pieces]` carries the most rows a segmentation of the first `to` letters into
-  that many held words can hold, so what is written is the fewest pieces the whole run cuts into
-  and, among those, the most rows — *thegreatgig* is **the Great Gig**, which a single cut could
-  not reach, neither *thegreat* nor *greatgig* being a word the catalog holds. It is refused below
-  the length `furthest_from` refuses to correct at, so one rule bounds both.
-  `run_tokens_together` is the join that spans two *tokens* rather than two runs of one word,
-  because *pink floy d* is three clauses and not one word: it takes only a clause that is a single
-  plain undenied word of one run scoped the same way as its neighbour, so a phrase, a denial and an
-  alternation are all left as they were. What a split writes is two words where there was one,
-  which reads back as two words — unless the word was scoped, where it is written as a phrase so
-  `artist:` reaches both halves rather than the first alone. `worth_asking` weighs an adjacent pair
-  joined as well as each run alone, so *flo yd* is worth the read that *flo* and *yd* are not.
-- **A vocabulary is indexed for the catalog the scan is written for, and the cost is measured.**
-  A `Vocabulary` holds its words and its names each as a `Held`: the entries keyed by an
-  `Arc<str>`, the same keys bucketed by how many letters they hold, and — built the first time a
-  prefix is asked for and dropped by the next `take` — the keys in order. `nearest_in` weighs only
-  the buckets within `furthest` letters of the run, and within them only a key whose `Signature`,
-  the set of letters it holds folded into 32 bits, differs from the run's in at most two bits an
-  edit — which no edit can exceed, a substitution taking one letter out and putting one in — so
-  the bounded distance runs on the few keys that could be near; `edits_between` works on bytes
-  where both are ASCII and on the stack below 64 letters, and allocates nothing either way.
-  `holds` and `names` read the ordered keys by a binary search rather than walking them.
-  `cargo bench -p resonate-library --bench spelling` builds the vocabulary of 500 000 tracks,
-  50 000 artists and 60 000 albums out of synthetic words and times what a listener asks of it:
-  the build takes some 700 ms, a word held or a name held answers in microseconds, a word a
-  letter pair away in 4 ms, a query like nothing in the catalog in under 1 ms — where the walk
-  over every entry with an allocating distance took 20 and 127 ms — and a completion about 1 ms.
-- **A phrase is weighed against a whole name before it is corrected a word at a time.**
-  `Vocabulary` holds the names beside the words — every title, artist and album of more than one
-  run, keyed by its runs folded and joined by a space, spelt the way `better_spelt` picks for a
-  word — and `instead_of_the_whole` is the reading: a quoted token is weighed against them first,
-  under the budget its own whole length earns from `furthest_from`, and only where nothing is near
-  it does the run-by-run walk take over. That is what a word at a time cannot reach:
-  *"the great gig in teh sky"* is **The Great Gig in the Sky** although `teh` is three letters and
-  nothing that short is ever corrected on its own. `names` is `holds`'s counterpart and guards it
-  the same way, so a phrase that *begins* a name the catalog holds is left alone.
-- **A run of tokens is weighed as a name too, and only where a word in it is beyond correcting.**
-  Quoting is how a listener says *this is one name*, and most of them do not: the same title typed
-  without quotes is several clauses, so `name_the_tokens` gathers a run of adjacent clauses that
-  are each a single plain undenied word of one run scoped the same way — the reading
-  `run_tokens_together` already takes, through the same `one_run_of` — joins them with a space and
-  hands the result to `instead_of_the_name`, which is `instead_of_the_whole`'s second half and the
-  one place a name is weighed. It shrinks from the longest run down to two, so the most specific
-  reading wins and a token beside the name is left where it stands rather than drawn into it; a
-  term, a denial or a change of scope ends the run rather than being read through, and
-  `MOST_TOKENS_IN_A_NAME` bounds how long a run may be at all.
-  What keeps it from overreaching is `beyond_a_word`: a run is weighed as a name only where one of
-  its tokens is a word the catalog neither holds nor can spell nearer, which is exactly the case a
-  word at a time cannot reach. So *the great gig in teh sky* is **The Great Gig in the Sky** and
-  *pink floid* is still **pink Floyd** rather than *Pink Floyd* — the narrower fix stands wherever
-  it is enough, and the catalog's own casing is not written over a word the listener typed right.
-  The name is written back unquoted, so what is offered means what was typed: a run of words the
-  search still ANDs, with the spelling put right — unless the run was scoped, where it is written
-  as a phrase the way a split is, because `artist:Pink Floyd` reads back as `artist:Pink` and a
-  loose `Floyd` over every field. The budget `furthest_from` answers is weighed in letters through
-  `letters_in` rather than in bytes, so a folded Cyrillic or CJK word earns what a Latin one of
-  the same length does and *мир* is not offered as *мор*.
+  catalog read for one.** `spelling.rs` is the whole of it. `Spellings` is four `Vocabulary`s —
+  titles, artists, albums and genres, the searchable `tracks_fts` columns bar lyrics — each mapping a
+  folded word to the spelling it is drawn in and how many rows hold it, filled by `store::spellings`
+  from `tracks.title`, `tracks.artist`, `artists.name`, `albums.title`, `tracks.genre` and
+  `artist_genres.name` through the `search::runs_in` splitting that lights a matched run, so a
+  vocabulary word is exactly a word a search could match. `Spellings::did_you_mean` walks the parsed
+  `Search` and corrects words in place, so terms, denials, phrases and scopes all survive: `year:1973`
+  passes untouched, `-floid` is left alone (a denial is not what a listener mistyped), and `title:`
+  weighs its word against the titles alone. What comes back is the whole query written again through
+  `Display for Search`, the rendering the *Reads* chips draw, so what a press puts in the box reads as
+  what the pane already said.
+- **A word is corrected only where the catalog cannot already match it, and never further than it can
+  afford.** `Vocabulary::holds` passes over a run the index would find — one held outright *or* one
+  beginning a held word, a bare word matching as a prefix — so *floy* is not corrected to *Floyd* while
+  *floid* is. `furthest_from` is the budget: nothing under four letters is corrected, a word up to seven
+  (`ONE_LETTER_WRONG_UNTIL`) may be one letter wrong and a longer one two (`FURTHEST`), and `apart_by` is
+  a bounded optimal-string-alignment distance, so two letters typed the wrong way round cost one, not
+  two — most mistypings. The nearest wins, then the word most rows hold, then the spelling itself, so the
+  answer is the same twice running; among spellings of one word the marked one is drawn, as
+  `folded_letters` does for an artist. A suggestion is only ever a held word, so it cannot send a
+  listener to a search matching nothing in turn.
+- **A run-together and a split are corrections too, and neither invents a word.** `Spellings::whole` is
+  the *exact* reading of a vocabulary — the entry a folded run names, not the nearest — and both rest on
+  it: `run_together` answers where two runs joined name one held word and the two apart do not both name
+  one, and `split_apart` where one run cuts into two that each do. So *pinkfloyd* is **Pink Floyd** and
+  *pink floy d* is **pink Floyd**, where a word at a time could read neither — `floy` being a prefix
+  `Vocabulary::holds` passes over, and `pinkfloyd` four letters from anything. The three readings are
+  weighed in order: the join first, explaining two runs where the others explain one; the ordinary
+  nearest word second, a mistyped letter being commoner; the split last. A split cuts into as many
+  pieces as needed, up to `MOST_PIECES` (4), as a walk rather than a scan of cuts: `reached[to][pieces]`
+  carries the most rows a segmentation of the first `to` letters into that many held words can hold, so
+  what is written is the fewest pieces the whole run cuts into and, among those, the most rows —
+  *thegreatgig* is **the Great Gig**, beyond a single cut, neither *thegreat* nor *greatgig* being held.
+  It is refused below the length `furthest_from` refuses to correct at, one rule bounding both.
+  `run_tokens_together` is the join spanning two *tokens* rather than two runs of one word, *pink floy
+  d* being three clauses: it takes only a clause that is a single plain undenied word of one run scoped
+  as its neighbour, leaving phrases, denials and alternations alone. A split writes two words where
+  there was one, reading back as two words — unless the word was scoped, where it is written as a phrase
+  so `artist:` reaches both halves. `worth_asking` weighs an adjacent pair joined as well as each run
+  alone, so *flo yd* is worth the read *flo* and *yd* are not.
+- **A vocabulary is indexed for the catalog the scan is written for, and the cost is measured.** A
+  `Vocabulary` holds its words and names each as a `Held`: the entries keyed by an `Arc<str>`, the same
+  keys bucketed by letter count, and — built when a prefix is first asked and dropped by the next
+  `take` — the keys in order. `nearest_in` weighs only the buckets within `furthest` letters of the run,
+  and within them only a key whose `Signature` — its set of letters folded into 32 bits — differs from
+  the run's by at most two bits an edit (which no edit can exceed, a substitution taking one letter out
+  and putting one in), so the bounded distance runs on the few keys that could be near;
+  `edits_between` works on bytes where both are ASCII and on the stack below 64 letters, allocating
+  nothing either way. `holds` and `names` read the ordered keys by binary search. `cargo bench -p
+  resonate-library --bench spelling` builds the vocabulary of 500 000 tracks, 50 000 artists and 60 000
+  albums from synthetic words and times what a listener asks: the build takes ~700 ms, a held word or
+  name answers in microseconds, a word a letter pair away in 4 ms, a query like nothing held in under
+  1 ms — where the walk over every entry with an allocating distance took 20 and 127 ms — and a
+  completion about 1 ms.
+- **A phrase is weighed against a whole name before it is corrected a word at a time.** `Vocabulary`
+  holds the names beside the words — every title, artist and album of more than one run, keyed by its
+  runs folded and joined by a space, spelt as `better_spelt` picks for a word — and
+  `instead_of_the_whole` is the reading: a quoted token is weighed against them first, under the budget
+  its whole length earns from `furthest_from`, and only where nothing is near does the run-by-run walk
+  take over. That reaches what a word at a time cannot: *"the great gig in teh sky"* is **The Great Gig
+  in the Sky** though `teh` is three letters and nothing that short is corrected alone. `names` is
+  `holds`'s counterpart and guards it likewise, so a phrase *beginning* a held name is left alone.
+- **A run of tokens is weighed as a name too, only where a word in it is beyond correcting.** Quoting
+  is how a listener says *this is one name*, and most do not: the same title unquoted is several
+  clauses, so `name_the_tokens` gathers a run of adjacent clauses each a single plain undenied word of
+  one run scoped alike — `run_tokens_together`'s reading, through the same `one_run_of` — joins them
+  with a space and hands the result to `instead_of_the_name`, `instead_of_the_whole`'s second half and
+  the one place a name is weighed. It shrinks from the longest run down to two, so the most specific
+  reading wins and a token beside the name is left rather than drawn in; a term, a denial or a change of
+  scope ends the run, and `MOST_TOKENS_IN_A_NAME` bounds its length. What keeps it from overreaching is
+  `beyond_a_word`: a run is weighed as a name only where one of its tokens is a word the catalog
+  neither holds nor can spell nearer — exactly what a word at a time cannot reach. So *the great gig in
+  teh sky* is **The Great Gig in the Sky** and *pink floid* is still **pink Floyd**, not *Pink Floyd* —
+  the narrower fix stands wherever enough, and the catalog's casing is not written over a word typed
+  right. The name is written back unquoted, so what is offered means what was typed — a run of words
+  the search still ANDs, spelling put right — unless the run was scoped, where it is written as a phrase
+  as a split is, `artist:Pink Floyd` reading back as `artist:Pink` and a loose `Floyd` over every field.
+  The budget `furthest_from` answers is weighed in letters through `letters_in`, not bytes, so a folded
+  Cyrillic or CJK word earns what a Latin one of the same length does and *мир* is not offered as *мор*.
 - **The read is the cost, so it is paid once and kept until a name could have moved.**
-  `Library::did_you_mean` walks every title, artist and album name in the catalog, which is why
-  the window asks only where the albums, the artists and the tracks all came back empty —
-  `browsed` reads them first and asks afterwards, on the background executor like the rest of the
-  load — and why `spelling::worth_asking` refuses before the read wherever the query holds no word
-  long enough to be corrected. What that read built is then kept: `Inner::vocabulary` stamps the
-  `Spellings` with a counter and hands back an `Arc` of it until the counter moves, so a listener
-  typing past the end of what they hold pays one read rather than one per settled keystroke.
-  **What moves the counter is SQLite itself.** `watch_the_names` lays `NAMES_MOVED_TRIGGERS` on
-  the writer — `TEMP` triggers, so they live on that one connection and never reach the schema, a
-  migration or another program writing the catalog — which step a row of a `TEMP` table wherever
-  a row of `tracks`, `albums`, `artists` or `artist_genres` is inserted or deleted, or one of the
-  columns the vocabulary is read from — a track's title, artist and genre, an album's title, an
-  artist's name — takes a value other than the one it held; an `update_hook` on the writer sees
-  that temporary row move and steps the counter. So the invalidation is derived from what was
-  actually written rather than from a list of write paths somebody has to keep in step — a pass
-  written tomorrow is covered by having used the writer at all — and it is per *column*: a counted
-  play, a favourite, a scan writing a title back as it stood drop nothing. The update hook answers
-  per table and per row and SQLite offers per column only through `sqlite3_preupdate_hook`, a
-  compile-time flag on the bundled library, which is why the triggers do the weighing and the
-  hook only the counting; they cost some 0.35 µs a row of a scan's inserts. What it is not is
-  another process's writer, which this one cannot see. That half is `PRAGMA
-  data_version`, read off the writer connection beside the counter into one `NamesStamp`: it moves
-  only for a commit some *other* connection made, so a `resonate scan` running beside a window
-  drops the window's vocabulary the next time it is asked for, and this process's own writes are
-  still the hook's alone. It is read under `try_lock`, because the writer may be held through a
-  whole scan batch and a search must not wait behind one; a busy writer is this process writing,
-  and the stamp is then weighed by the counter alone. Every delete on the three tables carries a
-  `WHERE`, so the truncate optimisation — the one case SQLite skips the hook for — cannot arise.
-  `Library::written_elsewhere` hands the same reading out as a `WrittenElsewhere`, which is what
-  the window watches to see another process's edits — see `ui.md`.
+  `Library::did_you_mean` walks every title, artist and album name, which is why the window asks only
+  where albums, artists and tracks all came back empty — `browsed` reads them first and asks after, on
+  the background executor with the rest of the load — and why `spelling::worth_asking` refuses before
+  the read wherever the query holds no word long enough to correct. What the read built is kept:
+  `Inner::vocabulary` stamps the `Spellings` with a counter and hands back an `Arc` of it until the
+  counter moves, so typing past the end of what is held pays one read, not one per settled keystroke.
+  **SQLite itself moves the counter.** `watch_the_names` lays `NAMES_MOVED_TRIGGERS` on the writer —
+  `TEMP` triggers, living on that connection alone and never reaching the schema, a migration or another
+  program — stepping a row of a `TEMP` table wherever a row of `tracks`, `albums`, `artists` or
+  `artist_genres` is inserted or deleted, or a column the vocabulary reads — a track's title, artist
+  and genre, an album's title, an artist's name — takes another value; an `update_hook` on the writer
+  sees that temporary row move and steps the counter. The invalidation is thus derived from what was
+  written rather than from a list of write paths to keep in step — a pass written tomorrow is covered by
+  using the writer at all — and is per *column*: a counted play, a favourite, a scan writing a title back
+  unchanged drop nothing. The update hook answers per table and row, SQLite offering per column only
+  through `sqlite3_preupdate_hook`, a compile-time flag on the bundled library — why the triggers weigh
+  and the hook only counts; they cost ~0.35 µs a row of a scan's inserts. Another process's writer this
+  one cannot see; that half is `PRAGMA data_version`, read off the writer connection beside the counter
+  into one `CatalogStamp { named, written_elsewhere }` (`Inner::names_stamp`): it moves only for a commit
+  some *other* connection made, so a `resonate scan` beside a window drops the window's vocabulary the
+  next time it is asked for, this process's own writes staying the hook's alone. It is read under
+  `try_lock`, the writer possibly held through a whole scan batch and a search not to wait behind one; a
+  busy writer is this process writing, and the stamp is then weighed by the counter alone. Every delete
+  on the three tables carries a `WHERE`, so the truncate optimisation — the one case SQLite skips the hook
+  for — cannot arise. `Library::written_elsewhere` hands the same reading out as a `WrittenElsewhere`,
+  what the window watches to see another process's edits (`ui.md`).
 
 ## Playlists
 
-- **A playlist is a list of cuts, not of library rows.** `Cut` is a `MediaLocation` and the
-  `Option<FrameSpan>` of it, which is what a playable item has been everywhere else — `Track`,
-  `QueueItem` and `Resumable` all carry the pair — and `playlist_entries` now stores it as
-  `path`, `span_start` and `span_frames` under the same `store::span` convention `tracks` and
-  `resume_rows` use. A file no scan has seen is still a row, and a file that leaves the library
-  leaves its playlists named but unresolved. Reading one back is a `LEFT JOIN` onto `tracks` on
-  `path` *and* `span_start`: a `PlaylistEntry` carries its `Cut` always and its `Track` only where
-  the catalog has one, which is the same fallback the queue pane draws for an unscanned row.
-- **A row cut out of a file is the cut rather than the file, all the way to the graph.** The join
-  used to take the lowest `span_start` the path held, so the three rows a `.cue` cuts out of one
-  FLAC all drew as the first of them, counted that one's length three times over and played the
-  whole file; `Held` and `Reaching` carried bare locations, so a drag lost the span before the
-  edit did, and both `queue_items` built `span: None` even where the joined `Track` had one.
-  `Cut::of` is the one turn from a catalog row into a queueable cut and `Cut::whole` is what a
-  sheet's path, a command-line file and a bus `AddTrack` all are, none of the three formats
-  having a vocabulary for a region. Folding doubles reads the whole row rather than the path, so
-  two cuts of one file are two rows while the same cut twice is one.
+- **A playlist is a list of cuts, not library rows.** `Cut` is a `MediaLocation` and its
+  `Option<FrameSpan>`, what a playable item is everywhere else — `Track`, `QueueItem` and `Resumable`
+  all carry the pair — and `playlist_entries` stores it as `path`, `span_start` and `span_frames` under
+  `tracks`' and `resume_rows`' `store::span` convention. A file no scan has seen is still a row, and a
+  file leaving the library leaves its playlists named but unresolved. Reading one back is a `LEFT JOIN`
+  onto `tracks` on `path` *and* `span_start`: a `PlaylistEntry` carries its `Cut` always and its
+  `Track` only where the catalog has one — the queue pane's fallback for an unscanned row.
+- **A row cut from a file is the cut, not the file, all the way to the graph.** The join once took the
+  path's lowest `span_start`, so the three rows a `.cue` cuts from one FLAC drew as the first, counted
+  its length thrice and played the whole file; `Held` and `Reaching` carried bare locations, so a drag
+  lost the span before the edit did, and both `queue_items` built `span: None` even where the joined
+  `Track` had one. `Cut::of` is the one turn from a catalog row into a queueable cut and `Cut::whole` is
+  what a sheet's path, a command-line file and a bus `AddTrack` all are, none of the three formats having
+  a vocabulary for a region. Folding doubles reads the whole cut, not the path, so two cuts of one file
+  are two rows while one cut twice is one.
   `a_cue_row_put_in_a_playlist_is_the_cut_it_was_rather_than_the_file_it_came_out_of`,
   `the_rows_a_sheet_cut_are_a_playlist_of_their_own_lengths` and
-  `two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other` are the three claims. An edit writes only the rows
-  it moved: appending goes at `max(position) + 1`, removing shifts the rows after it, moving shifts
-  the span between the two and tidying rewrites from the first row whose file has gone. A shift
-  parks the rows at `-1 - position` and unparks them in a second statement, because
-  `PRIMARY KEY (playlist_id, position)` refuses a collision even a transient one and SQLite does not
-  promise the order an `UPDATE` visits rows in. `position` stays dense, which is what lets a row's
-  index and its position be the same number, and it is why every span is weighed against the list
-  before it is written rather than cast to an `i64` and trusted: `move_in_playlist` answers false
-  where either end of the span or the row it is dropped on is past what the playlist holds, and
-  `remove_from_playlist` takes the rows from the first named to the end of the list and refuses a
-  span that starts past it. A span of any length costs the same two writes one row does, which is
-  the whole reason `Span` reaches the SQL rather than the pane sending one edit per row. What every
-  edit that moves a row reads is the whole playlist, because `undo::edited` takes a restore point
-  before each: an append that wrote one row reads a thousand paths on a list of a thousand. Only the
-  local source can be in one — `add_to_playlist` refuses a `MediaLocation` that names another.
-- **A name is one name however it is written, and the column is what says so.** `playlists.folded`
-  holds `playlist::folded` — Rust's `to_lowercase`, which folds every alphabet rather than
-  SQLite's `NOCASE` ASCII, and then NFC, which folds the spellings of one letter into each other —
-  and carries the `UNIQUE`, so two spellings of one name cannot both be
-  in the table whatever `refuse_duplicate` does. `Library::playlist_named`, `HOLDS_THE_WORD` and
-  `PlaylistOrder::Name` all read that column, so addressing, narrowing and ordering fold the same
-  way, which is what lets `resonate playlist <NAME>` and the pane address a playlist by its name.
-  The order is lowercase and then compose, because `to_lowercase` does not promise composed output;
-  it is one function applied to what is stored and to what is asked, so the two cannot disagree. It
-  is NFC rather than NFKC: "Café" typed with a combining acute is the playlist typed with a
-  precomposed one, while ﬁ and fi stay two names, because folding a ligature is a different claim.
-  What the column holds is written when the row is, so a database from a build before the fold
-  changed keeps the folds it had — which is the "delete it and rescan" the schema note above
-  already assumes.
-  `Library::rename_playlist` refuses a spelling another playlist already holds through
-  `refuse_duplicate`, which excludes the playlist being renamed, so a name re-cased is not a
-  duplicate of itself. Renaming and discarding are not row edits, so a saved query takes both the
-  way a list does; `resonate playlist <NAME> --rename <NEW>` and `--discard` are the same two
-  gestures on the command line, where there is no undo behind them.
-- **Every row edit refuses inside the transaction that writes it.** `only_a_list` asks whether the
-  playlist is there and whether it fills itself from a query, against the transaction rather than a
-  reader connection, so `Error::UnknownPlaylist` and `Error::NotAList` cannot be answered from a
-  state the write no longer sees. The three passes that drop rows share the same discipline:
-  `Going` is the question — `Gone`, `Doubled` or `Matching` — and `asked_of` asks it of the rows
-  `numbered` read inside that transaction, so no closure names a row it never looked at. What it
-  costs is a refused edit still paying the whole-playlist read `undo::edited` takes before it.
-  `copy_playlist` is the exception by design: it reads the source outside the transaction it lands
-  in, because a copy is the source as it stood.
-- **A playlist either holds a list or fills itself from a query, and both answer through
-  `playlist_entries`.** A row in `playlist_queries` is what makes one a saved query: the search
-  text, the `SortOrder` and the row cap, which is a `TrackQuery` with the album and artist left out.
-  `Library::playlist_entries` runs it rather than reading `playlist_entries` where one is there, so
-  the queue, the pane, MPRIS and every sheet writer take a query playlist for an ordinary one and
-  need to know nothing. The counts a listing carries are the query's too, which costs one `count(*)`
-  per saved query on top of the grouped pass. Editing the rows is refused — `Error::NotAList` out of
-  `add`, `remove_rows`, `move_rows` and `prune` — because there is no row there to move; renaming,
-  playing, exporting and dropping all work as they do for a list. What a query has instead is
-  `Library::revise_query`, which rewrites those three columns where they stand and refuses a list
-  with `Error::NotAQuery`, the mirror of `NotAList`, so each kind refuses exactly the edit the other
-  takes. A query holds no album or artist id, so saving one while an album is selected cannot
-  quietly widen to the library: the window offers *Save this search* only where the search box is
-  what scoped the pane, and `resonate playlist <NAME> --query` is the same gesture on the command
-  line, saving one under a name nothing holds and revising the one already named. A revision is the
-  whole edit: nothing keeps what a query held before it was changed. What a query holds is read at
-  the moment it is asked, so it can answer differently twice in a row and a queue loaded from one is
-  a snapshot — nothing re-reads a query into a queue already playing it. `SortOrder::Plays` or
-  `Played` beside a row cap is what writes a *Top 25 most played*, and `plays:0` is what has never
-  been heard. `Library::playlist_lists` is the read for the one gesture that can only reach the
-  other kind — the window's picker, which puts rows in a list — so it is the listing's own grouped
-  pass with the queries taken out in SQL and no `count(*)` behind it.
-- **A list is put in order by the library, not a row at a time by the pane.**
-  `Library::sort_playlist` takes a `RowOrder` and a `Direction` and rewrites the positions where
-  they stand — one `DELETE` and a dense reinsert from the first row the order moves, rather than the
-  park-and-unpark pair a move costs — and answers with how many rows moved, so a list already in
-  that order costs no write and moves no revision. `RowOrder::Album`, `Artist`, `Title` and `Length`
-  read the catalog through the same columns the tracks pane orders by and put a row no scan has seen
-  at the end whichever way round the order is read; `RowOrder::File` reads the path every row
-  carries, so it is the one order that places the unscanned rows too. `Length` is seconds rather
-  than frames, because two files at different rates do not count time the same way. A saved query
-  refuses it with `Error::NotAList` like every other row edit, because its order is the query's. It
-  is an edit rather than a property, so a list in hand still puts the next row appended at the end;
-  what makes an order a property is `Kept` below. The pane reaches it through the opened playlist's
-  *Sort* control, which opens the same *In order* and *Reading* chips the index carries, and
-  `resonate playlist <NAME> --order <ORDER> [--reverse]` is the same gesture on the command line.
-- **A list is either in hand or kept in an order, and a kept one refuses the edits that place a row
-  by hand.** `Library::keep_playlist_in_order` takes an `Option<Kept>` — a `RowOrder` and a
-  `Direction` — writes it to `playlists.kept_order` and `kept_reading` and puts the rows in it in
-  the same transaction, so keeping a list is the gesture that sorts it once and then holds it.
-  `playlist::add` runs that same pass after it appends, which is what lands a row added by hand, by
-  `resonate playlist --add` or by an imported sheet where the order says rather than at the end.
-  What a kept list refuses is `move_in_playlist` and `sort_playlist`, both with
-  `Error::KeptInOrder` — the mirror of `NotAList`, because its order is the sort's and not a
-  hand's — while removing, tidying, renaming, exporting and adding all work as they do for a list in
-  hand. `keep_playlist_in_order(id, None)` puts one back in hand and leaves the rows where they
-  stand. A saved query refuses to be kept at all, with `NotAList` like every other row edit, because
-  its order is already the query's. The window reads the states through `views/playlists.rs::Rows`:
-  `InHand` is moved and edited, `Kept` is edited and not moved, `Matched` is neither, so the movers,
-  the drag, the reach and the ✕ each ask the one question they care about rather than testing for a
-  query. The *Sort* control carries the choice as a third chip row, *Keeps*, and the index draws a
-  kept list under the sort mark rather than the playlist one;
-  `resonate playlist <NAME> --order <ORDER> --keep` and `resonate playlist <NAME> --by-hand` are the
-  same two gestures on the command line. Keeping a list in the order it is already kept in, or
-  putting one back in hand it is already in, moves nothing and so writes nothing: `keep` answers
-  `Change::Nothing` there, the way every other edit that wrote nothing does. What keeping costs is
-  the whole list read on every append: the order is re-read and the rows rewritten from the first
-  one it moves, so a row sorting to the end of a kept list of a thousand costs the one write a list
-  in hand costs and a row sorting to its top still costs a thousand. The order is only re-read when
-  the list is written to, so a scan that renames a track or fills in the album it belongs to leaves
-  a kept list in the order it had — nothing re-sorts one on its own.
-- **What a search showed is what a drop takes out, and nothing empties a list in one gesture.**
-  `Library::remove_matching` reads the positions a search matched and rewrites the list from the
-  first row that goes, which is the pass `prune_playlist` already took — they share `dropped_where`,
-  because a narrowing breaks the adjacency a `Span` needs and both are one question asked of every
-  row. A saved query refuses it with `Error::NotAList` like every other row edit; a kept list takes
-  it, because dropping a row places none. It asks for the text rather than an `Option<&str>` the way
-  `copy_playlist` does, so there is no call that empties a list: one with nothing left in it is one
-  to discard. The window draws *Drop shown* beside *Copy* only under `Rows::Narrowed`, and
-  `resonate playlist <NAME> --matching <TEXT> --drop` is the same gesture on the command line, which
-  is why `--drop` requires `--matching`.
-- **A row doubled is a row to fold away, and the first of each is the one that stays.**
-  `Library::fold_doubles` reads the paths a list holds and drops every row naming a file an earlier
-  row already named, through the same `dropped_where` pass `prune_playlist` and `remove_matching`
-  take — a third question asked of every row rather than a third way of rewriting one. It is the
-  companion to `copy_playlist`, which reconciles nothing and so doubles what it lands, and to
-  `add_to_playlist`, which lets the same file be put in twice deliberately: nothing folds on its
-  own, because putting a track in a playlist twice is a thing to be able to do. It reconciles on the
-  path the way `import_playlist` does, so two names for one file are two rows to it and stay two. A
-  saved query refuses it with `Error::NotAList` like every other row edit; a kept list takes it,
-  because dropping a row places none. `Library::tidy_playlist` asks both whether a file is gone and
-  whether an earlier live row already names it, then drops the union in one `Edit::Tidied` step;
-  missing rows do not make later live rows look doubled. The opened playlist draws that combined
-  action as *Tidy*, so one undo restores both kinds of row together. The command line keeps
-  `resonate playlist <NAME> --tidy` for missing files and `--fold` for doubles, and refuses them
-  together because they ask different questions. It is one press for the whole list — nothing folds
-  doubles out of a span, and nothing previews which rows a press would take.
+  `two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other` are the claims. An edit writes
+  only the rows it moved: appending goes at `max(position) + 1`, removing shifts the rows after it,
+  moving shifts the span between the two ends, and tidying rewrites from the first row whose file has
+  gone. A shift parks rows at `-1 - position` and unparks them in a second statement, since
+  `PRIMARY KEY (playlist_id, position)` refuses even a transient collision and SQLite promises no order
+  an `UPDATE` visits rows in. `position` stays dense, so a row's index and position are one number —
+  why every span is weighed against the list before being written rather than cast to an `i64` and
+  trusted: `move_in_playlist` answers false where either end of the span or the row dropped on is past
+  the playlist's end, and `remove_from_playlist` takes rows from the first named to the list's end and
+  refuses a span starting past it. A span of any length costs one row's two writes — the whole reason
+  `Span` reaches the SQL rather than the pane sending an edit per row. Every row-moving edit reads the
+  whole playlist, `undo::edited` taking a restore point before each: an append writing one row reads a
+  thousand paths on a list of a thousand. Only the local source can be in one — `add_to_playlist`
+  refuses a `MediaLocation` naming another.
+- **A name is one name however written, and the column says so.** `playlists.folded` holds
+  `playlist::folded` — Rust's `to_lowercase`, folding every alphabet rather than SQLite's `NOCASE`
+  ASCII, then NFC, folding one letter's spellings into each other — and carries the `UNIQUE`, so two
+  spellings of one name cannot both be in the table whatever `refuse_duplicate` does.
+  `Library::playlist_named`, `HOLDS_THE_WORD` and `PlaylistOrder::Name` read that column, so addressing,
+  narrowing and ordering fold alike — what lets `resonate playlist <NAME>` and the pane address a
+  playlist by name. Lowercase then compose, `to_lowercase` not promising composed output; one function
+  applied to what is stored and what is asked, so the two cannot disagree. NFC, not NFKC: "Café" typed
+  with a combining acute is the playlist typed with a precomposed one, while ﬁ and fi stay two names,
+  folding a ligature being a different claim. The column is written with the row, so a database from a
+  build before the fold changed keeps its folds — the delete-and-rescan the schema note assumes.
+  `Library::rename_playlist` refuses a spelling another playlist holds through `refuse_duplicate`, which
+  excludes the playlist renamed, so a re-cased name is not a duplicate of itself. Renaming and
+  discarding are not row edits, so a saved query takes both as a list does; `resonate playlist <NAME>
+  --rename <NEW>` and `--discard` are the command line's gestures, with no undo behind them.
+- **Every row edit refuses inside the transaction writing it.** `only_a_list` asks whether the
+  playlist is there and whether it fills itself from a query against the transaction, not a reader
+  connection, so `Error::UnknownPlaylist` and `Error::NotAList` cannot be answered from a state the write
+  no longer sees. The passes dropping rows share the discipline: `Going` is the question — `Gone`,
+  `Doubled`, `Unwanted` (gone or doubled, for a tidy) or `Matching` — and `asked_of` asks it of the rows
+  `numbered` read inside that transaction, so no closure names a row it never looked at. A refused edit
+  still pays the whole-playlist read `undo::edited` takes first. `copy_playlist` is the exception by
+  design: it reads the source outside the transaction it lands in, a copy being the source as it stood.
+- **A playlist holds a list or fills itself from a query, and both answer through
+  `playlist_entries`.** A row in `playlist_queries` makes one a saved query: the search text, the
+  `SortOrder` and the row cap — a `TrackQuery` without the album and artist. `Library::playlist_entries`
+  runs it rather than reading `playlist_entries` where one exists, so the queue, the pane, MPRIS and
+  every sheet writer take a query playlist for an ordinary one. A listing's counts are the query's too,
+  one `count(*)` per saved query on top of the grouped pass. Editing rows is refused — `Error::NotAList`
+  from `add`, `remove_rows`, `move_rows` and `prune` — there being no row to move; renaming, playing,
+  exporting and dropping work as for a list. A query has `Library::revise_query` instead, rewriting those
+  three columns in place and refusing a list with `Error::NotAQuery`, the mirror of `NotAList`, so each
+  kind refuses exactly the edit the other takes. A query holds no album or artist id, so saving one while
+  an album is selected cannot quietly widen to the library: the window offers *Save this search* only
+  where the search box scoped the pane, and `resonate playlist <NAME> --query` saves one under an unused
+  name and revises the one named. A revision is the whole edit: nothing keeps what a query held before.
+  What a query holds is read when asked, so it can answer differently twice running, and a queue loaded
+  from one is a snapshot — nothing re-reads a query into a queue playing it. `SortOrder::Plays` or
+  `Played` beside a cap writes a *Top 25 most played*, and `plays:0` is what was never heard.
+  `Library::playlist_lists` is the read for the one gesture reaching only the other kind — the window's
+  picker, putting rows in a list — the listing's grouped pass with queries taken out in SQL and no
+  `count(*)`.
+- **A list is put in order by the library, not a row at a time by the pane.** `Library::sort_playlist`
+  takes a `RowOrder` and a `Direction` and rewrites positions in place — one `DELETE` and a dense
+  reinsert from the first row the order moves, not a move's park-and-unpark pair — answering how many
+  rows moved, so a list already in that order costs no write and moves no revision. `RowOrder::Album`,
+  `Artist`, `Title` and `Length` read the catalog through the tracks pane's order columns and put an
+  unscanned row at the end whichever way the order reads; `RowOrder::File` reads the path every row
+  carries, the one order placing unscanned rows too. `Length` is seconds, not frames, files at different
+  rates counting time differently. A saved query refuses it with `Error::NotAList`, its order being the
+  query's. It is an edit, not a property, so a list in hand still puts the next appended row at the end;
+  `Kept` below makes an order a property. The pane reaches it through the opened playlist's *Sort*
+  control, which opens the index's *In order* and *Reading* chips, and `resonate playlist <NAME> --order
+  <ORDER> [--reverse]` is the command line's gesture.
+- **A list is in hand or kept in an order, and a kept one refuses edits placing a row by hand.**
+  `Library::keep_playlist_in_order` takes an `Option<Kept>` — a `RowOrder` and a `Direction` — writes it
+  to `playlists.kept_order` and `kept_reading` and puts the rows in it in the same transaction, so
+  keeping sorts once and then holds. `playlist::add` runs the same pass after appending, landing a row
+  added by hand, by `resonate playlist --add` or by an imported sheet where the order says. A kept list
+  refuses `move_in_playlist` and `sort_playlist` with `Error::KeptInOrder` — the mirror of `NotAList`,
+  its order being the sort's — while removing, tidying, renaming, exporting and adding work as for a list
+  in hand. `keep_playlist_in_order(id, None)` puts one back in hand, leaving rows where they stand. A
+  saved query refuses to be kept at all, with `NotAList`. The window reads the states through
+  `views/playlists.rs::Rows`: `InHand` is moved and edited, `Kept` edited not moved, `Matched` neither, so
+  the movers, the drag, the reach and the ✕ each ask their one question rather than testing for a query.
+  The *Sort* control carries the choice as a third chip row, *Keeps*, and the index draws a kept list
+  under the sort mark; `resonate playlist <NAME> --order <ORDER> --keep` and `--by-hand` are the command
+  line's gestures. Keeping a list in its kept order, or putting one in hand back in hand, moves nothing
+  and writes nothing (`Change::Nothing`, as every edit writing nothing answers). Keeping costs the whole
+  list read on every append — the order re-read and rows rewritten from the first it moves — so a row
+  sorting to the end of a kept list of a thousand costs one write and one sorting to its top a thousand.
+  The order is re-read only when the list is written, so a scan renaming a track or filling its album
+  leaves a kept list in its order — nothing re-sorts one on its own.
+- **What a search showed is what a drop removes, and nothing empties a list in one gesture.**
+  `Library::remove_matching` reads the positions a search matched and rewrites the list from the first
+  row that goes — `prune_playlist`'s pass; they share `dropped_where`, a narrowing breaking the adjacency
+  a `Span` needs and both being one question asked of every row. A saved query refuses it with
+  `NotAList`; a kept list takes it, dropping placing none. It asks for the text, not an `Option<&str>` as
+  `copy_playlist` does, so no call empties a list: an emptied one is one to discard. The window draws
+  *Drop shown* beside *Copy* only under `Rows::Narrowed`, and `resonate playlist <NAME> --matching <TEXT>
+  --drop` is the command line's gesture, hence `--drop` requires `--matching`.
+- **A doubled row is folded away, the first of each staying.** `Library::fold_doubles` reads the cuts
+  a list holds and drops every row naming a cut (path and span) an earlier row already named, through
+  the same `dropped_where` pass. It is the companion of `copy_playlist`, which reconciles nothing and so
+  doubles what it lands, and of `add_to_playlist`, which lets a file be put in twice deliberately:
+  nothing folds on its own, a track twice in a playlist being a thing to be able to do. It reconciles on
+  the path as `import_playlist` does, so two names for one file are two rows and stay two. A saved query
+  refuses it with `NotAList`; a kept list takes it. `Library::tidy_playlist` asks both whether a file is
+  gone and whether an earlier live row already names it (`Going::Unwanted`), dropping the union in one
+  `Edit::Tidied` step; missing rows do not make later live rows look doubled. The opened playlist draws
+  that combined action as *Tidy*, so one undo restores both kinds. The command line keeps `resonate
+  playlist <NAME> --tidy` for missing files and `--fold` for doubles, refusing them together as they ask
+  different questions. One press for the whole list — nothing folds out of a span, and nothing previews
+  which rows a press would take.
 - **A playlist is copied into another, never moved into it.** `Library::copy_playlist` reads one
-  playlist's rows — the whole of it, or only what a search matched — and lands them through
-  `add_to_playlist`, so the source keeps them, a kept target puts them in its order, and a saved
-  query refuses to receive them with `NotAList` like every other row edit. `Error::IntoItself`
-  refuses both sides being the same playlist, because that would only double it. Copying out of a
-  query is what freezes a search into a list; the command line remains the way to copy one. The
-  playlist index and opened playlist use + to enter a track-browsing mode for the chosen target,
-  while row-level + actions that already hold tracks still open `hold_for_a_playlist`. `resonate playlist <NAME> --into <OTHER>` copies on the
-  command line, creating OTHER where nothing is named that. What it costs is the whole source read into memory as locations and a
-  write per row, plus the order re-read where the target is kept in one.
+  playlist's rows — all, or what a search matched — and lands them through `add_to_playlist`, so the
+  source keeps them, a kept target puts them in its order, and a saved query refuses them with
+  `NotAList`. `Error::IntoItself` refuses both sides being one playlist, which would only double it.
+  Copying out of a query freezes a search into a list; the command line remains the way to copy one. The
+  playlist index and opened playlist use + to enter a track-browsing mode for the chosen target, while
+  row-level + actions already holding tracks open `hold_for_a_playlist`. `resonate playlist <NAME>
+  --into <OTHER>` copies, creating OTHER where nothing is named so. It costs the whole source read into
+  memory as locations and a write per row, plus the order re-read where the target is kept.
 - **A playlist is duplicated whole, and a duplicate is one step to walk back.**
-  `Library::duplicate_playlist` makes a playlist under the first of *NAME (copy)*, *NAME (copy 2)*
-  and on that nothing already holds, in one `undo::started` step: a list's rows are copied as the
-  stored rows they are, spans and all, and its kept order with them, and a saved query is given
-  the same search, order and cap rather than frozen into the rows it matches now — that is what
-  `copy_playlist` out of a query is for. The pin, the plays and when it was played stay with the
-  source. The window offers it as *Duplicate* in the menu of a playlist card, a playlist row and
-  the opened playlist's more mark.
-  `a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name` and
+  `Library::duplicate_playlist` makes a playlist under the first free of *NAME (copy)*, *NAME (copy 2)*
+  and on, in one `undo::started` step: a list's rows are copied as stored, spans and all, with its kept
+  order, and a saved query gets the same search, order and cap rather than being frozen into its current
+  rows (`copy_playlist` out of a query does that). The pin, the plays and when played stay with the
+  source. The window offers *Duplicate* in the menu of a playlist card, a playlist row and the opened
+  playlist's more mark. `a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name` and
   `a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had` are the claims.
-- **What pictures a playlist is the covered albums its rows reach first.** `Library::playlist_pictures`
-  answers at most the covers asked for, one per distinct picture through the same identity and
-  likeness `pictured_by` weighs a suggestion's by. A list is read in its own order, so the mosaic
-  is the opening of the playlist; a saved query with no cap is `pictured_by` over its search, and
-  one with a cap reads the rows the cap leaves, so *Top 25* is pictured by those twenty-five and no
-  others. `Library::pinned_playlists` is the other read the sidebar takes: the pinned playlists'
-  ids and names, most lately pinned first, with no join and no narrowing.
-- **A search narrows a playlist, and what is shown is what plays.** `Library::playlists` takes the
-  words a search holds and matches each against the name, because a playlist has only a name to
-  answer with: a term is passed over, and a search holding no standalone word leaves the index
-  whole. `Library::playlist_entries` takes the whole text and runs it against the catalog, so a row
-  no scan has seen answers nothing and falls out, and a saved query's own text and the typed one
-  both have to hold. A `PlaylistEntry` carries its `position` for that reason — a narrowed row still
-  knows where it stands, so the number it draws and the row a ✕ drops are the list's rather than the
-  view's. `Rows::Narrowed` sits beside `InHand`, `Kept` and `Matched`: edited, not reached and not
-  moved, because a reach is a run of adjacent rows and a `Span` is what reaches the SQL, and
-  adjacency is what the narrowing broke. What acts on the playlist as a whole — Rename, Sort, Tidy,
-  Export, Discard — acts on the whole whatever is shown; what acts on rows — Play, Play next, Add to
-  queue, Copy, Drop shown and every row gesture — acts on what is shown, which is why playing a
-  narrowed playlist leaves `Library::playing_playlist` unset: the queue is a part of it rather than
-  the thing itself. `resonate playlists --named` and `resonate playlist <NAME> --matching` are the
-  same two gestures on the command line. A saved query's own text and the typed one are read
-  *beside* each other rather than joined into one string: `db::matching` takes the texts, reads each
-  through `Search::read` and asks their clauses together, so an unbalanced quote closes at the end
-  of the text it was written in and a trailing `or` stays the word it was. Both run under the
-  query's own cap, so the cap falls on what the two match rather than on what the query alone would
-  have, and the count the listing carries is still the query's. Nothing says which of the two a row
-  answered, and the same box is what *revises* a query through *Edit search*, so the text narrowing
-  one and the text defining it are the same field read two ways.
+- **What pictures a playlist is the covered albums its rows reach first.**
+  `Library::playlist_pictures` answers at most the covers asked for, one per distinct picture through
+  `pictured_by`'s identity and likeness. A list is read in its own order, so the mosaic is the playlist's
+  opening; a saved query with no cap is `pictured_by` over its search, and one with a cap reads the rows
+  the cap leaves, so *Top 25* is pictured by those twenty-five. `Library::pinned_playlists` is the other
+  sidebar read: the pinned playlists' ids and names, most lately pinned first, no join, no narrowing.
+- **A search narrows a playlist, and what is shown is what plays.** `Library::playlists` takes a
+  search's words and matches each against the name, a playlist having only a name to answer with: a term
+  is passed over, and a search with no standalone word leaves the index whole.
+  `Library::playlist_entries` runs the whole text against the catalog, so an unscanned row answers
+  nothing and falls out, and a saved query's own text and the typed one must both hold. A
+  `PlaylistEntry` carries its `position` for that reason — a narrowed row knows where it stands, so the
+  number it draws and the row a ✕ drops are the list's, not the view's. `Rows::Narrowed` sits beside
+  `InHand`, `Kept` and `Matched`: edited, not reached and not moved, a reach being a run of adjacent rows
+  and a `Span` what reaches the SQL, adjacency being what the narrowing broke. What acts on the playlist
+  whole — Rename, Sort, Tidy, Export, Discard — acts on the whole whatever is shown; what acts on rows —
+  Play, Play next, Add to queue, Copy, Drop shown and every row gesture — acts on what is shown, so
+  playing a narrowed playlist leaves `Library::playing_playlist` unset, the queue being part of it rather
+  than it. `resonate playlists --named` and `resonate playlist <NAME> --matching` are the command line's
+  gestures. A saved query's text and the typed one are read *beside* each other, not joined into one
+  string: `db::matching` takes the texts, reads each through `Search::read` and asks their clauses
+  together, so an unbalanced quote closes at the end of the text it was written in and a trailing `or`
+  stays a word. Both run under the query's own cap, so the cap falls on what the two match, and the
+  listing's count is still the query's. Nothing says which of the two a row answered, and the same box
+  *revises* a query through *Edit search*, so the text narrowing one and the text defining it are one
+  field read two ways.
 - **A playlist listing is an order and a `Direction`, and whoever draws it picks both.**
-  `Library::playlists` takes the two and `order_by` writes the sense into the SQL, so a reading is
-  the query's rather than a `reverse()` over what came back — which is what leaves a playlist
-  nothing has played at the bottom of *Most recent first* and the top of *Longest ago first*, where
-  SQLite puts a NULL. `PlaylistOrder::reads` is the direction an order *opens* at: ascending for
-  `Name`, descending for the other four, because a person expects the newest or the most played at
-  the top. That is a default and not a rule — the pane's *Reading* row and
-  `resonate playlists --reverse` each turn one around, and choosing an order resets the reading to
-  what that order opens at. The bus opens ascending whatever the order, because the MPRIS Playlists
-  spec defines `CreationDate`, `ModifiedDate` and `LastPlayDate` as oldest first, and maps its own
-  `reverseOrder` onto `Direction::Descending` rather than reversing a list it has already read.
-- **Which playlist is in play is the library's, and it is the queue it was loaded as that keeps
-  it.** `Library::playing_playlist` is a cell beside the catalog rather than a column, and what it
-  holds is a `Playing` — the `PlaylistId` and the `QueueStamp` that `engine::stamp_of` reads off
-  the rows the queue was loaded with, their locations and spans rather than the ids they were
-  handed. It answers `Library::playing_playlist(queue)` only where the two stamps agree, so the cell
-  *is* the claim that the queue is that playlist rather than a note every caller has to remember to
-  tear up. `Queue::rows_changed` restamps whenever a row arrives or leaves and the engine publishes
-  it as `PlayerState::queue_stamp`, so an `Insert` or a `Remove` takes the badge off wherever it
-  came from — `RootView::queue`, a row's ✕, or `AddTrack` and `RemoveTrack` over the bus without the
-  window in between. `Queue::split` restamps too, because a drag that crosses into or out of the
-  rows queued to play next changes which rows the queue plays from, and a drag back restores the
-  stamp it had. A reorder that keeps the same rows in `order` stamps the same, because the stamp
-  is read off `items` rather than `order`, so a queue move and a shuffle both leave the playlist in play and
-  `PlayerState::loaded_position` still names the playlist row being heard. Three callers set it,
-  each stamping the items it is about to send: `RootView::play_playlist`, `Collection::activate` and
-  the binary's `play_queue`. MPRIS's `ActivePlaylist` reads the same cell through the same stamp, so
-  the bus and the pane cannot disagree about what is on. `QueueItem` derives no `Hash`, so `engine::stamp_of`
-  is the only way a queue's rows can be stamped: `Collection::activate` once hashed whole items,
-  ids and all, which no queue the engine publishes could match, and `ActivePlaylist` never named
-  the playlist the bus had just activated. It holds only a playlist the catalog holds,
-  because `set_playing_playlist` fills it from whether `played_now` counted the play:
-  an id nothing holds leaves the cell and `ActivePlaylist` empty rather than naming a playlist that
-  is not there. It is not persisted because the queue is not either. *When* one was last played is,
-  and so is how often: the same call writes `playlists.played` and steps `playlists.plays`, which is
-  what `PlaylistOrder::Played` and `PlaylistOrder::Plays` order on and what the bus answers
-  `LastPlayDate` from. Loading one counts, so loading the same playlist twice counts twice.
-  `Library::playlists_revision` is the companion cell, bumped by every playlist write, which is what
-  a 200 ms bus poll watches so a listing is re-read only when an edit moved it. What the stamp costs
-  is a poll: the engine publishes it only once it has applied the load, so the badge arrives a poll
-  behind the queue. It is a 64-bit hash of the rows in their loaded order, so two queues that
-  collide are one queue to it and a queue edited back to what it was is the playlist again.
+  `Library::playlists` takes the two and `order_by` writes the sense into the SQL, so a reading is the
+  query's, not a `reverse()` over what came back — leaving a never-played playlist at the bottom of *Most
+  recent first* and the top of *Longest ago first*, where SQLite puts a NULL. `PlaylistOrder::reads` is
+  the direction an order *opens* at: ascending for `Name`, descending for the other five, a person
+  expecting the newest or most played on top. A default, not a rule — the pane's *Reading* row and
+  `resonate playlists --reverse` each turn one around, and choosing an order resets the reading to what
+  it opens at. The bus opens ascending whatever the order, the MPRIS Playlists spec defining
+  `CreationDate`, `ModifiedDate` and `LastPlayDate` as oldest first, and maps its own `reverseOrder` onto
+  `Direction::Descending` rather than reversing a list already read.
+- **Which playlist is in play is the library's, kept by the queue it was loaded as.**
+  `Library::playing_playlist` is a cell beside the catalog, not a column, holding a `Playing` — the
+  `PlaylistId` and the `QueueStamp` `engine::stamp_of` reads off the rows the queue was loaded with,
+  their locations and spans rather than the ids handed. It answers `Library::playing_playlist(queue)`
+  only where the two stamps agree, so the cell *is* the claim that the queue is that playlist, not a note
+  every caller must remember to tear up. `Queue::rows_changed` restamps whenever a row arrives or leaves
+  and the engine publishes it as `PlayerState::queue_stamp`, so an `Insert` or `Remove` takes the badge
+  off from wherever it came — `RootView::queue`, a row's ✕, or `AddTrack` and `RemoveTrack` over the bus
+  with no window between. `Queue::split` restamps too (through `stamp_what_is_playing_from`), a drag
+  crossing into or out of the rows queued next changing which rows the queue plays from, and a drag back
+  restores its stamp. A reorder keeping the same rows in `order` stamps the same, the stamp being read off
+  `items`, not `order`, so a queue move and a shuffle leave the playlist in play and
+  `PlayerState::loaded_position` still names the playlist row heard. Three callers set it, each stamping
+  the items it is about to send: `RootView::play_playlist`, `Collection::activate` and the binary's
+  `play_queue`. MPRIS's `ActivePlaylist` reads the same cell through the same stamp, so bus and pane
+  cannot disagree. `QueueItem` derives no `Hash`, so `engine::stamp_of` is the only way a queue's rows are
+  stamped: `Collection::activate` once hashed whole items, ids and all, which no published queue could
+  match, and `ActivePlaylist` never named the playlist the bus had just activated. It holds only a
+  playlist the catalog holds, `set_playing_playlist` filling it from whether `played_now` counted the play
+  (`counted_a_play`): an id nothing holds leaves the cell and `ActivePlaylist` empty rather than naming an
+  absent playlist. Not persisted, as the queue is not. *When* one was last played is, and how often: the
+  same call writes `playlists.played` and steps `playlists.plays`, what `PlaylistOrder::Played` and
+  `Plays` order on and the bus answers `LastPlayDate` from. Loading one counts, so loading it twice
+  counts twice. `Library::playlists_revision` is the companion cell, bumped by every playlist write, which
+  a 200 ms bus poll watches so a listing is re-read only when an edit moved it. The stamp costs a poll:
+  the engine publishes it only once it has applied the load, so the badge arrives a poll behind the
+  queue. It is a 64-bit hash of the rows in loaded order, so two colliding queues are one queue to it and
+  a queue edited back to what it was is the playlist again.
 
 ## Undo
 
-- **An edit to a playlist is one step to walk back, and a step is the playlist as it stood.**
-  `undo.rs` is the whole of it. `undo::edited` wraps every mutator's transaction: it reads the
-  playlist's name, kept order, saved query and rows before the change and keeps that restore point
-  only where the change moved something, which is what `Change::Made` and `Change::Nothing` say — an
-  edit that wrote nothing leaves nothing to put back. `undo::started` is the other half, for the
-  gestures that create a playlist, whose restore point is that it did not exist. `Library::undo`
-  takes the newest step and writes it back whole — one `DELETE` of the playlist row, which cascades
-  its entries and its query away, then a dense rewrite — so a discarded playlist comes back under
-  the id it had, while `played` and `plays` are read off the row rather than restored, because a
-  play is not an edit. It is why `Library::start_playlist` and `Library::revise_query` are single
-  calls: the window's gesture is name-and-rows and name-and-search, and two library calls would be
-  two steps. The stack is `Inner::steps`, bounded at 32 steps and 50 000 rows and living only as
-  long as the run, so the command line has no undo. The newest step is always kept, so a long run of
-  edits drops the oldest rather than the largest. A play counted between an edit and its undo is not
-  taken back with it, because `played` and `plays` are read off the row rather than restored — but
-  the date the playlist was last changed is, so an edit walked back does not leave it climbing a
-  *Last changed* listing.
-- **A step holds the rows only where its edit could have moved one.** `Edit::moves_rows` is where
-  that is said, and `Renamed` and `Revised` are the two it answers `false` for, so neither reads the
-  paths under a playlist nor counts them against the stack's 50 000. What such a step is put back by
-  is `written_over`, an `UPDATE` of the playlist row and a rewrite of its query where it has one,
-  rather than the `DELETE` that would cascade the entries away — which is why the rows-holding path
-  is the one that has to read `played` and `plays` back off the row it is about to delete. Both
-  halves of `undo::walk` read the shape from the step's own `Edit`, so the inverse of a rename is a
-  rename and holds no more than the rename did.
-- **A step is walked either way, and walking it is what writes the step back the other way.**
-  `undo::walk` is `Library::undo` and `Library::redo` alike: it pops a step off one stack, reads the
-  standing it is about to overwrite, applies the step and pushes what it read onto the other — so
-  `Inner::walked` holds the playlist as each edit *left* it, no step carries an inverse of its own,
-  and a redone step is a step to walk back again. A step that finds no playlist under its id is a
-  `Standing::Fresh`, which is how a discard and a create are the same shape read from opposite ends;
-  walking one back that discards the playlist in play clears `playing_playlist` with it. What ends a
-  redo is the next edit: `undo::note` clears `walked` before it keeps a step, so an edit made after
-  a walk back forgets what was walked, while one that wrote nothing clears nothing because it never
-  reaches `note`. That is also what keeps the id safe. Undo is strictly last-first, so every gesture
-  that frees an id leaves a step under every gesture that takes one; every gesture that takes an id
-  is an edit, so a step on `walked` can never name a playlist SQLite has since handed the id to.
-  `RootView::undo_edit` and `RootView::redo_edit` are the playlists headings' *Undo* and *Redo*, and
-  `ctrl-z`, `ctrl-shift-z` and `ctrl-y` away from the search field, where the field's own three are
-  bound inside it. `Inner::walked` is bounded like `steps` — 32 steps or 50 000 rows — but it is a
-  second bound rather than a shared one, so a long run of undos over long playlists can hold both
-  ends of each of them, and nothing collapses a step walked back and forth again into the one it
-  came from: a press either way costs the read and the rewrite the edit did.
+- **A playlist edit is one step to walk back, and a step is the playlist as it stood.** `undo.rs` is
+  the whole of it. `undo::edited` wraps every mutator's transaction: it reads the playlist's name, kept
+  order, saved query and rows before the change and keeps that restore point only where the change moved
+  something (`Change::Made` and `Change::Nothing`) — an edit writing nothing leaves nothing to put back.
+  `undo::started` is the other half, for gestures creating a playlist, whose restore point is its not
+  existing. `Library::undo` takes the newest step and writes it back whole — one `DELETE` of the playlist
+  row, cascading its entries and query away, then a dense rewrite — so a discarded playlist returns under
+  its id, while `played` and `plays` are read off the row rather than restored, a play not being an edit.
+  Why `Library::start_playlist` and `Library::revise_query` are single calls: the window's gesture is
+  name-and-rows and name-and-search, and two library calls would be two steps. The stack is
+  `Inner::steps`, bounded at 32 steps (`STEPS_HELD`) and 50 000 rows (`ROWS_HELD`) and living only as
+  long as the run, so the command line has no undo. The newest step is always kept, so a long run drops
+  the oldest, not the largest. A play counted between an edit and its undo is not taken back — `played`
+  and `plays` are read off the row — but the date last changed is, so an edit walked back does not leave
+  it climbing a *Last changed* listing.
+- **A step holds the rows only where its edit could have moved one.** `Edit::moves_rows` says so, and
+  `Renamed` and `Revised` are the two answering `false`, so neither reads the paths under a playlist nor
+  counts them against the stack's 50 000. Such a step is put back by `written_over`, an `UPDATE` of the
+  playlist row and a rewrite of its query where it has one, not the `DELETE` that would cascade the
+  entries away — which is why the rows-holding path is the one reading `played` and `plays` back off the
+  row it is about to delete. Both halves of `undo::walk` read the shape from the step's own `Edit`, so a
+  rename's inverse is a rename holding no more than the rename did.
+- **A step is walked either way, and walking it writes the step back the other way.** `undo::walk` is
+  `Library::undo` and `Library::redo` alike: it pops a step off one stack, reads the standing it is
+  about to overwrite, applies the step and pushes what it read onto the other — so `Inner::walked` holds
+  the playlist as each edit *left* it, no step carries an inverse, and a redone step is one to walk back
+  again. A step finding no playlist under its id is `Standing::Fresh`, how a discard and a create are
+  one shape read from opposite ends; walking back one that discards the playlist in play clears
+  `playing_playlist` with it. The next edit ends a redo: `undo::note` clears `walked` before keeping a
+  step, so an edit after a walk back forgets what was walked, while one writing nothing clears nothing,
+  never reaching `note`. That also keeps the id safe: undo is strictly last-first, so every gesture
+  freeing an id leaves a step under every gesture taking one, and every id-taking gesture is an edit, so
+  a step on `walked` can never name a playlist SQLite has since handed the id to. `RootView::undo_edit`
+  and `RootView::redo_edit` are the playlists headings' *Undo* and *Redo*, and `ctrl-z`, `ctrl-shift-z`
+  and `ctrl-y` away from the search field, where the field's own three are bound inside it.
+  `Inner::walked` is bounded like `steps` — 32 steps or 50 000 rows — but as a second bound, not a
+  shared one, so a long run of undos over long playlists can hold both ends of each, and nothing
+  collapses a step walked back and forth into the one it came from: a press either way costs the edit's
+  read and rewrite.
 
 ## Sheets
 
-- **A playlist leaves and arrives as M3U, PLS or XSPF, and the sheet names files rather than
-  tracks.** `sheet.rs` is the seam and `Library::import_playlist` / `export_playlist` the way in: it
-  reads the bytes, settles the encoding, decides which of the three the *text* is and hands
-  `m3u.rs`, `pls.rs` or `xspf.rs` the job. What all three share lives there rather than three times
-  over — a row's seconds, artist and title as a `Described`, the relative-or-absolute path rule,
-  percent escaping both ways, and the staged rename over the target that stops a crash mid-write
-  truncating a sheet. Writing picks the format from the target's extension and falls back to M3U
+- **A playlist leaves and arrives as M3U, PLS or XSPF, and the sheet names files, not tracks.**
+  `sheet.rs` is the seam and `Library::import_playlist` / `export_playlist` the way in: it reads the
+  bytes, settles the encoding, decides which of the three the *text* is and hands `m3u.rs`, `pls.rs` or
+  `xspf.rs` the job; `sheet::parse`, split from `sheet::read`, reads a sheet with no file. What the
+  three share lives there once — a row's seconds, artist and title as a `Described`, the
+  relative-or-absolute path rule, percent escaping both ways, and the staged rename over the target that
+  stops a crash mid-write truncating a sheet. Writing picks the format from the target's extension, M3U
   where the name declares nothing; reading picks it from the content, so a sheet under the wrong
-  extension still reads. Everything a sheet says about a *track* is read past — a `playlist_entries`
-  row is a path, so `#EXTINF:`, `TitleN`/`LengthN` and `<title>`/`<creator>`/`<duration>` are
-  written and never believed. A row naming a scheme that is not `file://` is counted rather than
-  refused, because one stream in a sheet must not cost the other fifty rows. The scheme and a
-  `localhost` authority are read whatever their case, as RFC 3986 has them, so `FILE:///a.wav` and
-  `file://LocalHost/a.wav` are local rows and an `xml:base` written either way still resolves what
-  sits under it; `file:/a.wav`, the form with no authority at all, reads as `file:///a.wav` does,
-  while `file:track.flac`, with no slash, stays a relative path. A row that is empty once trimmed
-  — a PLS `File1=` with nothing after it — names nothing and is counted as elsewhere, where it
-  used to resolve to the sheet's own folder and be stored as a row. A sheet that is not
-  UTF-8 is read as Windows-1252, unless its name declares UTF-8 — `.m3u8` and `.xspf` do — or its
-  bytes hold a NUL, which no text sheet does. Importing reconciles by count rather than by set: a
-  row the playlist already holds is counted as already there, so the same sheet read twice is a
-  no-op, while a file the *sheet itself* names twice is two rows, because `add_to_playlist` lets the
-  same file be put in twice deliberately. A name already taken is appended to rather than refused,
-  which is what makes `import` and `resonate playlist <NAME> --add` the same gesture. A `.cue`
-  handed to `--add` is added as the rows it cuts, through the same `sheet_cuts` `resonate play`
-  and `resonate queue` read one through, rather than as a row naming the sheet. A row is
-  written as a path only where `sheet::as_a_row` finds that path reads back as itself, and as an
-  escaped `file://` URI where it does not, which is what carries a `#`, a line break or a scheme of
-  its own through M3U and PLS. `sheet::canonical` settles a path the filesystem cannot answer for
-  lexically — absolute, its `.` and `..` taken out — so a sheet imported while a mount is down still
-  names what a later scan will store. A row holding a backslash and no forward slash is a path a
-  Windows player wrote, and `forward_separated` reads it with its separators turned, so
-  `..\Music\01.mp3` resolves beside the sheet rather than as one file of that literal name. The
-  reverse is held to it too: `reads_back_as_itself` refuses a row `forward_separated` would turn,
-  so a file of ours named `AC\DC.wav` is written as an escaped `file://` URI rather than as a row
-  that would read back as `AC/DC.wav`. What is escaped is not ambiguous that way: a literal
-  backslash cannot stand in a `file://` URI or an XSPF location, whose writers escape one as
-  `%5C`, so `sheet::forward_escaped` turns every literal one into a separator *before* the text
-  is unescaped — `file:///music\a.wav` and an XSPF `album\a.wav` or `xml:base="discs\"` name
-  folders — while `AC%5CDC.wav` still reads back as the one file it names. A reference ends at
-  its first raw `?` or `#`: `sheet::path_of_reference` cuts a `file:` URI and a relative XSPF
-  location there before anything is unescaped, the way `MediaLocation::from_uri` already reads
-  one, so `file:///music/Echoes.flac#t=10` and this build's own `#frames=` URI are the file they
-  name while `%23` and `%3F` still decode into it. A plain M3U or PLS row is not a URI, so a `#`
-  in the middle of one stays part of the name. The 8 MiB ceiling is weighed against what the name declares
-  and again against what the read took, so a FIFO reporting zero is refused rather than read
-  unbounded. `Library::prune_playlist` is the companion that drops the rows whose files have gone,
-  and it is asked for rather than automatic. A sheet that says how many rows it holds is taken at
-  its word and then weighed — PLS's `NumberOfEntries` against what the text held, the shortfall
-  carried as `Imported::short` — so a truncated sheet says so rather than importing quietly short.
-  M3U and XSPF declare no count at all, so only a PLS sheet can say it lost rows, and a sheet
-  holding more than it promised is taken whole and says nothing. Import resolves and stats every
-  row, so a sheet naming a network mount that is down reports each of its rows as missing rather
-  than as waiting, while a symlink stays unresolved because nothing but the filesystem knows where
-  it points; nothing tells a file that grew between the two reads from one that lied about its size.
-- **A cue row leaves as the file it is cut from and the times VLC reads, and comes back as the
-  cut.** M3U, PLS and XSPF name files, so a row a sheet cuts is written as its file and, where the
-  format has a way to say it, the start and stop VLC honours: `#EXTVLCOPT:start-time=` and
-  `stop-time=` lines ahead of an M3U row, and the same two options as `<vlc:option>` inside a
-  track's VLC `<extension>` in XSPF, the playlist element declaring the `vlc` namespace. The
-  seconds are the cut's frames at the track's rate, rounded to the nanosecond, and reading one back
-  probes the file for its rate and rounds again, which lands on the frame it was written from at
-  every rate the workspace holds — a frame is never shorter than 1.3 µs. A row whose file will not
-  probe, or a PLS row, which has no word for a region, is the whole file, and `Sheet::locations`
-  holds `Listed` rows — a location and its `Timed` — so the parse stays free of I/O and the fuzz
-  target reaches it as before. `a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds` is
-  the claim.
-- **`xspf.rs` reads its own markup, and every leniency in it is deliberate.** A tag ends at the
-  first `>` *outside* a quoted attribute value, so an attribute holding one does not cut the tag in
-  half. `xml:base` is resolved down an element stack, so a relative `<location>` answers to the base
-  in force rather than always to the sheet's folder, and a base naming a scheme that is not
-  `file://` makes every relative row under it count as elsewhere rather than resolve to nonsense. A
-  track's `<location>`s are alternates, so the first that names a local file is the row and a track
-  offering none is what costs one `elsewhere`. `<!DOCTYPE …>` and `<?…?>` are skipped rather than
-  pushed, because an element pushed and never popped would carry its base to the rest of the sheet.
-  `<album>`, `<image>`, `<annotation>` and `<meta>` stay unread on purpose: a row is a path, so a
-  sheet is never a source of tags. What it takes on trust is the rest: an element is matched by its
-  local name, so two namespaces both calling something `track` are one element to it; it knows the
-  five entities XML defines and a numeric reference — decimal, or hexadecimal after an `x` or an
-  `X`, both of which XML allows — and nothing else; and it trusts the nesting, so
-  a sheet that never closes an element it opened carries that element's base to everything after it.
+  extension still reads. Everything a sheet says about a *track* is read past — a `playlist_entries` row
+  is a path, so `#EXTINF:`, `TitleN`/`LengthN` and `<title>`/`<creator>`/`<duration>` are written and
+  never believed. A row naming a scheme not `file://` is counted rather than refused, one stream in a
+  sheet not being allowed to cost the other fifty rows. The scheme and a `localhost` authority are read
+  in any case, as RFC 3986 has them, so `FILE:///a.wav` and `file://LocalHost/a.wav` are local rows and
+  an `xml:base` written either way still resolves what sits under it; `file:/a.wav`, with no authority,
+  reads as `file:///a.wav`, while `file:track.flac`, with no slash, stays a relative path. A row empty
+  once trimmed — a PLS `File1=` with nothing after — names nothing and is counted as elsewhere, where it
+  once resolved to the sheet's own folder and was stored. A sheet not UTF-8 is read as Windows-1252,
+  unless its name declares UTF-8 (`.m3u8` and `.xspf` do) or its bytes hold a NUL, which no text sheet
+  does. Importing reconciles by count, not set: a row the playlist holds counts as already there, so a
+  sheet read twice is a no-op, while a file the *sheet itself* names twice is two rows,
+  `add_to_playlist` letting one file be put in twice deliberately. A taken name is appended to rather
+  than refused, making `import` and `resonate playlist <NAME> --add` one gesture. A `.cue` handed to
+  `--add` is added as the rows it cuts, through the `sheet_cuts` `resonate play` and `resonate queue`
+  read one through, not as a row naming the sheet. A row is written as a path only where
+  `sheet::as_a_row` finds the path reads back as itself, else as an escaped `file://` URI, which carries
+  a `#`, a line break or a scheme of its own through M3U and PLS. `sheet::canonical` settles a path the
+  filesystem cannot answer for lexically — absolute, `.` and `..` taken out — so a sheet imported while
+  a mount is down still names what a later scan will store. A row holding a backslash and no forward
+  slash is a path a Windows player wrote, and `forward_separated` reads it with its separators turned,
+  so `..\Music\01.mp3` resolves beside the sheet rather than as one oddly named file. The reverse is
+  held too: `reads_back_as_itself` refuses a row `forward_separated` would turn, so our file named
+  `AC\DC.wav` is written as an escaped `file://` URI rather than a row reading back as `AC/DC.wav`. What
+  is escaped is not ambiguous that way: a literal backslash cannot stand in a `file://` URI or an XSPF
+  location, whose writers escape one as `%5C`, so `sheet::forward_escaped` turns every literal one into
+  a separator *before* unescaping — `file:///music\a.wav` and an XSPF `album\a.wav` or
+  `xml:base="discs\"` name folders — while `AC%5CDC.wav` still reads back as its one file. A reference
+  ends at its first raw `?` or `#`: `sheet::path_of_reference` cuts a `file:` URI and a relative XSPF
+  location there before unescaping, as `MediaLocation::from_uri` reads one, so
+  `file:///music/Echoes.flac#t=10` and this build's own `#frames=` URI are the file they name while
+  `%23` and `%3F` still decode into it. A plain M3U or PLS row is no URI, so a `#` mid-row stays part of
+  the name. The 8 MiB ceiling (`LARGEST_PLAYLIST_FILE`) is weighed against what the name declares and
+  again against what the read took, so a FIFO reporting zero is refused rather than read unbounded.
+  `Library::prune_playlist` is the companion dropping rows whose files have gone, asked for rather than
+  automatic. A sheet saying how many rows it holds is taken at its word then weighed — PLS's
+  `NumberOfEntries` against what the text held, the shortfall carried as `Imported::short` — so a
+  truncated sheet says so rather than importing quietly short. M3U and XSPF declare no count, so only a
+  PLS can say it lost rows, and a sheet holding more than promised is taken whole silently. Import
+  resolves and stats every row, so a sheet naming a downed network mount reports each row missing rather
+  than waiting, while a symlink stays unresolved, only the filesystem knowing where it points; nothing
+  tells a file grown between the two reads from one that lied about its size.
+- **A cue row leaves as its file and the times VLC reads, and comes back as the cut.** M3U, PLS and
+  XSPF name files, so a cut row is written as its file and, where the format can say it, the start and
+  stop VLC honours: `#EXTVLCOPT:start-time=` and `stop-time=` lines before an M3U row, and the same two
+  options as `<vlc:option>` inside a track's VLC `<extension>` in XSPF, the playlist element declaring the
+  `vlc` namespace. The seconds are the cut's frames at the track's rate, rounded to the nanosecond, and
+  reading back probes the file for its rate and rounds again, landing on the written frame at every rate
+  the workspace holds — a frame is never shorter than 1.3 µs. A row whose file will not probe, or a PLS
+  row (no word for a region), is the whole file, and `Sheet::locations` holds `Listed` rows — a location
+  and its `Timed` — so the parse stays free of I/O and the fuzz target reaches it as before.
+  `a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds` is the claim.
+- **`xspf.rs` reads its own markup, and every leniency in it is deliberate.** A tag ends at the first
+  `>` *outside* a quoted attribute value, so an attribute holding one does not halve the tag. `xml:base`
+  is resolved down an element stack, so a relative `<location>` answers to the base in force, not always
+  the sheet's folder, and a base naming a non-`file://` scheme makes every relative row under it count as
+  elsewhere rather than resolve to nonsense. A track's `<location>`s are alternates, so the first naming a
+  local file is the row and a track offering none costs one `elsewhere`. `<!DOCTYPE …>` and `<?…?>` are
+  skipped, not pushed, an element pushed and never popped carrying its base to the rest of the sheet.
+  `<album>`, `<image>`, `<annotation>` and `<meta>` stay unread on purpose: a row is a path, so a sheet
+  is never a source of tags. The rest is taken on trust: an element is matched by local name, so two
+  namespaces both calling something `track` are one element; it knows the five entities XML defines and a
+  numeric reference — decimal, or hexadecimal after `x` or `X`, both allowed — and nothing else; and it
+  trusts the nesting, so a sheet never closing an opened element carries its base to everything after.
 
 ## The MPRIS seam
 
 - **`resonate-mpris` reaches playlists through a seam, never the library.** `Playlists` is the trait
-  `Mpris::start` takes beside `Host`, and the binary fills it with a `Collection` over the `Library`
-  and the `Player`. The interface is served only when one is supplied, so a run with no catalog
-  advertises no `org.mpris.MediaPlayer2.Playlists` at all rather than an empty one. `Orderings` is
-  built from `mpris::PlaylistOrder::ALL` — Alphabetical, CreationDate, ModifiedDate and
-  LastPlayDate, the spec's four, distinct from the library's five — so an ordering the player never
-  advertised is refused rather than quietly answered under another, `UserDefined` among them,
-  because a playlist's own order is not one the bus can ask for by name. `PlaylistCount`,
-  `ActivePlaylist` and `PlaylistChanged` are diffed from the same 200 ms poll the player properties
-  use, against a listing re-read only when `Library::playlists_revision` moves. `unheard_of` is the
-  question the diff asks of every row — a playlist the listing held under another name, or did not
-  hold at all — so `PlaylistChanged` announces one that arrived as well as one renamed, which is
-  what a sample holding an addition and a removal at once has to say: the count is the same and
-  correctly stays, and the spec names no signal for a playlist that left, so a client learns of that
-  one by re-reading `GetPlaylists` on the arrival it was told about. Neither of the seam's two reads
-  is `Library::playlists`, because that is a grouped pass over every row of every playlist and one
-  `count(*)` per saved query and the bus keeps only an id and a name of each row: `Playlists::count`
-  is `Library::playlist_count`, one `count(*)` over `playlists`, and `Playlists::listing` is
-  `Library::playlist_names`, which selects the id and the name with no join under it and takes the
-  `index` and `maxCount` of the `GetPlaylists` call as `OFFSET` and `LIMIT`, so a client asking for
-  ten reads ten. `PlaylistCount` is a property every client reads and every announced change
-  re-reads, which is why it is the one that had to stop measuring a listing. Both query SQLite on
-  the bus thread, so a client that asks for a listing pays for it there. What the bus cannot ask for
-  is a narrowing, so the seam takes none.
+  `Mpris::start` takes beside `Host`, filled by the binary with a `Collection` over the `Library` and the
+  `Player`. The interface is served only when one is supplied, so a run with no catalog advertises no
+  `org.mpris.MediaPlayer2.Playlists` at all rather than an empty one. `Orderings` is built from
+  `mpris::PlaylistOrder::ALL` — Alphabetical, CreationDate, ModifiedDate and LastPlayDate, the spec's
+  four, distinct from the library's six — so an ordering the player never advertised is refused rather
+  than quietly answered under another, `UserDefined` among them, a playlist's own order not being one the
+  bus can ask by name. `PlaylistCount`, `ActivePlaylist` and `PlaylistChanged` are diffed from the
+  player properties' 200 ms poll, against a listing re-read only when `Library::playlists_revision` moves.
+  `unheard_of` is the question the diff asks of every row — a playlist the listing held under another
+  name, or not at all — so `PlaylistChanged` announces an arrival as well as a rename, what a sample
+  holding an addition and a removal at once must say: the count is the same and correctly stays, and the
+  spec names no signal for a playlist that left, so a client learns of it by re-reading `GetPlaylists` on
+  the arrival it was told of. Neither of the seam's two reads is `Library::playlists` — a grouped pass
+  over every row of every playlist and a `count(*)` per saved query, where the bus keeps only each row's
+  id and name: `Playlists::count` is `Library::playlist_count`, one `count(*)` over `playlists`, and
+  `Playlists::listing` is `Library::playlist_names`, selecting id and name with no join and taking the
+  `GetPlaylists` call's `index` and `maxCount` as `OFFSET` and `LIMIT`, so a client asking for ten reads
+  ten. `PlaylistCount` is read by every client and re-read on every announced change, which is why it had
+  to stop measuring a listing. Both query SQLite on the bus thread, so a client asking for a listing pays
+  for it there. The bus cannot ask for a narrowing, so the seam takes none.

@@ -61,6 +61,7 @@ service or a format — and is not worked until that moves; everything else is o
 - A *Listening history* chip ages the catalog the moment it is pressed, for good, while its note
   says listens are forgotten as the library opens; every other destructive setting is armed by a
   first press
+- `resonate-online` declares `serde-saphyr` and uses nothing of it
 
 ## Privacy and security
 - `config::laid_down` creates the staged file under the umask and copies a mode only from a file
@@ -421,12 +422,6 @@ service or a format — and is not worked until that moves; everything else is o
   no fake fingerprinter hands the analysis pane yet
 - **Blocked on hardware:** A microphone recording has not been proved against real sound reaching a
   microphone
-
-## The rules
-- `eq.md` says a change of default sink does not resolve the profile again, where
-  `follow_the_sink_it_would_choose` does
-- `audio.md` says the third spec that differs fails with `Renegotiation`, where it is the fourth
-- CLAUDE.md's `resonate playlist` entry leaves out `--pin` and `--unpin`
 
 ## Later: Sources and providers
 - **Blocked on the services:** The service links an `Identity` carries are read by nothing: no
