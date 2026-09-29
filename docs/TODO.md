@@ -32,8 +32,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A sink's formats are enumerated once, at bind: its params are not subscribed to and a stale
   index is never dropped, so a port or EDID change that keeps the node leaves the negotiation
   reading the old list
-- `SinkInfo::supports` refuses a format entry naming no channels where `candidates` reads it as
-  any layout, so such a sink is never offered DoP
 - A device removed before any Route param arrived keeps its proxy until the client reconnects
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported

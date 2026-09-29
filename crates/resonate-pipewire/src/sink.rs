@@ -113,6 +113,12 @@ pub struct SinkFormats {
     pub channels: Vec<ChannelLayout>,
 }
 
+impl SinkFormats {
+    pub fn takes(&self, channels: ChannelLayout) -> bool {
+        self.channels.is_empty() || self.channels.contains(&channels)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Plugged {
     #[default]
@@ -202,7 +208,7 @@ impl SinkInfo {
             && self.formats.iter().any(|entry| {
                 entry.format == spec.format
                     && entry.rates.contains(&spec.rate)
-                    && entry.channels.contains(&spec.channels)
+                    && entry.takes(spec.channels)
             })
     }
 
@@ -519,6 +525,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_format_naming_no_channels_supports_every_layout_the_chooser_would_offer() {
+        let sink = of(
+            &[SampleRate::HZ_176400],
+            vec![entry(SampleFormat::S32, &[SampleRate::HZ_176400], &[])],
+        );
+        let dop = stereo(SampleRate::HZ_176400, SampleFormat::S32);
+
+        assert!(sink.supports(dop));
+        assert_eq!(sink.best_spec_for(dop), Some(dop));
     }
 
     #[test]

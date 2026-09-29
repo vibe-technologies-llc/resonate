@@ -1839,8 +1839,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **Silence about a capability is not a refusal.** A node answering `EnumFormat` with no channels
   property, or no formats at all, is believed about what it said and left alone about the rest: the
   candidate list falls back to the source's own layout, or `allowed_rates` crossed with the source's
-  format. `SinkInfo::supports` stays strict, answering another question — whether the device advertised
-  this exact spec — which the DoP path, `resonate explain` and the settings pane read.
+  format. `SinkInfo::supports` stays strict about the rest, answering another question — whether the
+  device advertised this exact format at this exact rate — which the DoP path, `resonate explain` and
+  the settings pane read; a format entry naming no channels takes any layout there too
+  (`SinkFormats::takes`), as the candidate list reads it, or a sink saying nothing of its channels was
+  never offered DoP (`a_format_naming_no_channels_supports_every_layout_the_chooser_would_offer`).
 - **A sink's advertised formats and the graph's `allowed_rates` are separate fields.** A device
   advertising 192 kHz is irrelevant if the daemon will not switch the graph to it; conflating them
   would make the bit-perfect claim unfalsifiable.
