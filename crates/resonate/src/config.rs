@@ -757,14 +757,48 @@ fn held_alone(target: &Path) -> Result<File> {
         path: target.to_path_buf(),
         source,
     };
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(beside(target, LOCK_SUFFIX))
-        .map_err(refused)?;
+    let folder = target.parent().unwrap_or_else(|| Path::new("."));
+    let lock = File::open(folder).map_err(refused)?;
     lock.lock().map_err(refused)?;
+    sweep_what_writers_left(target, folder);
     Ok(lock)
+}
+
+fn sweep_what_writers_left(target: &Path, folder: &Path) {
+    let Some(named) = target.file_name().and_then(|named| named.to_str()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let left = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| left_by_a_writer(name, named));
+        if left && let Err(error) = fs::remove_file(entry.path()) {
+            tracing::debug!(%error, path = %entry.path().display(), "what a writer left could not be swept");
+        }
+    }
+}
+
+fn left_by_a_writer(name: &str, target: &str) -> bool {
+    let Some(rest) = name.strip_prefix(target) else {
+        return false;
+    };
+    if rest == LOCK_SUFFIX {
+        return true;
+    }
+    let Some(staged) = rest
+        .strip_prefix('.')
+        .and_then(|staged| staged.strip_suffix(STAGING_SUFFIX))
+    else {
+        return false;
+    };
+    let numbered = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    staged
+        .split_once('-')
+        .is_some_and(|(pid, nth)| numbered(pid) && numbered(nth))
 }
 
 fn write(target: &Path, text: &str) -> Result<()> {
@@ -1623,6 +1657,34 @@ mod tests {
             })
             .collect();
         assert!(staged.is_empty(), "a staging file was left behind");
+    }
+
+    #[test]
+    fn what_a_killed_writer_left_is_swept_by_the_next_and_nothing_else() {
+        let scratch = Scratch::new().seed("quality = \"fast\"\n");
+        let folder = scratch.path.parent().expect("a folder").to_path_buf();
+        let left = [
+            folder.join("config.toml.lock"),
+            folder.join("config.toml.999999-3.new"),
+        ];
+        let kept = [
+            folder.join("config.toml.notes"),
+            folder.join("config.toml.9x-3.new"),
+            folder.join("other.toml.1-1.new"),
+        ];
+        for path in left.iter().chain(&kept) {
+            fs::write(path, "").expect("a writable folder");
+        }
+
+        store(&scratch.path, ConfigKey::Dither, "none").expect("a writable file");
+
+        for path in &left {
+            assert!(!path.exists(), "{} was left", path.display());
+        }
+        for path in &kept {
+            assert!(path.exists(), "{} was swept", path.display());
+        }
+        assert!(scratch.text().contains("dither"));
     }
 
     #[test]

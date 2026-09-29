@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- `config.toml.lock` is made and never removed, and a staged config a killed process left is never
-  swept
 
 ## Playback and output
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so

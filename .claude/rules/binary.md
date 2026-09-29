@@ -208,8 +208,12 @@ What some of them mean:
 `settings::File`. It edits the document with `toml_edit` rather than reserialising a parsed
 `Config`, so a hand-written file keeps its comments and key order. Every writer — `config::store`,
 `clear`, `store_in_table`, `clear_in_table` — goes through the private `edited`, which follows a symlinked
-`config.toml` to its file, holds `config.toml.lock` for the whole read-edit-write (so a window and a
-`resonate eq` beside it cannot write over each other), stages under a name of this process's own,
+`config.toml` to its file, holds a lock on the folder the file sits in for the whole
+read-edit-write (so a window and a `resonate eq` beside it cannot write over each other, and no lock
+file is left beside it), sweeps what a killed writer left there — a `config.toml.<pid>-<n>.new` and
+the `config.toml.lock` older builds made, nothing else
+(`what_a_killed_writer_left_is_swept_by_the_next_and_nothing_else`) — stages under a name of this
+process's own,
 creates the staged file `0600` and narrows the standing file's mode to its owner's bits before a
 byte is written — the file holds `subsonic-password`, `audd-token` and `listenbrainz-token`, and one
 made under the umask, or kept at a wider mode an older build left, was readable by every local user
