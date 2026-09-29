@@ -21,13 +21,13 @@ use resonate_core::{
     SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_engine::{
-    AudioSource, Backend, Band, BandGain, BandKind, Caught, Command, DitherKind, EngineConfig,
-    Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting, Media,
-    MediaProvider, NodeName, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
-    PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading, RepeatMode, ReplayGainMode,
-    Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult,
-    SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand, StreamEvent, StreamRequest,
-    Surveyor, Tapped, Until, Words, stamp_of,
+    AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
+    EngineConfig, Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting,
+    Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement, PlaybackState, Player,
+    Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading, RepeatMode,
+    ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo,
+    SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
+    StreamEvent, StreamRequest, Surveyor, Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -487,6 +487,74 @@ impl MediaProvider for Gated {
         }
         Ok(Media {
             stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+            hint: None,
+        })
+    }
+}
+
+struct Trickling {
+    source: SourceId,
+    bytes: Vec<u8>,
+    held_back_from: usize,
+    arrived: Arc<AtomicBool>,
+    served: Arc<AtomicU64>,
+}
+
+struct Trickle {
+    bytes: Vec<u8>,
+    held_back_from: usize,
+    at: usize,
+    arrived: Arc<AtomicBool>,
+}
+
+impl std::io::Read for Trickle {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        let until = if self.arrived.load(Ordering::Acquire) {
+            self.bytes.len()
+        } else {
+            self.held_back_from
+        };
+        if self.at >= until && until < self.bytes.len() {
+            thread::sleep(Duration::from_millis(5));
+            return Err(std::io::ErrorKind::Interrupted.into());
+        }
+        let read = into.len().min(until - self.at);
+        into[..read].copy_from_slice(&self.bytes[self.at..self.at + read]);
+        self.at += read;
+        Ok(read)
+    }
+}
+
+impl std::io::Seek for Trickle {
+    fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+}
+
+impl MediaStream for Trickle {
+    fn is_seekable(&self) -> bool {
+        false
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        None
+    }
+}
+
+impl MediaProvider for Trickling {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _: &MediaLocation) -> CodecResult<Media> {
+        self.served.fetch_add(1, Ordering::AcqRel);
+        Ok(Media {
+            stream: Box::new(Trickle {
+                bytes: self.bytes.clone(),
+                held_back_from: self.held_back_from,
+                at: 0,
+                arrived: Arc::clone(&self.arrived),
+            }),
             hint: None,
         })
     }
@@ -1682,6 +1750,110 @@ fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
     let graph = graph.lock();
     assert_eq!(graph.opens, 2);
     assert_eq!(graph.closes, 1);
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() -> Result<()> {
+    let source = pcm(16, FRAMES);
+    let named = SourceId::new("trickling").expect("a lowercase name");
+    let arrived = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Trickling {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        held_back_from: source.file.len() - 4 * BLOCK_FRAMES,
+        arrived: Arc::clone(&arrived),
+        served: Arc::default(),
+    }));
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "live.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let refused = player
+        .request(Command::Seek(Frames(FRAMES as u64 / 2)))?
+        .wait_for(PATIENCE);
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|error| error.cause() == Cause::CannotSeek),
+        "a seek on a stream that cannot seek answered {refused:?}"
+    );
+    player
+        .request(Command::SetDither(DitherKind::None))?
+        .wait_for(PATIENCE)?;
+    assert_eq!(
+        graph.lock().opens,
+        1,
+        "a stream that cannot seek was rebuilt, throwing away what its ring held"
+    );
+
+    arrived.store(true, Ordering::Release);
+    wait_for(
+        &player,
+        |_| graph.lock().opens == 2,
+        "the stream owed a rebuild to be rebuilt once it could seek",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_cannot_seek_is_opened_again_to_go_back_to_its_start() -> Result<()> {
+    let source = pcm(16, FRAMES);
+    let named = SourceId::new("trickling").expect("a lowercase name");
+    let served = Arc::new(AtomicU64::new(0));
+    let sources = Sources::local().and(Arc::new(Trickling {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        held_back_from: source.file.len() - 4 * BLOCK_FRAMES,
+        arrived: Arc::new(AtomicBool::new(false)),
+        served: Arc::clone(&served),
+    }));
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "live.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.position > Frames::ZERO)
+        },
+        "the stream to be heard",
+    );
+
+    let before = served.load(Ordering::Acquire);
+    player
+        .request(Command::Seek(Frames::ZERO))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |_| served.load(Ordering::Acquire) > before,
+        "the stream to be opened again from its start",
+    );
     Ok(())
 }
 

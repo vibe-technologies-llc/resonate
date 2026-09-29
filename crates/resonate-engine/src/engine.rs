@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    iter,
+    iter, mem,
     sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
@@ -517,6 +517,7 @@ pub struct Engine {
     track: Option<Track>,
     output: Option<Output>,
     unbound: Option<Frames>,
+    rebind_owed: bool,
     graph_lost: Option<Instant>,
     graph_last_lost: Option<Instant>,
     heard_at_least: Option<Frames>,
@@ -624,6 +625,7 @@ impl Engine {
             track: None,
             output: None,
             unbound: None,
+            rebind_owed: false,
             graph_lost: None,
             graph_last_lost: None,
             heard_at_least: None,
@@ -973,28 +975,23 @@ impl Engine {
             }
             Command::SetSink(sink) => {
                 self.config.sink = sink;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetQuality(quality) => {
                 self.config.quality = quality;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetFilterPhase(phase) => {
                 self.config.filter_phase = phase;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetDither(dither) => {
                 self.config.dither = dither;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetRestoration(restoration) => {
                 self.config.restoration = restoration;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetTruePeak(on) => {
                 self.config.true_peak = on;
@@ -1003,13 +1000,11 @@ impl Engine {
                     track.published = None;
                     track.measure_where_wanted(&self.sources, &self.config);
                 }
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetNoiseShaping(shaping) => {
                 self.config.noise_shaping = shaping;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetReplayGain(mode) => {
                 self.config.replay_gain = mode;
@@ -1021,8 +1016,7 @@ impl Engine {
             }
             Command::SetConvolution(impulse) => {
                 self.config.convolution = impulse;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
@@ -1054,8 +1048,7 @@ impl Engine {
             }
             Command::SetForceGraphRate(force) => {
                 self.config.force_graph_rate = force;
-                let at = self.position();
-                self.rebind(Some(at), None)
+                self.rebind_where_it_stands()
             }
             Command::SetBuffer(buffer) => {
                 self.config.buffer = buffer;
@@ -1105,11 +1098,18 @@ impl Engine {
         let Some(settled) = track.decoder.settle_the_spool() else {
             return;
         };
+        let seekable = settled.is_seekable;
         let info = Arc::make_mut(&mut track.info);
-        info.is_seekable = settled.is_seekable;
+        info.is_seekable = seekable;
         info.duration = settled.duration;
         info.playable = settled.playable;
         track.published = None;
+        if !seekable || !mem::take(&mut self.rebind_owed) {
+            return;
+        }
+        if let Err(error) = self.rebind_where_it_stands() {
+            self.fail(error);
+        }
     }
 
     fn heed_the_measured_peak(&mut self) {
@@ -1306,6 +1306,9 @@ impl Engine {
                 duration,
             });
         }
+        if !track.info.is_seekable {
+            return self.seek_where_nothing_seeks(to);
+        }
         let landed = if self.reuses_stream() {
             self.seek_in_place(to)
         } else {
@@ -1316,6 +1319,42 @@ impl Engine {
             self.heard_at_least = None;
         }
         landed
+    }
+
+    fn seek_where_nothing_seeks(&mut self, to: Frames) -> Result<()> {
+        let Some(track) = self.track.as_ref() else {
+            return Ok(());
+        };
+        if self.position() == to {
+            return Ok(());
+        }
+        if to == Frames::ZERO {
+            self.seeks = self.seeks.stepped();
+            return self.start(Frames::ZERO);
+        }
+        Err(Error::Decode {
+            track: track.id,
+            source: resonate_codec::Error::NotSeekable {
+                location: track.location.clone(),
+            },
+        })
+    }
+
+    fn rebind_where_it_stands(&mut self) -> Result<()> {
+        let streaming_what_cannot_seek = self.output.is_some()
+            && self
+                .track
+                .as_ref()
+                .is_some_and(|track| !track.info.is_seekable);
+        if streaming_what_cannot_seek {
+            tracing::debug!(
+                "a track that cannot seek keeps its stream until it can or the next begins"
+            );
+            self.rebind_owed = true;
+            return Ok(());
+        }
+        let at = self.position();
+        self.rebind(Some(at), None)
     }
 
     fn reuses_stream(&self) -> bool {
@@ -1390,6 +1429,7 @@ impl Engine {
         self.track = None;
         self.opening = None;
         self.heard_at_least = None;
+        self.rebind_owed = false;
 
         if !item.location.is_local() {
             self.opening = Some(Opening::begin(item, at, &self.sources));
@@ -1445,8 +1485,7 @@ impl Engine {
         if self.keeps_its_stream() {
             return Ok(());
         }
-        let at = self.position();
-        self.rebind(Some(at), None)
+        self.rebind_where_it_stands()
     }
 
     fn keeps_its_stream(&self) -> bool {
@@ -1557,8 +1596,7 @@ impl Engine {
                 )
             });
         if packs {
-            let at = self.position();
-            return self.rebind(Some(at), None);
+            return self.rebind_where_it_stands();
         }
         let wanted = plan_for(
             track.decoded(),
@@ -1583,8 +1621,7 @@ impl Engine {
         if output.plan.becomes_on_the_same_stream(&wanted) {
             return self.reshape(wanted);
         }
-        let at = self.position();
-        self.rebind(Some(at), None)
+        self.rebind_where_it_stands()
     }
 
     fn reshape(&mut self, wanted: OutputPlan) -> Result<()> {

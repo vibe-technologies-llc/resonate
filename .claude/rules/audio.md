@@ -381,6 +381,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `a_stream_that_arrives_slowly_opens_from_what_came_within_the_wait_rather_than_its_whole` and
   `a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pages_declare` are the
   claims.
+- **Until it can seek, a track keeps its stream.** A rebuild throws the ring and the carry away and
+  seeks the decoder back to where the listener is, which a track that cannot seek cannot do — the
+  audio jumped forward by what the ring held and the seek answered `Ok`. So `Engine::seek` on such a
+  track refuses with `codec::Error::NotSeekable` (`Cause::CannotSeek`), except a seek to its start —
+  a restarting Previous among them — which opens the row again through `start`
+  (`seek_where_nothing_seeks`). A setting that rebuilds the stream — the sink, quality, filter phase,
+  dither, restoration, true peak, noise shaping, convolution, the forced graph rate, bit-perfect, DoP
+  and a retune that packs again — goes through `rebind_where_it_stands`, which instead marks the
+  rebuild owed; `settle_what_was_spooled` pays it the pass the spool settles, and the next track's
+  `start` forgets it, being built under the new settings anyway. A rebuild the graph forces — a device
+  gone, a format renegotiated, a stalled discard — still happens at once
+  (`a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can`,
+  `a_stream_that_cannot_seek_is_opened_again_to_go_back_to_its_start`).
 - **A prescan over a source that *can* seek reads through a window, the five walks being made of
   four-byte reads.** `riff.rs`, `caf.rs`, `matroska.rs`, `boxes.rs` and `flac.rs` each read an id or
   header a few bytes at a time then seek absolutely past what it declared, and `Reading` delegates
