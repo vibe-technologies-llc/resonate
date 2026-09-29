@@ -461,4 +461,9 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   dropping an unsaved copy rather than writing it back.
 - **Every fetch runs on the background executor**, since reading an 851 KB index must not block a
   frame; the file write behind an edit is debounced by `PROFILE_SETTLES` while the engine is told at
-  once — the sound follows the number, a save does not follow a keystroke.
+  once — the sound follows the number, a save does not follow a keystroke. **Each kind of ask holds
+  a task of its own** — `_imported`, `_exported`, `_catalogued`, `_fetched` — and the catalogue read
+  and the fetch a flag each, `is_looking` answering either: one `_asked` task served all four, so an
+  import started while the catalogue was being read dropped the read, left the pane looking for the
+  rest of the run and never read the catalogue again
+  (`a_catalogue_read_is_not_dropped_by_an_import_started_beside_it`).

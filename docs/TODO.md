@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The equaliser's one `_asked` task serves the import, the export, the catalogue read and the
-  fetch, so starting one while another runs drops it and leaves `looking` set for the rest of the
-  run, and the catalogue is never read again
 - The vault import maps every error `keep` answers — a full disc, a failed rename — to
   `Passing::Unreadable` and goes on, so a full vault disc costs most of the work of every row left
   and bills each as unreadable; a cover with no format code ends the whole import where one

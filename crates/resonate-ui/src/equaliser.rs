@@ -187,11 +187,15 @@ pub struct EqualiserModel {
     chosen: Option<usize>,
     catalogue: Option<Arc<Catalogue>>,
     found: Vec<Found>,
-    looking: bool,
+    reading_the_catalogue: bool,
+    fetching: bool,
     notice: Option<Notice>,
     untold: bool,
     _saved: Task<()>,
-    _asked: Task<()>,
+    _imported: Task<()>,
+    _exported: Task<()>,
+    _catalogued: Task<()>,
+    _fetched: Task<()>,
 }
 
 impl EqualiserModel {
@@ -214,11 +218,15 @@ impl EqualiserModel {
             chosen: None,
             catalogue: None,
             found: Vec::new(),
-            looking: false,
+            reading_the_catalogue: false,
+            fetching: false,
             notice: None,
             untold: false,
             _saved: Task::ready(()),
-            _asked: Task::ready(()),
+            _imported: Task::ready(()),
+            _exported: Task::ready(()),
+            _catalogued: Task::ready(()),
+            _fetched: Task::ready(()),
         };
         model.gather();
         model
@@ -269,8 +277,8 @@ impl EqualiserModel {
         self.chosen = row.filter(|row| self.band(*row).is_some());
     }
 
-    pub fn is_looking(&self) -> bool {
-        self.looking
+    pub const fn is_looking(&self) -> bool {
+        self.reading_the_catalogue || self.fetching
     }
 
     pub fn has_a_source(&self) -> bool {
@@ -662,7 +670,7 @@ impl EqualiserModel {
 
     pub fn import(&mut self, from: PathBuf, cx: &mut Context<Self>) {
         let folder = self.store.folder().to_path_buf();
-        self._asked = cx.spawn(async move |this, cx| {
+        self._imported = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move { Store::at(folder).import(&from, None) })
@@ -700,7 +708,7 @@ impl EqualiserModel {
         let name = curve.spoken();
         let folder = self.store.folder().to_path_buf();
 
-        self._asked = cx.spawn(async move |this, cx| {
+        self._exported = cx.spawn(async move |this, cx| {
             let written = cx
                 .background_executor()
                 .spawn(async move { Store::at(folder).export(&profile, &to) })
@@ -783,20 +791,20 @@ impl EqualiserModel {
     }
 
     pub fn read_the_catalogue(&mut self, then: Option<String>, cx: &mut Context<Self>) {
-        if self.looking {
+        if self.reading_the_catalogue {
             return;
         }
-        self.looking = true;
+        self.reading_the_catalogue = true;
         let corrections = Arc::clone(&self.corrections);
 
-        self._asked = cx.spawn(async move |this, cx| {
+        self._catalogued = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move { corrections.catalogue() })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {
-                this.looking = false;
+                this.reading_the_catalogue = false;
                 match read {
                     Ok(catalogue) => {
                         this.catalogue = Some(catalogue);
@@ -836,9 +844,9 @@ impl EqualiserModel {
     pub fn fetch(&mut self, device: DeviceId, label: String, cx: &mut Context<Self>) {
         let corrections = Arc::clone(&self.corrections);
         let folder = self.store.folder().to_path_buf();
-        self.looking = true;
+        self.fetching = true;
 
-        self._asked = cx.spawn(async move |this, cx| {
+        self._fetched = cx.spawn(async move |this, cx| {
             let fetched = cx
                 .background_executor()
                 .spawn(async move {
@@ -855,7 +863,7 @@ impl EqualiserModel {
                 .await;
 
             let outcome = this.update(cx, |this, cx| {
-                this.looking = false;
+                this.fetching = false;
                 match fetched {
                     Ok(Some((name, profile))) => {
                         this.reload();
@@ -966,6 +974,41 @@ mod tests {
             BandGain::from_decibels(3.0).expect("a gain"),
             Q::BUTTERWORTH,
         )
+    }
+
+    #[gpui::test]
+    fn a_catalogue_read_is_not_dropped_by_an_import_started_beside_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-beside-{}",
+            std::process::id()
+        ));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.read_the_catalogue(None, cx);
+            model.import(folder.join("not-there.txt"), cx);
+        });
+        cx.run_until_parked();
+
+        let (looking, known) = model.read_with(cx, |model, _| {
+            (model.is_looking(), model.knows_the_catalogue())
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(
+            !looking,
+            "the catalogue read was dropped and left the pane looking"
+        );
+        assert!(known, "the catalogue was never read");
     }
 
     #[test]
