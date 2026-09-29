@@ -268,6 +268,9 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   prefix keeps a device literally called `every-other-device` off the fallback's file and `.` or
   `..` from naming a folder; one too long for a file name is `Error::DeviceNotNameable`.
   `no_device_name_reaches_the_file_another_device_or_the_rest_are_kept_in` is the claim.
+- **The switch is one for every device.** `equaliser` is a single key, so `resonate eq --off --for
+  <sink>` is refused by the grammar rather than switching every device off; one device is let go
+  with `--unbind`.
 - **The command line binds, shapes and forgets an own curve as the pane does.** `resonate eq --own`
   binds the device `--for` names — or every other device — to its own curve and switches the
   equaliser on as `--profile` does; beside `--import` or `--fetch` what is read is kept as that

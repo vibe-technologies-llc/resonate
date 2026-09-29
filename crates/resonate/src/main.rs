@@ -2563,6 +2563,45 @@ mod tests {
     }
 
     #[test]
+    fn a_flag_that_would_do_nothing_or_more_than_it_says_is_refused() {
+        let parsed = |arguments: &[&str]| Cli::try_parse_from(arguments.iter().copied()).is_ok();
+
+        assert!(!parsed(&["resonate", "playlist", "Road", "--reverse"]));
+        assert!(!parsed(&[
+            "resonate",
+            "playlist",
+            "Road",
+            "--export",
+            "a.m3u",
+            "--reverse"
+        ]));
+        assert!(parsed(&[
+            "resonate",
+            "playlist",
+            "Road",
+            "--order",
+            "title",
+            "--reverse"
+        ]));
+        assert!(parsed(&[
+            "resonate",
+            "playlist",
+            "Road",
+            "--query",
+            "floyd",
+            "--reverse"
+        ]));
+        assert!(!parsed(&[
+            "resonate",
+            "eq",
+            "--off",
+            "--for",
+            "alsa_output.usb"
+        ]));
+        assert!(parsed(&["resonate", "eq", "--off"]));
+    }
+
+    #[test]
     fn a_length_to_listen_for_is_held_to_what_the_setting_takes() {
         let listened = |seconds: &str| {
             Cli::try_parse_from(["resonate", "listen", "--seconds", seconds]).map(|cli| {

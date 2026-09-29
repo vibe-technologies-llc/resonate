@@ -225,7 +225,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `SortOrder::ALL` crossed with `Direction::ALL` through `db::listing` and refuses a plan holding a
   temporary B-tree, what a full sort before the `LIMIT` reads as. The cost is eight order indexes on
   `tracks` written per stored row where there were three. `resonate playlist --reverse` turns `--sort`
-  round as well as `--order`.
+  round as well as `--order`, and without either the grammar refuses it (the `ordered` group) rather
+  than taking a flag that would do nothing.
 - **The albums and artists panes have orders too, deliberately with no index behind them.**
   `AlbumOrder` is relevance, title, artist, year, track count, when a track of it was last added and
   favourited; `ArtistOrder` is relevance, name, album count, track count and favourited;

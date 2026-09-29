@@ -1,6 +1,6 @@
 use std::{ffi::OsString, num::NonZeroUsize, ops::RangeInclusive, path::PathBuf};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 
 const MOST_LISTENED: NonZeroUsize = NonZeroUsize::new(10).unwrap();
 
@@ -173,6 +173,7 @@ pub enum PlaylistOrderArg {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("ordered").args(["order", "query"]).multiple(true)))]
 pub struct PlaylistArgs {
     #[arg(value_name = "NAME")]
     pub name: String,
@@ -242,6 +243,7 @@ pub struct PlaylistArgs {
 
     #[arg(
         long,
+        requires = "ordered",
         help = "Put them in that order the other way round, whichever of --order and --sort \
                 named it"
     )]
@@ -478,9 +480,9 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["on", "import", "export", "find", "fetch", "suggest", "list", "forget", "own", "forget_own"],
-        help = "Turn the equaliser off and leave the samples untouched. Every binding stays, so \
-                --on puts them back"
+        conflicts_with_all = ["for", "on", "import", "export", "find", "fetch", "suggest", "list", "forget", "own", "forget_own"],
+        help = "Turn the equaliser off for every device and leave the samples untouched. Every \
+                binding stays, so --on puts them back, and one device is let go with --unbind"
     )]
     pub off: bool,
 
