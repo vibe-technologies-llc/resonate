@@ -1212,6 +1212,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   inspector's values, a menu's entries, a sidebar tab, a pressing's line, a device's label, a settings
   row — is `truncate().ends_in_an_ellipsis()`, so a name whose room ran out because an *ancestor* did
   ends in an ellipsis rather than a sliced glyph.
+  **A content-sized box does not wrap.** `kit::KeepsItsWidth::keeps_its_width` — `flex_none`,
+  `max_w_full` — sets `whitespace_nowrap` back over the clamp, since taffy measures such a box at its
+  min-content width and a wrapping, clamped text there drew nothing: the playback bar's title,
+  artist and album went blank on every track once `opens` took the clamp. Those boxes are cut to fit
+  by `kit::cut_to_fit` where they must end in an ellipsis; a `flex_shrink` cell keeps the clamp.
 
 ## Driven by tests
 

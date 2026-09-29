@@ -106,7 +106,7 @@ pub(crate) fn subtitle(text: impl IntoElement) -> Div {
 
 pub(crate) trait KeepsItsWidth: Styled + Sized {
     fn keeps_its_width(self) -> Self {
-        self.flex_none().max_w_full()
+        self.flex_none().max_w_full().whitespace_nowrap()
     }
 }
 
