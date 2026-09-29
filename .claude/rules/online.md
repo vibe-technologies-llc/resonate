@@ -371,7 +371,9 @@ test asks both routes.
   while paused, never for a file the catalog names nothing for. Its `Token` follows the file as
   `Followed` does: the modification time is weighed and `config::submitting_in` reads `online` and
   `listenbrainz-token` only where it moved, so a token typed into the window's *ListenBrainz* group
-  or written by hand is carried by the next submission, and `online` turned off stops it. A 401 or
+  or written by hand is carried by the next submission, and `online` turned off stops it. The
+  `ListenBrainz` client is built once per token and kept across the looks, so its connections and its
+  pacing outlive the two seconds between them; a token that moves builds the next. A 401 or
   403 holds that token back until the file names another. A build without the feature starts
   nothing and warns once where a token is set.
 

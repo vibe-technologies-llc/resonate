@@ -63,6 +63,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
             let mut refused: Option<String> = None;
             let mut failed = 0;
             let mut told_playing: Option<Row> = None;
+            let mut scrobbling: Option<(String, Arc<dyn Scrobbler>)> = None;
             loop {
                 match stopped.recv_timeout(PLAYING_LOOKED_AT_EVERY) {
                     Err(RecvTimeoutError::Timeout) => {}
@@ -74,7 +75,15 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                 if refused.as_deref() == Some(held) {
                     continue;
                 }
-                let scrobbler = online::listenbrainz(&config, held.to_owned());
+                let held = held.to_owned();
+                let scrobbler = match &scrobbling {
+                    Some((kept, scrobbler)) if *kept == held => Arc::clone(scrobbler),
+                    _ => {
+                        let made = online::listenbrainz(&config, held.clone());
+                        scrobbling = Some((held.clone(), Arc::clone(&made)));
+                        made
+                    }
+                };
 
                 let playing = playing_row(&player);
                 if playing.is_some() && playing != told_playing {
@@ -108,7 +117,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                             status,
                             "ListenBrainz refused the token; nothing is submitted until it changes"
                         );
-                        refused = Some(held.to_owned());
+                        refused = Some(held);
                     }
                     Err(error) => {
                         failed += 1;
