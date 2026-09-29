@@ -374,6 +374,9 @@ fn read(bytes: &[u8]) -> Option<Analysis> {
     let lanes = usize::from(reader.u8()?);
     let frames_per_column = reader.u64()?;
     let frames = reader.u64()?;
+    if !(1..=ENVELOPE_LANES).contains(&lanes) || (frames_per_column == 0 && frames > 0) {
+        return None;
+    }
     let count = usize::try_from(reader.u32()?).ok()?;
     if count.checked_mul(ENVELOPE_LANES * 12)? > reader.0.len() {
         return None;
@@ -558,6 +561,27 @@ mod tests {
         assert_eq!(read(&bytes), Some(analysis));
         assert_eq!(read(&bytes[..bytes.len() - 1]), None);
         assert_eq!(read(b"RSAN\x02"), None);
+    }
+
+    #[test]
+    fn a_kept_envelope_whose_shape_could_not_have_been_drawn_is_not_read_back() {
+        let mut too_many_lanes = analysed();
+        too_many_lanes.envelope.lanes = ENVELOPE_LANES + 1;
+        let mut no_lanes = analysed();
+        no_lanes.envelope.lanes = 0;
+        let mut columns_of_nothing = analysed();
+        columns_of_nothing.envelope.frames_per_column = 0;
+
+        assert_eq!(read(&written(&too_many_lanes)), None);
+        assert_eq!(read(&written(&no_lanes)), None);
+        assert_eq!(read(&written(&columns_of_nothing)), None);
+        assert!(columns_of_nothing.envelope.condensed(0, 16).is_empty());
+        assert!(
+            too_many_lanes
+                .envelope
+                .condensed(ENVELOPE_LANES, 16)
+                .is_empty()
+        );
     }
 
     #[test]

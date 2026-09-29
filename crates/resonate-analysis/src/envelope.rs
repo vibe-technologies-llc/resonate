@@ -159,7 +159,8 @@ impl Envelope {
     }
 
     pub fn condensed(&self, lane: usize, wanted: usize) -> Vec<Reach> {
-        if self.frames == 0 || wanted == 0 || lane >= self.lanes || self.columns.is_empty() {
+        let drawn = lane < self.lanes.min(ENVELOPE_LANES) && self.frames_per_column > 0;
+        if self.frames == 0 || wanted == 0 || !drawn || self.columns.is_empty() {
             return Vec::new();
         }
 

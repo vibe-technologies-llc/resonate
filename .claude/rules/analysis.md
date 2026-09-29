@@ -105,7 +105,12 @@ size and modification time, so a rewritten file or a cut taken again is a name n
 drawn before a restart without reading the file. `kept::written`'s layout is a magic, a version,
 every field of the study, the envelope and the spectrogram, little-endian; the judgement is *not*
 written — `read` runs `judged` over the kept spectrum and levels, so a kept analysis is weighed
-under this build's verdict. A file that will not read back is deleted where it stands, a write
+under this build's verdict. The reader trusts none of its own shape: an envelope naming no lane or
+more than `ENVELOPE_LANES`, or columns of no frames over frames, reads as nothing, and
+`Envelope::condensed` answers nothing for either however it was built — an index past the lanes
+and a division by zero once reached the pane
+(`a_kept_envelope_whose_shape_could_not_have_been_drawn_is_not_read_back`). A file that will not
+read back is deleted where it stands, a write
 lands through a staged name and rename, a recall touches the modification time, and past
 `KEPT_BYTES_AT_MOST` (256 MiB, ~four hundred tracks) the least lately used go first. A cache:
 every failure is a debug record and a decode. The headless commands keep nothing.

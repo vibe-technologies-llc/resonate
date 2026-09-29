@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The kept analysis cache trusts its own structure: `lanes` past `ENVELOPE_LANES` indexes out of
-  bounds and a `frames_per_column` of nothing divides by zero in `Envelope::condensed`
 - One NaN or infinite sample poisons the K-weighting filter's state for the rest of the track, so
   loudness and range come out `None` and the spectrum's sums go non-finite; the engine's
   equaliser already guards its state against the same
