@@ -351,8 +351,21 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `roots` — re-parented, not deleted, because `tracks.root_id` cascades and widening a root must not
   cost a play counted under it. Nesting was never only untidy: the overlap was walked twice with
   `root_id` flipping on the second upsert.
+- **What the scan could not read, it keeps.** The prune takes every row the pass did not stamp, so a
+  row is stamped wherever the pass could not tell a file gone from a file it failed to read. A file
+  whose size or mtime moved and which then would not probe — a torn write, a transient `EIO` — is
+  counted failed and its `Candidate::existing` rows stamped as `Outcome::Kept`, which touches the row
+  without counting it processed a second time; so is a cue-cut file. A directory `read_dir` refuses —
+  `EACCES`, `EIO`, an automount not answering — and an entry whose `stat` fails, a link into an
+  unplugged drive among them, stamp every row `Known::at_or_under` names at or below the path, a range
+  over the `BTreeMap` the rows are held in. Before, each was stepped past and the prune deleted the rows,
+  and their plays, listens and favourites with them
+  (`a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it`,
+  `a_folder_the_scan_cannot_read_keeps_every_row_under_it`). An *empty* folder is not guarded: a
+  mount point with nothing mounted reads exactly as a folder whose files were moved out, and keeping
+  those rows kept `moves::follow_the_moved` from pairing any move out of a folder emptied by it.
 - **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned over
-  and skipped as an unreadable one is, rather than failing the scan and the prune with it. A symlink is
+  and skipped rather than failing the scan and the prune with it. A symlink is
   weighed only where it names a directory, and one naming a directory this walk has been down is
   stepped past rather than read as a cycle, so two albums linked to one shared folder walk it once
   instead of aborting — the set is what a cycle runs into on its second pass through the link, so

@@ -6,12 +6,9 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A scan prunes a changed file that fails to probe: `read_candidate`'s error arm in `scan.rs`
-  steps past the file without marking its row seen, so a torn write or a transient `EIO` deletes
-  the row and cascades its listens, plays and favourite away
-- A scan prunes every row under a subfolder it could not read — a submount not mounted, an
-  `EACCES`, an `EIO` — because a failed `read_dir` is stepped past and `store::prune` deletes
-  whatever was not seen; only the root is guarded, by `is_there`
+- A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
+  it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
+  were moved out
 - The `Walk` guard is an `AtomicBool` inside one process, so `resonate scan` beside the window's
   scan or organise prunes the rows the other wrote, and `resonate vault --prune` beside the
   window's import sweeps its staging files and deletes a cover landed but not yet noted, after

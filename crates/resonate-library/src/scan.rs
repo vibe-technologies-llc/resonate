@@ -12,7 +12,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
@@ -309,7 +309,7 @@ impl Stored {
 
 #[derive(Default)]
 struct Known {
-    rows: AHashMap<String, Vec<Stored>>,
+    rows: BTreeMap<String, Vec<Stored>>,
 }
 
 impl Known {
@@ -357,6 +357,18 @@ impl Known {
 
     fn rows(&self, path: &str) -> &[Stored] {
         self.rows.get(path).map_or(&[], Vec::as_slice)
+    }
+
+    fn at_or_under(&self, path: &Path) -> Vec<TrackId> {
+        let Some(text) = path.to_str() else {
+            return Vec::new();
+        };
+        let (from, past) = walked_from(text);
+        self.rows(text)
+            .iter()
+            .chain(self.rows.range(from..past).flat_map(|(_, rows)| rows))
+            .map(|held| held.id)
+            .collect()
     }
 }
 
@@ -425,13 +437,21 @@ struct SheetCandidate {
 
 enum Job {
     Known(TrackId),
+    Unread(TrackId),
     Probe(Box<Candidate>),
     Sheet(Box<SheetCandidate>),
 }
 
 enum Outcome {
     Seen(TrackId),
+    Kept(TrackId),
     Store(Box<TrackRecord>),
+}
+
+impl Outcome {
+    const fn is_counted(&self) -> bool {
+        !matches!(self, Self::Kept(_))
+    }
 }
 
 fn run(
@@ -715,7 +735,10 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
         let entries = match fs::read_dir(&directory) {
             Ok(entries) => entries,
             Err(error) => {
-                tracing::warn!(%error, path = %directory.display(), "skipping an unreadable directory");
+                tracing::warn!(%error, path = %directory.display(), "keeping what the catalog holds under a directory it could not read");
+                if !kept_unread(walking, &directory) {
+                    return Ok(());
+                }
                 continue;
             }
         };
@@ -743,7 +766,10 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
             let metadata = match fs::metadata(&path) {
                 Ok(metadata) => metadata,
                 Err(error) => {
-                    tracing::debug!(%error, path = %path.display(), "skipping an unreadable entry");
+                    tracing::debug!(%error, path = %path.display(), "keeping what the catalog holds at an unreadable entry");
+                    if !kept_unread(walking, &path) {
+                        return Ok(());
+                    }
                     continue;
                 }
             };
@@ -770,6 +796,14 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn kept_unread(walking: &Walking<'_>, path: &Path) -> bool {
+    walking
+        .known
+        .at_or_under(path)
+        .into_iter()
+        .all(|id| walking.work.send(Job::Unread(id)).is_ok())
 }
 
 fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>) -> bool {
@@ -1221,6 +1255,7 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
 
         let outcomes = match job {
             Job::Known(id) => vec![Outcome::Seen(id)],
+            Job::Unread(id) => vec![Outcome::Kept(id)],
             Job::Probe(candidate) => match read_candidate(&sources, &candidate) {
                 Ok(records) => {
                     rows_past_the_first(progress, records.len());
@@ -1231,10 +1266,10 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
                 }
                 Err(error) => {
                     let failure = Failure::of(&error);
-                    tracing::debug!(%error, ?failure, path = %candidate.path.display(), "skipping a file that would not probe");
+                    tracing::debug!(%error, ?failure, path = %candidate.path.display(), "keeping what the catalog holds of a file that would not probe");
                     progress.failed.add(failure, 1);
                     progress.processed.fetch_add(1, Ordering::Relaxed);
-                    continue;
+                    kept(&candidate.existing)
                 }
             },
             Job::Sheet(candidate) => match read_cut(&sources, &candidate) {
@@ -1245,10 +1280,10 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
                 Err(error) => {
                     let tracks = candidate.cut.audio_tracks().count() as u64;
                     let failure = Failure::of(&error);
-                    tracing::debug!(%error, ?failure, sheet = %candidate.sheet.display(), "skipping a cue sheet whose file would not probe");
+                    tracing::debug!(%error, ?failure, sheet = %candidate.sheet.display(), "keeping what the catalog holds of a cue sheet whose file would not probe");
                     progress.failed.add(failure, tracks);
                     progress.processed.fetch_add(tracks, Ordering::Relaxed);
-                    continue;
+                    kept(&candidate.existing)
                 }
             },
         };
@@ -1259,6 +1294,15 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
             }
         }
     }
+}
+
+fn kept(existing: &[Option<TrackId>]) -> Vec<Outcome> {
+    existing
+        .iter()
+        .flatten()
+        .copied()
+        .map(Outcome::Kept)
+        .collect()
 }
 
 struct Cutting<'a> {
@@ -1453,7 +1497,9 @@ fn commit(
     inner.write(|transaction| {
         for outcome in batch.iter() {
             match outcome {
-                Outcome::Seen(id) => store::touch(transaction, *id, generation)?,
+                Outcome::Seen(id) | Outcome::Kept(id) => {
+                    store::touch(transaction, *id, generation)?;
+                }
                 Outcome::Store(record) => {
                     let stored = store::apply(
                         transaction,
@@ -1476,9 +1522,10 @@ fn commit(
         Ok(())
     })?;
 
+    let counted = batch.iter().filter(|outcome| outcome.is_counted()).count();
     progress
         .processed
-        .fetch_add(batch.len() as u64, Ordering::Relaxed);
+        .fetch_add(counted as u64, Ordering::Relaxed);
     progress.added.fetch_add(added, Ordering::Relaxed);
     progress.updated.fetch_add(updated, Ordering::Relaxed);
     batch.clear();

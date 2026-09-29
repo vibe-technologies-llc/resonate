@@ -1937,6 +1937,60 @@ fn a_directory_past_the_depth_limit_is_stepped_past_and_the_prune_still_runs() -
     Ok(())
 }
 
+#[test]
+fn a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("torn.wav", &Wav::new().text(TITLE, "Torn").build());
+    tree.write("whole.wav", &Wav::new().text(TITLE, "Whole").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    library.track_played(&MediaLocation::local(&path), None, Duration::ZERO)?;
+
+    fs::write(&path, b"RIFF torn midway through a write").expect("the fixture file is writable");
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.removed, 0);
+    assert_eq!(stats.failed.total(), 1);
+    assert_eq!(titles(&all(&library)?), vec!["Torn", "Whole"]);
+    assert_eq!(library.track_at(&path, None)?.map(|row| row.plays), Some(1));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
+    use os::unix::fs::PermissionsExt as _;
+
+    let tree = Tree::new();
+    tree.write(
+        "locked/deep/one.wav",
+        &Wav::new().text(TITLE, "One").build(),
+    );
+    tree.write("locked/two.wav", &Wav::new().text(TITLE, "Two").build());
+    tree.write("open.wav", &Wav::new().text(TITLE, "Open").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let locked = tree.path().join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000))
+        .expect("the fixture folder takes a mode");
+    if fs::read_dir(&locked).is_ok() {
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))
+            .expect("the fixture folder takes a mode");
+        eprintln!("skipping: this user reads a folder whatever its mode");
+        return Ok(());
+    }
+    let stats = scan(&library, &options(&tree));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))
+        .expect("the fixture folder takes a mode");
+
+    assert_eq!(stats?.removed, 0);
+    assert_eq!(titles(&all(&library)?), vec!["One", "Open", "Two"]);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> Result<()> {
