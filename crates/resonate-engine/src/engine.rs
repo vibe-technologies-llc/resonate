@@ -76,13 +76,19 @@ struct Track {
     layout: Option<Arc<BoxLayout>>,
     hints: TrackHints,
     replay_gain: AppliedGain,
-    measuring: Option<Measuring>,
+    peak: Peak,
     decoded: AudioBuffer,
     decoded_at: usize,
     profile: ProfileBuilder,
     profiled_from: Frames,
     sampled: Option<Frames>,
     published: Option<usize>,
+}
+
+enum Peak {
+    Unasked,
+    Measuring(Measuring),
+    Unmeasurable,
 }
 
 struct Unwrapped {
@@ -158,7 +164,7 @@ impl Track {
             location: item.location.clone(),
             span: item.span,
             hints,
-            measuring: None,
+            peak: Peak::Unasked,
             decoded: AudioBuffer::empty(info.spec),
             layout: layout.map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
@@ -175,20 +181,30 @@ impl Track {
     }
 
     fn measure_where_wanted(&mut self, sources: &Arc<Sources>, config: &EngineConfig) {
-        if self.measuring.is_some() || !Measuring::wanted(config, &self.info, self.replay_gain) {
+        if !matches!(self.peak, Peak::Unasked)
+            || !Measuring::wanted(config, &self.info, self.replay_gain)
+        {
             return;
         }
-        self.measuring = Measuring::start(Arc::clone(sources), self.location.clone(), self.span);
+        if let Some(measuring) =
+            Measuring::start(Arc::clone(sources), self.location.clone(), self.span)
+        {
+            self.peak = Peak::Measuring(measuring);
+        }
     }
 
     fn heed_what_was_measured(&mut self, config: &EngineConfig) -> bool {
-        let Some(measured) = self.measuring.as_ref().and_then(Measuring::landed) else {
+        let Peak::Measuring(measuring) = &self.peak else {
             return false;
         };
-        self.measuring = None;
+        let Some(measured) = measuring.landed() else {
+            return false;
+        };
         let Measured::Peaking(peak) = measured else {
+            self.peak = Peak::Unmeasurable;
             return false;
         };
+        self.peak = Peak::Unasked;
         self.hints.true_peak = Some(peak);
         self.replay_gain = levelled(config, &self.info, self.hints);
         self.published = None;

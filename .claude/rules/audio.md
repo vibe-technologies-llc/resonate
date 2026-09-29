@@ -1782,8 +1782,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   per-sample clamp for the rest of the track, and a float file passing full scale grows a gain stage
   rather than reaching the device as it is. Dropping the track drops the `Measuring`, telling the thread
   to stop at its next block, so a run of skips leaves no decode behind; `re_level` and `SetTruePeak`
-  start one where a changed setting now wants it. The measurement is the engine's alone and not kept —
-  the lookup's study is what the catalog keeps.
+  start one where a changed setting now wants it. `Track::peak` is a `Peak` — `Unasked`, `Measuring`,
+  `Unmeasurable` — so a row that would not open or decode to its end is not decoded whole again for
+  every `SetReplayGain`, `SetLevelling` and `SetTruePeak` it lives through
+  (`a_track_whose_peak_cannot_be_measured_is_not_decoded_again_for_it`). The measurement is the
+  engine's alone and not kept — the lookup's study is what the catalog keeps.
   `a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_under_it` opens a
   2.0-peaking float file bit-perfect and hears it no louder than full scale once measured.
 - **The true-peak guard is a lookahead gain, not a clipper, and touches nothing under the ceiling.**

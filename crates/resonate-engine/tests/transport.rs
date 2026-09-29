@@ -6210,6 +6210,78 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
     Ok(())
 }
 
+#[test]
+fn a_track_whose_peak_cannot_be_measured_is_not_decoded_again_for_it() -> Result<()> {
+    let named = SourceId::new("once").expect("a lowercase name");
+    let once = Arc::new(ServesOnce {
+        source: named.clone(),
+        key: "hot.wav".to_owned(),
+        bytes: floating_wave(2.0, 10 * RATE as usize),
+        served: AtomicU64::new(0),
+    });
+    let served = Arc::clone(&once);
+    let sources = Sources::local().and(once);
+    let rate = SampleRate::HZ_44100;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::F32);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[rate], &[SampleFormat::F32])],
+        Arc::new(sources),
+        ring_deep(),
+    )?;
+    player.send(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "hot.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    let mut asked_since = None;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| {
+            let opened = served.served.load(Ordering::Relaxed);
+            let played = graph.played.len();
+            let since = *asked_since.get_or_insert((opened, played));
+            if opened != since.0 {
+                asked_since = Some((opened, played));
+                return false;
+            }
+            played >= since.1 + 32 * block
+        },
+        "the refused measurement to settle",
+    );
+    let opened = served.served.load(Ordering::Relaxed);
+
+    for command in [
+        Command::SetTruePeak(false),
+        Command::SetTruePeak(true),
+        Command::SetReplayGain(ReplayGainMode::Track),
+        Command::SetReplayGain(ReplayGainMode::Off),
+    ] {
+        player.send(command)?;
+        let heard_before = graph.lock().played.len();
+        play_until(
+            &player,
+            &graph,
+            block,
+            |_, graph| graph.played.len() >= heard_before + 16 * block,
+            "the stream to play on",
+        );
+    }
+
+    assert_eq!(
+        served.served.load(Ordering::Relaxed),
+        opened,
+        "a track whose peak could not be measured was opened again to measure it"
+    );
+    Ok(())
+}
+
 fn turning_its_own_volume(at: f32) -> SinkInfo {
     SinkInfo {
         port: Some(SinkPort {
