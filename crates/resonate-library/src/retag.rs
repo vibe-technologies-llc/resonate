@@ -536,6 +536,16 @@ pub(crate) struct Undoing {
     pub was: Held,
 }
 
+impl Undoing {
+    fn of(write: &Written) -> Self {
+        Self {
+            path: write.path.clone(),
+            pictured: write.picture.is_some(),
+            was: write.was.clone(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Noted {
     begun: bool,
@@ -549,11 +559,20 @@ fn apply(
     noted: &mut Noted,
 ) -> Result<()> {
     let planned = mem::take(&mut retagging.writes);
-    let mut followed = Vec::with_capacity(planned.len());
-    let mut undoing = Vec::with_capacity(planned.len());
+    if planned.is_empty() || progress.is_cancelled() {
+        retagging.writes = planned;
+        return Ok(());
+    }
+    let undoing: Vec<Undoing> = planned.iter().map(Undoing::of).collect();
+    let begins = !noted.begun;
+    library.retag_to_be_written(&undoing, begins)?;
+    noted.begun = true;
 
+    let mut followed = Vec::with_capacity(planned.len());
+    let mut unwritten = Vec::new();
     for write in planned {
         if progress.is_cancelled() {
+            unwritten.push(write.path.clone());
             retagging.writes.push(write);
             continue;
         }
@@ -572,20 +591,16 @@ fn apply(
                     RetagProgress::step(&progress.ratings);
                 }
                 followed.push(follow);
-                undoing.push(Undoing {
-                    path: write.path.clone(),
-                    pictured: write.picture.is_some(),
-                    was: write.was.clone(),
-                });
                 retagging.writes.push(write);
             }
-            Err(why) => retagging.pass_over(&write.path, why, progress),
+            Err(why) => {
+                unwritten.push(write.path.clone());
+                retagging.pass_over(&write.path, why, progress);
+            }
         }
     }
 
-    let begins = !noted.begun && !undoing.is_empty();
-    noted.begun |= begins;
-    library.files_retagged(&followed, &undoing, begins)
+    library.files_retagged(&followed, &unwritten)
 }
 
 fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed, Unwritten> {
@@ -694,8 +709,7 @@ fn wrote(write: &Written, field: TagField) -> Option<Option<String>> {
 pub(crate) fn files_retagged(
     tx: &Transaction<'_>,
     followed: &[Followed],
-    undoing: &[Undoing],
-    begins: bool,
+    unwritten: &[PathBuf],
 ) -> Result<()> {
     let mut statement = tx
         .prepare(
@@ -722,7 +736,25 @@ pub(crate) fn files_retagged(
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
 
-    note_what_was_there(tx, undoing, begins)
+    forget_what_was_not_written(tx, unwritten)
+}
+
+fn forget_what_was_not_written(tx: &Transaction<'_>, unwritten: &[PathBuf]) -> Result<()> {
+    let mut noted = tx
+        .prepare_cached("DELETE FROM retagged WHERE path = ?1")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let mut fields = tx
+        .prepare_cached("DELETE FROM retagged_fields WHERE path = ?1")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    for path in unwritten {
+        let path = store::path_text(path)?;
+        for statement in [&mut noted, &mut fields] {
+            statement
+                .execute(params![path])
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        }
+    }
+    Ok(())
 }
 
 fn rating_kept(rated: Option<Rated>) -> Option<i64> {
@@ -749,7 +781,11 @@ fn rating_read(kept: Option<i64>) -> Option<Popularity> {
     })
 }
 
-fn note_what_was_there(tx: &Transaction<'_>, undoing: &[Undoing], begins: bool) -> Result<()> {
+pub(crate) fn note_what_was_there(
+    tx: &Transaction<'_>,
+    undoing: &[Undoing],
+    begins: bool,
+) -> Result<()> {
     if begins {
         tx.execute_batch("DELETE FROM retagged; DELETE FROM retagged_fields;")
             .map_err(|source| Error::store(StoreOp::Delete, source))?;

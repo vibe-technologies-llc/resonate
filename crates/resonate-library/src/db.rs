@@ -1776,14 +1776,22 @@ impl Library {
         })
     }
 
-    pub(crate) fn files_retagged(
+    pub(crate) fn retag_to_be_written(
         &self,
-        followed: &[Followed],
         undoing: &[retag::Undoing],
         begins: bool,
     ) -> Result<()> {
         self.inner
-            .write(|transaction| retag::files_retagged(transaction, followed, undoing, begins))
+            .write(|transaction| retag::note_what_was_there(transaction, undoing, begins))
+    }
+
+    pub(crate) fn files_retagged(
+        &self,
+        followed: &[Followed],
+        unwritten: &[PathBuf],
+    ) -> Result<()> {
+        self.inner
+            .write(|transaction| retag::files_retagged(transaction, followed, unwritten))
     }
 
     pub(crate) fn last_retag(&self) -> Result<Vec<retag::KeptRetag>> {

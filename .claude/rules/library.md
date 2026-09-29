@@ -1443,7 +1443,15 @@ under Library is the window's way in, with the same preview-then-arm shape *Orga
   before, `None` where the file carried none, and the rating where it changes one — and the apply notes
   it in `retagged` and `retagged_fields` (a `MIGRATIONS` step) beside whether the write added the
   album's cover; the first page of a run writing anything clears what the previous run noted, so the
-  record is the last run's alone. `RetagOptions::undo` plans from that record instead of the catalog:
+  record is the last run's alone. **The note is written ahead of the files**: `apply` notes every
+  planned write of a page (`Library::retag_to_be_written`) before it touches one, then follows the
+  catalog and forgets the notes of the writes that failed or were cancelled in one transaction
+  (`files_retagged`). Written the other way round, a catalog error between the two left files changed
+  with nothing to put them back by; now a note that cannot be written stops the run before any file is
+  (`a_tag_run_the_catalog_cannot_note_writes_no_file`), and a follow that cannot be written leaves the
+  record whole and sizes and mtimes the next scan reads as changed. The price is that a run whose every
+  write fails still clears the previous run's record
+  (`a_write_that_fails_is_not_noted_as_one_to_put_back`). `RetagOptions::undo` plans from that record instead of the catalog:
   each field read before is written back, one the run added is removed (`Writing::taken`, removing the
   key), an added cover is taken out (`Writing::unpictured`, the front cover alone) and the rating put
   back, all handed to the same `apply`, which reads every file back, has the catalog follow

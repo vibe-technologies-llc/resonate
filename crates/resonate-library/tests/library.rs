@@ -14607,6 +14607,78 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     Ok(())
 }
 
+#[test]
+fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    beside(&database)
+        .execute_batch(
+            "CREATE TRIGGER refused BEFORE INSERT ON retagged
+             BEGIN SELECT RAISE(ABORT, 'the catalog refuses the note'); END;",
+        )
+        .expect("the trigger is laid down");
+
+    assert!(
+        retagged(&library, true).is_err(),
+        "a run the catalog could not note went on"
+    );
+    assert_eq!(
+        tags_of(&file).title.as_deref(),
+        Some("Echos"),
+        "a file was written ahead of the note that would put it back"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
+    use os::unix::fs::PermissionsExt as _;
+
+    let tree = Tree::new();
+    let file = tree.write(
+        "shut/1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
+    let shut = tree.path().join("shut");
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o555))
+        .expect("the fixture folder takes a mode");
+    if fs::write(shut.join("probe"), b"").is_ok() {
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
+            .expect("the fixture folder takes a mode");
+        eprintln!("skipping: this user writes into a folder whatever its mode");
+        return Ok(());
+    }
+    let summary = retagged(&library, true);
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
+        .expect("the fixture folder takes a mode");
+
+    assert_eq!(summary?.stats.written, 0);
+    assert!(
+        !library.retag_walks_back()?,
+        "a write that never landed was noted as one to put back"
+    );
+    Ok(())
+}
+
 fn drawn_png(side: u32) -> Vec<u8> {
     let mut written = std::io::Cursor::new(Vec::new());
     image::RgbImage::from_pixel(side, side, image::Rgb([200, 40, 40]))

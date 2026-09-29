@@ -9,8 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- `retag` writes a page of files before it journals them, so a catalog error between the two
-  leaves files changed with no undo and a catalog that disagrees with them
 - `prune_the_vault` forgets an object's row even where the file could not be taken away, and an
   object that landed before `note_vaulted` failed has no row at all; the prune walks rows rather
   than `audio/`, so either stands on the disc for good
