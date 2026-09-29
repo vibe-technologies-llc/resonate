@@ -6,10 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The Discord socket search gives up at the first socket that answers `Close`, whatever the code,
-  so a sibling `discord-ipc-N` or Vesktop is never tried; an `ERROR` frame during the handshake is
-  dropped and waited out, and a reconnect is a fixed 15 s across some 120 candidate paths with no
-  memory of the one that worked
 - The engine's tag and cover catalog is never invalidated and caches a failed read as nothing, so
   a row retagged, or read while its share was unmounted, stays wrong until the LRU evicts it
 - Engine events share one 256-slot channel that drops when full, and a sustained underrun raises

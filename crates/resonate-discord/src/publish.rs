@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::Arc,
     thread,
     time::{Duration, Instant, SystemTime},
@@ -18,7 +19,9 @@ use crate::{
 const TICK: Duration = Duration::from_secs(1);
 const SENDS_APART: Duration = Duration::from_secs(4);
 const DRIFT_ALLOWED: Duration = Duration::from_secs(2);
-const RETRY_AFTER: Duration = Duration::from_secs(15);
+const RETRY_AFTER_AT_FIRST: Duration = Duration::from_secs(5);
+const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(120);
+const SENT_AGAIN_AFTER_A_REFUSAL: Duration = Duration::from_secs(15);
 const COVER_REFRESH_AFTER: Duration = Duration::from_secs(15);
 const FAREWELL: Duration = Duration::from_millis(500);
 
@@ -41,6 +44,8 @@ impl Running {
             presence,
             link: Link::Closed { retry_at: None },
             covered: None,
+            answered_last: None,
+            waits: RETRY_AFTER_AT_FIRST,
         };
         let spawned = thread::Builder::new()
             .name("resonate-discord".to_owned())
@@ -108,6 +113,8 @@ struct Publisher {
     presence: Arc<RwLock<Presence>>,
     link: Link,
     covered: Option<CachedCover>,
+    answered_last: Option<PathBuf>,
+    waits: Duration,
 }
 
 impl Publisher {
@@ -149,9 +156,11 @@ impl Publisher {
             if wanted.is_none() || retry_at.is_some_and(|at| now < at) {
                 return;
             }
-            match Session::find(app) {
-                Ok(session) => {
+            match Session::find(app, self.answered_last.as_deref()) {
+                Ok((session, path)) => {
                     tracing::info!("showing what is playing on Discord");
+                    self.answered_last = Some(path);
+                    self.waits = RETRY_AFTER_AT_FIRST;
                     self.link = Link::Open {
                         session: Box::new(session),
                         app,
@@ -164,10 +173,11 @@ impl Publisher {
                     return;
                 }
                 Err(error) => {
-                    tracing::debug!(%error, "Discord could not be reached; asking again later");
+                    tracing::debug!(%error, waits = ?self.waits, "Discord could not be reached; asking again later");
                     self.link = Link::Closed {
-                        retry_at: Some(now + RETRY_AFTER),
+                        retry_at: Some(now + self.waits),
                     };
+                    self.waits = self.waits.saturating_mul(2).min(RETRY_AFTER_AT_MOST);
                     return;
                 }
             }
@@ -198,8 +208,9 @@ impl Publisher {
             }
             Err(error) => {
                 tracing::debug!(%error, "the connection to Discord was lost");
+                self.waits = RETRY_AFTER_AT_FIRST;
                 self.link = Link::Closed {
-                    retry_at: Some(now + RETRY_AFTER),
+                    retry_at: Some(now + self.waits),
                 };
             }
         }
@@ -318,7 +329,7 @@ fn due(sent: Option<&Sent>, wanted: Option<&Activity>, now: Instant) -> bool {
     if changed {
         waited >= SENDS_APART
     } else {
-        sent.refused && waited >= RETRY_AFTER
+        sent.refused && waited >= SENT_AGAIN_AFTER_A_REFUSAL
     }
 }
 
@@ -496,7 +507,11 @@ mod tests {
         let same = activity("Echoes", 1);
 
         assert!(!due(Some(&sent), Some(&same), now + SENDS_APART));
-        assert!(due(Some(&sent), Some(&same), now + RETRY_AFTER));
+        assert!(due(
+            Some(&sent),
+            Some(&same),
+            now + SENT_AGAIN_AFTER_A_REFUSAL
+        ));
         assert!(due(
             Some(&sent),
             Some(&activity("Time", 0)),

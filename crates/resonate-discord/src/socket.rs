@@ -109,21 +109,31 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    pub(crate) fn find(app: AppId) -> Result<Self> {
-        for path in candidates_here() {
+    pub(crate) fn find(app: AppId, answered_last: Option<&Path>) -> Result<(Self, PathBuf)> {
+        let first = answered_last.map(Path::to_path_buf);
+        let rest = candidates_here()
+            .into_iter()
+            .filter(|path| Some(path.as_path()) != answered_last);
+        Self::find_among(app, first.into_iter().chain(rest))
+    }
+
+    fn find_among(app: AppId, paths: impl IntoIterator<Item = PathBuf>) -> Result<(Self, PathBuf)> {
+        let mut answered = None;
+        for path in paths {
             match Self::open(&path, app) {
                 Ok(session) => {
                     tracing::debug!(path = %path.display(), "reached Discord");
-                    return Ok(session);
+                    return Ok((session, path));
                 }
-                Err(error @ Error::Closed { .. }) => return Err(error),
+                Err(error) if error.names_no_application() => return Err(error),
                 Err(Error::Socket { .. }) => {}
                 Err(error) => {
-                    tracing::debug!(%error, path = %path.display(), "a Discord socket answered in a way this client does not read");
+                    tracing::debug!(%error, path = %path.display(), "a Discord socket would not take this client; trying the next");
+                    answered.get_or_insert(error);
                 }
             }
         }
-        Err(Error::NoDiscord)
+        Err(answered.unwrap_or(Error::NoDiscord))
     }
 
     pub(crate) fn open(path: &Path, app: AppId) -> Result<Self> {
@@ -175,8 +185,14 @@ impl Session {
             let frame = read_frame(&mut self.stream)?;
             if frame.opcode == Opcode::Frame {
                 let reply: ReplyDoc = decoded(&frame.body)?;
-                if reply.cmd.as_deref() == Some(DISPATCH) && reply.evt.as_deref() == Some(READY) {
-                    return Ok(());
+                match (reply.cmd.as_deref(), reply.evt.as_deref()) {
+                    (Some(DISPATCH), Some(READY)) => return Ok(()),
+                    (_, Some(ERROR)) => {
+                        return Err(Error::Refused {
+                            code: reply.data.and_then(|fault| fault.code).unwrap_or_default(),
+                        });
+                    }
+                    _ => {}
                 }
             } else {
                 self.answer(frame)?;
@@ -457,6 +473,85 @@ mod tests {
         drop(stream);
 
         assert!(matches!(refused, Err(Error::Refused { code: 4002 })));
+    }
+
+    fn a_discord_at(
+        path: &Path,
+        answer: impl FnOnce(&mut UnixStream) + Send + 'static,
+    ) -> thread::JoinHandle<()> {
+        let listener = UnixListener::bind(path).expect("bound");
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepted");
+            read_frame(&mut stream).expect("a handshake");
+            answer(&mut stream);
+            let _ = read_frame(&mut stream);
+        })
+    }
+
+    #[test]
+    fn a_socket_that_will_not_take_this_client_is_passed_for_the_next() {
+        let folder = Folder::new();
+        let closing = folder.0.join("discord-ipc-0");
+        let erring = folder.0.join("discord-ipc-1");
+        let taking = folder.0.join("discord-ipc-2");
+        let closed = a_discord_at(&closing, |stream| {
+            send(
+                stream,
+                Opcode::Close,
+                &json!({ "code": 4003, "message": "no" }),
+            );
+        });
+        let erred = a_discord_at(&erring, |stream| {
+            send(
+                stream,
+                Opcode::Frame,
+                &json!({ "cmd": "DISPATCH", "evt": "ERROR", "data": { "code": 4001, "message": "no" } }),
+            );
+        });
+        let took = a_discord_at(&taking, ready);
+
+        let asked = Instant::now();
+        let found = Session::find_among(
+            app(),
+            [
+                folder.0.join("discord-ipc-9"),
+                closing.clone(),
+                erring.clone(),
+                taking.clone(),
+            ],
+        );
+        let asked_for = asked.elapsed();
+        let reached = found.map(|(session, path)| {
+            drop(session);
+            path
+        });
+        for fake in [closed, erred, took] {
+            fake.join().expect("a fake Discord");
+        }
+
+        assert_eq!(reached.ok(), Some(taking));
+        assert!(
+            asked_for < ANSWERS_WITHIN,
+            "an error in the handshake was waited out for {asked_for:?}"
+        );
+    }
+
+    #[test]
+    fn an_application_every_discord_refuses_ends_the_search_at_the_first() {
+        let folder = Folder::new();
+        let refusing = folder.0.join("discord-ipc-0");
+        let refused = a_discord_at(&refusing, |stream| {
+            send(
+                stream,
+                Opcode::Close,
+                &json!({ "code": 4000, "message": "Invalid Client ID" }),
+            );
+        });
+
+        let found = Session::find_among(app(), [refusing, folder.0.join("discord-ipc-1")]);
+        refused.join().expect("a fake Discord");
+
+        assert!(matches!(&found, Err(error) if error.names_no_application()));
     }
 
     #[test]

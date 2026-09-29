@@ -44,15 +44,24 @@ the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the 
 ## What is sent
 
 - **The frame is Discord's**: a little-endian opcode and length, then JSON, capped at
-  `LARGEST_FRAME`. The handshake waits for `READY`; a `Close` carrying 4000 is an application
+  `LARGEST_FRAME`. The handshake waits for `READY`, and an `ERROR` it gets instead is a `Refused`
+  at once rather than a wait to `READY_WITHIN`; a `Close` carrying 4000 is an application
   Discord does not know, warned about once and waited out until the id changes. A `Ping` is
   answered with a `Pong`; an `ERROR` reply is a `Refused` warning that keeps the session — the
-  `Sent` is marked `refused`, so `due` offers the same activity again after `RETRY_AFTER`, and a
+  `Sent` is marked `refused`, so `due` offers the same activity again after
+  `SENT_AGAIN_AFTER_A_REFUSAL`, and a
   change is sent on the usual spacing. Closing the socket over it would reconnect every fifteen
   seconds to be refused the same payload.
 - **The socket is looked for where every Discord puts it**: `$XDG_RUNTIME_DIR`, `$TMPDIR` and
-  `/tmp`, each plain and under the Flatpak, Snap and Vesktop sandboxes, `discord-ipc-0` to `-9`.
-  One that does not answer is a debug record and a retry after `RETRY_AFTER`.
+  `/tmp`, each plain and under the Flatpak, Snap and Vesktop sandboxes, `discord-ipc-0` to `-9`,
+  the path that answered last tried first. `find_among` goes on past a socket that will not take
+  the client — a `Close` of another code, an `ERROR` in the handshake, a frame it cannot read — so
+  a sibling `discord-ipc-N` or Vesktop beside a Discord that refuses is still reached; only 4000
+  ends the search, every Discord answering the same id alike
+  (`a_socket_that_will_not_take_this_client_is_passed_for_the_next`,
+  `an_application_every_discord_refuses_ends_the_search_at_the_first`). A search that finds
+  nothing asks again after `RETRY_AFTER_AT_FIRST` (5 s), doubling to `RETRY_AFTER_AT_MOST`
+  (2 min), and a session reached or lost starts the wait over.
 - **`Activity::of` is the whole policy**, pure and tested without a socket.
   - `Shown::Application` says nothing about the track and draws no cover even where asked; `Track`
     is the title over the artist; `Album` adds the album as the picture's caption, or after the
