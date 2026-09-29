@@ -119,25 +119,18 @@ pub(crate) const fn held(entries: usize) -> NonZeroUsize {
 }
 
 struct Browsed {
-    albums: Vec<Album>,
-    artists: Vec<Artist>,
-    tracks: Vec<Track>,
+    paged: Paged,
     favourite_albums: Vec<Album>,
     favourite_artists: Vec<Artist>,
     favourite_tracks: Vec<Track>,
-    statistics: Statistics,
-    most_listened: MostListened,
-    by_day: Vec<Day>,
-    suggestions: Arc<[Suggestion]>,
+    standing: Option<Standing>,
     instead: Option<String>,
     unheld: Vec<MissingTrack>,
     sung: Option<Sung>,
-    scoped: Vec<Track>,
     albums_counted: u32,
     artists_counted: u32,
     tracks_measured: Measured,
     scoped_measured: Measured,
-    roots: Vec<PathBuf>,
     release_tracks: Vec<HeldReleaseTrack>,
     release: Option<ReleaseDetail>,
     artist: Option<ArtistDetail>,
@@ -146,8 +139,28 @@ struct Browsed {
     album: Option<Album>,
 }
 
+struct Paged {
+    albums: Vec<Album>,
+    artists: Vec<Artist>,
+    tracks: Vec<Track>,
+    scoped: Vec<Track>,
+}
+
+struct Standing {
+    statistics: Statistics,
+    most_listened: MostListened,
+    by_day: Vec<Day>,
+    suggestions: Arc<[Suggestion]>,
+    roots: Vec<PathBuf>,
+}
+
 struct Loaded {
     browsed: Option<Browsed>,
+    paged: Option<Paged>,
+    shelves: Option<Shelves>,
+}
+
+struct Shelves {
     playlists: Vec<Playlist>,
     lists: Vec<Playlist>,
     pictured: AHashMap<PlaylistId, Arc<[AlbumId]>>,
@@ -233,7 +246,32 @@ impl Favourited {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Wanted {
     Everything,
+    TheSearch,
+    ThePage,
     ThePlaylists,
+}
+
+impl Wanted {
+    const fn with(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Everything, _) | (_, Self::Everything) => Self::Everything,
+            (Self::ThePage, Self::ThePage) => Self::ThePage,
+            (Self::ThePlaylists, Self::ThePlaylists) => Self::ThePlaylists,
+            _ => Self::TheSearch,
+        }
+    }
+
+    const fn reads_the_listing(self) -> bool {
+        matches!(self, Self::Everything | Self::TheSearch)
+    }
+
+    const fn reads_what_stands(self) -> bool {
+        matches!(self, Self::Everything)
+    }
+
+    const fn reads_the_shelves(self) -> bool {
+        !matches!(self, Self::ThePage)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -614,7 +652,7 @@ pub struct LibraryModel {
     read_albums: Recent<AlbumId, Option<Album>>,
     counted: Option<Listen>,
     _load: Task<()>,
-    reading_everything: bool,
+    in_flight: Option<Wanted>,
     _scan: Task<()>,
     _organise: Task<()>,
     _import: Task<()>,
@@ -760,7 +798,7 @@ impl LibraryModel {
             read_albums: Recent::new(ALBUMS_HELD),
             counted: None,
             _load: Task::ready(()),
-            reading_everything: false,
+            in_flight: None,
             _scan: Task::ready(()),
             _organise: Task::ready(()),
             _import: Task::ready(()),
@@ -1269,7 +1307,7 @@ impl LibraryModel {
         cx.notify();
 
         self.edited_then(
-            Wanted::Everything,
+            Wanted::TheSearch,
             Change::Favour { favourite },
             move |library| library.favour(what, favourite).map(|_| None),
             move |this, edited, _| {
@@ -1677,7 +1715,7 @@ impl LibraryModel {
             return;
         }
         self.reach = self.reach.saturating_add(PAGE);
-        self.read(Wanted::Everything, cx);
+        self.read(Wanted::ThePage, cx);
     }
 
     pub(crate) fn is_the_whole_listing(&self, played: &[Track]) -> bool {
@@ -1868,7 +1906,7 @@ impl LibraryModel {
 
     fn read_listings_again(&mut self, cx: &mut Context<Self>) {
         self.reach = PAGE;
-        self.read(Wanted::Everything, cx);
+        self.read(Wanted::TheSearch, cx);
     }
 
     pub fn opened_playlist(&self) -> Option<&Playlist> {
@@ -2700,7 +2738,7 @@ impl LibraryModel {
         self.search = Search::read(&query);
         self.query = query;
         self.reach = PAGE;
-        self.read_after(SEARCH_SETTLE, Wanted::Everything, cx);
+        self.read_after(SEARCH_SETTLE, Wanted::TheSearch, cx);
         self.ask_elsewhere_after(ASKED_ELSEWHERE_AFTER, cx);
     }
 
@@ -2718,7 +2756,7 @@ impl LibraryModel {
         }
         self.selection = selection;
         self.reach = PAGE;
-        self.reload(cx);
+        self.read(Wanted::TheSearch, cx);
     }
 
     pub fn ask_about(&self, album: Option<AlbumId>, artist: Option<ArtistId>) {
@@ -2772,12 +2810,10 @@ impl LibraryModel {
     }
 
     fn read_after(&mut self, settling: Duration, wanted: Wanted, cx: &mut Context<Self>) {
-        let wanted = if self.reading_everything {
-            Wanted::Everything
-        } else {
-            wanted
-        };
-        self.reading_everything = wanted == Wanted::Everything;
+        let wanted = self
+            .in_flight
+            .map_or(wanted, |reading| reading.with(wanted));
+        self.in_flight = Some(wanted);
         let library = Arc::clone(&self.library);
         let asked = self.asked();
         let read_ahead = self.first_read.take().filter(|first| {
@@ -2786,7 +2822,7 @@ impl LibraryModel {
         if let Some(first) = read_ahead.as_ref()
             && let Ok(read) = first.read.try_recv()
         {
-            self.reading_everything = false;
+            self.in_flight = None;
             self.landed(read, cx);
             return;
         }
@@ -2805,7 +2841,7 @@ impl LibraryModel {
                 .await;
 
             let outcome = this.update(cx, |this, cx| {
-                this.reading_everything = false;
+                this.in_flight = None;
                 this.landed(loaded, cx);
             });
             let _ = outcome;
@@ -2826,64 +2862,89 @@ impl LibraryModel {
 
     fn take(&mut self, loaded: Loaded) {
         self.revision = self.revision.wrapping_add(1);
-        self.wanted = loaded.wanted;
-        self.missing_track_rows = missing_track_rows(
-            loaded
-                .missing_tracks
-                .iter()
-                .map(|track| (track.album, track.disc)),
-        )
-        .into();
-        self.unheld_release_rows =
-            unheld_release_rows(loaded.unheld_releases.iter().map(|release| release.artist)).into();
-        self.missing_tracks = loaded.missing_tracks.into();
-        self.unheld_releases = loaded.unheld_releases.into();
-        self.missing = loaded.missing;
+        self.read_albums = Recent::new(ALBUMS_HELD);
+        if let Some(shelves) = loaded.shelves {
+            self.take_the_shelves(shelves);
+        }
         if let Some(browsed) = loaded.browsed {
-            self.albums = browsed.albums.into();
-            self.artists = browsed.artists.into();
-            self.tracks = browsed.tracks.into();
-            self.favourite_albums = browsed.favourite_albums.into();
-            self.favourite_artists = browsed.favourite_artists.into();
-            self.favourite_tracks = browsed.favourite_tracks.into();
-            self.statistics = browsed.statistics;
-            self.most_listened = Arc::new(browsed.most_listened);
-            self.by_day = browsed.by_day.into();
-            self.suggestions = browsed.suggestions;
-            self.unheld = browsed.unheld.into();
-            self.sung = browsed.sung;
-            self.scoped = browsed.scoped.into();
-            self.albums_counted = browsed.albums_counted;
-            self.artists_counted = browsed.artists_counted;
-            self.tracks_measured = browsed.tracks_measured;
-            self.scoped_measured = browsed.scoped_measured;
-            self.roots = browsed.roots;
-            self.release_tracks = browsed.release_tracks.into();
-            self.release = browsed.release;
-            self.artist = browsed.artist;
-            self.artist_albums = browsed.artist_albums.into();
-            self.artist_totals = browsed.artist_totals;
-            self.album = browsed.album;
-            self.instead = browsed.instead;
-            self.index_the_albums();
+            self.take_the_listing(browsed);
+        } else if let Some(paged) = loaded.paged {
+            self.take_the_page(paged);
             self.index_the_favourites();
-            self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
             self.restate_the_listing();
             self.ask_about_what_is_drawn();
         }
-        self.playlists = loaded.playlists.into();
-        self.lists = loaded.lists.into();
-        self.pictured = loaded.pictured;
-        self.pinned = loaded.pinned.into();
-        self.held = loaded.held;
-        self.entries = loaded.entries.into();
+    }
+
+    fn take_the_shelves(&mut self, shelves: Shelves) {
+        self.wanted = shelves.wanted;
+        if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
+            self.missing_track_rows = missing_track_rows(
+                self.missing_tracks
+                    .iter()
+                    .map(|track| (track.album, track.disc)),
+            )
+            .into();
+        }
+        if renewed(&mut self.unheld_releases, shelves.unheld_releases) {
+            self.unheld_release_rows =
+                unheld_release_rows(self.unheld_releases.iter().map(|release| release.artist))
+                    .into();
+        }
+        self.missing = shelves.missing;
+        renewed(&mut self.playlists, shelves.playlists);
+        renewed(&mut self.lists, shelves.lists);
+        self.pictured = shelves.pictured;
+        renewed(&mut self.pinned, shelves.pinned);
+        self.held = shelves.held;
+        renewed(&mut self.entries, shelves.entries);
         if self.held.is_none() {
             self.opened = None;
         }
     }
 
+    fn take_the_page(&mut self, paged: Paged) {
+        if renewed(&mut self.albums, paged.albums) {
+            self.index_the_albums();
+        }
+        renewed(&mut self.artists, paged.artists);
+        renewed(&mut self.tracks, paged.tracks);
+        renewed(&mut self.scoped, paged.scoped);
+    }
+
+    fn take_the_listing(&mut self, browsed: Browsed) {
+        self.take_the_page(browsed.paged);
+        renewed(&mut self.favourite_albums, browsed.favourite_albums);
+        renewed(&mut self.favourite_artists, browsed.favourite_artists);
+        renewed(&mut self.favourite_tracks, browsed.favourite_tracks);
+        if let Some(standing) = browsed.standing {
+            self.statistics = standing.statistics;
+            self.most_listened = Arc::new(standing.most_listened);
+            if renewed(&mut self.by_day, standing.by_day) {
+                self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
+            }
+            self.suggestions = standing.suggestions;
+            self.roots = standing.roots;
+        }
+        renewed(&mut self.unheld, browsed.unheld);
+        self.sung = browsed.sung;
+        self.albums_counted = browsed.albums_counted;
+        self.artists_counted = browsed.artists_counted;
+        self.tracks_measured = browsed.tracks_measured;
+        self.scoped_measured = browsed.scoped_measured;
+        renewed(&mut self.release_tracks, browsed.release_tracks);
+        self.release = browsed.release;
+        self.artist = browsed.artist;
+        renewed(&mut self.artist_albums, browsed.artist_albums);
+        self.artist_totals = browsed.artist_totals;
+        self.album = browsed.album;
+        self.instead = browsed.instead;
+        self.index_the_favourites();
+        self.restate_the_listing();
+        self.ask_about_what_is_drawn();
+    }
+
     fn index_the_albums(&mut self) {
-        self.read_albums = Recent::new(ALBUMS_HELD);
         self.album_at.clear();
         for (at, album) in self.albums.iter().enumerate() {
             self.album_at.insert(album.id, at);
@@ -4378,32 +4439,34 @@ fn walk(
 }
 
 fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Result<Loaded> {
-    let Asked {
-        text,
-        album,
-        artist,
-        opened,
-        order,
-        reading,
-        sorting,
-        reach,
-        window,
-    } = asked;
-    let narrowing = text.as_deref();
+    let narrowing = asked.text.as_deref();
 
-    let browsed = match wanted {
-        Wanted::Everything => Some(browsed(
-            library,
-            album,
-            artist,
-            text.clone(),
-            sorting,
-            reach,
-            window,
-        )?),
-        Wanted::ThePlaylists => None,
+    let (browsed, paged) = match wanted {
+        Wanted::ThePage => (None, Some(paged(library, &asked)?)),
+        wanted if wanted.reads_the_listing() => (
+            Some(browsed(library, &asked, wanted.reads_what_stands())?),
+            None,
+        ),
+        _ => (None, None),
     };
-    let (held, entries) = match opened {
+    let shelves = match wanted.reads_the_shelves() {
+        true => Some(shelves(library, &asked, narrowing)?),
+        false => None,
+    };
+
+    Ok(Loaded {
+        browsed,
+        paged,
+        shelves,
+    })
+}
+
+fn shelves(
+    library: &Library,
+    asked: &Asked,
+    narrowing: Option<&str>,
+) -> resonate_library::Result<Shelves> {
+    let (held, entries) = match asked.opened {
         Some(opened) => (
             library.playlist(opened)?,
             library.playlist_entries(opened, narrowing)?,
@@ -4416,13 +4479,12 @@ fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Re
         .map(|want| (want.release_track, want.id))
         .collect();
 
-    let playlists = library.playlists(order, reading, narrowing)?;
+    let playlists = library.playlists(asked.order, asked.reading, narrowing)?;
     let pictured = pictures_of(library, playlists.iter().chain(held.as_ref()))?;
 
-    Ok(Loaded {
-        browsed,
+    Ok(Shelves {
         playlists,
-        lists: library.playlist_lists(order, reading)?,
+        lists: library.playlist_lists(asked.order, asked.reading)?,
         pictured,
         pinned: library.pinned_playlists(PINNED_IN_THE_SIDEBAR)?,
         held,
@@ -4479,40 +4541,82 @@ fn drawn_portrait(library: &Library, id: ArtistId, side: NonZeroU32) -> Option<P
     }
 }
 
+impl Asked {
+    fn listing(
+        &self,
+        album: Option<AlbumId>,
+        artist: Option<ArtistId>,
+        limit: Option<usize>,
+    ) -> TrackQuery {
+        TrackQuery {
+            album,
+            artist,
+            text: self.text.clone(),
+            sort: self.sorting.tracks,
+            reading: self.sorting.tracks_read,
+            limit,
+            offset: 0,
+        }
+    }
+
+    fn scoping(&self) -> bool {
+        self.album.is_some() || self.artist.is_some()
+    }
+
+    fn albums(&self) -> AlbumQuery {
+        AlbumQuery {
+            artist: None,
+            text: self.text.clone(),
+            sort: self.sorting.albums,
+            reading: self.sorting.albums_read,
+            limit: Some(self.reach),
+            offset: 0,
+        }
+    }
+
+    fn artists(&self) -> ArtistQuery {
+        ArtistQuery {
+            text: self.text.clone(),
+            sort: self.sorting.artists,
+            reading: self.sorting.artists_read,
+            limit: Some(self.reach),
+            offset: 0,
+        }
+    }
+}
+
+fn paged(library: &Library, asked: &Asked) -> resonate_library::Result<Paged> {
+    let reach = Some(asked.reach);
+    Ok(Paged {
+        albums: library.albums(&asked.albums())?,
+        artists: library.artists(&asked.artists())?,
+        tracks: library.tracks(&asked.listing(None, None, reach))?,
+        scoped: match asked.scoping() {
+            true => library.tracks(&asked.listing(asked.album, asked.artist, reach))?,
+            false => Vec::new(),
+        },
+    })
+}
+
+fn standing(library: &Library, window: Window) -> resonate_library::Result<Standing> {
+    Ok(Standing {
+        statistics: library.statistics(window)?,
+        most_listened: library.most_listened(window, MOST_LISTENED)?,
+        by_day: library.listening_by_day(window)?,
+        suggestions: library.suggestions()?,
+        roots: library.roots()?,
+    })
+}
+
 fn browsed(
     library: &Library,
-    album: Option<AlbumId>,
-    artist: Option<ArtistId>,
-    text: Option<String>,
-    sorting: Sorting,
-    reach: usize,
-    window: Window,
+    asked: &Asked,
+    with_what_stands: bool,
 ) -> resonate_library::Result<Browsed> {
-    let listing = |album, artist, limit| TrackQuery {
-        album,
-        artist,
-        text: text.clone(),
-        sort: sorting.tracks,
-        reading: sorting.tracks_read,
-        limit,
-        offset: 0,
-    };
-    let scoping = album.is_some() || artist.is_some();
-    let albums_asked = AlbumQuery {
-        artist: None,
-        text: text.clone(),
-        sort: sorting.albums,
-        reading: sorting.albums_read,
-        limit: Some(reach),
-        offset: 0,
-    };
-    let artists_asked = ArtistQuery {
-        text: text.clone(),
-        sort: sorting.artists,
-        reading: sorting.artists_read,
-        limit: Some(reach),
-        offset: 0,
-    };
+    let text = asked.text.as_deref();
+    let (album, artist) = (asked.album, asked.artist);
+    let albums_asked = asked.albums();
+    let artists_asked = asked.artists();
     let favourite_albums_asked = AlbumQuery {
         sort: AlbumOrder::Favourited,
         reading: AlbumOrder::Favourited.reads(),
@@ -4528,57 +4632,47 @@ fn browsed(
     let favourite_tracks_asked = TrackQuery {
         sort: SortOrder::Favourited,
         reading: SortOrder::Favourited.reads(),
-        ..listing(None, None, Some(FAVOURITES_AT_MOST))
+        ..asked.listing(None, None, Some(FAVOURITES_AT_MOST))
     };
-    let tracks_measured = library.measured(&listing(None, None, None))?;
-    let unheld = match text.as_deref() {
+
+    let tracks_measured = library.measured(&asked.listing(None, None, None))?;
+    let unheld = match text {
         Some(text) => library.unheld_matching(text, Some(UNHELD_MATCHED_AT_MOST))?,
         None => Vec::new(),
     };
-    let sung = match text.as_deref() {
+    let sung = match text {
         Some(text) => library.sung(text)?,
         None => None,
     };
-    let albums = library.albums(&albums_asked)?;
-    let artists = library.artists(&artists_asked)?;
-    let tracks = library.tracks(&listing(None, None, Some(reach)))?;
-    let matched_nothing = albums.is_empty()
-        && artists.is_empty()
-        && tracks.is_empty()
+    let paged = paged(library, asked)?;
+    let matched_nothing = paged.albums.is_empty()
+        && paged.artists.is_empty()
+        && paged.tracks.is_empty()
         && unheld.is_empty()
         && sung.is_none();
 
     Ok(Browsed {
-        instead: match text.as_deref().filter(|_| matched_nothing) {
+        instead: match text.filter(|_| matched_nothing) {
             Some(text) => library.did_you_mean(text)?,
             None => None,
         },
         albums_counted: library.albums_counted(&albums_asked)?,
         artists_counted: library.artists_counted(&artists_asked)?,
         tracks_measured,
-        scoped_measured: if scoping {
-            library.measured(&listing(album, artist, None))?
-        } else {
-            tracks_measured
+        scoped_measured: match asked.scoping() {
+            true => library.measured(&asked.listing(album, artist, None))?,
+            false => tracks_measured,
         },
         favourite_albums: library.favourite_albums(&favourite_albums_asked)?,
         favourite_artists: library.favourite_artists(&favourite_artists_asked)?,
         favourite_tracks: library.favourite_tracks(&favourite_tracks_asked)?,
-        statistics: library.statistics(window)?,
-        most_listened: library.most_listened(window, MOST_LISTENED)?,
-        by_day: library.listening_by_day(window)?,
-        suggestions: library.suggestions()?,
+        standing: match with_what_stands {
+            true => Some(standing(library, asked.window)?),
+            false => None,
+        },
         unheld,
         sung,
-        albums,
-        artists,
-        tracks,
-        scoped: if scoping {
-            library.tracks(&listing(album, artist, Some(reach)))?
-        } else {
-            Vec::new()
-        },
-        roots: library.roots()?,
+        paged,
         release_tracks: match album {
             Some(album) => library.release_tracks(album)?,
             None => Vec::new(),
@@ -4687,6 +4781,14 @@ pub(crate) type Picture = Arc<RenderImage>;
 pub(crate) struct AtSide<K> {
     pub(crate) key: K,
     pub(crate) side: NonZeroU32,
+}
+
+fn renewed<T: PartialEq>(held: &mut Arc<[T]>, read: Vec<T>) -> bool {
+    if **held == *read {
+        return false;
+    }
+    *held = read.into();
+    true
 }
 
 pub(crate) fn picture_of(raster: Raster) -> Option<Picture> {
@@ -4799,9 +4901,49 @@ mod tests {
 
     use super::{
         Arranging, Beyond, Change, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching,
-        Shared, arranged, beyond_the_listing, headed_by_disc, held_at, held_in, landed_since,
-        missing_track_rows, on_the_clipboard, unheld_release_rows,
+        Shared, Wanted, arranged, beyond_the_listing, headed_by_disc, held_at, held_in,
+        landed_since, missing_track_rows, on_the_clipboard, renewed, unheld_release_rows,
     };
+
+    #[test]
+    fn a_read_asked_for_while_another_runs_covers_what_both_would_have_read() {
+        let every = [
+            Wanted::Everything,
+            Wanted::TheSearch,
+            Wanted::ThePage,
+            Wanted::ThePlaylists,
+        ];
+        for one in every {
+            for other in every {
+                let both = one.with(other);
+                assert_eq!(both, other.with(one));
+                for part in [one, other] {
+                    assert!(!part.reads_the_listing() || both.reads_the_listing());
+                    assert!(!part.reads_what_stands() || both.reads_what_stands());
+                    assert!(!part.reads_the_shelves() || both.reads_the_shelves());
+                    assert!(
+                        part != Wanted::ThePage
+                            || both.reads_the_listing()
+                            || both == Wanted::ThePage,
+                        "{one:?} with {other:?} dropped the page"
+                    );
+                }
+            }
+        }
+        assert_eq!(Wanted::ThePage.with(Wanted::ThePage), Wanted::ThePage);
+        assert!(!Wanted::TheSearch.reads_what_stands());
+    }
+
+    #[test]
+    fn a_list_read_again_the_same_is_left_where_it_stood() {
+        let mut held: std::sync::Arc<[u32]> = vec![1, 2, 3].into();
+        let before = std::sync::Arc::clone(&held);
+
+        assert!(!renewed(&mut held, vec![1, 2, 3]));
+        assert!(std::sync::Arc::ptr_eq(&held, &before));
+        assert!(renewed(&mut held, vec![1, 2]));
+        assert_eq!(*held, [1, 2]);
+    }
 
     #[test]
     fn a_lookup_that_kept_lyrics_says_how_many_tracks_it_kept_them_for() {

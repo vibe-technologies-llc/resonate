@@ -834,18 +834,28 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **A narrower read never cancels a wider one.** A read replaces `_load`, dropping the one in flight —
   right between two whole reads, but it lost the browse panes where a playlist edit's `ThePlaylists` read
   landed on top of a scan's closing `Everything`: the listing kept the rows the scan had just pruned.
-  `reading_everything` is what the model remembers, and a read asked while it is set reads everything.
-- **A read of the library says how much it wants.** `LibraryModel::read` takes a `Wanted`: `Everything`
-  reads albums, artists, tracks and roots beside the playlists; `ThePlaylists` reads the listing, the
-  opened playlist and its entries alone, leaving the browse panes where they stand. Every gesture behind
-  `LibraryModel::edit` writes to `playlists`, `playlist_entries` or `playlist_queries` and nothing else,
-  so an edit, a listing-order change and opening a playlist take the narrower one; a search, a selection,
-  a scan, a counted play and forgetting a root take the whole, each moving a browse pane.
-  `Loaded::browsed` is `None` where the browse panes were not read, so `take` tells what came back empty
-  from what was never asked.
+  `in_flight` is what the model remembers, and a read asked while one runs reads what both would have
+  — `Wanted::with`, `Everything` over anything, two of a kind as they are, and any other pair
+  `TheSearch`, which covers both
+  (`a_read_asked_for_while_another_runs_covers_what_both_would_have_read`).
+- **A read of the library says how much it wants.** `LibraryModel::read` takes a `Wanted`:
+  `Everything` reads the browse panes, what stands whatever is typed — the statistics, the most
+  listened, the days, the suggestions and the roots (`Standing`) — and the shelves: the playlists, the
+  wants and the missing (`Shelves`). `TheSearch` reads the browse panes and the shelves and leaves the
+  standing — a keystroke, a selection, a sort and a favourite, none of which move it, so a search no
+  longer asks for the week's statistics each time. `ThePage` reads the four lists `reach` bounds —
+  albums, artists, tracks, the scoped tracks (`Paged`) — alone, for `reach_further`, their counts and
+  every other pane standing still. `ThePlaylists` reads the shelves alone. Every gesture behind
+  `LibraryModel::edit` writes to `playlists`, `playlist_entries` or `playlist_queries` and nothing
+  else, so an edit, a listing-order change and opening a playlist take that; a scan, a counted play,
+  a window of time and forgetting a root take the whole. `Loaded` carries each part as an `Option`, so
+  `take` tells what came back empty from what was never asked, and `renewed` swaps a list's `Arc`
+  only where what came back differs, so a read that moved nothing leaves every pane's rows, the
+  album index and the chart where they stood
+  (`a_list_read_again_the_same_is_left_where_it_stood`).
 - **A read the typing asked for waits for the typing to stop; every other runs at once.**
   `LibraryModel::set_query` is `read_after`'s one caller, and `SEARCH_SETTLE` is the 150 ms it holds the
-  read, so ten characters cost one pass over albums, artists, tracks, roots, the playlist index with its
+  read, so ten characters cost one pass over albums, artists, tracks, the playlist index with its
   `count(*)` per saved query and the opened playlist's entries, not ten. What a keystroke does move is
   `Search::read` and the query beside it — a handful of tokens — so the *Reads* row and a pane's own
   narrowed reading are live as typed and only the SQLite work settles. The wait lives in the `_load` task,

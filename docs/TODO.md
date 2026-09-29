@@ -40,9 +40,6 @@ service or a format — and is not worked until that moves; everything else is o
   copies the whole file, and one with a second name twice
 
 ## Performance and scale
-- `browsed` reads albums, artists, tracks, three favourites lists, the statistics and the
-  suggestions — some twenty-two queries — on every search keystroke, page grown and favourite,
-  and `take` swaps every `Arc` whether it moved or not
 - The queue pane's length and its sort chips read the catalog for every queue row on the UI thread,
   past a 4 096-row cache, so a 20 000-row queue is some 40 000 reads that freeze the window
 - Every setting written is a locked read-modify-write with two `sync_all`s on the UI thread, so
