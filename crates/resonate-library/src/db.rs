@@ -3466,19 +3466,34 @@ pub(crate) fn measured(inner: &Inner, query: &TrackQuery) -> Result<Measured> {
     let Some(scoped) = scoped(query, None) else {
         return Ok(Measured::default());
     };
-    let sql = format!(
-        "SELECT count(*), sum(seconds), sum(lossless) FROM
-         (SELECT tracks.duration * 1.0 / tracks.sample_rate AS seconds,
-                 tracks.codec IN ({}) AS lossless{}
-          ORDER BY {} LIMIT ? OFFSET ?)",
-        lossless_codes(),
-        scoped.from,
-        order_by(query.sort, query.reading, scoped.ranked)
-    );
+    let whole = query.limit.is_none() && query.offset == 0;
+    let (sql, binds) = match whole {
+        true => (
+            format!(
+                "SELECT count(*), sum(tracks.duration * 1.0 / tracks.sample_rate),
+                        sum(tracks.codec IN ({})){}",
+                lossless_codes(),
+                scoped.from,
+            ),
+            scoped.binds,
+        ),
+        false => (
+            format!(
+                "SELECT count(*), sum(seconds), sum(lossless) FROM
+                 (SELECT tracks.duration * 1.0 / tracks.sample_rate AS seconds,
+                         tracks.codec IN ({}) AS lossless{}
+                  ORDER BY {} LIMIT ? OFFSET ?)",
+                lossless_codes(),
+                scoped.from,
+                order_by(query.sort, query.reading, scoped.ranked)
+            ),
+            paged(scoped.binds, query),
+        ),
+    };
 
     inner.read(|connection| {
         connection
-            .query_row(&sql, params_from_iter(paged(scoped.binds, query)), |row| {
+            .query_row(&sql, params_from_iter(binds), |row| {
                 Ok(Measured {
                     rows: row.get::<_, i64>(0)? as u32,
                     length: played(row.get::<_, Option<f64>>(1)?),

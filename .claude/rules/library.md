@@ -169,7 +169,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   rather than a `measured` pass per candidate. Per table rather than per name because a suggestion
   counts plays and favourites as well as names: a counted play is a `tracks` write and drops it where
   the vocabulary stands, and a catalog written by another process drops both through the data
-  version, whatever table it wrote. `length` is the same `measured` read's total, and `pictured_by` is
+  version, whatever table it wrote. `length` is the same `measured` read's total — an aggregate over
+  the matching rows with no `ORDER BY` wherever the query has no limit or offset, the order mattering
+  only to which rows a bounded query counts, so a candidate is counted without sorting everything it
+  matches — and `pictured_by` is
   `db::pictured_by`: the albums holding a picture that the search's rows fall on, most rows first, up
   to `PICTURED_BY_AT_MOST` (4), passing over an album whose picture — its vault key, or its bytes'
   length and first 256 bytes — another already stood for, then one whose picture merely *looks like*
