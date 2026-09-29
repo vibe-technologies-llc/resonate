@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{cell::Cell as Kept, collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 use gpui::{Context, Task};
 use resonate_core::{
     SampleRate,
-    eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q, sweep},
+    eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q},
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
@@ -182,6 +182,7 @@ pub struct EqualiserModel {
     unsaved: bool,
     revision: u64,
     drawn: Option<Drawn>,
+    peaked: Kept<Option<(u64, f64)>>,
     editing: Option<Editing>,
     shaping: Option<usize>,
     chosen: Option<usize>,
@@ -213,6 +214,7 @@ impl EqualiserModel {
             unsaved: false,
             revision: 0,
             drawn: None,
+            peaked: Kept::new(None),
             editing: None,
             shaping: None,
             chosen: None,
@@ -395,9 +397,7 @@ impl EqualiserModel {
         }
 
         let curve: Arc<[f64]> = match self.shown() {
-            Some(profile) => sweep(CURVE_COLUMNS)
-                .map(|hertz| profile.magnitude_db(hertz, rate))
-                .collect(),
+            Some(profile) => profile.response(rate, CURVE_COLUMNS).into(),
             None => vec![0.0; CURVE_COLUMNS].into(),
         };
         self.drawn = Some(Drawn {
@@ -409,8 +409,16 @@ impl EqualiserModel {
     }
 
     pub fn peak_db(&self) -> f64 {
-        self.shown()
-            .map_or(0.0, |profile| profile.peak_db(DRAWN_AT))
+        if let Some((revision, peak)) = self.peaked.get()
+            && revision == self.revision
+        {
+            return peak;
+        }
+        let peak = self
+            .shown()
+            .map_or(0.0, |profile| profile.peak_db(DRAWN_AT));
+        self.peaked.set(Some((self.revision, peak)));
+        peak
     }
 
     pub fn equalisation(&self) -> Equalisation {

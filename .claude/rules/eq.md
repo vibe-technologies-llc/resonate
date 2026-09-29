@@ -435,7 +435,11 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 - **The response is computed when the profile changes, not per frame**, keyed on a revision counter
   beside the rate — the `PlayerModel::condensed` rule, for 192 points of up to 32 biquads at 60 Hz.
   The curve is drawn *with* the preamp, as the signal gets it; the peak beside it is what the bands
-  reach before the preamp, what *Fit* sets it from.
+  reach before the preamp, what *Fit* sets it from, and is kept against the same revision
+  (`EqualiserModel::peaked`), so a render of the Bands group sweeps nothing. `Profile::response` and
+  `Profile::peak_db` design each band once per sweep and turn each point's angle into its sines and
+  cosines once for every section (`Turned`), where the sweep had designed every band again at each
+  of its 256 points.
 - **One shared `Field` and an `Editing { row, cell }` cursor edit every cell** — ten bands times
   three numeric cells would be thirty entities where `RootView` holds three. A press opens the field
   in place, enter commits, escape and a press outside cancel, and a value outside its newtype's

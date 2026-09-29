@@ -53,8 +53,6 @@ service or a format — and is not worked until that moves; everything else is o
   a hundred by default
 - A cover for `mpris:artUrl` is written and `sync_all`ed on the poll thread, under the lock every
   `Metadata` read takes
-- The equaliser's `peak_db` designs every band again at each of 256 points on every render of the
-  Bands group
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
   paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
 

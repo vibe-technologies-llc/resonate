@@ -535,9 +535,12 @@ impl Biquad {
     }
 
     pub fn magnitude_db(self, hertz: f64, rate: SampleRate) -> f64 {
-        let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
-        let above = squared_modulus(self.b0, self.b1, self.b2, angle);
-        let below = squared_modulus(1.0, self.a1, self.a2, angle);
+        self.magnitude_db_at(Turned::at(hertz, rate))
+    }
+
+    fn magnitude_db_at(self, turned: Turned) -> f64 {
+        let above = turned.squared_modulus(self.b0, self.b1, self.b2);
+        let below = turned.squared_modulus(1.0, self.a1, self.a2);
         if above <= 0.0 || below <= 0.0 {
             return SILENT_DB;
         }
@@ -547,10 +550,32 @@ impl Biquad {
 
 const SILENT_DB: f64 = -400.0;
 
-fn squared_modulus(zeroth: f64, first: f64, second: f64, angle: f64) -> f64 {
-    let real = zeroth + first * angle.cos() + second * (2.0 * angle).cos();
-    let imaginary = first * angle.sin() + second * (2.0 * angle).sin();
-    real * real + imaginary * imaginary
+#[derive(Clone, Copy)]
+struct Turned {
+    cos: f64,
+    sin: f64,
+    cos_twice: f64,
+    sin_twice: f64,
+}
+
+impl Turned {
+    fn at(hertz: f64, rate: SampleRate) -> Self {
+        let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
+        let (sin, cos) = angle.sin_cos();
+        let (sin_twice, cos_twice) = (2.0 * angle).sin_cos();
+        Self {
+            cos,
+            sin,
+            cos_twice,
+            sin_twice,
+        }
+    }
+
+    fn squared_modulus(self, zeroth: f64, first: f64, second: f64) -> f64 {
+        let real = zeroth + first * self.cos + second * self.cos_twice;
+        let imaginary = first * self.sin + second * self.sin_twice;
+        real * real + imaginary * imaginary
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -667,22 +692,20 @@ impl Profile {
     }
 
     pub fn magnitude_db(&self, hertz: f64, rate: SampleRate) -> f64 {
-        self.preamp.decibels()
-            + self
-                .designed(rate)
-                .map(|section| section.magnitude_db(hertz, rate))
-                .sum::<f64>()
+        self.preamp.decibels() + shaped_db(&self.designed(rate).collect::<Vec<_>>(), hertz, rate)
     }
 
     pub fn response(&self, rate: SampleRate, points: usize) -> Vec<f64> {
+        let sections: Vec<Biquad> = self.designed(rate).collect();
         sweep(points)
-            .map(|hertz| self.magnitude_db(hertz, rate))
+            .map(|hertz| self.preamp.decibels() + shaped_db(&sections, hertz, rate))
             .collect()
     }
 
     pub fn peak_db(&self, rate: SampleRate) -> f64 {
+        let sections: Vec<Biquad> = self.designed(rate).collect();
         sweep(RESPONSE_POINTS).fold(f64::NEG_INFINITY, |highest, hertz| {
-            highest.max(self.magnitude_db(hertz, rate) - self.preamp.decibels())
+            highest.max(shaped_db(&sections, hertz, rate))
         })
     }
 
@@ -693,6 +716,14 @@ impl Profile {
         }
         Preamp::from_decibels(-peak).unwrap_or(Preamp::NONE)
     }
+}
+
+fn shaped_db(sections: &[Biquad], hertz: f64, rate: SampleRate) -> f64 {
+    let turned = Turned::at(hertz, rate);
+    sections
+        .iter()
+        .map(|section| section.magnitude_db_at(turned))
+        .sum()
 }
 
 pub const RESPONSE_POINTS: usize = 256;
