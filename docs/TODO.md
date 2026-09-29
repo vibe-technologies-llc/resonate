@@ -25,8 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Formats
 - `INDEX 00` is thrown away, so a pregap between two tracks of one file plays as the tail of the row
   before it
-- A cue `FILE` naming a file in a subfolder of the sheet's is looked for beside the sheet alone, so a
-  sheet at an album's root cutting `CD1/01.flac` claims nothing
 - RF64, BW64 and Wave64 are refused as unrecognised, so a WAVE past 4 GiB will not open; symphonia
   reads none of them, and a reader of the crate's own would, as it does for Monkey's Audio
 - A DSF's or a DSDIFF's cover in its ID3 `APIC` is never offered, `MAX_METADATA_BYTES` cuts a large

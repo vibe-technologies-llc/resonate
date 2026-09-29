@@ -1185,7 +1185,9 @@ fn left_standing(refused: &Refused, roots: &[PathBuf]) -> String {
     let why = stands_because(&refused.refusal);
 
     match &refused.refusal {
-        Refusal::Collided { with } | Refusal::SharesASheet { sheet: with } => {
+        Refusal::Collided { with }
+        | Refusal::SharesASheet { sheet: with }
+        | Refusal::NamedFromAbove { sheet: with } => {
             format!("{standing}: {why} {}", under_its_root(with, roots))
         }
         Refusal::Unmoved { kind } => format!("{standing}: {why} ({kind})"),
@@ -1199,6 +1201,7 @@ const fn stands_because(refusal: &Refusal) -> &'static str {
         Refusal::Loose => "it would land loose in the root",
         Refusal::Collided { .. } => "it would collide with",
         Refusal::SharesASheet { .. } => "it would be split from another file named by",
+        Refusal::NamedFromAbove { .. } => "it is cut by a sheet in a folder above it,",
         Refusal::SourceGone => "it is no longer where the catalog says",
         Refusal::Unmoved { .. } => "the volume refused the move",
     }

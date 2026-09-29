@@ -12,12 +12,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
     Codec, CueFile, CueNaming, CueSheet, MediaInfo, Scanned, Sources, TagSet, probe_scanned,
-    read_cue, the_best_a_cue_names, the_one_a_cue_names,
+    read_cue, the_best_a_cue_names, the_folder_a_cue_names, the_one_a_cue_names,
 };
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::params;
@@ -749,6 +749,7 @@ fn walk(
     } = *walking;
     let root = &walking.root.path;
     let mut stack = vec![(root.clone(), 1_u8, root.parent().and_then(volumes::device))];
+    let mut claimed_from_above = AHashSet::new();
 
     while let Some((directory, depth, outer)) = stack.pop() {
         if progress.is_cancelled() {
@@ -838,7 +839,7 @@ fn walk(
             }
         }
 
-        if !directory_of(walking, &sheets, &audio)? {
+        if !directory_of(walking, &sheets, &audio, &mut claimed_from_above)? {
             return Ok(false);
         }
     }
@@ -897,25 +898,52 @@ fn directory_of(
     walking: &Walking<'_>,
     sheets: &[(PathBuf, Metadata)],
     audio: &[(PathBuf, Metadata)],
+    claimed_from_above: &mut AHashSet<PathBuf>,
 ) -> Result<bool> {
     let mut claimed = AHashSet::new();
+    let mut below: AHashMap<PathBuf, Vec<(PathBuf, Metadata)>> = AHashMap::new();
     for (path, metadata) in sheets {
+        let Some(folder) = path.parent() else {
+            continue;
+        };
         let Some(sheet) = read_sheet(path) else {
             continue;
         };
         let touched = metadata.modified().unwrap_or(UNIX_EPOCH);
 
         for cut in &sheet.files {
-            let Some(held) = the_one_a_cue_names(&cut.named, named_in(audio)) else {
+            let within = the_folder_a_cue_names(folder, &cut.named);
+            let beside = within == folder;
+            let candidates = if beside {
+                audio
+            } else {
+                below
+                    .entry(within)
+                    .or_insert_with_key(|within| audio_below(walking, within))
+                    .as_slice()
+            };
+            let Some(held) = the_one_a_cue_names(&cut.named, named_in(candidates)) else {
                 tracing::debug!(
                     sheet = %path.display(),
                     file = %cut.named,
-                    "a cue sheet names a file that is not beside it"
+                    "a cue sheet names a file that is not where it says"
                 );
                 continue;
             };
+            if claimed_from_above.contains(&held.0) {
+                tracing::debug!(
+                    sheet = %path.display(),
+                    file = %held.0.display(),
+                    "a cue sheet names a file a sheet in a folder above already cuts"
+                );
+                continue;
+            }
 
-            claimed.insert(held.0.clone());
+            if beside {
+                claimed.insert(held.0.clone());
+            } else {
+                claimed_from_above.insert(held.0.clone());
+            }
             if !sheet_job(walking, cut, path, held, touched)? {
                 return Ok(false);
             }
@@ -923,7 +951,7 @@ fn directory_of(
     }
 
     for (path, metadata) in audio {
-        if claimed.contains(path) {
+        if claimed.contains(path) || claimed_from_above.remove(path) {
             continue;
         }
         if !whole_file_job(walking, path, metadata)? {
@@ -931,6 +959,30 @@ fn directory_of(
         }
     }
     Ok(true)
+}
+
+fn audio_below(walking: &Walking<'_>, folder: &Path) -> Vec<(PathBuf, Metadata)> {
+    if walking.is_the_vault(folder) {
+        return Vec::new();
+    }
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| {
+                !kind.is_dir() && (walking.options.follow_symlinks || !kind.is_symlink())
+            })
+        })
+        .map(|entry| entry.path())
+        .filter(|path| is_audio(path))
+        .filter_map(|path| {
+            let metadata = fs::metadata(&path).ok()?;
+            metadata.is_file().then_some((path, metadata))
+        })
+        .collect()
 }
 
 fn sheet_job(

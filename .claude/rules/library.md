@@ -268,12 +268,19 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   audio and not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet in a
   directory first, resolves each `FILE` against the sheet's own folder, and only then sends a probe job
   for audio no sheet claimed — which stops one FLAC being stored as an album's worth of rows and as one
-  whole-file row. A `FILE` is matched against the audio beside the sheet by its last component —
-  split on `/` and `\\` alike, so a Windows path or a backslashed folder names the file in the sheet's
-  own folder — through `cue::Naming`: the name exactly, else the name in any case, else the same stem
-  with another extension (a rip converted after its sheet was written, `FILE "ALBUM.WAV"` beside
+  whole-file row. A `FILE` naming a folder below the sheet (`cue::folder_named`, `audio.md`) is
+  matched against the audio listed there, and the claim is kept in the walk's `claimed_from_above`,
+  which that folder's own pass — always later, the walk being depth first with a folder's children
+  pushed before it is read — takes the file out of; a sheet in the lower folder naming a file one
+  above already claims is passed over, so no file is cut twice. Otherwise a `FILE` is matched against
+  the audio beside the sheet by its last component — split on `/` and `\\` alike, so a Windows path
+  names the file in the sheet's own folder — through `cue::Naming`: the name exactly, else the name
+  in any case, else the same stem with another extension (a rip converted after its sheet was written, `FILE "ALBUM.WAV"` beside
   `album.flac`), the closest reading winning and a tie at it naming nothing. `organise` resolves a
-  sheet's claims through the same `scan::claimed_beside`, a stem naming only audio, and
+  sheet's claims through the same `scan::claimed_beside`, a stem naming only audio, and a file a
+  sheet in a folder above cuts is `Refusal::NamedFromAbove` and stays where it is — moving it would
+  leave the sheet naming nothing, and a sheet naming files in two folders is refused as
+  `SharesASheet` for the same reason, the move filing its files into one folder; and
   `cue::renamed` rewrites whichever `FILE` line the moved file answered to. Incrementality weighs the two mtimes
   apart: `tracks.modified` is the audio file's and `tracks.sheet_modified` the sidecar's, NULL where no
   sidecar cut the row. A row is unchanged only where both agree with the walk, so editing a sheet

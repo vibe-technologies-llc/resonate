@@ -19,6 +19,12 @@ const SHEET_EXTENSION: &str = "cue";
 const FILE_COMMAND: &str = "FILE";
 const FIRST_INDEX: u32 = 1;
 const BYTE_ORDER_MARK: char = '\u{feff}';
+const PATH_SEPARATORS: [char; 2] = ['/', '\\'];
+const THIS_FOLDER: &str = ".";
+const PARENT_FOLDER: &str = "..";
+const DRIVE_SEPARATOR: char = ':';
+const MOST_SHEETS_ABOVE: usize = 16;
+pub const DEEPEST_FOLDER_A_SHEET_NAMES: usize = 2;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CueStamp {
@@ -267,12 +273,112 @@ fn beside(sources: &Sources, location: &MediaLocation) -> Option<CueFile> {
     let named = path.file_name()?.to_str()?;
     let stem = path.file_stem()?.to_str()?;
 
-    sheets_beside(path.parent()?, named, stem)
+    let folder = path.parent()?;
+
+    sheets_beside(folder, named, stem)
         .into_iter()
         .find_map(|sheet| {
             let held = read_media(sources, &MediaLocation::local(sheet)).ok()?;
             cut_named(held, named)
         })
+        .or_else(|| above(sources, folder, named))
+}
+
+fn above(sources: &Sources, folder: &Path, named: &str) -> Option<CueFile> {
+    folder
+        .ancestors()
+        .skip(1)
+        .take(DEEPEST_FOLDER_A_SHEET_NAMES)
+        .find_map(|above| {
+            sheets_in(above).into_iter().find_map(|sheet| {
+                let held = read_media(sources, &MediaLocation::local(sheet)).ok()?;
+                cut_named_below(held, above, folder, named)
+            })
+        })
+}
+
+fn sheets_in(folder: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut sheets: Vec<PathBuf> = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file = entry.file_name();
+            let (_, extension) = file.to_str()?.rsplit_once('.')?;
+            extension
+                .eq_ignore_ascii_case(SHEET_EXTENSION)
+                .then(|| entry.path())
+        })
+        .collect();
+    sheets.sort();
+    sheets.truncate(MOST_SHEETS_ABOVE);
+    sheets
+}
+
+fn cut_named_below(sheet: CueSheet, above: &Path, folder: &Path, named: &str) -> Option<CueFile> {
+    let mut cut: Vec<CueFile> = sheet
+        .files
+        .into_iter()
+        .filter(|file| file.audio_tracks().next().is_some())
+        .filter(|file| folder_named(above, &file.named) == folder)
+        .collect();
+
+    let at = the_best_named(
+        cut.iter()
+            .enumerate()
+            .map(|(at, file)| (at, Naming::of(&file.named, named))),
+    )?;
+    Some(cut.swap_remove(at))
+}
+
+pub fn folder_named(beside: &Path, named: &str) -> PathBuf {
+    the_folders_below(named)
+        .and_then(|folders| {
+            folders
+                .into_iter()
+                .try_fold(beside.to_path_buf(), |at, folder| a_folder_in(&at, folder))
+        })
+        .unwrap_or_else(|| beside.to_path_buf())
+}
+
+fn the_folders_below(named: &str) -> Option<Vec<&str>> {
+    if named.starts_with(PATH_SEPARATORS) {
+        return None;
+    }
+    let mut folders: Vec<&str> = named
+        .split(PATH_SEPARATORS)
+        .filter(|part| !part.is_empty() && *part != THIS_FOLDER)
+        .collect();
+    folders.pop()?;
+
+    let out_of_reach = folders.len() > DEEPEST_FOLDER_A_SHEET_NAMES
+        || folders
+            .iter()
+            .any(|folder| *folder == PARENT_FOLDER || folder.contains(DRIVE_SEPARATOR));
+    (!folders.is_empty() && !out_of_reach).then_some(folders)
+}
+
+fn a_folder_in(folder: &Path, named: &str) -> Option<PathBuf> {
+    let exactly = folder.join(named);
+    if fs::symlink_metadata(&exactly).is_ok_and(|held| held.is_dir()) {
+        return Some(exactly);
+    }
+
+    let wanted = folded(named);
+    let mut found = fs::read_dir(folder)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|held| folded(held) == wanted)
+        })
+        .map(|entry| entry.path());
+    let one = found.next()?;
+    found.next().is_none().then_some(one)
 }
 
 fn sheets_beside(folder: &Path, named: &str, stem: &str) -> Vec<PathBuf> {
@@ -370,7 +476,7 @@ pub fn the_best_named<T>(candidates: impl IntoIterator<Item = (T, Option<Naming>
 
 fn the_name_alone(named: &str) -> &str {
     named
-        .rsplit(['/', '\\'])
+        .rsplit(PATH_SEPARATORS)
         .find(|part| !part.is_empty())
         .unwrap_or(named)
 }
@@ -1396,6 +1502,60 @@ FILE "Meddle.flac" WAVE
         assert_eq!(
             found,
             vec![folder.join("ALBUM.CUE"), folder.join("Album.flac.Cue")]
+        );
+    }
+
+    #[test]
+    fn a_file_line_naming_a_folder_below_the_sheet_is_looked_for_there() {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-cue-below-{}", std::process::id()));
+        fs::create_dir_all(folder.join("CD1")).expect("a folder");
+        fs::create_dir_all(folder.join("Disc 2/Audio")).expect("a folder");
+
+        let below = folder_named(&folder, "cd1\\01.flac");
+        let deeper = folder_named(&folder, "./Disc 2/Audio/01.flac");
+        let absent = folder_named(&folder, "CD3/01.flac");
+        let outside = folder_named(&folder, "../CD1/01.flac");
+        let driven = folder_named(&folder, "C:\\CD1\\01.flac");
+        let beside = folder_named(&folder, "01.flac");
+        fs::remove_dir_all(&folder).expect("the folder goes");
+
+        assert_eq!(below, folder.join("CD1"));
+        assert_eq!(deeper, folder.join("Disc 2/Audio"));
+        for held in [absent, outside, driven, beside] {
+            assert_eq!(
+                held, folder,
+                "a name reaching no folder below was not looked for beside"
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_a_sheet_above_it_names_is_cut_by_that_sheet() {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-cue-above-{}", std::process::id()));
+        fs::create_dir_all(folder.join("CD1")).expect("a folder");
+        fs::create_dir_all(folder.join("CD2")).expect("a folder");
+        fs::write(
+            folder.join("Album.cue"),
+            b"FILE \"CD1/01.flac\" WAVE\n TRACK 01 AUDIO\n  TITLE \"One\"\n  INDEX 01 00:00:00\n\
+              FILE \"CD2\\01.flac\" WAVE\n TRACK 02 AUDIO\n  TITLE \"Two\"\n  INDEX 01 00:00:00\n",
+        )
+        .expect("a sheet");
+        for named in ["CD1/01.flac", "CD2/01.flac", "01.flac"] {
+            fs::write(folder.join(named), b"").expect("a file");
+        }
+
+        let sources = Sources::local();
+        let second = beside(&sources, &MediaLocation::local(folder.join("CD2/01.flac")));
+        let loose = beside(&sources, &MediaLocation::local(folder.join("01.flac")));
+        fs::remove_dir_all(&folder).expect("the folder goes");
+
+        assert_eq!(second.map(|cut| cut.named), Some("CD2\\01.flac".to_owned()));
+        assert_eq!(
+            loose.map(|cut| cut.named),
+            None,
+            "a file beside the sheet was cut by a line naming one below it"
         );
     }
 

@@ -479,8 +479,18 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `MediaInfo::cue` the file embeds, else the sheet beside a *local* file — `<stem>.cue`, then
   `<name>.cue`, the extension and the name in any case (`sheets_beside`, one listing of the folder,
   paid only where a span is opened) — whose `FILE` line names it as the scan's matching does
-  (`library.md`), or its only cut where it holds one. A non-filesystem source has no
+  (`library.md`), or its only cut where it holds one — else a sheet in one of the
+  `DEEPEST_FOLDER_A_SHEET_NAMES` (two) folders above whose `FILE` line reaches down to it
+  (`cue::above`, any `.cue` there, the first `MOST_SHEETS_ABOVE` by name), which is how a sheet at
+  an album's root cutting `CD1/01.flac` bills that file's rows. A non-filesystem source has no
   sidecar and keeps the embedded answer or none.
+- **A `FILE` line may name a folder below its sheet.** `cue::folder_named` is the one reading of
+  where a named file lives: a relative name whose folders — split on `/` and `\\` alike, `.`
+  skipped — are at most two deep and each an existing real folder (the exact name, else the one
+  entry equal in any case; a link is not taken) is looked for there, and anything else — a bare
+  name, a Windows or absolute path, `..`, a folder that is not there — beside the sheet by its last
+  component, as before. The scan, the organiser and the decoder all ask it, so the three agree on
+  which file a line names.
 - **A row is probed the way it is played.** `probe_span` is `probe` through the same cut, so the tags
   a queue row draws and plays under come off one reading — `crates/resonate-codec/src/decoder.rs`
   asserts the pair agree. The engine's catalog reads a spanned row through it, which is the whole of

@@ -6537,6 +6537,91 @@ fn a_sheet_that_ends_each_file_with_the_next_tracks_gap_is_scanned_as_one_whole_
     Ok(())
 }
 
+const TWO_DISC_SHEET: &str = "PERFORMER \"Pink Floyd\"\nTITLE \"The Wall\"\nFILE \"CD1/wall.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"In the Flesh?\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"The Thin Ice\"\n    INDEX 01 00:00:40\nFILE \"cd2\\\\wall.wav\" WAVE\n  TRACK 03 AUDIO\n    TITLE \"Hey You\"\n    INDEX 01 00:00:00\n";
+
+fn scanned_two_discs() -> (Tree, Library) {
+    let tree = Tree::new();
+    tree.write("CD1/wall.wav", &Wav::new().frames(44_100).build());
+    tree.write("CD2/wall.wav", &Wav::new().frames(44_100).build());
+    tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
+
+    let library = Library::open_in_memory().expect("an in-memory library");
+    scan(&library, &options(&tree)).expect("a scan of two files a sheet above them cuts");
+    (tree, library)
+}
+
+#[test]
+fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
+    let (tree, library) = scanned_two_discs();
+    let rows = library.tracks(&TrackQuery::default())?;
+
+    let mut held: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.location.as_path().map(Path::to_path_buf),
+                row.span.map(FrameSpan::start),
+                row.title.clone(),
+            )
+        })
+        .collect();
+    held.sort();
+    assert_eq!(
+        held,
+        vec![
+            (
+                Some(tree.path().join("CD1/wall.wav")),
+                Some(Frames::ZERO),
+                "In the Flesh?".to_owned()
+            ),
+            (
+                Some(tree.path().join("CD1/wall.wav")),
+                Some(Frames(44_100 / 75 * 40)),
+                "The Thin Ice".to_owned()
+            ),
+            (
+                Some(tree.path().join("CD2/wall.wav")),
+                Some(Frames::ZERO),
+                "Hey You".to_owned()
+            ),
+        ],
+        "the files below the sheet were not cut as it says"
+    );
+
+    let again = scan(&library, &options(&tree))?;
+    assert_eq!(
+        (again.added, again.updated, again.removed),
+        (0, 0, 0),
+        "an unchanged rescan wrote rows"
+    );
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 3);
+    Ok(())
+}
+
+#[test]
+fn a_file_a_sheet_above_it_cuts_is_left_where_it_stands() -> Result<()> {
+    let (tree, library) = scanned_two_discs();
+
+    let summary = previewed(&library)?;
+    let root = filed_under(&tree);
+    assert!(summary.plan.moves.is_empty(), "{:?}", summary.plan.moves);
+    let mut refused: Vec<Refused> = summary.plan.refused.clone();
+    refused.sort_by(|one, other| one.from.cmp(&other.from));
+    assert_eq!(
+        refused,
+        ["CD1/wall.wav", "CD2/wall.wav"]
+            .iter()
+            .map(|file| Refused {
+                from: root.join(file),
+                refusal: Refusal::NamedFromAbove {
+                    sheet: root.join("The Wall.cue"),
+                },
+            })
+            .collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
 #[test]
 fn a_sheet_naming_its_file_by_another_case_extension_or_folder_still_cuts_it() -> Result<()> {
     let tree = Tree::new();

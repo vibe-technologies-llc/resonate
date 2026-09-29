@@ -16,6 +16,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use resonate_codec::{DEEPEST_FOLDER_A_SHEET_NAMES, the_folder_a_cue_names};
 use resonate_core::{AlbumId, MediaLocation, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
 
@@ -523,6 +524,7 @@ pub enum Refusal {
     Loose,
     Collided { with: PathBuf },
     SharesASheet { sheet: PathBuf },
+    NamedFromAbove { sheet: PathBuf },
     SourceGone,
     Unmoved { kind: io::ErrorKind },
 }
@@ -867,6 +869,11 @@ impl<'a> Planner<'a> {
                 continue;
             }
 
+            if let Some(sheet) = self.sheet_above(first) {
+                self.refuse(first, Refusal::NamedFromAbove { sheet });
+                continue;
+            }
+
             let tied = self.tied_by_sheets(&first.path);
             if tied.sheets.is_empty() {
                 self.file(group);
@@ -898,7 +905,9 @@ impl<'a> Planner<'a> {
                 self.filed.insert(file.clone());
             }
             let held: Vec<&[TrackToFile]> = members.iter().flatten().copied().collect();
-            if members.iter().any(Option::is_none) {
+            let folder = first.path.parent();
+            let across_folders = tied.files.iter().any(|file| file.parent() != folder);
+            if across_folders || members.iter().any(Option::is_none) {
                 self.refuse_the_sheets(&held, &tied, None);
                 continue;
             }
@@ -1279,27 +1288,48 @@ impl<'a> Planner<'a> {
 
     fn sheets_in(&mut self, folder: &Path) -> &[Claiming] {
         if !self.sheets.contains_key(folder) {
-            let files = &listing(&mut self.beside, folder).files;
-            let read: Vec<Claiming> = files
-                .iter()
-                .filter(|file| scan::is_a_sheet(file))
-                .filter_map(|sheet| {
-                    let read = scan::read_sheet(sheet)?;
-                    let files = read
-                        .files
-                        .iter()
-                        .filter_map(|cut| scan::claimed_beside(&cut.named, files))
-                        .cloned()
-                        .collect();
-                    Some(Claiming {
-                        sheet: sheet.clone(),
-                        files,
-                    })
-                })
-                .collect();
+            let files = listing(&mut self.beside, folder).files.clone();
+            let mut read = Vec::new();
+            for sheet in files.iter().filter(|file| scan::is_a_sheet(file)) {
+                let Some(held) = scan::read_sheet(sheet) else {
+                    continue;
+                };
+                let mut claimed = Vec::new();
+                for cut in &held.files {
+                    let within = the_folder_a_cue_names(folder, &cut.named);
+                    let candidates = if within == folder {
+                        &files
+                    } else {
+                        &listing(&mut self.beside, &within).files
+                    };
+                    claimed.extend(scan::claimed_beside(&cut.named, candidates).cloned());
+                }
+                read.push(Claiming {
+                    sheet: sheet.clone(),
+                    files: claimed,
+                });
+            }
             self.sheets.insert(folder.to_path_buf(), read);
         }
         self.sheets.get(folder).map_or(&[], Vec::as_slice)
+    }
+
+    fn sheet_above(&mut self, row: &TrackToFile) -> Option<PathBuf> {
+        let folder = row.path.parent()?;
+        let above: Vec<PathBuf> = folder
+            .ancestors()
+            .skip(1)
+            .take(DEEPEST_FOLDER_A_SHEET_NAMES)
+            .filter(|above| above.starts_with(&row.root))
+            .map(Path::to_path_buf)
+            .collect();
+
+        above.iter().find_map(|above| {
+            self.sheets_in(above)
+                .iter()
+                .find(|claiming| claiming.files.contains(&row.path))
+                .map(|claiming| claiming.sheet.clone())
+        })
     }
 
     fn sidecars(&mut self, from: &Path, to: &Path) -> Vec<Sidecar> {
@@ -1624,9 +1654,9 @@ fn counted(progress: &OrganiseProgress, refusal: &Refusal) {
         Refusal::Unidentified | Refusal::Loose => {
             progress.unidentified.fetch_add(1, Ordering::Relaxed)
         }
-        Refusal::Collided { .. } | Refusal::SharesASheet { .. } => {
-            progress.collided.fetch_add(1, Ordering::Relaxed)
-        }
+        Refusal::Collided { .. }
+        | Refusal::SharesASheet { .. }
+        | Refusal::NamedFromAbove { .. } => progress.collided.fetch_add(1, Ordering::Relaxed),
         Refusal::SourceGone | Refusal::Unmoved { .. } => {
             progress.failed.fetch_add(1, Ordering::Relaxed)
         }
