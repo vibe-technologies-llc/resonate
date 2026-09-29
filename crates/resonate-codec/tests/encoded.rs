@@ -8,8 +8,8 @@ use std::{
 
 use resonate_codec::{
     Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags,
-    ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSink, TagSource,
-    Writing, probe, probe_cover_art, probe_stream,
+    ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSet, TagSink,
+    TagSource, Writing, probe, probe_cover_art, probe_stream,
 };
 use resonate_core::{
     AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
@@ -2692,11 +2692,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         .into_iter()
         .map(|field| TagEdit {
             field,
-            value: match field {
-                TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
-                TagField::DiscNumber | TagField::DiscTotal => "1".to_owned(),
-                _ => format!("{field}"),
-            },
+            value: written_as(field),
         })
         .collect();
     tags.write(
@@ -2777,6 +2773,34 @@ fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
 
         pictured(None, true);
         assert_eq!(read(), None, "{name} kept a cover taken away");
+    }
+}
+
+fn read_back_from_an_ape_tag(read: &TagSet, edits: &[TagEdit]) {
+    for edit in edits {
+        let wanted = match edit.field {
+            TagField::BeatsPerMinute => None,
+            _ => Some(edit.value.as_str()),
+        };
+        assert_eq!(
+            edit.field.read(read).as_deref(),
+            wanted,
+            "{} did not read back as an APE tag holds it",
+            edit.field
+        );
+    }
+}
+
+fn written_as(field: TagField) -> String {
+    match field {
+        TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
+        TagField::DiscNumber | TagField::DiscTotal | TagField::Compilation => "1".to_owned(),
+        TagField::BeatsPerMinute => "120".to_owned(),
+        TagField::ReplayGainTrackGain => "-6.50 dB".to_owned(),
+        TagField::ReplayGainAlbumGain => "-7.25 dB".to_owned(),
+        TagField::ReplayGainTrackPeak => "0.988547".to_owned(),
+        TagField::ReplayGainAlbumPeak => "0.999969".to_owned(),
+        _ => format!("{field}"),
     }
 }
 
@@ -3271,11 +3295,7 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         .into_iter()
         .map(|field| TagEdit {
             field,
-            value: match field {
-                TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
-                TagField::DiscNumber | TagField::DiscTotal => "1".to_owned(),
-                _ => format!("{field}"),
-            },
+            value: written_as(field),
         })
         .collect();
     tags.write(
@@ -3294,14 +3314,7 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         .read(&location, Picturing::Whether)
         .expect("a readable WavPack file")
         .tags;
-    for edit in &edits {
-        assert_eq!(
-            edit.field.read(&read).as_deref(),
-            Some(edit.value.as_str()),
-            "{} did not read back as it was written",
-            edit.field
-        );
-    }
+    read_back_from_an_ape_tag(&read, &edits);
     assert_eq!(
         decode(&path).samples,
         before,
@@ -3511,11 +3524,7 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         .into_iter()
         .map(|field| TagEdit {
             field,
-            value: match field {
-                TagField::TrackNumber | TagField::TrackTotal => "6".to_owned(),
-                TagField::DiscNumber | TagField::DiscTotal => "1".to_owned(),
-                _ => format!("{field}"),
-            },
+            value: written_as(field),
         })
         .collect();
     tags.write(
@@ -3534,14 +3543,7 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         .read(&location, Picturing::Whether)
         .expect("a readable Monkey's Audio file")
         .tags;
-    for edit in &edits {
-        assert_eq!(
-            edit.field.read(&read).as_deref(),
-            Some(edit.value.as_str()),
-            "{} did not read back as it was written",
-            edit.field
-        );
-    }
+    read_back_from_an_ape_tag(&read, &edits);
     assert_eq!(
         decode(&path).samples,
         before,

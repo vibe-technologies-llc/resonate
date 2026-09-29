@@ -1370,6 +1370,18 @@ two DSD containers, which lofty cannot write, are passed over. `Library::retag` 
 `resonate tag`, a preview until `--apply`, as `organise` is; the settings pane's *Tagging* group
 under Library is the window's way in, with the same preview-then-arm shape *Organising* has.
 
+**Every field the `TagSet` names a writer can reach is a `TagField`**, thirty-six of them: the names,
+numbers, date, label and identifiers, and genre, the seven credits, comment, BPM, compilation,
+grouping, copyright and the four ReplayGain values. `TagField::read` spells each as it is written, so
+a write is weighed against the file in the same text: a compilation is `1`, a gain
+`spelled_gain`'s `+x.xx dB` and a peak `spelled_peak`'s six places. `TagField::key_in` is the lofty
+key a field takes in a tag kind — BPM is `Bpm` in a Vorbis comment, `IntegerBpm` in ID3 and MP4 —
+and answers `None` where lofty has no key for it there: an APE tag's BPM, which lofty 0.25 cannot
+spell. lofty maps no ID3 frame to a performer either (it would be `TMCL`). Such a field is not
+written and its read-back leaves the row `Unwritten::Unconfirmed`, as any quirk does; the round-trip
+tests name them (`UNHELD_BY_ID3`, `read_back_from_an_ape_tag`) rather than skip them. A name is
+append-only once shipped: the undo record keeps fields by `TagField::as_str`.
+
 - **A guess is never written, so a name is written only where a lookup answered for the row holding
   it.** `tracks.title` falls back to the stem where the tags named nothing and `albums.title` to
   whatever grouped the folder, so writing either back would put this build's own reading into the

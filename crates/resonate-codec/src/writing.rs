@@ -19,7 +19,7 @@ use lofty::{
     probe::Probe,
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
-use resonate_core::MediaLocation;
+use resonate_core::{Decibels, MediaLocation};
 use rustix::fs::XattrFlags;
 
 use crate::{
@@ -51,10 +51,29 @@ pub enum TagField {
     MusicBrainzArtistId,
     MusicBrainzAlbumArtistId,
     MusicBrainzReleaseGroupId,
+    Genre,
+    Composer,
+    Conductor,
+    Lyricist,
+    Performer,
+    Remixer,
+    Engineer,
+    Producer,
+    Comment,
+    BeatsPerMinute,
+    Compilation,
+    Grouping,
+    Copyright,
+    ReplayGainTrackGain,
+    ReplayGainTrackPeak,
+    ReplayGainAlbumGain,
+    ReplayGainAlbumPeak,
 }
 
+const COMPILED: &str = "1";
+
 impl TagField {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 36] = [
         Self::Title,
         Self::Artist,
         Self::Album,
@@ -74,6 +93,23 @@ impl TagField {
         Self::MusicBrainzArtistId,
         Self::MusicBrainzAlbumArtistId,
         Self::MusicBrainzReleaseGroupId,
+        Self::Genre,
+        Self::Composer,
+        Self::Conductor,
+        Self::Lyricist,
+        Self::Performer,
+        Self::Remixer,
+        Self::Engineer,
+        Self::Producer,
+        Self::Comment,
+        Self::BeatsPerMinute,
+        Self::Compilation,
+        Self::Grouping,
+        Self::Copyright,
+        Self::ReplayGainTrackGain,
+        Self::ReplayGainTrackPeak,
+        Self::ReplayGainAlbumGain,
+        Self::ReplayGainAlbumPeak,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -97,6 +133,23 @@ impl TagField {
             Self::MusicBrainzArtistId => "musicbrainz artist id",
             Self::MusicBrainzAlbumArtistId => "musicbrainz album artist id",
             Self::MusicBrainzReleaseGroupId => "musicbrainz release group id",
+            Self::Genre => "genre",
+            Self::Composer => "composer",
+            Self::Conductor => "conductor",
+            Self::Lyricist => "lyricist",
+            Self::Performer => "performer",
+            Self::Remixer => "remixer",
+            Self::Engineer => "engineer",
+            Self::Producer => "producer",
+            Self::Comment => "comment",
+            Self::BeatsPerMinute => "bpm",
+            Self::Compilation => "compilation",
+            Self::Grouping => "grouping",
+            Self::Copyright => "copyright",
+            Self::ReplayGainTrackGain => "replaygain track gain",
+            Self::ReplayGainTrackPeak => "replaygain track peak",
+            Self::ReplayGainAlbumGain => "replaygain album gain",
+            Self::ReplayGainAlbumPeak => "replaygain album peak",
         }
     }
 
@@ -125,6 +178,31 @@ impl TagField {
             Self::MusicBrainzArtistId => tags.musicbrainz_artist_id.clone(),
             Self::MusicBrainzAlbumArtistId => tags.musicbrainz_album_artist_id.clone(),
             Self::MusicBrainzReleaseGroupId => tags.musicbrainz_release_group_id.clone(),
+            Self::Genre => tags.genre.clone(),
+            Self::Composer => tags.credits.composer.clone(),
+            Self::Conductor => tags.credits.conductor.clone(),
+            Self::Lyricist => tags.credits.lyricist.clone(),
+            Self::Performer => tags.credits.performer.clone(),
+            Self::Remixer => tags.credits.remixer.clone(),
+            Self::Engineer => tags.credits.engineer.clone(),
+            Self::Producer => tags.credits.producer.clone(),
+            Self::Comment => tags.comment.clone(),
+            Self::BeatsPerMinute => tags.beats_per_minute.map(|beats| beats.to_string()),
+            Self::Compilation => tags.compilation.then(|| COMPILED.to_owned()),
+            Self::Grouping => tags.grouping.clone(),
+            Self::Copyright => tags.copyright.clone(),
+            Self::ReplayGainTrackGain => tags.replay_gain.track_gain.map(spelled_gain),
+            Self::ReplayGainTrackPeak => tags.replay_gain.track_peak.map(spelled_peak),
+            Self::ReplayGainAlbumGain => tags.replay_gain.album_gain.map(spelled_gain),
+            Self::ReplayGainAlbumPeak => tags.replay_gain.album_peak.map(spelled_peak),
+        }
+    }
+
+    fn key_in(self, kind: TagType) -> Option<ItemKey> {
+        match (self, kind) {
+            (Self::BeatsPerMinute, TagType::VorbisComments) => Some(ItemKey::Bpm),
+            (Self::BeatsPerMinute, TagType::Ape) => None,
+            (field, _) => Some(field.key()),
         }
     }
 
@@ -149,8 +227,33 @@ impl TagField {
             Self::MusicBrainzArtistId => ItemKey::MusicBrainzArtistId,
             Self::MusicBrainzAlbumArtistId => ItemKey::MusicBrainzReleaseArtistId,
             Self::MusicBrainzReleaseGroupId => ItemKey::MusicBrainzReleaseGroupId,
+            Self::Genre => ItemKey::Genre,
+            Self::Composer => ItemKey::Composer,
+            Self::Conductor => ItemKey::Conductor,
+            Self::Lyricist => ItemKey::Lyricist,
+            Self::Performer => ItemKey::Performer,
+            Self::Remixer => ItemKey::Remixer,
+            Self::Engineer => ItemKey::Engineer,
+            Self::Producer => ItemKey::Producer,
+            Self::Comment => ItemKey::Comment,
+            Self::BeatsPerMinute => ItemKey::IntegerBpm,
+            Self::Compilation => ItemKey::FlagCompilation,
+            Self::Grouping => ItemKey::ContentGroup,
+            Self::Copyright => ItemKey::CopyrightMessage,
+            Self::ReplayGainTrackGain => ItemKey::ReplayGainTrackGain,
+            Self::ReplayGainTrackPeak => ItemKey::ReplayGainTrackPeak,
+            Self::ReplayGainAlbumGain => ItemKey::ReplayGainAlbumGain,
+            Self::ReplayGainAlbumPeak => ItemKey::ReplayGainAlbumPeak,
         }
     }
+}
+
+fn spelled_gain(gain: Decibels) -> String {
+    format!("{:+.2} dB", gain.get())
+}
+
+fn spelled_peak(peak: f32) -> String {
+    format!("{peak:.6}")
 }
 
 impl fmt::Display for TagField {
@@ -376,10 +479,14 @@ impl FileTags {
             .primary_tag_mut()
             .expect("a primary tag this call has just put there");
         for edit in writing.edits {
-            tag.insert_text(edit.field.key(), edit.value.clone());
+            if let Some(key) = edit.field.key_in(tag.tag_type()) {
+                tag.insert_text(key, edit.value.clone());
+            }
         }
         for field in writing.taken {
-            tag.remove_key(field.key());
+            if let Some(key) = field.key_in(tag.tag_type()) {
+                tag.remove_key(key);
+            }
         }
         if writing.unpictured || writing.picture.is_some() {
             uncovered(tag);
@@ -515,11 +622,19 @@ fn cleared_elsewhere(tagged: &lofty::file::TaggedFile, taken: &[TagField]) -> Ve
         .tags()
         .iter()
         .filter(|held| held.tag_type() != primary)
-        .filter(|held| taken.iter().any(|field| held.get(field.key()).is_some()))
+        .filter(|held| {
+            taken
+                .iter()
+                .filter_map(|field| field.key_in(held.tag_type()))
+                .any(|key| held.get(key).is_some())
+        })
         .map(|held| {
             let mut cleared = held.clone();
-            for field in taken {
-                cleared.remove_key(field.key());
+            for key in taken
+                .iter()
+                .filter_map(|field| field.key_in(held.tag_type()))
+            {
+                cleared.remove_key(key);
             }
             cleared
         })
@@ -989,19 +1104,42 @@ mod tests {
                 TagField::MusicBrainzReleaseGroupId,
                 "f5093c06-23e3-404f-aeaa-40f72885ee3a",
             ),
+            edited(TagField::Genre, "Progressive Rock"),
+            edited(TagField::Composer, "Roger Waters"),
+            edited(TagField::Conductor, "Ron Geesin"),
+            edited(TagField::Lyricist, "Roger Waters"),
+            edited(TagField::Performer, "David Gilmour"),
+            edited(TagField::Remixer, "James Guthrie"),
+            edited(TagField::Engineer, "John Leckie"),
+            edited(TagField::Producer, "Pink Floyd"),
+            edited(TagField::Comment, "Side two, whole"),
+            edited(TagField::BeatsPerMinute, "68"),
+            edited(TagField::Compilation, "1"),
+            edited(TagField::Grouping, "Meddle sessions"),
+            edited(TagField::Copyright, "1971 Pink Floyd Music Ltd"),
+            edited(TagField::ReplayGainTrackGain, "-6.50 dB"),
+            edited(TagField::ReplayGainTrackPeak, "0.988547"),
+            edited(TagField::ReplayGainAlbumGain, "-7.25 dB"),
+            edited(TagField::ReplayGainAlbumPeak, "0.999969"),
         ]
     }
 
-    fn assert_read_back(tags: &TagSet, edits: &[TagEdit]) {
+    const UNHELD_BY_ID3: [TagField; 1] = [TagField::Performer];
+
+    fn assert_read_back(tags: &TagSet, edits: &[TagEdit], unheld: &[TagField]) {
         assert_eq!(
             edits.len(),
             TagField::ALL.len(),
             "a field was added to the vocabulary without a round trip to hold it"
         );
         for edit in edits {
+            let wanted = match unheld.contains(&edit.field) {
+                true => None,
+                false => Some(edit.value.as_str()),
+            };
             assert_eq!(
                 edit.field.read(tags).as_deref(),
-                Some(edit.value.as_str()),
+                wanted,
                 "{} did not read back as it was written",
                 edit.field
             );
@@ -1056,6 +1194,7 @@ mod tests {
                 .expect("a readable FLAC")
                 .tags,
             &edits,
+            &[],
         );
     }
 
@@ -1073,6 +1212,7 @@ mod tests {
                 .expect("a readable AIFF")
                 .tags,
             &edits,
+            &UNHELD_BY_ID3,
         );
     }
 
@@ -1406,13 +1546,13 @@ mod tests {
         let weighed = tags
             .read(&location, Picturing::Whether)
             .expect("a readable FLAC");
-        assert_read_back(&weighed.tags, &edits);
+        assert_read_back(&weighed.tags, &edits, &[]);
         assert_eq!(weighed.picture, Pictured::Carried);
 
         let copied = tags
             .read(&location, Picturing::Copied)
             .expect("a readable FLAC");
-        assert_read_back(&copied.tags, &edits);
+        assert_read_back(&copied.tags, &edits, &[]);
         assert_eq!(copied.picture, Pictured::Copied(picture));
     }
 
@@ -1442,6 +1582,7 @@ mod tests {
                 .expect("a readable FLAC")
                 .tags,
             &edits,
+            &[],
         );
         assert_eq!(
             tags.read(&location, Picturing::Copied)
@@ -1476,7 +1617,7 @@ mod tests {
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable WAV");
-        assert_read_back(&read.tags, &edits);
+        assert_read_back(&read.tags, &edits, &UNHELD_BY_ID3);
         assert_eq!(read.picture, Pictured::Copied(cover));
     }
 

@@ -39,8 +39,8 @@ service or a format — and is not worked until that moves; everything else is o
 ## Tagging
 - On a filesystem that cannot clone a file — ext4 — every tag write copies the whole file, and one
   with a second name twice, so a multi-gigabyte file is copied for every edit
-- `TagField` holds 19 fields: genre, composer and the other credits, comment, BPM, compilation,
-  grouping, copyright and ReplayGain are read and cannot be written
+- A performer cannot be written into an ID3 tag nor BPM into an APE tag, lofty mapping no key for
+  either there
 
 ## Performance and scale
 - `browsed` reads albums, artists, tracks, three favourites lists, the statistics and the
