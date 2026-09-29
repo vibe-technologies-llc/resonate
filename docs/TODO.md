@@ -13,8 +13,6 @@ service or a format — and is not worked until that moves; everything else is o
   ring's depth
 - Pause, stop, a seek and the sleep timer cut the waveform where it stands and resume from a sample
   that is not zero, so each can click; nothing fades, and the sleep timer does not fade out
-- A convolution impulse is applied at the level it was written, with no normalisation or headroom,
-  so a boosted one clips at the dither's clamp or pumps the true-peak guard
 - **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already
   queued — `pw_time.queued` has no safe setter in pipewire-rs 0.10 — so the position and the
   visualiser's frame are short by up to one cycle

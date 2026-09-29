@@ -14,6 +14,7 @@ pub fn partition_frames_at(rate: SampleRate) -> usize {
     PARTITION_AT_48_KHZ * scaled.next_power_of_two()
 }
 const RESAMPLED_A_BLOCK_AT_A_TIME: usize = 4_096;
+const SPECTRUM_POINTS_A_TAP: usize = 4;
 
 pub type Taps = Arc<[Vec<f64>]>;
 
@@ -52,6 +53,45 @@ impl Impulse {
 
     pub fn frames(&self) -> usize {
         self.taps.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    pub fn loudest_gain(&self) -> f64 {
+        let longest = self.frames().max(1);
+        let size = (longest * SPECTRUM_POINTS_A_TAP).next_power_of_two();
+        let fft = FftPlanner::new().plan_fft_forward(size);
+        let mut spectrum = vec![Complex::default(); size];
+        let mut loudest = 0.0_f64;
+        for channel in &self.taps {
+            spectrum.fill(Complex::default());
+            for (slot, tap) in spectrum.iter_mut().zip(channel) {
+                *slot = Complex::new(*tap, 0.0);
+            }
+            fft.process(&mut spectrum);
+            loudest = spectrum
+                .iter()
+                .take(size / 2 + 1)
+                .map(|bin| bin.norm())
+                .fold(loudest, f64::max);
+        }
+        loudest
+    }
+
+    #[must_use]
+    pub fn with_headroom(self) -> Self {
+        let loudest = self.loudest_gain();
+        if !loudest.is_finite() || loudest <= 1.0 {
+            return self;
+        }
+        let scale = loudest.recip();
+        Self {
+            rate: self.rate,
+            taps: self
+                .taps
+                .into_iter()
+                .map(|channel| channel.into_iter().map(|tap| tap * scale).collect())
+                .collect(),
+            at_rates: Mutex::new(Vec::new()),
+        }
     }
 
     pub fn at(&self, rate: SampleRate) -> Result<Taps> {
@@ -408,6 +448,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn headroom_brings_a_boosting_response_down_to_unity_and_leaves_a_quiet_one_alone() {
+        let boosted = Impulse::new(RATE, vec![vec![0.5, 1.0, 0.5], vec![0.25]])
+            .expect("an impulse")
+            .with_headroom();
+        let quiet = Impulse::new(RATE, vec![vec![0.5, -0.25]])
+            .expect("an impulse")
+            .with_headroom();
+
+        assert!((boosted.loudest_gain() - 1.0).abs() < 1e-9);
+        let taps = boosted.at(RATE).expect("the response at its own rate");
+        assert!((taps[0][1] - 0.5).abs() < 1e-9, "{:?}", taps[0]);
+        assert!(
+            (taps[1][0] - 0.125).abs() < 1e-9,
+            "the channels lost their balance"
+        );
+        assert_eq!(quiet.at(RATE).expect("the response")[0], vec![0.5, -0.25]);
     }
 
     #[test]

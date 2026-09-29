@@ -36,7 +36,7 @@ pub fn read_impulse(
         channel.truncate(most);
     }
 
-    Ok(Impulse::new(rate, taps))
+    Ok(Impulse::new(rate, taps).map(Impulse::with_headroom))
 }
 
 #[cfg(test)]
@@ -79,5 +79,22 @@ mod tests {
         assert_eq!(read.channels(), 1);
         assert_eq!(read.frames(), 3);
         assert_eq!(read.rate().hz(), 48_000);
+    }
+
+    #[test]
+    fn a_response_boosting_past_unity_is_read_with_the_headroom_it_needs() {
+        let path = env::temp_dir().join(format!("resonate-boosting-{}.wav", process::id()));
+        fs::write(&path, wave(48_000, &[16_384, 16_384, 16_384])).expect("a scratch response");
+
+        let read = read_impulse(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a readable response")
+            .expect("a response with taps");
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            (read.loudest_gain() - 1.0).abs() < 1e-9,
+            "{}",
+            read.loudest_gain()
+        );
     }
 }

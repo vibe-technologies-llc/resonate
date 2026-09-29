@@ -149,11 +149,12 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   resampler included.** Switching the equaliser on or off changes the plan's shape, and `retune`
   swaps a chain built from the new plan in under the stream it holds wherever
   `OutputPlan::becomes_on_the_same_stream` says it may (`audio.md` has how); under a resampler the
-  running one is carried into the new chain, history and all, and so is a convolver. An equalised plan always carries a
-  gain stage, so neither swap steps the level, and the stage crossfades itself: `Easing` is what
-  the engine tells it. A stage *entering* a playing stream starts wholly dry and blends toward its
-  own output over `EASED_OVER` (40 ms), its biquads running on the real signal from the first frame,
-  so their silent history and a preamp's sudden cut fade in under the dry signal; one *leaving*
+  running one is carried into the new chain, history and all, and so is a convolver. An equalised
+  plan always carries a gain stage, so neither swap steps the level, and the stage crossfades
+  itself: `Easing` is what the engine tells it. A stage *entering* a playing stream starts wholly
+  dry and blends toward its own output over `EASED_OVER` (40 ms), its biquads running on the real
+  signal from the first frame, so their silent history and a preamp's sudden cut fade in under the
+  dry signal; one *leaving*
   blends back to dry the same way, the wanted plan held in `Output::settles_into` until it is there,
   and the chain without it is swapped in only then. A profile asked for again while leaving is
   *returning*, turning the blend round from wherever it stands. A settled stage never blends — the
@@ -192,7 +193,13 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   and `Impulse::at` draws it again at the stream's rate through the `VeryHigh` resampler, skipping
   the resampler's delay, scaling by the rate ratio so its gain holds, and keeping each rate drawn so
   a second track there costs nothing. `engine::read_impulse` decodes one from any file the codec
-  opens, at most `LONGEST_IMPULSE` (10 s). `Convolver` is uniformly partitioned overlap-save over
+  opens, at most `LONGEST_IMPULSE` (10 s), **with the headroom its loudest boost needs**:
+  `Impulse::with_headroom` takes the greatest magnitude any channel's response reaches
+  (`loudest_gain`, over a spectrum zero-padded to four points a tap) and, where it is above unity,
+  scales every channel by its reciprocal, so no frequency comes out louder than it went in and the
+  channels keep their balance. A response written quieter is left as written, never raised. A
+  measured correction boosting a dip by 6 dB otherwise clipped at the dither's clamp or rode the
+  true-peak guard on every loud passage. `Convolver` is uniformly partitioned overlap-save over
   `rustfft`: each partition's spectrum is taken once, a frequency-domain delay line holds the
   input's, and a block out is the inverse of their summed products — one partition behind, its
   latency and what `latency_frames` says. `partition_frames_at` grows the partition with the rate,
