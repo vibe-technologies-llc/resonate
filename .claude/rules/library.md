@@ -1399,8 +1399,12 @@ under Library is the window's way in, with the same preview-then-arm shape *Orga
   holds one album's bytes at a time while `TRACKS_TO_TAG` reads in path order, so tracks from one
   folder share one read of the blob. `written` reads the file back once too, under
   `Picturing::Copied` where a picture went in. A file under no album is offered nothing. What is
-  written is a `PictureType::CoverFront` under the format's own media type, *replacing* the front cover
-  rather than standing beside it, so a file cannot collect two. `written` weighs the picture read back
+  written is a `PictureType::CoverFront` under the format's own media type, *replacing* every picture
+  the reader would take as the cover — `writing::uncovered` takes out the front cover, `Other` and an
+  untyped one, the set `probe::choose` draws from — so a file cannot collect two. lofty reads every
+  MP4 `covr` image as `Other` where symphonia reads it as the front cover, so removing the front
+  cover alone left an m4a's cover in place and a new one behind it, never drawn
+  (`a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there`). `written` weighs the picture read back
   against the bytes sent, as each field, so a container quietly dropping one is
   `Unwritten::Unconfirmed` and the catalog is not moved. `RetagStats::pictures` counts them apart from
   `fields`, a picture not being a field and a write of one alone still a write.
@@ -1489,7 +1493,7 @@ under Library is the window's way in, with the same preview-then-arm shape *Orga
   write fails still clears the previous run's record
   (`a_write_that_fails_is_not_noted_as_one_to_put_back`). `RetagOptions::undo` plans from that record instead of the catalog:
   each field read before is written back, one the run added is removed (`Writing::taken`, removing the
-  key), an added cover is taken out (`Writing::unpictured`, the front cover alone) and the rating put
+  key), an added cover is taken out (`Writing::unpictured`, through the same `uncovered`) and the rating put
   back, all handed to the same `apply`, which reads every file back, has the catalog follow
   `tagged_title` and `tagged_artist` as they now stand and notes what it replaced in turn, so putting
   the walk back writes the run again — only a cover is not rewritten, the walk back having nothing to

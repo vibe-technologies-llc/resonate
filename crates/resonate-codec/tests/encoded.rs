@@ -7,9 +7,9 @@ use std::{
 };
 
 use resonate_codec::{
-    Codec, Container, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags, Picturing,
-    Popularity, Rated, Sources, TagEdit, TagField, TagSink, TagSource, Writing, probe,
-    probe_cover_art, probe_stream,
+    Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags,
+    ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSink, TagSource,
+    Writing, probe, probe_cover_art, probe_stream,
 };
 use resonate_core::{
     AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
@@ -2728,6 +2728,56 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         before,
         "writing the tags moved the audio"
     );
+}
+
+#[test]
+fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
+    let cases: [(&str, &[&str]); 3] = [
+        ("covered.m4a", &["-c:a", "aac"]),
+        ("covered.mp3", &["-c:a", "libmp3lame"]),
+        ("covered.flac", &["-c:a", "flac"]),
+    ];
+    let first = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let mut second = first.clone();
+    second.bytes.extend_from_slice(b"another");
+
+    for (name, codec) in cases {
+        let tree = Tree::new();
+        let Some((path, _)) = shaped(&tree, CD, name, codec) else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let tags = FileTags::default();
+        let pictured = |picture: Option<&CoverArt>, unpictured: bool| {
+            tags.write(
+                &location,
+                Writing {
+                    edits: &[],
+                    taken: &[],
+                    picture,
+                    unpictured,
+                    popularity: None,
+                },
+            )
+            .expect("a file whose picture was written");
+        };
+        let read = || {
+            tags.read(&location, Picturing::Copied)
+                .expect("a readable file")
+                .picture
+                .into_copied()
+        };
+
+        pictured(Some(&first), false);
+        pictured(Some(&second), false);
+        assert_eq!(read(), Some(second.clone()), "{name}");
+
+        pictured(None, true);
+        assert_eq!(read(), None, "{name} kept a cover taken away");
+    }
 }
 
 fn rated_as(popularity: Popularity) -> Writing<'static> {

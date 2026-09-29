@@ -366,11 +366,10 @@ impl FileTags {
         for field in writing.taken {
             tag.remove_key(field.key());
         }
-        if writing.unpictured {
-            tag.remove_picture_type(PictureType::CoverFront);
+        if writing.unpictured || writing.picture.is_some() {
+            uncovered(tag);
         }
         if let Some(picture) = writing.picture {
-            tag.remove_picture_type(PictureType::CoverFront);
             tag.push_picture(front_cover(picture));
         }
         let counting = writing.popularity.filter(|_| counts(tag.tag_type()));
@@ -475,6 +474,24 @@ impl<'a> Popularimeter<'a> {
     fn is_ours(&self, kind: TagType) -> bool {
         !names_who_rated(kind) || self.by == RATED_BY
     }
+}
+
+fn uncovered(tag: &mut Tag) {
+    let mut at = tag.pictures().len();
+    while let Some(before) = at.checked_sub(1) {
+        at = before;
+        let kind = tag.pictures().get(at).map(Picture::pic_type);
+        if kind.is_some_and(read_as_the_cover) {
+            tag.remove_picture(at);
+        }
+    }
+}
+
+const fn read_as_the_cover(kind: PictureType) -> bool {
+    matches!(
+        kind,
+        PictureType::CoverFront | PictureType::Other | PictureType::Undefined(_)
+    )
 }
 
 fn cleared_elsewhere(tagged: &lofty::file::TaggedFile, taken: &[TagField]) -> Vec<Tag> {

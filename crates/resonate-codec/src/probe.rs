@@ -251,9 +251,12 @@ fn choose<T>(visuals: &[Visual], taken: &dyn Fn(ImageFormat, &[u8]) -> T) -> Opt
     let front = visuals
         .iter()
         .filter(|visual| matches!(visual.usage, Some(StandardVisualKey::FrontCover)));
+    let unnamed = visuals
+        .iter()
+        .filter(|visual| matches!(visual.usage, None | Some(StandardVisualKey::Other)));
 
     front
-        .chain(visuals.iter())
+        .chain(unnamed)
         .find_map(|visual| decode_visual(visual, taken))
 }
 
@@ -395,6 +398,26 @@ mod tests {
                 .len(),
             64
         );
+    }
+
+    #[test]
+    fn a_picture_that_is_plainly_not_the_cover_is_never_drawn_as_one() {
+        let named = [
+            visual(Some(StandardVisualKey::FileIcon), 16),
+            visual(Some(StandardVisualKey::Leaflet), 32),
+            visual(Some(StandardVisualKey::BackCover), 48),
+            visual(Some(StandardVisualKey::Other), 64),
+        ];
+        let elsewhere = [
+            visual(Some(StandardVisualKey::Media), 16),
+            visual(Some(StandardVisualKey::BackCover), 32),
+        ];
+
+        assert_eq!(
+            choose(&named, &copied).map(|cover| cover.bytes.len()),
+            Some(64)
+        );
+        assert_eq!(choose(&elsewhere, &copied), None);
     }
 
     #[test]

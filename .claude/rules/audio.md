@@ -389,8 +389,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the time `probe_cover_art` sees it, so the `to_vec` is a second copy of whatever the file embedded —
   and the engine's `ART_BYTES_HELD` bounds what the catalog *holds*, long after the allocation.
   `MAX_COVER_BYTES` is checked against `data.len()` before the copy, and an oversized visual is
-  declined rather than failing the read: `choose` prefers a front cover then any visual, so the next
-  candidate is tried and a file whose front cover is absurd still draws its back cover. A file whose
+  declined rather than failing the read: `choose` prefers a front cover then a picture typed `Other`
+  or not typed at all, so the next candidate is tried and a file whose front cover is absurd still
+  draws an untyped one. An icon, a leaflet, a back cover, a disc or a portrait is never drawn as the
+  cover — taking any visual let a file icon stand in for the album — and a file holding only those
+  answers `None` (`a_picture_that_is_plainly_not_the_cover_is_never_drawn_as_one`). A file whose
   every picture is oversized answers `None`, as one with no picture does — nothing failed, a picture
   was declined, which is a `tracing` record.
 - **A hand-rolled parser never allocates what a header declares.** `riff.rs` and `matroska.rs` read
