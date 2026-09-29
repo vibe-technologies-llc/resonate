@@ -1,7 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+};
 
 use ahash::{AHashMap, AHashSet};
-use rusqlite::{Transaction, params};
+use rusqlite::{Connection, Transaction, params};
 
 use crate::{
     enriched,
@@ -113,6 +116,30 @@ const WHOLE_AND_ALONE: &str = "span_frames IS NULL AND span_start = 0
 const CUT_OR_SHARED: &str = "(span_frames IS NOT NULL OR span_start != 0
      OR EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.id != t.id))";
 
+pub(crate) fn to_be_heard(
+    connection: &Connection,
+    roots: &[i64],
+    generation: i64,
+) -> Result<Vec<PathBuf>> {
+    if roots.is_empty() {
+        return Ok(Vec::new());
+    }
+    let asked = RefCell::new(Vec::new());
+    wholes_moved(connection, &scoped(roots), generation, &|path| {
+        asked.borrow_mut().push(path.to_path_buf());
+        None
+    })?;
+    Ok(asked.into_inner())
+}
+
+fn scoped(roots: &[i64]) -> String {
+    roots
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 pub(crate) fn follow_the_moved(
     tx: &Transaction<'_>,
     roots: &[i64],
@@ -122,11 +149,7 @@ pub(crate) fn follow_the_moved(
     if roots.is_empty() {
         return Ok(0);
     }
-    let scoped = roots
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
+    let scoped = scoped(roots);
 
     let mut paired = wholes_moved(tx, &scoped, generation, heard)?;
     paired.extend(cuts_moved(tx, &scoped, generation)?);
@@ -138,7 +161,7 @@ pub(crate) fn follow_the_moved(
 }
 
 fn wholes_moved(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     scoped: &str,
     generation: i64,
     heard: &dyn Fn(&Path) -> Option<String>,
@@ -165,7 +188,7 @@ fn wholes_moved(
     Ok(paired)
 }
 
-fn cuts_moved(tx: &Transaction<'_>, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
+fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
     let gone: Vec<Cut> = cuts(rows(
         tx,
         &format!("seen != ?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
@@ -228,7 +251,7 @@ fn cuts(rows: Vec<Row>) -> Vec<Cut> {
         .collect()
 }
 
-fn rows(tx: &Transaction<'_>, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
+fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
     let mut statement = tx
         .prepare(&format!(
             "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,

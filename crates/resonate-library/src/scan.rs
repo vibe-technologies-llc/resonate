@@ -538,8 +538,15 @@ fn run(
 
     let cancelled = progress.is_cancelled();
     if !cancelled {
+        let asked = inner.read(|connection| moves::to_be_heard(connection, &ids, generation))?;
+        let prints: AHashMap<PathBuf, String> = asked
+            .into_iter()
+            .filter_map(|path| heard_as(&path).map(|print| (path, print)))
+            .collect();
         let moved = inner.write(|transaction| {
-            moves::follow_the_moved(transaction, &ids, generation, &heard_as)
+            moves::follow_the_moved(transaction, &ids, generation, &|path| {
+                prints.get(path).cloned()
+            })
         })?;
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);

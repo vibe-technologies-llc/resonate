@@ -695,8 +695,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   Chromaprint is paired with the one new row of its sound where `resonate_analysis::print` — the first
   two minutes decoded exactly as the study decodes them, nothing past — writes the same print, so a file
   retagged past every name and renamed as it moved is still its row; an unstudied row, or a differing
-  print, is forgotten and found as before. The decode happens inside the scan's write, so it is asked
-  only of the few rows a unique sound leaves unnamed.
+  print, is forgotten and found as before. The decode is asked only of the few rows a unique sound
+  leaves unnamed, and never inside a transaction: `moves::to_be_heard` runs the same pairing on a read
+  connection with a `heard` that notes each path it is asked about and answers nothing, the scan
+  decodes those with no lock held, and `follow_the_moved` then pairs inside the write with the prints
+  already in hand — so a bulk move no longer holds every other writer past its busy timeout while
+  files decode.
   `a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_study_took`,
   `a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like` and
   `a_file_taken_away_and_another_of_its_length_added_are_not_one_file` are the claims. A pair is

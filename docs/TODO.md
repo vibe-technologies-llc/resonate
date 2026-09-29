@@ -42,8 +42,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Performance and scale
 - Undo snapshots every row of a playlist for each edit that moves rows, so one row added to a
   100 000-row playlist reads all of them under the write lock
-- Move detection fingerprints its candidates — a whole decode each — inside the scan's write
-  transaction, so a bulk move holds every other writer past its busy timeout
 - `retag` holds each picture it replaces in memory for the whole run and writes it per file into
   `retagged`, which undo then reads back whole
 - `measured` sorts a suggestion's whole result to count it, for up to sixteen candidates in series
