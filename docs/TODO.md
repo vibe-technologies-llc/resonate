@@ -6,10 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The vault import maps every error `keep` answers — a full disc, a failed rename — to
-  `Passing::Unreadable` and goes on, so a full vault disc costs most of the work of every row left
-  and bills each as unreadable; a cover with no format code ends the whole import where one
-  `image` cannot read only warns
 - `Vault::open` makes `audio/`, `covers/` and `staging/` wherever it is pointed, so a vault on an
   unmounted drive becomes an empty vault on the wrong disc
 - The Discord socket search gives up at the first socket that answers `Close`, whatever the code,

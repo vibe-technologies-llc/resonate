@@ -16913,6 +16913,83 @@ fn a_cover_the_vault_cannot_read_is_passed_over_and_the_import_carries_on() -> R
 }
 
 #[test]
+fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carries_on() -> Result<()>
+{
+    let tree = Tree::new();
+    let held = Tree::new();
+    let art = a_real_picture(24, 18);
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ALBUM, "Meddle")
+            .picture(&art.bytes)
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let vault = Arc::new(Vault::open(held.path()).expect("a writable vault"));
+    let library = Library::open_with_vault(&database, vault)?;
+    scan(&library, &options(&tree))?;
+    beside(&database)
+        .execute("UPDATE albums SET cover_format = 99", [])
+        .expect("the catalog takes a format code");
+
+    let summary = vaulted(&library, true)?;
+
+    assert_eq!(
+        summary.stats.vaulted, 1,
+        "a cover of no known format ended the import"
+    );
+    assert_eq!(summary.stats.covers_passed, 1);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row() -> Result<()> {
+    use os::unix::fs::PermissionsExt as _;
+
+    let tree = Tree::new();
+    let held = Tree::new();
+    for title in ["Echoes", "Time", "Money"] {
+        tree.write(
+            &format!("{title}.wav"),
+            &Wav::new().text(TITLE, title).build(),
+        );
+    }
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    let staging = held.path().join("staging");
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o555))
+        .expect("the staging folder takes a mode");
+    if fs::write(staging.join("probe"), b"").is_ok() {
+        fs::set_permissions(&staging, fs::Permissions::from_mode(0o755))
+            .expect("the staging folder takes a mode");
+        eprintln!("skipping: this user writes a folder whatever its mode");
+        return Ok(());
+    }
+
+    let refused = library
+        .import(
+            Arc::new(Sources::local()),
+            ImportOptions {
+                roots: Vec::new(),
+                apply: true,
+                ..ImportOptions::default()
+            },
+        )?
+        .join();
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o755))
+        .expect("the staging folder takes a mode");
+
+    assert!(
+        matches!(refused, Err(Error::Vault { .. })),
+        "a vault that could not write answered {refused:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_cover_the_vault_already_holds_is_not_kept_a_second_time() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

@@ -346,6 +346,10 @@ fn keep_one(
     };
 
     match vault.keep(&taking) {
+        Err(source) if vault.failed_itself(&source) => Err(Error::Vault {
+            path: row.path.clone(),
+            source: Box::new(source),
+        }),
         Err(source) => {
             tracing::warn!(path = %row.path.display(), %source, "the vault could not keep a track");
             Ok(passed(progress, &asked, Passing::Unreadable))
@@ -381,8 +385,15 @@ fn cover_of(
     album: AlbumId,
     progress: &ImportProgress,
 ) -> Result<()> {
-    let Some(art) = library.cover_the_vault_lacks(album)? else {
-        return Ok(());
+    let art = match library.cover_the_vault_lacks(album) {
+        Ok(Some(art)) => art,
+        Ok(None) => return Ok(()),
+        Err(error @ (Error::UntypedCoverArt { .. } | Error::UnknownImageFormat { .. })) => {
+            tracing::warn!(album = album.get(), %error, "an album's cover names no format the vault can keep");
+            progress.covers_passed.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+        Err(error) => return Err(error),
     };
 
     let kept = match vault.keep_cover(&art) {

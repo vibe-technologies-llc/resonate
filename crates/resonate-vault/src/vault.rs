@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{Read, Seek, Write},
+    io::{self, Read, Seek, Write},
     ops::Deref,
     path::{Component, Path, PathBuf},
     process,
@@ -70,7 +70,7 @@ impl Drop for Staged {
     fn drop(&mut self) {
         match fs::remove_file(&self.0) {
             Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
                 tracing::warn!(path = %self.0.display(), %error, "a staging file could not be taken away");
             }
@@ -229,6 +229,32 @@ impl Vault {
 
     pub fn holds(&self, path: &Path) -> bool {
         self.within(path).is_ok()
+    }
+
+    pub fn failed_itself(&self, error: &Error) -> bool {
+        match error {
+            Error::Io { path, source, .. } => {
+                path.starts_with(&self.root)
+                    || matches!(
+                        source.kind(),
+                        io::ErrorKind::StorageFull
+                            | io::ErrorKind::QuotaExceeded
+                            | io::ErrorKind::ReadOnlyFilesystem
+                    )
+            }
+            Error::OutsideTheVault { .. } => true,
+            Error::NotAKey
+            | Error::Codec { .. }
+            | Error::Unencodable { .. }
+            | Error::Encoding { .. }
+            | Error::Written { .. }
+            | Error::Picture { .. }
+            | Error::PictureWritten { .. }
+            | Error::PictureUnsized { .. }
+            | Error::PictureUnconfirmed { .. }
+            | Error::PictureRead { .. }
+            | Error::Domain(_) => false,
+        }
     }
 
     pub fn keep_delivered(&self, reader: &mut dyn Read, extension: &str) -> Result<Keeping> {
@@ -1151,6 +1177,36 @@ mod tests {
             Path::new("covers/ab/ab.jxl")
         );
         assert!(vault.within(Path::new("/elsewhere/covers/ab.jxl")).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_failure_on_the_vaults_own_disc_is_told_from_one_of_the_source() {
+        let root = std::env::temp_dir().join(format!("resonate-vault-failed-{}", process::id()));
+        let vault = Vault::open(&root).expect("a vault");
+        let failed = |path: PathBuf, kind: io::ErrorKind| Error::Io {
+            op: VaultOp::Write,
+            path,
+            source: io::Error::from(kind),
+        };
+
+        assert!(vault.failed_itself(&failed(
+            root.join("staging").join("x"),
+            io::ErrorKind::Other
+        )));
+        assert!(vault.failed_itself(&failed(
+            PathBuf::from("/music/a.flac"),
+            io::ErrorKind::StorageFull
+        )));
+        assert!(!vault.failed_itself(&failed(
+            PathBuf::from("/music/a.flac"),
+            io::ErrorKind::Other
+        )));
+        assert!(!vault.failed_itself(&Error::Unencodable {
+            rate: 1,
+            channels: 1,
+            bits: 1
+        }));
         let _ = fs::remove_dir_all(&root);
     }
 

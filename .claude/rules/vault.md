@@ -299,7 +299,17 @@ catalog written before was scanned again); a change now is a `MIGRATIONS` step (
   vault-covered album as covered, so neither an archive cover nor a rescanned file's lands where
   the vault holds one. The import asks `cover_the_vault_lacks` rather than `cover_art` (which would
   hand back the vault's own PNG to keep again under another digest), and a cover `image` cannot
-  read is a warning and a `covers_passed` count, not the end of the import.
+  read — or one whose stored format code names nothing, `UntypedCoverArt` and `UnknownImageFormat`
+  — is a warning and a `covers_passed` count, not the end of the import
+  (`a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carries_on`).
+- **A vault that fails ends the import; a source that fails is passed over.** `Vault::failed_itself`
+  tells the two apart: an `Error::Io` on a path under the root, or a full, over-quota or read-only
+  disc wherever it was, and `OutsideTheVault`, are the vault's, and `keep_one` answers them as
+  `Error::Vault`, which stops every worker; anything else — a source that will not decode or encode
+  — is `Passing::Unreadable` and the import goes on. Every failure was once `Unreadable`, so a full
+  vault disc cost most of the work of every row left and billed each as unreadable
+  (`a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row`,
+  `a_failure_on_the_vaults_own_disc_is_told_from_one_of_the_source`).
 
 ## Reading an object back
 
