@@ -546,6 +546,33 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `CueFile::tracks` as `CueTrackKind::Data`, so `audio_tracks` skips it while `span_of` reads its
   offset as the last audio track's end. A track's start is its own offset plus its index 1's where it
   declares one, putting a pregap on the track before, as `INDEX 01` does in a text sheet.
+- **A file's chapters cut it as an embedded sheet does.** Where the file embeds no sheet,
+  `container::chaptered` is `MediaInfo::cue`'s third source: symphonia's `FormatReader::chapters`
+  — an MP3's leading ID3v2 `CHAP` frames, an Ogg's `CHAPTERnnn` comments — flattened by
+  `chapters::of_group` (the first edition where a group holds editions, top-level chapters only),
+  else what the prescan read itself. symphonia's FLAC reader reads `CHAPTERnnn` comments into
+  chapters and throws them away, keeping them out of the tags too, so `flac.rs` takes them off the
+  `VORBIS_COMMENT` block it walks past for the `CUESHEET` (at most `MAX_COMMENT_BYTES`), and
+  `chapters::of_comments` reads each `HH:MM:SS.fff` with its `CHAPTERnnnNAME`, in number order. symphonia reads no MP4 chapter, so `boxes.rs` reads an m4b's:
+  the QuickTime chapter track the sound track's `tref/chap` names — its samples found through
+  `stts`, `stsz`, `stsc` and `stco`/`co64`, each a length-prefixed title, UTF-8 or UTF-16 behind a
+  mark — else Nero's `moov/udta/chpl`, in 100 ns units; ffmpeg writes both. `chapters::cut` turns
+  two or more distinct starts into a `CueFile` of `CueStart::Sampled` tracks billed by the file as a
+  `CUESHEET` block's are, the file's title standing for the album where it names none — an
+  audiobook names the book in its title — and each track titled by its chapter; one chapter, or
+  chapters all at one moment, cut nothing. **A Matroska file's chapters are read by the prescan and
+  hidden from symphonia**, whose reader refuses a whole file whose `EditionEntry` carries no
+  `EditionUID` — what ffmpeg writes, the spec making it optional — with "missing edition uid", so an
+  `.mka` with chapters would not open at all. `matroska::read_chapters` takes the first edition's
+  `ChapterAtom`s — `ChapterTimeStart` in nanoseconds, the first `ChapterDisplay`'s `ChapString` —
+  and `Voided` is the element's header rewritten as an EBML `Void` of the same length, which
+  `container::Probed` lays over the bytes symphonia reads, so symphonia steps past the element and
+  nothing else of the file moves. A header too short to hold a `Void`'s size, or a `Chapters`
+  element the top-level walk cannot reach, leaves the file as it was.
+  `a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them` holds an m4b, an MP3 and an
+  `.mka` ffmpeg wrote to their cuts, `chapter_comments_cut_a_flac_or_an_ogg_where_they_start` a FLAC
+  and an Ogg, a chapter's own title and album and the `.mka` to its every
+  sample; a catalog scanned before holds such a file whole until it is read again.
 - **A track belongs to the file its `INDEX 01` is in, whichever `FILE` line its `TRACK` followed.**
   EAC's default sheet for a one-file-per-track rip — gaps appended to the previous track — writes each
   track's `TRACK` line and `INDEX 00` at the tail of the file before, then the next `FILE` line, then

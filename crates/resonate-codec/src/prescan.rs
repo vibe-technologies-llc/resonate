@@ -5,6 +5,7 @@ use resonate_core::{Frames, SampleRate};
 use crate::{
     boxes::{self, Movie},
     caf::{self, Overflow},
+    chapters::Marked,
     flac::{self, Flac},
     matroska::{self, Segment},
     riff::{self, Riff},
@@ -73,6 +74,13 @@ impl Prescan {
         window.rewind_the_source();
 
         found
+    }
+
+    pub(crate) fn chapters(&self) -> Vec<Marked> {
+        match self.segment.chapters.is_empty() {
+            true => self.boxes.chapters.clone(),
+            false => self.segment.chapters.clone(),
+        }
     }
 
     pub(crate) fn segment_duration(&self, rate: SampleRate) -> Option<Frames> {

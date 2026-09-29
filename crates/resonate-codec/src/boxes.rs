@@ -6,7 +6,11 @@ use std::{
 
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate};
 
-use crate::{Error, Result, source::Sources};
+use crate::{
+    Error, Result,
+    chapters::{ChapterStart, MOST_CHAPTERS, Marked, named},
+    source::Sources,
+};
 
 const HEADER: u64 = 8;
 const LARGE_HEADER: u64 = 16;
@@ -59,6 +63,26 @@ const ILST: BoxKind = BoxKind(*b"ilst");
 const FREE_FORM: BoxKind = BoxKind(*b"----");
 const ITEM_NAME: BoxKind = BoxKind(*b"name");
 const ITEM_DATA: BoxKind = BoxKind(*b"data");
+const TREF: BoxKind = BoxKind(*b"tref");
+const CHAP: BoxKind = BoxKind(*b"chap");
+const TKHD: BoxKind = BoxKind(*b"tkhd");
+const CHPL: BoxKind = BoxKind(*b"chpl");
+const STSZ: BoxKind = BoxKind(*b"stsz");
+const STSC: BoxKind = BoxKind(*b"stsc");
+const STCO: BoxKind = BoxKind(*b"stco");
+const CO64: BoxKind = BoxKind(*b"co64");
+
+const TRACK_ID_AT: usize = 12;
+const WIDE_TRACK_ID_AT: usize = 20;
+const SAMPLE_SIZE_AT: usize = 4;
+const SAMPLE_COUNT_AT: usize = 8;
+const SAMPLE_SIZES_AT: usize = 12;
+const SAMPLE_TO_CHUNK_ENTRY_BYTES: usize = 12;
+const NERO_TICKS_A_SECOND: NonZeroU32 = NonZeroU32::new(10_000_000).expect("not zero");
+const NERO_RESERVED_BYTES: usize = 4;
+const TEXT_LENGTH_BYTES: u64 = 2;
+const LONGEST_CHAPTER_TITLE: u64 = 1 << 10;
+const UTF16_BIG_ENDIAN_MARK: [u8; 2] = [0xFE, 0xFF];
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BoxKind([u8; 4]);
@@ -184,21 +208,22 @@ fn read_at<const N: usize, S: Read + Seek + ?Sized>(file: &mut S, at: u64) -> Op
     Some(buffer)
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Movie {
     timescale: Option<NonZeroU32>,
     priming: Option<Priming>,
     fragmented: Option<Ticks>,
+    pub(crate) chapters: Vec<Marked>,
 }
 
 impl Movie {
-    pub(crate) fn priming_at(self, rate: SampleRate) -> Option<Priming> {
+    pub(crate) fn priming_at(&self, rate: SampleRate) -> Option<Priming> {
         (self.timescale?.get() == rate.hz())
             .then_some(self.priming)
             .flatten()
     }
 
-    pub(crate) fn fragmented_length(self, rate: SampleRate) -> Option<Frames> {
+    pub(crate) fn fragmented_length(&self, rate: SampleRate) -> Option<Frames> {
         let held = self.fragmented?;
         rescaled(held.ticks, held.timescale, NonZeroU32::new(rate.hz())?).map(Frames)
     }
@@ -302,7 +327,185 @@ fn scan_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Movie> {
             .or_else(|| edit_priming(source, moov, trak, media, decoded))
             .filter(|held| held.fits_within(decoded)),
         fragmented: extended_length(source, moov).or_else(|| indexed_length(source, &top)),
+        chapters: chapter_track(source, moov, trak)
+            .filter(|marked| !marked.is_empty())
+            .or_else(|| nero_chapters(source, moov))
+            .unwrap_or_default(),
     })
+}
+
+fn nero_chapters<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Option<Vec<Marked>> {
+    let chpl = descend(source, moov, &[UDTA, CHPL])?;
+    let bytes = leaf(source, chpl)?;
+    let mut at = VERSION_AND_FLAGS as usize;
+    if *bytes.first()? > 0 {
+        at += NERO_RESERVED_BYTES;
+    }
+    let count = usize::from(*bytes.get(at)?);
+    at += 1;
+
+    let mut marked = Vec::with_capacity(count);
+    for _ in 0..count {
+        let ticks = be64(&bytes, at)?;
+        let length = usize::from(*bytes.get(at + 8)?);
+        let title = bytes.get(at + 9..at + 9 + length)?;
+        at += 9 + length;
+        marked.push(Marked {
+            start: ChapterStart::new(ticks, NERO_TICKS_A_SECOND),
+            title: chapter_title(title),
+        });
+    }
+    Some(marked)
+}
+
+fn chapter_track<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    moov: Extent,
+    sound: Extent,
+) -> Option<Vec<Marked>> {
+    let named = descend(source, sound, &[TREF, CHAP]).and_then(|chap| leaf(source, chap))?;
+    let wanted = be32(&named, 0)?;
+    let traks = children(source, moov)
+        .into_iter()
+        .filter(|held| held.kind == TRAK)
+        .map(|held| held.body)
+        .collect::<Vec<_>>();
+    let trak = traks
+        .into_iter()
+        .find(|trak| track_id(source, *trak) == Some(wanted))?;
+
+    let mdia = child(source, trak, MDIA)?;
+    let mdhd = child(source, mdia, MDHD)?;
+    let media = header_of(source, mdhd)?;
+    let stbl = descend(source, mdia, &[MINF, STBL])?;
+    let stts = child(source, stbl, STTS)?;
+    let lasting = sample_durations(source, stts)?;
+    let stsz = child(source, stbl, STSZ)?;
+    let sizes = sample_sizes(source, stsz)?;
+    let offsets = sample_offsets(source, stbl, &sizes)?;
+
+    let mut marked = Vec::new();
+    let mut ticks = 0_u64;
+    for (offset, lasted) in offsets.into_iter().zip(lasting).take(MOST_CHAPTERS) {
+        marked.push(Marked {
+            start: ChapterStart::new(ticks, media.timescale),
+            title: sample_text(source, offset),
+        });
+        ticks = ticks.checked_add(lasted)?;
+    }
+    Some(marked)
+}
+
+fn track_id<S: Read + Seek + ?Sized>(source: &mut S, trak: Extent) -> Option<u32> {
+    let tkhd = child(source, trak, TKHD)?;
+    let bytes = leaf(source, tkhd)?;
+    match *bytes.first()? {
+        0 => be32(&bytes, TRACK_ID_AT),
+        _ => be32(&bytes, WIDE_TRACK_ID_AT),
+    }
+}
+
+fn sample_durations<S: Read + Seek + ?Sized>(source: &mut S, table: Extent) -> Option<Vec<u64>> {
+    let bytes = leaf(source, table)?;
+    let entries = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MAX_TIME_TO_SAMPLE_ENTRIES);
+    let mut lasting = Vec::new();
+    for entry in 0..entries {
+        let at = ENTRIES_AT + entry * TIME_TO_SAMPLE_ENTRY_BYTES;
+        let count = be32(&bytes, at)? as usize;
+        let delta = u64::from(be32(&bytes, at + 4)?);
+        let room = MOST_CHAPTERS.saturating_sub(lasting.len());
+        lasting.extend(std::iter::repeat_n(delta, count.min(room)));
+    }
+    Some(lasting)
+}
+
+fn sample_sizes<S: Read + Seek + ?Sized>(source: &mut S, table: Extent) -> Option<Vec<u64>> {
+    let bytes = leaf(source, table)?;
+    let fixed = be32(&bytes, SAMPLE_SIZE_AT)?;
+    let count = (be32(&bytes, SAMPLE_COUNT_AT)? as usize).min(MOST_CHAPTERS);
+    (0..count)
+        .map(|sample| match fixed {
+            0 => be32(&bytes, SAMPLE_SIZES_AT + sample * 4).map(u64::from),
+            fixed => Some(u64::from(fixed)),
+        })
+        .collect()
+}
+
+fn sample_offsets<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    stbl: Extent,
+    sizes: &[u64],
+) -> Option<Vec<u64>> {
+    let chunks = chunk_offsets(source, stbl)?;
+    let stsc = child(source, stbl, STSC)?;
+    let runs = leaf(source, stsc)?;
+    let entries = be32(&runs, ENTRY_COUNT_AT)? as usize;
+    let run = |entry: usize| -> Option<(usize, usize)> {
+        let at = ENTRIES_AT + entry.checked_mul(SAMPLE_TO_CHUNK_ENTRY_BYTES)?;
+        Some((be32(&runs, at)? as usize, be32(&runs, at + 4)? as usize))
+    };
+
+    let mut offsets = Vec::with_capacity(sizes.len());
+    let mut sizes = sizes.iter();
+    let mut entry = 0;
+    for (chunk, start) in chunks.into_iter().enumerate() {
+        let number = chunk + 1;
+        while entry + 1 < entries && run(entry + 1)?.0 <= number {
+            entry += 1;
+        }
+        let mut at = start;
+        for _ in 0..run(entry)?.1 {
+            let Some(size) = sizes.next() else {
+                return Some(offsets);
+            };
+            offsets.push(at);
+            at = at.checked_add(*size)?;
+        }
+    }
+    Some(offsets)
+}
+
+fn chunk_offsets<S: Read + Seek + ?Sized>(source: &mut S, stbl: Extent) -> Option<Vec<u64>> {
+    let (table, wide) = match child(source, stbl, STCO) {
+        Some(table) => (table, false),
+        None => (child(source, stbl, CO64)?, true),
+    };
+    let bytes = leaf(source, table)?;
+    let count = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MOST_CHAPTERS);
+    (0..count)
+        .map(|chunk| match wide {
+            false => be32(&bytes, ENTRIES_AT + chunk * 4).map(u64::from),
+            true => be64(&bytes, ENTRIES_AT + chunk * 8),
+        })
+        .collect()
+}
+
+fn sample_text<S: Read + Seek + ?Sized>(source: &mut S, at: u64) -> Option<String> {
+    let length = u16::from_be_bytes(read_at::<2, S>(source, at)?);
+    let body = at.checked_add(TEXT_LENGTH_BYTES)?;
+    let text = leaf(
+        source,
+        Extent {
+            at: body,
+            end: body.checked_add(u64::from(length).min(LONGEST_CHAPTER_TITLE))?,
+        },
+    )?;
+    chapter_title(&text)
+}
+
+fn chapter_title(bytes: &[u8]) -> Option<String> {
+    let text = match bytes.strip_prefix(&UTF16_BIG_ENDIAN_MARK) {
+        Some(wide) => String::from_utf16_lossy(
+            &wide
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u16::from_be_bytes(*pair))
+                .collect::<Vec<_>>(),
+        ),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    };
+    named(&text)
 }
 
 fn extended_length<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Option<Ticks> {

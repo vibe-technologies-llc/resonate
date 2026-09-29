@@ -13,6 +13,10 @@ const BLOCK_HEADER_BYTES: usize = 4;
 const LAST_BLOCK: u8 = 0x80;
 const BLOCK_KIND: u8 = 0x7F;
 const CUESHEET: u8 = 5;
+const VORBIS_COMMENT: u8 = 4;
+const MAX_COMMENT_BYTES: u64 = 1 << 20;
+const MOST_COMMENTS: usize = 4_096;
+const CHAPTER_COMMENT: &str = "CHAPTER";
 
 const MAX_BLOCKS: usize = 1_024;
 const MAX_CUESHEET_BYTES: u64 = 1 << 20;
@@ -53,6 +57,7 @@ pub(crate) const FRAME_HEADER_BYTES_AT_MOST: usize = 16;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Flac {
     pub(crate) cue: Option<CueFile>,
+    pub(crate) chapters: Vec<(String, String)>,
 }
 
 pub(crate) fn samples_in_a_frame(header: &[u8]) -> Option<u64> {
@@ -122,6 +127,9 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Flac> {
         if kind(&header) == CUESHEET && found.cue.is_none() && declared <= MAX_CUESHEET_BYTES {
             found.cue = read_cuesheet(source, declared);
         }
+        if kind(&header) == VORBIS_COMMENT && declared <= MAX_COMMENT_BYTES {
+            found.chapters = chapter_comments(source, declared).unwrap_or_default();
+        }
 
         let Some(next) = body.checked_add(declared) else {
             break;
@@ -135,6 +143,47 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Flac> {
     }
 
     Some(found)
+}
+
+fn chapter_comments<S: Read + ?Sized>(
+    source: &mut S,
+    declared: u64,
+) -> Option<Vec<(String, String)>> {
+    let mut block = Vec::new();
+    source.take(declared).read_to_end(&mut block).ok()?;
+
+    let mut at = 0;
+    next_field(&block, &mut at)?;
+    let count = next_count(&block, &mut at)?;
+
+    let mut chapters = Vec::new();
+    for _ in 0..count.min(MOST_COMMENTS) {
+        let comment = next_field(&block, &mut at)?;
+        let Some((key, value)) = str::from_utf8(comment)
+            .ok()
+            .and_then(|held| held.split_once('='))
+        else {
+            continue;
+        };
+        let lead = key.get(..CHAPTER_COMMENT.len());
+        if lead.is_some_and(|lead| lead.eq_ignore_ascii_case(CHAPTER_COMMENT)) {
+            chapters.push((key.to_ascii_uppercase(), value.to_owned()));
+        }
+    }
+    Some(chapters)
+}
+
+fn next_count(block: &[u8], at: &mut usize) -> Option<usize> {
+    let count = u32::from_le_bytes(block.get(*at..*at + 4)?.try_into().ok()?);
+    *at += 4;
+    usize::try_from(count).ok()
+}
+
+fn next_field<'b>(block: &'b [u8], at: &mut usize) -> Option<&'b [u8]> {
+    let length = next_count(block, at)?;
+    let field = block.get(*at..at.checked_add(length)?)?;
+    *at += length;
+    Some(field)
 }
 
 const fn kind(header: &[u8; BLOCK_HEADER_BYTES]) -> u8 {

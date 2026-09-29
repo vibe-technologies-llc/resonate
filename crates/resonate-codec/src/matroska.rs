@@ -6,6 +6,7 @@ use std::{
 use resonate_core::{Frames, SampleRate};
 
 use crate::{
+    chapters::{ChapterStart, MOST_CHAPTERS, Marked, named},
     flac, opus,
     prescan::read_exact,
     vorbis::Windows,
@@ -47,6 +48,16 @@ const SEGMENT_CHILDREN: [u32; 8] = [
     ATTACHMENTS,
 ];
 
+const EDITION_ENTRY: u32 = 0x45B9;
+const CHAPTER_ATOM: u32 = 0x00B6;
+const CHAPTER_TIME_START: u32 = 0x0091;
+const CHAPTER_DISPLAY: u32 = 0x0080;
+const CHAPTER_STRING: u32 = 0x0085;
+const VOID: u8 = 0xEC;
+const VOID_ID_BYTES: u64 = 1;
+const NANOS_A_SECOND: std::num::NonZeroU32 =
+    std::num::NonZeroU32::new(1_000_000_000).expect("a second is not zero");
+
 const DEFAULT_TIMESTAMP_SCALE: u64 = 1_000_000;
 const MAX_ID_BYTES: u32 = 4;
 const MAX_LENGTH_BYTES: u32 = 8;
@@ -78,6 +89,14 @@ pub(crate) struct Segment {
     pub(crate) framed_samples: Option<u64>,
     pub(crate) counted_track: Option<u64>,
     pub(crate) wavpack: Coding,
+    pub(crate) chapters: Vec<Marked>,
+    pub(crate) voided: Option<Voided>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Voided {
+    pub(crate) at: u64,
+    pub(crate) header: Vec<u8>,
 }
 
 impl Segment {
@@ -286,8 +305,90 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Segment> {
     {
         found.wavpack = read_wavpack_coding(source, within, track).unwrap_or_default();
     }
+    if source.seek(SeekFrom::Start(body)).is_ok()
+        && let Some(chapters) = find(source, CHAPTERS, within)
+    {
+        found.voided = voided(&chapters);
+        found.chapters = read_chapters(source, chapters.end());
+    }
 
     Some(found)
+}
+
+fn voided(chapters: &Element) -> Option<Voided> {
+    let Length::Known(body) = chapters.length else {
+        return None;
+    };
+    let width = chapters.body.checked_sub(chapters.at + VOID_ID_BYTES)?;
+    let width = u32::try_from(width)
+        .ok()
+        .filter(|width| (1..=MAX_LENGTH_BYTES).contains(width))?;
+    if body >= (1_u64 << (7 * width)) - 1 {
+        return None;
+    }
+
+    let sized = ((1_u64 << (7 * width)) | body).to_be_bytes();
+    let mut header = vec![VOID];
+    header.extend_from_slice(sized.get(sized.len() - width as usize..)?);
+    Some(Voided {
+        at: chapters.at,
+        header,
+    })
+}
+
+fn read_chapters<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Vec<Marked> {
+    let Some(edition) = find(source, EDITION_ENTRY, limit) else {
+        return Vec::new();
+    };
+    let within = edition.end();
+
+    let mut marked = Vec::new();
+    for _ in 0..MAX_ELEMENTS {
+        let Some(element) = element(source) else {
+            break;
+        };
+        if element.id == CHAPTER_ATOM
+            && let Some(atom) = read_atom(source, element.end())
+        {
+            marked.push(atom);
+            if marked.len() >= MOST_CHAPTERS {
+                break;
+            }
+        }
+        let Some(next) = skip(source, &element) else {
+            break;
+        };
+        if within.is_none_or(|within| next >= within) {
+            break;
+        }
+    }
+    marked
+}
+
+fn read_atom<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Option<Marked> {
+    let limit = limit?;
+    let mut start = None;
+    let mut title = None;
+    for _ in 0..MAX_ELEMENTS {
+        let element = element(source)?;
+        match element.id {
+            CHAPTER_TIME_START => start = uint(source, element.length),
+            CHAPTER_DISPLAY if title.is_none() => {
+                title = find(source, CHAPTER_STRING, element.end())
+                    .and_then(|string| text(source, string.length))
+                    .and_then(|held| named(&held));
+            }
+            _ => {}
+        }
+        if skip(source, &element)? >= limit {
+            break;
+        }
+    }
+
+    Some(Marked {
+        start: ChapterStart::new(start?, NANOS_A_SECOND),
+        title,
+    })
 }
 
 fn count_clusters<S: Read + Seek + ?Sized>(
@@ -833,6 +934,8 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         framed_samples: None,
         counted_track: None,
         wavpack: Coding::Lossless,
+        chapters: Vec::new(),
+        voided: None,
     }
 }
 
@@ -887,6 +990,7 @@ enum Length {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Element {
+    at: u64,
     id: u32,
     length: Length,
     body: u64,
@@ -922,11 +1026,17 @@ fn skip<S: Seek + ?Sized>(source: &mut S, element: &Element) -> Option<u64> {
 }
 
 fn element<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Element> {
+    let at = source.stream_position().ok()?;
     let id = id(source)?;
     let length = length(source)?;
     let body = source.stream_position().ok()?;
 
-    Some(Element { id, length, body })
+    Some(Element {
+        at,
+        id,
+        length,
+        body,
+    })
 }
 
 fn id<S: Read + ?Sized>(source: &mut S) -> Option<u32> {

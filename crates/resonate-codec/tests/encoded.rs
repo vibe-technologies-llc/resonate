@@ -841,6 +841,130 @@ fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_
     }
 }
 
+const CHAPTERS: &str = ";FFMETADATA1\ntitle=Meddle\nartist=Pink Floyd\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=One of These Days\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=1500\ntitle=A Pillow of Winds\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=1500\nEND=2000\ntitle=Fearless\n";
+
+fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i32>)> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build a chaptered {name}");
+        return None;
+    }
+    let samples = tone(CD);
+    let source = tree.at("source.wav");
+    wav(&source, CD, &samples);
+    let chapters = tree.at("chapters.txt");
+    fs::write(&chapters, CHAPTERS).expect("a writable temporary file");
+
+    let target = tree.at(name);
+    let made = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .arg("-i")
+        .arg(&chapters)
+        .args(["-map", "0:a", "-map_metadata", "1", "-map_chapters", "1"])
+        .args(codec)
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if !made {
+        eprintln!("skipped: ffmpeg would not write a chaptered {name}");
+        return None;
+    }
+    Some((target, samples))
+}
+
+#[test]
+fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
+    let cases: [(&str, &[&str]); 3] = [
+        ("book.m4b", &["-c:a", "aac"]),
+        ("book.mp3", &["-c:a", "libmp3lame"]),
+        ("book.mka", &["-c:a", "flac"]),
+    ];
+
+    for (name, codec) in cases {
+        let tree = Tree::new();
+        let Some((path, samples)) = chaptered(&tree, name, codec) else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+
+        let info = probe(&Sources::local(), &location).expect("a chaptered file probes");
+        let cut = info.cue.expect("the chapters cut the file");
+        let rows: Vec<_> = cut
+            .audio_tracks()
+            .map(|(_, track)| (track.start.at(info.spec.rate), track.titled().title))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (Frames::ZERO, Some("One of These Days".to_owned())),
+                (Frames(44_100), Some("A Pillow of Winds".to_owned())),
+                (Frames(66_150), Some("Fearless".to_owned())),
+            ],
+            "{name}"
+        );
+
+        let second = cut
+            .span_of(1, info.spec.rate, info.duration)
+            .expect("a span");
+        let heard = resonate_codec::probe_span(&Sources::local(), &location, second)
+            .expect("a chapter probes as its own row");
+        assert_eq!(
+            heard.tags.title.as_deref(),
+            Some("A Pillow of Winds"),
+            "{name}"
+        );
+        assert_eq!(heard.tags.album.as_deref(), Some("Meddle"), "{name}");
+        assert_eq!(heard.duration, Some(Frames(22_050)), "{name}");
+
+        if name.ends_with(".mka") {
+            assert_eq!(
+                decode(&path).samples,
+                widened(&samples, CD.bits),
+                "a Matroska file carrying chapters did not decode whole"
+            );
+        }
+    }
+}
+
+#[test]
+fn chapter_comments_cut_a_flac_or_an_ogg_where_they_start() {
+    let comments = [
+        "CHAPTER001=00:00:00.000",
+        "CHAPTER001NAME=One of These Days",
+        "CHAPTER002=00:00:01.250",
+        "CHAPTER002NAME=A Pillow of Winds",
+    ];
+    for (name, codec) in [("book.flac", "flac"), ("book.ogg", "libvorbis")] {
+        let tree = Tree::new();
+        let mut arguments = vec!["-c:a", codec];
+        for comment in comments {
+            arguments.extend(["-metadata", comment]);
+        }
+        let Some((path, _)) = shaped(&tree, CD, name, &arguments) else {
+            return;
+        };
+
+        let info = probe(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a file carrying chapter comments probes");
+        let cut = info.cue.expect("the chapter comments cut the file");
+        assert_eq!(
+            cut.audio_tracks()
+                .map(|(_, track)| (track.start.at(info.spec.rate), track.titled().title))
+                .collect::<Vec<_>>(),
+            vec![
+                (Frames::ZERO, Some("One of These Days".to_owned())),
+                (Frames(55_125), Some("A Pillow of Winds".to_owned())),
+            ],
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn a_lossless_encoder_round_trips_the_shapes_past_the_cd_one() {
     let cases: [(&str, Shape, ChannelLayout, &[&str]); 5] = [

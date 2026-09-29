@@ -290,7 +290,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone` is that claim, needing an
   mtime set by hand, a sheet written after the file it names being the newer.
 - **A sheet the file itself carries is the probe worker's to see, so the cut is decided there, not in
-  the walk.** A sidecar shows in a directory listing and an embedded `CUESHEET` does not, so
+  the walk.** A file's chapters are such a sheet (`audio.md`), an audiobook scanning as a row a
+  chapter. A sidecar shows in a directory listing and an embedded `CUESHEET` does not, so
   `read_candidate` probes then cuts on `MediaInfo::cue` where it names audio tracks, sharing
   `cut_into_rows` with `read_cut` so the arithmetic is written once. The sidecar still wins, by the
   walk: `claimed` takes the audio file out of the audio pass before `whole_file_job` sees it, so the

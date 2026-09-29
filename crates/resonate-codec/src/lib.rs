@@ -2,6 +2,7 @@ mod ape;
 mod artwork;
 mod boxes;
 mod caf;
+mod chapters;
 mod container;
 mod counted;
 mod cue;

@@ -7134,6 +7134,71 @@ fn a_file_carrying_its_own_cue_sheet_is_scanned_as_the_tracks_that_sheet_names()
 }
 
 #[test]
+fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build a chaptered book");
+        return Ok(());
+    }
+    let tree = Tree::new();
+    let held = Tree::new();
+    let source = held.write("tone.wav", &Wav::new().frames(88_200).build());
+    let chapters = held.write(
+        "chapters.txt",
+        b";FFMETADATA1\ntitle=The Hobbit\nartist=J. R. R. Tolkien\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1200\ntitle=An Unexpected Party\n\
+[CHAPTER]\nTIMEBASE=1/1000\nSTART=1200\nEND=2000\ntitle=Roast Mutton\n",
+    );
+    let path = tree.path().join("The Hobbit.m4b");
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .arg("-i")
+        .arg(&chapters)
+        .args([
+            "-map",
+            "0:a",
+            "-map_metadata",
+            "1",
+            "-map_chapters",
+            "1",
+            "-c:a",
+            "aac",
+        ])
+        .arg(&path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: ffmpeg would not write a chaptered book");
+        return Ok(());
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let rows = library.tracks(&TrackQuery::default())?;
+
+    assert_eq!(
+        rows.iter()
+            .map(|row| (row.title.as_str(), row.span.map(FrameSpan::start)))
+            .collect::<Vec<_>>(),
+        vec![
+            ("An Unexpected Party", Some(Frames::ZERO)),
+            ("Roast Mutton", Some(Frames(52_920))),
+        ],
+        "the book was not cut where its chapters start"
+    );
+    let albums = library.albums(&AlbumQuery::default())?;
+    assert_eq!(
+        albums
+            .iter()
+            .map(|album| album.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["The Hobbit"]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Result<()> {
     let tree = Tree::new();
     if flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET).is_none() {

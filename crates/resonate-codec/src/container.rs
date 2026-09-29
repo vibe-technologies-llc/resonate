@@ -32,9 +32,10 @@ use symphonia::core::{
 use crate::{
     CodecOp, Container, Error, MediaInfo, Result, Speakers, StreamTrackId, TrackProperty,
     boxes::Priming,
-    caf,
+    caf, chapters,
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
+    matroska::Voided,
     opus,
     prescan::Prescan,
     riff::{self, Riff},
@@ -126,27 +127,69 @@ impl Opened {
     }
 }
 
-struct Probed(Box<dyn MediaStream>);
+struct Probed {
+    bytes: Box<dyn MediaStream>,
+    at: u64,
+    voided: Option<Voided>,
+}
+
+impl Probed {
+    fn over(mut bytes: Box<dyn MediaStream>, voided: Option<Voided>) -> Self {
+        let at = match voided {
+            Some(_) => bytes.stream_position().unwrap_or(0),
+            None => 0,
+        };
+        Self { bytes, at, voided }
+    }
+
+    fn lay_the_void_over(&self, read: &mut [u8]) {
+        let Some(voided) = &self.voided else {
+            return;
+        };
+        let read_end = self.at.saturating_add(read.len() as u64);
+        let void_end = voided.at.saturating_add(voided.header.len() as u64);
+        let from = self.at.max(voided.at);
+        let to = read_end.min(void_end);
+        for position in from..to {
+            let (Ok(into), Ok(held)) = (
+                usize::try_from(position - self.at),
+                usize::try_from(position - voided.at),
+            ) else {
+                continue;
+            };
+            if let (Some(into), Some(held)) = (read.get_mut(into), voided.header.get(held)) {
+                *into = *held;
+            }
+        }
+    }
+}
 
 impl Read for Probed {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
+        let read = self.bytes.read(buf)?;
+        if self.voided.is_some() {
+            self.lay_the_void_over(buf.get_mut(..read).unwrap_or_default());
+            self.at = self.at.saturating_add(read as u64);
+        }
+        Ok(read)
     }
 }
 
 impl Seek for Probed {
     fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
-        self.0.seek(to)
+        let landed = self.bytes.seek(to)?;
+        self.at = landed;
+        Ok(landed)
     }
 }
 
 impl MediaSource for Probed {
     fn is_seekable(&self) -> bool {
-        self.0.is_seekable()
+        self.bytes.is_seekable()
     }
 
     fn byte_len(&self) -> Option<u64> {
-        self.0.byte_len()
+        self.bytes.byte_len()
     }
 }
 
@@ -232,8 +275,10 @@ fn open_spooling_within(
         None => {}
     }
 
-    let stream =
-        MediaSourceStream::new(Box::new(Probed(bytes)), MediaSourceStreamOptions::default());
+    let stream = MediaSourceStream::new(
+        Box::new(Probed::over(bytes, prescan.segment.voided.clone())),
+        MediaSourceStreamOptions::default(),
+    );
     let mut reader = crate::registry::formats()
         .probe(
             &hint,
@@ -407,7 +452,7 @@ pub(crate) fn coded_info(
             .and_then(|bits| u8::try_from(bits).ok()),
         is_seekable: opened.seekable,
         packing: Packing::Samples,
-        cue: embedded_cue(opened, track, &tags),
+        cue: embedded_cue(opened, track, &tags).or_else(|| chaptered(opened, spec.rate, &tags)),
         tags,
     })
 }
@@ -424,6 +469,21 @@ fn embedded_cue(opened: &Coded, track: &Track, tags: &TagSet) -> Option<CueFile>
                 .clone()
                 .map(|cut| cut.billed_by(tags))
         })
+}
+
+fn chaptered(opened: &Coded, rate: SampleRate, tags: &TagSet) -> Option<CueFile> {
+    let mut marked = opened
+        .reader
+        .chapters()
+        .map(chapters::of_group)
+        .unwrap_or_default();
+    if marked.is_empty() {
+        marked = opened.prescan.chapters();
+    }
+    if marked.is_empty() {
+        marked = chapters::of_comments(&opened.prescan.flac.chapters);
+    }
+    chapters::cut(&marked, rate, tags)
 }
 
 fn the_first_cut(sheet: CueSheet) -> Option<CueFile> {
