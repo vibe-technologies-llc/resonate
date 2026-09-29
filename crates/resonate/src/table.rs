@@ -1,5 +1,22 @@
 use unicode_width::UnicodeWidthStr as _;
 
+const TURNS_THE_READING: [char; 9] = [
+    '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}',
+    '\u{2069}',
+];
+
+pub fn on_one_line(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_control() || TURNS_THE_READING.contains(&character) {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 pub struct Table {
     headers: Vec<&'static str>,
     rows: Vec<Vec<String>>,
@@ -14,7 +31,8 @@ impl Table {
     }
 
     pub fn push(&mut self, row: Vec<String>) {
-        self.rows.push(row);
+        self.rows
+            .push(row.iter().map(|cell| on_one_line(cell)).collect());
     }
 
     fn widths(&self) -> Vec<usize> {
@@ -70,6 +88,27 @@ mod tests {
         table.push(vec!["auto_null".to_owned(), "48 kHz".to_owned()]);
         table.push(vec!["a".to_owned(), "44.1 kHz".to_owned()]);
         table
+    }
+
+    #[test]
+    fn a_cell_carrying_a_control_or_a_reordering_mark_is_laid_on_one_plain_line() {
+        let mut table = Table::new(vec!["TITLE", "ARTIST"]);
+        table.push(vec![
+            "Echoes\x1b]0;owned\x07".to_owned(),
+            "Pink\nFloyd  forged\u{202e}".to_owned(),
+        ]);
+
+        let rendered = table.render();
+
+        assert_eq!(rendered.lines().count(), 2, "{rendered:?}");
+        assert!(
+            !rendered
+                .chars()
+                .any(|character| character != '\n' && character.is_control()),
+            "{rendered:?}"
+        );
+        assert!(!rendered.contains('\u{202e}'));
+        assert!(rendered.contains("Echoes ]0;owned "));
     }
 
     #[test]

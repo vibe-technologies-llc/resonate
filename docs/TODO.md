@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Privacy and security
-- Tag text reaches the terminal raw in every table but `info`'s — `stats`, `favourites`,
-  `missing`, `playlists` and `play`'s readout — so a title carrying an OSC sequence or a newline
-  retitles the terminal or forges a row
 - `resonate mcp` reads a request with an unbounded `read_until`, so a client sending bytes with no
   newline grows the line until the process is killed
 - `Vault::inside` and `holds` compare paths lexically, so `<root>/../x` passes; only `Vault::at`

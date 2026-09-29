@@ -7,7 +7,10 @@ use resonate_codec::{
 use resonate_core::{AppliedGain, Decibels, Frames, MediaLocation, SampleRate};
 use resonate_engine::{EngineConfig, resolve_replay_gain};
 
-use crate::{Result, table::Table};
+use crate::{
+    Result,
+    table::{self, Table},
+};
 
 const NANOS_A_MILLI: u128 = 1_000_000;
 const MILLIS_A_SECOND: u64 = 1_000;
@@ -334,17 +337,7 @@ fn tags(tags: &[RawTag]) {
 }
 
 fn on_one_line(value: &TagValue) -> String {
-    let folded: String = value
-        .to_string()
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect();
+    let folded = table::on_one_line(&value.to_string());
 
     let mut kept: String = folded.chars().take(WIDEST_TAG_VALUE).collect();
     if folded.chars().nth(WIDEST_TAG_VALUE).is_some() {

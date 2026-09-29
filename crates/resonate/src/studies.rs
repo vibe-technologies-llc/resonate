@@ -1,7 +1,10 @@
 use resonate_core::{FrameSpan, MediaLocation};
 use resonate_library::{Agreement, Library, StudiedTrack, StudyFilter, Verdict};
 
-use crate::{Error, Result, table::Table};
+use crate::{
+    Error, Result,
+    table::{self, Table},
+};
 
 const NOTHING: &str = "-";
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
@@ -69,8 +72,8 @@ pub fn take(library: &Library, location: &MediaLocation, span: Option<FrameSpan>
 
     println!(
         "{} — {} | recording {} | heard at {}",
-        taken.artist.as_deref().unwrap_or(NOTHING),
-        taken.title,
+        table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
+        table::on_one_line(&taken.title),
         taken.recording,
         taken.score
     );

@@ -95,6 +95,13 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
 
 ## Output
 
+**Text from a tag, a sheet or a service reaches the terminal as plain text.** `Table::push` passes
+every cell through `table::on_one_line`, which turns a control character — an escape opening an OSC
+sequence, a newline forging a row — and a bidirectional override into a space, so every table
+(`stats`, `favourites`, `missing`, `playlists`, `players`, `studies`, `info`'s) is safe whatever
+the catalog holds; a line printed outside a table from such text, as `studies --take`'s, goes
+through it too (`a_cell_carrying_a_control_or_a_reordering_mark_is_laid_on_one_plain_line`).
+
 `resonate info` folds a raw tag value onto one line and cuts it at 72 characters
 (`WIDEST_TAG_VALUE`), since a lyric tag runs to hundreds of lines and would wreck the table's
 alignment; it reads a length through one clock that carries — rounded to the millisecond, so a
