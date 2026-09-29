@@ -24,7 +24,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `lay_out` writes `V1` and every step where the stamp is `UNSTAMPED`, opens where it is this build's,
   and otherwise finds which prefix of the steps the stamp names and applies the rest in one
   transaction that restamps as it commits — a failing step is `StoreOp::Migrate` and leaves the
-  catalog, stamp and all, as it was. Only a stamp no prefix names is `Error::SchemaMismatch`: a
+  catalog, stamp and all, as it was. The stamp is read *inside* that transaction, begun `IMMEDIATE`,
+  so a second process opening an old catalog waits on the first's write lock and then reads the stamp
+  it left, rather than reading the old one first and failing on a duplicate column
+  (`a_catalog_another_process_is_migrating_is_read_once_it_has_and_not_migrated_twice`). Only a stamp no prefix names is `Error::SchemaMismatch`: a
   catalog from before the history began, or from a build with a history this one does not share —
   the one case left where the catalog is deleted and scanned again. A counted version was weighed and
   refused: it cannot tell a build with the same count and a different schema from ours, so the stamp

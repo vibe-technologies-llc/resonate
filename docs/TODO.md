@@ -9,8 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- `schema.rs` reads the stamp before it opens the migration transaction, so two processes opening
-  an old catalog both migrate and the second refuses to start on a duplicate column
 - `Inner::write` opens a deferred transaction, so an edit that reads before it writes — every
   undo-wrapped playlist edit — fails at once with `SQLITE_BUSY_SNAPSHOT`, past `busy_timeout`,
   where another process committed in between

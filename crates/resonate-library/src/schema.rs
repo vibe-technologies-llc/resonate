@@ -1,4 +1,4 @@
-use rusqlite::{Connection, functions::FunctionFlags};
+use rusqlite::{Connection, Transaction, TransactionBehavior, functions::FunctionFlags};
 
 use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
@@ -536,7 +536,9 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
 
 fn lay_out_through(connection: &Connection, first: &str, steps: &[&str]) -> Result<()> {
     let expected = fingerprint_after(first, steps);
-    let found = stamped(connection)?;
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    let found = stamped(&transaction)?;
     if found == Some(expected) {
         return Ok(());
     }
@@ -547,9 +549,6 @@ fn lay_out_through(connection: &Connection, first: &str, steps: &[&str]) -> Resu
         ),
     };
 
-    let transaction = connection
-        .unchecked_transaction()
-        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
     if taken.is_none() {
         transaction
             .execute_batch(first)
@@ -619,6 +618,8 @@ const fn never_unstamped(hashed: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use std::{env, fs, process, thread, time::Duration};
+
     use super::*;
 
     fn opened() -> Connection {
@@ -702,6 +703,48 @@ mod tests {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .expect("the table's columns read back")
+    }
+
+    #[test]
+    fn a_catalog_another_process_is_migrating_is_read_once_it_has_and_not_migrated_twice() {
+        let folder =
+            env::temp_dir().join(format!("resonate-schema-{}-migrated-once", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let catalog = folder.join("library.db");
+        let on_disc = || {
+            let connection = Connection::open(&catalog).expect("a catalog on disc");
+            configure(&connection, Role::Writing).expect("the pragmas apply");
+            connection
+        };
+
+        let first = on_disc();
+        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
+        first
+            .execute_batch("BEGIN IMMEDIATE;")
+            .expect("the first process takes the write");
+        first.execute_batch(NAMED).expect("the step applies");
+        first
+            .pragma_update(
+                None,
+                "user_version",
+                as_signed(fingerprint_after(FIRST, &[NAMED]).0),
+            )
+            .expect("the stamp is written");
+
+        let second = on_disc();
+        let opening =
+            thread::spawn(move || lay_out_through(&second, FIRST, &[NAMED]).map(|()| second));
+        thread::sleep(Duration::from_millis(200));
+        first.execute_batch("COMMIT;").expect("the migration lands");
+
+        let second = opening
+            .join()
+            .expect("the second process did not panic")
+            .expect("the second process opened what the first migrated");
+        assert_eq!(columns_of_held(&second), vec!["id", "name"]);
+        drop((first, second));
+        let _ = fs::remove_dir_all(&folder);
     }
 
     #[test]
