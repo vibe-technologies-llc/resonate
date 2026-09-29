@@ -6,10 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- The ListenBrainz token field is missing from `RootView::editing`, so every character typed into
-  it is typed into the library search as well
-- Escape in the AutoEq search field clears the library search or steps back a pane, because
-  `dismiss_search` has no arm for `looking`
 - A plain lyric sheet glides back to its first line six seconds after it is scrolled: `landing`
   answers the top wherever no line is being read, and `following` comes back after `HANDS_OFF`
 - A press or an Enter on a Tracks row queues only the pages already loaded where the heading's

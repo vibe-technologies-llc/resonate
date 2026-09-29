@@ -202,6 +202,15 @@ impl Driven {
         library: Arc<Library>,
         folder: &Folder,
     ) -> Self {
+        Self::corrected_by(cx, library, folder, Corrected::uncorrected())
+    }
+
+    pub(crate) fn corrected_by(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        corrections: Corrected,
+    ) -> Self {
         theme::wear(Appearance::default());
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
@@ -212,7 +221,7 @@ impl Driven {
                 library,
                 lyricists: Arc::new(Lyricists::unsourced()),
                 fingerprinters: Arc::new(Fingerprinters::none()),
-                corrections: Arc::new(Corrected::uncorrected()),
+                corrections: Arc::new(corrections),
                 settings: Arc::new(Ephemeral),
                 online: Online::default(),
                 bindings: Bindings::default(),
@@ -412,6 +421,18 @@ impl Driven {
     pub(crate) fn read<R>(&mut self, read: impl FnOnce(&RootView, &gpui::App) -> R) -> R {
         let root = self.root.clone();
         self.cx.update(|_, cx| read(root.read(cx), cx))
+    }
+
+    pub(crate) fn focus(
+        &mut self,
+        field: impl FnOnce(&RootView) -> &Entity<crate::views::field::Field>,
+    ) {
+        let root = self.root.clone();
+        self.cx.update(|window, cx| {
+            let field = field(root.read(cx)).clone();
+            field.read(cx).take_focus(window);
+        });
+        self.settle();
     }
 }
 
@@ -702,6 +723,89 @@ mod tests {
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the way back landed at {landed:?} where the list was left at {left_at:?}"
+        );
+    }
+
+    struct Measuring {
+        source: resonate_core::SourceId,
+    }
+
+    impl resonate_eq::Corrections for Measuring {
+        fn source(&self) -> &resonate_core::SourceId {
+            &self.source
+        }
+
+        fn catalogue(&self) -> resonate_eq::Result<Arc<resonate_eq::Catalogue>> {
+            Ok(Arc::new(resonate_eq::Catalogue::empty()))
+        }
+
+        fn profile(
+            &self,
+            _: &resonate_eq::DeviceId,
+        ) -> resonate_eq::Result<Option<resonate_core::eq::Profile>> {
+            Ok(None)
+        }
+    }
+
+    fn texts(driven: &mut Driven) -> (String, String, String) {
+        driven.read(|root, cx| {
+            (
+                root.search.read(cx).text().to_owned(),
+                root.listenbrainz.read(cx).text().to_owned(),
+                root.looking.read(cx).text().to_owned(),
+            )
+        })
+    }
+
+    #[gpui::test]
+    fn what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.click("tab-settings");
+        driven.click("category-Online");
+        driven.focus(|root| &root.listenbrainz);
+
+        driven.cx.simulate_input("token");
+        driven.settle();
+
+        let (searched, token, _) = texts(&mut driven);
+        assert_eq!(token, "token");
+        assert_eq!(searched, "", "the token was typed into the search as well");
+    }
+
+    #[gpui::test]
+    fn escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was(
+        cx: &mut TestAppContext,
+    ) {
+        let measuring = Measuring {
+            source: resonate_core::SourceId::new("measured").expect("a usable source name"),
+        };
+        let mut driven = Driven::corrected_by(
+            cx,
+            catalog(),
+            &Folder::new(),
+            Corrected::uncorrected().and(Arc::new(measuring)),
+        );
+        driven.click("tab-settings");
+        driven.click("category-Equaliser");
+        driven.focus(|root| &root.looking);
+        driven.cx.simulate_input("hd 650");
+        driven.settle();
+        let before = texts(&mut driven);
+
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        let (searched, _, looked_for) = texts(&mut driven);
+        let pane = driven.read(|root, _| root.pane);
+        assert_eq!(before.2, "hd 650");
+        assert_eq!(looked_for, "", "escape left the AutoEq search as it was");
+        assert_eq!(searched, "");
+        assert_eq!(
+            pane,
+            Pane::Settings,
+            "escape stepped back out of the settings"
         );
     }
 

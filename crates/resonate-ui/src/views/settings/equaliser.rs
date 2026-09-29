@@ -1243,6 +1243,12 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn leave_looking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.looking.update(cx, |looking, cx| looking.clear(cx));
+        self.look_for_a_device(cx);
+        window.focus(&self.focus);
+    }
+
     fn read_the_catalogue(&mut self, cx: &mut Context<Self>) {
         self.equaliser
             .update(cx, |model, cx| model.read_the_catalogue(None, cx));

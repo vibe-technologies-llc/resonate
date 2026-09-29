@@ -236,7 +236,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   mean*, *Sung in*, a suggestion's *Search for these* and Listen's *Find it* go through — call
   `show_everything` before writing the words. A click on the toast is the same `toast::dismiss`. The
   caret keeps escape for itself: a focused field never reaches the match, `editing` returning first, so
-  escape in the box does what it always did.
+  escape in the box does what it always did. `editing` asks `RootView::text_fields`, the one list of
+  every `Field` the root holds, the Subsonic account's included, so a field cannot be left out of it
+  as the ListenBrainz token once was, every letter typed into it landing in the search too
+  (`what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search`). Each field still
+  needs its own arm in `dismiss_search`; the AutoEq search's, `leave_looking`, clears it and its
+  results and hands focus back, where escape there once cleared the library search or stepped back a
+  pane (`escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
 - **A slider is grabbed on the press and followed from a window-wide surface, not the rail.**
   `views/slider.rs` owns both rails: the press starts a `Grab`, and `drag_surface` — an absolutely
   positioned child of the app that occludes while held — carries the move and release listeners, a

@@ -2643,20 +2643,29 @@ impl RootView {
         )
     }
 
+    fn text_fields(&self) -> impl Iterator<Item = &Entity<Field>> {
+        [
+            &self.search,
+            &self.name,
+            &self.contact,
+            &self.acoustid,
+            &self.audd,
+            &self.listenbrainz,
+            &self.discord_app,
+            &self.discord_icon,
+            &self.organising,
+            &self.typed_root,
+            &self.finding,
+            &self.figure,
+            &self.looking,
+        ]
+        .into_iter()
+        .chain(&self.subsonic)
+    }
+
     fn editing(&self, window: &Window, cx: &App) -> bool {
-        self.search.read(cx).is_focused(window)
-            || self.name.read(cx).is_focused(window)
-            || self.contact.read(cx).is_focused(window)
-            || self.acoustid.read(cx).is_focused(window)
-            || self.audd.read(cx).is_focused(window)
-            || self.an_account_field_is_focused(window, cx)
-            || self.discord_app.read(cx).is_focused(window)
-            || self.discord_icon.read(cx).is_focused(window)
-            || self.organising.read(cx).is_focused(window)
-            || self.typed_root.read(cx).is_focused(window)
-            || self.finding.read(cx).is_focused(window)
-            || self.figure.read(cx).is_focused(window)
-            || self.looking.read(cx).is_focused(window)
+        self.text_fields()
+            .any(|field| field.read(cx).is_focused(window))
     }
 
     fn enter_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2738,6 +2747,10 @@ impl RootView {
         }
         if self.figure.read(cx).is_focused(window) {
             self.leave_figure(window, cx);
+            return;
+        }
+        if self.looking.read(cx).is_focused(window) {
+            self.leave_looking(window, cx);
             return;
         }
         if self.naming.is_some() || self.adding.is_some() {
