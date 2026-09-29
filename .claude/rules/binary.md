@@ -184,8 +184,12 @@ What some of them mean:
 `clear`, `store_in_table`, `clear_in_table` — goes through the private `edited`, which follows a symlinked
 `config.toml` to its file, holds `config.toml.lock` for the whole read-edit-write (so a window and a
 `resonate eq` beside it cannot write over each other), stages under a name of this process's own,
-carries the file's mode across, `sync_all`s the staged file and the folder around the rename, and
-renames it over the target so a crash cannot truncate it. A value with a flag is spelled as the
+creates the staged file `0600` and narrows the standing file's mode to its owner's bits before a
+byte is written — the file holds `subsonic-password`, `audd-token` and `listenbrainz-token`, and one
+made under the umask, or kept at a wider mode an older build left, was readable by every local user
+(`the_settings_file_is_its_owners_alone_from_the_first_write_and_after_a_wider_one`) — `sync_all`s
+the staged file and the folder around the rename, and renames it over the target so a crash cannot
+truncate it. A value with a flag is spelled as the
 flag spells it — `quality`, `dither` and `noise-shaping` go through the `ValueEnum`s `cli.rs`
 declares — so `--noise-shaping flat` is `noise-shaping = "flat"`. `Setting::Theme` and
 `Setting::Accent` take the same seam and never reach the engine, as do `Setting::Online` and

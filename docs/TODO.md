@@ -6,10 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Privacy and security
-- `config::laid_down` creates the staged file under the umask and copies a mode only from a file
-  already there, so the first setting written makes a `config.toml` holding
-  `subsonic-password`, `audd-token` and `listenbrainz-token` readable by every local user, and
-  every later write holds them at the umask's mode until `set_permissions` runs
 - The Subsonic password and the three tokens are drawn in plain text: `Field` has no masked mode
 - `contact` rides on every request's User-Agent, Shazam, AudD, Spotify, Apple Music, Deezer,
   SoundCloud and GitHub included, where only MusicBrainz and the services it fronts ask for one

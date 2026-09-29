@@ -3,6 +3,7 @@ use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
+    os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -35,6 +36,10 @@ const LISTENS_FOR_SECONDS: std::ops::RangeInclusive<u64> = 4..=60;
 const LOCK_SUFFIX: &str = ".lock";
 
 const STAGING_SUFFIX: &str = ".new";
+
+const READ_BY_ITS_OWNER_ALONE: u32 = 0o600;
+
+const ITS_OWNERS_BITS: u32 = 0o700;
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
@@ -777,11 +782,13 @@ fn laid_down(target: &Path, staged: &Path, text: &str) -> io::Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(READ_BY_ITS_OWNER_ALONE)
         .open(staged)?;
-    file.write_all(text.as_bytes())?;
     if let Ok(standing) = fs::metadata(target) {
-        file.set_permissions(standing.permissions())?;
+        let owners = standing.permissions().mode() & ITS_OWNERS_BITS;
+        file.set_permissions(fs::Permissions::from_mode(owners))?;
     }
+    file.write_all(text.as_bytes())?;
     file.sync_all()?;
     fs::rename(staged, target)?;
     if let Some(parent) = target.parent() {
@@ -1511,6 +1518,31 @@ mod tests {
         clear(&scratch.path, ConfigKey::Sink).expect("a writable file");
 
         assert_eq!(scratch.text(), "quality = \"fast\"\n");
+    }
+
+    #[test]
+    fn the_settings_file_is_its_owners_alone_from_the_first_write_and_after_a_wider_one() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mode = |path: &Path| {
+            fs::metadata(path)
+                .expect("the settings file")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        let scratch = Scratch::new();
+        let folder = scratch.path.parent().expect("a folder").to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+
+        store(&scratch.path, ConfigKey::AuddToken, "a secret").expect("a writable file");
+
+        assert_eq!(mode(&scratch.path), 0o600);
+
+        fs::set_permissions(&scratch.path, fs::Permissions::from_mode(0o644)).expect("a mode");
+        store(&scratch.path, ConfigKey::AuddToken, "another").expect("a writable file");
+
+        assert_eq!(mode(&scratch.path), 0o600);
     }
 
     #[test]
