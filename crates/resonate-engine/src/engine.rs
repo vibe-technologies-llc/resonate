@@ -356,6 +356,7 @@ impl Output {
                 latency: Frames::ZERO,
                 underruns: 0,
                 went_without: Frames::ZERO,
+                device_turned: attenuator == Attenuator::Device,
                 device_muted: attenuator.hears_the_mute_of(sink),
             },
             plan,
@@ -1095,6 +1096,7 @@ impl Engine {
             Command::SwitchProfile { sink, profile } => {
                 Ok(self.backend.set_card_profile(sink, profile)?)
             }
+            Command::SetDeviceMute(muted) => self.mute_the_device(muted),
             Command::SetDeviceVolume(handed) => {
                 self.config.device_volume = handed;
                 self.retune()
@@ -1854,6 +1856,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+        output.status.device_turned = attenuator == Attenuator::Device;
         output.status.device_muted = attenuator.hears_the_mute_of(&sink);
         if output.attenuator == attenuator {
             return;
@@ -1916,6 +1919,18 @@ impl Engine {
             self.turned.pop_front();
         }
         self.turned.push_back(gain);
+    }
+
+    fn mute_the_device(&self, muted: bool) -> Result<()> {
+        let Some(output) = self
+            .output
+            .as_ref()
+            .filter(|output| output.attenuator == Attenuator::Device)
+        else {
+            tracing::debug!("no device turns the volume here, so it has no mute to set");
+            return Ok(());
+        };
+        Ok(self.backend.set_device_mute(output.sink, muted)?)
     }
 
     fn follow_the_sink_it_would_choose(&mut self) {

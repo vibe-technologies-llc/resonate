@@ -56,6 +56,10 @@ impl Backend for NoSinks {
         Err(SinkError::NoSink)
     }
 
+    fn set_device_mute(&self, _sink: SinkId, _muted: bool) -> SinkResult<()> {
+        Err(SinkError::NoSink)
+    }
+
     fn set_card_profile(&self, _sink: SinkId, _profile: ProfileIndex) -> SinkResult<()> {
         Err(SinkError::NoSink)
     }

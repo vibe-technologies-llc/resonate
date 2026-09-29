@@ -309,6 +309,10 @@ impl Backend for RealtimeSink {
         Ok(())
     }
 
+    fn set_device_mute(&self, _sink: SinkId, _muted: bool) -> SinkResult<()> {
+        Ok(())
+    }
+
     fn set_card_profile(&self, _sink: SinkId, _profile: ProfileIndex) -> SinkResult<()> {
         Ok(())
     }

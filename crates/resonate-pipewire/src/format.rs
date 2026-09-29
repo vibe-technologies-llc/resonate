@@ -341,21 +341,70 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
 pub(crate) struct AdvertisedRoute {
     pub(crate) index: Option<i32>,
     pub(crate) seats: Vec<i32>,
-    pub(crate) channels: usize,
+    pub(crate) channel_volumes: Vec<f32>,
     pub(crate) port: SinkPort,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct RouteVolume {
+pub(crate) enum RouteSetting {
+    Volume(Gain),
+    Mute(bool),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RouteChange {
     pub(crate) index: i32,
     pub(crate) seat: i32,
-    pub(crate) channels: usize,
-    pub(crate) gain: Gain,
+    pub(crate) channel_volumes: Vec<f32>,
+    pub(crate) setting: RouteSetting,
+}
+
+impl RouteChange {
+    pub(crate) fn can_be_made(&self) -> bool {
+        match self.setting {
+            RouteSetting::Volume(_) => !self.channel_volumes.is_empty(),
+            RouteSetting::Mute(_) => true,
+        }
+    }
+
+    fn props(&self) -> Property {
+        match self.setting {
+            RouteSetting::Volume(gain) => Property::new(
+                sys::SPA_PROP_channelVolumes,
+                Value::ValueArray(ValueArray::Float(self.balanced(gain))),
+            ),
+            RouteSetting::Mute(muted) => Property::new(sys::SPA_PROP_mute, Value::Bool(muted)),
+        }
+    }
+
+    fn balanced(&self, gain: Gain) -> Vec<f32> {
+        let loudest = self
+            .channel_volumes
+            .iter()
+            .copied()
+            .filter(|volume| volume.is_finite())
+            .fold(0.0_f32, f32::max);
+        let wanted = gain.get();
+        if loudest <= 0.0 {
+            return vec![wanted; self.channel_volumes.len()];
+        }
+        self.channel_volumes
+            .iter()
+            .map(|volume| {
+                let share = if volume.is_finite() {
+                    volume.max(0.0) / loudest
+                } else {
+                    1.0
+                };
+                wanted * share
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Levels {
-    channels: usize,
+    channel_volumes: Vec<f32>,
     loudest: Option<Gain>,
     muted: bool,
 }
@@ -369,7 +418,7 @@ impl Levels {
         for property in &object.properties {
             match (property.key, &property.value) {
                 (sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(volumes))) => {
-                    levels.channels = volumes.len();
+                    levels.channel_volumes.clone_from(volumes);
                     levels.loudest = volumes
                         .iter()
                         .copied()
@@ -436,7 +485,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
     Some(AdvertisedRoute {
         index,
         seats,
-        channels: levels.channels,
+        channel_volumes: levels.channel_volumes,
         port: SinkPort {
             description: description.or(name)?,
             plugged,
@@ -447,8 +496,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
     })
 }
 
-pub(crate) fn route_volume(turned: RouteVolume) -> Value {
-    let volumes = vec![turned.gain.get(); turned.channels];
+pub(crate) fn route_change(turned: &RouteChange) -> Value {
     Value::Object(Object {
         type_: sys::SPA_TYPE_OBJECT_ParamRoute,
         id: sys::SPA_PARAM_Route,
@@ -460,13 +508,7 @@ pub(crate) fn route_volume(turned: RouteVolume) -> Value {
                 Value::Object(Object {
                     type_: sys::SPA_TYPE_OBJECT_Props,
                     id: sys::SPA_PARAM_Route,
-                    properties: vec![
-                        Property::new(
-                            sys::SPA_PROP_channelVolumes,
-                            Value::ValueArray(ValueArray::Float(volumes)),
-                        ),
-                        Property::new(sys::SPA_PROP_mute, Value::Bool(false)),
-                    ],
+                    properties: vec![turned.props()],
                 }),
             ),
             Property::new(sys::SPA_PARAM_ROUTE_save, Value::Bool(true)),
@@ -748,7 +790,7 @@ mod tests {
         let route =
             parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
         assert_eq!(route.index, Some(4));
-        assert_eq!(route.channels, 2);
+        assert_eq!(route.channel_volumes, vec![0.125, 0.25]);
         assert_eq!(route.port.volume, Gain::new(0.25).ok());
 
         let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
@@ -765,18 +807,16 @@ mod tests {
         ))
         .expect("an output route");
         assert_eq!(bare.port.volume, None);
-        assert_eq!(bare.channels, 0);
+        assert!(bare.channel_volumes.is_empty());
     }
 
-    #[test]
-    fn a_turned_route_sets_every_channel_unmuted_and_asks_to_be_remembered() {
-        let turned = route_volume(RouteVolume {
+    fn changed(channel_volumes: &[f32], setting: RouteSetting) -> Vec<Property> {
+        let Value::Object(object) = route_change(&RouteChange {
             index: 4,
             seat: 1,
-            channels: 3,
-            gain: Gain::new(0.125).expect("in range"),
-        });
-        let Value::Object(object) = &turned else {
+            channel_volumes: channel_volumes.to_vec(),
+            setting,
+        }) else {
             panic!("a route is an object");
         };
         let said = |key| {
@@ -790,14 +830,74 @@ mod tests {
         assert_eq!(said(sys::SPA_PARAM_ROUTE_index), Some(Value::Int(4)));
         assert_eq!(said(sys::SPA_PARAM_ROUTE_device), Some(Value::Int(1)));
         assert_eq!(said(sys::SPA_PARAM_ROUTE_save), Some(Value::Bool(true)));
-        let levels = Levels::of(&said(sys::SPA_PARAM_ROUTE_props).expect("the route's props"));
+        match said(sys::SPA_PARAM_ROUTE_props) {
+            Some(Value::Object(props)) => props.properties,
+            _ => panic!("a route's props are an object"),
+        }
+    }
+
+    fn volumes_in(props: &[Property]) -> Option<Vec<f32>> {
+        props
+            .iter()
+            .find_map(|property| match (property.key, &property.value) {
+                (sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(volumes))) => {
+                    Some(volumes.clone())
+                }
+                _ => None,
+            })
+    }
+
+    fn mute_in(props: &[Property]) -> Option<bool> {
+        props
+            .iter()
+            .find_map(|property| match (property.key, &property.value) {
+                (sys::SPA_PROP_mute, Value::Bool(muted)) => Some(*muted),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn a_turned_route_keeps_its_balance_leaves_its_mute_and_asks_to_be_remembered() {
+        let eighth = Gain::new(0.125).expect("in range");
+        let half = Gain::new(0.5).expect("in range");
+
+        let turned = changed(&[0.5, 0.25, 0.0], RouteSetting::Volume(eighth));
+        let silent = changed(&[0.0, 0.0], RouteSetting::Volume(half));
+
+        assert_eq!(volumes_in(&turned), Some(vec![0.125, 0.0625, 0.0]));
         assert_eq!(
-            levels,
-            Levels {
-                channels: 3,
-                loudest: Gain::new(0.125).ok(),
-                muted: false,
+            mute_in(&turned),
+            None,
+            "turning the route said whether it is muted"
+        );
+        assert_eq!(volumes_in(&silent), Some(vec![0.5, 0.5]));
+    }
+
+    #[test]
+    fn a_muted_route_is_told_its_mute_and_nothing_of_its_volume() {
+        let muted = changed(&[0.5, 0.25], RouteSetting::Mute(true));
+        let unmuted = changed(&[], RouteSetting::Mute(false));
+
+        assert_eq!(mute_in(&muted), Some(true));
+        assert_eq!(volumes_in(&muted), None);
+        assert_eq!(mute_in(&unmuted), Some(false));
+        assert!(
+            RouteChange {
+                index: 0,
+                seat: 0,
+                channel_volumes: Vec::new(),
+                setting: RouteSetting::Mute(false),
             }
+            .can_be_made()
+        );
+        assert!(
+            !RouteChange {
+                index: 0,
+                seat: 0,
+                channel_volumes: Vec::new(),
+                setting: RouteSetting::Volume(Gain::UNITY),
+            }
+            .can_be_made()
         );
     }
 

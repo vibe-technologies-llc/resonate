@@ -43,9 +43,9 @@ use crate::{
     SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent,
     StreamRequest, StreamState,
     format::{
-        AdvertisedFormat, AdvertisedRoute, RouteVolume, WireWord, negotiated, packs_narrower,
-        parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile, parse_rate,
-        parse_route, profile_switch, route_volume, spa_format, spa_position,
+        AdvertisedFormat, AdvertisedRoute, RouteChange, RouteSetting, WireWord, negotiated,
+        packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
+        parse_rate, parse_route, profile_switch, route_change, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
 };
@@ -95,7 +95,7 @@ enum Request {
     Capture(Box<CaptureOpen>),
     StopCapture,
     SetActive(bool),
-    Turn { sink: SinkId, gain: Gain },
+    Turn { sink: SinkId, setting: RouteSetting },
     Switch { sink: SinkId, profile: ProfileIndex },
     Drain,
     Close,
@@ -337,18 +337,18 @@ impl Discovered {
         self.sinks.get(&sink.get())?.device
     }
 
-    fn route_turning(&self, sink: SinkId, gain: Gain) -> Option<(u32, RouteVolume)> {
+    fn route_turning(&self, sink: SinkId, setting: RouteSetting) -> Option<(u32, RouteChange)> {
         let record = self.sinks.get(&sink.get())?;
         let above = record.device?;
         let seat = record.seat?;
         let route = self.ports.get(&above)?.turning(seat)?;
-        let turned = RouteVolume {
+        let turned = RouteChange {
             index: route.index?,
             seat,
-            channels: route.channels,
-            gain,
+            channel_volumes: route.channel_volumes.clone(),
+            setting,
         };
-        (turned.channels > 0).then_some((above, turned))
+        turned.can_be_made().then_some((above, turned))
     }
 
     fn sinks_on(&self, device: u32) -> Vec<SinkId> {
@@ -513,9 +513,17 @@ impl PipeWire {
     }
 
     pub fn set_device_volume(&self, sink: SinkId, gain: Gain) -> Result<()> {
+        self.turn(sink, RouteSetting::Volume(gain))
+    }
+
+    pub fn set_device_mute(&self, sink: SinkId, muted: bool) -> Result<()> {
+        self.turn(sink, RouteSetting::Mute(muted))
+    }
+
+    fn turn(&self, sink: SinkId, setting: RouteSetting) -> Result<()> {
         self.survey
             .commands
-            .send(Request::Turn { sink, gain })
+            .send(Request::Turn { sink, setting })
             .map_err(|_| Error::LoopStopped)
     }
 
@@ -723,8 +731,8 @@ fn run(
                     let _ = stream.set_active(wanted);
                 }
             }
-            Request::Turn { sink, gain } => {
-                let turning = reaching.shared.lock().route_turning(sink, gain);
+            Request::Turn { sink, setting } => {
+                let turning = reaching.shared.lock().route_turning(sink, setting);
                 let Some((device, turned)) = turning else {
                     tracing::warn!(%sink, "the device under this sink names no route whose volume could be turned");
                     return;
@@ -734,7 +742,7 @@ fn run(
                     return;
                 };
                 match devices.get(&device) {
-                    Some((proxy, _)) => turn_the_route(proxy, turned),
+                    Some((proxy, _)) => turn_the_route(proxy, &turned),
                     None => tracing::warn!(%sink, device, "the device under this sink has left the graph"),
                 }
             }
@@ -1194,9 +1202,9 @@ fn watch_the_registry(
         .register()
 }
 
-fn turn_the_route(device: &Device, turned: RouteVolume) {
+fn turn_the_route(device: &Device, turned: &RouteChange) {
     let serialized =
-        PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &route_volume(turned));
+        PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &route_change(turned));
     let bytes = match serialized {
         Ok((cursor, _)) => cursor.into_inner(),
         Err(error) => {
@@ -1579,7 +1587,7 @@ mod tests {
         AdvertisedRoute {
             index: Some(0),
             seats: seats.to_vec(),
-            channels: 2,
+            channel_volumes: vec![0.125, 0.25],
             port,
         }
     }
@@ -1734,7 +1742,7 @@ mod tests {
         let mut ports = DevicePorts::default();
         ports.keep(Held::Offered, 3, serving(&[1], heard_at(0.125)));
         graph.ports.insert(49, ports);
-        let half = Gain::new(0.5).expect("in range");
+        let half = RouteSetting::Volume(Gain::new(0.5).expect("in range"));
 
         assert_eq!(
             graph.route_turning(SinkId::new(59), half),
@@ -1751,11 +1759,11 @@ mod tests {
             graph.route_turning(SinkId::new(59), half),
             Some((
                 49,
-                RouteVolume {
+                RouteChange {
                     index: 0,
                     seat: 1,
-                    channels: 2,
-                    gain: half,
+                    channel_volumes: vec![0.125, 0.25],
+                    setting: half,
                 }
             ))
         );

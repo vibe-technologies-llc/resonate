@@ -158,6 +158,7 @@ struct Graph {
     enumerations: usize,
     announce: Option<Sender<SinkChange>>,
     turned: Vec<(SinkId, Gain)>,
+    muted: Vec<(SinkId, bool)>,
     switched: Vec<(SinkId, ProfileIndex)>,
 }
 
@@ -285,6 +286,11 @@ impl Backend for FakeSink {
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
         self.graph.lock().turned.push((sink, gain));
+        Ok(())
+    }
+
+    fn set_device_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()> {
+        self.graph.lock().muted.push((sink, muted));
         Ok(())
     }
 
@@ -6043,6 +6049,33 @@ fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
         "the engine to read the device unmuted",
     );
     assert!(heard_near(&player, 0.5));
+
+    answered(&player, Command::SetDeviceMute(true))?;
+    assert_eq!(graph.lock().muted, vec![(SinkId::new(1), true)]);
+    Ok(())
+}
+
+#[test]
+fn a_stream_turning_its_own_volume_leaves_the_devices_mute_alone() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
+    let player = Player::with_backend(handing_the_volume_over(false), move |_| {
+        Ok(Box::new(backend))
+    })?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    answered(&player, Command::SetDeviceMute(true))?;
+    let status = player.state().output.expect("an output status");
+
+    assert!(!status.device_turned);
+    assert!(graph.lock().muted.is_empty());
     Ok(())
 }
 

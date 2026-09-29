@@ -1782,11 +1782,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the plan keeps no gain stage for it, while a ReplayGain adjustment stays the stream's own.
   `Output::attenuator` is decided at open and weighed again in `retune`, so the switch reshapes the chain
   in place like any gain change. What the device is turned to is the route: `parse_route` reads its
-  `index`, channel count and `props` — `SinkPort::volume` is the loudest channel whether or not the route
-  is muted, `SinkPort::muted` the mute apart from it — and `PipeWire::set_device_volume` (`route_volume`)
-  sets `Route` on the `Device` with every channel at `Volume::to_gain`, unmuted and `save`d, what
-  pipewire-pulse writes for a desktop slider; setting the node's `Props` would be the adapter's software
-  volume. **The slider starts where the device already is** — a bind, or the switch turned on, takes
+  `index`, each channel's volume and `props` — `SinkPort::volume` is the loudest channel whether or not
+  the route is muted, `SinkPort::muted` the mute apart from it — and `PipeWire::set_device_volume`
+  (`route_change` with `RouteSetting::Volume`) sets `Route` on the `Device` with its loudest channel at
+  `Volume::to_gain` and every other scaled by the same factor, `save`d and saying nothing of the mute,
+  what pipewire-pulse writes for a desktop slider; setting the node's `Props` would be the adapter's
+  software volume. **A turn keeps the device's balance and its mute.** Writing one gain into every
+  channel flattened a balance set in the desktop's mixer, and writing `mute = false` with it unmuted a
+  device muted there the moment the slider moved; a route whose channels all read nothing is turned
+  level, there being no balance left to keep. The mute is set apart: `Command::SetDeviceMute` reaches
+  `PipeWire::set_device_mute` (`RouteSetting::Mute`), which says the mute and nothing of the volume,
+  and does nothing where the stream turns the volume. `OutputStatus::device_turned` says the device
+  has the slider, and there the window's mute mark mutes and unmutes the device rather than sending
+  the slider to nothing and back, which would have flattened the balance through a zero. **The slider starts where the device already is** — a bind, or the switch turned on, takes
   `Volume::heard_at` of the route's reading into `EngineConfig::volume` rather than pushing the stored
   volume at it, so handing the slider over cannot jump headphones to full — and it follows a device
   turned from the desktop: a subscribed `Route` is not re-sent when its volume moves, so the device's
@@ -1801,8 +1809,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   bound sink, weighed at open, whenever the attenuator is weighed again and on every survey;
   `DevicePorts::keep` counts a mute that moved as a turn, so muting at an unchanged level is still read.
   The slider stays at the level, the window lights its mute mark and says *muted*, and pressing it sends
-  the level again, which `route_volume` writes unmuted as any turn does
-  (`a_device_muted_from_elsewhere_keeps_the_slider_where_it_was`). Turning the switch off leaves the
+  `SetDeviceMute(false)` (`a_device_muted_from_elsewhere_keeps_the_slider_where_it_was`,
+  `a_stream_turning_its_own_volume_leaves_the_devices_mute_alone`,
+  `a_turned_route_keeps_its_balance_leaves_its_mute_and_asks_to_be_remembered`). Turning the switch off leaves the
   device where it was and puts the gain stage back on top, quieter rather than louder.
   `a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect`,
   `a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not` and

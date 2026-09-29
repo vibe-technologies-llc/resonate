@@ -264,7 +264,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   at in `muted_from` without storing anything, so a run quit while muted opens at the chosen level, not
   nothing. `muted_at` reads the pair only while the engine still publishes nothing, so a volume set over
   the bus ends the mute; a second press, a wheel notch, `ctrl-up` and `ctrl-down` all restart from the
-  kept level, and grabbing the rail is a volume of its own and forgets it. The release is taken from three
+  kept level, and grabbing the rail is a volume of its own and forgets it. Where the device has the
+  slider (`OutputStatus::device_turned`) the press is the device's own mute instead —
+  `Command::SetDeviceMute`, flipping what `device_muted` says — so a balance set in the desktop's
+  mixer survives it and the desktop's mute switch agrees with the mark (`audio.md`). The release is taken from three
   places — a release inside the window, `on_mouse_up_out` for one outside, and a move reporting no button
   held — a pointer leaving the window mid-drag otherwise never being told to let go. The equaliser's
   handles ride the same surface: a `HeldBand` beside the `Grab` makes it occlude and follow, and one

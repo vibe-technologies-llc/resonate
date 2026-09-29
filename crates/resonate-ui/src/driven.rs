@@ -145,6 +145,10 @@ impl Backend for Unplugged {
         Ok(())
     }
 
+    fn set_device_mute(&self, _: SinkId, _: bool) -> SinkResult<()> {
+        Ok(())
+    }
+
     fn set_card_profile(&self, _: SinkId, _: ProfileIndex) -> SinkResult<()> {
         Ok(())
     }

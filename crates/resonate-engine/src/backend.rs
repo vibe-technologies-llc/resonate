@@ -19,6 +19,7 @@ pub trait Backend: Send + 'static {
     fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>)
     -> SinkResult<SinkStream>;
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()>;
+    fn set_device_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()>;
     fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> SinkResult<()>;
     fn shutdown(self: Box<Self>) -> SinkResult<()>;
 }
@@ -48,6 +49,10 @@ impl Backend for PipeWire {
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
         Self::set_device_volume(self, sink, gain)
+    }
+
+    fn set_device_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()> {
+        Self::set_device_mute(self, sink, muted)
     }
 
     fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> SinkResult<()> {

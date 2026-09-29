@@ -2906,13 +2906,23 @@ impl RootView {
             .is_some_and(|output| output.device_muted)
     }
 
+    fn device_takes_the_volume(&self, cx: &App) -> bool {
+        self.player
+            .read(cx)
+            .state()
+            .output
+            .is_some_and(|output| output.device_turned)
+    }
+
     pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         if let Some(muted_from) = self.muted_at(cx) {
             self.set_volume(muted_from.get(), cx);
             return;
         }
-        if self.device_is_muted(cx) {
-            self.set_volume(self.volume_now(cx), cx);
+        if self.device_takes_the_volume(cx) {
+            let muted = self.device_is_muted(cx);
+            self.send(Command::SetDeviceMute(!muted), cx);
+            cx.notify();
             return;
         }
         let Ok(heard_at) = Volume::new(self.volume_now(cx).clamp(0.0, 1.0)) else {
