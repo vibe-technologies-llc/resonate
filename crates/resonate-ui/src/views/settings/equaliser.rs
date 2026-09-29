@@ -611,9 +611,7 @@ impl RootView {
         let sink = self
             .player
             .read(cx)
-            .sinks()
-            .iter()
-            .find(|sink| sink.is_default)
+            .sink_in_use()
             .map(|sink| sink.description.clone());
         let suggested = sink
             .as_deref()
@@ -934,12 +932,10 @@ impl RootView {
         cx.notify();
     }
 
-    fn the_default_sink(&self, cx: &mut Context<Self>) -> Option<NodeName> {
+    fn the_sink_in_use(&self, cx: &mut Context<Self>) -> Option<NodeName> {
         self.player
             .read(cx)
-            .sinks()
-            .iter()
-            .find(|sink| sink.is_default)
+            .sink_in_use()
             .map(|sink| sink.name.clone())
     }
 
@@ -947,7 +943,7 @@ impl RootView {
         if self.equaliser.read(cx).shown().is_some() {
             return;
         }
-        let sink = self.the_default_sink(cx);
+        let sink = self.the_sink_in_use(cx);
         self.bind_a_curve(sink, Some(Binding::Own), cx);
         if !self.equaliser.read(cx).bindings().enabled {
             self.switch_the_equaliser(true, cx);
@@ -1087,7 +1083,7 @@ impl RootView {
     }
 
     pub(crate) fn follow_the_binding(&mut self, cx: &mut Context<Self>) {
-        let sink = self.the_default_sink(cx);
+        let sink = self.the_sink_in_use(cx);
         self.equaliser
             .update(cx, |model, _| model.show(sink.as_ref()));
     }

@@ -383,9 +383,15 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   as well as a grabbed rail and lets both go on a release inside or outside the window or a move with
   no button held. The wheel is consumed only over a handle, so elsewhere on the curve it scrolls the
   page.
-- **A press with nothing bound gives the device a curve of its own.** The pane shows the default
-  device's binding, so a press on a curve showing nothing binds that device's own curve — the
-  fallback's where the graph names no default — and switches the equaliser on, as `resonate eq
+- **The pane is the device in use's.** `PlayerModel::sink_in_use` answers the sink the stream is
+  open on, else the one the engine would bind — the device chosen under Output, else the default,
+  else the first, `chosen_sink`'s order — and the Bands group, a press and AutoEq's suggestion all
+  read it. The desktop's default alone bound the speakers and suggested for them while a DAC chosen
+  under Output was playing
+  (`the_sink_in_use_is_the_one_open_else_the_one_the_engine_would_choose`).
+- **A press with nothing bound gives the device a curve of its own.** The pane shows the device in
+  use's binding, so a press on a curve showing nothing binds that device's own curve — the
+  fallback's where the graph names no device — and switches the equaliser on, as `resonate eq
   --profile` does when it binds; *Add a band* takes the same path. The binding row offers the own
   curve beside *nothing* and every kept profile, so a device moves between the two losing neither.
 - **The sound follows the pointer, and a drag never reshapes the chain.** A move landing on a

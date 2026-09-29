@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- The equaliser pane reads and writes the binding of the desktop's default sink rather than of the
-  sink the engine plays through, so with a DAC chosen under Output a press on the curve binds the
-  speakers and AutoEq suggests for them
 - Importing or fetching a profile over the one already bound redraws the pane and never tells the
   engine, which plays the old curve until some other edit
 - The ListenBrainz token field is missing from `RootView::editing`, so every character typed into

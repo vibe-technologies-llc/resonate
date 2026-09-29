@@ -15,8 +15,8 @@ use gpui::{
 };
 use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId};
 use resonate_engine::{
-    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, OutputSettings, Player, PlayerState,
-    QueueItem, Queued, SinkInfo, StreamDigest, Tapped, TrackState,
+    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, OutputSettings, Player,
+    PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped, TrackState,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, HistoryKept, Library, Reference};
@@ -295,6 +295,14 @@ impl PlayerModel {
 
     pub fn sinks(&self) -> &[SinkInfo] {
         &self.sinks
+    }
+
+    pub fn sink_in_use(&self) -> Option<&SinkInfo> {
+        sink_in_use(
+            &self.sinks,
+            self.state.output.map(|output| output.sink),
+            self.settings.sink.as_ref(),
+        )
     }
 
     pub fn digest(&self) -> Option<Arc<StreamDigest>> {
@@ -895,6 +903,19 @@ pub fn run(
     }
 }
 
+pub(crate) fn sink_in_use<'s>(
+    sinks: &'s [SinkInfo],
+    open: Option<SinkId>,
+    named: Option<&NodeName>,
+) -> Option<&'s SinkInfo> {
+    sinks
+        .iter()
+        .find(|sink| open == Some(sink.id))
+        .or_else(|| sinks.iter().find(|sink| named == Some(&sink.name)))
+        .or_else(|| sinks.iter().find(|sink| sink.is_default))
+        .or_else(|| sinks.first())
+}
+
 #[cfg(test)]
 mod tests {
     use gpui::{KeyBindingContextPredicate, KeyContext, Keystroke, Modifiers};
@@ -924,6 +945,53 @@ mod tests {
     fn away_from_search() -> KeyBindingContextPredicate {
         KeyBindingContextPredicate::parse(&format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}"))
             .expect("the predicate every transport key carries")
+    }
+
+    fn device(id: u32, name: &str, is_default: bool) -> SinkInfo {
+        SinkInfo {
+            id: SinkId::new(id),
+            name: NodeName::new(name),
+            description: name.to_owned(),
+            is_default,
+            is_hardware: true,
+            port: None,
+            profile: None,
+            profiles: Vec::new(),
+            formats: Vec::new(),
+            allowed_rates: Vec::new(),
+            current_rate: None,
+        }
+    }
+
+    #[test]
+    fn the_sink_in_use_is_the_one_open_else_the_one_the_engine_would_choose() {
+        let sinks = [
+            device(1, "speakers", true),
+            device(2, "dac", false),
+            device(3, "hdmi", false),
+        ];
+        let dac = NodeName::new("dac");
+        let gone = NodeName::new("unplugged");
+
+        let named = |sink: Option<&SinkInfo>| sink.map(|sink| sink.name.as_str().to_owned());
+
+        assert_eq!(
+            named(sink_in_use(&sinks, Some(SinkId::new(3)), Some(&dac))),
+            Some("hdmi".to_owned())
+        );
+        assert_eq!(
+            named(sink_in_use(&sinks, None, Some(&dac))),
+            Some("dac".to_owned())
+        );
+        assert_eq!(
+            named(sink_in_use(&sinks, Some(SinkId::new(9)), Some(&gone))),
+            Some("speakers".to_owned())
+        );
+        assert_eq!(
+            named(sink_in_use(&sinks[1..], None, None)),
+            Some("dac".to_owned())
+        );
+        assert_eq!(named(sink_in_use(&[], None, None)), None);
     }
 
     #[test]
