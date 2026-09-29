@@ -1111,6 +1111,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   restarting; `previous-restarts` is the key, `Command::SetPreviousRestarts` sets it and
   `PlayerState::previous_restarts` publishes it; the Library category's *The previous button* writes
   the key and sends the command, so it is live.
+- **A relative seek past the end moves on, as the bus's `Seek` does.** `Command::SeekBy` landing at
+  or past a known length is `Command::Next` — a skip by hand, stepping no `Seeks` — so a held
+  arrow key, `resonate play`'s `f 600` and the window's seek-forward all reach the next row rather
+  than a `SeekOutOfRange` toast. An absolute `Command::Seek` past the end is still refused, a
+  position asked for by value being a mistake where an offset is a direction
+  (`a_relative_seek_past_the_end_moves_on_to_the_next_row`).
 - **The published position never steps back within a stretch of listening.** It is the decoder's less
   what ring, chain and sink still hold, and the sink's latency is known only once a stream reports it,
   so every rebind and seek used to publish a position a latency behind the last — which `Listening`

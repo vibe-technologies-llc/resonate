@@ -987,19 +987,17 @@ impl Engine {
             Command::Seek(to) => self.seek(to),
             Command::SeekBy(delta) => {
                 let now = self.position().get();
-                let to = if delta < 0 {
+                let to = Frames(if delta < 0 {
                     now.saturating_sub(delta.unsigned_abs())
                 } else {
                     now.saturating_add(delta.unsigned_abs())
-                };
-                self.seek(Frames(to))
+                });
+                if self.lands_past_the_end(to) {
+                    return self.next();
+                }
+                self.seek(to)
             }
-            Command::Next => {
-                self.failures = 0;
-                self.skipped_by_hand();
-                let skipped = self.skip(false);
-                self.past_what_will_not_open(skipped)
-            }
+            Command::Next => self.next(),
             Command::Previous => {
                 self.failures = 0;
                 if self.restarts_the_track() {
@@ -1344,6 +1342,22 @@ impl Engine {
             self.nods_off();
         }
         self.start(Frames::ZERO)
+    }
+
+    fn next(&mut self) -> Result<()> {
+        self.failures = 0;
+        self.skipped_by_hand();
+        let skipped = self.skip(false);
+        self.past_what_will_not_open(skipped)
+    }
+
+    fn lands_past_the_end(&self, to: Frames) -> bool {
+        self.opening.is_none()
+            && self
+                .track
+                .as_ref()
+                .and_then(|track| track.info.duration)
+                .is_some_and(|duration| to >= duration)
     }
 
     fn seek(&mut self, to: Frames) -> Result<()> {

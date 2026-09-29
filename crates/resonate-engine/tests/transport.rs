@@ -1266,6 +1266,45 @@ fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> 
 }
 
 #[test]
+fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    wait_for(
+        &player,
+        |player| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.duration.is_some())
+        },
+        "the length of the track to be known",
+    );
+
+    let unseeked = player.state().seeks;
+    player
+        .request(Command::SeekBy(FRAMES as i64 * 4))?
+        .wait_for(PATIENCE)?;
+    wait_for(&player, |player| plays(player, 2), "the next row to open");
+
+    assert_eq!(
+        player.state().seeks,
+        unseeked,
+        "moving on to the next row was counted as a seek"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

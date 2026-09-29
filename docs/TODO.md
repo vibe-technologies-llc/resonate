@@ -25,8 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
   so a boosted one clips at the dither's clamp or pumps the true-peak guard
 - With `device-volume` on, the slider writes one gain into every channel and `mute = false`, so it
   unmutes a muted device and flattens its balance
-- `Command::SeekBy` past the end answers `SeekOutOfRange` rather than moving on the way the bus's
-  `Seek` does
 - `Command::Load` with no rows and `autoplay` leaves `playing` set with nothing loaded, so every
   toggle answers `InvalidTransition`, and `resonate play` with no file, or with a sheet that
   yields no row, waits for keys rather than saying so
