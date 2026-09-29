@@ -14,7 +14,9 @@ use std::{
 
 use lofty::{
     config::WriteOptions,
+    error::FileEncodingError,
     file::{FileType, TaggedFileExt as _},
+    io::FileLike,
     picture::{MimeType, Picture, PictureType},
     probe::Probe,
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
@@ -25,6 +27,8 @@ use rustix::fs::XattrFlags;
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
     counted::{Counted, counts},
+    overlay::{Landing, Overlay},
+    padded::Head,
     probe_pictured,
     source::Sources,
     tags::{TagSource, Tagged},
@@ -469,6 +473,7 @@ impl FileTags {
         writing: Writing<'_>,
     ) -> Result<()> {
         let mut tagged = opened(rechunked.unwrap_or(path), location)?;
+        let kind = tagged.file_type();
         let others = cleared_elsewhere(&tagged, writing.taken);
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
@@ -501,38 +506,16 @@ impl FileTags {
             rate(tag, popularity);
         }
 
-        let staged = rechunked.map_or_else(|| staged_beside(path), Path::to_path_buf);
-        let copied = match rechunked {
-            Some(_) => Ok(()),
-            None => fs::copy(path, &staged).map(drop),
+        let saving = Saving {
+            kind,
+            tag,
+            counting,
+            others: &others,
         };
-        let written = copied
-            .map_err(|source| Error::Io {
-                location: location.clone(),
-                source,
-            })
-            .and_then(|()| {
-                saved(tag, counting, &staged)
-                    .and_then(|()| {
-                        others.iter().try_for_each(|other| {
-                            other.save_to_path(&staged, WriteOptions::default())
-                        })
-                    })
-                    .map_err(|source| Error::TagsUnwritten {
-                        location: location.clone(),
-                        source,
-                    })
-            })
-            .and_then(|()| {
-                settled_over(&staged, path).map_err(|source| Error::Io {
-                    location: location.clone(),
-                    source,
-                })
-            });
-        if written.is_err() {
-            let _ = fs::remove_file(&staged);
+        match rechunked {
+            Some(staged) => landed_through(staged, path, location, &saving),
+            None => landed(path, location, &saving),
         }
-        written
     }
 
     fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
@@ -652,20 +635,20 @@ const fn keeps_popularimeters(kind: TagType) -> bool {
     )
 }
 
-fn saved(
+fn saved<F: FileLike>(
     tag: &Tag,
     counting: Option<Popularity>,
-    staged: &Path,
-) -> std::result::Result<(), lofty::error::FileEncodingError> {
+    file: &mut F,
+) -> std::result::Result<(), FileEncodingError> {
     let counted = counting
         .and_then(|popularity| Counted::of(tag.clone()).map(|counted| (counted, popularity)));
     match counted {
         Some((mut counted, popularity)) => {
             counted.count(popularity.plays);
             counted.favour_in_ape(popularity.favourite);
-            counted.save(staged)
+            counted.save(file)
         }
-        None => tag.save_to_path(staged, WriteOptions::default()),
+        None => tag.save_to(file, WriteOptions::default()),
     }
 }
 
@@ -689,6 +672,174 @@ fn rate(tag: &mut Tag, popularity: Popularity) {
             ItemValue::Text(format!("{RATED_BY}|{FAVOURITE_STARS}|{}", popularity.plays)),
         ));
     }
+}
+
+const LEEWAY_PAST_THE_HEAD: u64 = 64 << 10;
+
+struct Saving<'a> {
+    kind: FileType,
+    tag: &'a Tag,
+    counting: Option<Popularity>,
+    others: &'a [Tag],
+}
+
+impl Saving<'_> {
+    fn written_into<F: FileLike>(
+        &self,
+        file: &mut F,
+    ) -> std::result::Result<(), FileEncodingError> {
+        file.rewind()?;
+        saved(self.tag, self.counting, file)?;
+        self.others_written_into(file)
+    }
+
+    fn others_written_into<F: FileLike>(
+        &self,
+        file: &mut F,
+    ) -> std::result::Result<(), FileEncodingError> {
+        for other in self.others {
+            file.rewind()?;
+            other.save_to(file, WriteOptions::default())?;
+        }
+        Ok(())
+    }
+
+    fn written_into_the_head<F: FileLike>(
+        &self,
+        head: Head,
+        overlay: &mut F,
+    ) -> std::result::Result<bool, FileEncodingError> {
+        let stood = overlay.len()?;
+        let tail = stood.saturating_sub(head.length).min(LEEWAY_PAST_THE_HEAD);
+        if tail == 0 {
+            return Ok(false);
+        }
+
+        let length = usize::try_from(head.length + tail)
+            .map_err(|_| io::Error::from(io::ErrorKind::FileTooLarge))?;
+        let mut held = vec![0_u8; length];
+        overlay.rewind()?;
+        overlay.read_exact(&mut held)?;
+        let past = held[usize::try_from(head.length).unwrap_or(length)..].to_vec();
+
+        let mut copy = io::Cursor::new(held);
+        saved(self.tag, self.counting, &mut copy)?;
+        let written = copy.into_inner();
+        let Some(written) = written.strip_suffix(past.as_slice()) else {
+            return Ok(false);
+        };
+        let Some(absorbed) = head.absorbed(written) else {
+            return Ok(false);
+        };
+
+        overlay.rewind()?;
+        overlay.write_all(&absorbed)?;
+        Ok(true)
+    }
+}
+
+fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
+    let unread = |source| Error::Io {
+        location: location.clone(),
+        source,
+    };
+    if let Some(staged) = cloned_beside(path).map_err(unread)? {
+        return landed_through(&staged, path, location, saving);
+    }
+    if landed_in_place(path, location, saving)? {
+        return Ok(());
+    }
+
+    let staged = staged_beside(path);
+    if let Err(source) = fs::copy(path, &staged) {
+        let _ = fs::remove_file(&staged);
+        return Err(unread(source));
+    }
+    landed_through(&staged, path, location, saving)
+}
+
+fn cloned_beside(path: &Path) -> io::Result<Option<PathBuf>> {
+    let file = File::open(path)?;
+    let staged = staged_beside(path);
+    let into = File::create_new(&staged)?;
+    if let Err(error) = rustix::fs::ioctl_ficlone(&into, &file) {
+        tracing::trace!(path = %path.display(), %error, "the file cannot be cloned");
+        drop(into);
+        fs::remove_file(&staged)?;
+        return Ok(None);
+    }
+    Ok(Some(staged))
+}
+
+fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<bool> {
+    let Ok(file) = OpenOptions::new().read(true).write(true).open(path) else {
+        return Ok(false);
+    };
+    let unread = |source| Error::Io {
+        location: location.clone(),
+        source,
+    };
+    let mut overlay = Overlay::over(&file).map_err(unread)?;
+    let fitted =
+        match Head::of(saving.kind, &mut &file) {
+            Some(head) => saving
+                .written_into_the_head(head, &mut overlay)
+                .and_then(|fits| match fits {
+                    true => saving.others_written_into(&mut overlay).map(|()| true),
+                    false => Ok(false),
+                }),
+            None => saving.written_into(&mut overlay).map(|()| true),
+        };
+    match fitted {
+        Ok(true) => {}
+        Ok(false) => return Ok(false),
+        Err(_) if overlay.outgrown() => return Ok(false),
+        Err(source) => {
+            return Err(Error::TagsUnwritten {
+                location: location.clone(),
+                source,
+            });
+        }
+    }
+
+    Ok(match overlay.land().map_err(unread)? {
+        Landing::InPlace | Landing::Unchanged => true,
+        Landing::TooWide => false,
+    })
+}
+
+fn landed_through(
+    staged: &Path,
+    path: &Path,
+    location: &MediaLocation,
+    saving: &Saving<'_>,
+) -> Result<()> {
+    let written = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(staged)
+        .map_err(|source| Error::Io {
+            location: location.clone(),
+            source,
+        })
+        .and_then(|mut file| {
+            saving
+                .written_into(&mut file)
+                .map_err(|source| Error::TagsUnwritten {
+                    location: location.clone(),
+                    source,
+                })
+        })
+        .and_then(|()| {
+            settled_over(staged, path).map_err(|source| Error::Io {
+                location: location.clone(),
+                source,
+            })
+        });
+    if written.is_err() {
+        let _ = fs::remove_file(staged);
+    }
+    written
 }
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
@@ -1196,6 +1347,111 @@ mod tests {
             &edits,
             &[],
         );
+    }
+
+    fn retitled(path: &Path, location: &MediaLocation, title: &str) -> Result<bool> {
+        let mut tagged = opened(path, location)?;
+        let kind = tagged.file_type();
+        if tagged.primary_tag().is_none() {
+            tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
+        }
+        let tag = tagged.primary_tag_mut().expect("a primary tag");
+        tag.insert_text(ItemKey::TrackTitle, title.to_owned());
+        landed_in_place(
+            path,
+            location,
+            &Saving {
+                kind,
+                tag,
+                counting: None,
+                others: &[],
+            },
+        )
+    }
+
+    #[test]
+    fn an_edit_the_padding_holds_lands_in_the_file_itself_rather_than_a_copy() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        tags.write(&location, just(&named_and_identified()))
+            .expect("a written FLAC");
+        let standing = fs::metadata(&path).expect("the file");
+
+        assert!(
+            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            "an edit the padding holds was not landed in place"
+        );
+
+        let landed = fs::metadata(&path).expect("the file");
+        assert_eq!(landed.ino(), standing.ino());
+        assert_eq!(landed.len(), standing.len());
+        assert_eq!(
+            tags.read(&location, Picturing::Whether)
+                .expect("a readable FLAC")
+                .tags
+                .title
+                .as_deref(),
+            Some("Echoes (Live)")
+        );
+        assert_eq!(
+            fs::read_dir(&folder.root).expect("the folder").count(),
+            1,
+            "an edit in place left a copy beside the file"
+        );
+    }
+
+    fn mp3() -> Vec<u8> {
+        const FRAME_BYTES: usize = 417;
+        const FRAMES_HELD: usize = 8;
+        let mut file = Vec::with_capacity(FRAME_BYTES * FRAMES_HELD);
+        for _ in 0..FRAMES_HELD {
+            let mut frame = vec![0xFF, 0xFB, 0x90, 0x64];
+            frame.resize(FRAME_BYTES, 0);
+            file.extend_from_slice(&frame);
+        }
+        file
+    }
+
+    #[test]
+    fn an_edit_a_leading_id3_tag_has_room_for_lands_in_the_file_itself() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.mp3", &mp3());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+        tags.write(&location, just(&named_and_identified()))
+            .expect("a written MP3");
+        let standing = fs::metadata(&path).expect("the file");
+
+        assert!(
+            retitled(&path, &location, "Echoes (Live)").expect("an edit in place"),
+            "an edit the tag's padding holds was not landed in place"
+        );
+
+        let landed = fs::metadata(&path).expect("the file");
+        assert_eq!(landed.ino(), standing.ino());
+        assert_eq!(landed.len(), standing.len());
+        let read = tags
+            .read(&location, Picturing::Whether)
+            .expect("a readable MP3")
+            .tags;
+        assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
+        assert_eq!(read.album.as_deref(), Some("Meddle"));
+    }
+
+    #[test]
+    fn an_edit_that_moves_the_audio_is_left_to_a_whole_copy() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let before = fs::read(&path).expect("the file");
+
+        assert!(
+            !retitled(&path, &location, &"Echoes ".repeat(4096)).expect("a refusal"),
+            "an edit that moved the audio was landed in place"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), before);
     }
 
     #[test]

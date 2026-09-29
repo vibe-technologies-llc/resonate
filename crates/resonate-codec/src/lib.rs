@@ -12,6 +12,8 @@ mod error;
 mod flac;
 mod matroska;
 mod opus;
+mod overlay;
+mod padded;
 mod prescan;
 mod probe;
 mod registry;

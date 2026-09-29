@@ -1467,16 +1467,31 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   file. `FileTags::write` copies the file to a staged sibling — `.<stem>.<pid>-<n>.<ext>`
   (`staged_beside`), the extension kept since lofty reads the kind off it — writes the tags into the
   copy, `sync_all`s it, renames it over the file and syncs the folder, removing the copy wherever any
-  of that failed. The cost is a copy per write, the price `config::edited` and `organise`'s sheets pay
-  for the same promise — `fs::copy` is `copy_file_range`, which btrfs and XFS answer with a clone
-  sharing the audio's extents, so there a copy costs the tag's bytes. **What the rename would lose is
+  of that failed. The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
+  extents — btrfs, XFS — so there it costs the tag's bytes. **Where it cannot clone — ext4, tmpfs —
+  an edit the tag's own room holds lands in the file itself** rather than copying gigabytes:
+  `landed_in_place` has lofty write into an `Overlay`, the file seen through 4 KiB pages held in
+  memory, and `Overlay::land` writes back only the pages that differ, then `sync_data`s — and only
+  where the file keeps its length and under `MOST_BYTES_WRITTEN_IN_PLACE` (32 MiB) was touched, so
+  audio that would move, or a tag at the end that would grow, is never rewritten where it stands and
+  goes through a whole staged copy instead, the promise above kept. The window this opens is a crash
+  during a write of a few pages of tag, never of audio. lofty 0.25 keeps a FLAC's padding block as it
+  was and pads an ID3v2 tag with a fresh 1 KiB, so neither would ever keep its length: for those two,
+  `Head` has lofty write into an in-memory copy of the tag's head (and 64 KiB past it, so the kind
+  still probes), and `Head::absorbed` fits the result back into the head's old length — the FLAC's
+  blocks with one padding block sized to the room left, the ID3v2 tag's frames zero-padded to its
+  old size — or answers that it will not fit. An MP4's `free` atoms already absorb an edit
+  (`an_edit_the_padding_holds_lands_in_the_file_itself_rather_than_a_copy`,
+  `an_edit_a_leading_id3_tag_has_room_for_lands_in_the_file_itself`,
+  `an_edit_that_moves_the_audio_is_left_to_a_whole_copy`). **What the rename would lose is
   kept.** A track reached through a symlink is written where the link points, staged beside the
   target, so the link stays a link. The staged copy is given the file's owner, mode and extended
   attributes (`carries_what_the_file_did` — `chown`, `set_permissions`, and every `listxattr` name,
   ACLs and SELinux labels among them, through `rustix`); where any of that is refused — a file owned
   by another user in a shared folder, a label only root may set — and wherever the file has a second
   name (`nlink` over one), the whole tagged copy is instead written back into the file's own inode
-  (`written_back`), which keeps all of it and both names at the price of a second copy and a window
+  (`written_back`) — an edit landed in place never needing it — which keeps all of it and both names
+  at the price of a second copy and a window
   where the file is part rewritten, the synced staged copy standing beside it until the write-back is
   synced (`a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link`,
   `a_track_with_two_names_keeps_both_and_both_read_the_write`,

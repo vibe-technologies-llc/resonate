@@ -9,6 +9,7 @@ use lofty::{
     flac::FlacFile,
     id3::v2::Id3v2Tag,
     iff::{aiff::AiffFile, wav::WavFile},
+    io::FileLike,
     mp4::{Atom, AtomData, AtomIdent, Ilst, Mp4File},
     mpeg::MpegFile,
     ogg::{OpusFile, VorbisFile, tag::VorbisComments},
@@ -168,13 +169,13 @@ impl Counted {
         }
     }
 
-    pub(crate) fn save(&self, path: &Path) -> Result<(), FileEncodingError> {
+    pub(crate) fn save<F: FileLike>(&self, file: &mut F) -> Result<(), FileEncodingError> {
         let options = WriteOptions::default();
         match self {
-            Self::Commented(comments) => comments.save_to_path(path, options),
-            Self::Ape(tag) => tag.save_to_path(path, options),
-            Self::Atoms(atoms) => atoms.save_to_path(path, options),
-            Self::Framed(frames) => frames.save_to_path(path, options),
+            Self::Commented(comments) => comments.save_to(file, options),
+            Self::Ape(tag) => tag.save_to(file, options),
+            Self::Atoms(atoms) => atoms.save_to(file, options),
+            Self::Framed(frames) => frames.save_to(file, options),
         }
     }
 }
