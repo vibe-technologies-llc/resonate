@@ -197,13 +197,18 @@ a `TrackId`, an object path being this crate's business alone. A second remote c
 rather than reimplementing the bus.
 
 - **`resonate queue <files>`** lists the bus names, takes the plain name or else the first
-  `instance<pid>` under it by name, and calls `AddTrack` a row at a time. Where a row lands is the
+  `instance<pid>` under it by name, and hands the whole run to `org.resonate.Player1`'s
+  `AddTracks(uris, after_track, play_the_first)`, one `Command::Insert` and one settle for every row
+  — MCP's `add_to_queue` of a hundred rows was a hundred round trips and up to a hundred 500 ms
+  settles — falling back to `AddTrack` a row at a time only where the running player is an older
+  build answering `UnknownMethod`. Where a row lands is the
   `Placement` the window and service use; the client turns it into the spec's *anchor*, the track
   before it, `NoTrack` being the front: `Next` anchors on the playing row and `Queued` on the last
   row waiting after it, which `org.resonate.Player1`'s `PlayingNext` counts, so an `AddTrack` there
-  joins what is queued rather than landing after the whole playlist. A run of files is added back
-  to front against one anchor (each lands right after it), so the first named arrives first with
-  no read between calls, and `--play` is `set_as_current` on the last call, the first file. Living
+  joins what is queued rather than landing after the whole playlist. `AddTracks` lands the run in
+  order right after its anchor, `play_the_first` hearing its first row; the `AddTrack` fallback adds
+  it back to front against one anchor (each lands right after it), so the first named arrives first
+  with no read between calls, and `--play` is `set_as_current` on the last call, the first file. Living
   beside the service keeps one notion of a track path, a location and where a row goes.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows**, since the bus has no
   call adding one and `ActivatePlaylist` replaces a queue: it reads the rows from the catalog here

@@ -49,8 +49,6 @@ service or a format — and is not worked until that moves; everything else is o
   import, with nothing stamping the refusal against `Encoding::OF_THIS_BUILD`
 - `keep_cover` decodes a JXL whole to learn its size on every dedup hit, and `Unpacking` starts the
   stream again for any seek backwards
-- MCP's `add_to_queue` costs one `AddTrack` round trip — and a settle of up to 500 ms — per row,
-  a hundred by default
 - A cover for `mpris:artUrl` is written and `sync_all`ed on the poll thread, under the lock every
   `Metadata` read takes
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window

@@ -31,6 +31,8 @@ const GET_TRACKS_METADATA: &str = "GetTracksMetadata";
 const GET_PLAYLISTS: &str = "GetPlaylists";
 const ACTIVATE_PLAYLIST: &str = "ActivatePlaylist";
 const SET_SLEEP: &str = "SetSleep";
+const ADD_TRACKS: &str = "AddTracks";
+const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 const PLAYING_NEXT: &str = "PlayingNext";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
@@ -363,8 +365,20 @@ impl Running {
             return Ok(0);
         }
         let after = self.landing(queueing.at)?;
-        let tracks = self.proxy(TRACK_LIST)?;
+        let uris: Vec<String> = rows
+            .iter()
+            .map(|(location, span)| location.to_uri_within(*span))
+            .collect();
+        match self
+            .proxy(OWN_INTERFACE)?
+            .call::<_, _, ()>(ADD_TRACKS, &(uris, &after, queueing.play))
+        {
+            Ok(()) => return Ok(rows.len()),
+            Err(zbus::Error::MethodError(name, ..)) if name.as_str() == UNKNOWN_METHOD => {}
+            Err(source) => return Err(Error::bus(BusOp::Queue, source)),
+        }
 
+        let tracks = self.proxy(TRACK_LIST)?;
         for (place, (location, span)) in rows.iter().enumerate().rev() {
             let heard_now = queueing.play && place == 0;
             tracks

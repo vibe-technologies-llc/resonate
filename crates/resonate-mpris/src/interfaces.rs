@@ -4,7 +4,8 @@ use ahash::AHashSet;
 use parking_lot::Mutex;
 use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
 use resonate_engine::{
-    Command, Player, PlayerState, QueueItem, RepeatMode, StreamDigest, TrackState,
+    Command, Placement, Player, PlayerState, QueueItem, RepeatMode, StreamDigest, TrackState,
+    unclaimed_id,
 };
 use zbus::{
     fdo, interface,
@@ -18,6 +19,7 @@ use crate::{
         PlaybackStatus, Sleep, SleepMode, frames, loop_status, metadata, micros, playing_digest,
         repeat_mode, sleep_status, track_path,
     },
+    tracklist::TrackList,
 };
 
 pub(crate) const OWN_INTERFACE: &str = "org.resonate.Player1";
@@ -386,6 +388,37 @@ impl OwnInterface {
         };
         self.shared
             .settle(Command::SleepUntil(wanted.until(seconds)))
+    }
+
+    fn add_tracks(
+        &self,
+        uris: Vec<String>,
+        after_track: ObjectPath<'_>,
+        play_the_first: bool,
+    ) -> fdo::Result<()> {
+        let queue = self.shared.player.queue();
+        let at = TrackList::landing(&queue, &after_track)?;
+        let items = uris
+            .iter()
+            .map(|uri| {
+                let (location, span) = self.shared.located(uri)?;
+                let id = self
+                    .shared
+                    .host
+                    .held_as(&location, span)
+                    .unwrap_or_else(|| unclaimed_id(&queue));
+                Ok(QueueItem { id, location, span })
+            })
+            .collect::<fdo::Result<Vec<_>>>()?;
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        self.shared.settle(Command::Insert {
+            items,
+            at: Placement::At(at),
+            play: play_the_first,
+        })
     }
 
     #[zbus(property)]

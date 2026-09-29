@@ -125,7 +125,7 @@ impl TrackList {
         queue.iter().position(|item| item.id == track)
     }
 
-    fn landing(queue: &[QueueItem], after: &ObjectPath<'_>) -> fdo::Result<usize> {
+    pub(crate) fn landing(queue: &[QueueItem], after: &ObjectPath<'_>) -> fdo::Result<usize> {
         if after.as_str() == NO_TRACK {
             return Ok(0);
         }
