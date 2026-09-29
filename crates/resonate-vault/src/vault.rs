@@ -4,7 +4,10 @@ use std::{
     ops::Deref,
     path::{Component, Path, PathBuf},
     process,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use parking_lot::Mutex;
@@ -17,6 +20,7 @@ use crate::{
     bare, blanks, chunks, cover,
     drawn::Drawings,
     error::{Error, Result, VaultOp},
+    files::VaultFiles,
     flac,
     form::{Form, WIDEST_FLAC_BITS},
     key::VaultKey,
@@ -391,13 +395,7 @@ impl Vault {
                 Ok(digest.settled() == key)
             }
             Form::Flac => Ok(read_back(path, None)?.key == key),
-            Form::Wave => {
-                let staging = self.staged(WAVE_EXTENSION)?;
-                self.written_inside(&staging, &wave::decompressed(path)?)?;
-                let read = read_back(&staging, None);
-                self.discard(&staging)?;
-                Ok(read?.key == key)
-            }
+            Form::Wave => Ok(self.read_back_packed(path, None)?.key == key),
         }
     }
 
@@ -586,16 +584,18 @@ impl Vault {
             return Ok(Keeping::Refused(Refusal::NoSmaller));
         }
 
+        self.discard(&staging)?;
         let went_in = Heard {
             key: written.key,
             frames: written.frames,
             speakers,
         };
-        let holds = read_back(&staging, Some(format)).is_ok_and(|read| went_in.held_by(read));
+        let holds = self
+            .read_back_packed(&packed, Some(format))
+            .is_ok_and(|read| went_in.held_by(read));
         if !holds {
             return Ok(Keeping::Refused(Refusal::NotValidated));
         }
-        self.discard(&staging)?;
         let landing = self.landed_or_standing(&packed, &target, weighing)?;
 
         Ok(landing.kept(Kept {
@@ -809,6 +809,11 @@ impl Vault {
         Ok(landing)
     }
 
+    fn read_back_packed(&self, path: &Path, format: Option<SampleFormat>) -> Result<Heard> {
+        let sources = Sources::local().and(Arc::new(VaultFiles::over(self)));
+        read_back_through(&sources, path, format)
+    }
+
     fn object_path(&self, key: VaultKey, extension: &str) -> PathBuf {
         self.root
             .join(AUDIO)
@@ -937,9 +942,16 @@ impl Heard {
 }
 
 fn read_back(path: &Path, format: Option<SampleFormat>) -> Result<Heard> {
-    let sources = Sources::local();
+    read_back_through(&Sources::local(), path, format)
+}
+
+fn read_back_through(
+    sources: &Sources,
+    path: &Path,
+    format: Option<SampleFormat>,
+) -> Result<Heard> {
     let location = MediaLocation::local(path);
-    let (decoder, info) = Decoder::open(&sources, &location)
+    let (decoder, info) = Decoder::open(sources, &location)
         .map_err(|source| Error::codec(VaultOp::Verify, source))?;
     pcm_of(decoder, &info, format)
 }

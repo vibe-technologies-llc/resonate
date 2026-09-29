@@ -479,6 +479,28 @@ fn an_object_that_has_been_meddled_with_is_not_verified() {
 }
 
 #[test]
+fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
+    let tree = Tree::new();
+    let path = tree.write("meddled.wav", &floating(&signal(FRAMES)));
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+    assert_eq!(held.form, Form::Wave);
+    assert!(
+        vault
+            .verify(&held.path, Form::Wave)
+            .expect("a verified object")
+    );
+
+    let mut bytes = fs::read(&held.path).expect("an object");
+    let at = bytes.len() / 2;
+    bytes[at] ^= 0xff;
+    fs::write(&held.path, &bytes).expect("a meddled object");
+
+    assert!(!vault.verify(&held.path, Form::Wave).unwrap_or(false));
+}
+
+#[test]
 fn the_file_the_vault_read_is_left_exactly_as_it_was() {
     let tree = Tree::new();
     let samples = signal(FRAMES);

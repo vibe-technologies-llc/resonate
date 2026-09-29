@@ -9,9 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- A WAVE object is validated from the uncompressed staging file and the `.wav.zst` that lands is
-  never read back, so every object being read back through the player's decoder holds only for
-  FLAC and kept objects
 - `Refusal::TooLarge` never falls back to a kept copy the way `NoSmaller` does, so a lossless
   track past the RIFF ceiling — 46 minutes of 192 kHz stereo — writes 4 GiB of staging on every
   import and is never vaulted
@@ -235,9 +232,8 @@ service or a format — and is not worked until that moves; everything else is o
   before `Deduped` is known
 - A vault row refused — `NoSmaller`, `NotValidated` — is weighed again at full cost by every
   import, with nothing stamping the refusal against `Encoding::OF_THIS_BUILD`
-- `keep_cover` decodes a JXL whole to learn its size on every dedup hit, `--verify` decodes a WAVE
-  object into one `Vec` and stages it again, and `Unpacking` starts the stream again for any seek
-  backwards
+- `keep_cover` decodes a JXL whole to learn its size on every dedup hit, and `Unpacking` starts the
+  stream again for any seek backwards
 - MCP's `add_to_queue` costs one `AddTrack` round trip — and a settle of up to 500 ms — per row,
   a hundred by default
 - The MPRIS playlists poll compares every playlist with every other every 200 ms, even where the

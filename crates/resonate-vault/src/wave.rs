@@ -200,15 +200,6 @@ pub(crate) fn hopeless(from: &Path, smaller_than: u64) -> Result<bool> {
     Ok(foretold > beyond_doubt)
 }
 
-pub(crate) fn unpacked(from: &Path) -> std::io::Result<Vec<u8>> {
-    let file = File::open(from)?;
-    zstd::decode_all(std::io::BufReader::new(file))
-}
-
-pub(crate) fn decompressed(from: &Path) -> Result<Vec<u8>> {
-    unpacked(from).map_err(|source| Error::io(VaultOp::Read, from, source))
-}
-
 fn patched(file: &mut File, path: &Path, at: u64, value: u32) -> Result<()> {
     file.seek(SeekFrom::Start(at))
         .map_err(|source| Error::io(VaultOp::Write, path, source))?;

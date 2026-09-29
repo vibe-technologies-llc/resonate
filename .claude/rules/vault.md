@@ -153,7 +153,13 @@ opened as `./vault`, through a symlink or after a move is the same vault to cata
 prune.
 
 **Validation happens on the staging file, before the rename**, so a dedup hit is never at risk
-from a failed import of the same audio and a refused object never reaches `audio/`.
+from a failed import of the same audio and a refused object never reaches `audio/`. **It reads the
+form that lands**: a WAVE object is weighed from its staged `.wav.zst` through `VaultFiles` — the
+`Unpacking` stream the player reads it through — not from the uncompressed WAVE it was packed from,
+which is discarded first; so every object, not only FLAC and kept ones, is proved by the path that
+plays it. `Vault::verify` reads a WAVE object the same way, streaming rather than unpacking it into
+one buffer and staging it again
+(`a_packed_wave_that_has_been_meddled_with_is_not_verified`).
 
 ## An object is weighed again when the encoder moves
 
