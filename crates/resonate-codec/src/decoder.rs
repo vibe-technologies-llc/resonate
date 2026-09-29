@@ -428,7 +428,7 @@ impl Decoder {
             Opened::Dsd(held) => {
                 let timeline = Timeline::at(info.spec.rate);
                 let bytes = dsd::unpacked(held.bytes, &held.layout);
-                let stream = dsd::Stream::over(bytes, held.layout, info.packing);
+                let stream = dsd::Stream::over(bytes, location.clone(), held.layout, info.packing);
                 (Held::Dsd(Box::new(stream)), timeline)
             }
             Opened::Coded(coded) => {

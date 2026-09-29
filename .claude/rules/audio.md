@@ -602,6 +602,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   their own encoder — the arithmetic coder's inverse with its carry, tables written plain and
   predicted — so `a_coded_frame_unpacks_to_exactly_the_bits_that_were_packed` and
   `a_dst_dsdiff_plays_exactly_what_the_same_bits_uncompressed_play` need no fixture on disc.
+- **A DSD read that fails is an error, as a PCM codec's is.** `Planes` holds the location, and a
+  seek or read the stream refuses — an `EIO`, a DST frame `dst::Unpacked` cannot decode — reaches
+  `next_block` as `Error::Io`, so the engine reports and skips the row rather than taking it as
+  finished; an interrupted read is tried again. `fill` breaking on any error ended the track early
+  and silently (`a_read_that_fails_mid_track_is_an_error_rather_than_the_end_of_the_track`).
 - **A DSDIFF is tagged the two ways its writers tag it.** The `ID3 ` chunk a tagger appends after the
   sound is read by the ID3v2 reader a DSF's metadata block goes through, and the `DIIN` chunk's `DIAR`
   and `DITI` — the edited master's artist and title — fill only what the ID3 tag left empty. A `DIIN`

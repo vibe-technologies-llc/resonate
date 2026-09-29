@@ -6,9 +6,9 @@ mod pcm;
 mod rate;
 mod window;
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 
-use resonate_core::{ChannelCount, ChannelLayout, Frames};
+use resonate_core::{ChannelCount, ChannelLayout, Frames, MediaLocation};
 
 pub use crate::dsd::rate::{DsdRate, Packing};
 pub(crate) use crate::dsd::{dop::Dop, pcm::Decimator, rate::DOP_DECIMATION};
@@ -196,6 +196,7 @@ impl std::fmt::Display for DsdChunk {
 
 pub(crate) struct Planes {
     bytes: Box<dyn MediaStream>,
+    location: MediaLocation,
     layout: Layout,
     at: u64,
     planes: Vec<Vec<u8>>,
@@ -203,10 +204,15 @@ pub(crate) struct Planes {
 }
 
 impl Planes {
-    pub(crate) fn over(bytes: Box<dyn MediaStream>, layout: Layout) -> Self {
+    pub(crate) fn over(
+        bytes: Box<dyn MediaStream>,
+        location: MediaLocation,
+        layout: Layout,
+    ) -> Self {
         let lanes = layout.lanes();
         Self {
             bytes,
+            location,
             layout,
             at: 0,
             planes: vec![Vec::new(); lanes],
@@ -216,6 +222,13 @@ impl Planes {
 
     pub(crate) const fn at(&self) -> u64 {
         self.at
+    }
+
+    fn unread(&self, source: io::Error) -> Error {
+        Error::Io {
+            location: self.location.clone(),
+            source,
+        }
     }
 
     pub(crate) fn held(&self) -> &[Vec<u8>] {
@@ -267,7 +280,8 @@ impl Planes {
                     .planes
                     .get_mut(lane as usize)
                     .expect("a lane per plane");
-                read_at(self.bytes.as_mut(), offset, step as usize, into)?;
+                read_at(self.bytes.as_mut(), offset, step as usize, into)
+                    .map_err(|source| self.unread(source))?;
             }
             done = done.saturating_add(step);
         }
@@ -285,10 +299,19 @@ impl Planes {
             .layout
             .data_at
             .saturating_add(self.at.saturating_mul(lanes as u64));
-        if self.bytes.seek(SeekFrom::Start(offset)).is_err() {
-            return Ok(());
-        }
-        let read = fill(self.bytes.as_mut(), held);
+        let read = self
+            .bytes
+            .seek(SeekFrom::Start(offset))
+            .and_then(|_| fill(self.bytes.as_mut(), held));
+        let read = match read {
+            Ok(read) => read,
+            Err(source) => {
+                return Err(Error::Io {
+                    location: self.location.clone(),
+                    source,
+                });
+            }
+        };
         held.truncate(read);
 
         for (lane, plane) in self.planes.iter_mut().enumerate() {
@@ -304,29 +327,32 @@ fn read_at(
     offset: u64,
     wanted: usize,
     into: &mut Vec<u8>,
-) -> Result<()> {
-    if bytes.seek(SeekFrom::Start(offset)).is_err() {
-        return Ok(());
-    }
+) -> io::Result<()> {
+    bytes.seek(SeekFrom::Start(offset))?;
     let from = into.len();
     into.resize(from.saturating_add(wanted), 0);
-    let read = into.get_mut(from..).map_or(0, |held| fill(bytes, held));
+    let read = match into.get_mut(from..) {
+        Some(held) => fill(bytes, held)?,
+        None => 0,
+    };
     into.truncate(from.saturating_add(read));
     Ok(())
 }
 
-fn fill(bytes: &mut dyn MediaStream, into: &mut [u8]) -> usize {
+fn fill(bytes: &mut dyn MediaStream, into: &mut [u8]) -> io::Result<usize> {
     let mut read = 0;
     while read < into.len() {
         let Some(rest) = into.get_mut(read..) else {
             break;
         };
         match bytes.read(rest) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(taken) => read = read.saturating_add(taken),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
         }
     }
-    read
+    Ok(read)
 }
 
 pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> MediaInfo {
@@ -417,7 +443,12 @@ pub(crate) struct Stream {
 }
 
 impl Stream {
-    pub(crate) fn over(bytes: Box<dyn MediaStream>, layout: Layout, packing: Packing) -> Self {
+    pub(crate) fn over(
+        bytes: Box<dyn MediaStream>,
+        location: MediaLocation,
+        layout: Layout,
+        packing: Packing,
+    ) -> Self {
         let lanes = layout.lanes();
         let bits = layout.bits;
         let rate = layout.rate;
@@ -432,7 +463,7 @@ impl Stream {
             frame: 0,
             rate,
             bits,
-            planes: Planes::over(bytes, layout),
+            planes: Planes::over(bytes, location, layout),
         }
     }
 
@@ -553,13 +584,20 @@ mod tests {
 
     fn decimating(plane: u8, blocks: usize) -> Stream {
         let bytes = vec![plane; blocks * DSD_BLOCK_FRAMES as usize * BYTES_PER_DOP_FRAME as usize];
+        decimating_from(
+            Box::new(Reading::new(Cursor::new(bytes.clone()))),
+            bytes.len() as u64,
+        )
+    }
+
+    fn decimating_from(bytes: Box<dyn MediaStream>, held: u64) -> Stream {
         let layout = Layout {
             container: Container::Dsf,
             rate: DsdRate::new(DSD64).expect("dsd64"),
             channels: ChannelLayout::Mono,
-            samples: bytes.len() as u64 * 8,
+            samples: held * 8,
             data_at: 0,
-            data_bytes: bytes.len() as u64,
+            data_bytes: held,
             order: Interleave::PerByte,
             bits: BitOrder::MostSignificantFirst,
             metadata_at: None,
@@ -567,10 +605,62 @@ mod tests {
             packed: None,
         };
         Stream::over(
-            Box::new(Reading::new(Cursor::new(bytes))),
+            bytes,
+            MediaLocation::local("/music/tone.dsf"),
             layout,
             Packing::Samples,
         )
+    }
+
+    struct Failing {
+        held: Cursor<Vec<u8>>,
+        fails_past: u64,
+        interrupted: bool,
+    }
+
+    impl Read for Failing {
+        fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            if self.held.position() >= self.fails_past {
+                return Err(io::Error::other("the disc went away"));
+            }
+            self.held.read(into)
+        }
+    }
+
+    impl Seek for Failing {
+        fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+            self.held.seek(to)
+        }
+    }
+
+    #[test]
+    fn a_read_that_fails_mid_track_is_an_error_rather_than_the_end_of_the_track() {
+        let block = DSD_BLOCK_FRAMES * BYTES_PER_DOP_FRAME;
+        let held = block * 4;
+        let failing = Failing {
+            held: Cursor::new(vec![DSD_SILENCE; held as usize]),
+            fails_past: block,
+            interrupted: false,
+        };
+        let mut stream = decimating_from(Box::new(Reading::new(failing)), held);
+        let mut out = twenty_four_bit();
+
+        let first = stream.next_block(&mut out, None, DSD_BLOCK_FRAMES);
+        let second = stream.next_block(&mut out, None, DSD_BLOCK_FRAMES);
+
+        assert_eq!(
+            first.ok(),
+            Some(DSD_BLOCK_FRAMES as usize),
+            "an interrupted read was not tried again"
+        );
+        assert!(
+            matches!(second, Err(Error::Io { .. })),
+            "a failed read answered {second:?}"
+        );
     }
 
     fn twenty_four_bit() -> AudioBuffer {
