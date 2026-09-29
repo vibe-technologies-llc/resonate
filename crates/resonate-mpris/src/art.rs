@@ -35,6 +35,7 @@ const STAGED: &str = ".laying";
 pub(crate) struct Pictures {
     folder: Folder,
     drawn: Mutex<Laid>,
+    laying: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -74,36 +75,39 @@ impl Pictures {
     }
 
     fn laid_down(&self, playing: Option<Playing>, art: &CoverArt) -> Option<String> {
-        let mut laid = self.drawn.lock();
-        if !laid.made {
-            if let Err(error) = made_ours(&self.folder.0) {
-                tracing::debug!(
-                    %error,
-                    folder = %self.folder.0.display(),
-                    "no folder of our own could be made for the covers the bus names"
-                );
-                return None;
+        let path = {
+            let mut laid = self.drawn.lock();
+            if !laid.made {
+                if let Err(error) = made_ours(&self.folder.0) {
+                    tracing::debug!(
+                        %error,
+                        folder = %self.folder.0.display(),
+                        "no folder of our own could be made for the covers the bus names"
+                    );
+                    return None;
+                }
+                laid.made = true;
             }
-            laid.made = true;
-        }
-        let drawn = &mut laid.drawn;
-        if let Some(playing) = playing.as_ref()
-            && let Some(held) = drawn.iter().find(|held| {
-                held.playing
-                    .as_ref()
-                    .is_some_and(|drawn_for| drawn_for.is(playing))
-            })
-        {
-            return Some(held.uri.clone());
-        }
+            if let Some(playing) = playing.as_ref()
+                && let Some(held) = laid.drawn.iter().find(|held| {
+                    held.playing
+                        .as_ref()
+                        .is_some_and(|drawn_for| drawn_for.is(playing))
+                })
+            {
+                return Some(held.uri.clone());
+            }
+            self.folder.0.join(format!(
+                "{:016x}.{}",
+                digest_of(&art.bytes),
+                art.format.extension()
+            ))
+        };
 
-        let path = self.folder.0.join(format!(
-            "{:016x}.{}",
-            digest_of(&art.bytes),
-            art.format.extension()
-        ));
-        let already = drawn.iter().any(|held| held.path == path);
-        if !already && let Err(error) = lay_down(&path, &art.bytes) {
+        let laying = self.laying.lock();
+        let written = lay_down(&path, &art.bytes);
+        drop(laying);
+        if let Err(error) = written {
             tracing::debug!(
                 %error,
                 path = %path.display(),
@@ -113,6 +117,12 @@ impl Pictures {
         }
 
         let uri = MediaLocation::local(&path).to_uri();
+        let mut laid = self.drawn.lock();
+        if !laid.made {
+            let _ = fs::remove_file(&path);
+            return None;
+        }
+        let drawn = &mut laid.drawn;
         drawn.push_back(Drawn {
             playing,
             path,
@@ -218,8 +228,7 @@ fn write_staged(staged: &Path, bytes: &[u8]) -> io::Result<()> {
         .truncate(true)
         .mode(READ_BY_US_ALONE)
         .open(staged)?;
-    file.write_all(bytes)?;
-    file.sync_all()
+    file.write_all(bytes)
 }
 
 #[cfg(test)]

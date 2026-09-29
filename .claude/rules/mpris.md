@@ -86,8 +86,12 @@ property changes.
   minted again from `TrackId::MAX` by the next load and an id alone published the last file's
   cover. The folder is made 0700 with a `create` refusing one already standing, so a predictable
   name in a shared folder cannot be taken first by another user to read what plays or aim a
-  symlink; each cover is written at 0600 under a staging name, synced and renamed into place, the
-  staging file removed on any error, so `mpris:artUrl` never names an unfinished cover; a file
+  symlink; each cover is written at 0600 under a staging name and renamed into place, the
+  staging file removed on any error, so `mpris:artUrl` never names an unfinished cover. It is not
+  synced — a copy in a runtime folder a crash empties anyway, the rename being what makes it whole
+  to a reader — and it is written outside the lock every `Metadata` read takes (`Pictures::drawn`),
+  under one of its own (`laying`), so a read naming a cover already laid never waits on a write; a
+  file
   already under the name counts as the picture only where its length matches the bytes just
   hashed. Only the last `COVERS_KEPT` (8) are held — a cover no kept track names is removed — and
   `Mpris::shutdown` removes the folder; a run that never got to (the signal fallback's
