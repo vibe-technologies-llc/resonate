@@ -1258,13 +1258,13 @@ pub(crate) fn insert(
     position: i64,
     row: &Row,
 ) -> Result<()> {
-    transaction
-        .execute(
-            "INSERT INTO playlist_entries (playlist_id, position, path, span_start, span_frames)
+    store::cached(
+        transaction,
+        "INSERT INTO playlist_entries (playlist_id, position, path, span_start, span_frames)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id.get() as i64, position, row.path, row.start, row.frames],
-        )
-        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        params![id.get() as i64, position, row.path, row.start, row.frames],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
     Ok(())
 }

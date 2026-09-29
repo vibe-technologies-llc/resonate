@@ -57,9 +57,6 @@ service or a format — and is not worked until that moves; everything else is o
 - `retag` holds each picture it replaces in memory for the whole run and writes it per file into
   `retagged`, which undo then reads back whole
 - `measured` sorts a suggestion's whole result to count it, for up to sixteen candidates in series
-- Per-row statements go through `execute` rather than `prepare_cached` — `store::touch`, the
-  playlist inserts, `keep_resumption`, `keep_order` — so an incremental scan of 500 000 tracks
-  parses 500 000 `UPDATE`s
 - A track that will not decode is decoded again by every lookup, because a failed study writes no
   row
 - An unmeasured track is decoded whole again on every `SetReplayGain`, `SetLevelling` and

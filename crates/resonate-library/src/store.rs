@@ -246,7 +246,8 @@ fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
         tx.execute(statement, params![gone, keeps])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
-    tx.execute(
+    cached(
+        tx,
         "UPDATE artists SET
              favourite       = coalesce(min(artists.favourite, o.favourite),
                                         artists.favourite, o.favourite),
@@ -258,13 +259,14 @@ fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
         params![gone, keeps],
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
-    tx.execute("DELETE FROM artists WHERE id = ?1", params![gone])
+    cached(tx, "DELETE FROM artists WHERE id = ?1", params![gone])
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
 fn rekey_artist(tx: &Transaction<'_>, artist: i64, key: &str, name: &str) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE artists SET key = ?2, name = ?3 WHERE id = ?1",
         params![artist, key, name],
     )
@@ -831,7 +833,8 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     }
 
     let text = path_text(canonical)?;
-    tx.execute(
+    cached(
+        tx,
         "INSERT INTO roots (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
         params![text],
     )
@@ -890,8 +893,19 @@ fn take_in(tx: &Transaction<'_>, root: i64, taken: &[i64]) -> Result<()> {
         .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
+pub(crate) const STATEMENTS_CACHED: usize = 64;
+
+pub(crate) fn cached(
+    connection: &rusqlite::Connection,
+    sql: &str,
+    bound: impl rusqlite::Params,
+) -> rusqlite::Result<usize> {
+    connection.prepare_cached(sql)?.execute(bound)
+}
+
 pub fn touch(tx: &Transaction<'_>, id: TrackId, generation: i64) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE tracks SET seen = ?1 WHERE id = ?2",
         params![generation, id.get() as i64],
     )
@@ -1179,7 +1193,8 @@ pub(crate) fn artist_named(tx: &Transaction<'_>, name: &str, mbid: Option<&Mbid>
 }
 
 fn respell_artist(tx: &Transaction<'_>, artist: i64, name: &str) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE artists SET name = ?1 WHERE id = ?2",
         params![name, artist],
     )
@@ -1188,7 +1203,8 @@ fn respell_artist(tx: &Transaction<'_>, artist: i64, name: &str) -> Result<()> {
 }
 
 fn fill_artist_mbid(tx: &Transaction<'_>, artist: i64, mbid: &Mbid) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE artists SET mbid = ?1 WHERE id = ?2 AND mbid IS NULL",
         params![mbid.as_str(), artist],
     )
@@ -1292,7 +1308,8 @@ pub(crate) fn keys_of(tx: &Transaction<'_>, album: i64) -> Result<Vec<String>> {
 }
 
 pub(crate) fn key_album(tx: &Transaction<'_>, key: &str, album: i64) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "INSERT INTO album_keys (key, album_id) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET album_id = excluded.album_id",
         params![key, album],
@@ -1302,7 +1319,8 @@ pub(crate) fn key_album(tx: &Transaction<'_>, key: &str, album: i64) -> Result<(
 }
 
 pub(crate) fn re_key_album(tx: &Transaction<'_>, was: &str, now: &str) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE album_keys SET key = ?2 WHERE key = ?1",
         params![was, now],
     )
@@ -1401,7 +1419,8 @@ fn lend_the_free_names(
     grouped: Grouped,
 ) -> Result<()> {
     for key in naming {
-        tx.execute(
+        cached(
+            tx,
             "INSERT INTO album_keys (key, album_id) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING",
             params![key, grouped.id],
         )
@@ -1434,7 +1453,8 @@ fn name_the_album(
         if cache.albums.insert(key.clone(), grouped).is_some() {
             continue;
         }
-        tx.execute(
+        cached(
+            tx,
             "INSERT INTO album_keys (key, album_id) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING",
             params![key, grouped.id],
         )
@@ -1486,7 +1506,8 @@ fn grouped_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grouped> {
 }
 
 fn disown(tx: &Transaction<'_>, album: i64) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE albums SET artist_id = NULL WHERE id = ?1",
         params![album],
     )
@@ -1495,7 +1516,8 @@ fn disown(tx: &Transaction<'_>, album: i64) -> Result<()> {
 }
 
 fn fill_year(tx: &Transaction<'_>, album: i64, year: i64) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE albums SET year = ?1 WHERE id = ?2 AND year IS NULL",
         params![year, album],
     )
@@ -1504,7 +1526,8 @@ fn fill_year(tx: &Transaction<'_>, album: i64, year: i64) -> Result<()> {
 }
 
 fn fill_declared(tx: &Transaction<'_>, album: i64, declared: &Declaration<'_>) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE albums SET
              barcode        = coalesce(barcode, ?1),
              catalog_number = coalesce(catalog_number, ?2),
@@ -1587,7 +1610,8 @@ fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool>
         return Ok(true);
     }
 
-    tx.execute(
+    cached(
+        tx,
         "UPDATE albums SET cover_art = ?1, cover_format = ?2, cover_source = ?3
           WHERE id = ?4 AND cover_path IS NULL",
         params![
@@ -1811,11 +1835,12 @@ pub(crate) fn index_row(
     album: &str,
     genre: &str,
 ) -> Result<()> {
-    tx.execute("DELETE FROM tracks_fts WHERE rowid = ?1", params![id])
+    cached(tx, "DELETE FROM tracks_fts WHERE rowid = ?1", params![id])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
     let sung = sung_by(tx, id)?;
-    tx.execute(
+    cached(
+        tx,
         "INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
@@ -1852,7 +1877,8 @@ pub(crate) fn index_what_is_sung(
     span_start: i64,
     text: Option<&str>,
 ) -> Result<()> {
-    tx.execute(
+    cached(
+        tx,
         "UPDATE tracks_fts SET lyrics = ?1
           WHERE rowid IN (SELECT id FROM tracks
                            WHERE path = ?2 AND span_start = ?3 AND lyrics IS NULL)",

@@ -437,6 +437,14 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   registers nothing, and settles them before the thread starts — answering `None` where none is left —
   so a drive unplugged after its root was queued costs the roots queued beside it nothing, and the
   window takes a root off what it owes only once a scan has taken it.
+- **A statement run once a row is prepared once a connection.** `store::cached` runs literal SQL
+  through `prepare_cached`, and every per-row write goes through it — the scan's store writes
+  (`touch`, the index row, the album's key, year and cover among them), the resumption's and
+  queue order's rows and a playlist's inserts — so an incremental scan of 500 000 tracks parses its
+  `UPDATE` once rather than 500 000 times. A scan cycles through more distinct statements a record
+  than rusqlite's default cache of 16 holds, so `connect` raises it to `STATEMENTS_CACHED` (64),
+  or the statements would evict each other and every one be parsed again. SQL built by `format!`
+  stays on `execute`, each spelling being its own statement.
 - **A track is keyed by `(path, span_start)`, not path.** N cue rows share one path, so the `UNIQUE` is
   on the pair and `span_start` is `NOT NULL DEFAULT 0`, not nullable — SQLite treats NULLs as distinct
   in a unique index, letting one file insert twice. Every lookup meaning *this row* takes the span

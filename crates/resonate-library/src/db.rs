@@ -903,6 +903,7 @@ fn connect(source: &Source, role: schema::Role) -> Result<Connection> {
     .map_err(|source| Error::store(StoreOp::Open, source))?;
 
     schema::configure(&connection, role)?;
+    connection.set_prepared_statement_cache_capacity(store::STATEMENTS_CACHED);
     Ok(connection)
 }
 
@@ -2786,13 +2787,13 @@ impl Library {
 
             for (position, row) in resumption.rows.iter().enumerate() {
                 let (start, frames) = store::span_columns(row.span);
-                transaction
-                    .execute(
-                        "INSERT INTO resume_rows (position, uri, span_start, span_frames)
+                store::cached(
+                    transaction,
+                    "INSERT INTO resume_rows (position, uri, span_start, span_frames)
                          VALUES (?1, ?2, ?3, ?4)",
-                        params![position as i64, row.location.to_uri(), start, frames],
-                    )
-                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+                    params![position as i64, row.location.to_uri(), start, frames],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
             }
 
             keep_order(
@@ -3974,15 +3975,15 @@ fn keep_order(
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
     for (position, loaded_at) in order.iter().enumerate() {
-        transaction
-            .execute(
-                "INSERT INTO resume_order (position, loaded_at) VALUES (?1, ?2)",
-                params![
-                    i64::try_from(position).unwrap_or(i64::MAX),
-                    i64::try_from(*loaded_at).unwrap_or(i64::MAX)
-                ],
-            )
-            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        store::cached(
+            transaction,
+            "INSERT INTO resume_order (position, loaded_at) VALUES (?1, ?2)",
+            params![
+                i64::try_from(position).unwrap_or(i64::MAX),
+                i64::try_from(*loaded_at).unwrap_or(i64::MAX)
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
 
     keep_place(transaction, kept.row, kept.at)?;
