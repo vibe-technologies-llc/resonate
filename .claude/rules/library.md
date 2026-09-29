@@ -268,8 +268,13 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   audio and not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet in a
   directory first, resolves each `FILE` against the sheet's own folder, and only then sends a probe job
   for audio no sheet claimed — which stops one FLAC being stored as an album's worth of rows and as one
-  whole-file row. A `FILE` naming anything outside the sheet's folder is refused and logged, that being
-  what the format means and what no ripper writes otherwise. Incrementality weighs the two mtimes
+  whole-file row. A `FILE` is matched against the audio beside the sheet by its last component —
+  split on `/` and `\\` alike, so a Windows path or a backslashed folder names the file in the sheet's
+  own folder — through `cue::Naming`: the name exactly, else the name in any case, else the same stem
+  with another extension (a rip converted after its sheet was written, `FILE "ALBUM.WAV"` beside
+  `album.flac`), the closest reading winning and a tie at it naming nothing. `organise` resolves a
+  sheet's claims through the same `scan::claimed_beside`, a stem naming only audio, and
+  `cue::renamed` rewrites whichever `FILE` line the moved file answered to. Incrementality weighs the two mtimes
   apart: `tracks.modified` is the audio file's and `tracks.sheet_modified` the sidecar's, NULL where no
   sidecar cut the row. A row is unchanged only where both agree with the walk, so editing a sheet
   rescans its rows, and taking the sheet away reprobes the file and prunes the rows the cut no longer

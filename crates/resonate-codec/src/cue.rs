@@ -1,4 +1,9 @@
-use std::{fmt, io::Read, ops::Range};
+use std::{
+    fmt, fs,
+    io::Read,
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 use resonate_core::{Decibels, FrameSpan, Frames, MediaLocation, SampleRate};
 
@@ -12,7 +17,7 @@ use crate::{
 const SECTORS_PER_SECOND: u64 = 75;
 const MOST_TRACKS: usize = 999;
 const LARGEST_CUE_SHEET: u64 = 1 << 20;
-const SHEET_EXTENSIONS: [&str; 2] = ["cue", "CUE"];
+const SHEET_EXTENSION: &str = "cue";
 const FILE_COMMAND: &str = "FILE";
 const FIRST_INDEX: u32 = 1;
 const BYTE_ORDER_MARK: char = '\u{feff}';
@@ -262,12 +267,34 @@ pub(crate) fn cut_for(
 fn beside(sources: &Sources, location: &MediaLocation) -> Option<CueFile> {
     let path = location.as_path()?;
     let named = path.file_name()?.to_str()?;
+    let stem = path.file_stem()?.to_str()?;
 
-    SHEET_EXTENSIONS.iter().find_map(|extension| {
-        let sheet = MediaLocation::local(path.with_extension(extension));
-        let held = read_media(sources, &sheet).ok()?;
-        cut_named(held, named)
-    })
+    sheets_beside(path.parent()?, named, stem)
+        .into_iter()
+        .find_map(|sheet| {
+            let held = read_media(sources, &MediaLocation::local(sheet)).ok()?;
+            cut_named(held, named)
+        })
+}
+
+fn sheets_beside(folder: &Path, named: &str, stem: &str) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut sheets: Vec<(bool, PathBuf)> = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file = entry.file_name();
+            let (lead, extension) = file.to_str()?.rsplit_once('.')?;
+            if !extension.eq_ignore_ascii_case(SHEET_EXTENSION) {
+                return None;
+            }
+            let by_stem = folded(lead) == folded(stem);
+            (by_stem || folded(lead) == folded(named)).then(|| (!by_stem, entry.path()))
+        })
+        .collect();
+    sheets.sort();
+    sheets.into_iter().map(|(_, sheet)| sheet).collect()
 }
 
 fn cut_named(sheet: CueSheet, named: &str) -> Option<CueFile> {
@@ -280,14 +307,90 @@ fn cut_named(sheet: CueSheet, named: &str) -> Option<CueFile> {
     if cut.len() == 1 {
         return cut.pop();
     }
-    cut.into_iter().find(|file| file.named == named)
+    let at = the_best_named(
+        cut.iter()
+            .enumerate()
+            .map(|(at, file)| (at, Naming::of(&file.named, named))),
+    )?;
+    Some(cut.swap_remove(at))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Naming {
+    ByStem,
+    ByCase,
+    Exactly,
+}
+
+impl Naming {
+    pub fn of(named: &str, file: &str) -> Option<Self> {
+        let named = the_name_alone(named);
+        if named == file {
+            return Some(Self::Exactly);
+        }
+        if folded(named) == folded(file) {
+            return Some(Self::ByCase);
+        }
+        (folded(stem_of(named)) == folded(stem_of(file))).then_some(Self::ByStem)
+    }
+}
+
+pub fn the_one_named<'a, T>(
+    named: &str,
+    candidates: impl IntoIterator<Item = (T, &'a str)>,
+) -> Option<T> {
+    the_best_named(
+        candidates
+            .into_iter()
+            .map(|(candidate, file)| (candidate, Naming::of(named, file))),
+    )
+}
+
+pub fn the_best_named<T>(candidates: impl IntoIterator<Item = (T, Option<Naming>)>) -> Option<T> {
+    let mut best: Option<(Naming, T)> = None;
+    let mut tied = false;
+    for (candidate, naming) in candidates {
+        let Some(naming) = naming else {
+            continue;
+        };
+        match &best {
+            Some((held, _)) if naming < *held => {}
+            Some((held, _)) if naming == *held => tied = true,
+            _ => {
+                best = Some((naming, candidate));
+                tied = false;
+            }
+        }
+    }
+
+    if tied {
+        tracing::debug!("a cue sheet's file line names more than one file alike");
+        return None;
+    }
+    best.map(|(_, candidate)| candidate)
+}
+
+fn the_name_alone(named: &str) -> &str {
+    named
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(named)
+}
+
+fn stem_of(named: &str) -> &str {
+    match named.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem,
+        _ => named,
+    }
+}
+
+fn folded(named: &str) -> String {
+    named.to_lowercase()
 }
 
 pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     let held = read(sheet);
-    if held.claims().filter(|named| *named == from).count() != 1 {
-        return None;
-    }
+    let from = the_best_named(held.claims().map(|named| (named, Naming::of(named, from))))?;
 
     let named = encoded(from, held.encoding)?;
     let at = the_run_on_the_file_line(sheet, &named, held.encoding)?;
@@ -1247,6 +1350,60 @@ FILE "Meddle.flac" WAVE
             (Some(2), Some(2))
         );
         assert_eq!(cut.tracks[0].tags.isrc.as_deref(), Some("GBAYE7100001"));
+    }
+
+    #[test]
+    fn a_file_line_names_its_file_whatever_the_case_the_extension_or_the_folder() {
+        assert_eq!(
+            Naming::of("Album.flac", "Album.flac"),
+            Some(Naming::Exactly)
+        );
+        assert_eq!(Naming::of("ALBUM.WAV", "album.wav"), Some(Naming::ByCase));
+        assert_eq!(Naming::of("ALBUM.WAV", "album.flac"), Some(Naming::ByStem));
+        assert_eq!(
+            Naming::of("C:\\Rips\\Écoute.wav", "écoute.flac"),
+            Some(Naming::ByStem)
+        );
+        assert_eq!(Naming::of("CD1\\01.flac", "01.flac"), Some(Naming::Exactly));
+        assert_eq!(Naming::of("Album.flac", "Albums.flac"), None);
+
+        let beside = [("wav", "album.wav"), ("flac", "Album.flac")];
+        assert_eq!(the_one_named("Album.flac", beside), Some("flac"));
+        assert_eq!(the_one_named("ALBUM.WAV", beside), Some("wav"));
+        assert_eq!(
+            the_one_named("Album.ape", beside),
+            None,
+            "a stem naming two files alike was taken for one"
+        );
+    }
+
+    #[test]
+    fn a_sheet_beside_a_file_is_found_under_any_case_and_after_its_whole_name() {
+        let folder = std::env::temp_dir().join(format!("resonate-cue-{}", std::process::id()));
+        fs::create_dir_all(&folder).expect("a folder");
+        for named in ["Album.flac.Cue", "ALBUM.CUE", "Album.log", "Other.cue"] {
+            fs::write(folder.join(named), b"").expect("a file");
+        }
+
+        let found = sheets_beside(&folder, "Album.flac", "Album");
+        fs::remove_dir_all(&folder).expect("the folder goes");
+
+        assert_eq!(
+            found,
+            vec![folder.join("ALBUM.CUE"), folder.join("Album.flac.Cue")]
+        );
+    }
+
+    #[test]
+    fn a_sheet_naming_its_file_by_another_case_is_renamed_on_its_file_line() {
+        let written = renamed(
+            b"FILE \"ALBUM.WAV\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n",
+            "album.wav",
+            "01 Album.wav",
+        )
+        .expect("the file line is rewritten");
+
+        assert_eq!(read(&written).files[0].named, "01 Album.wav");
     }
 
     #[test]

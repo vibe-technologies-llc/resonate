@@ -33,8 +33,9 @@ pub use crate::{
     artwork::{Drawing, Likeness, Raster},
     boxes::{BoxKind, BoxLayout, Faststart, TopLevelBox, read as probe_boxes},
     cue::{
-        CueFile, CueSheet, CueStamp, CueStart, CueTrack, CueTrackKind, read as read_cue,
-        read_media as read_cue_media, renamed as renamed_cue,
+        CueFile, CueSheet, CueStamp, CueStart, CueTrack, CueTrackKind, Naming as CueNaming,
+        read as read_cue, read_media as read_cue_media, renamed as renamed_cue,
+        the_best_named as the_best_a_cue_names, the_one_named as the_one_a_cue_names,
     },
     decoder::{Codec, Container, DecodeStatus, Decoder, Delivery, MediaInfo},
     dsd::{DsdChunk, DsdField, DsdRate, Packing},

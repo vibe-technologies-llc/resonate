@@ -467,8 +467,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the sheet named it nothing, and the scan writes its rows through the same call, so catalog and
   transport cannot bill one row two ways. `cue::cut_for` is where the cut comes from: the
   `MediaInfo::cue` the file embeds, else the sheet beside a *local* file — `<stem>.cue`, then
-  `<stem>.CUE` (`SHEET_EXTENSIONS`) — whose `FILE` line names it, or its only cut where it holds one
-  (what a rip converted after its sheet was written still reads as). A non-filesystem source has no
+  `<name>.cue`, the extension and the name in any case (`sheets_beside`, one listing of the folder,
+  paid only where a span is opened) — whose `FILE` line names it as the scan's matching does
+  (`library.md`), or its only cut where it holds one. A non-filesystem source has no
   sidecar and keeps the embedded answer or none.
 - **A row is probed the way it is played.** `probe_span` is `probe` through the same cut, so the tags
   a queue row draws and plays under come off one reading — `crates/resonate-codec/src/decoder.rs`

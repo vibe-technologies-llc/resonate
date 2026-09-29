@@ -16,7 +16,8 @@ use ahash::AHashSet;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
-    Codec, CueFile, CueSheet, MediaInfo, Scanned, Sources, TagSet, probe_scanned, read_cue,
+    Codec, CueFile, CueNaming, CueSheet, MediaInfo, Scanned, Sources, TagSet, probe_scanned,
+    read_cue, the_best_a_cue_names, the_one_a_cue_names,
 };
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::params;
@@ -905,19 +906,16 @@ fn directory_of(
         let touched = metadata.modified().unwrap_or(UNIX_EPOCH);
 
         for cut in &sheet.files {
-            let Some(file) = beside(path, &cut.named) else {
-                continue;
-            };
-            let Some(held) = audio.iter().find(|(named, _)| *named == file) else {
+            let Some(held) = the_one_a_cue_names(&cut.named, named_in(audio)) else {
                 tracing::debug!(
                     sheet = %path.display(),
-                    file = %file.display(),
+                    file = %cut.named,
                     "a cue sheet names a file that is not beside it"
                 );
                 continue;
             };
 
-            claimed.insert(file.clone());
+            claimed.insert(held.0.clone());
             if !sheet_job(walking, cut, path, held, touched)? {
                 return Ok(false);
             }
@@ -1270,17 +1268,21 @@ pub(crate) fn read_sheet(path: &Path) -> Option<CueSheet> {
     (!sheet.is_empty()).then_some(sheet)
 }
 
-pub(crate) fn beside(sheet: &Path, named: &str) -> Option<PathBuf> {
-    let named = Path::new(named);
-    if named.components().count() != 1 {
-        tracing::warn!(
-            sheet = %sheet.display(),
-            file = %named.display(),
-            "a cue sheet naming a file outside its own folder is not followed"
-        );
-        return None;
-    }
-    Some(sheet.parent()?.join(named))
+fn named_in<T>(audio: &[(PathBuf, T)]) -> impl Iterator<Item = (&(PathBuf, T), &str)> {
+    audio
+        .iter()
+        .filter_map(|held| Some((held, held.0.file_name()?.to_str()?)))
+}
+
+pub(crate) fn claimed_beside<'a>(named: &str, files: &'a [PathBuf]) -> Option<&'a PathBuf> {
+    the_best_a_cue_names(files.iter().map(|file| {
+        let naming = file
+            .file_name()
+            .and_then(|held| held.to_str())
+            .and_then(|held| CueNaming::of(named, held))
+            .filter(|naming| *naming != CueNaming::ByStem || is_audio(file));
+        (file, naming)
+    }))
 }
 
 pub(crate) fn is_audio(path: &Path) -> bool {

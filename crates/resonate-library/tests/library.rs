@@ -6507,6 +6507,46 @@ fn a_sheet_that_ends_each_file_with_the_next_tracks_gap_is_scanned_as_one_whole_
 }
 
 #[test]
+fn a_sheet_naming_its_file_by_another_case_extension_or_folder_still_cuts_it() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("album.wav", &Wav::new().frames(88_200).build());
+    tree.write("other.wav", &Wav::new().frames(44_100).build());
+    tree.write(
+        "Album.cue",
+        b"FILE \"C:\\Rips\\ALBUM.FLAC\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:01:00\n",
+    );
+    tree.write(
+        "Other.wav.CUE",
+        b"FILE \"OTHER.WAV\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Other\"\n    INDEX 01 00:00:00\n",
+    );
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let rows = library.tracks(&TrackQuery::default())?;
+
+    let mut held: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.location.as_path().map(Path::to_path_buf),
+                row.span.map(FrameSpan::start),
+            )
+        })
+        .collect();
+    held.sort();
+    assert_eq!(
+        held,
+        vec![
+            (Some(tree.path().join("album.wav")), Some(Frames::ZERO)),
+            (Some(tree.path().join("album.wav")), Some(Frames(44_100))),
+            (Some(tree.path().join("other.wav")), Some(Frames::ZERO)),
+        ]
+    );
+    assert!(rows.iter().any(|row| row.title == "Other"));
+    Ok(())
+}
+
+#[test]
 fn a_play_counted_against_one_cue_row_is_not_counted_against_its_neighbours() -> Result<()> {
     let (_, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;

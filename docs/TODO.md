@@ -28,9 +28,8 @@ service or a format — and is not worked until that moves; everything else is o
 - A sheet that is neither UTF-8 nor UTF-16 with a mark is read as Windows-1252, so a CP1251, GBK,
   Shift-JIS or Big5 `.cue` arrives as mojibake; a UTF-16 playlist sheet is refused outright, and
   RIFF `INFO` strings, EqualizerAPO profiles and lyric sidecars are read as UTF-8 alone
-- A cue's `FILE` is matched to the audio exactly and by case, so `FILE "ALBUM.WAV"` beside
-  `album.flac` or a backslashed subfolder is dropped with a debug record, and `Album.flac.cue` or
-  `Album.Cue` is never found
+- A cue `FILE` naming a file in a subfolder of the sheet's is looked for beside the sheet alone, so a
+  sheet at an album's root cutting `CD1/01.flac` claims nothing
 - A FLAC with an ID3v2 tag in front loses its `CUESHEET`, because `flac::scan` wants `fLaC` at the
   start where `riff.rs` and `caf.rs` step past a tag, and the vault's `bare_flac` keeps such a file
   whole, tags and picture included

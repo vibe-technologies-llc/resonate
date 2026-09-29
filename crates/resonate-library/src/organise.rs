@@ -1279,8 +1279,8 @@ impl<'a> Planner<'a> {
 
     fn sheets_in(&mut self, folder: &Path) -> &[Claiming] {
         if !self.sheets.contains_key(folder) {
-            let read: Vec<Claiming> = listing(&mut self.beside, folder)
-                .files
+            let files = &listing(&mut self.beside, folder).files;
+            let read: Vec<Claiming> = files
                 .iter()
                 .filter(|file| scan::is_a_sheet(file))
                 .filter_map(|sheet| {
@@ -1288,8 +1288,8 @@ impl<'a> Planner<'a> {
                     let files = read
                         .files
                         .iter()
-                        .filter_map(|cut| scan::beside(sheet, &cut.named))
-                        .filter(|file| file.exists())
+                        .filter_map(|cut| scan::claimed_beside(&cut.named, files))
+                        .cloned()
                         .collect();
                     Some(Claiming {
                         sheet: sheet.clone(),
