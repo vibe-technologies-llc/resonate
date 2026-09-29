@@ -27,6 +27,7 @@ const SHEET_HEADER_BYTES: usize = TRACK_COUNT_AT + 1;
 
 const TRACK_BYTES: usize = 36;
 const TRACK_NUMBER_AT: usize = 8;
+const ISRC_AT: usize = TRACK_NUMBER_AT + 1;
 const TRACK_FLAGS_AT: usize = 21;
 const NOT_AUDIO: u8 = 0x80;
 const TRACK_INDEX_COUNT_AT: usize = 35;
@@ -157,6 +158,7 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
         false => LEAD_OUT,
     };
     let count = usize::from(*block.get(TRACK_COUNT_AT)?);
+    let catalog = written_text(block.get(..CATALOG_BYTES)?);
 
     let mut tracks = Vec::with_capacity(count.min(block.len() / TRACK_BYTES));
     let mut at = SHEET_HEADER_BYTES;
@@ -168,7 +170,9 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
             .checked_add(indexes.checked_mul(INDEX_BYTES)?)?;
         let points = block.get(at + TRACK_BYTES..past)?;
 
-        tracks.push(cue_track(record, points, lead_out));
+        let mut track = cue_track(record, points, lead_out);
+        track.tags.barcode.clone_from(&catalog);
+        tracks.push(track);
         at = past;
     }
 
@@ -193,8 +197,17 @@ fn cue_track(record: &[u8], points: &[u8], lead_out: u8) -> CueTrack {
         kind,
         start: CueStart::Sampled(Frames(offset.saturating_add(music_at(points)))),
         pregap: None,
-        tags: TagSet::default(),
+        tags: TagSet {
+            isrc: written_text(&record[ISRC_AT..TRACK_FLAGS_AT]),
+            ..TagSet::default()
+        },
     }
+}
+
+fn written_text(field: &[u8]) -> Option<String> {
+    let held = field.split(|byte| *byte == 0).next().unwrap_or_default();
+    let text = std::str::from_utf8(held).ok()?.trim();
+    (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_graphic())).then(|| text.to_owned())
 }
 
 fn music_at(points: &[u8]) -> u64 {
@@ -303,6 +316,7 @@ mod tests {
     struct Track {
         offset: u64,
         number: u8,
+        isrc: &'static str,
         audio: bool,
         points: Vec<Point>,
     }
@@ -312,6 +326,7 @@ mod tests {
             Self {
                 offset,
                 number,
+                isrc: "",
                 audio: true,
                 points: vec![Point {
                     offset: 0,
@@ -324,6 +339,7 @@ mod tests {
             Self {
                 offset,
                 number: CD_DA_LEAD_OUT,
+                isrc: "",
                 audio: true,
                 points: Vec::new(),
             }
@@ -332,7 +348,9 @@ mod tests {
         fn written(&self, into: &mut Vec<u8>) {
             into.extend_from_slice(&self.offset.to_be_bytes());
             into.push(self.number);
-            into.extend_from_slice(&[0; 12]);
+            let mut isrc = [0; 12];
+            isrc[..self.isrc.len()].copy_from_slice(self.isrc.as_bytes());
+            into.extend_from_slice(&isrc);
             into.push(if self.audio { 0 } else { NOT_AUDIO });
             into.extend_from_slice(&[0; 13]);
             into.push(self.points.len() as u8);
@@ -434,6 +452,22 @@ mod tests {
             .expect("an embedded sheet");
 
         assert_eq!(cut.tracks[0].start, CueStart::Sampled(Frames::ZERO));
+    }
+
+    #[test]
+    fn a_block_names_each_tracks_isrc_and_the_discs_catalogue_number() {
+        let mut tracks = meddle();
+        tracks[1].isrc = "GBN9Y7100002";
+        let mut sheet = cuesheet(&tracks, None);
+        sheet[..13].copy_from_slice(b"0724356757828");
+
+        let cut = found(flac(&[(CUESHEET, sheet)]))
+            .cue
+            .expect("an embedded sheet");
+
+        assert_eq!(cut.tracks[0].tags.isrc, None);
+        assert_eq!(cut.tracks[1].tags.isrc.as_deref(), Some("GBN9Y7100002"));
+        assert_eq!(cut.tracks[2].tags.barcode.as_deref(), Some("0724356757828"));
     }
 
     #[test]

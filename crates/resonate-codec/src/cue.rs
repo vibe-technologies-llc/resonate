@@ -3,7 +3,7 @@ use std::{fmt, io::Read, ops::Range};
 use resonate_core::{Decibels, FrameSpan, Frames, MediaLocation, SampleRate};
 
 use crate::{
-    Error, MediaInfo, Result, TagSet,
+    Error, MediaInfo, ReplayGain, Result, TagSet,
     source::Sources,
     tags::Uppercased,
     text::{TextEncoding, UTF8_BOM, decoded, encoded, legacy},
@@ -174,6 +174,21 @@ impl CueFile {
             CueStart::Written(_) => CueStart::Written(CueStamp::default()),
             CueStart::Sampled(_) => CueStart::Sampled(Frames::ZERO),
         };
+    }
+
+    pub(crate) fn billed_by(mut self, file: &TagSet) -> Self {
+        let total = self.audio_tracks().count() as u32;
+        for track in &mut self.tracks {
+            let own = std::mem::take(&mut track.tags);
+            track.tags = TagSet {
+                track_number: Some(track.number),
+                track_total: Some(total),
+                isrc: own.isrc,
+                barcode: own.barcode.or_else(|| file.barcode.clone()),
+                ..the_albums_of(file)
+            };
+        }
+        self
     }
 
     pub fn audio_tracks(&self) -> impl Iterator<Item = (usize, &CueTrack)> {
@@ -504,10 +519,7 @@ impl Reading {
             Named::Performer => tags.artist = Some(value),
             Named::Songwriter => tags.credits.composer = Some(value),
             Named::Isrc => tags.isrc = Some(value),
-            Named::Catalog if album => {
-                tags.musicbrainz_album_id = None;
-                tags.barcode = Some(value);
-            }
+            Named::Catalog if album => tags.barcode = Some(value),
             Named::Catalog => {}
         }
     }
@@ -533,6 +545,13 @@ impl Reading {
             "DATE" => tags.date = Some(value),
             "GENRE" => tags.genre = Some(value),
             "COMMENT" => tags.comment = Some(value),
+            "COMPOSER" => tags.credits.composer = Some(value),
+            "DISCNUMBER" => {
+                let (number, total) = numbered(&value);
+                tags.disc_number = number.or(tags.disc_number);
+                tags.disc_total = total.or(tags.disc_total);
+            }
+            "TOTALDISCS" | "DISCTOTAL" => tags.disc_total = numbered(&value).0,
             "REPLAYGAIN_TRACK_GAIN" => tags.replay_gain.track_gain = decibels(&value),
             "REPLAYGAIN_TRACK_PEAK" => tags.replay_gain.track_peak = peak(&value),
             "REPLAYGAIN_ALBUM_GAIN" => tags.replay_gain.album_gain = decibels(&value),
@@ -624,11 +643,48 @@ fn settle(tags: &mut TagSet, album: &TagSet, total: u32) {
     if tags.genre.is_none() {
         tags.genre = album.genre.clone();
     }
+    if tags.credits.composer.is_none() {
+        tags.credits.composer = album.credits.composer.clone();
+    }
+    if tags.disc_number.is_none() {
+        tags.disc_number = album.disc_number;
+    }
+    if tags.disc_total.is_none() {
+        tags.disc_total = album.disc_total;
+    }
+    if tags.barcode.is_none() {
+        tags.barcode = album.barcode.clone();
+    }
     if tags.replay_gain.album_gain.is_none() {
         tags.replay_gain.album_gain = album.replay_gain.album_gain;
     }
     if tags.replay_gain.album_peak.is_none() {
         tags.replay_gain.album_peak = album.replay_gain.album_peak;
+    }
+}
+
+fn the_albums_of(file: &TagSet) -> TagSet {
+    TagSet {
+        artist: file.album_artist.clone().or_else(|| file.artist.clone()),
+        album: file.album.clone(),
+        album_artist: file.album_artist.clone(),
+        disc_number: file.disc_number,
+        disc_total: file.disc_total,
+        date: file.date.clone(),
+        genre: file.genre.clone(),
+        label: file.label.clone(),
+        copyright: file.copyright.clone(),
+        musicbrainz_album_id: file.musicbrainz_album_id.clone(),
+        musicbrainz_album_artist_id: file.musicbrainz_album_artist_id.clone(),
+        musicbrainz_release_group_id: file.musicbrainz_release_group_id.clone(),
+        catalog_number: file.catalog_number.clone(),
+        compilation: file.compilation,
+        replay_gain: ReplayGain {
+            album_gain: file.replay_gain.album_gain,
+            album_peak: file.replay_gain.album_peak,
+            ..ReplayGain::default()
+        },
+        ..TagSet::default()
     }
 }
 
@@ -670,6 +726,15 @@ fn quoted(value: &str) -> String {
         Some((held, _)) => held.to_owned(),
         None => rest.to_owned(),
     }
+}
+
+fn numbered(value: &str) -> (Option<u32>, Option<u32>) {
+    let (number, total) = match value.split_once('/') {
+        Some((number, total)) => (number, Some(total)),
+        None => (value, None),
+    };
+    let read = |held: &str| held.trim().parse().ok().filter(|held: &u32| *held > 0);
+    (read(number), total.and_then(read))
 }
 
 fn decibels(value: &str) -> Option<Decibels> {
@@ -1109,6 +1174,79 @@ FILE "Meddle.flac" WAVE
         assert_eq!(track.tags.title.as_deref(), Some("The \"Real\" Thing"));
         assert_eq!(track.tags.album.as_deref(), Some("The \"Real\" Album"));
         assert_eq!(track.tags.artist.as_deref(), Some("Unquoted Artist"));
+    }
+
+    #[test]
+    fn the_disc_the_composer_and_the_catalogue_a_sheet_names_reach_every_track() {
+        let sheet = read(
+            b"REM DISCNUMBER 2\nREM TOTALDISCS 3\nREM COMPOSER \"Bach\"\nCATALOG 0724356757828\nSONGWRITER \"Gilmour\"\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    REM COMPOSER \"Waters\"\n    INDEX 01 04:00:00\n",
+        );
+        let [first, second] = sheet.files[0].tracks.as_slice() else {
+            panic!("two tracks: {:?}", sheet.files[0].tracks);
+        };
+
+        assert_eq!(first.tags.disc_number, Some(2));
+        assert_eq!(first.tags.disc_total, Some(3));
+        assert_eq!(first.tags.barcode.as_deref(), Some("0724356757828"));
+        assert_eq!(first.tags.credits.composer.as_deref(), Some("Gilmour"));
+        assert_eq!(second.tags.credits.composer.as_deref(), Some("Waters"));
+        assert_eq!(second.tags.disc_number, Some(2));
+
+        let slashed = read(
+            b"REM DISCNUMBER 1/2\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n",
+        );
+        let tags = &slashed.files[0].tracks[0].tags;
+        assert_eq!((tags.disc_number, tags.disc_total), (Some(1), Some(2)));
+    }
+
+    #[test]
+    fn a_block_cut_is_billed_by_the_album_its_file_is_tagged_as() {
+        let file = TagSet {
+            title: Some("Meddle".to_owned()),
+            artist: Some("Pink Floyd".to_owned()),
+            album: Some("Meddle".to_owned()),
+            date: Some("1971".to_owned()),
+            isrc: Some("GBN9Y1100001".to_owned()),
+            track_number: Some(1),
+            ..TagSet::default()
+        };
+        let cut = CueFile {
+            named: String::new(),
+            tracks: vec![
+                CueTrack {
+                    number: 1,
+                    tags: TagSet {
+                        isrc: Some("GBAYE7100001".to_owned()),
+                        ..TagSet::default()
+                    },
+                    ..CueTrack::default()
+                },
+                CueTrack {
+                    number: 2,
+                    start: CueStart::Sampled(Frames(44_100)),
+                    ..CueTrack::default()
+                },
+                CueTrack {
+                    number: 170,
+                    kind: CueTrackKind::Data,
+                    start: CueStart::Sampled(Frames(88_200)),
+                    ..CueTrack::default()
+                },
+            ],
+        }
+        .billed_by(&file);
+
+        let second = &cut.tracks[1].tags;
+        assert_eq!(second.album.as_deref(), Some("Meddle"));
+        assert_eq!(second.artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(second.date.as_deref(), Some("1971"));
+        assert_eq!(second.title, None);
+        assert_eq!(second.isrc, None);
+        assert_eq!(
+            (second.track_number, second.track_total),
+            (Some(2), Some(2))
+        );
+        assert_eq!(cut.tracks[0].tags.isrc.as_deref(), Some("GBAYE7100001"));
     }
 
     #[test]

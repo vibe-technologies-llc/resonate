@@ -362,6 +362,12 @@ pub(crate) fn coded_info(
     let carrying = Carrying::of(opened.reader.format_info().format, params.codec);
     let primed = priming(track, params, carrying, prescan, spec.rate);
     let playable = primed.and_then(Priming::window);
+    let tags = tags::read(
+        &opened.revisions,
+        track.id,
+        prescan,
+        segment_title_names_the_track(opened.reader.as_ref()),
+    );
 
     Ok(MediaInfo {
         container: opened.reader.format_info().format,
@@ -388,21 +394,23 @@ pub(crate) fn coded_info(
             .and_then(|bits| u8::try_from(bits).ok()),
         is_seekable: opened.seekable,
         packing: Packing::Samples,
-        tags: tags::read(
-            &opened.revisions,
-            track.id,
-            prescan,
-            segment_title_names_the_track(opened.reader.as_ref()),
-        ),
-        cue: embedded_cue(opened, track),
+        cue: embedded_cue(opened, track, &tags),
+        tags,
     })
 }
 
-fn embedded_cue(opened: &Coded, track: &Track) -> Option<CueFile> {
+fn embedded_cue(opened: &Coded, track: &Track, tags: &TagSet) -> Option<CueFile> {
     tags::read_cue_sheet(&opened.revisions, track.id)
         .map(|text| cue::read(text.as_bytes()))
         .and_then(the_first_cut)
-        .or_else(|| opened.prescan.flac.cue.clone())
+        .or_else(|| {
+            opened
+                .prescan
+                .flac
+                .cue
+                .clone()
+                .map(|cut| cut.billed_by(tags))
+        })
 }
 
 fn the_first_cut(sheet: CueSheet) -> Option<CueFile> {

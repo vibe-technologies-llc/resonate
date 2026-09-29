@@ -65,8 +65,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `edition`, `label`, `isrc`, `beats_per_minute`, `copyright`, `encoder` and `comment`, the six
   release ids a tagger writes — `musicbrainz_track_id`, `musicbrainz_album_id`,
   `musicbrainz_artist_id`, `musicbrainz_album_artist_id`, `musicbrainz_release_group_id`,
-  `musicbrainz_release_track_id` — and `barcode` and `catalog_number` (which a cue sheet's `CATALOG`
-  line fills, being what the line is). All three naming paths land on them, so `IENG`, `IMUS`,
+  `musicbrainz_release_track_id` — and `barcode` and `catalog_number`, a cue sheet's `CATALOG` line
+  and a FLAC `CUESHEET`'s catalogue field filling `barcode`, the disc's UPC/EAN being what both
+  hold. All three naming paths land on them, so `IENG`, `IMUS`,
   `IWRI`, `IPRO`, `ICOP`, `ISFT` and `ICMT` from a WAV's `INFO`, a Vorbis name a reader declined and
   Matroska's `COLLECTION` and `EDITION` targets above the album reach the same field. The inspector
   reads a field, not a key, and MPRIS fills `xesam:composer`, `xesam:lyricist`, `xesam:comment` and
@@ -487,7 +488,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   preferred: a Vorbis `CUESHEET` comment — a whole cue file with titles, read through
   `tags::read_cue_sheet` into `cue::read` — else the binary block, which `flac.rs` walks off the
   metadata headers beside `riff.rs` and `matroska.rs` in the `Prescan`, a non-FLAC costing the
-  four-byte magic. A block carries no names, so its tracks come back with an empty `TagSet`. Its last
+  four-byte magic. A block carries no names, only each track's ISRC and the disc's catalogue number,
+  so `CueFile::billed_by` bills its tracks by the file's own album fields — album, album artist
+  (the artist where there is none), disc, date, genre, label, the release ids, the album gain — with
+  the track's number, the block's audio track count as its total, and its ISRC; the title stays
+  unset for `titled` to name. Its last
   track is the lead-out — 170 for CD-DA (`CD_DA_LEAD_OUT`), 255 otherwise (`LEAD_OUT`) — kept in
   `CueFile::tracks` as `CueTrackKind::Data`, so `audio_tracks` skips it while `span_of` reads its
   offset as the last audio track's end. A track's start is its own offset plus its index 1's where it
@@ -510,7 +515,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `INDEX 01` and the gap a "gaps prepended" rip puts at the head of each file play as part of the
   track they lead into rather than belonging to no row; both readers call it. `track_total` is the
   audio tracks of the whole sheet, so a sheet of one `FILE` a track bills each as one of twelve and a
-  data track is not counted. A quoted value runs to the *last* quote on its line, so EAC's
+  data track is not counted. `REM DISCNUMBER` (a `1/2` read as number and total), `REM TOTALDISCS`,
+  `REM COMPOSER`, a sheet-level `SONGWRITER` and `CATALOG` are handed to every track that did not
+  name its own. A quoted value runs to the *last* quote on its line, so EAC's
   `TITLE "The "Real" Thing"` and a `FILE` name holding quotes read whole.
 - **A cue sheet is read as far as it parses and never fails.** An unknown command is skipped (as
   `lrc.rs` skips a bracket neither moment nor id tag), and rubbish yields a sheet naming nothing. Only

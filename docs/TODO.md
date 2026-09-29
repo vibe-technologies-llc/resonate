@@ -34,8 +34,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A FLAC with an ID3v2 tag in front loses its `CUESHEET`, because `flac::scan` wants `fLaC` at the
   start where `riff.rs` and `caf.rs` step past a tag, and the vault's `bare_flac` keeps such a file
   whole, tags and picture included
-- `REM DISCNUMBER`, `TOTALDISCS` and `COMPOSER` are ignored, an album-level `SONGWRITER` is not
-  handed to the tracks, and a FLAC `CUESHEET`'s ISRC and catalogue number are never read
 - RF64, BW64 and Wave64 are refused as unrecognised, so a WAVE past 4 GiB will not open; symphonia
   reads none of them, and a reader of the crate's own would, as it does for Monkey's Audio
 - `Codec::from_id` names no unsigned big-endian or planar integer PCM, so such a CAF is
