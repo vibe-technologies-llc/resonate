@@ -844,6 +844,46 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_shorter_history_is_armed_by_the_first_press_and_kept_by_the_second(
+        cx: &mut TestAppContext,
+    ) {
+        let six_months = resonate_library::HistoryKept::for_days(182).expect("a span of days");
+        let kept = |driven: &mut Driven| {
+            driven.read(|root, cx| {
+                (
+                    cx.global::<ResonateApp>().history_kept,
+                    root.aging_the_history,
+                )
+            })
+        };
+        let mut driven = Driven::open(cx, catalog());
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("listened");
+        driven.settle();
+
+        driven.click("history-kept-4");
+
+        assert_eq!(
+            kept(&mut driven),
+            (resonate_library::HistoryKept::Forever, Some(six_months)),
+            "the first press forgot listens rather than asking again"
+        );
+
+        driven.click("history-kept-4");
+
+        assert_eq!(kept(&mut driven), (six_months, None));
+
+        driven.click("history-kept-0");
+
+        assert_eq!(
+            kept(&mut driven),
+            (resonate_library::HistoryKept::Forever, None),
+            "keeping more was asked about twice"
+        );
+    }
+
+    #[gpui::test]
     fn the_wheel_scrolls_the_settings_body(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");

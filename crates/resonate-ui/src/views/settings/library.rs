@@ -75,6 +75,14 @@ impl Choice for HistoryKept {
 
 const SECONDS_A_DAY: u64 = 86_400;
 
+fn forgets_listens(now: HistoryKept, asked: HistoryKept) -> bool {
+    match (now.span(), asked.span()) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(now), Some(asked)) => asked < now,
+    }
+}
+
 const REFRESHING_NOTE: &str = "The scan's progress shows under Scanning above. What MusicBrainz \
                                answered is asked again with Refresh all under Online.";
 
@@ -506,16 +514,38 @@ impl RootView {
 
     pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Div {
         let kept = cx.global::<ResonateApp>().history_kept;
+        let armed = self.aging_the_history;
 
-        kit::section_body().child(kit::field(
-            "Keep what was listened to",
-            self.choices(
-                "history-kept",
-                Some(kept),
-                cx,
-                |this, kept: HistoryKept, cx| this.keep_the_history(kept, cx),
-            ),
-        ))
+        kit::section_body()
+            .child(kit::field(
+                "Keep what was listened to",
+                self.choices(
+                    "history-kept",
+                    Some(kept),
+                    cx,
+                    |this, kept: HistoryKept, cx| this.ask_to_keep_the_history(kept, cx),
+                ),
+            ))
+            .when_some(armed, |body, armed| {
+                body.child(note(format!(
+                    "Press {} again to forget every listen older than that now, for good. \
+                     Listens ListenBrainz has not been told of yet are kept until it has.",
+                    armed.label()
+                )))
+            })
+    }
+
+    fn ask_to_keep_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
+        let now = cx.global::<ResonateApp>().history_kept;
+        if forgets_listens(now, kept) && self.aging_the_history != Some(kept) {
+            self.lower_every_armed_press();
+            self.aging_the_history = Some(kept);
+            cx.notify();
+            return;
+        }
+        self.aging_the_history = None;
+        self.keep_the_history(kept, cx);
+        cx.notify();
     }
 
     pub(crate) fn keep_the_history(&self, kept: HistoryKept, cx: &mut Context<Self>) {
@@ -1451,5 +1481,24 @@ const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
     match planned {
         Planned::Outdated => MOVED_UNDER_THE_PREVIEW,
         Planned::Not | Planned::Shown(_) => first,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_shorter_span_forgets_listens() {
+        let forever = HistoryKept::Forever;
+        let year = HistoryKept::for_days(365).expect("a span of days");
+        let months = HistoryKept::for_days(182).expect("a span of days");
+
+        assert!(forgets_listens(forever, year));
+        assert!(forgets_listens(year, months));
+        assert!(!forgets_listens(months, year));
+        assert!(!forgets_listens(year, forever));
+        assert!(!forgets_listens(year, year));
+        assert!(!forgets_listens(forever, forever));
     }
 }

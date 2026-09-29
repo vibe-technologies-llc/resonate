@@ -121,7 +121,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   count and the *most played* order are as they were, and only the Statistics pane's reads — every one
   over `listens` — reach back no further than the span. The binary ages the catalog in
   `open_library_with`, so every command opening it does, and the settings pane's *Listening history*
-  ages it the moment a span is chosen.
+  ages it once a span is chosen: a span shorter than the one in force is armed by the first press
+  (`RootView::aging_the_history`, lowered by `disarm` with the pane's other armed presses) and kept
+  by the second, as every other setting forgetting something for good is, while a longer one or
+  *Forever* forgets nothing and is kept at once
+  (`a_shorter_history_is_armed_by_the_first_press_and_kept_by_the_second`).
   `a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told` is the claim.
 - **What a service has been told is a mark in the history, and the history is what is told.**
   `submissions` — the sixth `MIGRATIONS` step — holds one row per `ListeningService`, the id of the

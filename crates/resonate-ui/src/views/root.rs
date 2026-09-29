@@ -18,8 +18,8 @@ use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, QueueItem, RepeatMode, stamp_of,
 };
 use resonate_library::{
-    Cut, Direction, EnrichStats, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, Track,
+    Cut, Direction, EnrichStats, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder,
+    SavedQuery, SortOrder, Track,
 };
 
 use crate::{
@@ -476,6 +476,7 @@ pub struct RootView {
     pub(crate) queue_length: Option<QueueLength>,
     pub(crate) resetting_everything: bool,
     pub(crate) discarding_the_curve: bool,
+    pub(crate) aging_the_history: Option<HistoryKept>,
     pub(crate) reset_everything_landed: bool,
     pub(crate) moving_the_files: bool,
     pub(crate) walking_the_filing_back: bool,
@@ -867,6 +868,7 @@ impl RootView {
             queue_length: None,
             resetting_everything: false,
             discarding_the_curve: false,
+            aging_the_history: None,
             reset_everything_landed: false,
             moving_the_files: false,
             walking_the_filing_back: false,

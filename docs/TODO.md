@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A *Listening history* chip ages the catalog the moment it is pressed, for good, while its note
-  says listens are forgotten as the library opens; every other destructive setting is armed by a
-  first press
 - `resonate-online` declares `serde-saphyr` and uses nothing of it
 
 ## Privacy and security

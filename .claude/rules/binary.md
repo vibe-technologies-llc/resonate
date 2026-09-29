@@ -141,7 +141,7 @@ What some of them mean:
   category's *Listening* group and the Listen sheet's chips write them.
 - `history-kept` is `forever` (default) or a whole number of days; every command opening the
   catalog first forgets listens and skipped time older than that, and the Library category's
-  *Listening history* chips write it and age the catalog at once.
+  *Listening history* chips write it and age the catalog, a shorter span on a second press.
 - `previous-restarts` (default true): previous restarts the song once the heard position is past
   its first three seconds and goes back a track within them. Library's *The previous button*; live.
 - `enrich-after-scan` (default true), read by `resonate scan` and the window's scan; off, the
