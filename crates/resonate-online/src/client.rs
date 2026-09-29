@@ -119,8 +119,45 @@ impl Identity {
             .filter(|contact| !contact.is_empty());
 
         match contact {
-            Some(contact) => format!("{NAME}/{} ( {contact} )", self.version),
-            None => format!("{NAME}/{}", self.version),
+            Some(contact) => format!("{} ( {contact} )", self.named()),
+            None => self.named(),
+        }
+    }
+
+    pub fn user_agent_to(&self, host: Host) -> String {
+        if host.asks_who_is_asking() {
+            self.user_agent()
+        } else {
+            self.named()
+        }
+    }
+
+    fn named(&self) -> String {
+        format!("{NAME}/{}", self.version)
+    }
+}
+
+impl Host {
+    const fn asks_who_is_asking(self) -> bool {
+        match self {
+            Self::MusicBrainz
+            | Self::CoverArtArchive
+            | Self::ListenBrainz
+            | Self::Commons
+            | Self::Wikidata => true,
+            Self::Lrclib
+            | Self::AutoEq
+            | Self::AcoustId
+            | Self::Shazam
+            | Self::AppleArtwork
+            | Self::AppleMusic
+            | Self::Audd
+            | Self::Deezer
+            | Self::DeezerPictures
+            | Self::Spotify
+            | Self::SpotifyPictures
+            | Self::SoundCloud
+            | Self::SoundCloudPictures => false,
         }
     }
 }
@@ -129,14 +166,14 @@ pub type Reintroduction = Arc<dyn Fn() -> Option<Identity> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Introduction {
-    said: Arc<RwLock<String>>,
+    said: Arc<RwLock<Identity>>,
     follows: Option<Reintroduction>,
 }
 
 impl fmt::Debug for Introduction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Introduction")
-            .field("said", &*self.said.read())
+            .field("said", &self.said.read().user_agent())
             .field("follows", &self.follows.is_some())
             .finish()
     }
@@ -145,7 +182,7 @@ impl fmt::Debug for Introduction {
 impl Introduction {
     pub fn as_(identity: &Identity) -> Self {
         Self {
-            said: Arc::new(RwLock::new(identity.user_agent())),
+            said: Arc::new(RwLock::new(identity.clone())),
             follows: None,
         }
     }
@@ -158,14 +195,23 @@ impl Introduction {
     }
 
     pub fn change_to(&self, identity: &Identity) {
-        *self.said.write() = identity.user_agent();
+        *self.said.write() = identity.clone();
     }
 
     pub fn user_agent(&self) -> String {
+        self.heard_again();
+        self.said.read().user_agent()
+    }
+
+    pub fn user_agent_to(&self, host: Host) -> String {
+        self.heard_again();
+        self.said.read().user_agent_to(host)
+    }
+
+    fn heard_again(&self) {
         if let Some(identity) = self.follows.as_ref().and_then(|follows| follows()) {
             self.change_to(&identity);
         }
-        self.said.read().clone()
     }
 }
 
@@ -241,7 +287,7 @@ impl Client {
         carried: Carried,
     ) -> Self {
         let config = Agent::config_builder()
-            .user_agent(introduction.user_agent().as_str())
+            .user_agent(Identity::of_this_build().named().as_str())
             .https_only(carried == Carried::Encrypted)
             .timeout_connect(Some(CONNECT_WITHIN))
             .timeout_global(Some(ANSWER_WITHIN))
@@ -347,7 +393,7 @@ impl Client {
         let mut by_default = RETRY_AFTER_BY_DEFAULT;
         loop {
             self.pace(host);
-            let introduced = self.introduction.user_agent();
+            let introduced = self.introduction.user_agent_to(host);
             let sent = match body {
                 None => self.agent.get(url).header(USER_AGENT, &introduced).call(),
                 Some(posted) => {
@@ -566,7 +612,7 @@ mod tests {
 
         let _: Option<serde_json::Value> = client
             .posted(
-                Host::AcoustId,
+                Host::MusicBrainz,
                 LookupOp::Recognise,
                 &url,
                 &Posted::packed_form(Params::new().with("client", "a key")),
@@ -583,6 +629,43 @@ mod tests {
             client.user_agent(),
             "resonate/9.9.9 ( someone who typed a contact )"
         );
+    }
+
+    #[test]
+    fn a_contact_is_told_to_the_hosts_that_ask_who_is_asking_and_no_other() {
+        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
+        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
+
+        for (host, told) in [
+            (Host::MusicBrainz, true),
+            (Host::CoverArtArchive, true),
+            (Host::ListenBrainz, true),
+            (Host::Wikidata, true),
+            (Host::Shazam, false),
+            (Host::Audd, false),
+            (Host::AcoustId, false),
+            (Host::Spotify, false),
+            (Host::AutoEq, false),
+        ] {
+            let (url, served) = serving_one_post();
+            let _: Option<serde_json::Value> = client
+                .posted(
+                    host,
+                    LookupOp::Recognise,
+                    &url,
+                    &Posted::packed_form(Params::new().with("client", "a key")),
+                )
+                .expect("an answer");
+            let (head, _) = served.join().expect("the server");
+
+            let said = if told {
+                "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n"
+            } else {
+                "user-agent: resonate/9.9.9\r\n"
+            };
+            assert!(head.contains(said), "{host:?} was told {head}");
+            assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
+        }
     }
 
     #[test]
@@ -605,7 +688,7 @@ mod tests {
         let (url, served) = serving_one_post();
         let _: Option<serde_json::Value> = client
             .posted(
-                Host::AcoustId,
+                Host::ListenBrainz,
                 LookupOp::Recognise,
                 &url,
                 &Posted::packed_form(Params::new().with("client", "a key")),

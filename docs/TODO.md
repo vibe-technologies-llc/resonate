@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Privacy and security
-- `contact` rides on every request's User-Agent, Shazam, AudD, Spotify, Apple Music, Deezer,
-  SoundCloud and GitHub included, where only MusicBrainz and the services it fronts ask for one
 - Tag text reaches the terminal raw in every table but `info`'s — `stats`, `favourites`,
   `missing`, `playlists` and `play`'s readout — so a title carrying an OSC sequence or a newline
   retitles the terminal or forges a row
@@ -311,7 +309,6 @@ service or a format — and is not worked until that moves; everything else is o
   shaping both
 - A value off a segmented control's table — a `bluetooth-lead-ms`, a pre-amp — lights nothing and
   says nothing, where `buffer-ms` and `listen-for` say what is in force
-- The Online card says `contact` is used from the next start, where it is live
 - `faint` text fails 4.5:1 against the panes in most themes and `muted` fails it against a raised
   surface in Frappé and Macchiato, which the palette test never weighs
 - *Suspect* and *Lossy* are drawn in one colour

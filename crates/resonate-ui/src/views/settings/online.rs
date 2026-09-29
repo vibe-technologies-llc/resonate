@@ -126,8 +126,9 @@ impl Choice for ClipLength {
     }
 }
 
-const CONTACT_NOTE: &str = "Sent in the User-Agent from the next start. Leave it empty to send \
-                            nothing.";
+const CONTACT_NOTE: &str = "Sent in the User-Agent to MusicBrainz, the Cover Art Archive, \
+                            ListenBrainz and Wikimedia, which ask who is asking, from the next \
+                            request on. Leave it empty to send nothing.";
 
 impl RootView {
     pub(super) fn lookups_group(&mut self, cx: &mut Context<Self>) -> Div {

@@ -36,9 +36,14 @@ listener, every counted play, and only under a token.
   answer is read. The `AutoEq` host is `raw.githubusercontent.com/jaakkopasanen/AutoEq/master`, a
   file server rather than an API, which is why the search reading it lives in `resonate-eq`
   (`eq.md`).
-  `Identity::user_agent` is what every request carries: `resonate/<version>` from
+  `Identity::user_agent_to` is what every request carries: `resonate/<version>` from
   `CARGO_PKG_VERSION`, with ` ( <contact> )` after it only where `Identity::contact` holds non-blank
-  text. `Identity::of_this_build` carries none; the binary's `online::identity` fills it from
+  text and the host is one `Host::asks_who_is_asking` — MusicBrainz, the Cover Art Archive and
+  ListenBrainz, whose MetaBrainz policy asks for a contact, and Commons and Wikidata, whose
+  Wikimedia one does. Shazam, AudD, AcoustID, LRCLIB, GitHub and the picture and artist services
+  are told the build's name and version alone, a contact typed for MusicBrainz having once ridden on
+  every request (`a_contact_is_told_to_the_hosts_that_ask_who_is_asking_and_no_other`). The agent's
+  own configured User-Agent is the bare one too. `Identity::of_this_build` carries none; the binary's `online::identity` fills it from
   `Config::contact` — the `contact` key and nothing else, `None` for a blank value — so a bare
   install identifies itself by name and version alone. **What a client says is read per request.**
   `Introduction` is the User-Agent behind a shared `RwLock`; `Client::introduced` takes one and

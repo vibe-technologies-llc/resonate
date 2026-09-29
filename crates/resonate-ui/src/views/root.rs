@@ -1378,9 +1378,9 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = given.clone());
 
         let said = if given.is_empty() {
-            "No contact is sent from the next start"
+            "No contact is sent from the next request on"
         } else {
-            "The contact is sent from the next start"
+            "The contact is sent from the next request on"
         };
         self.store(&Setting::Contact(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);

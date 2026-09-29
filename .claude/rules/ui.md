@@ -1698,8 +1698,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   each heading filters `naming` for the variants the other leaves. `RootView::contact` is the third
   `Field`, the Online card's, filled by `Field::hold`: `set_content` with the preedit cleared (`clear`'s
   shape), so the saved contact is in the box when the window opens and is put back trimmed on enter.
-  `contact_given` stores `Setting::Contact`, moves the global, reports it is sent from the next start
-  and hands focus back; escape and a press outside leave it through `leave_contact`, ahead of the naming
+  `contact_given` stores `Setting::Contact`, moves the global, reports it is sent from the next
+  request on — the store reintroducing every client (`online.md`) — and hands focus back; escape and a press outside leave it through `leave_contact`, ahead of the naming
   row in `dismiss_search`, and `editing` counts it so the typed keys stay off while the caret is in it.
   The order and the cap ride beside the name as chips, a saved query being a search, an order and a row
   cap, the window otherwise only ever saving the first. *Edit search* on a saved query is
