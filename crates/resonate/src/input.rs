@@ -1,13 +1,17 @@
 use std::{
     io::{self, BufRead as _, Read as _},
     panic, thread,
+    time::Duration,
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::{Mutex, Once};
 use rustix::termios::{self, LocalModes, OptionalActions, SpecialCodeIndex, Termios};
 
-use crate::sleep::{Sleep, WITHOUT_A_SPEC};
+use crate::{
+    lasting::{Bare, lasting},
+    sleep::{Sleep, WITHOUT_A_SPEC},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -15,8 +19,9 @@ pub enum Action {
     Next,
     Previous,
     Stop,
-    SeekTo(u64),
-    SeekBy(i64),
+    SeekTo(Duration),
+    SeekForward(Duration),
+    SeekBack(Duration),
     VolumeBy(i32),
     ToggleShuffle,
     CycleRepeat,
@@ -27,14 +32,14 @@ pub enum Action {
 
 pub const HELP: &str = "\
   enter / p  play or pause    n  next track     b  previous track
-  f [secs]   forward 10s      r [secs]  back 10s   <secs>  seek to
+  f [time]   forward 10s      r [time]  back 10s   <time>  seek to (90, 1:30, 2m)
   + [step]   louder 5%        - [step]  quieter    s  shuffle
   l          cycle repeat     x  stop         q  quit        ?  this help
-  z [spec]   sleep in 30m, or z <mins> / z track / z queue / z off";
+  z [spec]   sleep in 30m, or z <mins> / z 1h30m / z track / z queue / z off";
 
 pub const KEYS: &str = "\
   space / p  play or pause    n  next track     b  previous track
-  f / →      forward 10s      r / ←  back 10s      <secs> enter  seek to
+  f / →      forward 10s      r / ←  back 10s      <time> enter  seek to
   + / ↑      louder 5%        - / ↓  quieter       s  shuffle
   l          cycle repeat     x  stop         q  quit        ?  these keys
   z          sleep in 30m     :  type any line the piped form takes — :f 45, :z track";
@@ -110,14 +115,29 @@ pub fn restore_the_terminal() {
     }
 }
 
-const SEEK_STEP: i64 = 10;
+const SEEK_STEP: Duration = Duration::from_secs(10);
 const VOLUME_STEP: i32 = 5;
 
-fn amount<T: std::str::FromStr>(rest: &str, default: T) -> T {
+fn unsigned(rest: &str) -> &str {
+    rest.strip_prefix(['+', '-']).unwrap_or(rest).trim_start()
+}
+
+fn seek_step(rest: &str) -> Option<Duration> {
     if rest.is_empty() {
-        return default;
+        return Some(SEEK_STEP);
     }
-    rest.parse().unwrap_or(default)
+    lasting(unsigned(rest), Bare::Seconds)
+}
+
+fn volume_step(rest: &str) -> Option<i32> {
+    if rest.is_empty() {
+        return Some(VOLUME_STEP);
+    }
+    let digits = unsigned(rest);
+    if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }
 
 pub fn parse(line: &str) -> Option<Action> {
@@ -140,11 +160,11 @@ pub fn parse(line: &str) -> Option<Action> {
         'q' => Some(Action::Quit),
         'h' | '?' => Some(Action::Help),
         'z' => asked_of_the_timer(rest).map(Action::Sleep),
-        'f' => Some(Action::SeekBy(amount(rest, SEEK_STEP).abs())),
-        'r' => Some(Action::SeekBy(-amount(rest, SEEK_STEP).abs())),
-        '+' => Some(Action::VolumeBy(amount(rest, VOLUME_STEP).abs())),
-        '-' => Some(Action::VolumeBy(-amount(rest, VOLUME_STEP).abs())),
-        digit if digit.is_ascii_digit() => line.parse().ok().map(Action::SeekTo),
+        'f' => seek_step(rest).map(Action::SeekForward),
+        'r' => seek_step(rest).map(Action::SeekBack),
+        '+' => volume_step(rest).map(Action::VolumeBy),
+        '-' => volume_step(rest).map(|step| Action::VolumeBy(-step)),
+        digit if digit.is_ascii_digit() => lasting(line, Bare::Seconds).map(Action::SeekTo),
         _ => None,
     }
 }
@@ -268,8 +288,8 @@ const fn arrowed(key: u8) -> Option<Action> {
     match key {
         UP => Some(Action::VolumeBy(VOLUME_STEP)),
         DOWN => Some(Action::VolumeBy(-VOLUME_STEP)),
-        RIGHT => Some(Action::SeekBy(SEEK_STEP)),
-        LEFT => Some(Action::SeekBy(-SEEK_STEP)),
+        RIGHT => Some(Action::SeekForward(SEEK_STEP)),
+        LEFT => Some(Action::SeekBack(SEEK_STEP)),
         _ => None,
     }
 }
@@ -277,6 +297,10 @@ const fn arrowed(key: u8) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const fn seconds(count: u64) -> Duration {
+        Duration::from_secs(count)
+    }
 
     #[test]
     fn a_bare_newline_toggles_playback() {
@@ -299,17 +323,30 @@ mod tests {
 
     #[test]
     fn seeking_defaults_to_its_step_and_accepts_an_override() {
-        assert_eq!(parse("f"), Some(Action::SeekBy(SEEK_STEP)));
-        assert_eq!(parse("r"), Some(Action::SeekBy(-SEEK_STEP)));
-        assert_eq!(parse("f 45"), Some(Action::SeekBy(45)));
-        assert_eq!(parse("r 45"), Some(Action::SeekBy(-45)));
+        assert_eq!(parse("f"), Some(Action::SeekForward(SEEK_STEP)));
+        assert_eq!(parse("r"), Some(Action::SeekBack(SEEK_STEP)));
+        assert_eq!(parse("f 45"), Some(Action::SeekForward(seconds(45))));
+        assert_eq!(parse("r 45"), Some(Action::SeekBack(seconds(45))));
+        assert_eq!(parse("f 1:30"), Some(Action::SeekForward(seconds(90))));
+        assert_eq!(parse("r 2m"), Some(Action::SeekBack(seconds(120))));
     }
 
     #[test]
     fn a_signed_override_never_flips_the_direction_its_key_chose() {
-        assert_eq!(parse("f -45"), Some(Action::SeekBy(45)));
-        assert_eq!(parse("r -45"), Some(Action::SeekBy(-45)));
+        assert_eq!(parse("f -45"), Some(Action::SeekForward(seconds(45))));
+        assert_eq!(parse("r -45"), Some(Action::SeekBack(seconds(45))));
         assert_eq!(parse("- -5"), Some(Action::VolumeBy(-5)));
+    }
+
+    #[test]
+    fn an_override_past_what_a_number_holds_is_refused_rather_than_wrapped() {
+        assert_eq!(
+            parse("f -9223372036854775808"),
+            Some(Action::SeekForward(seconds(9_223_372_036_854_775_808)))
+        );
+        assert_eq!(parse("f 99999999999999999999"), None);
+        assert_eq!(parse("- -2147483648"), None);
+        assert_eq!(parse("+ 2147483647"), Some(Action::VolumeBy(i32::MAX)));
     }
 
     #[test]
@@ -321,15 +358,20 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_number_seeks_to_that_second() {
-        assert_eq!(parse("90"), Some(Action::SeekTo(90)));
-        assert_eq!(parse(" 0 "), Some(Action::SeekTo(0)));
+    fn a_bare_number_or_a_clock_seeks_to_that_moment() {
+        assert_eq!(parse("90"), Some(Action::SeekTo(seconds(90))));
+        assert_eq!(parse(" 0 "), Some(Action::SeekTo(seconds(0))));
+        assert_eq!(parse("1:30"), Some(Action::SeekTo(seconds(90))));
+        assert_eq!(parse("1:02:03"), Some(Action::SeekTo(seconds(3_723))));
+        assert_eq!(parse("2m"), Some(Action::SeekTo(seconds(120))));
     }
 
     #[test]
-    fn an_unparseable_override_falls_back_to_the_step() {
-        assert_eq!(parse("f abc"), Some(Action::SeekBy(SEEK_STEP)));
-        assert_eq!(parse("+ abc"), Some(Action::VolumeBy(VOLUME_STEP)));
+    fn an_override_that_cannot_be_read_is_refused_rather_than_taking_the_step() {
+        assert_eq!(parse("f abc"), None);
+        assert_eq!(parse("r 1.5"), None);
+        assert_eq!(parse("+ abc"), None);
+        assert_eq!(parse("- 5%"), None);
     }
 
     #[test]
@@ -367,7 +409,7 @@ mod tests {
         assert_eq!(
             keyed(b"f+-"),
             vec![
-                Pressed::Acted(Action::SeekBy(SEEK_STEP)),
+                Pressed::Acted(Action::SeekForward(SEEK_STEP)),
                 Pressed::Acted(Action::VolumeBy(VOLUME_STEP)),
                 Pressed::Acted(Action::VolumeBy(-VOLUME_STEP)),
             ]
@@ -380,8 +422,8 @@ mod tests {
         assert_eq!(
             keyed(b"\x1b[C\x1b[D\x1b[A\x1b[B"),
             vec![
-                Pressed::Acted(Action::SeekBy(SEEK_STEP)),
-                Pressed::Acted(Action::SeekBy(-SEEK_STEP)),
+                Pressed::Acted(Action::SeekForward(SEEK_STEP)),
+                Pressed::Acted(Action::SeekBack(SEEK_STEP)),
                 Pressed::Acted(Action::VolumeBy(VOLUME_STEP)),
                 Pressed::Acted(Action::VolumeBy(-VOLUME_STEP)),
             ]
@@ -396,7 +438,7 @@ mod tests {
                 Pressed::Typing("9".to_owned()),
                 Pressed::Typing("90".to_owned()),
                 Pressed::Typing(String::new()),
-                Pressed::Acted(Action::SeekTo(90)),
+                Pressed::Acted(Action::SeekTo(seconds(90))),
             ]
         );
         assert_eq!(

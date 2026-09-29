@@ -6,9 +6,10 @@ const MOST_LISTENED: NonZeroUsize = NonZeroUsize::new(10).unwrap();
 
 pub const LISTENS_FOR_SECONDS: RangeInclusive<u64> = 4..=60;
 
-const SLEEP_SPEC_MEANS: &str = "How much longer to play: a bare number of minutes, track to stop \
-                                at the end of the one playing, queue to stop at the end of the \
-                                queue, or off to take the timer away";
+const SLEEP_SPEC_MEANS: &str = "How much longer to play: a bare number of minutes, a length such \
+                                as 30m, 1h30m or 1:30:00, track to stop at the end of the one \
+                                playing, queue to stop at the end of the queue, or off to take the \
+                                timer away";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum QualityArg {

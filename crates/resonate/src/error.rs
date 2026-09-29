@@ -382,7 +382,9 @@ pub enum Error {
     #[error("nothing is suggested under the name {0}; resonate suggest lists what is")]
     NoSuchSuggestion(SuggestionName),
 
-    #[error("{given} is not a sleep timer; give it a number of minutes, track, queue or off")]
+    #[error(
+        "{given} is not a sleep timer; give it minutes, a length such as 1h30m or 1:30:00, track, queue or off"
+    )]
     NotASleepTimer { given: Spoken },
 
     #[error("--as names one playlist, and {given} files were given")]

@@ -90,6 +90,15 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   length, volume, shuffle, repeat, the sleep timer and what is being typed — every 500 ms sample
   and after every key, clearing it before anything else prints so an event or refusal is a line
   of its own above. Piped input is read a line at a time with no readout, as a script sends it.
+- **A length is read one way wherever one is typed.** `lasting::lasting` takes a bare number in
+  the unit its caller names — seconds for `play`'s seeks, minutes for a sleep spec — a clock
+  (`1:30`, `1:02:03`, every field after the first under 60) or units coarsest first (`1h30m`,
+  `45s`, `10mins`), and answers `None` for anything else, a sign or a count past `u64` included.
+  `play`'s `f` and `r` take the key's direction and one leading sign's worth of slack (`f -45` is
+  still forward), a seek past `i64::MAX` frames saturates rather than wrapping backwards, and an
+  override that will not read — `f abc`, `+ 5%` — is refused as an unknown line rather than taking
+  the step (`an_override_that_cannot_be_read_is_refused_rather_than_taking_the_step`). A sleep spec
+  is `track`, `queue`, `off` or a non-zero length, kept to the second.
 - **A headless pass stops at a file boundary on the first signal.** `resonate scan`, `enrich`,
   `poll`, `tag`, `organise` and `vault --import` run through `until_told`, which puts
   `signals::cancel_when_told` over the pass: the first `SIGINT` or `SIGTERM` calls the pass's

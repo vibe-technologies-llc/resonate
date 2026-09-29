@@ -3,7 +3,11 @@ use std::{fmt, num::NonZeroU64, time::Duration};
 use resonate_engine::{Asleep, Until};
 use resonate_mpris::Running;
 
-use crate::{Error, Result, reached};
+use crate::{
+    Error, Result,
+    lasting::{Bare, lasting},
+    reached,
+};
 
 const END_OF_TRACK: &str = "track";
 const END_OF_QUEUE: &str = "queue";
@@ -12,7 +16,7 @@ const NO_TIMER: &str = "off";
 const SECONDS_A_MINUTE: u64 = 60;
 const SECONDS_AN_HOUR: u64 = 60 * SECONDS_A_MINUTE;
 
-pub const WITHOUT_A_SPEC: Sleep = Sleep::In(NonZeroU64::new(30).unwrap());
+pub const WITHOUT_A_SPEC: Sleep = Sleep::InSeconds(NonZeroU64::new(30 * SECONDS_A_MINUTE).unwrap());
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Spoken(Box<str>);
@@ -25,7 +29,7 @@ impl fmt::Display for Spoken {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Sleep {
-    In(NonZeroU64),
+    InSeconds(NonZeroU64),
     EndOfTrack,
     EndOfQueue,
     Off,
@@ -42,18 +46,16 @@ impl Sleep {
             END_OF_TRACK => Ok(Self::EndOfTrack),
             END_OF_QUEUE => Ok(Self::EndOfQueue),
             NO_TIMER => Ok(Self::Off),
-            minutes => minutes
-                .parse::<NonZeroU64>()
-                .map(Self::In)
-                .map_err(|_| refused()),
+            written => lasting(written, Bare::Minutes)
+                .and_then(|span| NonZeroU64::new(span.as_secs()))
+                .map(Self::InSeconds)
+                .ok_or_else(refused),
         }
     }
 
     pub const fn until(self) -> Option<Until> {
         match self {
-            Self::In(minutes) => Some(Until::After(Duration::from_secs(
-                minutes.get().saturating_mul(SECONDS_A_MINUTE),
-            ))),
+            Self::InSeconds(seconds) => Some(Until::After(Duration::from_secs(seconds.get()))),
             Self::EndOfTrack => Some(Until::EndOfTrack),
             Self::EndOfQueue => Some(Until::EndOfQueue),
             Self::Off => None,
@@ -102,7 +104,10 @@ mod tests {
     use super::*;
 
     fn minutes(count: u64) -> Sleep {
-        Sleep::In(NonZeroU64::new(count).expect("a timer of no minutes is not one to read"))
+        Sleep::InSeconds(
+            NonZeroU64::new(count * SECONDS_A_MINUTE)
+                .expect("a timer of no minutes is not one to read"),
+        )
     }
 
     #[test]
@@ -112,8 +117,15 @@ mod tests {
         assert_eq!(Sleep::read("track").ok(), Some(Sleep::EndOfTrack));
         assert_eq!(Sleep::read("queue").ok(), Some(Sleep::EndOfQueue));
         assert_eq!(Sleep::read("off").ok(), Some(Sleep::Off));
+        assert_eq!(Sleep::read("30m").ok(), Some(minutes(30)));
+        assert_eq!(Sleep::read("1h30m").ok(), Some(minutes(90)));
+        assert_eq!(Sleep::read("1:30:00").ok(), Some(minutes(90)));
+        assert_eq!(
+            Sleep::read("45s").ok(),
+            NonZeroU64::new(45).map(Sleep::InSeconds)
+        );
 
-        for refused in ["", "soon", "0", "-5", "30m", "Track", "1.5"] {
+        for refused in ["", "soon", "0", "0m", "-5", "Track", "1.5"] {
             assert!(Sleep::read(refused).is_err(), "{refused:?} was read");
         }
     }

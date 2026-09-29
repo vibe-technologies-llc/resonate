@@ -171,8 +171,6 @@ service or a format — and is not worked until that moves; everything else is o
 
 ## Command line
 - Escape on `play`'s line is read only when the next key arrives, which is then taken as a command
-- `play`'s input reads `f -9223372036854775808` through an overflowing `abs`, turns a seek past
-  `i64::MAX` frames backwards, and seeks ten seconds on a number it could not read
 - `resonate playlist --reverse` is ignored everywhere but `--order` and `--query`, and `resonate eq
   --off --for <sink>` switches the equaliser off for every device
 - `info`, `explain`, `share <file>` and `playlist --add` take no `file://` URI where `play` and
@@ -180,7 +178,6 @@ service or a format — and is not worked until that moves; everything else is o
 - There is no `--bit-perfect` to undo the key for one run, and `play` has no flag for shuffle,
   repeat or the volume
 - `scan` is always incremental and never follows links, and a cancelled scan exits 0
-- A seek takes seconds alone, never `1:30`, and the sleep timer takes minutes alone, never `30m`
 
 ## Packaging and CI
 - The Flatpak installs `resonate.desktop`, which flatpak-builder exports only under a name

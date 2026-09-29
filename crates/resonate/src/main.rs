@@ -7,6 +7,7 @@ mod error;
 mod favourites;
 mod info;
 mod input;
+mod lasting;
 #[cfg(feature = "ui")]
 mod launcher;
 mod listen;
@@ -2067,15 +2068,17 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
         Action::Next => Command::Next,
         Action::Previous => Command::Previous,
         Action::Stop => Command::Stop,
-        Action::SeekTo(seconds) => {
+        Action::SeekTo(moment) => {
             let Some(rate) = rate else { return Ok(()) };
-            Command::Seek(Frames::from_duration(Duration::from_secs(seconds), rate))
+            Command::Seek(Frames::from_duration(moment, rate))
         }
-        Action::SeekBy(seconds) => {
+        Action::SeekForward(span) => {
             let Some(rate) = rate else { return Ok(()) };
-            let span = Duration::from_secs(seconds.unsigned_abs());
-            let frames = Frames::from_duration(span, rate).get() as i64;
-            Command::SeekBy(if seconds < 0 { -frames } else { frames })
+            Command::SeekBy(frames_in(span, rate))
+        }
+        Action::SeekBack(span) => {
+            let Some(rate) = rate else { return Ok(()) };
+            Command::SeekBy(-frames_in(span, rate))
         }
         Action::VolumeBy(step) => {
             let percent = (state.volume.get() * 100.0).round() as i32;
@@ -2102,6 +2105,10 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
         report(&error);
     }
     Ok(())
+}
+
+fn frames_in(span: Duration, rate: SampleRate) -> i64 {
+    i64::try_from(Frames::from_duration(span, rate).get()).unwrap_or(i64::MAX)
 }
 
 pub(crate) fn impulse_at(path: &Path) -> Option<Arc<Impulse>> {
