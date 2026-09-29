@@ -297,9 +297,14 @@ impl Vault {
             renewing: taking.renewing,
             smaller_than: held,
         };
+        let outgrows_a_wave = whole
+            && info
+                .duration
+                .is_some_and(|frames| wave::outgrows_a_wave(frames, info.spec.channel_count()));
         let kept = match form {
             Form::Kept if !whole => return Ok(Keeping::Refused(Refusal::CutFromAnother)),
             Form::Kept => self.kept_whole(taking, codec, &info, Some(decoder))?,
+            Form::Wave if outgrows_a_wave => Keeping::Refused(Refusal::TooLarge),
             Form::Wave => self.kept_as_wave(weighing, &mut decoder, info.spec, speakers, codec)?,
             Form::Flac => {
                 self.kept_as_flac(weighing, &mut decoder, info.spec, speakers, bits, codec)?
@@ -307,7 +312,7 @@ impl Vault {
         };
 
         let kept = match kept {
-            Keeping::Refused(Refusal::NoSmaller) if whole => {
+            Keeping::Refused(Refusal::NoSmaller | Refusal::TooLarge) if whole => {
                 self.kept_whole(taking, codec, &info, None)?
             }
             kept => kept,

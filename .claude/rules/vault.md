@@ -64,7 +64,12 @@ comparison may overrule it.
   (no VORBIS_COMMENT, PICTURE or SEEKTABLE): stripping is construction, not a later pass.
 - **`Form::Wave`** — PCM FLAC cannot hold: `SampleFormat::F32`, > 24 bits or > 96 kHz. A canonical
   `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, stripped by construction, zstd'd at `ARCHIVED_AT`;
-  refused over `LARGEST_PCM`, the RIFF ceiling. `wave::compressed` counts what the encoder wrote and
+  refused over `LARGEST_PCM`, the RIFF ceiling — before anything is staged where the source declares
+  its length (`wave::outgrows_a_wave`, frames × channels × four bytes), so 46 minutes of 192 kHz
+  stereo no longer writes 4 GiB of staging on every import, and a whole file refused `TooLarge` is
+  handed to `kept_whole` as a `NoSmaller` one is, rather than never vaulted
+  (`a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged`). A cut row has no
+  kept form, so it is still weighed by writing it. `wave::compressed` counts what the encoder wrote and
   gives up — `Packed::NoSmaller` — the moment it reaches the source's weight, before the read-back, so a
   hi-res source whose WAVE would be thrown away costs a fraction of a level-19 pass; `keep` hands such a
   whole file to `kept_whole` as it does one whose finished object came out too large. **A pass is

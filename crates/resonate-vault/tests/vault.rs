@@ -501,6 +501,41 @@ fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
 }
 
 #[test]
+fn a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged() {
+    const FAST: u32 = 192_000;
+    const DECLARED_BYTES: u32 = 0xF000_0000;
+
+    let tree = Tree::new();
+    let block_align = CHANNELS * 2;
+    let data = vec![0_u8; FRAMES * usize::from(block_align)];
+    let mut format = Vec::new();
+    format.extend_from_slice(&1_u16.to_le_bytes());
+    format.extend_from_slice(&CHANNELS.to_le_bytes());
+    format.extend_from_slice(&FAST.to_le_bytes());
+    format.extend_from_slice(&(FAST * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&block_align.to_le_bytes());
+    format.extend_from_slice(&16_u16.to_le_bytes());
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WAVE");
+    chunk(&mut body, b"fmt ", &format);
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&DECLARED_BYTES.to_le_bytes());
+    body.extend_from_slice(&data);
+    let declared_body = body.len() as u32 - data.len() as u32 + DECLARED_BYTES;
+    let mut whole = Vec::new();
+    whole.extend_from_slice(b"RIFF");
+    whole.extend_from_slice(&declared_body.to_le_bytes());
+    whole.extend_from_slice(&body);
+    let path = tree.write("long.wav", &whole);
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    assert_eq!(held.form, Form::Kept);
+    assert!(held.path.to_string_lossy().ends_with(".wav"));
+}
+
+#[test]
 fn the_file_the_vault_read_is_left_exactly_as_it_was() {
     let tree = Tree::new();
     let samples = signal(FRAMES);

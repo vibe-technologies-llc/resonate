@@ -9,9 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- `Refusal::TooLarge` never falls back to a kept copy the way `NoSmaller` does, so a lossless
-  track past the RIFF ceiling — 46 minutes of 192 kHz stereo — writes 4 GiB of staging on every
-  import and is never vaulted
 - A seek on a track that cannot seek — a spooling stream — rebinds without seeking and throws
   the ring and the carry away, so the audio jumps forward and the seek answers `Ok`; a
   `SetQuality`, a `SetSink` and a restarting Previous do the same

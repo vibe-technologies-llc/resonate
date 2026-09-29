@@ -5,7 +5,7 @@ use std::{
 };
 
 use resonate_codec::{DecodeStatus, Decoder, Speakers};
-use resonate_core::{AudioBuffer, Frames, SampleFormat, StreamSpec};
+use resonate_core::{AudioBuffer, ChannelCount, Frames, SampleFormat, StreamSpec};
 
 use crate::{
     error::{Error, Result, VaultOp},
@@ -32,6 +32,11 @@ const RIFF_SIZE_AT: u64 = 4;
 const RIFF_HEADER: u32 = 8;
 
 pub(crate) const LARGEST_PCM: u64 = u32::MAX as u64 - WIDEST_HEADER as u64;
+
+pub(crate) fn outgrows_a_wave(frames: Frames, channels: ChannelCount) -> bool {
+    let sample_bytes = u128::from(WAVE_BITS / 8);
+    u128::from(frames.get()) * u128::from(channels.get()) * sample_bytes > u128::from(LARGEST_PCM)
+}
 pub(crate) const ARCHIVED_AT: i32 = 19;
 const FORETOLD_FROM_BYTES: u64 = 32 << 20;
 const SLICES_FORETOLD_FROM: u64 = 4;
