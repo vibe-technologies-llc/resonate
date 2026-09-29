@@ -3088,3 +3088,26 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         );
     }
 }
+
+#[test]
+fn an_adpcm_wave_opens_and_is_billed_as_the_lossy_codec_it_is() {
+    for (name, codec) in [("ima.wav", "adpcm_ima_wav"), ("ms.wav", "adpcm_ms")] {
+        let tree = Tree::new();
+        let Some((path, samples)) = fixture(&tree, name, &["-c:a", codec]) else {
+            return;
+        };
+
+        let info =
+            probe(&Sources::local(), &MediaLocation::local(&path)).expect("an ADPCM WAVE probes");
+        assert_eq!(Codec::from_id(info.codec), Codec::Adpcm, "{name}");
+        assert!(!Codec::from_id(info.codec).is_lossless());
+
+        let decoded = decode(&path);
+        assert!(
+            decoded.samples.len().abs_diff(samples.len()) < samples.len() / 10,
+            "{name} decoded to {} samples where {} went in",
+            decoded.samples.len(),
+            samples.len()
+        );
+    }
+}

@@ -256,6 +256,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in` and
   `a_floating_monkeys_audio_decodes_to_every_bit_that_went_in` are the claims, over files `mac`
   writes.
+- **Every PCM symphonia names is billed as PCM, and ADPCM as the lossy codec it is.**
+  `Codec::from_id` reads the signed, unsigned, float and companded ids in either byte order and
+  planar or interleaved as `Codec::Pcm`, so an unsigned big-endian CAF is not `Unknown` and billed
+  lossy; symphonia's `adpcm` feature is on, so an IMA or Microsoft ADPCM WAVE opens, and its ids are
+  `Codec::Adpcm` — not `is_lossless`, stored as code 14 and searched as `codec:adpcm`. A migration
+  step marks every `Unknown` row `probe_again`, so a catalog scanned before reads such a file anew.
 - **This build drops every priming itself and asks nobody else to.** `Decoder::build` makes its
   decoder with `AudioDecoderOptions::gapless(false)`, so symphonia's decoders emit whole blocks and
   the only trimming anywhere is `MediaInfo::playable`. One rule instead of a list: `gapless` defaults

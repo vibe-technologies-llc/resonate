@@ -90,6 +90,7 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE volumes (
          path TEXT PRIMARY KEY
      ) STRICT, WITHOUT ROWID;",
+    "UPDATE tracks SET probe_again = 1 WHERE codec = 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

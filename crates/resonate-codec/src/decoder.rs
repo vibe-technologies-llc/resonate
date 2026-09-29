@@ -125,12 +125,13 @@ pub enum Codec {
     WavPack,
     WavPackHybrid,
     MonkeysAudio,
+    Adpcm,
     #[default]
     Unknown,
 }
 
 impl Codec {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Flac,
         Self::Alac,
         Self::Dsd,
@@ -142,6 +143,7 @@ impl Codec {
         Self::WavPack,
         Self::WavPackHybrid,
         Self::MonkeysAudio,
+        Self::Adpcm,
         Self::Unknown,
     ];
 
@@ -158,19 +160,29 @@ impl Codec {
             | Self::Vorbis
             | Self::Opus
             | Self::WavPackHybrid
+            | Self::Adpcm
             | Self::Unknown => false,
         }
     }
 
     pub fn from_id(id: AudioCodecId) -> Self {
         use symphonia::core::codecs::audio::well_known::{
-            CODEC_ID_AAC, CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MONKEYS_AUDIO, CODEC_ID_MP1,
-            CODEC_ID_MP2, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_PCM_ALAW, CODEC_ID_PCM_F32BE,
-            CODEC_ID_PCM_F32LE, CODEC_ID_PCM_F64BE, CODEC_ID_PCM_F64LE, CODEC_ID_PCM_MULAW,
-            CODEC_ID_PCM_S8, CODEC_ID_PCM_S16BE, CODEC_ID_PCM_S16LE, CODEC_ID_PCM_S24BE,
-            CODEC_ID_PCM_S24LE, CODEC_ID_PCM_S32BE, CODEC_ID_PCM_S32LE, CODEC_ID_PCM_U8,
-            CODEC_ID_PCM_U16LE, CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U32LE, CODEC_ID_VORBIS,
-            CODEC_ID_WAVPACK,
+            CODEC_ID_AAC, CODEC_ID_ADPCM_G722, CODEC_ID_ADPCM_G726, CODEC_ID_ADPCM_G726LE,
+            CODEC_ID_ADPCM_IMA_QT, CODEC_ID_ADPCM_IMA_WAV, CODEC_ID_ADPCM_MS, CODEC_ID_ALAC,
+            CODEC_ID_FLAC, CODEC_ID_MONKEYS_AUDIO, CODEC_ID_MP1, CODEC_ID_MP2, CODEC_ID_MP3,
+            CODEC_ID_OPUS, CODEC_ID_PCM_ALAW, CODEC_ID_PCM_F32BE, CODEC_ID_PCM_F32BE_PLANAR,
+            CODEC_ID_PCM_F32LE, CODEC_ID_PCM_F32LE_PLANAR, CODEC_ID_PCM_F64BE,
+            CODEC_ID_PCM_F64BE_PLANAR, CODEC_ID_PCM_F64LE, CODEC_ID_PCM_F64LE_PLANAR,
+            CODEC_ID_PCM_MULAW, CODEC_ID_PCM_S8, CODEC_ID_PCM_S8_PLANAR, CODEC_ID_PCM_S16BE,
+            CODEC_ID_PCM_S16BE_PLANAR, CODEC_ID_PCM_S16LE, CODEC_ID_PCM_S16LE_PLANAR,
+            CODEC_ID_PCM_S24BE, CODEC_ID_PCM_S24BE_PLANAR, CODEC_ID_PCM_S24LE,
+            CODEC_ID_PCM_S24LE_PLANAR, CODEC_ID_PCM_S32BE, CODEC_ID_PCM_S32BE_PLANAR,
+            CODEC_ID_PCM_S32LE, CODEC_ID_PCM_S32LE_PLANAR, CODEC_ID_PCM_U8, CODEC_ID_PCM_U8_PLANAR,
+            CODEC_ID_PCM_U16BE, CODEC_ID_PCM_U16BE_PLANAR, CODEC_ID_PCM_U16LE,
+            CODEC_ID_PCM_U16LE_PLANAR, CODEC_ID_PCM_U24BE, CODEC_ID_PCM_U24BE_PLANAR,
+            CODEC_ID_PCM_U24LE, CODEC_ID_PCM_U24LE_PLANAR, CODEC_ID_PCM_U32BE,
+            CODEC_ID_PCM_U32BE_PLANAR, CODEC_ID_PCM_U32LE, CODEC_ID_PCM_U32LE_PLANAR,
+            CODEC_ID_VORBIS, CODEC_ID_WAVPACK,
         };
 
         if id == crate::dsd::DSD_CODEC_ID {
@@ -189,11 +201,50 @@ impl Codec {
             CODEC_ID_OPUS => Self::Opus,
             CODEC_ID_WAVPACK => Self::WavPack,
             CODEC_ID_MONKEYS_AUDIO => Self::MonkeysAudio,
-            CODEC_ID_PCM_S32LE | CODEC_ID_PCM_S32BE | CODEC_ID_PCM_S24LE | CODEC_ID_PCM_S24BE
-            | CODEC_ID_PCM_S16LE | CODEC_ID_PCM_S16BE | CODEC_ID_PCM_S8 | CODEC_ID_PCM_U32LE
-            | CODEC_ID_PCM_U24LE | CODEC_ID_PCM_U16LE | CODEC_ID_PCM_U8 | CODEC_ID_PCM_F32LE
-            | CODEC_ID_PCM_F32BE | CODEC_ID_PCM_F64LE | CODEC_ID_PCM_F64BE | CODEC_ID_PCM_ALAW
+            CODEC_ID_PCM_S32LE
+            | CODEC_ID_PCM_S32LE_PLANAR
+            | CODEC_ID_PCM_S32BE
+            | CODEC_ID_PCM_S32BE_PLANAR
+            | CODEC_ID_PCM_S24LE
+            | CODEC_ID_PCM_S24LE_PLANAR
+            | CODEC_ID_PCM_S24BE
+            | CODEC_ID_PCM_S24BE_PLANAR
+            | CODEC_ID_PCM_S16LE
+            | CODEC_ID_PCM_S16LE_PLANAR
+            | CODEC_ID_PCM_S16BE
+            | CODEC_ID_PCM_S16BE_PLANAR
+            | CODEC_ID_PCM_S8
+            | CODEC_ID_PCM_S8_PLANAR
+            | CODEC_ID_PCM_U32LE
+            | CODEC_ID_PCM_U32LE_PLANAR
+            | CODEC_ID_PCM_U32BE
+            | CODEC_ID_PCM_U32BE_PLANAR
+            | CODEC_ID_PCM_U24LE
+            | CODEC_ID_PCM_U24LE_PLANAR
+            | CODEC_ID_PCM_U24BE
+            | CODEC_ID_PCM_U24BE_PLANAR
+            | CODEC_ID_PCM_U16LE
+            | CODEC_ID_PCM_U16LE_PLANAR
+            | CODEC_ID_PCM_U16BE
+            | CODEC_ID_PCM_U16BE_PLANAR
+            | CODEC_ID_PCM_U8
+            | CODEC_ID_PCM_U8_PLANAR
+            | CODEC_ID_PCM_F32LE
+            | CODEC_ID_PCM_F32LE_PLANAR
+            | CODEC_ID_PCM_F32BE
+            | CODEC_ID_PCM_F32BE_PLANAR
+            | CODEC_ID_PCM_F64LE
+            | CODEC_ID_PCM_F64LE_PLANAR
+            | CODEC_ID_PCM_F64BE
+            | CODEC_ID_PCM_F64BE_PLANAR
+            | CODEC_ID_PCM_ALAW
             | CODEC_ID_PCM_MULAW => Self::Pcm,
+            CODEC_ID_ADPCM_MS
+            | CODEC_ID_ADPCM_IMA_WAV
+            | CODEC_ID_ADPCM_IMA_QT
+            | CODEC_ID_ADPCM_G722
+            | CODEC_ID_ADPCM_G726
+            | CODEC_ID_ADPCM_G726LE => Self::Adpcm,
             _ => Self::Unknown,
         }
     }
@@ -211,6 +262,7 @@ impl Codec {
             Self::WavPack => "WavPack",
             Self::WavPackHybrid => "WavPack hybrid",
             Self::MonkeysAudio => "Monkey's Audio",
+            Self::Adpcm => "ADPCM",
             Self::Unknown => "Unknown",
         }
     }

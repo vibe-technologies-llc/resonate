@@ -32,9 +32,6 @@ service or a format — and is not worked until that moves; everything else is o
   sheet at an album's root cutting `CD1/01.flac` claims nothing
 - RF64, BW64 and Wave64 are refused as unrecognised, so a WAVE past 4 GiB will not open; symphonia
   reads none of them, and a reader of the crate's own would, as it does for Monkey's Audio
-- `Codec::from_id` names no unsigned big-endian or planar integer PCM, so such a CAF is
-  `Codec::Unknown` and billed lossy; symphonia's `adpcm` feature is off, so an IMA or MS ADPCM
-  WAVE is refused
 - A DSF's or a DSDIFF's cover in its ID3 `APIC` is never offered, `MAX_METADATA_BYTES` cuts a large
   tag short, and a DSD file's channels — DSF's channel type, DSDIFF's `CHNL` — are read as a count
 - A tag given twice collapses to its last value, so two `ARTIST` or several `GENRE` entries show

@@ -195,6 +195,7 @@ pub const fn tuning_of(codec: Codec) -> Option<Tuning> {
         | Codec::WavPack
         | Codec::WavPackHybrid
         | Codec::MonkeysAudio
+        | Codec::Adpcm
         | Codec::Unknown => None,
     }
 }
