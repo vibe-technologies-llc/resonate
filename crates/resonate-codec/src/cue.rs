@@ -17,6 +17,7 @@ const MOST_TRACKS: usize = 999;
 const LARGEST_CUE_SHEET: u64 = 1 << 20;
 const SHEET_EXTENSION: &str = "cue";
 const FILE_COMMAND: &str = "FILE";
+const LEAD_IN_INDEX: u32 = 0;
 const FIRST_INDEX: u32 = 1;
 const BYTE_ORDER_MARK: char = '\u{feff}';
 const PATH_SEPARATORS: [char; 2] = ['/', '\\'];
@@ -125,11 +126,15 @@ pub struct CueTrack {
     pub number: u32,
     pub kind: CueTrackKind,
     pub start: CueStart,
-    pub pregap: Option<CueStamp>,
+    pub lead_in: Option<CueStart>,
     pub tags: TagSet,
 }
 
 impl CueTrack {
+    pub fn heard_from(&self) -> CueStart {
+        self.lead_in.unwrap_or(self.start)
+    }
+
     pub fn titled(&self) -> TagSet {
         let mut tags = self.tags.clone();
         if tags.title.is_none() {
@@ -153,11 +158,11 @@ impl CueFile {
         whole: Option<Frames>,
     ) -> Option<FrameSpan> {
         let track = self.tracks.get(index)?;
-        let start = track.start.at(rate);
+        let start = track.heard_from().at(rate);
 
         let span = match self.tracks.get(index + 1) {
-            Some(next) if next.start.at(rate) < start => return None,
-            Some(next) => FrameSpan::between(start, next.start.at(rate)),
+            Some(next) if next.heard_from().at(rate) < start => return None,
+            Some(next) => FrameSpan::between(start, next.heard_from().at(rate)),
             None => FrameSpan::starting(start),
         };
         Some(match whole {
@@ -169,7 +174,7 @@ impl CueFile {
     pub fn cut_at(&self, start: Frames, rate: SampleRate) -> Option<&CueTrack> {
         self.audio_tracks()
             .map(|(_, track)| track)
-            .find(|track| track.start.at(rate) == start)
+            .find(|track| track.heard_from().at(rate) == start || track.start.at(rate) == start)
     }
 
     pub(crate) fn heard_from_the_head(&mut self) {
@@ -179,6 +184,7 @@ impl CueFile {
         if first.kind != CueTrackKind::Audio {
             return;
         }
+        first.lead_in = None;
         first.start = match first.start {
             CueStart::Written(_) => CueStart::Written(CueStamp::default()),
             CueStart::Sampled(_) => CueStart::Sampled(Frames::ZERO),
@@ -606,7 +612,6 @@ struct Reading {
     album: TagSet,
     open: Option<CueTrack>,
     indexed: Indexed,
-    pregap: Option<CueStamp>,
     dropped: bool,
 }
 
@@ -633,7 +638,6 @@ impl Reading {
             "FILE" => self.file(rest),
             "TRACK" => self.track(rest),
             "INDEX" => self.index(rest),
-            "PREGAP" => self.pregap = CueStamp::read(rest.trim()),
             "TITLE" => self.named(rest, Named::Title),
             "PERFORMER" => self.named(rest, Named::Performer),
             "SONGWRITER" => self.named(rest, Named::Songwriter),
@@ -664,6 +668,7 @@ impl Reading {
             self.indexed = Indexed::Not;
             self.open = Some(CueTrack {
                 start: CueStart::default(),
+                lead_in: None,
                 ..track
             });
         }
@@ -686,7 +691,7 @@ impl Reading {
             number,
             kind,
             start: CueStart::default(),
-            pregap: None,
+            lead_in: None,
             tags: TagSet::default(),
         });
     }
@@ -706,6 +711,9 @@ impl Reading {
             return;
         };
 
+        if number == LEAD_IN_INDEX {
+            track.lead_in = Some(CueStart::Written(stamp));
+        }
         self.indexed = match (number, self.indexed) {
             (FIRST_INDEX, _) => Indexed::AtTheFirst,
             (_, Indexed::Not) => Indexed::Provisionally,
@@ -778,7 +786,6 @@ impl Reading {
         let Some(mut track) = self.open.take() else {
             return;
         };
-        track.pregap = self.pregap.take();
 
         let Some(file) = self.files.last_mut() else {
             return;
@@ -799,6 +806,13 @@ impl Reading {
             );
             return;
         }
+        track.lead_in = track.lead_in.filter(|lead_in| {
+            lead_in.is_before(track.start)
+                && file
+                    .tracks
+                    .last()
+                    .is_none_or(|before| before.start.is_before(*lead_in))
+        });
         if file.tracks.len() >= MOST_TRACKS {
             if !self.dropped {
                 tracing::warn!(
@@ -1048,6 +1062,62 @@ FILE "Meddle.flac" WAVE
 
         assert_eq!(tracks[0].start, CueStart::Written(CueStamp::new(0, 0, 0)));
         assert_eq!(tracks[1].start, CueStart::Written(CueStamp::new(4, 2, 0)));
+        assert_eq!(
+            tracks[1].lead_in,
+            Some(CueStart::Written(CueStamp::new(4, 0, 0)))
+        );
+    }
+
+    #[test]
+    fn a_pregap_inside_one_file_is_heard_as_the_head_of_the_track_it_leads_into() {
+        let file = meddle();
+        let rate = SampleRate::HZ_44100;
+        let gap = CueStamp::new(5, 57, 25).at(rate);
+
+        let first = file.span_of(0, rate, None).expect("the first track");
+        let second = file.span_of(1, rate, None).expect("the second track");
+        assert_eq!(
+            first.end(),
+            Some(gap),
+            "the pregap stayed on the row before"
+        );
+        assert_eq!(second.start(), gap);
+
+        assert_eq!(
+            file.cut_at(gap, rate)
+                .and_then(|row| row.tags.title.as_deref()),
+            Some("A Pillow of Winds")
+        );
+        assert_eq!(
+            file.cut_at(CueStamp::new(5, 57, 50).at(rate), rate)
+                .and_then(|row| row.tags.title.as_deref()),
+            Some("A Pillow of Winds"),
+            "a row a catalog cut at its first index no longer named its track"
+        );
+    }
+
+    #[test]
+    fn a_pregap_that_cannot_be_the_tracks_own_is_passed_over() {
+        let sheet = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 03:00:00\n  TRACK 02 AUDIO\n    INDEX 00 02:00:00\n    INDEX 01 04:00:00\n  TRACK 03 AUDIO\n    INDEX 00 06:00:00\n    INDEX 01 05:00:00\n",
+        );
+        let tracks = &sheet.files[0].tracks;
+
+        assert_eq!(
+            tracks[1].lead_in, None,
+            "a pregap reached into the track before"
+        );
+        assert_eq!(tracks[2].lead_in, None, "a pregap came after its own music");
+    }
+
+    #[test]
+    fn a_pregap_in_the_file_before_stays_with_the_track_before() {
+        let sheet = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 00 04:10:00\nFILE \"two.flac\" WAVE\n    INDEX 01 00:00:00\n",
+        );
+
+        assert_eq!(sheet.files[0].tracks.len(), 1);
+        assert_eq!(sheet.files[1].tracks[0].lead_in, None);
     }
 
     #[test]
@@ -1151,7 +1221,7 @@ FILE "Meddle.flac" WAVE
 
         let first = file.span_of(0, rate, None).expect("a first span");
         assert_eq!(first.start(), Frames::ZERO);
-        assert_eq!(first.end(), Some(CueStamp::new(5, 57, 50).at(rate)));
+        assert_eq!(first.end(), Some(CueStamp::new(5, 57, 25).at(rate)));
 
         let last = file.span_of(2, rate, None).expect("a last span");
         assert_eq!(last.start(), CueStamp::new(21, 10, 0).at(rate));

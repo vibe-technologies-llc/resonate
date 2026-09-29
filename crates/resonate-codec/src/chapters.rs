@@ -155,7 +155,7 @@ pub(crate) fn cut(marked: &[Marked], rate: SampleRate, file: &TagSet) -> Option<
                 number: at as u32 + 1,
                 kind: CueTrackKind::Audio,
                 start: CueStart::Sampled(*start),
-                pregap: None,
+                lead_in: None,
                 tags: TagSet::default(),
             })
             .collect(),

@@ -23,8 +23,6 @@ service or a format — and is not worked until that moves; everything else is o
   card here offers 48 kHz alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- `INDEX 00` is thrown away, so a pregap between two tracks of one file plays as the tail of the row
-  before it
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is

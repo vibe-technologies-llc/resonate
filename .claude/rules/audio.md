@@ -548,7 +548,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   track is the lead-out — 170 for CD-DA (`CD_DA_LEAD_OUT`), 255 otherwise (`LEAD_OUT`) — kept in
   `CueFile::tracks` as `CueTrackKind::Data`, so `audio_tracks` skips it while `span_of` reads its
   offset as the last audio track's end. A track's start is its own offset plus its index 1's where it
-  declares one, putting a pregap on the track before, as `INDEX 01` does in a text sheet.
+  declares one, and its index 0 its `lead_in`, as `INDEX 00` is in a text sheet.
 - **A file's chapters cut it as an embedded sheet does.** Where the file embeds no sheet,
   `container::chaptered` is `MediaInfo::cue`'s third source: symphonia's `FormatReader::chapters`
   — an MP3's leading ID3v2 `CHAP` frames, an Ogg's `CHAPTERnnn` comments — flattened by
@@ -584,6 +584,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   track, never scanned. `Reading::file` carries a track that has not reached its `INDEX 01` across the
   `FILE` line with its start put back to the head of the new file, so the gap stays at the end of the
   track before and each file is one whole row.
+- **A pregap inside one file is the head of the track it leads into.** `CueTrack::start` is where
+  the music starts (`INDEX 01`) and `lead_in` the track's `INDEX 00` in the same file;
+  `CueTrack::heard_from` is the one answer to where its row begins, so `span_of` ends a row at the
+  next track's pregap and the gap — silence, or the applause of a live set — plays at the head of
+  the row whose number the Red Book gives it rather than as the tail of the one before. A pregap
+  not after the track before's music, or not before the track's own, is passed over; one written
+  in the file before (EAC's gaps appended) stays there, with that file's track. `cut_at` takes a
+  row starting at either, so a row a catalog cut at the first index before this still names its
+  track until it is read again. The `PREGAP` command, silence no file holds, is not read.
 - **What a sheet cannot place is left out, and what it does not name is the first track's.** A track
   whose `INDEX 01` does not read (`Indexed::Unreadably`) is dropped at its close rather than starting
   at the head of the file over track 1, and so is a track starting before the one ahead of it in its

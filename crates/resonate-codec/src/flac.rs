@@ -38,6 +38,7 @@ const TRACK_INDEX_COUNT_AT: usize = 35;
 
 const INDEX_BYTES: usize = 12;
 const INDEX_NUMBER_AT: usize = 8;
+const LEAD_IN_INDEX: u8 = 0;
 const FIRST_INDEX: u8 = 1;
 
 const CD_DA_LEAD_OUT: u8 = 170;
@@ -243,11 +244,16 @@ fn cue_track(record: &[u8], points: &[u8], lead_out: u8) -> CueTrack {
         false => CueTrackKind::Audio,
     };
 
+    let start = offset.saturating_add(index_at(points, FIRST_INDEX).unwrap_or(0));
+    let lead_in = index_at(points, LEAD_IN_INDEX)
+        .map(|at| offset.saturating_add(at))
+        .filter(|lead_in| *lead_in < start);
+
     CueTrack {
         number: u32::from(number),
         kind,
-        start: CueStart::Sampled(Frames(offset.saturating_add(music_at(points)))),
-        pregap: None,
+        start: CueStart::Sampled(Frames(start)),
+        lead_in: lead_in.map(|at| CueStart::Sampled(Frames(at))),
         tags: TagSet {
             isrc: written_text(&record[ISRC_AT..TRACK_FLAGS_AT]),
             ..TagSet::default()
@@ -261,13 +267,13 @@ fn written_text(field: &[u8]) -> Option<String> {
     (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_graphic())).then(|| text.to_owned())
 }
 
-fn music_at(points: &[u8]) -> u64 {
+fn index_at(points: &[u8], number: u8) -> Option<u64> {
     points
         .as_chunks::<INDEX_BYTES>()
         .0
         .iter()
-        .find(|point| point[INDEX_NUMBER_AT] == FIRST_INDEX)
-        .map_or(0, |point| eight_bytes(point))
+        .find(|point| point[INDEX_NUMBER_AT] == number)
+        .map(|point| eight_bytes(point))
 }
 
 fn eight_bytes(from: &[u8]) -> u64 {
@@ -279,6 +285,8 @@ fn eight_bytes(from: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use resonate_core::{FrameSpan, SampleRate};
 
     use super::*;
 
@@ -483,6 +491,21 @@ mod tests {
         assert_eq!(
             cut.tracks[1].start,
             CueStart::Sampled(Frames(15_773_100 + 88_200))
+        );
+        assert_eq!(
+            cut.tracks[1].lead_in,
+            Some(CueStart::Sampled(Frames(15_773_100)))
+        );
+        assert_eq!(
+            cut.span_of(0, SampleRate::HZ_44100, None)
+                .and_then(FrameSpan::end),
+            Some(Frames(15_773_100)),
+            "the pregap was left as the tail of the track before"
+        );
+        assert_eq!(
+            cut.span_of(1, SampleRate::HZ_44100, None)
+                .map(FrameSpan::start),
+            Some(Frames(15_773_100))
         );
     }
 
