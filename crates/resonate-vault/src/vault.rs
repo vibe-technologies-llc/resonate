@@ -228,7 +228,7 @@ impl Vault {
     }
 
     pub fn holds(&self, path: &Path) -> bool {
-        path.starts_with(&self.root)
+        self.within(path).is_ok()
     }
 
     pub fn keep_delivered(&self, reader: &mut dyn Read, extension: &str) -> Result<Keeping> {
@@ -1151,6 +1151,21 @@ mod tests {
             Path::new("covers/ab/ab.jxl")
         );
         assert!(vault.within(Path::new("/elsewhere/covers/ab.jxl")).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_path_climbing_out_of_the_vault_is_not_held_by_it() {
+        let root = std::env::temp_dir().join(format!("resonate-vault-climbing-{}", process::id()));
+        let vault = Vault::open(&root).expect("a vault");
+
+        let climbing = root.join("..").join("elsewhere.flac");
+        let deeper = root.join("audio").join("..").join("..").join("etc");
+
+        assert!(!vault.holds(&climbing));
+        assert!(!vault.holds(&deeper));
+        assert!(vault.read_inside(&climbing).is_err());
+        assert!(vault.holds(&root.join("audio").join("ab.flac")));
         let _ = fs::remove_dir_all(&root);
     }
 

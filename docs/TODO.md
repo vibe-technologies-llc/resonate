@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Privacy and security
-- `Vault::inside` and `holds` compare paths lexically, so `<root>/../x` passes; only `Vault::at`
-  refuses a component that is not a plain name
 
 ## Robustness
 - A release build aborts on a panic and nothing installs a hook, so a panic under `resonate play`

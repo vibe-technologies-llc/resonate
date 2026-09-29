@@ -51,7 +51,10 @@ A leaf beside `resonate-codec`: chiefly `resonate-core`, `resonate-codec`, `symp
   is one object; a cover is keyed by its bytes, so twelve tracks embedding one picture cost one
   JXL and eleven dedup hits.
 - **Nothing outside the root.** `Vault::inside` guards every read, write and delete; a path not
-  under the root is `Error::OutsideTheVault`.
+  under the root is `Error::OutsideTheVault`. `holds`, which it asks, is `within`: what follows the
+  root must be plain names, as `Vault::at` asks of what it is handed, so `<root>/../x` — which a
+  lexical `starts_with` passed — is outside
+  (`a_path_climbing_out_of_the_vault_is_not_held_by_it`).
 
 ## The three forms
 
