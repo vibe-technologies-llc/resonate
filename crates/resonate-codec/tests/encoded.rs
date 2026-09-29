@@ -308,6 +308,17 @@ fn tone(shape: Shape) -> Vec<i32> {
 }
 
 fn wav(path: &Path, shape: Shape, samples: &[i32]) {
+    let mut body = b"WAVE".to_vec();
+    chunk(&mut body, b"fmt ", &wave_fmt(shape));
+    chunk(&mut body, b"data", &wave_data(shape, samples));
+
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    fs::write(path, file).expect("a writable temporary file");
+}
+
+fn wave_data(shape: Shape, samples: &[i32]) -> Vec<u8> {
     let stride = shape.bytes_per_sample();
     let mut data = Vec::with_capacity(samples.len() * stride);
     for sample in samples {
@@ -318,7 +329,10 @@ fn wav(path: &Path, shape: Shape, samples: &[i32]) {
                 .expect("a sample is at most four bytes wide"),
         );
     }
+    data
+}
 
+fn wave_fmt(shape: Shape) -> Vec<u8> {
     let extensible = shape.channels > 2;
     let align = shape.block_align();
     let mut fmt = Vec::new();
@@ -334,15 +348,78 @@ fn wav(path: &Path, shape: Shape, samples: &[i32]) {
         fmt.extend_from_slice(&SURROUND_MASK.to_le_bytes());
         fmt.extend_from_slice(&PCM_SUBFORMAT);
     }
+    fmt
+}
 
-    let mut body = b"WAVE".to_vec();
-    chunk(&mut body, b"fmt ", &fmt);
-    chunk(&mut body, b"data", &data);
+const WAVE64_RIFF: [u8; 16] = [
+    0x72, 0x69, 0x66, 0x66, 0x2E, 0x91, 0xCF, 0x11, 0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00,
+];
+const WAVE64_TAIL: [u8; 12] = [
+    0xF3, 0xAC, 0xD3, 0x11, 0x8C, 0xD1, 0x00, 0xC0, 0x4F, 0x8E, 0xDB, 0x8A,
+];
+const WAVE64_HEADER: u64 = 24;
+const UNSTATED: u32 = u32::MAX;
 
-    let mut file = b"RIFF".to_vec();
-    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
-    file.extend_from_slice(&body);
+#[derive(Clone, Copy, Debug)]
+enum Wide {
+    Rf64,
+    Bw64,
+    Wave64,
+}
+
+fn wide_wave(path: &Path, wide: Wide, shape: Shape, samples: &[i32]) {
+    let fmt = wave_fmt(shape);
+    let data = wave_data(shape, samples);
+
+    let file = match wide {
+        Wide::Rf64 | Wide::Bw64 => {
+            let mut ds64 = Vec::new();
+            ds64.extend_from_slice(&0_u64.to_le_bytes());
+            ds64.extend_from_slice(&(data.len() as u64).to_le_bytes());
+            ds64.extend_from_slice(
+                &(samples.len() as u64 / u64::from(shape.channels)).to_le_bytes(),
+            );
+            ds64.extend_from_slice(&0_u32.to_le_bytes());
+
+            let mut body = b"WAVE".to_vec();
+            chunk(&mut body, b"ds64", &ds64);
+            chunk(&mut body, b"fmt ", &fmt);
+            body.extend_from_slice(b"data");
+            body.extend_from_slice(&UNSTATED.to_le_bytes());
+            body.extend_from_slice(&data);
+
+            let mut file = match wide {
+                Wide::Bw64 => b"BW64".to_vec(),
+                Wide::Rf64 | Wide::Wave64 => b"RF64".to_vec(),
+            };
+            file.extend_from_slice(&UNSTATED.to_le_bytes());
+            file.extend_from_slice(&body);
+            file
+        }
+        Wide::Wave64 => {
+            let mut body = Vec::new();
+            wave64_chunk(&mut body, *b"fmt ", &fmt);
+            wave64_chunk(&mut body, *b"data", &data);
+
+            let mut file = WAVE64_RIFF.to_vec();
+            file.extend_from_slice(&(body.len() as u64 + 40).to_le_bytes());
+            file.extend_from_slice(b"wave");
+            file.extend_from_slice(&WAVE64_TAIL);
+            file.extend_from_slice(&body);
+            file
+        }
+    };
     fs::write(path, file).expect("a writable temporary file");
+}
+
+fn wave64_chunk(into: &mut Vec<u8>, id: [u8; 4], payload: &[u8]) {
+    into.extend_from_slice(&id);
+    into.extend_from_slice(&WAVE64_TAIL);
+    into.extend_from_slice(&(payload.len() as u64 + WAVE64_HEADER).to_le_bytes());
+    into.extend_from_slice(payload);
+    while !into.len().is_multiple_of(8) {
+        into.push(0);
+    }
 }
 
 fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
@@ -646,6 +723,122 @@ fn alac_decodes_to_exactly_the_samples_that_went_in() {
         widened(&samples, 16),
         "alac is lossless and did not round-trip"
     );
+}
+
+#[test]
+fn a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in() {
+    let tree = Tree::new();
+    let shapes = [
+        (CD, ChannelLayout::Stereo),
+        (STUDIO, ChannelLayout::Stereo),
+        (SURROUND, ChannelLayout::Surround51),
+        (SPOKEN, ChannelLayout::Mono),
+    ];
+
+    for wide in [Wide::Rf64, Wide::Bw64, Wide::Wave64] {
+        for (shape, layout) in shapes {
+            let samples = tone(shape);
+            let path = tree.at(&format!("{wide:?}-{}.wav", shape.channels));
+            wide_wave(&path, wide, shape, &samples);
+
+            let info =
+                probe(&Sources::local(), &MediaLocation::local(&path)).expect("a wide wave probes");
+            let named = match wide {
+                Wide::Rf64 | Wide::Bw64 => Container::Rf64,
+                Wide::Wave64 => Container::Wave64,
+            };
+            assert_eq!(Container::from_id(info.container), named, "{wide:?}");
+            assert_eq!(Codec::from_id(info.codec), Codec::Pcm, "{wide:?}");
+            assert_eq!(
+                info.duration,
+                Some(Frames(shape.frames() as u64)),
+                "{wide:?}"
+            );
+
+            let decoded = decode(&path);
+            assert_eq!(decoded.spec.channels, layout, "{wide:?}");
+            assert_eq!(decoded.spec.rate.hz(), shape.rate, "{wide:?}");
+            assert_eq!(
+                decoded.samples,
+                widened(&samples, shape.bits),
+                "{wide:?} at {} channels did not decode to what went in",
+                shape.channels
+            );
+        }
+    }
+}
+
+#[test]
+fn a_seek_into_a_wide_wave_lands_on_the_frame_asked_for() {
+    let tree = Tree::new();
+    let samples = tone(STUDIO);
+    let lanes = usize::from(STUDIO.channels);
+
+    for wide in [Wide::Rf64, Wide::Wave64] {
+        let path = tree.at(&format!("{wide:?}.w64"));
+        wide_wave(&path, wide, STUDIO, &samples);
+        let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a wide wave opens");
+
+        let wanted = Frames(70_001);
+        let landed = decoder.seek(wanted).expect("a seek inside the file");
+        let heard = drain(&mut decoder, info.spec);
+
+        assert_eq!(landed, wanted, "{wide:?}");
+        assert_eq!(
+            heard.first(),
+            widened(&samples, STUDIO.bits).get(70_001 * lanes),
+            "{wide:?} did not land on the frame asked for"
+        );
+        assert_eq!(heard.len(), samples.len() - 70_001 * lanes, "{wide:?}");
+    }
+}
+
+#[test]
+fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_tags() {
+    let tree = Tree::new();
+    let cases: [(&str, &[&str], Container); 2] = [
+        (
+            "tone.wav",
+            &[
+                "-c:a",
+                "pcm_s24le",
+                "-rf64",
+                "always",
+                "-metadata",
+                "title=Echoes",
+            ],
+            Container::Rf64,
+        ),
+        (
+            "tone.w64",
+            &["-c:a", "pcm_s24le", "-metadata", "title=Echoes"],
+            Container::Wave64,
+        ),
+    ];
+
+    for (name, codec, container) in cases {
+        let Some((path, samples)) = shaped(&tree, STUDIO, name, codec) else {
+            return;
+        };
+
+        let info = probe(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a wave ffmpeg wrote probes");
+        assert_eq!(Container::from_id(info.container), container, "{name}");
+        assert_eq!(
+            info.duration,
+            Some(Frames(STUDIO.frames() as u64)),
+            "{name}"
+        );
+        if container == Container::Rf64 {
+            assert_eq!(info.tags.title.as_deref(), Some("Echoes"), "{name}");
+        }
+        assert_eq!(
+            decode(&path).samples,
+            widened(&samples, STUDIO.bits),
+            "{name} did not decode to what went in"
+        );
+    }
 }
 
 #[test]

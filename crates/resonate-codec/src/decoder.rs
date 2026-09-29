@@ -49,6 +49,8 @@ pub enum Container {
     Matroska,
     WavPack,
     MonkeysAudio,
+    Rf64,
+    Wave64,
     #[default]
     Unknown,
 }
@@ -69,6 +71,12 @@ impl Container {
         }
         if id == crate::ape::APE_FORMAT_ID {
             return Self::MonkeysAudio;
+        }
+        if id == crate::wide::RF64_FORMAT_ID {
+            return Self::Rf64;
+        }
+        if id == crate::wide::WAVE64_FORMAT_ID {
+            return Self::Wave64;
         }
 
         match id {
@@ -101,6 +109,8 @@ impl Container {
             Self::Matroska => "Matroska",
             Self::WavPack => "WavPack",
             Self::MonkeysAudio => "Monkey's Audio",
+            Self::Rf64 => "RF64",
+            Self::Wave64 => "Wave64",
             Self::Unknown => "Unknown",
         }
     }

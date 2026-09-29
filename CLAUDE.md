@@ -216,9 +216,10 @@ entry point with no caller (`sheet::parse` was split out of `sheet::read` for th
 better factoring anyway). A run's grown corpus is ignored by `.gitignore`; the seed corpus is kept:
 `fuzz/seeds/<target>` holds the smallest file of each thing a target reads, handed to a run as a
 second corpus folder so growth lands in `corpus/` and the seeds stay. `probe` has one of every
-container the scan takes — a 50 ms 8 kHz ffmpeg tone as WAVE, a three-channel 24-bit WAVE, FLAC
-carrying a Vorbis `CUESHEET`, MP3, ADTS, AAC and ALAC in MP4, FLAC and Vorbis in Matroska, Vorbis,
-Opus in stereo and 5.1, AIFF, CAF, WavPack in integers and floats and Monkey's Audio — beside a DSF,
+container the scan takes — a 50 ms 8 kHz ffmpeg tone as WAVE, RF64 and Wave64, a three-channel
+24-bit WAVE, FLAC carrying a Vorbis `CUESHEET`, MP3, ADTS, AAC and ALAC in MP4, FLAC and Vorbis in
+Matroska, Vorbis, Opus in stereo and 5.1, AIFF, CAF, WavPack in integers and floats and Monkey's
+Audio — beside a DSF,
 a DSDIFF, a DST DSDIFF and an MP3 whose ID3v2 carries `SYLT`, `USLT` and a MusicBrainz `UFID`,
 written by hand; seeded, a run starts at 11 733 edges where an empty one starts at 343. `boxes`
 takes the two MP4s, and `cue`, `lrc` and `playlist` a sheet each. A seed is added by hand when a run

@@ -24,6 +24,7 @@ mod tags;
 mod timeline;
 mod vorbis;
 mod wavpack;
+mod wide;
 mod writing;
 
 pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};

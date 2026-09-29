@@ -256,6 +256,22 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in` and
   `a_floating_monkeys_audio_decodes_to_every_bit_that_went_in` are the claims, over files `mac`
   writes.
+- **A WAVE too long for RIFF is read by a reader of the codec crate's own.** RIFF sizes are 32 bits,
+  so a recording past 4 GiB is written as RF64 (the EBU's `RF64`, or `BW64` for ADM) — a `ds64`
+  chunk first carrying the 64-bit data size and a table for any other chunk whose 32-bit size says
+  `0xFFFFFFFF` — or as Sony's Wave64, every chunk named by a GUID and sized in 64 bits, aligned to
+  eight bytes. symphonia reads neither. `wide.rs`'s `WideReader` walks either forward to the `data`
+  chunk — `Wide::chunk` is the one reading of a chunk header in both layouts, `Sizes` the `ds64`
+  table — reads the `fmt ` chunk it passes on the way (integer PCM of 8 to 32 bits, IEEE float of 32
+  or 64, extensible with either, its valid bits and channel mask), and answers packets of at most
+  `FRAMES_A_PACKET` frames and `MOST_PACKET_BYTES`, seeking to the exact frame. Its markers are
+  `RF64`, `BW64` and Wave64's `riff`; `Container::Rf64` and `Container::Wave64` name what opened.
+  `riff.rs` walks the same two layouts through `Wide::chunk`, so an RF64's `LIST INFO` and `id3 `
+  chunk are read as a WAVE's are; the channel and mask refusals stay the plain WAVE's, guarding
+  symphonia's reader, which a wide file never reaches. The scan takes `.rf64` and `.w64` beside
+  `.wav`. `a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in` over hand-built
+  RF64, BW64 and Wave64 files and `a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_tags`
+  are the claims.
 - **Every PCM symphonia names is billed as PCM, and ADPCM as the lossy codec it is.**
   `Codec::from_id` reads the signed, unsigned, float and companded ids in either byte order and
   planar or interleaved as `Codec::Pcm`, so an unsigned big-endian CAF is not `Unknown` and billed

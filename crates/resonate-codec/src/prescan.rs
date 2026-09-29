@@ -9,6 +9,7 @@ use crate::{
     matroska::{self, Segment},
     riff::{self, Riff},
     wavpack::{self, Coding},
+    wide::Wide,
 };
 
 const PRESCAN_WINDOW: usize = 4 * 1024;
@@ -214,6 +215,7 @@ pub(crate) fn past_id3<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Opened {
     Wave,
+    Wide(Wide),
     Caf,
     Another,
 }
@@ -266,6 +268,9 @@ fn container_at(from: &[u8]) -> Option<Opened> {
     }
     if marker == CAFF {
         return Some(Opened::Caf);
+    }
+    if let Some(wide) = Wide::at(from) {
+        return Some(Opened::Wide(wide));
     }
     if OTHER_CONTAINERS
         .iter()

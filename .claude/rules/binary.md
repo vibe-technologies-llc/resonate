@@ -54,7 +54,8 @@ the whole file. A `.cue` handed to `OpenUri` is read as its rows through the sam
 **The desktop entry, the bus and the scan advertise what this build can decode, and nothing else.**
 `MIME_TYPES` is what `SupportedMimeTypes` answers, what `packaging/resonate.desktop` declares and
 what the metainfo's `<provides>` names, held to both in both directions by a test each;
-`resonate-library`'s `AUDIO_EXTENSIONS` names the same formats. WavPack is offered through
+`resonate-library`'s `AUDIO_EXTENSIONS` names the same formats — with `.rf64` and `.w64` beside
+them, which shared-mime-info gives no type of their own (an RF64 named `.wav` is `audio/x-wav`). WavPack is offered through
 `symphonia-codec-wavpack` and a decoder of the codec crate's own around it; Monkey's Audio through a
 reader and decoder of the codec crate's own over `ape-decoder` (symphonia's `ape` feature is APEv2
 metadata, not the codec); AAC, bare ADTS included, because the `aac` feature registers `AdtsReader`

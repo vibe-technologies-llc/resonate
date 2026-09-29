@@ -5,10 +5,10 @@ use resonate_core::text::{decoded_as, detected};
 use crate::{
     TagName,
     prescan::{Opened, opened_first, past_id3, read_exact},
+    wide::{ChunkHeader, DS64, FMT, MOST_DS64_BYTES, Sizes, WIDEST_CHUNK_HEADER, Wide},
 };
 
 const LIST: &[u8; 4] = b"LIST";
-const FMT: &[u8; 4] = b"fmt ";
 const INFO: &[u8; 4] = b"INFO";
 const ID3: &[u8; 3] = b"ID3";
 const ID3_CHUNKS: [&[u8; 4]; 2] = [b"id3 ", b"ID3 "];
@@ -58,41 +58,98 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Riff {
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
     let start = past_id3(source)?;
-    let header = riff_header_at(source, start)?;
+    let (layout, header) = riff_header_at(source, start)?;
     source
-        .seek(SeekFrom::Start(header + RIFF_HEADER_BYTES as u64))
+        .seek(SeekFrom::Start(header + layout.header_bytes()))
         .ok()?;
 
     let mut found = Riff::default();
-    for _ in 0..MAX_CHUNKS {
-        let Some(header) = read_exact::<8, S>(source) else {
-            break;
-        };
-        let Some(size) = payload_size(&header) else {
+    let mut sizes = Sizes::default();
+    for walked in 0..MAX_CHUNKS {
+        let Some(chunk) = layout.next_chunk(source, &sizes) else {
             break;
         };
         let Ok(body) = source.stream_position() else {
             break;
         };
+        let size = chunk.size;
 
-        if header.starts_with(LIST) && size >= FORM_BYTES {
+        if walked == 0 && chunk.is(DS64) {
+            sizes = Sizes::read(&read_bounded(source, size, MOST_DS64_BYTES));
+        }
+        if chunk.is(LIST) && size >= FORM_BYTES {
             read_info_list(source, size - FORM_BYTES, &mut found.info);
         }
-        if header.starts_with(FMT) && size >= FMT_PLAIN_BYTES && found.channels.is_none() {
+        if chunk.is(FMT)
+            && layout == Layout::Riff
+            && size >= FMT_PLAIN_BYTES
+            && found.channels.is_none()
+        {
             let fmt = read_fmt(source, size);
             found.channels = fmt.channels;
             found.mask = fmt.mask;
             found.valid_bits = fmt.valid_bits;
         }
-        if ID3_CHUNKS.iter().any(|id| header.starts_with(*id)) {
+        if ID3_CHUNKS.iter().any(|id| chunk.is(id)) {
             found.id3 = read_id3_chunk(source, size).or(found.id3);
         }
-        if source.seek(SeekFrom::Start(body + padded(size))).is_err() {
+        let Some(next) = body.checked_add(layout.padded(size)) else {
+            break;
+        };
+        if source.seek(SeekFrom::Start(next)).is_err() {
             break;
         }
     }
 
     Some(found)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Layout {
+    Riff,
+    Wide(Wide),
+}
+
+impl Layout {
+    fn header_bytes(self) -> u64 {
+        match self {
+            Self::Riff => RIFF_HEADER_BYTES as u64,
+            Self::Wide(wide) => wide.header_bytes(),
+        }
+    }
+
+    fn padded(self, size: u64) -> u64 {
+        match self {
+            Self::Riff => padded(size),
+            Self::Wide(wide) => wide.padded(size),
+        }
+    }
+
+    fn next_chunk<S: Read + ?Sized>(self, source: &mut S, sizes: &Sizes) -> Option<ChunkHeader> {
+        match self {
+            Self::Riff => {
+                let header = read_exact::<8, S>(source)?;
+                Some(ChunkHeader {
+                    id: header.first_chunk::<4>().copied(),
+                    size: payload_size(&header)?,
+                })
+            }
+            Self::Wide(wide) => {
+                let mut header = [0_u8; WIDEST_CHUNK_HEADER];
+                let header = header.get_mut(..wide.chunk_header_bytes())?;
+                source.read_exact(header).ok()?;
+                wide.chunk(header, sizes)
+            }
+        }
+    }
+}
+
+fn read_bounded<S: Read + ?Sized>(source: &mut S, size: u64, most: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if source.take(size.min(most)).read_to_end(&mut bytes).is_err() {
+        bytes.clear();
+    }
+    bytes
 }
 
 fn read_id3_chunk<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<Vec<u8>> {
@@ -254,9 +311,10 @@ const fn padded(size: u64) -> u64 {
     size + (size & 1)
 }
 
-fn riff_header_at<S: Read + Seek + ?Sized>(source: &mut S, start: u64) -> Option<u64> {
+fn riff_header_at<S: Read + Seek + ?Sized>(source: &mut S, start: u64) -> Option<(Layout, u64)> {
     match opened_first(source, start)? {
-        (Opened::Wave, at) => Some(at),
+        (Opened::Wave, at) => Some((Layout::Riff, at)),
+        (Opened::Wide(wide), at) => Some((Layout::Wide(wide), at)),
         (Opened::Caf | Opened::Another, _) => None,
     }
 }

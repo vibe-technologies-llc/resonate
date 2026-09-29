@@ -103,6 +103,9 @@ comparison may overrule it.
   `chunks::Passing`, a reader seeking over the left-out ranges; a data chunk declaring more than
   the file holds is read to the end rather than refused, which is how a streamed WAVE is written.
   `a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample` is the claim.
+  An RF64, BW64 or Wave64 kept this way — past eight channels, or a re-encode no smaller — is kept
+  whole, tags and all: `chunks::shed` walks 32-bit sizes, and its `ds64` table would have to be
+  rewritten for every chunk left out.
   **An MP4 or Matroska has its tags blanked where they stand**, since they sit inside the
   structure indexing the audio (MP4 chunk offsets count from file start; a Matroska SeekHead and
   Cues name positions) and cutting them would mean rewriting every offset behind.

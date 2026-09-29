@@ -83,7 +83,7 @@ pub(crate) fn bare(
         Container::Dff => shed_chunks(stream, Layout::Dsdiff),
         Container::IsoMp4 => blanked(stream, |held| blanks::blanked_movie(held)),
         Container::Matroska => blanked(stream, |held| blanks::blanked_segment(held)),
-        Container::Unknown => None,
+        Container::Rf64 | Container::Wave64 | Container::Unknown => None,
     };
 
     if found.is_none() {

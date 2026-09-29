@@ -8,6 +8,7 @@ use crate::{
     opus::Opus,
     vorbis::Vorbis,
     wavpack::WavPack,
+    wide::WideReader,
 };
 
 static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
@@ -25,6 +26,7 @@ static FORMATS: LazyLock<Probe> = LazyLock::new(|| {
     symphonia::default::register_enabled_formats(&mut probe);
     probe.register_format::<WavPackReader<'_>>();
     probe.register_format::<ApeReader<'_>>();
+    probe.register_format::<WideReader<'_>>();
     probe
 });
 
