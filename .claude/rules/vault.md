@@ -86,7 +86,8 @@ comparison may overrule it.
   than it saves: a lossy codec, DSD, > 8 channels, or a re-encode no smaller. What a container
   keeps its tags in *around* the audio is left behind, without touching an audio frame.
   `bare::bare` decides by the container symphonia opened: a FLAC's metadata blocks are rewritten
-  to STREAMINFO alone; an MPEG, ADTS, WavPack or Monkey's Audio stream sheds every ID3v2 tag
+  to STREAMINFO alone and the ID3 tags a tagger stacked in front of or behind it shed as an MPEG
+  stream's are; an MPEG, ADTS, WavPack or Monkey's Audio stream sheds every ID3v2 tag
   stacked before the frames and, from the end inward, ID3v1 with its enhanced `TAG+`, APEv2 with
   or without header, Lyrics3v2 and an appended ID3v2 read by its footer; a DSF ends where its
   metadata pointer pointed, header rewritten to that length with a null pointer; an Ogg Vorbis,

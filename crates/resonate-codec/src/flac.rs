@@ -5,7 +5,7 @@ use resonate_core::Frames;
 use crate::{
     TagSet,
     cue::{CueFile, CueStart, CueTrack, CueTrackKind},
-    prescan::read_exact,
+    prescan::{past_id3, read_exact},
 };
 
 const MAGIC: [u8; 4] = *b"fLaC";
@@ -103,6 +103,8 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Flac {
 }
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Flac> {
+    let start = past_id3(source)?;
+    source.seek(SeekFrom::Start(start)).ok()?;
     if read_exact::<4, S>(source)? != MAGIC {
         return None;
     }
@@ -525,6 +527,17 @@ mod tests {
         assert_eq!(read(&mut source), Flac::default());
         assert_eq!(source.position(), 0);
         assert_eq!(found(Vec::new()), Flac::default());
+    }
+
+    #[test]
+    fn a_sheet_behind_a_leading_id3_tag_is_still_found() {
+        let mut file = b"ID3\x04\x00\x00\x00\x00\x01\x00".to_vec();
+        file.extend_from_slice(&[0; 128]);
+        file.extend(flac(&[(CUESHEET, cuesheet(&meddle(), None))]));
+
+        let cut = found(file).cue.expect("an embedded sheet");
+
+        assert_eq!(cut.audio_tracks().count(), 3);
     }
 
     #[test]

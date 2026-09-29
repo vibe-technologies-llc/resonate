@@ -490,8 +490,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   sector's 13 ms. `MediaInfo::cue` is filled in `container::coded_info` from two places, the first
   preferred: a Vorbis `CUESHEET` comment — a whole cue file with titles, read through
   `tags::read_cue_sheet` into `cue::read` — else the binary block, which `flac.rs` walks off the
-  metadata headers beside `riff.rs` and `matroska.rs` in the `Prescan`, a non-FLAC costing the
-  four-byte magic. A block carries no names, only each track's ISRC and the disc's catalogue number,
+  metadata headers beside `riff.rs` and `matroska.rs` in the `Prescan`, stepping past a leading ID3v2
+  tag as `riff.rs` and `caf.rs` do (`past_id3`), a non-FLAC costing a ten-byte read. A block carries no names, only each track's ISRC and the disc's catalogue number,
   so `CueFile::billed_by` bills its tracks by the file's own album fields — album, album artist
   (the artist where there is none), disc, date, genre, label, the release ids, the album gain — with
   the track's number, the block's audio track count as its total, and its ISRC; the title stays

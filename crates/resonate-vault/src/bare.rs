@@ -110,6 +110,10 @@ fn blanked(
 }
 
 fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
+    let length = stream.seek(SeekFrom::End(0)).ok()?;
+    let from = past_leading_tags(stream, length)?;
+    stream.seek(SeekFrom::Start(from)).ok()?;
+
     let mut magic = [0_u8; FLAC_MAGIC.len()];
     stream.read_exact(&mut magic).ok()?;
     if magic != FLAC_MAGIC {
@@ -145,15 +149,19 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     }
 
     let held = stream_info?;
-    let length = u32::try_from(held.len()).ok()?.to_be_bytes();
+    let frames = stream.stream_position().ok()?;
+    let until = before_trailing_tags(stream, frames, length)?;
+    stream.seek(SeekFrom::Start(frames)).ok()?;
+
+    let declared = u32::try_from(held.len()).ok()?.to_be_bytes();
     let mut head = Vec::with_capacity(FLAC_MAGIC.len() + METADATA_HEADER_BYTES + held.len());
     head.extend_from_slice(&FLAC_MAGIC);
     head.push(LAST_BLOCK | STREAM_INFO);
-    head.extend_from_slice(&length[1..]);
+    head.extend_from_slice(&declared[1..]);
     head.extend_from_slice(&held);
     Some(Bare {
         head,
-        until: None,
+        until: (until < length).then_some(until),
         renumbering: None,
         left_out: Vec::new(),
         blanks: Vec::new(),
@@ -452,6 +460,23 @@ mod tests {
         wanted.extend(block(STREAM_INFO, true, &stream_info));
         assert_eq!(bare.expect("a FLAC head").head, wanted);
         assert_eq!(rest, b"the frames that follow");
+    }
+
+    #[test]
+    fn a_flac_behind_an_id3_tag_and_before_another_sheds_both() {
+        let stream_info = vec![7_u8; 34];
+        let mut whole = id3v2(&[0_u8; 300], false);
+        whole.extend_from_slice(&FLAC_MAGIC);
+        whole.extend(block(STREAM_INFO, true, &stream_info));
+        whole.extend_from_slice(FRAMES);
+        whole.extend(id3v1());
+
+        let (bare, rest) = bared(whole, Container::Flac);
+
+        let mut wanted = FLAC_MAGIC.to_vec();
+        wanted.extend(block(STREAM_INFO, true, &stream_info));
+        assert_eq!(bare.expect("a FLAC head").head, wanted);
+        assert_eq!(rest, FRAMES);
     }
 
     #[test]

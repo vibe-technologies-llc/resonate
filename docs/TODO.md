@@ -30,9 +30,6 @@ service or a format — and is not worked until that moves; everything else is o
   RIFF `INFO` strings, EqualizerAPO profiles and lyric sidecars are read as UTF-8 alone
 - A cue `FILE` naming a file in a subfolder of the sheet's is looked for beside the sheet alone, so a
   sheet at an album's root cutting `CD1/01.flac` claims nothing
-- A FLAC with an ID3v2 tag in front loses its `CUESHEET`, because `flac::scan` wants `fLaC` at the
-  start where `riff.rs` and `caf.rs` step past a tag, and the vault's `bare_flac` keeps such a file
-  whole, tags and picture included
 - RF64, BW64 and Wave64 are refused as unrecognised, so a WAVE past 4 GiB will not open; symphonia
   reads none of them, and a reader of the crate's own would, as it does for Monkey's Audio
 - `Codec::from_id` names no unsigned big-endian or planar integer PCM, so such a CAF is
