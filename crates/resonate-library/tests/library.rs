@@ -16902,6 +16902,82 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
 }
 
 #[test]
+fn a_prune_takes_away_an_object_no_row_names_once_it_has_stood_a_while() -> Result<()> {
+    const AN_HOUR: Duration = Duration::from_secs(60 * 60);
+
+    let held = Tree::new();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    let stood = held.write("audio/ab/ab000000000000000000000000000001.flac", b"fLaC");
+    let landing = held.write("audio/ab/ab000000000000000000000000000002.flac", b"fLaC");
+    fs::File::options()
+        .write(true)
+        .open(&stood)
+        .and_then(|file| file.set_modified(SystemTime::now() - AN_HOUR))
+        .expect("the fixture object takes a time");
+
+    let pruned = library.prune_the_vault()?;
+
+    assert_eq!(pruned.objects, 1);
+    assert!(
+        !stood.exists(),
+        "an object nothing names stood through a prune"
+    );
+    assert!(
+        landing.exists(),
+        "an object a poll may be about to note was taken from under it"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<()> {
+    use os::unix::fs::PermissionsExt as _;
+
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ALBUM, "Meddle")
+            .build(),
+    );
+    let (library, vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    assert!(library.remove_root(tree.path())?);
+    let loose = library.vault_objects_nothing_names()?;
+    let folder = vault
+        .root()
+        .join(&loose[0].path)
+        .parent()
+        .expect("an object sits in a folder")
+        .to_path_buf();
+
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o555))
+        .expect("the vault folder takes a mode");
+    if fs::write(folder.join("probe"), b"").is_ok() {
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755))
+            .expect("the vault folder takes a mode");
+        eprintln!("skipping: this user writes into a folder whatever its mode");
+        return Ok(());
+    }
+    let pruned = library.prune_the_vault();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755))
+        .expect("the vault folder takes a mode");
+
+    let pruned = pruned?;
+    assert_eq!((pruned.objects, pruned.left), (0, 1));
+    assert_eq!(library.vault_objects()?.len(), 1);
+
+    let pruned = library.prune_the_vault()?;
+    assert_eq!((pruned.objects, pruned.left), (1, 0));
+    assert!(library.vault_objects()?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<()> {
     let tree = Tree::new();
     tree.write(

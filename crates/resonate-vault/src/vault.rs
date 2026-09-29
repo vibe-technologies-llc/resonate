@@ -168,7 +168,7 @@ pub enum Keeping {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HeldCover {
+pub struct HeldFile {
     pub key: VaultKey,
     pub path: PathBuf,
 }
@@ -423,14 +423,24 @@ impl Vault {
         Ok(held)
     }
 
-    pub fn covers(&self) -> Result<Vec<HeldCover>> {
+    pub fn covers(&self) -> Result<Vec<HeldFile>> {
         let mut held = Vec::new();
         self.walked(&self.root.join(COVERS), &mut held)?;
         held.sort();
         Ok(held
             .into_iter()
             .filter(|path| path.extension().and_then(|held| held.to_str()) == Some(COVER_EXTENSION))
-            .filter_map(|path| named(&path).map(|key| HeldCover { key, path }))
+            .filter_map(|path| named(&path).map(|key| HeldFile { key, path }))
+            .collect())
+    }
+
+    pub fn objects(&self) -> Result<Vec<HeldFile>> {
+        let mut held = Vec::new();
+        self.walked(&self.root.join(AUDIO), &mut held)?;
+        held.sort();
+        Ok(held
+            .into_iter()
+            .filter_map(|path| named(&path).map(|key| HeldFile { key, path }))
             .collect())
     }
 

@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, OpenOptions, TryLockError},
+    fs::{self, File, OpenOptions, TryLockError},
     num::NonZeroU32,
     ops::Deref,
     path::{Path, PathBuf},
@@ -450,6 +450,14 @@ impl Drop for Walk {
 }
 
 const WALK_LOCK_SUFFIX: &str = ".walk";
+
+const LANDING_GRACE: Duration = Duration::from_secs(10 * 60);
+
+fn landed_before_it(object: &Path, moment: SystemTime) -> bool {
+    fs::metadata(object)
+        .and_then(|metadata| metadata.modified())
+        .is_ok_and(|landed| landed < moment)
+}
 
 fn walk_lock_beside(catalog: &Path) -> PathBuf {
     let mut named = catalog.as_os_str().to_owned();
@@ -1856,13 +1864,35 @@ impl Library {
         let mut pruned = Pruned::default();
         for object in self.vault_objects_nothing_names()? {
             match vault.forget(&object.path) {
-                Ok(true) => pruned.objects += 1,
-                Ok(false) => {}
+                Ok(taken) => {
+                    pruned.objects += u64::from(taken);
+                    self.forget_vault_object(&object.key)?;
+                }
                 Err(error) => {
-                    tracing::warn!(path = %object.path.display(), %error, "an object could not be taken away");
+                    tracing::warn!(path = %object.path.display(), %error, "an object could not be taken away, so its row stays for the next prune");
+                    pruned.left += 1;
                 }
             }
-            self.forget_vault_object(&object.key)?;
+        }
+
+        let noted = self.vault_keys_noted()?;
+        let landed_before = SystemTime::now()
+            .checked_sub(LANDING_GRACE)
+            .unwrap_or(UNIX_EPOCH);
+        for object in vault
+            .objects()
+            .map_err(|source| refused(vault.root(), source))?
+        {
+            if noted.contains(&object.key) || !landed_before_it(&object.path, landed_before) {
+                continue;
+            }
+            match vault.forget(&object.path) {
+                Ok(taken) => pruned.objects += u64::from(taken),
+                Err(error) => {
+                    tracing::warn!(path = %object.path.display(), %error, "an object no row names could not be taken away");
+                    pruned.left += 1;
+                }
+            }
         }
 
         let named: AHashSet<VaultKey> = self
@@ -1900,6 +1930,22 @@ impl Library {
             .sweep_the_staging()
             .map_err(|source| refused(&root, source))?;
         Ok(pruned)
+    }
+
+    fn vault_keys_noted(&self) -> Result<AHashSet<VaultKey>> {
+        let texts = self.inner.read(|connection| {
+            rows(
+                connection,
+                "SELECT key FROM vault_objects
+                 UNION SELECT vault_key FROM tracks WHERE vault_key IS NOT NULL",
+                Vec::new(),
+                |row| Ok(Ok(row.get::<_, String>(0)?)),
+            )
+        })?;
+        Ok(texts
+            .iter()
+            .filter_map(|text| VaultKey::read(text).ok())
+            .collect())
     }
 
     pub fn release_from_vault(&self, roots: &[PathBuf]) -> Result<Released> {

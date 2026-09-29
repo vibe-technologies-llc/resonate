@@ -222,8 +222,8 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
 fn prune(library: &Library) -> Result<()> {
     let pruned = library.prune_the_vault()?;
     println!(
-        "objects {} | covers {} | staged {}",
-        pruned.objects, pruned.covers, pruned.staged
+        "objects {} | covers {} | staged {} | left {}",
+        pruned.objects, pruned.covers, pruned.staged, pruned.left
     );
     Ok(())
 }

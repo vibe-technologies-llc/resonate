@@ -50,7 +50,7 @@ pub use resonate_codec::{
 };
 pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service};
 pub use resonate_vault::{
-    Encoding, Form, HeldCover, Holdings, Keeping, Kept as KeptInVault, KeptCover,
+    Encoding, Form, HeldFile, Holdings, Keeping, Kept as KeptInVault, KeptCover,
     Refusal as VaultRefusal, Taking, Vault, VaultFiles, VaultKey,
 };
 

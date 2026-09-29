@@ -104,6 +104,7 @@ pub struct Pruned {
     pub objects: u64,
     pub covers: u64,
     pub staged: u64,
+    pub left: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

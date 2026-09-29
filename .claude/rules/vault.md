@@ -241,7 +241,15 @@ catalog written before was scanned again); a change now is a `MIGRATIONS` step (
   it cannot remove an object an import landed and has not yet noted), it removes audio objects no
   row names and their `vault_objects` rows, then every JXL under `covers/` whose key no album's
   `cover_key` holds, then the staging folder. Matching by key, no spelling of the root makes a
-  named cover look loose.
+  named cover look loose. **An object's row goes only with its file**: one `Vault::forget` refuses
+  keeps its row for the next prune and is counted in `Pruned::left`, where forgetting the row anyway
+  left the file on the disc with nothing to find it by
+  (`an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next`). **It walks `audio/` as well
+  as the rows** (`Vault::objects`), taking any object whose key neither `vault_objects` nor a
+  `tracks.vault_key` names — one that landed before `note_vaulted` failed. A poll lands deliveries
+  outside the `Walk` guard, so an unnamed object is taken only once its mtime is `LANDING_GRACE` (ten
+  minutes) old, the landing-to-noting gap being milliseconds
+  (`a_prune_takes_away_an_object_no_row_names_once_it_has_stood_a_while`).
 - **`Library::import` takes the `Walk` guard**, reading every source file; a second caller gets
   `Error::AlreadyWalking`.
 - **An import runs on `ImportOptions::workers` threads** (the machine's parallelism by default),
@@ -307,7 +315,7 @@ genre, ReplayGain and words `Kept::declared` says the source declared, since the
 nothing — and records `wants.offered` as the *vault* object's URI, where the bytes now are.
 `providers.md` has why the row belongs to no root. A poll cancelled mid-keep stops at that file
 boundary like every pass: a landed object is noted, row and want, before the poll ends, because
-`--prune` walks rows, not `audio/`, and an unnamed object would stand forever
+an unnamed object is otherwise left for `--prune` to find on the disc
 (`a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted`).
 `a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went` and
 `a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims.
