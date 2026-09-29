@@ -938,7 +938,7 @@ impl Engine {
             } => {
                 self.stop();
                 let loaded = self.queue.load(items, start_at).is_some();
-                self.playing = autoplay;
+                self.playing = autoplay && loaded;
                 if loaded && autoplay {
                     let started = self.start(Frames::ZERO);
                     return self.past_what_will_not_open(started);
@@ -1202,6 +1202,11 @@ impl Engine {
     }
 
     fn play(&mut self) -> Result<()> {
+        let nothing_to_start =
+            self.track.is_none() && self.opening.is_none() && self.queue.current().is_none();
+        if nothing_to_start {
+            return Err(Error::QueueEmpty);
+        }
         self.playing = true;
         if self.opening.is_some() {
             return Ok(());

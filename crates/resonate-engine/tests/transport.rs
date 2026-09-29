@@ -1305,6 +1305,45 @@ fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
 }
 
 #[test]
+fn a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let row = tree.write("row.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player
+        .request(Command::Load {
+            items: Vec::new(),
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(PATIENCE)?;
+    let refused = player.request(Command::TogglePlayPause)?.wait_for(PATIENCE);
+
+    assert!(
+        matches!(refused, Err(EngineError::QueueEmpty)),
+        "play over an empty queue answered {refused:?}"
+    );
+
+    player
+        .request(Command::Insert {
+            items: vec![track(&row, 1)],
+            at: Placement::Queued,
+            play: false,
+        })?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::TogglePlayPause)?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        playing,
+        "the row queued after the empty load to play",
+    );
+    Ok(())
+}
+
+#[test]
 fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

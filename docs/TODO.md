@@ -25,9 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
   so a boosted one clips at the dither's clamp or pumps the true-peak guard
 - With `device-volume` on, the slider writes one gain into every channel and `mute = false`, so it
   unmutes a muted device and flattens its balance
-- `Command::Load` with no rows and `autoplay` leaves `playing` set with nothing loaded, so every
-  toggle answers `InvalidTransition`, and `resonate play` with no file, or with a sheet that
-  yields no row, waits for keys rather than saying so
 - Repeating the queue under shuffle can play the last track of one pass first in the next, because
   the wrap reshuffles with no guard
 - **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already

@@ -339,6 +339,12 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("nothing to play; name a file, a file:// URI or a cue sheet")]
+    NoFileNamed,
+
+    #[error("nothing named is a file, URI or cue track that plays")]
+    NothingPlayableNamed,
+
     #[error("no player is on the session bus; start one with resonate play or open the window")]
     NothingRunning,
 

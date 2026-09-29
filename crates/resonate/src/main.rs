@@ -1764,6 +1764,13 @@ fn play(cli: &Cli, config: &Config, arguments: &[OsString], spec: Option<&str>) 
     let library = catalog(cli, config);
 
     let items = mpris::claimed_by(library.as_deref(), queue_items(arguments));
+    if items.is_empty() {
+        return Err(if arguments.is_empty() {
+            Error::NoFileNamed
+        } else {
+            Error::NothingPlayableNamed
+        });
+    }
     play_queue(
         cli,
         config,

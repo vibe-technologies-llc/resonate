@@ -71,6 +71,9 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   will not is quiet a second after the signal. The `Player` reaches the thread as an `Arc` from both
   call sites, and `Player::send` only pushes onto a channel, so it is safe from a signal handler's
   thread and answers `EngineStopped` where the engine has gone.
+- **`resonate play` with nothing to play says so and exits 1** — `NoFileNamed` for no argument,
+  `NothingPlayableNamed` where every argument was passed over (a sheet with no row, a cut that
+  would not read) — rather than opening a transport with no rows and waiting for keys.
 - **`resonate play` takes a key at a time where it is typed at.** Where stdin is a terminal,
   `input::KeyAtATime` switches it out of canonical mode and echo through `rustix`'s safe `termios`
   (`rustix` was already in the tree under zbus and libspa, so the feature is the whole cost), keeps

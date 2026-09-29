@@ -901,7 +901,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   leave a pause in place — what MPRIS says those methods do, and what `transport.rs` asserts by
   watching the fake graph stay idle. `Load { autoplay }`, `Play`, `Command::JumpTo` and an `Insert` asked
   to be heard set `playing`, each a request to hear something now. A track failing mid-play still
-  advances into playback, the transport having been playing.
+  advances into playback, the transport having been playing. **Nothing to hear sets nothing:** a
+  `Load` whose rows are empty leaves `playing` clear whatever `autoplay` says, and `Play` over a
+  queue with no current row answers `QueueEmpty` before touching it, so the first play/pause after
+  rows arrive plays rather than answering `InvalidTransition` for a pause of nothing
+  (`a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next`).
 - **A track change nothing will be heard through opens the file and binds nothing else.**
   `Engine::start` reaching a paused transport records the frame it would bind at in `Engine::unbound`
   and stops, so a run of skips through a paused queue costs one `Unwrapped::open` a row rather than a
