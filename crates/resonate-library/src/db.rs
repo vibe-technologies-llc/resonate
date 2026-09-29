@@ -1840,9 +1840,15 @@ impl Library {
         &self,
         undoing: &[retag::Undoing],
         begins: bool,
+        pictures: &mut retag::KeptPictures,
     ) -> Result<()> {
         self.inner
-            .write(|transaction| retag::note_what_was_there(transaction, undoing, begins))
+            .write(|transaction| retag::note_what_was_there(transaction, undoing, begins, pictures))
+    }
+
+    pub(crate) fn retagged_picture(&self, id: i64) -> Result<Option<CoverArt>> {
+        self.inner
+            .read(|connection| retag::retagged_picture(connection, id))
     }
 
     pub(crate) fn files_retagged(

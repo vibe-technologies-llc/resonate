@@ -1556,7 +1556,16 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   `Library::retag_walks_back` says a run is noted. A file gone since is passed over as unreadable, and
   one that moved is not found by its old path.
   `an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writes_it_again` is the
-  claim.
+  claim. **A replaced picture is kept once and held no longer than its page.** A cover that gives way
+  to a better one is noted in `retagged_pictures`, `retagged.picture_id` naming it: `KeptPictures`
+  weighs each against the last eight it kept, by pointer and then byte for byte, so the thumbnail
+  twelve tracks of one album carried is one row, not twelve (a `MIGRATIONS` step folds a record kept
+  per file before into the same table). `run` drops `Held::picture` from every write once its page is
+  applied, so the summary a whole library's run returns holds none of the pictures it replaced
+  (`a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size`). The walk back reads the notes
+  without their pictures and each picture by id as a file first asks for it, each read once
+  (`PicturesPutBack`), rather than every row's copy up front
+  (`a_picture_the_last_tag_run_kept_per_file_is_kept_once`).
 - **The rows are read a page at a time, and a file is never split across two.** Planning a file needs
   its rows alone, so `retag::run` walks the catalog through `paged::Paging` — `ROWS_A_PAGE` (2 048) rows
   in path order past the last path handed out, the rows of the file a page ended in held back for the

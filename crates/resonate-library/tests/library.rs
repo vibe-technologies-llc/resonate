@@ -15116,8 +15116,22 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
             .all(|write| write.picture.is_some()),
         "a file's thumbnail was not offered the better cover"
     );
-    retagged(&library, true)?;
+    let applied = retagged(&library, true)?;
     assert_eq!(front_cover_side(&files[0]), Some(600));
+    assert!(
+        applied
+            .retagging
+            .writes
+            .iter()
+            .all(|write| write.was.picture.is_none()),
+        "a replaced picture was held past its page"
+    );
+    let kept: i64 = beside(&tree.path().join("library.db"))
+        .query_row("SELECT count(*) FROM retagged_pictures", [], |row| {
+            row.get(0)
+        })
+        .expect("the kept pictures count");
+    assert_eq!(kept, 1, "one thumbnail three files held was kept thrice");
 
     walked_back(&library, true)?;
     assert_eq!(

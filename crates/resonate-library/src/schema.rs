@@ -91,6 +91,17 @@ const MIGRATIONS: &[&str] = &[
          path TEXT PRIMARY KEY
      ) STRICT, WITHOUT ROWID;",
     "UPDATE tracks SET probe_again = 1 WHERE codec = 0;",
+    "CREATE TABLE retagged_pictures (
+         id      INTEGER PRIMARY KEY,
+         picture BLOB NOT NULL
+     ) STRICT;
+     ALTER TABLE retagged ADD COLUMN picture_id INTEGER;
+     INSERT INTO retagged_pictures (picture)
+          SELECT DISTINCT picture FROM retagged WHERE picture IS NOT NULL;
+     UPDATE retagged
+        SET picture_id = (SELECT p.id FROM retagged_pictures p WHERE p.picture = retagged.picture),
+            picture = NULL
+      WHERE picture IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -923,6 +934,59 @@ mod tests {
             })
             .expect("the queries read back");
         assert_eq!(parted, [(1, 6, 0), (2, 6, 1)]);
+    }
+
+    type KeptNote = (String, Option<Vec<u8>>, Option<Vec<u8>>);
+
+    #[test]
+    fn a_picture_the_last_tag_run_kept_per_file_is_kept_once() {
+        let connection = opened();
+        let keeping = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("CREATE TABLE retagged_pictures"))
+            .expect("the step that keeps a picture once");
+        lay_out_through(&connection, V1, &MIGRATIONS[..keeping])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO retagged (path, pictured, rated, picture) VALUES
+                     ('1.flac', 1, NULL, x'0102'),
+                     ('2.flac', 1, NULL, x'0102'),
+                     ('3.flac', 1, NULL, x'0304'),
+                     ('4.flac', 0, NULL, NULL);",
+            )
+            .expect("the notes are stored");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let kept: Vec<KeptNote> = connection
+            .prepare(
+                "SELECT r.path, r.picture, p.picture
+                   FROM retagged r LEFT JOIN retagged_pictures p ON p.id = r.picture_id
+                  ORDER BY r.path",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                    .collect()
+            })
+            .expect("the notes read back");
+        let pictures: i64 = connection
+            .query_row("SELECT count(*) FROM retagged_pictures", [], |row| {
+                row.get(0)
+            })
+            .expect("the pictures count");
+
+        assert_eq!(
+            kept,
+            [
+                ("1.flac".to_owned(), None, Some(vec![1, 2])),
+                ("2.flac".to_owned(), None, Some(vec![1, 2])),
+                ("3.flac".to_owned(), None, Some(vec![3, 4])),
+                ("4.flac".to_owned(), None, None),
+            ]
+        );
+        assert_eq!(pictures, 2);
     }
 
     #[test]

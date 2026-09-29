@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fs, mem,
     path::{Path, PathBuf},
     sync::{
@@ -9,12 +10,13 @@ use std::{
     time::SystemTime,
 };
 
+use ahash::AHashMap;
 use resonate_codec::{
     CoverArt, ImageFormat, Pictured, Picturing, Popularity, Rated, TagEdit, TagField, TagSet,
     TagSink, Writing,
 };
 use resonate_core::{AlbumId, MediaLocation, TrackId};
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
     Library, StoreOp,
@@ -245,6 +247,9 @@ fn run(
         let mut planned = planned(library, &page, tags, progress, &mut sleeve);
         if options.apply {
             apply(library, tags, &mut planned, progress, &mut noted)?;
+        }
+        for write in &mut planned.writes {
+            write.was.picture = None;
         }
         retagging.writes.append(&mut planned.writes);
         retagging.passed_over.append(&mut planned.passed_over);
@@ -549,6 +554,34 @@ impl Undoing {
 #[derive(Default)]
 pub(crate) struct Noted {
     begun: bool,
+    pictures: KeptPictures,
+}
+
+const PICTURES_WEIGHED_AGAINST: usize = 8;
+
+#[derive(Default)]
+pub(crate) struct KeptPictures {
+    recent: VecDeque<(Arc<CoverArt>, i64)>,
+}
+
+impl KeptPictures {
+    fn id_of(&mut self, tx: &Transaction<'_>, picture: &Arc<CoverArt>) -> Result<i64> {
+        if let Some((_, id)) = self
+            .recent
+            .iter()
+            .find(|(held, _)| Arc::ptr_eq(held, picture) || held.bytes == picture.bytes)
+        {
+            return Ok(*id);
+        }
+
+        tx.prepare_cached("INSERT INTO retagged_pictures (picture) VALUES (?1)")
+            .and_then(|mut statement| statement.execute(params![picture.bytes.as_slice()]))
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        let id = tx.last_insert_rowid();
+        self.recent.push_front((Arc::clone(picture), id));
+        self.recent.truncate(PICTURES_WEIGHED_AGAINST);
+        Ok(id)
+    }
 }
 
 fn apply(
@@ -565,7 +598,7 @@ fn apply(
     }
     let undoing: Vec<Undoing> = planned.iter().map(Undoing::of).collect();
     let begins = !noted.begun;
-    library.retag_to_be_written(&undoing, begins)?;
+    library.retag_to_be_written(&undoing, begins, &mut noted.pictures)?;
     noted.begun = true;
 
     let mut followed = Vec::with_capacity(planned.len());
@@ -785,26 +818,35 @@ pub(crate) fn note_what_was_there(
     tx: &Transaction<'_>,
     undoing: &[Undoing],
     begins: bool,
+    pictures: &mut KeptPictures,
 ) -> Result<()> {
     if begins {
-        tx.execute_batch("DELETE FROM retagged; DELETE FROM retagged_fields;")
-            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        tx.execute_batch(
+            "DELETE FROM retagged; DELETE FROM retagged_fields; DELETE FROM retagged_pictures;",
+        )
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        pictures.recent.clear();
     }
     for held in undoing {
         let path = store::path_text(&held.path)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture)
+        let picture = held
+            .was
+            .picture
+            .as_ref()
+            .map(|picture| pictures.id_of(tx, picture))
+            .transpose()?;
+        tx.prepare_cached(
+            "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture_id)
              VALUES (?1, ?2, ?3, ?4)",
-            params![
+        )
+        .and_then(|mut statement| {
+            statement.execute(params![
                 path,
                 held.pictured,
                 rating_kept(held.was.rated),
-                held.was
-                    .picture
-                    .as_ref()
-                    .map(|picture| picture.bytes.as_slice())
-            ],
-        )
+                picture
+            ])
+        })
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
         for (field, was) in &held.was.fields {
             tx.execute(
@@ -822,12 +864,29 @@ pub(crate) struct KeptRetag {
     pub path: PathBuf,
     pub pictured: bool,
     pub rated: Option<i64>,
-    pub picture: Option<CoverArt>,
+    pub picture: Option<i64>,
     pub fields: Vec<(TagField, Option<String>)>,
+}
+
+#[derive(Default)]
+struct PicturesPutBack {
+    read: AHashMap<i64, Option<Arc<CoverArt>>>,
+}
+
+impl PicturesPutBack {
+    fn of(&mut self, library: &Library, id: i64) -> Result<Option<Arc<CoverArt>>> {
+        if let Some(held) = self.read.get(&id) {
+            return Ok(held.clone());
+        }
+        let read = library.retagged_picture(id)?.map(Arc::new);
+        self.read.insert(id, read.clone());
+        Ok(read)
+    }
 }
 
 fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Result<Retagging> {
     let mut retagging = Retagging::default();
+    let mut pictures = PicturesPutBack::default();
     for kept in library.last_retag()? {
         if progress.is_cancelled() {
             break;
@@ -851,6 +910,10 @@ fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Re
             }
         };
         let popularity = rating_read(kept.rated);
+        let put_back = match kept.picture {
+            Some(id) => pictures.of(library, id)?,
+            None => None,
+        };
         let rated = popularity
             .is_some()
             .then(|| tags.rated(&location).ok())
@@ -875,18 +938,38 @@ fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Re
                 })
                 .collect(),
             taken: taken.into_iter().map(|(field, _)| *field).collect(),
-            unpictured: kept.pictured && kept.picture.is_none(),
-            picture: kept.picture.map(Arc::new),
+            unpictured: kept.pictured && put_back.is_none(),
+            picture: put_back,
             popularity,
         });
     }
     Ok(retagging)
 }
 
+pub(crate) fn retagged_picture(
+    connection: &rusqlite::Connection,
+    id: i64,
+) -> Result<Option<CoverArt>> {
+    let bytes: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT picture FROM retagged_pictures WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(bytes.and_then(|bytes| {
+        Some(CoverArt {
+            format: ImageFormat::sniff(&bytes)?,
+            bytes,
+        })
+    }))
+}
+
 pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRetag>> {
     let mut statement = connection
         .prepare(
-            "SELECT r.path, r.pictured, r.rated, f.field, f.was, r.picture
+            "SELECT r.path, r.pictured, r.rated, f.field, f.was, r.picture_id
                FROM retagged r LEFT JOIN retagged_fields f ON f.path = r.path
               ORDER BY r.path, f.field",
         )
@@ -899,7 +982,7 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
                 row.get::<_, Option<i64>>(2)?,
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<Vec<u8>>>(5)?,
+                row.get::<_, Option<i64>>(5)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -913,12 +996,7 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
                 path,
                 pictured,
                 rated,
-                picture: picture.and_then(|bytes| {
-                    Some(CoverArt {
-                        format: ImageFormat::sniff(&bytes)?,
-                        bytes,
-                    })
-                }),
+                picture,
                 fields: Vec::new(),
             });
         }
