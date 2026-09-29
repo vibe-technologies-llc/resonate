@@ -41,8 +41,6 @@ service or a format — and is not worked until that moves; everything else is o
   one
 - Chapters — an m4b's, MP3 `CHAP`, Matroska's — are never read, so only a `CUESHEET` cuts a file
   into rows
-- The Matroska cluster walk stops at the first cluster of unknown size, so a live-recorded mkv or
-  WebM has no length and no seek bar
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is

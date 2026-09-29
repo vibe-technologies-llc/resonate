@@ -109,7 +109,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   where the decoder already is. It also walks the clusters, taking each one's `Timestamp` and the
   furthest `SimpleBlock`/`Block` offset inside, so a file declaring no `Duration` — every file a muxer
   streamed rather than seeked back to finish, what `ffmpeg -f matroska -` writes — still has a length
-  and a seek bar. The count is deliberately a *lower* bound — where the last block starts, short by that
+  and a seek bar. A cluster of unknown size — what a browser's `MediaRecorder` and GStreamer's
+  streamable `matroskamux` write, ffmpeg sizing each cluster even on a pipe — runs to the next element
+  a segment holds (`SEGMENT_CHILDREN`), where the walk goes on, or to the end of the file. The count is deliberately a *lower* bound — where the last block starts, short by that
   block's length, never long. `Segment::duration` keeps the declaration wherever the clusters stay
   within it (the declaration being exact and the count not) and prefers the count only where blocks
   exist past the declared end, the one case the writer is provably wrong. A declaration too *long* is

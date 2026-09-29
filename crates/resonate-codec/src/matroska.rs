@@ -31,6 +31,21 @@ const SIMPLE_BLOCK: u32 = 0x00A3;
 const BLOCK_GROUP: u32 = 0x00A0;
 const BLOCK: u32 = 0x00A1;
 const DISCARD_PADDING: u32 = 0x75A2;
+const SEEK_HEAD: u32 = 0x114D_9B74;
+const CUES: u32 = 0x1C53_BB6B;
+const TAGS: u32 = 0x1254_C367;
+const CHAPTERS: u32 = 0x1043_A770;
+const ATTACHMENTS: u32 = 0x1941_A469;
+const SEGMENT_CHILDREN: [u32; 8] = [
+    SEEK_HEAD,
+    INFO,
+    TRACKS,
+    CLUSTER,
+    CUES,
+    TAGS,
+    CHAPTERS,
+    ATTACHMENTS,
+];
 
 const DEFAULT_TIMESTAMP_SCALE: u64 = 1_000_000;
 const MAX_ID_BYTES: u32 = 4;
@@ -290,14 +305,18 @@ fn count_clusters<S: Read + Seek + ?Sized>(
         let Some(element) = element(source) else {
             break;
         };
-        if element.id == CLUSTER {
-            if element.length == Length::Unknown {
-                break;
+        let next = if element.id == CLUSTER {
+            let unsized_until = read_cluster(source, element.end(), &mut counted);
+            match element.length {
+                Length::Known(_) => skip(source, &element),
+                Length::Unknown => {
+                    unsized_until.and_then(|next| source.seek(SeekFrom::Start(next)).ok())
+                }
             }
-            read_cluster(source, element.end(), &mut counted);
-        }
-
-        let Some(next) = skip(source, &element) else {
+        } else {
+            skip(source, &element)
+        };
+        let Some(next) = next else {
             break;
         };
         if within.is_some_and(|within| next >= within) {
@@ -312,18 +331,29 @@ fn count_clusters<S: Read + Seek + ?Sized>(
     counted
 }
 
-fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, into: &mut Counted) {
-    let Ok(body) = source.stream_position() else {
-        return;
-    };
+fn read_cluster<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    limit: Option<u64>,
+    into: &mut Counted,
+) -> Option<u64> {
+    let body = source.stream_position().ok()?;
     let mut at = None;
     let mut offsets = Offsets::default();
     let mut reached_the_end = false;
+    let mut unsized_until = None;
 
     for _ in 0..MAX_BLOCKS {
+        let Ok(starts) = source.stream_position() else {
+            break;
+        };
         let Some(element) = element(source) else {
             break;
         };
+        if limit.is_none() && SEGMENT_CHILDREN.contains(&element.id) {
+            unsized_until = Some(starts);
+            reached_the_end = true;
+            break;
+        }
         match element.id {
             CLUSTER_TIMESTAMP => at = uint(source, element.length),
             SIMPLE_BLOCK => {
@@ -360,6 +390,7 @@ fn read_cluster<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>, int
         into.blocks = into.blocks.saturating_add(offsets.blocks);
     }
     let _ = source.seek(SeekFrom::Start(body));
+    unsized_until
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -673,6 +704,9 @@ fn read_wavpack_coding<S: Read + Seek + ?Sized>(
         {
             return Some(coding);
         }
+        if element.length == Length::Unknown {
+            break;
+        }
 
         let next = skip(source, &element)?;
         if within.is_some_and(|within| next >= within) {
@@ -689,6 +723,9 @@ fn wavpack_coding_in_cluster<S: Read + Seek + ?Sized>(
 ) -> Option<Coding> {
     for _ in 0..MAX_BLOCKS {
         let element = element(source)?;
+        if limit.is_none() && SEGMENT_CHILDREN.contains(&element.id) {
+            break;
+        }
         let block = match element.id {
             SIMPLE_BLOCK => Some(element),
             BLOCK_GROUP => find(source, BLOCK, element.end()),
@@ -701,7 +738,7 @@ fn wavpack_coding_in_cluster<S: Read + Seek + ?Sized>(
         }
 
         let next = skip(source, &element)?;
-        if limit.is_none_or(|limit| next >= limit) {
+        if limit.is_some_and(|limit| next >= limit) {
             break;
         }
     }
@@ -1180,21 +1217,49 @@ mod tests {
         );
     }
 
+    fn unsized_cluster(at: u64, offsets: &[i16]) -> Vec<u8> {
+        let mut cluster = CLUSTER.to_be_bytes().to_vec();
+        cluster.push(UNBOUNDED);
+        cluster.extend_from_slice(&element(CLUSTER_TIMESTAMP, &at.to_be_bytes()));
+        for offset in offsets {
+            cluster.extend_from_slice(&simple_block(*offset));
+        }
+        cluster
+    }
+
     #[test]
-    fn a_cluster_of_unknown_length_ends_the_count_rather_than_being_guessed_at() {
+    fn a_live_recording_of_clusters_of_unknown_length_is_counted_to_its_last_block() {
+        let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+        let mut segment = SEGMENT.to_be_bytes().to_vec();
+        segment.push(UNBOUNDED);
+        segment.extend_from_slice(&element(INFO, &scale));
+        segment.extend_from_slice(&unsized_cluster(0, &[0, 500]));
+        segment.extend_from_slice(&unsized_cluster(1_000, &[0, 400]));
+        segment.extend_from_slice(&unsized_cluster(2_000, &[0, 750]));
+
+        let mut bytes = element(EBML_HEADER, b"an ebml header");
+        bytes.extend_from_slice(&segment);
+
+        assert_eq!(
+            read_segment(&mut Cursor::new(bytes)).duration(),
+            Some(Duration::from_millis(2_750))
+        );
+    }
+
+    #[test]
+    fn a_cluster_of_unknown_length_ends_where_the_next_element_of_the_segment_begins() {
         let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
         let mut segment = element(INFO, &scale);
-        segment.extend_from_slice(&cluster(0, &[0, 500]));
-        segment.extend_from_slice(&CLUSTER.to_be_bytes());
-        segment.push(UNBOUNDED);
-        segment.extend_from_slice(&element(CLUSTER_TIMESTAMP, &9_000_u64.to_be_bytes()));
+        segment.extend_from_slice(&unsized_cluster(0, &[0, 500]));
+        segment.extend_from_slice(&element(CUES, b"a cue point or two"));
+        segment.extend_from_slice(&cluster(3_000, &[0, 250]));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
         bytes.extend_from_slice(&element(SEGMENT, &segment));
 
         assert_eq!(
             read_segment(&mut Cursor::new(bytes)).duration(),
-            Some(Duration::from_millis(500))
+            Some(Duration::from_millis(3_250))
         );
     }
 
