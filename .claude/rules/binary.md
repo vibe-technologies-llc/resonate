@@ -121,7 +121,14 @@ setting where a silent fallback would hide the diagnostics being reached for.
 Loaded from `$XDG_CONFIG_HOME/resonate/config.toml`, or `--config <FILE>`, which must exist where
 the XDG path may not. A CLI flag outranks the file, the file outranks `EngineConfig`'s defaults,
 and an unknown key warns through `tracing` rather than failing. Every key is a `ConfigKey` variant
-(`ConfigKey::ALL` is the list), so a bad value names the key without prose in an error. Eight of
+(`ConfigKey::ALL` is the list), so a bad value names the key without prose in an error. **A value
+that will not read costs its key alone.** `Config::take` reads one key and answers the typed
+`ConfigType` or `ConfigValue` refusal; `parse` hands each to the caller's `refused`, and
+`Config::read_from`'s warns and leaves the key at its default, so a pane renamed under `last-tab`
+or a `window-size` from another build no longer fails every command — `sleep off` and `mcp`
+included — while a file that is not TOML still does
+(`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
+collects the refusals, so each reader's refusal is still asserted. Eight of
 the seventy have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
 `noise-shaping` and `bit-perfect` (as `--no-bit-perfect`); the other sixty-two are set only by the
 settings pane and the file:

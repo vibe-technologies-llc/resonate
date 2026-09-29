@@ -372,7 +372,9 @@ pub fn load(explicit: Option<&Path>) -> Result<Config> {
     };
     Ok(Config {
         read_from: Some(path.clone()),
-        ..parse(&path, &text)?
+        ..parse(&path, &text, |error| {
+            tracing::warn!(%error, "leaving a setting that will not read at its default");
+        })?
     })
 }
 
@@ -421,7 +423,7 @@ fn document(path: &Path, text: &str) -> Result<DocumentMut> {
     })
 }
 
-fn parse(path: &Path, text: &str) -> Result<Config> {
+fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> Result<Config> {
     let document = document(path, text)?;
 
     let mut config = Config::default();
@@ -430,9 +432,17 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
             tracing::warn!(key = name, path = %path.display(), "ignoring an unknown setting");
             continue;
         };
-        let at = At { path, key };
+        if let Err(error) = config.take(At { path, key }, value) {
+            refused(error);
+        }
+    }
+    Ok(config)
+}
 
-        match key {
+impl Config {
+    fn take(&mut self, at: At<'_>, value: &Item) -> Result<()> {
+        let config = self;
+        match at.key {
             ConfigKey::Sink => config.sink = Some(NodeName::new(at.string(value)?)),
             ConfigKey::Library => config.library = Some(PathBuf::from(at.string(value)?)),
             ConfigKey::Vault => config.vault = Some(PathBuf::from(at.string(value)?)),
@@ -564,8 +574,8 @@ fn parse(path: &Path, text: &str) -> Result<Config> {
                 config.buffer = Some(Duration::from_millis(millis));
             }
         }
+        Ok(())
     }
-    Ok(config)
 }
 
 #[derive(Clone, Copy)]
@@ -905,7 +915,33 @@ mod tests {
     use super::*;
 
     fn read(text: &str) -> Result<Config> {
-        parse(Path::new("/config.toml"), text)
+        let mut refusals = Vec::new();
+        let config = parse(Path::new("/config.toml"), text, |error| {
+            refusals.push(error)
+        })?;
+        match refusals.into_iter().next() {
+            Some(error) => Err(error),
+            None => Ok(config),
+        }
+    }
+
+    #[test]
+    fn a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read() {
+        let mut refusals = Vec::new();
+
+        let config = parse(
+            Path::new("/config.toml"),
+            "last-tab = \"a pane of another build\"\nquality = \"fast\"\n\
+             window-size = \"wide\"\nonline = false\n",
+            |error| refusals.push(error),
+        )
+        .expect("a file whose values will not all read still reads");
+
+        assert_eq!(refusals.len(), 2, "{refusals:?}");
+        assert_eq!(config.last_tab, None);
+        assert_eq!(config.window_size, None);
+        assert_eq!(config.quality, Some(Quality::Fast));
+        assert_eq!(config.online, Some(false));
     }
 
     struct Scratch {

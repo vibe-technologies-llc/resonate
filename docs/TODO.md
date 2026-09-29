@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- One unreadable value in `config.toml` — a pane renamed under `last-tab`, a `window-size` from
-  another build — fails every command, `resonate sleep off` and `resonate mcp` included, where an
-  unknown key only warns
 - `resonate mcp` installs no signal handling, so a client ending a session with `SIGTERM` kills a
   scan or a lookup mid-file rather than stopping it at a file boundary as every headless pass does
 - `resonate listen --seconds` is unbounded where `listen-for` is held to 4 to 60, and
