@@ -2356,6 +2356,29 @@ fn a_track_reads_back_by_its_own_id() -> Result<()> {
 }
 
 #[test]
+fn a_queue_of_tracks_and_their_albums_reads_back_in_one_pass() -> Result<()> {
+    let (_tree, library) = scanned_two_discs();
+    let rows = library.tracks(&TrackQuery::default())?;
+    let mut ids: Vec<TrackId> = rows.iter().map(|row| row.id).collect();
+    ids.extend(ids.clone());
+    ids.push(TrackId::MAX);
+
+    let mut read = library.tracks_with_ids(&ids)?;
+    read.sort_by_key(|track| track.id);
+    let mut wanted = rows.clone();
+    wanted.sort_by_key(|track| track.id);
+    assert_eq!(read, wanted);
+
+    let albums: Vec<AlbumId> = rows.iter().filter_map(|row| row.album_id).collect();
+    let titles = library.album_titles(&albums)?;
+    assert!(!titles.is_empty());
+    for (album, title) in titles {
+        assert_eq!(library.album(album)?.map(|held| held.title), Some(title));
+    }
+    Ok(())
+}
+
+#[test]
 fn a_file_library_survives_being_closed_and_reopened() -> Result<()> {
     let tree = Tree::new();
     tree.write("one.wav", &Wav::new().text(TITLE, "persistent").build());

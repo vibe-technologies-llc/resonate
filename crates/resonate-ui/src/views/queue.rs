@@ -1,10 +1,11 @@
 use std::{cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
 
+use ahash::{AHashMap, AHashSet};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
     uniform_list,
 };
-use resonate_core::{Span, TrackId};
+use resonate_core::{AlbumId, Span, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem};
 use resonate_library::{Cut, Direction, Favoured, Library, Lit, RowOrder, Track};
 use smallvec::{SmallVec, smallvec};
@@ -26,6 +27,13 @@ use crate::{
         sorting,
     },
 };
+
+#[derive(Default)]
+pub(crate) struct QueueMeasure {
+    held: Option<QueueLength>,
+    asked: Option<QueueLength>,
+    reading: Option<Task<()>>,
+}
 
 #[derive(Default)]
 pub(crate) struct QueueNames {
@@ -59,10 +67,10 @@ impl RootView {
             let names: Arc<[String]> = cx
                 .background_executor()
                 .spawn(async move {
-                    queued
-                        .rows
-                        .iter()
-                        .map(|item| queued_name(&library, &player, item))
+                    queued_rows(&library, &queued.rows)
+                        .into_iter()
+                        .zip(queued.rows.iter())
+                        .map(|(track, item)| queued_name(track, &player, item))
                         .collect()
                 })
                 .await;
@@ -76,8 +84,8 @@ impl RootView {
     }
 }
 
-fn queued_name(library: &Library, player: &Player, item: &QueueItem) -> String {
-    match queued_row(library, item) {
+fn queued_name(track: Option<Track>, player: &Player, item: &QueueItem) -> String {
+    match track {
         Some(track) => track.title,
         None => player
             .media(&item.location, item.span)
@@ -86,12 +94,25 @@ fn queued_name(library: &Library, player: &Player, item: &QueueItem) -> String {
     }
 }
 
-fn queued_row(library: &Library, item: &QueueItem) -> Option<Track> {
-    match library.track(item.id) {
-        Ok(Some(track)) if track.location == item.location => return Some(track),
-        Ok(_) => {}
-        Err(error) => tracing::warn!(%error, "a queued track could not be read by id"),
-    }
+fn queued_rows(library: &Library, rows: &[QueueItem]) -> Vec<Option<Track>> {
+    let ids: Vec<TrackId> = rows.iter().map(|item| item.id).collect();
+    let by_id: AHashMap<TrackId, Track> = match library.tracks_with_ids(&ids) {
+        Ok(read) => read.into_iter().map(|track| (track.id, track)).collect(),
+        Err(error) => {
+            tracing::warn!(%error, "the queued tracks could not be read by id");
+            AHashMap::new()
+        }
+    };
+
+    rows.iter()
+        .map(|item| match by_id.get(&item.id) {
+            Some(track) if track.location == item.location => Some(track.clone()),
+            _ => queued_at(library, item),
+        })
+        .collect()
+}
+
+fn queued_at(library: &Library, item: &QueueItem) -> Option<Track> {
     library
         .track_at(item.location.as_path()?, item.span)
         .inspect_err(|error| tracing::warn!(%error, "a queued track could not be read by path"))
@@ -731,40 +752,63 @@ impl RootView {
         self.took_out.offered(queue).is_some()
     }
 
-    fn queue_length(&mut self, queue: &[QueueItem], cx: &mut Context<Self>) -> Duration {
+    fn queue_length(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
         let measured = QueueLength {
             queue: self.player.read(cx).queued().revision,
             library: self.library.read(cx).revision(),
             total: Duration::ZERO,
         };
-        if let Some(held) = self.queue_length
+        if let Some(held) = self.queue_length.held
             && held.measures(measured)
         {
-            return held.total;
+            return Some(held.total);
         }
 
-        let total = queue
-            .iter()
-            .filter_map(|item| {
-                self.library
-                    .update(cx, |library, _| library.track_of(item))
-                    .and_then(|track| {
-                        track
-                            .duration
-                            .map(|frames| frames.to_duration(track.spec.rate))
-                    })
-            })
-            .sum();
-        self.queue_length = Some(QueueLength { total, ..measured });
-        total
+        self.measure_the_queue(measured, cx);
+        self.queue_length.held.map(|held| held.total)
+    }
+
+    fn measure_the_queue(&mut self, measured: QueueLength, cx: &mut Context<Self>) {
+        if self
+            .queue_length
+            .asked
+            .is_some_and(|asked| asked.measures(measured))
+        {
+            return;
+        }
+        self.queue_length.asked = Some(measured);
+        let queued = self.player.read(cx).queued();
+        let library = self.library.read(cx).catalog();
+
+        self.queue_length.reading = Some(cx.spawn(async move |this, cx| {
+            let total: Duration = cx
+                .background_executor()
+                .spawn(async move {
+                    queued_rows(&library, &queued.rows)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|track| {
+                            track
+                                .duration
+                                .map(|frames| frames.to_duration(track.spec.rate))
+                        })
+                        .sum()
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                this.queue_length.held = Some(QueueLength { total, ..measured });
+                cx.notify();
+            });
+            let _ = landed;
+        }));
     }
 
     fn queue_heading(&mut self, queue: &[QueueItem], cx: &mut Context<Self>) -> Div {
         let position = self.player.read(cx).state().queue_position;
-        let total = self.queue_length(queue, cx);
+        let total = self.queue_length(cx);
         let mut under: format::Parts<String> =
             smallvec![format::counted(queue.len(), "track", "tracks")];
-        if !total.is_zero() {
+        if let Some(total) = total.filter(|total| !total.is_zero()) {
             under.push(format::spanned(total));
         }
         if let Some(position) = position {
@@ -931,46 +975,90 @@ impl RootView {
         self.queue_order = order;
         self.queue_reading = reading;
 
-        let queue = self.player.read(cx).queue();
-        if queue.len() < 2 {
+        let queued = self.player.read(cx).queued();
+        if queued.rows.len() < 2 {
             cx.notify();
             return;
         }
+        let player = self.player.read(cx).engine();
+        let library = self.library.read(cx).catalog();
 
-        let mut keyed: Vec<Keyed> = queue
-            .iter()
-            .enumerate()
-            .map(|(row, item)| self.keyed(row, item, cx))
-            .collect();
-        keyed.sort_by(|left, right| {
-            let weighed = left.weighed(order, right);
-            match reading {
-                Direction::Ascending => weighed,
-                Direction::Descending => weighed.reverse(),
-            }
-        });
-
-        self.send(
-            Command::Order(keyed.into_iter().map(|key| key.row).collect()),
-            cx,
-        );
+        self.queue_ordered = Some(cx.spawn(async move |this, cx| {
+            let rows = Arc::clone(&queued.rows);
+            let ordered: Vec<usize> = cx
+                .background_executor()
+                .spawn(async move { ordered_rows(&library, &player, &rows, order, reading) })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                if this.player.read(cx).queued().revision != queued.revision {
+                    return;
+                }
+                this.send(Command::Order(ordered), cx);
+                cx.notify();
+            });
+            let _ = landed;
+        }));
         cx.notify();
     }
+}
 
-    fn keyed(&self, row: usize, item: &QueueItem, cx: &mut Context<Self>) -> Keyed {
-        let track = self.library.update(cx, |library, _| library.track_of(item));
+fn ordered_rows(
+    library: &Library,
+    player: &Player,
+    rows: &[QueueItem],
+    order: RowOrder,
+    reading: Direction,
+) -> Vec<usize> {
+    let tracks = queued_rows(library, rows);
+    let albums: Vec<AlbumId> = tracks
+        .iter()
+        .flatten()
+        .filter_map(|track| track.album_id)
+        .collect::<AHashSet<_>>()
+        .into_iter()
+        .collect();
+    let titles: AHashMap<AlbumId, String> = match library.album_titles(&albums) {
+        Ok(titles) => titles.into_iter().collect(),
+        Err(error) => {
+            tracing::warn!(%error, "the queued albums could not be read");
+            AHashMap::new()
+        }
+    };
+
+    let mut keyed: Vec<Keyed> = rows
+        .iter()
+        .zip(tracks)
+        .enumerate()
+        .map(|(row, (item, track))| Keyed::of(row, item, track, &titles, player))
+        .collect();
+    keyed.sort_by(|left, right| {
+        let weighed = left.weighed(order, right);
+        match reading {
+            Direction::Ascending => weighed,
+            Direction::Descending => weighed.reverse(),
+        }
+    });
+    keyed.into_iter().map(|key| key.row).collect()
+}
+
+impl Keyed {
+    fn of(
+        row: usize,
+        item: &QueueItem,
+        track: Option<Track>,
+        titles: &AHashMap<AlbumId, String>,
+        player: &Player,
+    ) -> Self {
         let album = track
             .as_ref()
             .and_then(|track| track.album_id)
-            .and_then(|id| {
-                self.library
-                    .update(cx, |library, _| library.album_title(id))
-            });
+            .and_then(|id| titles.get(&id))
+            .map(String::as_str);
 
         match track {
-            Some(track) => Keyed {
+            Some(track) => Self {
                 row,
-                album: folded(album.as_deref()),
+                album: folded(album),
                 disc: track.disc_number.unwrap_or(u32::MAX),
                 number: track.track_number.unwrap_or(u32::MAX),
                 artist: folded(track.artist.as_deref()),
@@ -981,10 +1069,10 @@ impl RootView {
                 file: format::stem(&item.location),
             },
             None => {
-                let info = self.player.read(cx).media(&item.location, item.span);
+                let info = player.media(&item.location, item.span);
                 let tags = info.as_ref().map(|info| &info.tags);
 
-                Keyed {
+                Self {
                     row,
                     album: folded(tags.and_then(|tags| tags.album.as_deref())),
                     disc: u32::MAX,

@@ -91,6 +91,7 @@ const CD_SAMPLE_RATE: u32 = 44_100;
 
 const CD_SAMPLE_DEPTH: u8 = 16;
 
+const IDS_READ_AT_ONCE: usize = 500;
 pub(crate) const TRACK_COLUMNS: &str =
     "tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album_id,
      tracks.track_number, tracks.disc_number, tracks.duration, tracks.sample_rate, tracks.channels,
@@ -1019,6 +1020,56 @@ impl Library {
         })?;
 
         raw.map(RawTrack::into_track).transpose()
+    }
+
+    pub fn tracks_with_ids(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
+        let raw = self.inner.read(|connection| {
+            let mut read = Vec::with_capacity(ids.len());
+            for batch in ids.chunks(IDS_READ_AT_ONCE) {
+                let held = vec!["?"; batch.len()].join(",");
+                let mut statement = connection
+                    .prepare(&format!(
+                        "SELECT {TRACK_COLUMNS} FROM tracks WHERE id IN ({held})"
+                    ))
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                let rows = statement
+                    .query_map(
+                        params_from_iter(batch.iter().map(|id| id.get() as i64)),
+                        RawTrack::read,
+                    )
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))?;
+                read.extend(rows);
+            }
+            Ok(read)
+        })?;
+
+        raw.into_iter().map(RawTrack::into_track).collect()
+    }
+
+    pub fn album_titles(&self, ids: &[AlbumId]) -> Result<Vec<(AlbumId, String)>> {
+        self.inner.read(|connection| {
+            let mut read = Vec::with_capacity(ids.len());
+            for batch in ids.chunks(IDS_READ_AT_ONCE) {
+                let held = vec!["?"; batch.len()].join(",");
+                let mut statement = connection
+                    .prepare(&format!(
+                        "SELECT id, title FROM albums WHERE id IN ({held})"
+                    ))
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                let rows = statement
+                    .query_map(
+                        params_from_iter(batch.iter().map(|id| id.get() as i64)),
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                    )
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))?;
+                read.extend(rows.into_iter().filter_map(|(id, title)| {
+                    Some((AlbumId::new(u64::try_from(id).ok()?).ok()?, title))
+                }));
+            }
+            Ok(read)
+        })
     }
 
     pub fn track_at(&self, path: &Path, span: Option<FrameSpan>) -> Result<Option<Track>> {

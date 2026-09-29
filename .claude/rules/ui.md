@@ -195,8 +195,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   box's and `artists.key`'s fold — so *przybylowicz* reaches *Przybyłowicz* at the queue as in the search
   field. **The names a jump reads are read off the render thread.** `QueueNames` holds the queue's
   titles against the `Queued::revision` read at, and `names_in_the_queue` hands them out only while that
-  revision stands; otherwise it asks the background executor — by id, then path, then `Player::media`,
-  then the stem, the queue's own row order — and a keystroke before they land is still taken as a jump,
+  revision stands; otherwise it asks the background executor — `queued_rows` reads the whole queue by
+  id in one `Library::tracks_with_ids` pass of 500-id batches, a row whose id names another file by
+  path, then `Player::media`, then the stem, the queue's own row order — and a keystroke before they
+  land is still taken as a jump,
   `jump_where_typed` making it once they do. The queue pane asks as it draws, so the names are usually
   there before the first letter. They were once read on the first keystroke, on the render thread, at up
   to two SQLite reads a row through a cache smaller than a long queue.
@@ -1978,8 +1980,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   name it read and reads again where they disagree. `album_title` answers for any album — the scoped one,
   the listing's, or one read by id into a bounded `read_albums` the next listing load throws away — so a
   search or page leaving the playing album out does not blank the playback bar, the magnifier's caption
-  or the queue's album order. `queue_heading`'s total is measured once per queue and library revision
-  into `RootView::queue_length` rather than by reading every queued row sixty times a second.
+  or the queue's album order. **What the queue pane weighs every row for is read off the render
+  thread.** `queue_heading`'s total is measured once per queue and library revision, in the background
+  through `queued_rows` (`QueueMeasure`), the heading keeping the last total until the new one lands;
+  and a sort chip keys every row in the background too — `ordered_rows` reads the tracks in one pass
+  and their album titles in another (`Library::album_titles`) — sending the order only if the queue is
+  still the revision it keyed. Both read on the UI thread once, one row at a time past `NAMES_HELD`'s
+  4 096, so a counted play under a 20 000-row queue froze the window for some 40 000 reads.
 - **A row is keyed by what it holds, not where it stands.** gpui keeps a tooltip, a hover and a drag in
   element state under the element's id path, so a row keyed by index handed row N's tooltip — a
   favourite's *Take out of favourites* among them — to whatever row an edit moved into place N. A queue
