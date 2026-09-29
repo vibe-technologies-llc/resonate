@@ -1634,7 +1634,13 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Request::Lost` through the loop's own channel, a connection being impossible to tear down inside its
   own callback. `Lost` drops the streams and the graph, answers every pending `Sync` by dropping it,
   empties `Discovered` and announces each known sink removed, and a thread sends `Request::Reconnect` a
-  second later, again until a core connects. While there is none, a `Sync`, an open and a capture
+  second later, again until a core connects. **The first connect is one more of these tries**: a
+  daemon not there when `PipeWire::start` runs leaves the graph empty, warns and asks again a second
+  later, so a player started before its session's daemon, or in a session whose daemon is late,
+  finds the graph once it comes rather than the binary exiting
+  (`a_client_started_before_its_daemon_finds_the_graph_once_it_comes`, beside the restart in the
+  same `reconnect.rs`, each rerunning the test binary under a daemon of its own). While there is
+  none, a `Sync`, an open and a capture
   answer `Error::Disconnected` at once rather than timing out as `LoopStopped`, `PipeWire::unanswered`
   telling the two apart by the loop's `connected` flag. What comes back is announced as the first time,
   the registry handing the globals over again. `crates/resonate-pipewire/tests/reconnect.rs` is the

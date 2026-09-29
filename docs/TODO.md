@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- The PipeWire client needs the daemon at start: a failed first `connect` ends the thread and the
-  binary exits, where a daemon lost mid-run is waited for and reconnected
 - `Engine::fill` loops until the ring is full with no time slice, so a prime, a seek's refill or a
   large `SetBuffer` holds Pause and Stop behind it, and `wait_for_the_graph` enumerates the sinks
   inline for up to two seconds a pass

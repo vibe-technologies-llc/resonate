@@ -646,13 +646,16 @@ fn run(
         announce: announce.clone(),
     };
     let graph: Rc<RefCell<Option<Graph>>> = match reaching.connect() {
-        Ok(graph) => Rc::new(RefCell::new(Some(graph))),
+        Ok(graph) => {
+            connected.store(true, Ordering::Release);
+            Rc::new(RefCell::new(Some(graph)))
+        }
         Err(error) => {
-            let _ = ready.send(Err(error));
-            return;
+            tracing::warn!(%error, "no PipeWire daemon to reach yet; connecting once it is there");
+            reaching.ask_again_later();
+            Rc::new(RefCell::new(None))
         }
     };
-    connected.store(true, Ordering::Release);
 
     let active: Rc<RefCell<Option<ActiveStream>>> = Rc::new(RefCell::new(None));
     let heard: Rc<RefCell<Option<HeardStream>>> = Rc::new(RefCell::new(None));

@@ -12,7 +12,6 @@ use resonate_pipewire::{
 };
 
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
-const THIS_TEST: &str = "a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it";
 const SINK: &str = "resonate-hosted-sink";
 const SOCKET: &str = "pipewire-0";
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -153,20 +152,17 @@ fn request(sink: &SinkInfo) -> StreamRequest {
     }
 }
 
-fn a_folder_of_its_own() -> PathBuf {
-    let folder = env::temp_dir().join(format!("rpw-{}", std::process::id()));
+fn a_folder_of_its_own(tag: &str) -> PathBuf {
+    let folder = env::temp_dir().join(format!("rpw-{}-{tag}", std::process::id()));
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     folder
 }
 
-fn runs_under_a_hosted_daemon() -> bool {
-    let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) else {
-        return false;
-    };
-    let Some(hosted) = Hosted::start(&folder) else {
+fn a_daemon_restarting_under_the_client(folder: &Path) {
+    let Some(hosted) = Hosted::start(folder) else {
         eprintln!("skipped: no pipewire binary to host a daemon with");
-        return true;
+        return;
     };
 
     let pipewire = PipeWire::start("resonate-reconnect-test").expect("the hosted daemon answers");
@@ -196,12 +192,58 @@ fn runs_under_a_hosted_daemon() -> bool {
         opens_again,
         "no stream opened on the daemon once it was back"
     );
-    true
+}
+
+fn a_daemon_coming_after_the_client(folder: &Path) {
+    let pipewire = PipeWire::start("resonate-reconnect-test")
+        .expect("the client starts with no daemon to reach");
+    let gone_at_first = told_it_is_disconnected(&pipewire);
+    let Some(hosted) = Hosted::start(folder) else {
+        eprintln!("skipped: no pipewire binary to host a daemon with");
+        return;
+    };
+
+    let found = the_hosted_sink(&pipewire);
+    let opened = found
+        .as_ref()
+        .map(|sink| pipewire.open(&request(sink), Box::new(Silence)).is_ok());
+
+    let _ = pipewire.shutdown();
+    hosted.kill();
+
+    assert!(gone_at_first, "the client did not say it had no daemon");
+    assert!(
+        found.is_some(),
+        "the sink was never found once the daemon came"
+    );
+    assert_eq!(
+        opened,
+        Some(true),
+        "no stream opened on the daemon that came"
+    );
 }
 
 #[test]
 fn a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it() {
-    if runs_under_a_hosted_daemon() {
+    hosted_as(
+        "a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it",
+        "r",
+        a_daemon_restarting_under_the_client,
+    );
+}
+
+#[test]
+fn a_client_started_before_its_daemon_finds_the_graph_once_it_comes() {
+    hosted_as(
+        "a_client_started_before_its_daemon_finds_the_graph_once_it_comes",
+        "b",
+        a_daemon_coming_after_the_client,
+    );
+}
+
+fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
+    if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
+        under(&folder);
         return;
     }
     if Command::new("pipewire")
@@ -215,9 +257,9 @@ fn a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it() {
         return;
     }
 
-    let folder = a_folder_of_its_own();
+    let folder = a_folder_of_its_own(tag);
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([THIS_TEST, "--exact", "--nocapture"])
+        .args([this_test, "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
         .status()
