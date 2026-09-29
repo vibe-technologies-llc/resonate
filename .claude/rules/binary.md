@@ -76,7 +76,10 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   (`rustix` was already in the tree under zbus and libspa, so the feature is the whole cost), keeps
   `ISIG` so an interrupt is still a signal, and restores the terminal on drop; the signal fallback's
   `process::exit` goes through `signals::leave`, which restores it first, since a wedged front
-  end's exit runs no destructor. `input::keys` reads bytes: a letter acts when pressed, the arrows
+  end's exit runs no destructor. A panic runs none either — the release profile aborts — so the
+  first `KeyAtATime` installs a panic hook, once, that puts the saved modes back (through
+  `try_lock`, a panic under the lock not deadlocking it) before the hook it replaced reports the
+  panic. `input::keys` reads bytes: a letter acts when pressed, the arrows
   seek and turn the volume, and a digit or `:` starts a line drawn in the readout and read through
   the same `parse` a piped line is (`90` enter seeks, `:z track` sets the timer). Where stdout is a
   terminal too, `readout::Readout` redraws one line — the transport's glyph, position out of

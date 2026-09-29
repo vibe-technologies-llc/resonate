@@ -1,10 +1,10 @@
 use std::{
     io::{self, BufRead as _, Read as _},
-    thread,
+    panic, thread,
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, Once};
 use rustix::termios::{self, LocalModes, OptionalActions, SpecialCodeIndex, Termios};
 
 use crate::sleep::{Sleep, WITHOUT_A_SPEC};
@@ -51,6 +51,8 @@ const TYPED: u8 = b':';
 
 static SAVED: Mutex<Option<Termios>> = Mutex::new(None);
 
+static HOOKED: Once = Once::new();
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pressed {
     Acted(Action),
@@ -75,6 +77,7 @@ impl KeyAtATime {
         keyed.special_codes[SpecialCodeIndex::VTIME] = 0;
         termios::tcsetattr(&stdin, OptionalActions::Now, &keyed).ok()?;
         *SAVED.lock() = Some(saved);
+        restore_the_terminal_on_a_panic();
         Some(Self)
     }
 }
@@ -83,6 +86,20 @@ impl Drop for KeyAtATime {
     fn drop(&mut self) {
         restore_the_terminal();
     }
+}
+
+fn restore_the_terminal_on_a_panic() {
+    HOOKED.call_once(|| {
+        let reported = panic::take_hook();
+        panic::set_hook(Box::new(move |panicked| {
+            if let Some(mut held) = SAVED.try_lock()
+                && let Some(saved) = held.take()
+            {
+                let _ = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved);
+            }
+            reported(panicked);
+        }));
+    });
 }
 
 pub fn restore_the_terminal() {

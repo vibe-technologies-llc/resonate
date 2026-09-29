@@ -5,11 +5,7 @@ that no listener is waiting on, and is worked only once the categories above it 
 marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
 service or a format — and is not worked until that moves; everything else is open to be done.
 
-## Privacy and security
-
 ## Robustness
-- A release build aborts on a panic and nothing installs a hook, so a panic under `resonate play`
-  on a terminal leaves it without echo or canonical mode until `reset`
 - One unreadable value in `config.toml` — a pane renamed under `last-tab`, a `window-size` from
   another build — fails every command, `resonate sleep off` and `resonate mcp` included, where an
   unknown key only warns
