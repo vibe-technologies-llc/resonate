@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A plain lyric sheet glides back to its first line six seconds after it is scrolled: `landing`
-  answers the top wherever no line is being read, and `following` comes back after `HANDS_OFF`
 - A press or an Enter on a Tracks row queues only the pages already loaded where the heading's
   *Play* queues the whole listing, so a 20 000-track library played from row 1 990 stops some
   two thousand rows later

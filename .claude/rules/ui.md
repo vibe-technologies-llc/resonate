@@ -1087,6 +1087,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   still drifts a little each frame while the lit line grows under it, so `glide_to` moves `lands` in place
   while a glide is in flight and a drift is under `RESETTLE`, starting afresh only for a jump. Restarting
   on every drift froze the scroll near its start and then let it snap.
+- **An unsynced sheet is placed at its top once and then left to the reader.** With no line read,
+  `landing` answers the top for a synced set, waiting on its first line, and for any set not yet
+  placed; a placed unsynced set answers nothing, so `place` leaves the offset where the wheel took it.
+  Answering the top there glided a plain sheet back to its first line `HANDS_OFF` after every scroll
+  (`a_plain_sheet_is_placed_at_its_top_once_and_then_left_where_it_was_read_to`).
 - **A line far from the pane is not laid out, only held open at its height.**
   `LyricsModel::resting_height` answers the height `bounds_for_item` last gave a line wherever that line,
   moved by the scroll offset the bounds leave out, lies more than `DRAWN_WITHIN_PANES` — a pane's height

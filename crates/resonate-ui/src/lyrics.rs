@@ -855,6 +855,7 @@ impl LyricsModel {
                 };
                 Some(self.centre_of(line)? - room / 2.0)
             }
+            None if self.placed && !self.is_synced() => None,
             None => Some(px(0.0)),
         }
     }
@@ -1146,6 +1147,36 @@ mod tests {
         model.hold();
 
         model
+    }
+
+    #[test]
+    fn a_plain_sheet_is_placed_at_its_top_once_and_then_left_where_it_was_read_to() {
+        let source = resonate_core::SourceId::new("held").expect("a lowercase name");
+        let mut model = model();
+        model.look = Look::Found(Arc::new(Lyrics::plain(
+            source,
+            vec!["one".to_owned(), "two".to_owned()],
+        )));
+        model.hold();
+
+        assert_eq!(model.landing(), Some(px(0.0)));
+
+        model.placed = true;
+
+        assert_eq!(
+            model.landing(),
+            None,
+            "a plain sheet read down the page was pulled back up"
+        );
+
+        let mut synced = verse(3);
+        synced.placed = true;
+
+        assert_eq!(
+            synced.landing(),
+            Some(px(0.0)),
+            "a synced sheet before its first line did not wait at the top"
+        );
     }
 
     fn verse(lines: usize) -> LyricsModel {
