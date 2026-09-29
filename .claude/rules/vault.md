@@ -73,6 +73,16 @@ comparison may overrule it.
   outgrew, or one whose key already has an object standing where the import is not a renewal, is
   weighed against that object before any read-back: `Deduped` where it fits, `NoSmaller` where it
   does not or none stands — a duplicate no longer read back whole before `Deduped` is known.
+  **A FLAC source names its key before the encode does.** A whole 16- or 24-bit native FLAC is
+  stored at its own depth, so its STREAMINFO MD5 is the digest the encode would lay down;
+  `bare::declared_digest` reads it (past any ID3 stacked in front, all zeros naming nothing), and
+  where an object stands under that key and the import is not a renewal, `foretold_flac` decodes
+  the source once into the digest instead of encoding it — `Deduped` or `NoSmaller` on the same
+  weighing — so a second copy of a rip costs a decode, not a flacenc pass at its highest effort.
+  The declaration is only a candidate: a source whose samples hash to anything else is
+  `Foretold::Misdeclared`, opened again and encoded as any other
+  (`a_flac_declaring_the_digest_of_an_object_standing_is_deduped_without_an_encode`). A WAVE,
+  AIFF, WavPack or ALAC source declares no digest and still pays its encode before `Deduped`.
 - **`Form::Wave`** — PCM FLAC cannot hold: `SampleFormat::F32`, > 24 bits or > 96 kHz. A canonical
   `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, stripped by construction, zstd'd at `ARCHIVED_AT`;
   refused over `LARGEST_PCM`, the RIFF ceiling — before anything is staged where the source declares
@@ -89,7 +99,11 @@ comparison may overrule it.
   landing more than an eighth past the source's weight is `NoSmaller` before the pass starts. Measured
   on a five-minute 24/192 FLAC of 251 MB: foretold 504.9 MB of a pass that came to 508.3 MB and took 40
   s on five cores, so a hi-res rip is kept after ~8 MB of zstd; a forecast within the eighth pays the
-  pass, which still decides.
+  pass, which still decides. **The pass is written as a run of zstd frames**, one per
+  `PACKED_FRAME_BYTES` (8 MiB) of WAVE, each pledged its length so its header carries the content
+  size — any zstd reader reads the run as one stream, and `Unpacking` can find where each frame's
+  bytes begin (below). A frame boundary costs the window its history, a loss too small to see on
+  PCM, which is why objects packed before as one frame were not weighed again for it.
 - **`Form::Kept`** — the source's own bytes, where re-encoding would lose something or cost more
   than it saves: a lossy codec, DSD, > 8 channels, or a re-encode no smaller. What a container
   keeps its tags in *around* the audio is left behind, without touching an audio frame.
@@ -156,9 +170,17 @@ naming depths.
 A `VaultKey` is sixteen bytes as thirty-two lowercase hex letters, fanned two deep. For `Flac` and
 `Wave` it is the MD5 of the decoded interleaved PCM — FLAC's STREAMINFO digest, so `metaflac` can
 be asked the same — and for `Kept` and covers the MD5 of the stored bytes. Writes go to `staging`,
-are `sync_all`'d and renamed into place (like `config::write` and `organise`'s staged sheet), so a
-crash leaves a staging file, never a half-written object; `Vault::sweep_the_staging` is what
-`--prune` clears them with.
+are `sync_all`'d and renamed into place (like `config::write` and `organise`'s staged sheet), and
+`landed` syncs the folder the object now sits in — and the one above where the fanout folder was
+made — so the rename survives the crash the synced bytes did. A crash leaves a staging file,
+never a half-written object. **Every staging file carries the pid that wrote it, and that is how
+it is swept.** `Vault::open` takes away each whose process `/proc` no longer holds
+(`Sweeping::WhatCrashed`), so a crashed import's copies go the next time anything opens the vault
+rather than at the next `--prune`; `Vault::sweep_the_staging` — what `--prune` clears the folder
+with — takes those and any file not named by a pid, and never a living process's, a poll landing
+deliveries outside the `Walk` guard or a window importing beside a `resonate vault --prune`. With
+no `/proc` every pid reads as living and nothing named by one is taken
+(`a_crashed_imports_staging_is_swept_when_the_vault_opens_and_a_living_ones_is_not`).
 
 **A staging file is a `Staged`, and dropping one removes the file.** Every write that can fail
 between `File::create` and the rename — a source read, a full disc, `sync_all`, a refused landing —
@@ -211,6 +233,16 @@ A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row
 a vault standing from before the catalog was deleted and rescanned — so an unrecorded encoder's
 object is weighed again next import rather than trusted.
 
+**A refusal is stamped against the encoder too.** Every `Keeping::Refused` — a cut no smaller than
+its share, one cut out of a file this build keeps as it stands, a copy that did not read back —
+writes `vault_refused (track_id, under)` with `Encoding::OF_THIS_BUILD` (a `MIGRATIONS` step), and
+`TRACKS_TO_VAULT` passes over a row stamped at or past this build's encoder, so a refused row is
+weighed once per encoder rather than at full cost by every `--import`, the preview included. The
+step's trigger drops the stamp where the row's size, mtime or span moves, as `unstudied`'s does,
+and `note_vaulted` drops it once the row lands. A source that failed to read — `Unreadable`,
+`SourceGone` — is stamped nothing, those being what a later import may find otherwise
+(`a_refused_row_is_not_weighed_again_until_its_file_or_the_encoder_moves`).
+
 ## Covers
 
 Decoded with `image`, encoded as lossless JXL by `zune-jpegxl` at its highest effort, read back
@@ -225,11 +257,21 @@ notification daemon can draw. `dependencies.md` forbids an image crate in `reson
 a daemon cannot read would break `mpris:artUrl`; one decode in the crate owning the format answers
 both.
 
+A cover already under its key is a dedup hit sized off the JXL's head alone
+(`cover::size_of_jxl`, `jxl-oxide` taken as far as its image header), so twelve tracks embedding
+one picture cost one encode and eleven header reads, not eleven whole decodes
+(`a_jxl_is_sized_by_its_head_alone`).
+
 **A cover is drawn once a run.** `Vault::picture`'s PNG is written at `image`'s fast compression
 (a transient form), and `Drawings` holds it under the cover's key — least lately asked first out
 past `DRAWN_BYTES_AT_MOST` — so the window and `retag` asking again cost a lookup, not a JXL
 decode and PNG encode. `Vault::forget` takes a drawing with the file, so a pruned cover is not
-answered from memory.
+answered from memory. A drawing is noted under the same lock that weighs and evicts, so two
+threads drawing one cover hold it once; and every `forget` moves a `Forgetting` count, which
+`picture` reads before it opens the file and `note` weighs again under the lock — a drawing made
+while its cover was being pruned is dropped rather than held for a file no longer there
+(`a_drawing_made_before_its_cover_was_forgotten_is_not_held_after`,
+`many_threads_noting_one_key_at_once_hold_it_once`).
 
 ## What the catalog holds
 
@@ -308,7 +350,10 @@ catalog written before was scanned again); a change now is a `MIGRATIONS` step (
   holds neither, so a gathered album never holds both nor names a source without the picture; it
   keeps the earlier of the two `favourite` stamps likewise.
 - **A cover moves into the vault once per album**: `enriched::vault_the_cover` clears `cover_art`
-  in the statement that writes `cover_path`, so an album never holds both. `land_archive_cover`
+  in the statement that writes `cover_path`, so an album never holds both — and only where
+  `cover_art` is still the bytes the import encoded, so a better archive cover landed while the
+  JXL was being written is left standing, named by nothing in the vault until the next import
+  keeps it (`a_cover_is_moved_into_the_vault_only_where_the_album_still_holds_the_picture_encoded`). `land_archive_cover`
   and the scan's `store::cover` carry `AND cover_path IS NULL`, the latter counting a
   vault-covered album as covered, so neither an archive cover nor a rescanned file's lands where
   the vault holds one. The import asks `cover_the_vault_lacks` rather than `cover_art` (which would
@@ -332,9 +377,15 @@ path under the vault root ending in `.zst` is an `Unpacking` with the inner exte
 `FormatHint`; everything else is the plain file open `LocalFiles` does. `Unpacking` decodes the
 stream as read rather than decompressing the object into a `Cursor`, which held a five-minute
 24/192 object — ~460 MB — resident for every open, each queued row's tag probe included, and two
-for a probe beside a play. It reads its length from the `RIFF` header this build wrote, seeks
-forward by decoding and discarding and backward by restarting the stream, so a probe costs the
-header, a play one pass, and only a backward seek pays for the stretch before it. It opens the
+for a probe beside a play. It reads its length from the `RIFF` header this build wrote and seeks
+forward by decoding and discarding. **A seek backward, or more than `FAR_AHEAD` (4 MiB) forward,
+starts again at the frame holding the target**: `unpacking::frames_of` walks the object's frame
+headers and block headers once, the first time one is asked, reading each frame's content size
+and where its bytes begin, and the stream is opened again at that frame — so seeking back in a
+five-minute 24/192 track decodes at most one 8 MiB frame, where it once decoded the ~460 MB before
+it (`a_wave_packed_in_frames_is_read_back_from_the_frame_a_seek_lands_in`). An object packed
+before as one frame naming no content size has no index, and a backward seek restarts the stream
+as it always did. It opens the
 object the stand-in names, and the binary registers it wherever it opens a track to play or read
 (`held_over`): the player, `resonate info`, `explain` and `analyse`. The bus, playlists,
 resumption and queue never see an object's path; a row is named by its own file.

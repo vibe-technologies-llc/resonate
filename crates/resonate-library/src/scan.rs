@@ -4,6 +4,7 @@ use std::{
     fs::{self, Metadata},
     num::{NonZeroU8, NonZeroU32, NonZeroUsize},
     path::{MAIN_SEPARATOR, Path, PathBuf},
+    slice,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -51,10 +52,7 @@ const SHEET_EXTENSION: &str = "cue";
 
 const LARGEST_SHEET_ON_DISC: u64 = 1 << 20;
 
-pub(crate) const AUDIO_EXTENSIONS: &[&str] = &[
-    "aac", "aif", "aiff", "ape", "caf", "dff", "dsf", "flac", "m4a", "m4b", "mka", "mp3", "mp4",
-    "oga", "ogg", "opus", "rf64", "w64", "wav", "wave", "wv",
-];
+pub(crate) use resonate_core::AUDIO_EXTENSIONS;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScanOptions {
@@ -386,37 +384,66 @@ impl Known {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unmounted {
+    Kept,
+    Retired,
+}
+
 pub(crate) fn forget_the_gone(inner: &Arc<Inner>, named: &[PathBuf]) -> Result<u64> {
     let _walking = inner.walk_the_tree()?;
-    inner.write(|transaction| {
-        let absent = volumes::absent(transaction)?;
-        let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
-        for path in named {
-            let Some(text) = path.to_str() else {
-                tracing::debug!(
-                    path = %path.display(),
-                    "a path the catalog cannot store names no row to forget"
-                );
-                continue;
-            };
-            let (from, past) = walked_from(text);
-            for (root, held) in store::rooted_paths_at(transaction, text, &from, &past)? {
-                if !held.exists() && !volumes::is_on_an_absent_one(&held, &absent) {
-                    gone.entry(root).or_default().push(held);
-                }
-            }
-        }
+    inner.write(|transaction| forget_at_or_under(transaction, named, Unmounted::Kept))
+}
 
-        let mut forgotten = 0;
-        for (root, paths) in &gone {
-            forgotten += store::forget_paths(transaction, *root, paths)?;
-        }
-        if forgotten > 0 {
-            store::sweep_orphans(transaction)?;
-            alternatives::settle(transaction)?;
-        }
+pub(crate) fn retire(inner: &Arc<Inner>, folder: &Path) -> Result<u64> {
+    let folder = folder
+        .canonicalize()
+        .unwrap_or_else(|_| folder.to_path_buf());
+    let _walking = inner.walk_the_tree()?;
+
+    inner.write(|transaction| {
+        let forgotten =
+            forget_at_or_under(transaction, slice::from_ref(&folder), Unmounted::Retired)?;
+        volumes::retire_at_or_under(transaction, &folder)?;
         Ok(forgotten)
     })
+}
+
+fn forget_at_or_under(
+    transaction: &rusqlite::Transaction<'_>,
+    named: &[PathBuf],
+    unmounted: Unmounted,
+) -> Result<u64> {
+    let absent = match unmounted {
+        Unmounted::Kept => volumes::absent(transaction)?,
+        Unmounted::Retired => Vec::new(),
+    };
+    let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
+    for path in named {
+        let Some(text) = path.to_str() else {
+            tracing::debug!(
+                path = %path.display(),
+                "a path the catalog cannot store names no row to forget"
+            );
+            continue;
+        };
+        let (from, past) = walked_from(text);
+        for (root, held) in store::rooted_paths_at(transaction, text, &from, &past)? {
+            if !held.exists() && !volumes::is_on_an_absent_one(&held, &absent) {
+                gone.entry(root).or_default().push(held);
+            }
+        }
+    }
+
+    let mut forgotten = 0;
+    for (root, paths) in &gone {
+        forgotten += store::forget_paths(transaction, *root, paths)?;
+    }
+    if forgotten > 0 {
+        store::sweep_orphans(transaction)?;
+        alternatives::settle(transaction)?;
+    }
+    Ok(forgotten)
 }
 
 pub(crate) fn walked_from(root: &str) -> (String, String) {
@@ -478,6 +505,10 @@ fn run(
     let generation = store::to_nanos(SystemTime::now());
     let ids: Vec<i64> = roots.iter().map(|root| root.id).collect();
     let walked_roots: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
+    let registered: Vec<PathBuf> = every_root(inner)?
+        .into_iter()
+        .map(|root| root.path)
+        .collect();
     let known = Known::under(inner, &roots)?;
 
     let (work_tx, work_rx) = bounded::<Job>(QUEUE);
@@ -507,7 +538,10 @@ fn run(
             .spawn(move || {
                 let outcome = walk_all(
                     &known,
-                    &roots,
+                    &Rooted {
+                        walked: &roots,
+                        registered: &registered,
+                    },
                     &options,
                     &progress,
                     &work_tx,
@@ -589,8 +623,8 @@ fn heard_as(path: &Path) -> Option<String> {
     }
 }
 
-fn held_roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
-    let held = inner.read(|connection| {
+fn every_root(inner: &Inner) -> Result<Vec<Root>> {
+    inner.read(|connection| {
         let mut statement = connection
             .prepare("SELECT id, path FROM roots ORDER BY path")
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -603,9 +637,11 @@ fn held_roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
             })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))
-    })?;
+    })
+}
 
-    Ok(held
+fn held_roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
+    Ok(every_root(inner)?
         .into_iter()
         .filter(|root| wanted.is_empty() || wanted.contains(&root.path))
         .filter(is_there)
@@ -649,26 +685,10 @@ fn is_there(root: &Root) -> bool {
 }
 
 fn roots_beside(inner: &Inner, walked: &[i64]) -> Result<Vec<Root>> {
-    inner.read(|connection| {
-        let mut statement = connection
-            .prepare("SELECT id, path FROM roots ORDER BY path")
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        let found = statement
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-        Ok(found
-            .into_iter()
-            .filter(|(id, _)| !walked.contains(id))
-            .map(|(id, path)| Root {
-                id,
-                path: PathBuf::from(path),
-            })
-            .collect())
-    })
+    Ok(every_root(inner)?
+        .into_iter()
+        .filter(|root| !walked.contains(&root.id))
+        .collect())
 }
 
 fn tidy_the_roots_beside(
@@ -709,9 +729,14 @@ fn tidy_the_roots_beside(
     Ok(tidied)
 }
 
+struct Rooted<'a> {
+    walked: &'a [Root],
+    registered: &'a [PathBuf],
+}
+
 fn walk_all(
     known: &Known,
-    roots: &[Root],
+    roots: &Rooted<'_>,
     options: &ScanOptions,
     progress: &ScanProgress,
     work: &Sender<Job>,
@@ -719,10 +744,11 @@ fn walk_all(
 ) -> Result<Vec<PathBuf>> {
     let mut visited = AHashSet::new();
     let mut mounted = Vec::new();
-    for root in roots {
+    for root in roots.walked {
         let walking = Walking {
             known,
             root,
+            registered: roots.registered,
             options,
             progress,
             work,
@@ -868,6 +894,14 @@ fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>)
     if walking.is_the_vault(&target) {
         return false;
     }
+    if walking.reaches_a_root(&target) {
+        tracing::debug!(
+            path = %path.display(),
+            target = %target.display(),
+            "stepping past a link into a library root, which the walk reads by its own path"
+        );
+        return false;
+    }
     if visited.insert(target) {
         return true;
     }
@@ -882,6 +916,7 @@ fn followed(path: &Path, visited: &mut AHashSet<PathBuf>, walking: &Walking<'_>)
 struct Walking<'a> {
     known: &'a Known,
     root: &'a Root,
+    registered: &'a [PathBuf],
     options: &'a ScanOptions,
     progress: &'a ScanProgress,
     work: &'a Sender<Job>,
@@ -889,6 +924,12 @@ struct Walking<'a> {
 }
 
 impl Walking<'_> {
+    fn reaches_a_root(&self, target: &Path) -> bool {
+        self.registered
+            .iter()
+            .any(|root| target.starts_with(root) || root.starts_with(target))
+    }
+
     fn is_the_vault(&self, directory: &Path) -> bool {
         let inside = self.vault.is_some_and(|vault| directory.starts_with(vault));
         if inside {

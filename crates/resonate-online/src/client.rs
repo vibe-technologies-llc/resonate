@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     io::{Read as _, Write as _},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     thread,
     time::{Duration, Instant},
 };
@@ -265,10 +265,50 @@ impl Host {
     }
 }
 
+#[derive(Default)]
+struct Turns {
+    next: BTreeMap<Host, Instant>,
+    stayed_busy: BTreeSet<Host>,
+}
+
+#[derive(Clone, Default)]
+struct Pacing(Arc<Mutex<Turns>>);
+
+static EVERY_CLIENT_IN_THE_PROCESS: LazyLock<Pacing> = LazyLock::new(Pacing::default);
+
+impl Pacing {
+    fn reserve(&self, host: Host, now: Instant) -> Instant {
+        let mut turns = self.0.lock();
+        let slot = turns
+            .next
+            .get(&host)
+            .map_or(now, |last| (*last + host.interval()).max(now));
+        turns.next.insert(host, slot);
+        slot
+    }
+
+    fn retries_owed(&self, host: Host) -> u32 {
+        if self.0.lock().stayed_busy.contains(&host) {
+            0
+        } else {
+            BUSY_RETRIES
+        }
+    }
+
+    fn heard(&self, host: Host, status: StatusCode) {
+        let mut turns = self.0.lock();
+        if busy(status) {
+            turns.stayed_busy.insert(host);
+        } else {
+            turns.stayed_busy.remove(&host);
+        }
+    }
+}
+
 pub struct Client {
     agent: Agent,
     introduction: Introduction,
-    paced: Mutex<BTreeMap<Host, Instant>>,
+    pacing: Pacing,
     clock: Arc<dyn Clock>,
 }
 
@@ -278,13 +318,28 @@ impl Client {
     }
 
     pub fn introduced(introduction: Introduction) -> Self {
-        Self::on_clock(introduction, Arc::new(WallClock), Carried::Encrypted)
+        Self::paced_by(
+            introduction,
+            Arc::new(WallClock),
+            Carried::Encrypted,
+            EVERY_CLIENT_IN_THE_PROCESS.clone(),
+        )
     }
 
+    #[cfg(test)]
     pub(crate) fn on_clock(
         introduction: Introduction,
         clock: Arc<dyn Clock>,
         carried: Carried,
+    ) -> Self {
+        Self::paced_by(introduction, clock, carried, Pacing::default())
+    }
+
+    fn paced_by(
+        introduction: Introduction,
+        clock: Arc<dyn Clock>,
+        carried: Carried,
+        pacing: Pacing,
     ) -> Self {
         let config = Agent::config_builder()
             .user_agent(Identity::of_this_build().named().as_str())
@@ -297,7 +352,7 @@ impl Client {
         Self {
             agent: config.new_agent(),
             introduction,
-            paced: Mutex::new(BTreeMap::new()),
+            pacing,
             clock,
         }
     }
@@ -389,6 +444,7 @@ impl Client {
         url: &str,
         body: Option<&Posted>,
     ) -> Result<Response<Body>> {
+        let owed = self.pacing.retries_owed(host);
         let mut retried = 0;
         let mut by_default = RETRY_AFTER_BY_DEFAULT;
         loop {
@@ -416,7 +472,8 @@ impl Client {
             };
             let response = sent.map_err(|error| Error::from_ureq(host, op, error))?;
 
-            if !asks_to_wait(response.status()) || retried == BUSY_RETRIES {
+            if !busy(response.status()) || retried == owed {
+                self.pacing.heard(host, response.status());
                 return Ok(response);
             }
 
@@ -437,14 +494,7 @@ impl Client {
 
     fn pace(&self, host: Host) {
         let now = self.clock.now();
-        let slot = {
-            let mut paced = self.paced.lock();
-            let slot = paced
-                .get(&host)
-                .map_or(now, |last| (*last + host.interval()).max(now));
-            paced.insert(host, slot);
-            slot
-        };
+        let slot = self.pacing.reserve(host, now);
 
         if slot > now {
             self.clock.sleep(slot - now);
@@ -452,10 +502,13 @@ impl Client {
     }
 }
 
-fn asks_to_wait(status: StatusCode) -> bool {
+fn busy(status: StatusCode) -> bool {
     matches!(
         status,
-        StatusCode::SERVICE_UNAVAILABLE | StatusCode::TOO_MANY_REQUESTS
+        StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::GATEWAY_TIMEOUT
     )
 }
 
@@ -777,6 +830,10 @@ mod tests {
             clock.clone(),
             Carried::Plain,
         );
+        fetched_by(&client, answers)
+    }
+
+    fn fetched_by(client: &Client, answers: Vec<Answer>) -> (u16, usize) {
         let (url, served) = serving(answers);
         let response = client
             .exchange(Host::MusicBrainz, LookupOp::FindRecording, &url, None)
@@ -885,6 +942,93 @@ mod tests {
                 Duration::from_secs(8)
             ]
         );
+    }
+
+    #[test]
+    fn every_client_in_the_process_takes_its_turn_in_one_queue_per_host() {
+        let clock = Faked::new();
+        let pacing = Pacing::default();
+
+        let reference = Client::paced_by(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+            pacing.clone(),
+        );
+        let recogniser = Client::paced_by(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+            pacing,
+        );
+
+        reference.pace(Host::MusicBrainz);
+        recogniser.pace(Host::MusicBrainz);
+        reference.pace(Host::MusicBrainz);
+        assert_eq!(
+            clock.slept(),
+            vec![MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
+        );
+
+        let first = Client::new(identity(None));
+        let second = Client::introduced(Introduction::as_(&identity(Some("a contact"))));
+        assert!(Arc::ptr_eq(&first.pacing.0, &second.pacing.0));
+    }
+
+    #[test]
+    fn a_gateway_that_failed_or_timed_out_is_asked_again_like_a_busy_service() {
+        let clock = Faked::new();
+        let bad_gateway = Answer {
+            status: 502,
+            retry_after: None,
+        };
+        let gateway_timeout = Answer {
+            status: 504,
+            retry_after: None,
+        };
+        let (status, served) = fetched(&clock, vec![bad_gateway, gateway_timeout, FINE]);
+
+        assert_eq!(status, 200);
+        assert_eq!(served, 3);
+        assert_eq!(
+            clock.slept(),
+            vec![Duration::from_secs(2), Duration::from_secs(4)]
+        );
+    }
+
+    #[test]
+    fn a_host_busy_through_every_retry_is_asked_once_until_it_answers() {
+        let clock = Faked::new();
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
+
+        let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, BUSY]);
+        assert_eq!((status, served), (503, 4));
+        assert_eq!(
+            clock.slept(),
+            vec![
+                Duration::from_secs(2),
+                Duration::from_secs(4),
+                Duration::from_secs(8)
+            ]
+        );
+
+        let (status, served) = fetched_by(&client, vec![BUSY]);
+        assert_eq!((status, served), (503, 1));
+        let (status, served) = fetched_by(&client, vec![BUSY]);
+        assert_eq!((status, served), (503, 1));
+        assert_eq!(
+            clock.slept()[3..],
+            [MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
+        );
+
+        let (status, served) = fetched_by(&client, vec![FINE]);
+        assert_eq!((status, served), (200, 1));
+        let (status, served) = fetched_by(&client, vec![BUSY, FINE]);
+        assert_eq!((status, served), (200, 2));
     }
 
     #[test]

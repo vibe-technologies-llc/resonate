@@ -11,7 +11,7 @@ use std::{
 
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
-use resonate_providers::{Asking, Delivered, Delivery, Identity, Providers};
+use resonate_providers::{Asking, Away, Delivered, Delivery, Identity, Providers};
 use resonate_vault::{Keeping, Taking};
 
 use crate::{
@@ -123,6 +123,7 @@ fn landed(
     delivered: Delivered,
     options: PollOptions,
     progress: &PollProgress,
+    away: &mut Away,
 ) -> Result<Option<MediaLocation>> {
     let taken_from = delivered.taken_from();
     let Some(vault) = library.vault().cloned() else {
@@ -154,6 +155,7 @@ fn landed(
             if pumped.stalled {
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
+                away.note(&delivered.provider);
                 return Ok(None);
             }
             keeping
@@ -307,6 +309,7 @@ fn run(
 ) -> Result<PollSummary> {
     let now = SystemTime::now();
     let wants = library.wants()?;
+    let mut away = Away::default();
 
     for want in wants
         .iter()
@@ -323,6 +326,7 @@ fn run(
                 within: options.answers_within,
                 cancelled: &cancelled,
             },
+            &mut away,
         );
         progress
             .refused
@@ -334,7 +338,7 @@ fn run(
         match answer.delivered {
             Some(delivered) => {
                 progress.offered.fetch_add(1, Ordering::Relaxed);
-                let noted = landed(library, want, delivered, options, progress)?;
+                let noted = landed(library, want, delivered, options, progress, &mut away)?;
                 let cancelled = progress.is_cancelled();
                 if noted.is_some() || !cancelled {
                     library.note_tried(want.id, noted.as_ref())?;
@@ -343,10 +347,17 @@ fn run(
                     break;
                 }
             }
-            None => {
+            None if answer.heard_from_every_provider() => {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);
                 library.note_tried(want.id, None)?;
             }
+            None => tracing::debug!(
+                want = %want.id,
+                refused = answer.refused,
+                late = answer.late,
+                passed_over = answer.passed_over,
+                "not every provider answered, so the want stays due"
+            ),
         }
     }
 

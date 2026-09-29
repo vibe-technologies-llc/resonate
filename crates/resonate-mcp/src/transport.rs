@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use resonate_core::{TrackId, Volume};
 use resonate_engine::{Placement, Until};
 use resonate_library::{Library, PlaylistName};
@@ -88,23 +90,41 @@ pub(crate) fn control(player: &dyn Controlling, action: Action) -> Result<Value>
 }
 
 pub(crate) fn seek(player: &dyn Controlling, by: Seeking) -> Result<Value> {
+    let from = playing_at(player)?;
+
     player.seek(by)?;
-    let moved = match by {
-        Seeking::Forward(span) => seconds(span),
-        Seeking::Backward(span) => -seconds(span),
-    };
+
     let playing = player.metadata()?;
-    let position = match playing {
-        Some(_) => Some(seconds(player.position()?)),
+    let landed = match &playing {
+        Some(described) => Some((described.track, player.position()?)),
         None => None,
+    };
+    let moved = match (from, landed) {
+        (Some((before, was)), Some((after, now))) if before == after => Some(between(was, now)),
+        _ => None,
     };
 
     Ok(compact(json!({
         "player": player.name(),
         "moved_seconds": moved,
         "track": playing.as_ref().map(written::row),
-        "position_seconds": position,
+        "position_seconds": landed.map(|(_, now)| seconds(now)),
     })))
+}
+
+fn between(was: Duration, now: Duration) -> f64 {
+    if now >= was {
+        seconds(now - was)
+    } else {
+        -seconds(was - now)
+    }
+}
+
+fn playing_at(player: &dyn Controlling) -> Result<Option<(TrackId, Duration)>> {
+    match player.metadata()? {
+        Some(described) => Ok(Some((described.track, player.position()?))),
+        None => Ok(None),
+    }
 }
 
 pub(crate) fn set_volume(player: &dyn Controlling, volume: Volume) -> Result<Value> {
@@ -140,23 +160,46 @@ pub(crate) fn queue(player: &dyn Controlling, most: usize) -> Result<Value> {
 
 pub(crate) fn add(player: &dyn Controlling, library: &Library, adding: &Adding) -> Result<Value> {
     let rows = catalog::wanted_rows(library, &adding.wanted)?;
-    let queued = player.queue(
-        &rows,
-        Queueing {
-            at: if adding.next {
-                Placement::Next
-            } else {
-                Placement::Queued
+    let before = player.queued()?.len();
+
+    let queued = player
+        .queue(
+            &rows,
+            Queueing {
+                at: if adding.next {
+                    Placement::Next
+                } else {
+                    Placement::Queued
+                },
+                play: adding.play,
             },
-            play: adding.play,
-        },
-    )?;
+        )
+        .map_err(|source| partway(player, before, rows.len(), source))?;
 
     Ok(json!({
         "player": player.name(),
         "queued": queued,
         "rows": player.queued()?.len(),
     }))
+}
+
+fn partway(
+    player: &dyn Controlling,
+    before: usize,
+    asked: usize,
+    source: resonate_mpris::Error,
+) -> Error {
+    match player.queued() {
+        Ok(now) => Error::QueuedPartway {
+            landed: now.len().saturating_sub(before),
+            asked,
+            source,
+        },
+        Err(unread) => {
+            tracing::debug!(%unread, "the queue could not be read back after a failed queueing");
+            Error::Mpris(source)
+        }
+    }
 }
 
 pub(crate) fn remove(player: &dyn Controlling, track: TrackId) -> Result<Value> {

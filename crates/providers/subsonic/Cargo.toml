@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 md-5.workspace = true
+parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-providers.workspace = true
 serde.workspace = true

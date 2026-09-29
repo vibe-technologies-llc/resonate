@@ -21,6 +21,8 @@ const WAITS_DOUBLE_AT_MOST: u32 = 5;
 
 const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
+const PORTRAITS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
 const HOLDS_RELEASE_ROWS: &str =
     "EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.album_id = a.id)";
 
@@ -42,7 +44,7 @@ fn waited_its_turn(row: &str) -> String {
     format!("{row}.asked + (CASE WHEN {row}.refusals > 0 THEN {bad_day} ELSE {earned} END) < ?3")
 }
 
-fn doubled(wait: &str, count: &str) -> String {
+pub(crate) fn doubled(wait: &str, count: &str) -> String {
     format!("{wait} * (1 << min(max({count} - 1, 0), {WAITS_DOUBLE_AT_MOST}))")
 }
 
@@ -51,7 +53,10 @@ fn due_again(row: &str) -> String {
     format!(
         "(?1 OR {row}.asked IS NULL
                  OR ({row}.answered IS NULL AND {waited})
-                 OR ({row}.answered IS NOT NULL AND {row}.answered < ?4))"
+                 OR ({row}.answered IS NOT NULL AND {row}.answered < ?4
+                     AND {row}.asks = 0 AND {row}.refusals = 0)
+                 OR ({row}.answered IS NOT NULL
+                     AND ({row}.answered < ?4 OR {row}.refusals > 0) AND {waited}))"
     )
 }
 
@@ -206,6 +211,7 @@ pub(crate) fn land_release(
                  kind           = ?9,
                  disambiguation = ?10,
                  year           = coalesce(year, ?11),
+                 front_cover    = ?14,
                  asks           = 0,
                  refusals       = 0,
                  asked          = ?12,
@@ -225,6 +231,7 @@ pub(crate) fn land_release(
                 release.date.as_deref().and_then(store::year),
                 store::to_nanos(now),
                 id,
+                release.has_front_cover,
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -336,6 +343,7 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
              country        = NULL,
              kind           = NULL,
              disambiguation = NULL,
+             front_cover    = NULL,
              cover_art      = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_art END,
              cover_format   = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_format END,
              cover_source   = CASE WHEN cover_source = ?2 THEN ?3 ELSE cover_source END,
@@ -785,6 +793,23 @@ pub(crate) fn note_cover_asked(tx: &Transaction<'_>, album: AlbumId, at: SystemT
     .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
+pub(crate) fn note_portrait_asked(
+    tx: &Transaction<'_>,
+    artist: ArtistId,
+    at: SystemTime,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE artists SET portrait_asked = ?1 WHERE id = ?2",
+        params![store::to_nanos(at), artist.get() as i64],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+pub(crate) fn portraits_asked_before(now: SystemTime) -> i64 {
+    store::to_nanos(now.checked_sub(PORTRAITS_ASKED_AGAIN_AFTER).unwrap_or(now))
+}
+
 pub(crate) fn ask_again_for_covers(tx: &Transaction<'_>) -> Result<usize> {
     tx.execute(
         &format!(
@@ -802,7 +827,7 @@ pub(crate) fn albums_wanting_a_cover(
     let asked_before = store::to_nanos(now.checked_sub(COVERS_ASKED_AGAIN_AFTER).unwrap_or(now));
     let mut statement = connection
         .prepare(&format!(
-            "SELECT id, mbid, release_group FROM albums
+            "SELECT id, mbid, release_group, front_cover IS NOT 0 FROM albums
               WHERE {UNCOVERED} AND (cover_asked IS NULL OR cover_asked < ?1)
                 AND (mbid IS NOT NULL OR release_group IS NOT NULL)
               ORDER BY id"
@@ -814,15 +839,17 @@ pub(crate) fn albums_wanting_a_cover(
                 row.get::<_, i64>(0)?,
                 row.get::<_, Option<String>>(1)?,
                 row.get::<_, Option<String>>(2)?,
+                row.get::<_, bool>(3)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut wanting = Vec::with_capacity(held.len());
-    for (album, release, group) in held {
+    for (album, release, group, may_have_a_front) in held {
         let group = store::mbid_in(group.as_deref());
-        let from = match (store::mbid_in(release.as_deref()), group) {
+        let release = store::mbid_in(release.as_deref()).filter(|_| may_have_a_front);
+        let from = match (release, group) {
             (Some(release), group) => CoverFrom::Release { release, group },
             (None, Some(group)) => CoverFrom::Group(group),
             (None, None) => continue,
@@ -860,16 +887,18 @@ pub(crate) fn vault_the_cover(
     album: AlbumId,
     key: VaultKey,
     within: &str,
+    encoded: &[u8],
 ) -> Result<bool> {
     tx.execute(
         "UPDATE albums SET cover_key = ?1, cover_path = ?2, cover_source = ?3,
                            cover_art = NULL, cover_format = NULL
-          WHERE id = ?4 AND cover_path IS NULL",
+          WHERE id = ?4 AND cover_path IS NULL AND cover_art = ?5",
         params![
             key.to_string(),
             within,
             store::cover_source_code(CoverSource::Vault),
             album.get() as i64,
+            encoded,
         ],
     )
     .map(|changed| changed > 0)
@@ -2053,6 +2082,79 @@ mod tests {
         assert!(
             due_at(asked + A_MONTH + A_MOMENT),
             "an answer that went stale did not make the album due"
+        );
+    }
+
+    #[test]
+    fn a_stale_answer_asked_again_in_vain_waits_its_turn_like_any_other_ask() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root is stored");
+        let tx = connection.transaction().expect("a transaction");
+        let album = one_album(&tx);
+        let landed = UNIX_EPOCH + A_MONTH;
+        let due_at = |now: SystemTime| {
+            albums_to_ask(&tx, WAITED, false, now)
+                .expect("the albums read back")
+                .iter()
+                .any(|found| found.id == album && !found.rematch_only)
+        };
+
+        land_release(
+            &tx,
+            album,
+            &meddle(vec![row(1, "One of These Days", None)]),
+            landed,
+        )
+        .expect("the release lands");
+        let stale = landed + A_MONTH + A_MOMENT;
+        assert!(due_at(stale), "an answer gone stale is not asked again");
+
+        stamp_album_asked(&tx, album, Fruitless::Missed, stale).expect("the album is missed");
+        assert!(
+            !due_at(stale + A_MOMENT),
+            "a stale answer asked again in vain is due again on the very next pass"
+        );
+        assert!(due_at(stale + A_DAY + A_MOMENT));
+
+        stamp_album_asked(&tx, album, Fruitless::Refused, stale).expect("the album is refused");
+        assert!(!due_at(stale + A_MOMENT));
+        assert!(due_at(stale + AN_HOUR + A_MOMENT));
+    }
+
+    #[test]
+    fn an_answer_whose_companion_ask_was_refused_is_asked_again_once_it_has_waited() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root is stored");
+        let tx = connection.transaction().expect("a transaction");
+        let album = one_album(&tx);
+        let landed = UNIX_EPOCH + A_MONTH;
+        let due_at = |now: SystemTime| {
+            albums_to_ask(&tx, WAITED, false, now)
+                .expect("the albums read back")
+                .iter()
+                .any(|found| found.id == album && !found.rematch_only)
+        };
+
+        land_release(
+            &tx,
+            album,
+            &meddle(vec![row(1, "One of These Days", None)]),
+            landed,
+        )
+        .expect("the release lands");
+        stamp_album_asked(&tx, album, Fruitless::Refused, landed + A_MOMENT)
+            .expect("what was asked beside the answer is refused");
+
+        assert!(!due_at(landed + A_MOMENT * 2));
+        assert!(
+            due_at(landed + AN_HOUR + A_MOMENT * 2),
+            "an answer with a refusal beside it waited out the month"
         );
     }
 

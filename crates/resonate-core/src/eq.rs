@@ -691,21 +691,63 @@ impl Profile {
             .count()
     }
 
-    pub fn magnitude_db(&self, hertz: f64, rate: SampleRate) -> f64 {
-        self.preamp.decibels() + shaped_db(&self.designed(rate).collect::<Vec<_>>(), hertz, rate)
+    pub fn designed_on(
+        &self,
+        rate: SampleRate,
+        channel: usize,
+    ) -> impl Iterator<Item = Biquad> + '_ {
+        self.bands
+            .iter()
+            .map(move |band| band.design_for(rate, channel))
     }
 
-    pub fn response(&self, rate: SampleRate, points: usize) -> Vec<f64> {
-        let sections: Vec<Biquad> = self.designed(rate).collect();
+    pub fn channels_apart(&self) -> Vec<usize> {
+        let mut apart: Vec<usize> = self
+            .bands
+            .iter()
+            .filter(|band| !band.channels.is_every())
+            .flat_map(|band| band.channels.held())
+            .collect();
+        apart.sort_unstable();
+        apart.dedup();
+        apart
+    }
+
+    fn heard_apart(&self, rate: SampleRate) -> Vec<Vec<Biquad>> {
+        self.channels_apart()
+            .into_iter()
+            .chain([EVERY_CHANNEL_NOT_NAMED])
+            .map(|channel| self.designed_on(rate, channel).collect())
+            .collect()
+    }
+
+    pub fn magnitude_db_on(&self, hertz: f64, rate: SampleRate, channel: usize) -> f64 {
+        let sections: Vec<Biquad> = self.designed_on(rate, channel).collect();
+        self.preamp.decibels() + shaped_db(&sections, hertz, rate)
+    }
+
+    pub fn response_on(&self, rate: SampleRate, points: usize, channel: usize) -> Vec<f64> {
+        let sections: Vec<Biquad> = self.designed_on(rate, channel).collect();
         sweep(points)
             .map(|hertz| self.preamp.decibels() + shaped_db(&sections, hertz, rate))
             .collect()
     }
 
+    pub fn magnitude_db(&self, hertz: f64, rate: SampleRate) -> f64 {
+        self.preamp.decibels() + loudest_db(&self.heard_apart(rate), hertz, rate)
+    }
+
+    pub fn response(&self, rate: SampleRate, points: usize) -> Vec<f64> {
+        let heard = self.heard_apart(rate);
+        sweep(points)
+            .map(|hertz| self.preamp.decibels() + loudest_db(&heard, hertz, rate))
+            .collect()
+    }
+
     pub fn peak_db(&self, rate: SampleRate) -> f64 {
-        let sections: Vec<Biquad> = self.designed(rate).collect();
+        let heard = self.heard_apart(rate);
         sweep(RESPONSE_POINTS).fold(f64::NEG_INFINITY, |highest, hertz| {
-            highest.max(shaped_db(&sections, hertz, rate))
+            highest.max(loudest_db(&heard, hertz, rate))
         })
     }
 
@@ -716,6 +758,15 @@ impl Profile {
         }
         Preamp::from_decibels(-peak).unwrap_or(Preamp::NONE)
     }
+}
+
+const EVERY_CHANNEL_NOT_NAMED: usize = ChannelSet::NAMED_AT_MOST;
+
+fn loudest_db(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> f64 {
+    heard
+        .iter()
+        .map(|sections| shaped_db(sections, hertz, rate))
+        .fold(f64::NEG_INFINITY, f64::max)
 }
 
 fn shaped_db(sections: &[Biquad], hertz: f64, rate: SampleRate) -> f64 {
@@ -1144,6 +1195,44 @@ mod tests {
         }
 
         assert_eq!(Profile::flat().fitted_preamp(rate), Preamp::NONE);
+    }
+
+    #[test]
+    fn a_band_shaping_one_channel_is_heard_on_that_channel_alone() {
+        let rate = SampleRate::HZ_48000;
+        let mut left = band(BandKind::Peaking, 1_000.0, 6.0, 1.0);
+        left.channels = ChannelSet::of(&[0]).expect("a named channel");
+        let mut right = band(BandKind::Peaking, 1_000.0, 6.0, 1.0);
+        right.channels = ChannelSet::of(&[1]).expect("a named channel");
+        let every = band(BandKind::Peaking, 60.0, -3.0, 4.0);
+        let apart = Profile::new(Preamp::NONE, vec![left, right, every]).expect("three bands");
+
+        assert_eq!(apart.channels_apart(), vec![0, 1]);
+        assert!((apart.magnitude_db_on(1_000.0, rate, 0) - 6.0).abs() < 0.01);
+        assert!((apart.magnitude_db_on(1_000.0, rate, 1) - 6.0).abs() < 0.01);
+        assert!(apart.magnitude_db_on(1_000.0, rate, 2).abs() < 0.2);
+        assert!((apart.magnitude_db_on(60.0, rate, 0) + 3.0).abs() < 0.2);
+        assert!(
+            (apart.magnitude_db(1_000.0, rate) - 6.0).abs() < 0.01,
+            "two channels' bands were summed onto one curve"
+        );
+        assert!(
+            (apart.peak_db(rate) - 6.0).abs() < 0.05,
+            "{}",
+            apart.peak_db(rate)
+        );
+
+        let drawn = apart.response_on(rate, RESPONSE_POINTS, 2);
+        let every_alone = Profile::new(Preamp::NONE, vec![every])
+            .expect("one band")
+            .response(rate, RESPONSE_POINTS);
+        assert_eq!(drawn, every_alone);
+        assert!(
+            Profile::new(Preamp::NONE, vec![every])
+                .expect("one band")
+                .channels_apart()
+                .is_empty()
+        );
     }
 
     #[test]

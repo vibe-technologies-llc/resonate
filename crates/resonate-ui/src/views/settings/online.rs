@@ -82,45 +82,32 @@ impl Choice for HeardFrom {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ClipLength {
-    Brief,
-    Usual,
-    Long,
-}
-
-impl ClipLength {
-    const fn held(self) -> Duration {
-        Duration::from_secs(match self {
-            Self::Brief => 8,
-            Self::Usual => 12,
-            Self::Long => 20,
-        })
-    }
-
-    fn of(held: Duration) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|length| length.held() == held)
-    }
-}
+struct ClipLength(Duration);
 
 impl Choice for ClipLength {
-    const ALL: &'static [Self] = &[Self::Brief, Self::Usual, Self::Long];
+    const ALL: &'static [Self] = &[
+        Self(Duration::from_secs(8)),
+        Self(Duration::from_secs(12)),
+        Self(Duration::from_secs(20)),
+    ];
 
     fn label(self) -> &'static str {
-        match self {
-            Self::Brief => "8 s",
-            Self::Usual => "12 s",
-            Self::Long => "20 s",
+        match self.0.as_secs() {
+            8 => "8 s",
+            12 => "12 s",
+            _ => "20 s",
         }
     }
 
+    fn in_force(self) -> SharedString {
+        SharedString::from(format!("{} s", self.0.as_secs()))
+    }
+
     fn meaning(self) -> SharedString {
-        SharedString::new_static(match self {
-            Self::Brief => "Quickest to answer; enough for a clear recording of a well-known song.",
-            Self::Usual => "Enough for most songs, even over a little noise.",
-            Self::Long => "The best chance with a noisy room, a quiet passage or a rarer song.",
+        SharedString::new_static(match self.0.as_secs() {
+            8 => "Quickest to answer; enough for a clear recording of a well-known song.",
+            12 => "Enough for most songs, even over a little noise.",
+            _ => "The best chance with a noisy room, a quiet passage or a rarer song.",
         })
     }
 }
@@ -268,37 +255,25 @@ impl RootView {
     pub(super) fn listening_group(&mut self, cx: &mut Context<Self>) -> Div {
         let listen = self.listen.read(cx);
         let from = HeardFrom::of(listen.from());
-        let held = listen.length();
-        let length = ClipLength::of(held);
+        let length = ClipLength(listen.length());
 
         kit::section_body()
             .child(kit::field(
                 "Listen to",
-                self.choices(
-                    "listen-from",
-                    Some(from),
-                    cx,
-                    |this, from: HeardFrom, cx| {
-                        let listening = match from {
-                            HeardFrom::Desktop => Listening::Desktop,
-                            HeardFrom::Microphone => Listening::Microphone(None),
-                        };
-                        this.listen_from(listening, cx);
-                    },
-                ),
+                self.choices("listen-from", from, cx, |this, from: HeardFrom, cx| {
+                    let listening = match from {
+                        HeardFrom::Desktop => Listening::Desktop,
+                        HeardFrom::Microphone => Listening::Microphone(None),
+                    };
+                    this.listen_from(listening, cx);
+                }),
             ))
             .child(kit::field(
                 "For",
                 self.choices("listen-for", length, cx, |this, length: ClipLength, cx| {
-                    this.listen_for(length.held(), cx);
+                    this.listen_for(length.0, cx);
                 }),
             ))
-            .when(length.is_none(), |body| {
-                body.child(note(format!(
-                    "{} s is in force, which is none of these.",
-                    held.as_secs()
-                )))
-            })
             .child(note(LISTENING_NOTE))
     }
 

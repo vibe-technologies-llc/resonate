@@ -49,14 +49,35 @@ const WRITTEN_AGES: [(&str, u64); 5] = [
     ("h", HOUR),
 ];
 
-const SPANS: [(&str, u64); 3] = [("h", HOUR), ("m", MINUTE), ("s", 1)];
+const CLOCK_UNITS: [(&str, ClockUnit); 3] = [
+    ("h", ClockUnit::Hour),
+    ("m", ClockUnit::Minute),
+    ("s", ClockUnit::Second),
+];
 
-const RATES: [(&str, f64); 4] = [("", 1.0), ("hz", 1.0), ("k", KILOHERTZ), ("khz", KILOHERTZ)];
+const MOST_DECIMALS: u32 = 9;
+
+const DECIMAL: u32 = 10;
+
+const RATES: [(&str, f64); 4] = [
+    ("", 1.0),
+    (HERTZ, 1.0),
+    ("k", KILOHERTZ),
+    ("khz", KILOHERTZ),
+];
+
+const HERTZ: &str = "hz";
+
+const A_BARE_RATE_IS_IN_KILOHERTZ_BELOW: f64 = KILOHERTZ;
+
+const WHOLE: char = '=';
+
+const QUOTE: char = '"';
 
 const DEPTHS: [&str; 3] = ["", "bit", "bits"];
 
 const AGE_WITH_NO_UNIT: u64 = DAY;
-const SPAN_WITH_NO_UNIT: u64 = 1;
+const SPAN_WITH_NO_UNIT: ClockUnit = ClockUnit::Second;
 
 const CODECS: [(&str, Codec); 19] = [
     ("flac", Codec::Flac),
@@ -172,6 +193,81 @@ impl Compare {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ClockUnit {
+    Second,
+    Minute,
+    Hour,
+}
+
+impl ClockUnit {
+    const LARGEST_FIRST: [Self; 3] = [Self::Hour, Self::Minute, Self::Second];
+
+    const fn seconds(self) -> u64 {
+        match self {
+            Self::Second => 1,
+            Self::Minute => MINUTE,
+            Self::Hour => HOUR,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        CLOCK_UNITS
+            .into_iter()
+            .find(|(_, unit)| *unit == self)
+            .map_or("s", |(name, _)| name)
+    }
+
+    fn of(unit: &str) -> Option<Self> {
+        if unit.is_empty() {
+            return Some(SPAN_WITH_NO_UNIT);
+        }
+
+        CLOCK_UNITS
+            .into_iter()
+            .find(|(name, _)| unit.eq_ignore_ascii_case(name))
+            .map(|(_, unit)| unit)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Grain {
+    pub unit: ClockUnit,
+    pub decimals: u32,
+}
+
+impl Grain {
+    pub const SECOND: Self = Self::whole(ClockUnit::Second);
+    pub const MINUTE: Self = Self::whole(ClockUnit::Minute);
+
+    const fn whole(unit: ClockUnit) -> Self {
+        Self { unit, decimals: 0 }
+    }
+
+    pub fn span(self) -> Duration {
+        Duration::from_secs(self.unit.seconds()) / DECIMAL.pow(self.decimals)
+    }
+
+    fn of(unit: &str, count: &str) -> Option<Self> {
+        let decimals = count
+            .split_once('.')
+            .map_or(0, |(_, fraction)| fraction.len());
+
+        Some(Self {
+            unit: ClockUnit::of(unit)?,
+            decimals: u32::try_from(decimals)
+                .ok()
+                .filter(|decimals| *decimals <= MOST_DECIMALS)?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+struct Spanned {
+    length: Duration,
+    grain: Grain,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Column {
     Title,
@@ -212,6 +308,31 @@ impl Column {
         Self::ALL
             .into_iter()
             .find(|column| key.eq_ignore_ascii_case(column.name()))
+    }
+
+    pub const fn takes_a_whole_name(self) -> bool {
+        !matches!(self, Self::Lyrics)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Reach {
+    #[default]
+    Begins,
+    Phrase,
+    Whole,
+}
+
+impl Reach {
+    pub const fn is_phrased(self) -> bool {
+        !matches!(self, Self::Begins)
+    }
+
+    pub const fn at_least_a_phrase(self) -> Self {
+        match self {
+            Self::Begins => Self::Phrase,
+            reach => reach,
+        }
     }
 }
 
@@ -290,6 +411,7 @@ pub enum Term {
     Length {
         compare: Compare,
         length: Duration,
+        grain: Grain,
     },
     Rate {
         compare: Compare,
@@ -363,8 +485,8 @@ impl Term {
             Self::Added { age, .. } | Self::Played { age, .. } => aged(*age),
             Self::Plays { plays, .. } => plays.to_string(),
             Self::Year { year, .. } => year.to_string(),
-            Self::Length { length, .. } => spanned(*length),
-            Self::Rate { hertz, .. } => hertz.to_string(),
+            Self::Length { length, grain, .. } => spanned(*length, *grain),
+            Self::Rate { hertz, .. } => rated(*hertz),
             Self::Depth { bits, .. } => bits.to_string(),
             Self::Codec(codec) => named_codec(*codec).to_owned(),
             Self::Shape(shape) => shape.name().to_owned(),
@@ -393,7 +515,7 @@ impl fmt::Display for Term {
 pub struct Word {
     pub column: Option<Column>,
     pub text: String,
-    pub phrase: bool,
+    pub reach: Reach,
 }
 
 impl fmt::Display for Word {
@@ -401,10 +523,10 @@ impl fmt::Display for Word {
         if let Some(column) = self.column {
             write!(f, "{}:", column.name())?;
         }
-        if self.phrase {
-            write!(f, "\"{}\"", self.text)
-        } else {
-            f.write_str(&self.text)
+        match self.reach {
+            Reach::Begins => f.write_str(&self.text),
+            Reach::Phrase => write!(f, "{QUOTE}{}{QUOTE}", self.text),
+            Reach::Whole => write!(f, "{WHOLE}{QUOTE}{}{QUOTE}", self.text),
         }
     }
 }
@@ -526,7 +648,7 @@ impl Search {
             if pieces.is_empty() {
                 continue;
             }
-            if word.phrase {
+            if word.reach.is_phrased() {
                 phrased(&tokens, &pieces, &mut lit);
             } else {
                 begun_with(&tokens, &pieces, &mut lit);
@@ -570,7 +692,7 @@ impl Search {
                     all: smallvec![Condition::Word(Word {
                         column: Some(Column::Lyrics),
                         text: words.join(" "),
-                        phrase: true,
+                        reach: Reach::Phrase,
                     })],
                 }],
             }],
@@ -689,6 +811,7 @@ struct Token {
     value: String,
     quoted: bool,
     denied: bool,
+    whole: bool,
 }
 
 enum Reading {
@@ -724,19 +847,41 @@ impl Token {
     }
 
     fn conditions(&self) -> Conditions {
-        match self.reading() {
-            Reading::Scoped(_, text) if text.trim().is_empty() => Conditions::new(),
-            Reading::Scoped(column, text) => smallvec![Condition::Word(Word {
-                column: Some(column),
-                text,
-                phrase: self.quoted,
-            })],
-            Reading::Narrowing(terms) => terms.into_iter().map(Condition::Term).collect(),
-            Reading::Loose(text) => smallvec![Condition::Word(Word {
+        let word = match self.reading() {
+            Reading::Narrowing(terms) => return terms.into_iter().map(Condition::Term).collect(),
+            Reading::Scoped(column, text) => self.scoped(column, text),
+            Reading::Loose(text) => Word {
                 column: None,
                 text,
-                phrase: self.quoted,
-            })],
+                reach: self.reach(false),
+            },
+        };
+        if pieces_of(&word).is_empty() {
+            return Conditions::new();
+        }
+
+        smallvec![Condition::Word(word)]
+    }
+
+    fn scoped(&self, column: Column, text: String) -> Word {
+        let written_whole = (!self.quoted)
+            .then(|| text.strip_prefix(WHOLE))
+            .flatten()
+            .map(str::to_owned);
+        let whole = (self.whole || written_whole.is_some()) && column.takes_a_whole_name();
+
+        Word {
+            column: Some(column),
+            reach: self.reach(whole),
+            text: written_whole.unwrap_or(text),
+        }
+    }
+
+    const fn reach(&self, whole: bool) -> Reach {
+        match (whole, self.quoted || self.whole) {
+            (true, _) => Reach::Whole,
+            (false, true) => Reach::Phrase,
+            (false, false) => Reach::Begins,
         }
     }
 
@@ -756,23 +901,24 @@ impl Token {
 }
 
 fn clauses(tokens: &[Token]) -> Vec<Clause> {
+    let read: Vec<(bool, Alternatives)> = tokens
+        .iter()
+        .map(|token| (token.joins(), token.asked()))
+        .filter(|(_, asked)| !asked.is_empty())
+        .collect();
     let mut clauses: Vec<Clause> = Vec::new();
     let mut joining = false;
 
-    for (index, token) in tokens.iter().enumerate() {
-        if token.joins() && !clauses.is_empty() && index + 1 < tokens.len() {
+    for (index, (joins, asked)) in read.iter().enumerate() {
+        if *joins && !clauses.is_empty() && index + 1 < read.len() {
             joining = true;
             continue;
         }
 
-        let asked = token.asked();
-        if asked.is_empty() {
-            continue;
-        }
         if joining && let Some(clause) = clauses.last_mut() {
-            clause.any.extend(asked);
+            clause.any.extend(asked.iter().cloned());
         } else {
-            clauses.push(Clause { any: asked });
+            clauses.push(Clause { any: asked.clone() });
         }
         joining = false;
     }
@@ -786,6 +932,7 @@ struct Pending {
     value: String,
     quoted: bool,
     denied: bool,
+    whole: bool,
 }
 
 impl Pending {
@@ -797,6 +944,13 @@ impl Pending {
         self.key.is_none() && !self.quoted && !self.value.is_empty()
     }
 
+    fn opens_a_whole_name(&self) -> bool {
+        !self.quoted
+            && self.value.len() == WHOLE.len_utf8()
+            && self.value.starts_with(WHOLE)
+            && self.key.as_deref().and_then(Column::of).is_some()
+    }
+
     fn settle(&mut self, found: &mut Vec<Token>) {
         if self.key.is_some() || !self.value.is_empty() {
             found.push(Token {
@@ -804,10 +958,12 @@ impl Pending {
                 value: std::mem::take(&mut self.value),
                 quoted: self.quoted,
                 denied: self.denied,
+                whole: self.whole,
             });
         }
         self.quoted = false;
         self.denied = false;
+        self.whole = false;
     }
 }
 
@@ -818,9 +974,13 @@ fn tokens(text: &str) -> Vec<Token> {
 
     for character in text.chars() {
         match character {
-            '"' if inside => inside = false,
+            QUOTE if inside => inside = false,
             _ if inside => pending.value.push(character),
-            '"' => {
+            QUOTE => {
+                if pending.opens_a_whole_name() {
+                    pending.whole = true;
+                    pending.value.clear();
+                }
                 inside = true;
                 pending.quoted = true;
             }
@@ -862,9 +1022,10 @@ fn narrowed(named: Named, value: &str) -> Option<Vec<Term>> {
             }])
         }
         Named::Year => bounded(value, year, |compare, year| Term::Year { compare, year }),
-        Named::Length => bounded(value, span, |compare, length| Term::Length {
+        Named::Length => bounded(value, span, |compare, spanned| Term::Length {
             compare,
-            length,
+            length: spanned.length,
+            grain: spanned.grain,
         }),
         Named::Rate => bounded(value, hertz, |compare, hertz| Term::Rate { compare, hertz }),
         Named::Depth => bounded(value, bits, |compare, bits| Term::Depth { compare, bits }),
@@ -888,14 +1049,19 @@ const fn within(compare: Compare) -> Compare {
     }
 }
 
-fn bounded<T: Copy>(
+fn bounded<T: Copy + PartialOrd>(
     value: &str,
     read: impl Fn(&str) -> Option<T>,
     term: impl Fn(Compare, T) -> Term,
 ) -> Option<Vec<Term>> {
-    if let Some((low, high)) = value.split_once('-')
-        && let (Some(low), Some(high)) = (read(low), read(high))
+    if let Some((first, second)) = value.split_once('-')
+        && let (Some(first), Some(second)) = (read(first), read(second))
     {
+        let (low, high) = if second < first {
+            (second, first)
+        } else {
+            (first, second)
+        };
         return Some(vec![
             term(Compare::AtLeast, low),
             term(Compare::AtMost, high),
@@ -931,40 +1097,59 @@ fn age(value: &str) -> Option<Duration> {
     Duration::try_from_secs_f64(count * seconds).ok()
 }
 
-fn span(value: &str) -> Option<Duration> {
+fn span(value: &str) -> Option<Spanned> {
     if let Some((minutes, seconds)) = value.split_once(':') {
         let minutes: u64 = minutes.parse().ok()?;
         let seconds: u64 = seconds.parse().ok()?;
         return (seconds < MINUTE)
             .then(|| minutes.checked_mul(MINUTE)?.checked_add(seconds))
             .flatten()
-            .map(Duration::from_secs);
+            .map(|seconds| Spanned {
+                length: Duration::from_secs(seconds),
+                grain: Grain::SECOND,
+            });
     }
 
     let mut rest = value;
     let mut seconds = 0.0;
+    let mut finest: Option<Grain> = None;
     while !rest.is_empty() {
-        let (count, tail) = counted(rest);
-        let count: f64 = count.parse().ok()?;
+        let (written, tail) = counted(rest);
+        let count: f64 = written.parse().ok()?;
         let end = tail
             .find(|character: char| character.is_ascii_digit())
             .unwrap_or(tail.len());
         let (unit, tail) = tail.split_at(end);
+        let grain = Grain::of(unit, written)?;
 
-        seconds += count * scaled(unit, &SPANS, SPAN_WITH_NO_UNIT)?;
+        seconds += count * grain.unit.seconds() as f64;
+        finest = Some(finest.map_or(grain, |finest| {
+            if grain.span() < finest.span() {
+                grain
+            } else {
+                finest
+            }
+        }));
         rest = tail;
     }
 
-    Duration::try_from_secs_f64(seconds).ok()
+    Some(Spanned {
+        length: Duration::try_from_secs_f64(seconds).ok()?,
+        grain: finest?,
+    })
 }
 
 fn hertz(value: &str) -> Option<u32> {
     let (count, unit) = counted(value);
     let count: f64 = count.parse().ok()?;
-    let scale = RATES
-        .into_iter()
-        .find(|(name, _)| unit.eq_ignore_ascii_case(name))
-        .map(|(_, scale)| scale)?;
+    let scale = if unit.is_empty() && count < A_BARE_RATE_IS_IN_KILOHERTZ_BELOW {
+        KILOHERTZ
+    } else {
+        RATES
+            .into_iter()
+            .find(|(name, _)| unit.eq_ignore_ascii_case(name))
+            .map(|(_, scale)| scale)?
+    };
     let hertz = (count * scale).round();
 
     (hertz >= 0.0 && hertz <= f64::from(u32::MAX)).then_some(hertz as u32)
@@ -1012,26 +1197,38 @@ fn aged(age: Duration) -> String {
         )
 }
 
-fn spanned(length: Duration) -> String {
-    if length.subsec_nanos() != 0 {
-        return format!("{}s", length.as_secs_f64());
+fn spanned(length: Duration, grain: Grain) -> String {
+    if grain.decimals > 0 || length.subsec_nanos() != 0 {
+        return format!(
+            "{:.*}{}",
+            grain.decimals as usize,
+            length.as_secs_f64() / grain.unit.seconds() as f64,
+            grain.unit.name()
+        );
     }
 
-    let seconds = length.as_secs();
     let mut written = String::new();
-    let mut rest = seconds;
-    for (name, size) in SPANS {
-        let held = rest / size;
-        if held > 0 {
-            written.push_str(&format!("{held}{name}"));
-            rest %= size;
+    let mut rest = length.as_secs();
+    for unit in ClockUnit::LARGEST_FIRST {
+        let held = rest / unit.seconds();
+        rest %= unit.seconds();
+        if held > 0 || !written.is_empty() || unit == grain.unit {
+            written.push_str(&format!("{held}{}", unit.name()));
+        }
+        if unit <= grain.unit && rest == 0 {
+            break;
         }
     }
 
-    if written.is_empty() {
-        return "0s".to_owned();
-    }
     written
+}
+
+fn rated(hertz: u32) -> String {
+    if f64::from(hertz) < A_BARE_RATE_IS_IN_KILOHERTZ_BELOW {
+        return format!("{hertz}{HERTZ}");
+    }
+
+    hertz.to_string()
 }
 
 #[cfg(test)]
@@ -1096,8 +1293,8 @@ mod tests {
         let held = worded("\"pink floyd\" live");
 
         assert_eq!(words("\"pink floyd\" live"), vec!["\"pink floyd\"", "live"]);
-        assert!(held.first().is_some_and(|word| word.phrase));
-        assert!(held.last().is_some_and(|word| !word.phrase));
+        assert_eq!(held.first().map(|word| word.reach), Some(Reach::Phrase));
+        assert_eq!(held.last().map(|word| word.reach), Some(Reach::Begins));
     }
 
     #[test]
@@ -1174,6 +1371,7 @@ mod tests {
             vec![Term::Length {
                 compare: Compare::Above,
                 length: Duration::from_secs(210),
+                grain: Grain::SECOND,
             }]
         );
         assert_eq!(
@@ -1181,6 +1379,7 @@ mod tests {
             vec![Term::Length {
                 compare: Compare::Below,
                 length: Duration::from_secs(270),
+                grain: Grain::SECOND,
             }]
         );
         assert_eq!(
@@ -1188,8 +1387,172 @@ mod tests {
             vec![Term::Length {
                 compare: Compare::Exactly,
                 length: Duration::from_secs(90),
+                grain: Grain::SECOND,
             }]
         );
+    }
+
+    #[test]
+    fn a_length_is_weighed_to_the_finest_unit_it_was_written_in() {
+        assert_eq!(
+            terms("length:3m"),
+            vec![Term::Length {
+                compare: Compare::Exactly,
+                length: Duration::from_secs(180),
+                grain: Grain::MINUTE,
+            }]
+        );
+        assert_eq!(
+            terms("length:1h5m"),
+            vec![Term::Length {
+                compare: Compare::Exactly,
+                length: Duration::from_secs(3900),
+                grain: Grain::MINUTE,
+            }]
+        );
+        assert_eq!(
+            terms("length:3.5m"),
+            vec![Term::Length {
+                compare: Compare::Exactly,
+                length: Duration::from_secs(210),
+                grain: Grain {
+                    unit: ClockUnit::Minute,
+                    decimals: 1,
+                },
+            }],
+            "a fraction should be weighed to the decimal it was typed to"
+        );
+        assert_eq!(
+            Grain {
+                unit: ClockUnit::Second,
+                decimals: 2,
+            }
+            .span(),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            terms("length:3:30"),
+            vec![Term::Length {
+                compare: Compare::Exactly,
+                length: Duration::from_secs(210),
+                grain: Grain::SECOND,
+            }]
+        );
+        for text in [
+            "length:3m",
+            "length:3m0s",
+            "length:1h0m",
+            "length:2h",
+            "length:0s",
+            "length:3.5m",
+            "length:>0.5s",
+            "length:0.50s",
+            "length:1.25h",
+        ] {
+            assert_eq!(
+                Search::read(text).to_string(),
+                text,
+                "{text} read back wrong"
+            );
+        }
+        assert_eq!(Search::read("length:180").to_string(), "length:3m0s");
+        assert_eq!(Search::read("length:3:30").to_string(), "length:3m30s");
+    }
+
+    #[test]
+    fn a_range_typed_the_wrong_way_round_is_the_range_it_names() {
+        assert_eq!(terms("year:2000-1990"), terms("year:1990-2000"));
+        assert_eq!(Search::read("year:2000-1990").to_string(), "year:1990-2000");
+        assert_eq!(terms("plays:10-5@30d"), terms("plays:5-10@30d"));
+        assert_eq!(terms("length:5m-3m"), terms("length:3m-5m"));
+        assert_eq!(terms("rate:96k-44.1k"), terms("rate:44.1k-96k"));
+    }
+
+    #[test]
+    fn a_bare_rate_below_a_thousand_is_read_in_kilohertz() {
+        for (text, hertz) in [
+            ("rate:44.1", 44_100),
+            ("rate:96", 96_000),
+            ("rate:192", 192_000),
+            ("rate:44100", 44_100),
+            ("rate:500hz", 500),
+        ] {
+            assert_eq!(
+                terms(text),
+                vec![Term::Rate {
+                    compare: Compare::Exactly,
+                    hertz,
+                }],
+                "{text} read wrong"
+            );
+        }
+        assert_eq!(Search::read("rate:500hz").to_string(), "rate:500hz");
+        assert_eq!(Search::read("rate:44.1").to_string(), "rate:44100");
+    }
+
+    #[test]
+    fn a_search_made_only_of_punctuation_is_no_search() {
+        for text in [
+            "!!!",
+            "+/-",
+            "- !!!",
+            "artist:!!!",
+            "\"...\"",
+            "title:=\"?\"",
+        ] {
+            assert!(
+                Search::read(text).is_empty(),
+                "{text} read as {:?}",
+                Search::read(text)
+            );
+        }
+        assert_eq!(shape("moon !!! or sun"), vec!["moon or sun"]);
+        assert_eq!(shape("moon or !!!"), vec!["moon", "or"]);
+    }
+
+    #[test]
+    fn an_equals_sign_asks_for_the_whole_name() {
+        let whole = worded("artist:=Air");
+        let quoted = worded("artist:=\"Air Supply\"");
+
+        assert_eq!(
+            whole,
+            vec![Word {
+                column: Some(Column::Artist),
+                text: "Air".to_owned(),
+                reach: Reach::Whole,
+            }]
+        );
+        assert_eq!(
+            quoted,
+            vec![Word {
+                column: Some(Column::Artist),
+                text: "Air Supply".to_owned(),
+                reach: Reach::Whole,
+            }]
+        );
+        assert_eq!(
+            worded("artist:\"=Air\"").first().map(|word| word.reach),
+            Some(Reach::Phrase),
+            "an equals sign inside the quotes is part of the phrase"
+        );
+        assert_eq!(
+            worded("lyrics:=\"a love\"").first().map(|word| word.reach),
+            Some(Reach::Phrase),
+            "the words a track sings are not a name"
+        );
+        for text in [
+            "artist:=\"Air\"",
+            "-album:=\"The Wall\"",
+            "genre:=\"trip hop\"",
+        ] {
+            assert_eq!(
+                Search::read(text).to_string(),
+                text,
+                "{text} read back wrong"
+            );
+        }
+        assert!(Search::read("artist:=Air").reads() == vec!["artist:=\"Air\"".to_owned()]);
     }
 
     #[test]

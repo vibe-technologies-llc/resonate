@@ -67,7 +67,7 @@ resonate            bin — CLI, tracing, wiring
   ├── resonate-lyrics     lyric vocabulary and the provider seam  → drawn by resonate-ui
   ├── resonate-vault      the managed archive: FLAC, WAVE+zstd, JXL covers
   ├── resonate-analysis   one whole decode: waveform, spectrum, verdict, loudness, Chromaprint;
-  │                       a clip's Chromaprint and Shazam signature
+  │                       a clip's Shazam signature
   ├── resonate-listen     capture the desktop or a microphone, and the recogniser seam
   ├── resonate-eq         profile formats, the profile store, the AutoEq catalogue and its seam
   ├── resonate-providers  the provider seam: an identity in, media out  → filled by providers/*
@@ -147,8 +147,9 @@ Invariants the layering protects; the rules files have the rest of each:
   naming a run of text edits.
 - **Core also carries what two crates that may not see each other share**: `Resumption` (built by
   the engine, stored by the library — `audio.md`), `Reordered`, `Appearance` (read by the config
-  reader, compiled without `ui`, and the window — `ui.md`), `CivilDate`, `eq`'s arithmetic
-  (`eq.md`) and `presence` (`discord.md`).
+  reader, compiled without `ui`, and the window — `ui.md`), `CivilDate`, `Calendar` (the
+  listener's zone, read through tz-rs, shared by the library's statistics and the window's chart),
+  `eq`'s arithmetic (`eq.md`) and `presence` (`discord.md`).
 - **Everything else is a crate behind a seam of its own**: tag writing through `TagSink`
   (`library.md`), the vault (`vault.md`), lyrics (`lyrics.md`), providers (`providers.md`),
   studies (`analysis.md`), the equaliser's I/O (`eq.md`), Discord (`discord.md`).
@@ -174,15 +175,24 @@ cargo clippy --workspace --all-targets -- -D warnings
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages   # every DSP stage under
                                                                        #   its ceiling
 cargo tree -p resonate-core                # must stay free of symphonia, pipewire, gpui, serde
-cargo tree -p resonate-library             # must stay free of ureq, serde
+cargo tree -p resonate-library             # must stay free of ureq, serde, serde_json
 cargo tree -p resonate-eq                  # must stay free of gpui, the engine, the library, ureq
 cargo tree -p resonate-vault               # must stay free of gpui, the engine, the library, ureq
-cargo tree -p resonate-dsp                 # must stay free of resonate-eq
+cargo tree -p resonate-codec               # must stay free of resonate-dsp, resonate-pipewire
+cargo tree -p resonate-dsp                 # must stay free of resonate-eq, resonate-codec,
+                                           #   resonate-pipewire
+cargo tree -p resonate-pipewire            # must stay free of resonate-codec, resonate-dsp
 cargo tree -p resonate-providers           # must stay free of the library, codec, vault, gpui
 cargo tree -p resonate-analysis            # must stay free of gpui, the engine, the library, ureq
 cargo tree -p resonate-discord             # must stay free of gpui, the library, ureq
+cargo tree -p resonate-listen              # must stay free of gpui, the engine, the library, ureq
+cargo tree -p resonate-lyrics              # must stay free of gpui, the engine, the library, ureq
+cargo tree -p resonate-mpris               # must stay free of gpui, the library
+cargo tree -p resonate --no-default-features   # must stay free of serde_json, gpui, ureq
 cargo test -p resonate-online --test live  # reaches the real services; skips unless
                                            #   RESONATE_ONLINE_TESTS is set
+cargo test -p resonate-subsonic            # tests/server.rs serves a fake Subsonic server on
+                                           #   loopback; no network needed
 rust-formatter                             # format; never `cargo fmt`
 rust-formatter --check                     # read-only; exits 1 with a diff
 cd fuzz && cargo +nightly fuzz build       # the parsers' fuzz targets; needs cargo-fuzz
@@ -279,18 +289,22 @@ cargo run -- analyse <file>           # decodes it whole: the lossless verdict a
                                       #   --recognise asks AcoustID what the audio is
 cargo run -- listen                   # records twelve seconds of the desktop — or, with
                                       #   --microphone [<name>], a microphone — and names the song
-                                      #   through Shazam, AudD or AcoustID; --seconds <n> sets the
-                                      #   length, --microphones lists what there is
+                                      #   through Shazam or AudD; --seconds <n> sets the length,
+                                      #   --microphones lists what there is
 cargo run -- play <files>             # plays a queue of paths or file:// URIs, reading transport
                                       #   keys on stdin (? for help), a key at a time under a live
-                                      #   position line on a terminal; --sleep <spec> sets the timer
+                                      #   position line on a terminal; --sleep <spec> sets the
+                                      #   timer, --shuffle, --repeat off|track|queue and --volume
+                                      #   <percent> the transport it starts with
 cargo run -- queue <files>            # adds them to the player on the bus, at the end or, with
                                       #   --next, after the playing row; --play hears the first as
                                       #   it lands, --playlist <name> sends a playlist's rows,
                                       #   --player <name> picks one of several players
 cargo run -- players                  # this build's players on the bus, what each plays, its rows
 cargo run -- scan <roots>             # scans into the SQLite library, prints the counts and,
-                                      #   with a reference, enriches what it holds
+                                      #   with a reference, enriches what it holds; --full reads
+                                      #   every file again, --follow-links walks into links; a
+                                      #   pass cancelled by a signal exits 1
 cargo run -- roots                    # the roots a bare `scan` walks
 cargo run -- enrich                   # asks the reference about every album and artist not asked
                                       #   lately; --refresh asks the answered again, --albums <N>
@@ -303,7 +317,9 @@ cargo run -- missing                  # release tracks with no file and releases
 cargo run -- poll                     # asks every provider for each want not tried lately and
                                       #   lands deliveries in the vault as rows; --again asks all
 cargo run -- forget <roots>           # drops roots and their tracks; a path or URI `wants` lists
-                                      #   a delivery under forgets that row, its want due again
+                                      #   a delivery under forgets that row, its want due again;
+                                      #   a folder inside a root forgets the tracks under it whose
+                                      #   files are gone, an unmounted drive's included
 cargo run -- tag                      # the tags that would be written into every scanned file,
                                       #   one row per field, with the album's cover where the file
                                       #   has none, a favourite as a rating and plays as a count;

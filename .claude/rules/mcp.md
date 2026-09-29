@@ -36,13 +36,37 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   `ResourceNotFound`, the spec's `-32002`.
 - **A notification is never answered**, whatever its method, nor is a message carrying a `result`
   or `error`, since this server sends no requests of its own.
+- **A batch is answered as one array**, each message in it read as a line alone would be and the
+  answers in the order asked, notifications and answers leaving no entry; a batch of nothing but
+  those is not answered at all, and an empty one is `Refusal::EmptyBatch` (`-32600`), as JSON-RPC
+  gives it. `2025-03-26` asks for batches and the later version dropped them; answering one
+  whatever was negotiated costs a client that sends none nothing
+  (`a_batch_is_answered_as_one_array_in_the_order_it_was_asked`).
 - `initialize` echoes the protocol version asked for where it is one of `PROTOCOLS`, else the
-  latest. It offers tools, resources, prompts and completions; `listChanged` is false for the first
-  three (the tools are `Tool::ALL`, the prompts `Prompt::ALL`, and a client lists resources again
-  whenever it wants the playlists as they stand) and `subscribe` false, since the one thread
-  reading stdin has nothing to write an update from. The instructions say the three long passes run
+  latest. It offers tools, resources, prompts and completions; `listChanged` is false for tools and
+  prompts (they are `Tool::ALL` and `Prompt::ALL`). The instructions say the three long passes run
   in the background and how to ask after them, that the readings are resources too, what the
   prompts are for and that their arguments complete.
+
+## What is pushed
+
+- **A resource can be subscribed to, and the resource list watched, where the session can push.**
+  `serve_until_stopped` already takes its input over a channel, so a third sender — the
+  `resonate-mcp-tick` thread — puts a `Tick` on it every `LOOKED_OVER_EVERY` (500 ms), and a tick
+  is answered between lines on the one thread, never beside one. On a tick each subscribed URI is
+  read again and, where its reading differs from the last (a failed read is a reading too, so a
+  player appearing is a change), `notifications/resources/updated` names it; once the client has
+  listed resources, a list that differs from the last one it was sent is
+  `notifications/resources/list_changed`. So a pass running is pushed through
+  `resonate://library/passes`, whose progress moves on every tick
+  (`a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs`). A reading that moves with
+  the clock — the position playing, a window of listening — is told as changed on every tick;
+  it did change.
+- **`serve` pushes nothing**, since it reads stdin on the thread answering: `initialize` offers
+  `subscribe` and `listChanged` only where `pushing` was set by `serve_until_stopped`, and a
+  subscription asked of a session that cannot push is `UnknownMethod`. Subscriptions are keyed by
+  the URI the client asked under, in a `BTreeMap` since the client names the keys; a URI naming no
+  resource is `UnknownResource`, as a read of one is.
 
 ## The resources
 
@@ -117,13 +141,22 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
 - **A `track_id` is the catalog's and a `queue_id` the queue's** — different numbers.
   `add_to_queue` takes the first, or a search queued in album order through the search box's
   grammar; `remove_from_queue` the second.
+- **A list of ids is held to `MOST_ROWS`**, as a search's `limit` is: every id array's schema says
+  `maxItems`, and more than that is `Refusal::TooMany` under `InvalidParams`, so a model cannot
+  hand the bus or a statement a hundred thousand rows in one call.
+- **A queueing that fails says how far it got.** `add_to_queue` reads the queue's length before
+  asking the bus, and where the bus fails reads it again, answering `Error::QueuedPartway` with the
+  rows that landed and the rows asked for beside the bus's failure — `Running::queue` falls back to
+  one `AddTrack` a row where `AddTracks` is not offered, so a failure can come after some landed.
 - **A `queue_id` is written as text.** The queue mints ids down from `u64::MAX`, and a client
   reading JSON numbers as doubles rounds `18446744073709551615` to another row.
 - **A result leaves out what nothing answered** rather than writing `null`, and is one object
   twice: `structuredContent` and a text block of its JSON, for a client reading only text.
 - **A transport tool answers what the player reads back once the gesture landed.** The bus settles
   every call moving the engine, so `control_playback` answers the following status and track,
-  `seek` the landed position, `set_volume` the volume read back, `add_to_queue` and
+  `seek` the landed position and `moved_seconds` as the distance between the position read before
+  and after — not the distance asked for, which a track's start or end cuts short — left out where
+  the seek carried the player onto another track, `set_volume` the volume read back, `add_to_queue` and
   `remove_from_queue` the queue's row count now. `play_playlist` is the exception:
   `ActivatePlaylist` is the front end's, not the engine's, and answers once handed over.
 - **`show_queue` describes only what it lists.** `Controlling` reads the queue's ids (one property)
@@ -168,10 +201,13 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   on one thread), and a finished pass is joined when first asked after, its summary read once and
   kept. A second start of a running pass is `Error::AlreadyRunning`; a scan beside another
   process's walk is the library's `AlreadyWalking`.
-- **Passes start as the command line starts them.** A scan adds each folder given as a root —
-  refusing a non-folder with `Error::NoSuchFolder` before anything is kept, every path weighed
-  before the first is added, since `add_root` commits each alone — and walks every root where given
-  none, incrementally, with covers, on the machine's parallelism; a lookup carries on one a run
+- **Passes start as the command line starts them.** A scan refuses a non-folder with
+  `Error::NoSuchFolder` before anything starts, then hands the folders to `Library::scan`, which
+  registers them as roots in one transaction on its own thread once it holds the walk — never
+  through `add_root` first, which commits each alone, so a scan refused (`AlreadyWalking` beside
+  another process's walk) or failing (a root inside a root, told by `library_passes` as `failed`)
+  keeps none of them (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`); it walks
+  every root where given none, incrementally, with covers, on the machine's parallelism; a lookup carries on one a run
   left unfinished unless asked to refresh, honouring `study`; a poll asks every registered
   provider. What the passes need from outside arrives as `Lookups` — reference, fingerprinters,
   providers, the study switch — filled by the binary from the `online::` and `providers::`

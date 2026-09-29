@@ -90,7 +90,7 @@ const HZ_A_KILOHERTZ: f32 = 1_000.0;
 fn verdict_colour(verdict: Verdict) -> u32 {
     match verdict {
         Verdict::Genuine => theme::lossless(),
-        Verdict::Suspect => theme::converted(),
+        Verdict::Suspect => theme::suspect(),
         Verdict::Fake => theme::failure(),
         Verdict::Lossy => theme::lossy(),
         Verdict::NotJudged => theme::faint(),
@@ -888,4 +888,32 @@ fn heard_row(heard: &HeardAs) -> Div {
                 ),
         )
         .child(kit::figure(format!("{} %", heard.score)))
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_engine::Verdict;
+
+    use super::verdict_colour;
+
+    #[test]
+    fn every_verdict_is_drawn_in_a_colour_of_its_own() {
+        let verdicts = [
+            Verdict::Genuine,
+            Verdict::Suspect,
+            Verdict::Fake,
+            Verdict::Lossy,
+            Verdict::NotJudged,
+        ];
+
+        let drawn = verdicts.map(verdict_colour);
+
+        for (at, colour) in drawn.iter().enumerate() {
+            assert!(
+                !drawn[..at].contains(colour),
+                "{:?} is drawn in the colour of another verdict",
+                verdicts[at]
+            );
+        }
+    }
 }

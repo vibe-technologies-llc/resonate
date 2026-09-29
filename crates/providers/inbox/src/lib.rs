@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use resonate_core::SourceId;
+use resonate_core::{SourceId, names_audio};
 use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
 
 const INBOX: &str = "inbox";
@@ -33,7 +33,7 @@ impl Inbox {
         let mut files = Vec::new();
         for entry in fs::read_dir(&self.folder).map_err(|source| self.refused(source))? {
             let path = entry.map_err(|source| self.refused(source))?.path();
-            if path.is_file() {
+            if path.is_file() && names_audio(&path) {
                 files.push(path);
             }
         }
@@ -191,6 +191,35 @@ mod tests {
 
         assert!(delivered(inbox.obtain(&Identity::named("Echoes")).expect("no read")).is_none());
         assert!(delivered(inbox.obtain(&echoes()).expect("a readable inbox")).is_none());
+    }
+
+    #[test]
+    fn only_audio_is_delivered_whatever_else_shares_its_name() {
+        let folder = Folder::new().holding(&[
+            &format!("{ECHOES}.cue"),
+            &format!("{ECHOES}.jpg"),
+            &format!("{ECHOES}.LOG"),
+            &format!("{ECHOES}.FLAC"),
+        ]);
+        let inbox = Inbox::at(&folder.0);
+
+        let found = delivered(inbox.obtain(&echoes()).expect("a readable inbox"));
+
+        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.FLAC"))));
+    }
+
+    #[test]
+    fn a_name_matched_by_no_audio_file_delivers_nothing() {
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.cue"), &format!("{ECHOES}.jpg")]);
+
+        assert!(
+            delivered(
+                Inbox::at(&folder.0)
+                    .obtain(&echoes())
+                    .expect("a readable inbox")
+            )
+            .is_none()
+        );
     }
 
     #[test]

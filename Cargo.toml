@@ -51,6 +51,7 @@ unicode-width = { version = "0.2.2", default-features = false }
 unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
 encoding_rs = { version = "0.8.42", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
+tz-rs = { version = "0.7.3", default-features = false, features = ["std"] }
 image = {
     version = "0.25.10",
     default-features = false,

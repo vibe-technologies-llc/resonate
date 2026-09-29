@@ -4,6 +4,7 @@ use image::{
     DynamicImage, ExtendedColorType, ImageEncoder as _, RgbaImage,
     codecs::png::{CompressionType, FilterType, PngEncoder},
 };
+use jxl_oxide::InitializeResult;
 use resonate_codec::{CoverArt, ImageFormat};
 use zune_core::{bit_depth::BitDepth, colorspace::ColorSpace, options::EncoderOptions};
 use zune_jpegxl::JxlSimpleEncoder;
@@ -47,6 +48,24 @@ pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawn> {
         width,
         height,
     })
+}
+
+pub(crate) fn size_of_jxl(bytes: &[u8]) -> Result<(u32, u32)> {
+    let unopened = || Error::PictureRead {
+        op: PictureOp::Open,
+    };
+    let mut reading = jxl_oxide::JxlImage::builder().build_uninit();
+    reading.feed_bytes(bytes).map_err(|source| {
+        tracing::warn!(%source, "a JXL picture's head could not be read");
+        unopened()
+    })?;
+    match reading.try_init().map_err(|source| {
+        tracing::warn!(%source, "a JXL picture's head could not be read");
+        unopened()
+    })? {
+        InitializeResult::Initialized(picture) => Ok((picture.width(), picture.height())),
+        InitializeResult::NeedMoreData(_) => Err(unopened()),
+    }
 }
 
 pub(crate) fn pixels_of_jxl(bytes: &[u8]) -> Result<RgbaImage> {
@@ -134,5 +153,41 @@ const fn read_as(format: ImageFormat) -> image::ImageFormat {
         ImageFormat::Webp => image::ImageFormat::WebP,
         ImageFormat::Gif => image::ImageFormat::Gif,
         ImageFormat::Bmp => image::ImageFormat::Bmp,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn noisy(width: u32, height: u32) -> CoverArt {
+        let mut state = 0x2545_f491_u32;
+        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+        for _ in 0..width * height {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let [red, green, blue, _] = state.to_le_bytes();
+            pixels.extend_from_slice(&[red, green, blue, OPAQUE]);
+        }
+        let drawn = RgbaImage::from_raw(width, height, pixels).expect("a drawn picture");
+        let mut written = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(drawn)
+            .write_to(&mut written, image::ImageFormat::Png)
+            .expect("a written picture");
+        CoverArt {
+            format: ImageFormat::Png,
+            bytes: written.into_inner(),
+        }
+    }
+
+    #[test]
+    fn a_jxl_is_sized_by_its_head_alone() {
+        let drawn = as_jxl(&noisy(64, 48)).expect("a JXL");
+        let head = &drawn.bytes[..drawn.bytes.len() / 4];
+
+        assert_eq!(size_of_jxl(&drawn.bytes).expect("a size"), (64, 48));
+        assert_eq!(size_of_jxl(head).expect("a size off the head"), (64, 48));
+        assert!(pixels_of_jxl(head).is_err());
     }
 }

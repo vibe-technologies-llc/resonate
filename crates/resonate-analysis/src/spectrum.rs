@@ -1,5 +1,6 @@
 use std::{f32::consts::PI, sync::Arc, time::Duration};
 
+use resonate_codec::Placement;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
 pub const FLOOR_DB: f32 = -160.0;
@@ -99,6 +100,8 @@ pub(crate) struct Transforming {
     points: usize,
     fft: Arc<dyn Fft<f32>>,
     window: Vec<f32>,
+    channels: usize,
+    heard: Vec<usize>,
     gathered: Vec<f32>,
     buffer: Vec<Complex<f32>>,
     scratch: Vec<Complex<f32>>,
@@ -112,8 +115,10 @@ pub(crate) struct Transforming {
 }
 
 impl Transforming {
-    pub(crate) fn new(rate: u32) -> Self {
+    pub(crate) fn new(rate: u32, placements: &[Placement]) -> Self {
         let points = points_for(rate);
+        let channels = placements.len().max(1);
+        let heard = heard_channels(placements);
         let fft = FftPlanner::new().plan_fft_forward(points);
         let scratch = vec![Complex::default(); fft.get_inplace_scratch_len()];
         let window = (0..points)
@@ -136,7 +141,9 @@ impl Transforming {
             points,
             fft,
             window,
-            gathered: Vec::with_capacity(points),
+            channels,
+            heard,
+            gathered: Vec::with_capacity(points * channels),
             buffer: vec![Complex::default(); points],
             scratch,
             powers: vec![0.0; points / 2 + 1],
@@ -153,14 +160,15 @@ impl Transforming {
         self.points
     }
 
-    pub(crate) fn note(&mut self, mono: &[f32], mut each: impl FnMut(&[f32])) {
-        let mut rest = mono;
+    pub(crate) fn note(&mut self, interleaved: &[f32], mut each: impl FnMut(&[f32])) {
+        let whole = self.points * self.channels;
+        let mut rest = interleaved;
         while !rest.is_empty() {
-            let room = self.points - self.gathered.len();
+            let room = whole - self.gathered.len();
             let (taken, left) = rest.split_at(room.min(rest.len()));
             self.gathered.extend_from_slice(taken);
             rest = left;
-            if self.gathered.len() == self.points {
+            if self.gathered.len() == whole {
                 self.transform();
                 each(&self.powers);
                 self.gathered.clear();
@@ -171,20 +179,34 @@ impl Transforming {
     fn transform(&mut self) {
         let squares: f64 = self
             .gathered
-            .iter()
-            .map(|sample| f64::from(*sample) * f64::from(*sample))
+            .chunks_exact(self.channels)
+            .flat_map(|frame| self.heard.iter().map(|channel| frame[*channel]))
+            .map(|sample| f64::from(sample) * f64::from(sample))
             .sum();
-        let loud = decibels(squares / self.points as f64) >= SILENT_BELOW_DB;
+        let weighed = (self.points * self.heard.len()) as f64;
+        let loud = decibels(squares / weighed) >= SILENT_BELOW_DB;
 
-        for ((slot, sample), weight) in self.buffer.iter_mut().zip(&self.gathered).zip(&self.window)
-        {
-            *slot = Complex::new(sample * weight, 0.0);
+        self.powers.fill(0.0);
+        for pair in self.heard.chunks(2) {
+            let first = pair[0];
+            let second = pair.get(1).copied();
+            for ((slot, frame), weight) in self
+                .buffer
+                .iter_mut()
+                .zip(self.gathered.chunks_exact(self.channels))
+                .zip(&self.window)
+            {
+                let beside = second.map_or(0.0, |channel| frame[channel] * weight);
+                *slot = Complex::new(frame[first] * weight, beside);
+            }
+            self.fft
+                .process_with_scratch(&mut self.buffer, &mut self.scratch);
+            add_the_powers(&self.buffer, second.is_some(), &mut self.powers);
         }
-        self.fft
-            .process_with_scratch(&mut self.buffer, &mut self.scratch);
 
-        for ((power, sum), bin) in self.powers.iter_mut().zip(&mut self.sums).zip(&self.buffer) {
-            let heard = f64::from(bin.norm_sqr()) / self.full_scale_power;
+        let share = 1.0 / (self.heard.len() as f64 * self.full_scale_power);
+        for (power, sum) in self.powers.iter_mut().zip(&mut self.sums) {
+            let heard = f64::from(*power) * share;
             *power = heard as f32;
             if loud {
                 *sum += heard;
@@ -260,6 +282,28 @@ impl Transforming {
     }
 }
 
+pub(crate) fn heard_channels(placements: &[Placement]) -> Vec<usize> {
+    let heard: Vec<usize> = placements
+        .iter()
+        .enumerate()
+        .filter(|(_, placement)| **placement != Placement::Lfe)
+        .map(|(channel, _)| channel)
+        .collect();
+    if heard.is_empty() { vec![0] } else { heard }
+}
+
+fn add_the_powers(transformed: &[Complex<f32>], packs_two: bool, into: &mut [f32]) {
+    let points = transformed.len();
+    for (bin, power) in into.iter_mut().enumerate() {
+        *power += if packs_two {
+            let mirrored = transformed[(points - bin) % points];
+            (transformed[bin].norm_sqr() + mirrored.norm_sqr()) / 2.0
+        } else {
+            transformed[bin].norm_sqr()
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,11 +311,76 @@ mod tests {
     const RATE: u32 = 48_000;
 
     fn transformed(signal: &[f32]) -> Spectrum {
-        let mut transforming = Transforming::new(RATE);
-        for block in signal.chunks(1_000) {
+        transformed_over(signal, &[Placement::Front])
+    }
+
+    fn transformed_over(interleaved: &[f32], placements: &[Placement]) -> Spectrum {
+        let mut transforming = Transforming::new(RATE, placements);
+        for block in interleaved.chunks(1_000 * placements.len()) {
             transforming.note(block, |_| {});
         }
         transforming.finished()
+    }
+
+    fn interleaved(lanes: &[Vec<f32>]) -> Vec<f32> {
+        (0..lanes[0].len())
+            .flat_map(|frame| lanes.iter().map(move |lane| lane[frame]))
+            .collect()
+    }
+
+    fn on_bin(bin: usize) -> f32 {
+        bin as f32 * RATE as f32 / points_for(RATE) as f32
+    }
+
+    #[test]
+    fn a_stereo_pair_in_opposite_phase_reads_as_loud_as_one_in_phase() {
+        let sounding = sine(on_bin(100), 1.0, 2);
+        let opposed: Vec<f32> = sounding.iter().map(|sample| -sample).collect();
+
+        let spectrum = transformed_over(
+            &interleaved(&[sounding, opposed]),
+            &[Placement::Front, Placement::Front],
+        );
+
+        assert!(
+            spectrum.levels()[100].abs() < 0.01,
+            "{}",
+            spectrum.levels()[100]
+        );
+    }
+
+    #[test]
+    fn each_channel_of_a_pair_is_weighed_apart_as_a_share_of_the_whole() {
+        let spectrum = transformed_over(
+            &interleaved(&[sine(on_bin(100), 1.0, 2), sine(on_bin(300), 1.0, 2)]),
+            &[Placement::Front, Placement::Front],
+        );
+        let half = 10.0 * 0.5_f32.log10();
+
+        assert!((spectrum.levels()[100] - half).abs() < 0.01);
+        assert!((spectrum.levels()[300] - half).abs() < 0.01);
+        assert!(spectrum.levels()[200] < -100.0);
+    }
+
+    #[test]
+    fn the_low_frequency_channel_is_left_out_of_the_spectrum() {
+        let spectrum = transformed_over(
+            &interleaved(&[
+                sine(on_bin(100), 1.0, 2),
+                sine(on_bin(100), 1.0, 2),
+                sine(on_bin(100), 1.0, 2),
+                sine(on_bin(10), 1.0, 2),
+            ]),
+            &[
+                Placement::Front,
+                Placement::Front,
+                Placement::Front,
+                Placement::Lfe,
+            ],
+        );
+
+        assert!(spectrum.levels()[100].abs() < 0.01);
+        assert!(spectrum.levels()[10] < -80.0, "{}", spectrum.levels()[10]);
     }
 
     fn sine(hz: f32, amplitude: f32, seconds: u32) -> Vec<f32> {

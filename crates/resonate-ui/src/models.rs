@@ -2244,8 +2244,10 @@ impl LibraryModel {
             return;
         };
         let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._settled, Task::ready(()));
 
         self._settled = cx.background_executor().spawn(async move {
+            before.await;
             if let Err(error) = library.listened(listen, heard) {
                 tracing::warn!(%error, "how long a play has been heard for was not kept");
             }
@@ -2254,8 +2256,10 @@ impl LibraryModel {
 
     pub fn track_passed(&mut self, heard: Duration, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._passed, Task::ready(()));
 
         self._passed = cx.background_executor().spawn(async move {
+            before.await;
             if let Err(error) = library.passed(heard) {
                 tracing::warn!(%error, "how long a passing listen lasted was not kept");
             }
@@ -2267,8 +2271,10 @@ impl LibraryModel {
             return;
         };
         let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._settled, Task::ready(()));
 
         self._settled = cx.background_executor().spawn(async move {
+            before.await;
             if let Err(error) = library.listened(listen, heard) {
                 tracing::warn!(%error, "how long a play was heard for was not kept");
             }
@@ -2337,8 +2343,10 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._edit, Task::ready(()));
 
         self._edit = cx.spawn(async move |this, cx| {
+            before.await;
             let done = cx
                 .background_executor()
                 .spawn(async move { change(&library) })

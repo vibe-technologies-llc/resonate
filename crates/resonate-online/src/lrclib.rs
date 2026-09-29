@@ -83,14 +83,34 @@ impl Answer {
                 .is_some_and(|named| folded(named) == folded(artist))
     }
 
+    fn worded(&self) -> Worded {
+        if self.instrumental {
+            Worded::Instrumental
+        } else if holds_text(self.synced.as_deref()) {
+            Worded::Synced
+        } else if holds_text(self.plain.as_deref()) || holds_text(self.lyricsfile.as_deref()) {
+            Worded::Plain
+        } else {
+            Worded::Wordless
+        }
+    }
+
+    fn lasts(&self) -> Option<Duration> {
+        self.duration
+            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+    }
+
+    fn misses_by(&self, wanted: Option<Duration>) -> Duration {
+        wanted
+            .zip(self.lasts())
+            .map_or(Duration::MAX, |(wanted, lasts)| lasts.abs_diff(wanted))
+    }
+
     fn lasts_about(&self, wanted: Option<Duration>) -> bool {
         let Some(wanted) = wanted else {
             return true;
         };
-        let Some(lasts) = self
-            .duration
-            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
-        else {
+        let Some(lasts) = self.lasts() else {
             return true;
         };
 
@@ -103,7 +123,19 @@ fn source() -> SourceId {
 }
 
 fn present(text: Option<String>) -> Option<String> {
-    text.filter(|text| !text.trim().is_empty())
+    text.filter(|text| holds_text(Some(text)))
+}
+
+fn holds_text(text: Option<&str>) -> bool {
+    text.is_some_and(|text| !text.trim().is_empty())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Worded {
+    Synced,
+    Plain,
+    Wordless,
+    Instrumental,
 }
 
 pub(crate) fn folded(text: &str) -> String {
@@ -114,9 +146,12 @@ pub(crate) fn folded(text: &str) -> String {
 }
 
 fn pick(found: Vec<Answer>, asked: &LyricsAsked) -> Option<Answer> {
-    found.into_iter().find(|answer| {
-        answer.names(&asked.title, &asked.artist) && answer.lasts_about(asked.length)
-    })
+    found
+        .into_iter()
+        .filter(|answer| {
+            answer.names(&asked.title, &asked.artist) && answer.lasts_about(asked.length)
+        })
+        .min_by_key(|answer| (answer.worded(), answer.misses_by(asked.length)))
 }
 
 pub(crate) struct Failed {
@@ -424,8 +459,8 @@ mod tests {
                 Some(Duration::from_secs(1000)),
             ),
         )
-        .expect("the first lasts about as long");
-        assert_eq!(taken.id, Some(18_688_320));
+        .expect("four last about as long");
+        assert_eq!(taken.id, Some(20_607_281));
 
         let taken = pick(
             found(),
@@ -446,6 +481,53 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    fn hit(id: u64, lasts: f64, synced: bool) -> Answer {
+        Answer {
+            id: Some(id),
+            track_name: Some("Time".to_owned()),
+            artist_name: Some("Pink Floyd".to_owned()),
+            duration: Some(lasts),
+            instrumental: false,
+            plain: Some("Ticking away".to_owned()),
+            synced: synced.then(|| "[00:01.00] Ticking away".to_owned()),
+            lyricsfile: None,
+        }
+    }
+
+    #[test]
+    fn a_synced_hit_is_taken_over_an_earlier_plain_one_and_the_nearest_in_length_among_equals() {
+        let wanted = asked("Time", "Pink Floyd", Some(Duration::from_secs(413)));
+
+        let taken = pick(vec![hit(1, 413.0, false), hit(2, 420.0, true)], &wanted)
+            .expect("both are acceptable");
+        assert_eq!(taken.id, Some(2));
+
+        let taken = pick(
+            vec![
+                hit(1, 430.0, true),
+                hit(2, 412.0, true),
+                hit(3, 413.5, false),
+            ],
+            &wanted,
+        )
+        .expect("every one is acceptable");
+        assert_eq!(taken.id, Some(2));
+
+        let silent = Answer {
+            instrumental: true,
+            ..hit(1, 413.0, true)
+        };
+        let taken = pick(vec![silent, hit(2, 440.0, false)], &wanted).expect("both are acceptable");
+        assert_eq!(taken.id, Some(2));
+
+        let taken = pick(
+            vec![hit(1, 413.0, true), hit(2, 413.0, true)],
+            &asked("Time", "Pink Floyd", None),
+        )
+        .expect("both are acceptable");
+        assert_eq!(taken.id, Some(1));
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use resonate_core::ListenId;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{Error, Mbid, Result, StoreOp, db::Inner, store};
+use crate::{Error, Isrc, Mbid, Result, StoreOp, db::Inner, store};
 
 pub const SUBMITTED_AT_ONCE: usize = 100;
 
@@ -19,7 +19,8 @@ const THE_LAST_LISTEN: &str = "SELECT coalesce(max(id), 0) FROM listens";
 macro_rules! billed_columns {
     () => {
         "t.title, coalesce(t.artist, r.name), a.title, t.mbid, a.mbid,
-         coalesce(t.artist_mbid, r.mbid), t.track_number, t.duration, t.sample_rate"
+         coalesce(t.artist_mbid, r.mbid), t.track_number, t.duration, t.sample_rate,
+         t.isrc, a.release_group"
     };
 }
 
@@ -64,7 +65,9 @@ pub struct Billed {
     pub album: Option<String>,
     pub recording: Option<Mbid>,
     pub release: Option<Mbid>,
+    pub release_group: Option<Mbid>,
     pub artist_mbid: Option<Mbid>,
+    pub isrc: Option<Isrc>,
     pub number: Option<u32>,
     pub length: Option<Duration>,
 }
@@ -253,6 +256,8 @@ struct RawBilled {
     number: Option<i64>,
     frames: Option<i64>,
     rate: i64,
+    isrc: Option<String>,
+    release_group: Option<String>,
 }
 
 impl RawBilled {
@@ -267,6 +272,8 @@ impl RawBilled {
             number: row.get(from + 6)?,
             frames: row.get(from + 7)?,
             rate: row.get(from + 8)?,
+            isrc: row.get(from + 9)?,
+            release_group: row.get(from + 10)?,
         })
     }
 
@@ -283,7 +290,9 @@ impl RawBilled {
                 album: named(self.album),
                 recording: store::mbid_in(self.recording.as_deref()),
                 release: store::mbid_in(self.release.as_deref()),
+                release_group: store::mbid_in(self.release_group.as_deref()),
                 artist_mbid: store::mbid_in(self.artist_mbid.as_deref()),
+                isrc: store::isrc_in(self.isrc.as_deref()),
                 number: self.number.and_then(|number| u32::try_from(number).ok()),
                 length,
             })

@@ -112,6 +112,14 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
+        help = "Switch the graph to the source's rate for this run, whatever the bit-perfect \
+                setting says"
+    )]
+    pub bit_perfect: bool,
+
+    #[arg(
+        long,
+        global = true,
         help = "Stay on whatever rate the graph is already running at, rather than switching it \
                 to match the source. Trades bit-accuracy for never interrupting another client"
     )]
@@ -126,6 +134,59 @@ pub struct Cli {
                 entry's %U passes"
     )]
     pub files: Vec<OsString>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum RepeatArg {
+    #[default]
+    Off,
+    Track,
+    Queue,
+}
+
+#[derive(Debug, Default, Args)]
+pub struct TransportArgs {
+    #[arg(
+        long,
+        help = "Play the queue in a shuffled order, starting anywhere in it"
+    )]
+    pub shuffle: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "MODE",
+        help = "Repeat nothing, the track playing or the whole queue"
+    )]
+    pub repeat: Option<RepeatArg>,
+
+    #[arg(
+        long,
+        value_name = "PERCENT",
+        value_parser = clap::value_parser!(u8).range(0..=100),
+        help = "Start at this volume, 0 to 100, rather than the volume setting's"
+    )]
+    pub volume: Option<u8>,
+}
+
+#[derive(Debug, Args)]
+pub struct ScanArgs {
+    #[arg(value_name = "ROOT")]
+    pub roots: Vec<PathBuf>,
+
+    #[arg(
+        long,
+        help = "Read every file again, rather than only those whose size or time has moved since \
+                the last scan"
+    )]
+    pub full: bool,
+
+    #[arg(
+        long,
+        help = "Walk into symbolic links to files and folders; a folder reached twice is walked \
+                once"
+    )]
+    pub follow_links: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -606,7 +667,7 @@ pub enum Sub {
     Sinks,
 
     #[command(about = "Scan library roots and exit. With no paths, rescans every registered root")]
-    Scan { roots: Vec<PathBuf> },
+    Scan(ScanArgs),
 
     #[command(about = "Print the library roots a bare `scan` will walk")]
     Roots,
@@ -658,11 +719,13 @@ pub enum Sub {
     },
 
     #[command(
-        about = "Drop library roots, and every track scanned from them, or a track a provider \
-                 delivered, named by the path or URI `resonate wants` lists it under"
+        about = "Drop library roots, and every track scanned from them; a track a provider \
+                 delivered, named by the path or URI `resonate wants` lists it under; or, for a \
+                 folder inside a root, every track under it whose file is gone, even from a drive \
+                 that is not mounted"
     )]
     Forget {
-        #[arg(required = true, value_name = "ROOTS_OR_DELIVERED")]
+        #[arg(required = true, value_name = "ROOTS_DELIVERED_OR_FOLDERS")]
         roots: Vec<PathBuf>,
     },
 
@@ -754,6 +817,9 @@ pub enum Sub {
             help = SLEEP_SPEC_MEANS,
         )]
         sleep: Option<String>,
+
+        #[command(flatten)]
+        transport: TransportArgs,
     },
 
     #[command(

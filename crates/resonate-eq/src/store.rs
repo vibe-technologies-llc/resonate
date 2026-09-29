@@ -1,4 +1,5 @@
 use std::{
+    collections::BinaryHeap,
     fmt::Write as _,
     fs,
     io::Read,
@@ -48,8 +49,7 @@ impl ProfileName {
             }
         }
         let spelled: String = spelled.split_whitespace().collect::<Vec<_>>().join(" ");
-        let cut: String = spelled.chars().take(NAME_AT_MOST).collect();
-        Self::new(&cut).unwrap_or_else(|_| Self("profile".into()))
+        Self::new(cut_to_fit(&spelled)).unwrap_or_else(|_| Self("profile".into()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -112,27 +112,15 @@ impl Store {
             Err(source) => return Err(Self::failed(&self.folder, StoreOp::Walk)(source)),
         };
 
-        let mut names = Vec::new();
-        for entry in walked.flatten() {
-            if names.len() >= PROFILES_AT_MOST {
-                tracing::debug!(
-                    folder = %self.folder.display(),
-                    "more profiles than this build lists"
-                );
-                break;
-            }
+        let names = walked.flatten().filter_map(|entry| {
             let path = entry.path();
             if path.extension().is_none_or(|held| held != EXTENSION) {
-                continue;
+                return None;
             }
-            if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str())
-                && let Ok(name) = ProfileName::new(stem)
-            {
-                names.push(name);
-            }
-        }
-        names.sort();
-        Ok(names)
+            let stem = path.file_stem()?.to_str()?;
+            ProfileName::new(stem).ok()
+        });
+        Ok(the_least(names, &self.folder))
     }
 
     fn text_of(path: &Path) -> Result<Option<String>> {
@@ -206,30 +194,19 @@ impl Store {
             Err(source) => return Err(Self::failed(&folder, StoreOp::Walk)(source)),
         };
 
-        let mut owners = Vec::new();
-        for entry in walked.flatten() {
-            if owners.len() >= PROFILES_AT_MOST {
-                tracing::debug!(
-                    folder = %folder.display(),
-                    "more own curves than this build lists"
-                );
-                break;
-            }
+        let owners = walked.flatten().filter_map(|entry| {
             let path = entry.path();
             if path.extension().is_none_or(|held| held != EXTENSION) {
-                continue;
+                return None;
             }
-            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                continue;
-            };
+            let stem = path.file_stem()?.to_str()?;
             if stem == EVERY_OTHER_DEVICE {
-                owners.push(None);
-            } else if let Some(device) = device_of_a_stem(stem) {
-                owners.push(Some(device));
+                Some(None)
+            } else {
+                device_of_a_stem(stem).map(Some)
             }
-        }
-        owners.sort();
-        Ok(owners)
+        });
+        Ok(the_least(owners, &folder))
     }
 
     pub fn forget(&self, name: &ProfileName) -> Result<bool> {
@@ -286,6 +263,37 @@ impl Store {
     pub fn export(&self, profile: &Profile, to: &Path) -> Result<()> {
         fs::write(to, apo::write(profile)).map_err(Self::failed(to, StoreOp::Write))
     }
+}
+
+fn cut_to_fit(spelled: &str) -> &str {
+    let fits = spelled
+        .char_indices()
+        .map(|(at, glyph)| at + glyph.len_utf8())
+        .take_while(|&end| end <= NAME_AT_MOST)
+        .last()
+        .unwrap_or(0);
+    &spelled[..fits]
+}
+
+fn the_least<T: Ord>(walked: impl Iterator<Item = T>, folder: &Path) -> Vec<T> {
+    let mut least = BinaryHeap::with_capacity(PROFILES_AT_MOST + 1);
+    let mut passed_over = 0_usize;
+    for item in walked {
+        least.push(item);
+        if least.len() > PROFILES_AT_MOST {
+            least.pop();
+            passed_over += 1;
+        }
+    }
+
+    if passed_over > 0 {
+        tracing::debug!(
+            folder = %folder.display(),
+            passed_over,
+            "more files than this build lists"
+        );
+    }
+    least.into_sorted_vec()
 }
 
 fn stem_for_a_device(device: &str) -> Result<String> {
@@ -424,6 +432,41 @@ mod tests {
             ProfileName::after("  spaced   out  ").as_str(),
             "spaced out"
         );
+    }
+
+    #[test]
+    fn a_name_cut_to_fit_keeps_as_many_letters_as_the_bytes_allow_in_any_script() {
+        let wide = "\u{97f3}".repeat(40);
+        let cut = ProfileName::after(&wide);
+
+        assert_eq!(cut.as_str(), "\u{97f3}".repeat(NAME_AT_MOST / 3));
+        assert_ne!(ProfileName::after(&"\u{3042}".repeat(40)), cut);
+        assert_eq!(
+            ProfileName::after(&format!("{}\u{97f3}", "x".repeat(NAME_AT_MOST - 1))).as_str(),
+            "x".repeat(NAME_AT_MOST - 1)
+        );
+        assert_eq!(
+            ProfileName::after(&"x".repeat(200)).as_str(),
+            "x".repeat(NAME_AT_MOST)
+        );
+    }
+
+    #[test]
+    fn the_profiles_listed_past_the_limit_are_the_first_by_name_whatever_the_folder_order() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let held = PROFILES_AT_MOST + 20;
+        for at in (0..held).rev() {
+            fs::write(folder.join(format!("p{at:04}.txt")), "Preamp: -1 dB").expect("writable");
+        }
+
+        let listed = scratch.store.names().expect("it walks");
+        let expected: Vec<ProfileName> = (0..PROFILES_AT_MOST)
+            .map(|at| named(&format!("p{at:04}")))
+            .collect();
+
+        assert_eq!(listed, expected);
     }
 
     #[test]

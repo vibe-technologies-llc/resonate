@@ -1,9 +1,11 @@
 use std::{
     borrow::Cow,
-    ffi::OsStr,
-    fs::{self, File},
-    io::Read as _,
+    ffi::{OsStr, OsString},
+    fs::{self, File, OpenOptions},
+    io::{Read as _, Write as _},
     path::{self, Component, Path, PathBuf},
+    process,
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -14,6 +16,8 @@ use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf}
 const LARGEST_PLAYLIST_FILE: u64 = 8 * 1024 * 1024;
 
 const STAGING_SUFFIX: &str = ".new";
+
+const HIDDEN_MARK: &str = ".";
 
 const SCHEME_SEPARATOR: &str = "://";
 
@@ -237,21 +241,16 @@ fn forward_separated(named: &str) -> Cow<'_, str> {
 }
 
 pub fn from_uri(named: &str) -> Option<MediaLocation> {
-    Some(canonical(PathBuf::from(local_file(named)?)))
+    let file = local_file(named)?;
+    Some(MediaLocation::local(settled(Path::new(&file))))
 }
 
 pub fn resolved(file: PathBuf, beside: &Path) -> MediaLocation {
-    canonical(if file.is_absolute() {
+    MediaLocation::local(settled(&if file.is_absolute() {
         file
     } else {
         beside.join(file)
-    })
-}
-
-pub fn canonical(file: PathBuf) -> MediaLocation {
-    let found = file.canonicalize();
-
-    MediaLocation::local(found.unwrap_or_else(|_| settled(&file)))
+    }))
 }
 
 fn settled(file: &Path) -> PathBuf {
@@ -480,17 +479,40 @@ fn staged_over(path: &Path, text: &str) -> Result<()> {
             path: path.to_path_buf(),
         });
     };
+    let failed = |source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    };
 
-    let mut staging = name.to_os_string();
-    staging.push(STAGING_SUFFIX);
-    let staged = path.with_file_name(staging);
+    let staged = path.with_file_name(staging_name_for(name));
+    let mut staging = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&staged)
+        .map_err(failed)?;
+    let landed = staging
+        .write_all(text.as_bytes())
+        .and_then(|()| staging.sync_all())
+        .and_then(|()| fs::rename(&staged, path));
+    drop(staging);
 
-    fs::write(&staged, text)
-        .and_then(|()| fs::rename(&staged, path))
-        .map_err(|source| Error::Io {
-            path: path.to_path_buf(),
-            source,
-        })
+    if landed.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    landed.map_err(failed)
+}
+
+fn staging_name_for(name: &OsStr) -> OsString {
+    static STAGED: AtomicU64 = AtomicU64::new(0);
+
+    let mut staging = OsString::from(HIDDEN_MARK);
+    staging.push(name);
+    staging.push(format!(
+        ".{}-{}{STAGING_SUFFIX}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    ));
+    staging
 }
 
 const fn hex(byte: u8) -> Option<u8> {

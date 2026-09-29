@@ -6,8 +6,8 @@ use rusqlite::{Connection, Row, params};
 use smallvec::smallvec;
 
 use crate::{
-    Asked, Clause, Column, Compare, Condition, Direction, Error, Result, SavedQuery, Search, Shape,
-    SortOrder, StoreOp, Term, TrackQuery, Word,
+    Asked, Clause, Column, Compare, Condition, Direction, Error, Grain, Reach, Result, SavedQuery,
+    Search, Shape, SortOrder, StoreOp, Term, TrackQuery, Word,
     db::{self, Inner},
     search::Conditions,
     store,
@@ -342,7 +342,7 @@ fn artist_mixes(inner: &Inner) -> Result<Vec<Candidate>> {
 }
 
 fn an_artist(name: &str) -> Candidate {
-    let text = asking(smallvec![Condition::Word(always_a_phrase(
+    let text = asking(smallvec![Condition::Word(the_whole_name(
         Column::Artist,
         name
     ))]);
@@ -413,8 +413,9 @@ fn the_shape_of_the_catalog() -> Vec<Candidate> {
             "Long players",
             Reason::LongPlayers,
             Term::Length {
-                compare: Compare::Above,
+                compare: Compare::AtLeast,
                 length: A_LONG_PLAYER,
+                grain: Grain::MINUTE,
             },
             SortOrder::Duration,
             Direction::Descending,
@@ -457,15 +458,19 @@ fn one_word_or_a_phrase(column: Column, text: &str) -> Word {
     Word {
         column: Some(column),
         text: text.to_owned(),
-        phrase: text.chars().any(char::is_whitespace),
+        reach: if text.chars().any(char::is_whitespace) {
+            Reach::Phrase
+        } else {
+            Reach::Begins
+        },
     }
 }
 
-fn always_a_phrase(column: Column, text: &str) -> Word {
+fn the_whole_name(column: Column, text: &str) -> Word {
     Word {
         column: Some(column),
         text: text.to_owned(),
-        phrase: true,
+        reach: Reach::Whole,
     }
 }
 
@@ -594,7 +599,7 @@ mod tests {
                 "added:<1mo",
                 "played:>1y",
                 "is:hires",
-                "length:>10m",
+                "length:>=10m",
             ]
         );
         for text in &written {
@@ -607,9 +612,18 @@ mod tests {
 
     #[test]
     fn a_name_with_a_space_in_it_is_asked_for_as_a_phrase() {
-        assert!(one_word_or_a_phrase(Column::Genre, "progressive rock").phrase);
-        assert!(!one_word_or_a_phrase(Column::Genre, "rock").phrase);
-        assert!(always_a_phrase(Column::Artist, "Nirvana").phrase);
+        assert_eq!(
+            one_word_or_a_phrase(Column::Genre, "progressive rock").reach,
+            Reach::Phrase
+        );
+        assert_eq!(
+            one_word_or_a_phrase(Column::Genre, "rock").reach,
+            Reach::Begins
+        );
+        assert_eq!(
+            the_whole_name(Column::Artist, "Nirvana").reach,
+            Reach::Whole
+        );
         assert!(!fits_in_a_phrase("a \"name\""));
     }
 }

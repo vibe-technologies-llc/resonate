@@ -1,7 +1,10 @@
 use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeMap,
     io::{self, BufRead, Read as _, Write},
     sync::mpsc::{self, Receiver, SyncSender},
     thread,
+    time::Duration,
 };
 
 use resonate_library::Library;
@@ -24,6 +27,7 @@ const LONGEST_MESSAGE: usize = 4 * 1024 * 1024;
 const LATEST_PROTOCOL: &str = "2025-06-18";
 const PROTOCOLS: [&str; 3] = [LATEST_PROTOCOL, "2025-03-26", "2024-11-05"];
 const SERVER_NAME: &str = "resonate";
+const LOOKED_OVER_EVERY: Duration = Duration::from_millis(500);
 
 const INITIALIZE: &str = "initialize";
 const PING: &str = "ping";
@@ -32,6 +36,10 @@ const TOOLS_CALL: &str = "tools/call";
 const RESOURCES_LIST: &str = "resources/list";
 const RESOURCE_TEMPLATES_LIST: &str = "resources/templates/list";
 const RESOURCES_READ: &str = "resources/read";
+const RESOURCES_SUBSCRIBE: &str = "resources/subscribe";
+const RESOURCES_UNSUBSCRIBE: &str = "resources/unsubscribe";
+const RESOURCE_UPDATED: &str = "notifications/resources/updated";
+const RESOURCE_LIST_CHANGED: &str = "notifications/resources/list_changed";
 const PROMPTS_LIST: &str = "prompts/list";
 const PROMPTS_GET: &str = "prompts/get";
 const COMPLETION_COMPLETE: &str = "completion/complete";
@@ -59,6 +67,9 @@ pub struct Server {
     library: Library,
     players: Box<dyn Reach>,
     passes: Passes,
+    pushing: Cell<bool>,
+    subscribed: RefCell<BTreeMap<String, Option<Value>>>,
+    listed: RefCell<Option<Vec<Value>>>,
 }
 
 enum Line {
@@ -75,6 +86,7 @@ enum Flow {
 
 enum Heard {
     Read(io::Result<Line>, Vec<u8>),
+    Tick,
     Stop,
 }
 
@@ -171,6 +183,9 @@ impl Server {
             library,
             players: Box::new(players),
             passes: Passes::over(Lookups::none()),
+            pushing: Cell::new(false),
+            subscribed: RefCell::new(BTreeMap::new()),
+            listed: RefCell::new(None),
         }
     }
 
@@ -200,17 +215,29 @@ impl Server {
         stoppable: Stoppable,
     ) -> Result<()> {
         let Stoppable { sender, heard } = stoppable;
+        let ticking = sender.clone();
         thread::Builder::new()
             .name("resonate-mcp-read".to_owned())
             .spawn(move || read_into(input, &sender))
+            .and_then(|_| {
+                thread::Builder::new()
+                    .name("resonate-mcp-tick".to_owned())
+                    .spawn(move || tick_into(&ticking))
+            })
             .map_err(|source| Error::Stream {
                 op: StreamOp::Read,
                 source,
             })?;
+        self.pushing.set(true);
 
         for told in heard {
             match told {
                 Heard::Stop => break,
+                Heard::Tick => {
+                    for notification in self.changed() {
+                        written_out(&mut output, &notification)?;
+                    }
+                }
                 Heard::Read(read, line) => {
                     if self.took(read, &line, &mut output)? == Flow::Ended {
                         return Ok(());
@@ -241,20 +268,90 @@ impl Server {
             Line::Held if line.trim_ascii().is_empty() => None,
             Line::Held => self.answer(line),
         };
-        let Some(answer) = answer else {
-            return Ok(Flow::Going);
-        };
-        writeln!(output, "{answer}")
-            .and_then(|()| output.flush())
-            .map_err(|source| Error::Stream {
-                op: StreamOp::Write,
-                source,
-            })?;
+        if let Some(answer) = answer {
+            written_out(output, &answer)?;
+        }
         Ok(Flow::Going)
     }
 
+    fn changed(&self) -> Vec<Value> {
+        let mut notifications = Vec::new();
+        for (uri, last) in self.subscribed.borrow_mut().iter_mut() {
+            let now = self.reading(uri);
+            if now != *last {
+                *last = now;
+                notifications.push(notification(RESOURCE_UPDATED, json!({ "uri": uri })));
+            }
+        }
+
+        let mut listed = self.listed.borrow_mut();
+        if let Some(last) = listed.as_mut() {
+            match self.listing() {
+                Ok(now) if now != *last => {
+                    *last = now;
+                    notifications.push(notification(RESOURCE_LIST_CHANGED, json!({})));
+                }
+                Ok(_) => {}
+                Err(error) => tracing::debug!(%error, "the resources could not be listed again"),
+            }
+        }
+        notifications
+    }
+
+    fn reading(&self, uri: &str) -> Option<Value> {
+        let resource = Resource::at(uri)?;
+        resource
+            .read(&self.library, &*self.players, &self.passes)
+            .inspect_err(|error| tracing::debug!(%uri, %error, "a subscribed resource failed"))
+            .ok()
+    }
+
+    fn listing(&self) -> Result<Vec<Value>> {
+        Ok(resources::every(&self.library)?
+            .iter()
+            .map(Resource::listed)
+            .collect())
+    }
+
+    fn subscription(&self, method: &str, params: Value) -> std::result::Result<String, Refusal> {
+        if !self.pushing.get() {
+            return Err(Refusal::UnknownMethod(MethodName::new(method)));
+        }
+        let asked: Reading = parameters(method, params)?;
+        if Resource::at(&asked.uri).is_none() {
+            return Err(Refusal::UnknownResource(ResourceUri::new(asked.uri)));
+        }
+        Ok(asked.uri)
+    }
+
     pub fn answer(&self, line: &[u8]) -> Option<Value> {
-        let (id, method, params) = match read(line) {
+        match serde_json::from_slice(line) {
+            Ok(Value::Array(batch)) => self.answer_batch(batch),
+            Ok(message) => self.answer_one(message),
+            Err(source) => Some(refused(
+                Value::Null,
+                &Unanswered::Refused(Refusal::Unparsed(source)),
+            )),
+        }
+    }
+
+    fn answer_batch(&self, batch: Vec<Value>) -> Option<Value> {
+        if batch.is_empty() {
+            return Some(refused(
+                Value::Null,
+                &Unanswered::Refused(Refusal::EmptyBatch),
+            ));
+        }
+        let answers: Vec<Value> = batch
+            .into_iter()
+            .filter_map(|message| self.answer_one(message))
+            .collect();
+
+        (!answers.is_empty()).then_some(Value::Array(answers))
+    }
+
+    fn answer_one(&self, message: Value) -> Option<Value> {
+        let (id, method, params) = match read(message) {
             Ok(Message::Request { id, method, params }) => (id, method, params),
             Ok(Message::Notification | Message::Answer) => return None,
             Err((id, refusal)) => return Some(refused(id, &Unanswered::Refused(refusal))),
@@ -270,7 +367,7 @@ impl Server {
         match method {
             INITIALIZE => {
                 let asked: Initialising = parameters(method, params)?;
-                Ok(initialised(&asked.protocol_version))
+                Ok(initialised(&asked.protocol_version, self.pushing.get()))
             }
             PING => Ok(json!({})),
             TOOLS_LIST => Ok(json!({ "tools": Tool::ALL.map(Tool::listed) })),
@@ -286,8 +383,11 @@ impl Server {
                 Ok(called(tool, outcome))
             }
             RESOURCES_LIST => {
-                let offered = resources::every(&self.library)?;
-                Ok(json!({ "resources": offered.iter().map(Resource::listed).collect::<Vec<_>>() }))
+                let offered = self.listing()?;
+                if self.pushing.get() {
+                    *self.listed.borrow_mut() = Some(offered.clone());
+                }
+                Ok(json!({ "resources": offered }))
             }
             RESOURCE_TEMPLATES_LIST => Ok(json!({ "resourceTemplates": Resource::templates() })),
             RESOURCES_READ => {
@@ -297,6 +397,17 @@ impl Server {
                 })?;
                 let read = resource.read(&self.library, &*self.players, &self.passes)?;
                 Ok(Resource::contents(&asked.uri, &read))
+            }
+            RESOURCES_SUBSCRIBE => {
+                let uri = self.subscription(method, params)?;
+                let now = self.reading(&uri);
+                self.subscribed.borrow_mut().insert(uri, now);
+                Ok(json!({}))
+            }
+            RESOURCES_UNSUBSCRIBE => {
+                let uri = self.subscription(method, params)?;
+                self.subscribed.borrow_mut().remove(&uri);
+                Ok(json!({}))
             }
             PROMPTS_LIST => Ok(json!({ "prompts": Prompt::ALL.map(Prompt::listed) })),
             PROMPTS_GET => {
@@ -316,6 +427,28 @@ impl Server {
             other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
         }
     }
+}
+
+fn tick_into(sender: &SyncSender<Heard>) {
+    loop {
+        thread::sleep(LOOKED_OVER_EVERY);
+        if sender.send(Heard::Tick).is_err() {
+            return;
+        }
+    }
+}
+
+fn written_out(output: &mut impl Write, message: &Value) -> Result<()> {
+    writeln!(output, "{message}")
+        .and_then(|()| output.flush())
+        .map_err(|source| Error::Stream {
+            op: StreamOp::Write,
+            source,
+        })
+}
+
+fn notification(method: &str, params: Value) -> Value {
+    json!({ "jsonrpc": JSON_RPC, "method": method, "params": params })
 }
 
 fn read_into(mut input: impl BufRead, sender: &SyncSender<Heard>) {
@@ -363,9 +496,7 @@ fn past_the_rest_of_the_line(input: &mut impl BufRead) -> io::Result<()> {
     }
 }
 
-fn read(line: &[u8]) -> std::result::Result<Message, (Value, Refusal)> {
-    let message: Value =
-        serde_json::from_slice(line).map_err(|source| (Value::Null, Refusal::Unparsed(source)))?;
+fn read(message: Value) -> std::result::Result<Message, (Value, Refusal)> {
     let Value::Object(mut envelope) = message else {
         return Err((Value::Null, Refusal::NotARequest));
     };
@@ -417,7 +548,7 @@ fn refused(id: Value, unanswered: &Unanswered) -> Value {
     })
 }
 
-fn initialised(asked: &str) -> Value {
+fn initialised(asked: &str, pushing: bool) -> Value {
     let protocol = PROTOCOLS
         .into_iter()
         .find(|known| *known == asked)
@@ -427,7 +558,7 @@ fn initialised(asked: &str) -> Value {
         "protocolVersion": protocol,
         "capabilities": {
             "tools": { "listChanged": false },
-            "resources": { "subscribe": false, "listChanged": false },
+            "resources": { "subscribe": pushing, "listChanged": pushing },
             "prompts": { "listChanged": false },
             "completions": {},
         },

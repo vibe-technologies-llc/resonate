@@ -354,7 +354,10 @@ fn keep_one(
             tracing::warn!(path = %row.path.display(), %source, "the vault could not keep a track");
             Ok(passed(progress, &asked, Passing::Unreadable))
         }
-        Ok(Keeping::Refused(refusal)) => Ok(passed(progress, &asked, Passing::Refused(refusal))),
+        Ok(Keeping::Refused(refusal)) => {
+            library.note_vault_refused(row)?;
+            Ok(passed(progress, &asked, Passing::Refused(refusal)))
+        }
         Ok(Keeping::Kept(kept)) => {
             let asked = Wanted {
                 form: kept.form,
@@ -404,7 +407,7 @@ fn cover_of(
             return Ok(());
         }
     };
-    if library.note_vaulted_cover(album, &kept)? {
+    if library.note_vaulted_cover(album, &kept, &art)? {
         progress.covers.fetch_add(1, Ordering::Relaxed);
     }
     Ok(())
@@ -463,5 +466,228 @@ fn wanted(row: &TrackToVault) -> Wanted {
         bytes: row.file_size,
         codec: row.codec,
         renewing: row.renewing,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, io::Cursor, path::Path, process};
+
+    use resonate_codec::{CoverArt, ImageFormat};
+    use rusqlite::params;
+
+    use super::*;
+    use crate::{ScanOptions, store};
+
+    const RATE: u32 = 44_100;
+    const FRAMES: u32 = 44_100;
+    const SHEET: &str = "FILE \"noise.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:20\n";
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(named: &str) -> Self {
+            let path = env::temp_dir().join(format!("resonate-import-{}-{named}", process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(path.join("music")).expect("a scratch folder");
+            Self(path)
+        }
+
+        fn music(&self) -> PathBuf {
+            self.0.join("music")
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn noise(seed: u32) -> Vec<u8> {
+        let mut state = seed;
+        let mut data = Vec::with_capacity(FRAMES as usize * 4);
+        for _ in 0..FRAMES * 2 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            data.extend_from_slice(&((state >> 16) as u16).to_le_bytes());
+        }
+        let mut wave = b"RIFF".to_vec();
+        wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(b"WAVEfmt ");
+        wave.extend_from_slice(&16_u32.to_le_bytes());
+        wave.extend_from_slice(&1_u16.to_le_bytes());
+        wave.extend_from_slice(&2_u16.to_le_bytes());
+        wave.extend_from_slice(&RATE.to_le_bytes());
+        wave.extend_from_slice(&(RATE * 4).to_le_bytes());
+        wave.extend_from_slice(&4_u16.to_le_bytes());
+        wave.extend_from_slice(&16_u16.to_le_bytes());
+        wave.extend_from_slice(b"data");
+        wave.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(&data);
+        wave
+    }
+
+    fn opened(scratch: &Scratch) -> Library {
+        let vault = Arc::new(Vault::make(scratch.0.join("vault")).expect("a vault"));
+        Library::open_in_memory_with_vault(vault).expect("a library")
+    }
+
+    fn scanned(library: &Library, root: &Path) {
+        library
+            .scan(ScanOptions {
+                roots: vec![root.to_path_buf()],
+                incremental: true,
+                follow_symlinks: false,
+                extract_cover_art: true,
+                workers: NonZeroUsize::MIN,
+            })
+            .expect("a scan")
+            .join()
+            .expect("a finished scan");
+    }
+
+    fn imported(library: &Library) -> ImportSummary {
+        library
+            .import(
+                Arc::new(Sources::local()),
+                ImportOptions {
+                    apply: true,
+                    workers: NonZeroUsize::MIN,
+                    ..ImportOptions::default()
+                },
+            )
+            .expect("an import")
+            .join()
+            .expect("a finished import")
+    }
+
+    fn picture(shade: u8) -> CoverArt {
+        let pixels: Vec<u8> = (0..16 * 16)
+            .flat_map(|at: u32| [shade, at as u8, 40, 255])
+            .collect();
+        let drawn = image::RgbaImage::from_raw(16, 16, pixels).expect("a drawn picture");
+        let mut written = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(drawn)
+            .write_to(&mut written, image::ImageFormat::Png)
+            .expect("a written picture");
+        CoverArt {
+            format: ImageFormat::Png,
+            bytes: written.into_inner(),
+        }
+    }
+
+    #[test]
+    fn a_refused_row_is_not_weighed_again_until_its_file_or_the_encoder_moves() {
+        let scratch = Scratch::new("refused");
+        let library = opened(&scratch);
+        let audio = scratch.music().join("noise.wav");
+        fs::write(&audio, noise(0x9e37_79b9)).expect("a written source");
+        fs::write(scratch.music().join("noise.cue"), SHEET).expect("a written sheet");
+        scanned(&library, &scratch.music());
+
+        let first = imported(&library);
+        let again = imported(&library);
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute("UPDATE vault_refused SET under = under - 1", [])
+                    .map(drop)
+                    .map_err(|source| Error::store(crate::error::StoreOp::Update, source))
+            })
+            .expect("an older stamp");
+        let behind = imported(&library);
+        fs::write(&audio, noise(0x2545_f491)).expect("a rewritten source");
+        scanned(&library, &scratch.music());
+        let rewritten = imported(&library);
+
+        assert_eq!(first.stats.walked, 2);
+        assert!(
+            first
+                .plan
+                .passed
+                .iter()
+                .all(|passed| passed.why == Passing::Refused(Refusal::NoSmaller)),
+            "{:?}",
+            first.plan.passed
+        );
+        assert_eq!(
+            again.stats.walked, 0,
+            "a refusal was weighed again at full cost"
+        );
+        assert_eq!(behind.stats.walked, 2);
+        assert_eq!(rewritten.stats.walked, 2);
+    }
+
+    #[test]
+    fn a_cover_is_moved_into_the_vault_only_where_the_album_still_holds_the_picture_encoded() {
+        let scratch = Scratch::new("cover");
+        let library = opened(&scratch);
+        let vault = Arc::clone(library.vault().expect("a vault"));
+        let first = picture(10);
+        let better = picture(200);
+        let albums: Vec<AlbumId> = ["Meddle", "Animals"]
+            .into_iter()
+            .map(|title| {
+                library
+                    .inner()
+                    .write(|transaction| {
+                        transaction
+                            .query_row(
+                                "INSERT INTO albums (title, cover_art, cover_format)
+                                 VALUES (?1, ?2, ?3) RETURNING id",
+                                params![
+                                    title,
+                                    first.bytes,
+                                    store::image_format_code(ImageFormat::Png)
+                                ],
+                                |row| row.get::<_, i64>(0),
+                            )
+                            .map_err(|source| Error::store(crate::error::StoreOp::Insert, source))
+                    })
+                    .map(|id| AlbumId::new(id as u64).expect("an album id"))
+                    .expect("an album")
+            })
+            .collect();
+        let [raced, alone] = albums[..] else {
+            panic!("two albums");
+        };
+
+        let asked = library
+            .cover_the_vault_lacks(raced)
+            .expect("a read")
+            .expect("a cover");
+        let kept = vault.keep_cover(&asked).expect("a kept cover");
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute(
+                        "UPDATE albums SET cover_art = ?1 WHERE id = ?2",
+                        params![better.bytes, raced.get() as i64],
+                    )
+                    .map(drop)
+                    .map_err(|source| Error::store(crate::error::StoreOp::Update, source))
+            })
+            .expect("a better cover landed");
+        let moved_over_the_better = library
+            .note_vaulted_cover(raced, &kept, &asked)
+            .expect("a noting");
+        let moved_alone = library
+            .note_vaulted_cover(alone, &kept, &asked)
+            .expect("a noting");
+
+        assert!(!moved_over_the_better);
+        assert_eq!(
+            library
+                .cover_the_vault_lacks(raced)
+                .expect("a read")
+                .map(|held| held.bytes),
+            Some(better.bytes)
+        );
+        assert!(moved_alone);
+        assert_eq!(library.cover_the_vault_lacks(alone).expect("a read"), None);
     }
 }

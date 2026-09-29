@@ -1,11 +1,14 @@
 use std::{
+    collections::HashMap,
     ffi::OsStr,
-    path::Path,
+    fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_core::{AlbumId, MediaLocation, PlaylistId, Span};
+use resonate_core::{AlbumId, MediaLocation, PlaylistId, SampleRate, Span};
 use rusqlite::{
     Connection, OptionalExtension as _, Row as SqlRow, Transaction, params, params_from_iter,
     types::Value,
@@ -19,7 +22,8 @@ use crate::{
     db::{self, BESIDE_A_TRACK, Inner, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
     store,
-    undo::{self, Change, Edit},
+    undo::{self, Change, Edit, Reach},
+    volumes,
 };
 
 const COLUMNS: &str = "p.id, p.name, p.created, p.modified, p.played, p.plays,
@@ -299,7 +303,7 @@ fn forget_the_plays_of_a_discarded_holder(
 pub fn rename(inner: &Inner, id: PlaylistId, name: &str) -> Result<()> {
     let name = wanted_name(name)?;
 
-    undo::edited(inner, id, Edit::Renamed, |transaction| {
+    undo::edited(inner, id, Edit::Renamed, Reach::Unmoved, |transaction| {
         refuse_duplicate(transaction, &name, Some(id))?;
         renamed(transaction, id, &name)?;
         Ok(Change::Made(()))
@@ -329,7 +333,7 @@ fn renamed(transaction: &Transaction<'_>, id: PlaylistId, name: &PlaylistName) -
 }
 
 pub fn remove(inner: &Inner, id: PlaylistId) -> Result<bool> {
-    let dropped = undo::edited(inner, id, Edit::Discarded, |transaction| {
+    let dropped = undo::edited(inner, id, Edit::Discarded, Reach::Whole, |transaction| {
         let dropped = transaction
             .execute(
                 "DELETE FROM playlists WHERE id = ?1",
@@ -358,10 +362,8 @@ pub fn remove(inner: &Inner, id: PlaylistId) -> Result<bool> {
 }
 
 pub fn duplicate(inner: &Inner, id: PlaylistId) -> Result<PlaylistId> {
-    let source = one(inner, id)?.ok_or(Error::UnknownPlaylist(id))?;
-    let name = inner.read(|connection| a_free_copy_of(connection, &source.name))?;
-
-    let copy = undo::started(inner, Edit::Started, &name, |transaction| {
+    let copy = undo::started_under_a_name_found(inner, Edit::Started, |transaction| {
+        let name = a_free_copy_of(transaction, &name_of(transaction, id)?)?;
         let copy = created(transaction, &name)?;
         match asked_in(transaction, id)? {
             Some(query) => write_query(transaction, copy, &query)?,
@@ -372,11 +374,23 @@ pub fn duplicate(inner: &Inner, id: PlaylistId) -> Result<PlaylistId> {
                 append(transaction, copy, &rows(transaction, id)?)?;
             }
         }
-        Ok((copy, copy))
+        Ok((copy, name, copy))
     })?;
 
     inner.playlists_changed();
     Ok(copy)
+}
+
+fn name_of(connection: &Connection, id: PlaylistId) -> Result<String> {
+    connection
+        .query_row(
+            "SELECT name FROM playlists WHERE id = ?1",
+            params![id.get() as i64],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .ok_or(Error::UnknownPlaylist(id))
 }
 
 fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
@@ -485,7 +499,7 @@ pub(crate) fn write_query(
 pub fn revise(inner: &Inner, id: PlaylistId, name: &str, query: &SavedQuery) -> Result<()> {
     let name = wanted_name(name)?;
 
-    undo::edited(inner, id, Edit::Revised, |transaction| {
+    undo::edited(inner, id, Edit::Revised, Reach::Unmoved, |transaction| {
         let revised = transaction
             .execute(
                 "UPDATE playlist_queries SET text = ?2, sort = ?3, max_rows = ?4, reading = ?5
@@ -644,7 +658,7 @@ pub fn add(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
 
 fn add_as(inner: &Inner, id: PlaylistId, edit: Edit, cuts: &[Cut]) -> Result<usize> {
     let wanted = local_rows(cuts)?;
-    let added = undo::edited(inner, id, edit, |transaction| {
+    let added = undo::edited(inner, id, edit, Reach::Appended, |transaction| {
         only_a_list(transaction, id)?;
         if wanted.is_empty() {
             return Ok(Change::Nothing(0));
@@ -700,7 +714,8 @@ pub fn copy(
 }
 
 pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
-    let changed = undo::edited(inner, id, Edit::Removed, |transaction| {
+    let reach = Reach::From(rows.first());
+    let changed = undo::edited(inner, id, Edit::Removed, reach, |transaction| {
         only_a_list(transaction, id)?;
         let held = length(transaction, id)?;
         let Some(rows) = up_to_the_end(rows, held) else {
@@ -730,7 +745,8 @@ pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
 }
 
 pub fn move_rows(inner: &Inner, id: PlaylistId, rows: Span, to: usize) -> Result<bool> {
-    let changed = undo::edited(inner, id, Edit::Moved, |transaction| {
+    let reach = Reach::From(rows.first().min(to));
+    let changed = undo::edited(inner, id, Edit::Moved, reach, |transaction| {
         only_a_list(transaction, id)?;
         refuse_a_kept_order(transaction, id)?;
         let held = length(transaction, id)?;
@@ -755,7 +771,7 @@ pub fn sort_rows(
     order: RowOrder,
     direction: Direction,
 ) -> Result<usize> {
-    let moved = undo::edited(inner, id, Edit::Ordered, |transaction| {
+    let moved = undo::edited(inner, id, Edit::Ordered, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
         refuse_a_kept_order(transaction, id)?;
         let moved = in_order(
@@ -780,7 +796,7 @@ pub fn sort_rows(
 }
 
 pub fn keep(inner: &Inner, id: PlaylistId, kept: Option<Kept>) -> Result<usize> {
-    let moved = undo::edited(inner, id, Edit::Kept, |transaction| {
+    let moved = undo::edited(inner, id, Edit::Kept, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
         let standing = kept_in(transaction, id)?;
         let moved = match kept {
@@ -857,11 +873,13 @@ fn moved_from(held: &[Row], wanted: &[Row]) -> usize {
 }
 
 pub fn prune(inner: &Inner, id: PlaylistId) -> Result<usize> {
-    dropped_where(inner, id, Edit::Tidied, Going::Gone)
+    let gone = gone_from(inner, id)?;
+    dropped_where(inner, id, Edit::Tidied, Going::Gone(&gone))
 }
 
 pub fn tidy(inner: &Inner, id: PlaylistId) -> Result<usize> {
-    dropped_where(inner, id, Edit::Tidied, Going::Unwanted)
+    let gone = gone_from(inner, id)?;
+    dropped_where(inner, id, Edit::Tidied, Going::Unwanted(&gone))
 }
 
 pub fn fold_doubles(inner: &Inner, id: PlaylistId) -> Result<usize> {
@@ -873,9 +891,9 @@ pub fn remove_matching(inner: &Inner, id: PlaylistId, matching: &str) -> Result<
 }
 
 enum Going<'a> {
-    Gone,
+    Gone(&'a AHashSet<String>),
     Doubled,
-    Unwanted,
+    Unwanted(&'a AHashSet<String>),
     Matching(&'a str),
 }
 
@@ -886,15 +904,18 @@ fn asked_of(
     question: Going<'_>,
 ) -> Result<Vec<bool>> {
     Ok(match question {
-        Going::Gone => held.iter().map(|(_, row)| has_gone(&row.path)).collect(),
+        Going::Gone(gone) => held
+            .iter()
+            .map(|(_, row)| gone.contains(&row.path))
+            .collect(),
         Going::Doubled => {
             let mut seen = AHashSet::with_capacity(held.len());
             held.iter().map(|(_, row)| !seen.insert(row)).collect()
         }
-        Going::Unwanted => {
+        Going::Unwanted(gone) => {
             let mut seen = AHashSet::with_capacity(held.len());
             held.iter()
-                .map(|(_, row)| has_gone(&row.path) || !seen.insert(row))
+                .map(|(_, row)| gone.contains(&row.path) || !seen.insert(row))
                 .collect()
         }
         Going::Matching(text) => {
@@ -927,7 +948,7 @@ fn matched_in(transaction: &Transaction<'_>, id: PlaylistId, text: &str) -> Resu
 }
 
 fn dropped_where(inner: &Inner, id: PlaylistId, edit: Edit, question: Going<'_>) -> Result<usize> {
-    let dropped = undo::edited(inner, id, edit, |transaction| {
+    let dropped = undo::edited(inner, id, edit, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
         let held = numbered(transaction, id)?;
         let going = asked_of(transaction, id, &held, question)?;
@@ -983,8 +1004,7 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
     let mut fresh = Vec::with_capacity(reading.sheet.locations.len());
     let mut already = 0;
 
-    for listed in reading.sheet.locations {
-        let cut = cut_of(listed);
+    for cut in cuts_of(inner, reading.sheet.locations)? {
         let named = Row::of(&cut)?;
         match held.get_mut(&named) {
             Some(times) if *times > 0 => {
@@ -1021,25 +1041,148 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
     })
 }
 
-fn cut_of(listed: Listed) -> Cut {
-    if listed.timed.is_whole() {
-        return Cut::whole(listed.location);
-    }
-    let rate = match resonate_codec::probe(&Sources::local(), &listed.location) {
-        Ok(info) => info.spec.rate,
-        Err(error) => {
-            tracing::debug!(
-                %error,
-                location = %listed.location,
-                "a timed row's file could not be read for its rate, so the whole file is listed"
-            );
-            return Cut::whole(listed.location);
-        }
+fn cuts_of(inner: &Inner, listed: Vec<Listed>) -> Result<Vec<Cut>> {
+    let mut settling = Settling {
+        roots: inner.read(root_paths)?,
+        folders: HashMap::new(),
     };
-    Cut {
-        span: listed.timed.at(rate),
-        location: listed.location,
+    let asked: Vec<Option<Candidates>> = listed
+        .iter()
+        .map(|listed| {
+            listed
+                .location
+                .as_path()
+                .map(|written| settling.candidates(written))
+        })
+        .collect();
+    let answered = inner.read(|connection| {
+        asked
+            .iter()
+            .map(|candidates| match candidates {
+                Some(candidates) => first_catalogued(connection, &candidates.named),
+                None => Ok(None),
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
+
+    let mut rates = HashMap::new();
+    Ok(listed
+        .into_iter()
+        .zip(asked)
+        .zip(answered)
+        .map(|((listed, asked), answered)| {
+            let Some(asked) = asked else {
+                return Cut::whole(listed.location);
+            };
+            let (path, catalogued_rate) = match answered {
+                Some(Catalogued { at, rate }) => (asked.named[at].clone(), rate),
+                None => (asked.otherwise, None),
+            };
+            let location = MediaLocation::local(path);
+            if listed.timed.is_whole() {
+                return Cut::whole(location);
+            }
+            match catalogued_rate.or_else(|| probed_rate(&location, &mut rates)) {
+                Some(rate) => Cut {
+                    span: listed.timed.at(rate),
+                    location,
+                },
+                None => Cut::whole(location),
+            }
+        })
+        .collect())
+}
+
+struct Settling {
+    roots: Vec<PathBuf>,
+    folders: HashMap<PathBuf, Option<PathBuf>>,
+}
+
+struct Candidates {
+    named: Vec<PathBuf>,
+    otherwise: PathBuf,
+}
+
+impl Settling {
+    fn candidates(&mut self, written: &Path) -> Candidates {
+        let canonical = written.canonicalize().ok();
+        let mut named = vec![written.to_path_buf()];
+        for candidate in [self.under_a_root(written), canonical.clone()]
+            .into_iter()
+            .flatten()
+        {
+            if !named.contains(&candidate) {
+                named.push(candidate);
+            }
+        }
+
+        Candidates {
+            named,
+            otherwise: canonical.unwrap_or_else(|| written.to_path_buf()),
+        }
     }
+
+    fn under_a_root(&mut self, written: &Path) -> Option<PathBuf> {
+        for folder in written.ancestors().skip(1) {
+            let reached = self
+                .folders
+                .entry(folder.to_path_buf())
+                .or_insert_with(|| folder.canonicalize().ok());
+            if let Some(reached) = reached.as_ref()
+                && self.roots.contains(reached)
+            {
+                return Some(reached.join(written.strip_prefix(folder).ok()?));
+            }
+        }
+        None
+    }
+}
+
+struct Catalogued {
+    at: usize,
+    rate: Option<SampleRate>,
+}
+
+fn first_catalogued(connection: &Connection, named: &[PathBuf]) -> Result<Option<Catalogued>> {
+    let mut statement = connection
+        .prepare_cached("SELECT sample_rate FROM tracks WHERE path = ?1 LIMIT 1")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    for (at, candidate) in named.iter().enumerate() {
+        let Some(text) = candidate.to_str() else {
+            continue;
+        };
+        let rate = statement
+            .query_row(params![text], |row| row.get::<_, u32>(0))
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        if let Some(rate) = rate {
+            return Ok(Some(Catalogued {
+                at,
+                rate: SampleRate::new(rate).ok(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn probed_rate(
+    location: &MediaLocation,
+    rates: &mut HashMap<MediaLocation, Option<SampleRate>>,
+) -> Option<SampleRate> {
+    *rates.entry(location.clone()).or_insert_with(|| {
+        match resonate_codec::probe(&Sources::local(), location) {
+            Ok(info) => Some(info.spec.rate),
+            Err(error) => {
+                tracing::debug!(
+                    %error,
+                    %location,
+                    "a timed row's file could not be read for its rate, so the whole file is listed"
+                );
+                None
+            }
+        }
+    })
 }
 
 pub fn export(inner: &Inner, id: PlaylistId, path: &Path) -> Result<Exported> {
@@ -1158,7 +1301,7 @@ fn refuse_a_kept_order(transaction: &Transaction<'_>, id: PlaylistId) -> Result<
     }
 }
 
-fn kept_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<Kept>> {
+pub(crate) fn kept_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<Kept>> {
     let held = transaction
         .query_row(
             "SELECT kept_order, kept_reading FROM playlists WHERE id = ?1",
@@ -1185,8 +1328,83 @@ fn is_on_disk(location: &MediaLocation) -> bool {
     location.as_path().is_some_and(Path::is_file)
 }
 
-fn has_gone(path: &str) -> bool {
-    !Path::new(path).is_file()
+fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
+    let (paths, volumes, roots) = inner.read(|connection| {
+        Ok((
+            distinct_paths(connection, id)?,
+            volumes::held(connection)?,
+            root_paths(connection)?,
+        ))
+    })?;
+
+    let mut out_of_reach: Vec<PathBuf> = volumes
+        .into_iter()
+        .filter(|volume| !volumes::is_mounted(volume))
+        .collect();
+    out_of_reach.extend(roots.into_iter().filter(|root| !root.is_dir()));
+    let mut folders = AHashMap::new();
+
+    Ok(paths
+        .into_iter()
+        .filter(|path| has_gone(Path::new(path), &out_of_reach, &mut folders))
+        .collect())
+}
+
+fn has_gone(path: &Path, out_of_reach: &[PathBuf], folders: &mut AHashMap<PathBuf, bool>) -> bool {
+    match fs::metadata(path) {
+        Ok(metadata) => !metadata.is_file(),
+        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            !volumes::is_on_an_absent_one(path, out_of_reach)
+                && path.parent().is_some_and(|folder| {
+                    the_nearest_standing_folder_holds_something(folder, folders)
+                })
+        }
+        Err(error) => {
+            tracing::debug!(%error, path = %path.display(), "keeping a row whose file could not be asked about");
+            false
+        }
+    }
+}
+
+fn the_nearest_standing_folder_holds_something(
+    folder: &Path,
+    folders: &mut AHashMap<PathBuf, bool>,
+) -> bool {
+    if let Some(verdict) = folders.get(folder) {
+        return *verdict;
+    }
+
+    let verdict = if folder.is_dir() {
+        fs::read_dir(folder).is_ok_and(|mut entries| entries.next().is_some())
+    } else {
+        folder
+            .parent()
+            .is_some_and(|above| the_nearest_standing_folder_holds_something(above, folders))
+    };
+    folders.insert(folder.to_path_buf(), verdict);
+    verdict
+}
+
+fn distinct_paths(connection: &Connection, id: PlaylistId) -> Result<Vec<String>> {
+    let mut statement = connection
+        .prepare("SELECT DISTINCT path FROM playlist_entries WHERE playlist_id = ?1")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map(params![id.get() as i64], |row| row.get::<_, String>(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn root_paths(connection: &Connection) -> Result<Vec<PathBuf>> {
+    let mut statement = connection
+        .prepare("SELECT path FROM roots")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 fn stem_of(path: &Path) -> Option<String> {
@@ -1314,6 +1532,20 @@ pub(crate) fn rows(connection: &Connection, id: PlaylistId) -> Result<Vec<Row>> 
     )
 }
 
+pub(crate) fn rows_from(connection: &Connection, id: PlaylistId, first: i64) -> Result<Vec<Row>> {
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {ROW_COLUMNS} FROM playlist_entries e
+             WHERE e.playlist_id = ?1 AND e.position >= ?2 ORDER BY e.position"
+        ))
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map(params![id.get() as i64, first], |row| Row::read_at(row, 0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
 fn rows_by(connection: &Connection, sql: &str, id: PlaylistId) -> Result<Vec<Row>> {
     let mut statement = connection
         .prepare(sql)
@@ -1370,7 +1602,7 @@ const fn up_to_the_end(rows: Span, held: usize) -> Option<Span> {
     ))
 }
 
-fn tail(transaction: &Transaction<'_>, id: PlaylistId) -> Result<i64> {
+pub(crate) fn tail(transaction: &Transaction<'_>, id: PlaylistId) -> Result<i64> {
     transaction
         .query_row(
             "SELECT coalesce(max(position), -1) + 1 FROM playlist_entries WHERE playlist_id = ?1",

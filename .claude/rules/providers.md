@@ -37,6 +37,9 @@ on a title.
 
 `Provider::obtain` answers `Obtained::Nothing` or `Obtained::Found(Delivery)`, or an `Err` where it
 could not be asked, which `Providers::first` logs, counts as `refused` and carries on past.
+`Error::is_the_provider_away` says which errors are about the provider rather than the want — an
+`Io` (a connection that failed, a folder that is not there) and a `Refused` of 500 or over — and
+`TurnedAway` or a 404 are the want's alone, a Subsonic code 70 being one song the server lacks.
 
 - **`Delivery::File(PathBuf)`** is audio already on disk. The vault reads it and copies what it
   keeps, leaving the file where it stood: a provider's folder, like the library an import reads,
@@ -52,6 +55,19 @@ A provider does none of this, so none of it is written twice:
 
 - **Which wants are due** — `POLL_AGAIN_AFTER` since the last try — and asking providers in
   registration order, the first delivery winning.
+- **A want is tried only when every provider answered it.** `Answer::heard_from_every_provider` is
+  false where any provider refused, ran late or was passed over, and a want answered so is not
+  stamped and not counted `nothing`: it stays due, so a Subsonic server that was down, or a wrong
+  password, is asked again on the next poll after it is put right rather than `POLL_AGAIN_AFTER`
+  later. The cost is a failing provider asked once a poll for as long as it fails
+  (`a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll`,
+  `a_want_one_provider_answered_and_another_refused_stays_due`).
+- **A provider that is not there is asked once a poll, not once a want.** The poll holds one `Away`
+  for its run and hands it to every `Providers::first`; a provider whose error
+  `is_the_provider_away`, or that ran late, is noted there and passed over for every want after,
+  counted in `Answer::passed_over` — so an unreachable Subsonic host costs its connect timeout once
+  a poll, and the wants it was not asked about stay due
+  (`a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want`).
 - **How long a provider is waited on.** `Providers::first` takes an `Asking` — `within` (the poll's
   `answers_within`, `ANSWERS_WITHIN` by default) and a `cancelled` the poll reads off its progress —
   and asks each provider on a thread of its own, looking at both every `LOOKED_AT_EVERY`. One that
@@ -65,7 +81,7 @@ A provider does none of this, so none of it is written twice:
   so the staging is thrown away and the want left untried rather than a cancelled pass copying on
   to `LARGEST_DELIVERY`; a stream yielding nothing for the poll's `answers_within` is given up the
   same way and counted `late`, and the want *is* stamped as tried — the provider answered and what
-  it answered stopped. The pump thread is left in the `read` that never returned, as a late
+  it answered stopped — while the provider is noted `Away` for the rest of the poll. The pump thread is left in the `read` that never returned, as a late
   provider's is, and ends on the first read that does, its channel gone.
 - **Staging, validating, deduping and keeping**, through `Vault::keep` and `Vault::keep_delivered`,
   so a delivery is held to the import's bit-exact, never-larger promise.
@@ -137,6 +153,10 @@ A provider does none of this, so none of it is written twice:
 `resonate-inbox` is the reference: `Inbox::at` over the folder the `inbox` key names, read and
 never written to, one directory read per want, a file directly inside whose stem is the recording
 MBID, then the track MBID, then the ISRC, ignoring case, never a nested folder or a shared title.
+Only audio is offered: a file counts where `resonate_core::names_audio` says its extension is one of
+`AUDIO_EXTENSIONS` — the list the scan walks by, moved into core so the inbox, which may not see the
+library, reads the same one — so `<mbid>.cue`, `<mbid>.jpg` or a rip log beside the audio is never
+delivered ahead of it (`only_audio_is_delivered_whatever_else_shares_its_name`).
 
 ## A Subsonic server
 
@@ -148,15 +168,28 @@ window builds its registry through the same closure (`Sourcing::register`), and 
 category's *A Subsonic server* group writes the keys for the next start.
 
 - **Asked by the identifiers, never by a title.** A want with neither a recording MBID nor an ISRC
-  answers `Nothing` without a request. Otherwise `search3` is asked with the title — the only words
-  the API searches — for `SONGS_ASKED` songs, and a song is taken only where its `musicBrainzId` is
-  the recording or, failing that, its `isrc` (one code or a list, as OpenSubsonic writes it) holds
-  the want's, so a tribute band's *Echoes* is never delivered for Pink Floyd's.
-  `a_song_is_taken_by_its_recording_and_then_by_its_isrc_and_never_by_its_title` is the claim, over
-  a captured Navidrome answer.
-- **It delivers the server's original file.** `download` answers the bytes as they sit on the
-  server, as a `Delivery::Stream` keyed by the song's id and hinted by its `suffix`, kept and
-  validated like any other; a suffix that is no `Extension` answers `Nothing` rather than a guess.
+  answers `Nothing` without a request. Otherwise `search3` is asked in words — the title and the
+  artist, then the title alone, a server such as Gonic matching the whole query against the title —
+  `SONGS_A_PAGE` songs at a time, paging by `songOffset` until a page comes back short or
+  `PAGES_AT_MOST` are read, so a title a hundred songs share still reaches the one wanted. A song is
+  taken only where its `musicBrainzId` is the recording or, failing that, its `isrc` (one code or a
+  list, as OpenSubsonic writes it) holds the want's — read through `Isrc::new`, so a code written
+  with dashes or in lowercase is the same code — so a tribute band's *Echoes* is never delivered for
+  Pink Floyd's. `a_song_is_taken_by_its_recording_and_then_by_its_isrc_and_never_by_its_title` is
+  the claim over a captured Navidrome answer; `tests/server.rs` serves the rest from a local socket
+  (`a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page`,
+  `an_isrc_written_with_dashes_is_the_same_code`).
+- **It delivers the server's original file, and only a file.** `download` answers the bytes as they
+  sit on the server, as a `Delivery::Stream` keyed by the song's id and hinted by its `suffix`, kept
+  and validated like any other; a suffix that is no `Extension` answers `Nothing` rather than a
+  guess. The API answers a failed download with its error document and a 200, so a download whose
+  `Content-Type` names text, JSON or XML is read as that document — `TurnedAway` with its code, or
+  `Unreadable` — and never streamed as a song
+  (`an_error_document_answering_a_download_is_a_refusal_and_never_a_song`).
+- **It paces itself and waits when asked to.** Requests go out `ASKED_APART` apart, one at a time
+  through `next_asked`; a 429 or 503 is asked again after its `Retry-After` in seconds, or one, two
+  and four seconds where it names none, never more than `LONGEST_RETRY_AFTER`, and after
+  `RETRIES_AT_MOST` is the `Refused` it was — a 503 the seam then reads as the provider away.
 - **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`,
   the MD5 of password and salt (the API's token scheme), beside `v` and `c=resonate`; the
   User-Agent is `resonate/<version>` alone. `status: failed` is `Error::TurnedAway` with the

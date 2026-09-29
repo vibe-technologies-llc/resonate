@@ -253,6 +253,10 @@ impl Choice for PreAmp {
         labelled(&PRE_AMPS, self.0)
     }
 
+    fn in_force(self) -> SharedString {
+        SharedString::from(self.0.to_string())
+    }
+
     fn meaning(self) -> SharedString {
         SharedString::new_static(
             "Added to every gain a ReplayGain tag asks for. Clip prevention still holds the \
@@ -276,6 +280,10 @@ impl Choice for Untagged {
         labelled(&UNTAGGED, self.0)
     }
 
+    fn in_force(self) -> SharedString {
+        SharedString::from(self.0.to_string())
+    }
+
     fn meaning(self) -> SharedString {
         SharedString::new_static(
             "The gain a track carrying no ReplayGain tag is played at, so it sits nearer the \
@@ -290,26 +298,18 @@ impl RootView {
         let (quality, phase) = (settings.quality, settings.filter_phase);
 
         kit::section_body()
-            .child(self.choices(
-                "quality",
-                Some(quality),
-                cx,
-                |this, quality: Quality, cx| {
+            .child(
+                self.choices("quality", quality, cx, |this, quality: Quality, cx| {
                     this.send(Command::SetQuality(quality), cx);
                     this.store(&Setting::Quality(quality), cx);
-                },
-            ))
+                }),
+            )
             .child(kit::field(
                 "Phase",
-                self.choices(
-                    "filter-phase",
-                    Some(phase),
-                    cx,
-                    |this, phase: FilterPhase, cx| {
-                        this.send(Command::SetFilterPhase(phase), cx);
-                        this.store(&Setting::FilterPhase(phase), cx);
-                    },
-                ),
+                self.choices("filter-phase", phase, cx, |this, phase: FilterPhase, cx| {
+                    this.send(Command::SetFilterPhase(phase), cx);
+                    this.store(&Setting::FilterPhase(phase), cx);
+                }),
             ))
     }
 
@@ -338,7 +338,7 @@ impl RootView {
         kit::section_body()
             .child(self.choices(
                 "restore-lossy",
-                Some(restoration),
+                restoration,
                 cx,
                 |this, restoration: Restoration, cx| {
                     this.send(Command::SetRestoration(restoration), cx);
@@ -353,7 +353,7 @@ impl RootView {
 
         kit::section_body().child(self.choices(
             "dither",
-            Some(dither),
+            dither,
             cx,
             |this, dither: DitherKind, cx| {
                 this.send(Command::SetDither(dither), cx);
@@ -367,7 +367,7 @@ impl RootView {
 
         kit::section_body().child(self.choices(
             "noise-shaping",
-            Some(shaping),
+            shaping,
             cx,
             |this, shaping: NoiseShaping, cx| {
                 this.send(Command::SetNoiseShaping(shaping), cx);
@@ -382,20 +382,17 @@ impl RootView {
         let levelling = settings.levelling;
 
         kit::section_body()
-            .child(self.choices(
-                "replay-gain",
-                Some(mode),
-                cx,
-                |this, mode: ReplayGainMode, cx| {
+            .child(
+                self.choices("replay-gain", mode, cx, |this, mode: ReplayGainMode, cx| {
                     this.send(Command::SetReplayGain(mode), cx);
                     this.store(&Setting::ReplayGain(mode), cx);
-                },
-            ))
+                }),
+            )
             .child(kit::field(
                 "Pre-amp",
                 self.choices(
                     "pre-amp",
-                    Some(PreAmp(levelling.pre_amp)),
+                    PreAmp(levelling.pre_amp),
                     cx,
                     |this, step: PreAmp, cx| {
                         let levelling = Levelling {
@@ -411,7 +408,7 @@ impl RootView {
                 "Without tags",
                 self.choices(
                     "untagged",
-                    Some(Untagged(levelling.untagged)),
+                    Untagged(levelling.untagged),
                     cx,
                     |this, step: Untagged, cx| {
                         let levelling = Levelling {
@@ -436,4 +433,25 @@ fn filter(params: SincParams) -> SharedString {
         params.half_taps, params.phases, params.cutoff, params.kaiser_beta,
     )
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::views::settings::said_under;
+
+    #[test]
+    fn a_trim_off_the_table_says_what_is_in_force() {
+        let off = Trim::from_millibels(150).expect("a trim");
+
+        assert_eq!(
+            said_under(PreAmp(off)),
+            "+1.5 dB is in force, which is none of these."
+        );
+        assert_eq!(
+            said_under(Untagged(off)),
+            "+1.5 dB is in force, which is none of these."
+        );
+        assert_eq!(said_under(PreAmp(Trim::NONE)), PreAmp(Trim::NONE).meaning());
+    }
 }

@@ -1,12 +1,12 @@
 use std::{
     rc::Rc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 
 use gpui::{
     AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb,
 };
-use resonate_core::{AlbumId, ArtistId, CivilDate};
+use resonate_core::{AlbumId, ArtistId, Calendar, CivilDate};
 use resonate_library::{Day, Listened, Lit, MostListened, Statistics, Window};
 
 use crate::{
@@ -36,8 +36,6 @@ const WINDOW_HINT: &str = "How far back every reading on this pane reaches";
 const OPEN_ALBUM_HINT: &str = "Show this album";
 
 const OPEN_ARTIST_HINT: &str = "Show this artist";
-
-const SECONDS_A_DAY: u64 = 24 * 60 * 60;
 
 pub(crate) const BARS_AT_MOST: usize = 120;
 
@@ -89,13 +87,17 @@ pub(crate) struct Chart {
 
 impl Chart {
     pub(crate) fn of(days: &[Day], now: SystemTime, at_most: usize) -> Self {
-        let today = day_of(now);
-        let this_year = CivilDate::of_day(today as i64).year;
+        Self::in_calendar(days, now, &Calendar::local(), at_most)
+    }
+
+    fn in_calendar(days: &[Day], now: SystemTime, calendar: &Calendar, at_most: usize) -> Self {
+        let today = calendar.day_of(now);
+        let this_year = CivilDate::of_day(today).year;
         let dated = |at: SystemTime| {
-            let day = day_of(at);
+            let day = calendar.day_of(at);
             Dated {
-                ago: today.saturating_sub(day),
-                date: CivilDate::of_day(day as i64),
+                ago: u64::try_from(today.saturating_sub(day)).unwrap_or(0),
+                date: CivilDate::of_day(day),
                 this_year,
             }
         };
@@ -144,10 +146,6 @@ const fn folded(days: usize, at_most: usize) -> usize {
     }
 
     days.div_ceil(at_most)
-}
-
-fn day_of(at: SystemTime) -> u64 {
-    at.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / SECONDS_A_DAY
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -533,8 +531,11 @@ fn drawn_bar(index: usize, bar: Bar) -> Stateful<Div> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::UNIX_EPOCH;
+
     use super::*;
 
+    const SECONDS_A_DAY: u64 = 24 * 60 * 60;
     const TODAY: u64 = 20_000;
 
     fn a_day(days_ago: u64, plays: u64, listened: Duration) -> Day {
@@ -564,7 +565,7 @@ mod tests {
             a_day(1, 20, Duration::from_secs(2_400)),
             a_day(0, 10, Duration::from_secs(1_200)),
         ];
-        let chart = Chart::of(&days, now(), BARS_AT_MOST);
+        let chart = Chart::in_calendar(&days, now(), &Calendar::utc(), BARS_AT_MOST);
 
         assert_eq!(chart.tallest, Duration::from_secs(2_400));
         assert_eq!(
@@ -578,9 +579,39 @@ mod tests {
     }
 
     #[test]
+    fn a_day_is_dated_in_the_listeners_calendar_rather_than_greenwichs() {
+        const TWO_HOURS_EAST: i32 = 2 * 60 * 60;
+
+        let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
+        let today = east.day_of(now());
+        let days = [
+            Day {
+                at: east.midnight_of(today - 1),
+                plays: 1,
+                listened: Duration::from_secs(60),
+            },
+            Day {
+                at: east.midnight_of(today),
+                plays: 1,
+                listened: Duration::from_secs(60),
+            },
+        ];
+        let chart = Chart::in_calendar(&days, now(), &east, BARS_AT_MOST);
+
+        assert_eq!(
+            chart
+                .bars
+                .iter()
+                .map(|drawn| drawn.first.ago)
+                .collect::<Vec<u64>>(),
+            vec![1, 0]
+        );
+    }
+
+    #[test]
     fn a_window_in_which_nothing_was_played_draws_every_bar_at_its_baseline() {
         let days = [a_day(1, 0, Duration::ZERO), a_day(0, 0, Duration::ZERO)];
-        let chart = Chart::of(&days, now(), BARS_AT_MOST);
+        let chart = Chart::in_calendar(&days, now(), &Calendar::utc(), BARS_AT_MOST);
 
         assert_eq!(chart.tallest, Duration::ZERO);
         assert!(chart.bars.iter().all(|drawn| drawn.share == 0.0));
@@ -588,7 +619,7 @@ mod tests {
 
     #[test]
     fn a_chart_of_no_days_at_all_has_no_bars_and_no_axis() {
-        let chart = Chart::of(&[], now(), BARS_AT_MOST);
+        let chart = Chart::in_calendar(&[], now(), &Calendar::utc(), BARS_AT_MOST);
 
         assert!(chart.bars.is_empty());
         assert_eq!(chart.tallest, Duration::ZERO);
@@ -598,7 +629,7 @@ mod tests {
     #[test]
     fn one_day_is_one_bar_reading_today_at_both_ends_of_the_axis() {
         let days = [a_day(0, 3, Duration::from_secs(900))];
-        let chart = Chart::of(&days, now(), BARS_AT_MOST);
+        let chart = Chart::in_calendar(&days, now(), &Calendar::utc(), BARS_AT_MOST);
 
         assert_eq!(chart.bars.len(), 1);
         assert_eq!(chart.bars[0].share, 1.0);
@@ -610,7 +641,7 @@ mod tests {
         let days: Vec<Day> = (0..250)
             .map(|index| a_day(249 - index, 1, Duration::from_secs(60)))
             .collect();
-        let chart = Chart::of(&days, now(), 120);
+        let chart = Chart::in_calendar(&days, now(), &Calendar::utc(), 120);
 
         assert_eq!(folded(250, 120), 3);
         assert_eq!(chart.bars.len(), 84);

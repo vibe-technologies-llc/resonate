@@ -109,7 +109,7 @@ const HAIRLINE: f32 = 0.135;
 const DRAWN_EDGE: f32 = 0.225;
 const BODY_INK: f32 = 0.935;
 const SECOND_INK: f32 = 0.660;
-const THIRD_INK: f32 = 0.455;
+const THIRD_INK: f32 = 0.506;
 const PITCH: f32 = 0.040;
 const PAPER: f32 = 0.968;
 const SCRIM_ALPHA: u32 = 0xea;
@@ -167,7 +167,7 @@ static RESONATE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x31313a,
     text: 0xf1efe9,
     muted: 0x9f9d97,
-    faint: 0x64625d,
+    faint: 0x807d77,
     pitch: 0x0b0a10,
     paper: 0xf6f4ee,
     scrim: 0x08080aea,
@@ -213,7 +213,7 @@ static AMOLED: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x2e2e2e,
     text: 0xf2f2f2,
     muted: 0xa3a3a3,
-    faint: 0x686868,
+    faint: 0x757575,
     pitch: 0x000000,
     paper: 0xf7f7f7,
     scrim: 0x000000ea,
@@ -249,7 +249,7 @@ static ROSE_PINE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x4c4864,
     text: 0xe0def4,
     muted: 0xa8a3c4,
-    faint: 0x807b9c,
+    faint: 0x8783a2,
     pitch: 0x16141f,
     paper: 0xfaf4ed,
     scrim: 0x191724ea,
@@ -275,7 +275,7 @@ static ROSE_PINE_MOON: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x56526e,
     text: 0xe0def4,
     muted: 0xaba6c8,
-    faint: 0x8983a3,
+    faint: 0x938eab,
     pitch: 0x1d1b2e,
     paper: 0xfaf4ed,
     scrim: 0x232136ea,
@@ -300,8 +300,8 @@ static CATPPUCCIN_MOCHA: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     border: 0x313244,
     outline: 0x585b70,
     text: 0xcdd6f4,
-    muted: 0x9399b2,
-    faint: 0x6c7086,
+    muted: 0xa6adc8,
+    faint: 0x9399b2,
     pitch: 0x11111b,
     paper: 0xeff1f5,
     scrim: 0x11111bea,
@@ -326,8 +326,8 @@ static CATPPUCCIN_MACCHIATO: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     border: 0x363a4f,
     outline: 0x5b6078,
     text: 0xcad3f5,
-    muted: 0x939ab7,
-    faint: 0x6e738d,
+    muted: 0xa5adcb,
+    faint: 0x939ab7,
     pitch: 0x181926,
     paper: 0xeff1f5,
     scrim: 0x181926ea,
@@ -352,8 +352,8 @@ static CATPPUCCIN_FRAPPE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     border: 0x414559,
     outline: 0x626880,
     text: 0xc6d0f5,
-    muted: 0x949cbb,
-    faint: 0x737994,
+    muted: 0xb5bfe2,
+    faint: 0x949cbb,
     pitch: 0x232634,
     paper: 0xeff1f5,
     scrim: 0x232634ea,
@@ -379,7 +379,7 @@ static NORD: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x4c566a,
     text: 0xeceff4,
     muted: 0xa7b1c2,
-    faint: 0x77829a,
+    faint: 0x949db0,
     pitch: 0x242933,
     paper: 0xeceff4,
     scrim: 0x242933ea,
@@ -405,7 +405,7 @@ static GRUVBOX_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x665c54,
     text: 0xebdbb2,
     muted: 0xbdae93,
-    faint: 0x928374,
+    faint: 0xa89984,
     pitch: 0x16181a,
     paper: 0xfbf1c7,
     scrim: 0x1d2021ea,
@@ -431,7 +431,7 @@ static TOKYO_NIGHT: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x3b4261,
     text: 0xc0caf5,
     muted: 0xa9b1d6,
-    faint: 0x737aa2,
+    faint: 0x7b82a7,
     pitch: 0x101014,
     paper: 0xd5d6db,
     scrim: 0x16161eea,
@@ -457,7 +457,7 @@ static DRACULA: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x4d5066,
     text: 0xf8f8f2,
     muted: 0xa9abc2,
-    faint: 0x6272a4,
+    faint: 0x8491b8,
     pitch: 0x191a21,
     paper: 0xf8f8f2,
     scrim: 0x191a21ea,
@@ -483,7 +483,7 @@ static ONE_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x4b5263,
     text: 0xd7dae0,
     muted: 0xabb2bf,
-    faint: 0x5c6370,
+    faint: 0x8d94a1,
     pitch: 0x181a1f,
     paper: 0xd7dae0,
     scrim: 0x181a1fea,
@@ -509,7 +509,7 @@ static SOLARIZED_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     outline: 0x586e75,
     text: 0xeee8d5,
     muted: 0x93a1a1,
-    faint: 0x657b83,
+    faint: 0x839496,
     pitch: 0x000000,
     paper: 0xfdf6e3,
     scrim: 0x001b22ea,
@@ -682,6 +682,10 @@ pub(crate) fn converted() -> u32 {
 
 pub(crate) fn lossy() -> u32 {
     muted()
+}
+
+pub(crate) fn suspect() -> u32 {
+    WORN.read().flavour.accents.peach
 }
 
 pub(crate) fn failure() -> u32 {
@@ -1063,10 +1067,36 @@ mod tests {
                 );
             }
 
-            let read = contrast(flavour.muted, flavour.background);
+            for under in [flavour.background, flavour.surface, flavour.raised] {
+                let read = contrast(flavour.muted, under);
+                assert!(
+                    read >= READS_AS_BODY,
+                    "{theme}: muted text on {under:06x} reads at {read:.2}"
+                );
+            }
+            for pane in [flavour.background, flavour.surface] {
+                let read = contrast(flavour.faint, pane);
+                assert!(
+                    read >= READS_AS_BODY,
+                    "{theme}: faint text on {pane:06x} reads at {read:.2}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_theme_steps_its_inks_down_from_text_through_muted_to_faint() {
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let on_the_ground = |ink: u32| contrast(ink, flavour.background);
+
             assert!(
-                read >= READS_AS_BODY,
-                "{theme}: muted text reads at {read:.1}"
+                on_the_ground(flavour.text) > on_the_ground(flavour.muted),
+                "{theme} draws muted text as bright as its body text"
+            );
+            assert!(
+                on_the_ground(flavour.muted) > on_the_ground(flavour.faint),
+                "{theme} draws faint text as bright as its muted text"
             );
         }
     }
@@ -1112,6 +1142,27 @@ mod tests {
                 stands >= STANDS_APART,
                 "{theme}/{named}: the accent reads at {stands:.1} against the panes"
             );
+        }
+    }
+
+    #[test]
+    fn every_theme_draws_each_verdict_of_a_study_in_a_colour_of_its_own() {
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let drawn = [
+                flavour.accents.green,
+                flavour.accents.peach,
+                flavour.accents.red,
+                flavour.muted,
+                flavour.faint,
+            ];
+
+            for (at, colour) in drawn.iter().enumerate() {
+                assert!(
+                    !drawn[..at].contains(colour),
+                    "{theme} draws two verdicts in {colour:06x}"
+                );
+            }
         }
     }
 

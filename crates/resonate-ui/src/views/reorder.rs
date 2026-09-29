@@ -151,6 +151,18 @@ impl Reach {
         })
     }
 
+    pub(crate) const fn after_dropping(shift: Shift, rows: Span, held: usize) -> Option<Self> {
+        let Some(left) = held.checked_sub(rows.rows()) else {
+            return None;
+        };
+        let Some(last) = left.checked_sub(1) else {
+            return None;
+        };
+        let first = rows.first();
+
+        Some(Self::at(shift, if first < last { first } else { last }))
+    }
+
     pub(crate) const fn stepped(self, step: Step) -> Self {
         match step {
             Step::Above => Self {
@@ -460,6 +472,49 @@ mod tests {
 
         assert_eq!(reach.rows(), Span::between(2, 5));
         assert_eq!(Reach::at(Shift::Queue, 3).rows(), Span::one(3));
+    }
+
+    #[test]
+    fn dropping_the_last_rows_leaves_the_reach_on_the_row_that_is_now_last() {
+        assert_eq!(
+            Reach::after_dropping(Shift::Queue, Span::between(3, 4), 5),
+            Some(Reach::at(Shift::Queue, 2))
+        );
+        assert_eq!(
+            Reach::after_dropping(Shift::Queue, Span::one(4), 5),
+            Some(Reach::at(Shift::Queue, 3))
+        );
+    }
+
+    #[test]
+    fn dropping_rows_from_the_middle_reaches_the_row_that_moved_up_into_their_place() {
+        assert_eq!(
+            Reach::after_dropping(Shift::Queue, Span::between(1, 2), 5),
+            Some(Reach::at(Shift::Queue, 1))
+        );
+    }
+
+    #[test]
+    fn dropping_every_row_leaves_nothing_reached() {
+        assert_eq!(
+            Reach::after_dropping(Shift::Queue, Span::between(0, 4), 5),
+            None
+        );
+        assert_eq!(Reach::after_dropping(Shift::Queue, Span::one(0), 0), None);
+    }
+
+    proptest! {
+        #[test]
+        fn a_reach_left_after_dropping_is_always_a_row_that_remains(
+            (held, rows) in a_list_and_a_span(),
+        ) {
+            let left = held - rows.rows();
+
+            match Reach::after_dropping(Shift::Queue, rows, held) {
+                Some(reach) => prop_assert!(reach.row < left && reach.anchor == reach.row),
+                None => prop_assert_eq!(left, 0),
+            }
+        }
     }
 
     #[test]

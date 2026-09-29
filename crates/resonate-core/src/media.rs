@@ -21,6 +21,21 @@ const PATH_ENDS: [char; 2] = ['?', '#'];
 const SPAN_FRAGMENT: &str = "#frames=";
 const SPAN_TO: char = '-';
 
+pub const AUDIO_EXTENSIONS: &[&str] = &[
+    "aac", "aif", "aiff", "ape", "caf", "dff", "dsf", "flac", "m4a", "m4b", "mka", "mp3", "mp4",
+    "oga", "ogg", "opus", "rf64", "w64", "wav", "wave", "wv",
+];
+
+pub fn names_audio(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            AUDIO_EXTENSIONS
+                .iter()
+                .any(|audio| audio.eq_ignore_ascii_case(extension))
+        })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceId(Arc<str>);
 

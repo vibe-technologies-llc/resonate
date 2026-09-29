@@ -19,12 +19,17 @@ paths:
 - **New code goes into `crates/<name>/`**, added to `workspace.members`, and to
   `[workspace.dependencies]` if anything depends on it.
 - **The layering:**
+  - **A boundary below that `cargo tree` can show is a `refuse` in the CI's layering job** and a
+    `cargo tree` line in `CLAUDE.md`'s commands, so a crossed layer fails a pull request rather
+    than waiting to be read; a crate or a boundary added here is added to both.
   - `resonate-core` takes no symphonia, pipewire, gpui or serde (`cargo tree -p resonate-core`);
     one would stop `resonate-dsp` being a leaf and grow the resampler's test cycle a full link. It
     does take `encoding_rs` and `chardetng`, pure Rust with no default features, for the one text
-    reader every crate reading a listener's files shares (`rust-style.md`).
+    reader every crate reading a listener's files shares (`rust-style.md`), and `tz-rs` with `std`
+    alone — pure Rust, no dependencies — for `Calendar`, the listener's zone read off `TZ` or
+    `/etc/localtime`, which the statistics and the chart both bucket days by.
   - `resonate-codec`, `resonate-dsp` and `resonate-pipewire` never depend on each other;
-    `resonate-lyrics` and `resonate-eq` on none of gpui, the engine or the library; `resonate-dsp`
+    `resonate-lyrics` and `resonate-eq` on none of gpui, the engine, the library or `ureq`; `resonate-dsp`
     on neither of those two, the equaliser's arithmetic being in `resonate-core::eq` so the
     resampler's test cycle stays short; `resonate-mpris` on neither gpui nor the library.
   - `resonate-ui` on neither `resonate-codec` nor any image decoding: `resonate-codec::Drawing`
@@ -123,8 +128,8 @@ paths:
   type, in mcp an argument struct turned into a domain value before a tool runs, in discord a doc
   for a frame Discord's IPC speaks — so the library and core stay free of both and a renamed field
   breaks one mapping in one crate, not a public type. `serde` is in the `--exclude resonate-ui
-  --no-default-features` build already, through `zbus`; `serde_json` is not, and
-  `cargo tree -p resonate --no-default-features -i serde_json` finding nothing is the guard.
+  --no-default-features` build already, through `zbus`; `serde_json` is not, and the layering
+  job refuses it — with gpui and `ureq` — in `cargo tree -p resonate --no-default-features`.
 - **`serde-saphyr`** is `resonate-lyrics`'s, with `deserialize` and none of its default set (its
   serialiser): it reads the YAML of a Lyricsfile — LRCLIB's answer or a sidecar's — and nothing
   writes one. It sits in the lyrics crate, not the online one, which reaches it through

@@ -45,7 +45,10 @@ property changes.
   so every `AfterTrack` names a row already announced — two rows queued in one poll are two
   additions, a row dragged to the front is removed and added again. A reorder moving more rows
   than it leaves standing (a shuffle), a list sharing no row with the last, and more than
-  `EDITS_ANNOUNCED_AT_MOST` edits are `TrackListReplaced`. One sample's additions share one
+  `EDITS_ANNOUNCED_AT_MOST` edits are `TrackListReplaced`. So is a sample whose rows match the
+  last but whose `Queued::revision` moved (`change_between`): a row added and removed inside one
+  poll is in neither sample, and the revision is the only trace of it the engine publishes — it
+  moves only where the drawn order does, so a quiet queue never announces. One sample's additions share one
   `ANNOUNCE_BUDGET` for their tags. `two_rows_added_between_two_polls_are_announced_as_two_additions`
   and `a_row_moved_is_announced_as_that_row_removed_and_added_again` are the claims.
 - **`Tracks` is declared `invalidates`**, as the spec asks, and the poll invalidates it wherever
@@ -59,7 +62,9 @@ property changes.
   `TrackMetadataChanged` with what the call would answer now. `Player::tags_read` answers
   `TagsRead`, the tri-state the catalog holds and `media` flattens, so a read that answered
   nothing (a file gone, a source that refused) is announced with the stem and dropped rather than
-  owed forever; only a pending read is waited on. A row leaving the queue is forgotten, so what
+  owed forever; only a pending read is waited on. A row's cover is owed the same way, through
+  `ArtRead`, and a `TrackAdded` whose tags or cover missed `ANNOUNCE_BUDGET` is owed too, so what it
+  lacked follows as `TrackMetadataChanged`. A row leaving the queue is forgotten, so what
   is owed is bounded by the queue.
 - **What the spec says a method does is what it does, including nothing.** A `SetPosition` before
   the start or past the end is ignored, a `Seek` past the end acts like `Next`, an offset is read
@@ -96,16 +101,22 @@ property changes.
   hashed. Only the last `COVERS_KEPT` (8) are held — a cover no kept track names is removed — and
   `Mpris::shutdown` removes the folder; a run that never got to (the signal fallback's
   `process::exit`) is swept by the next, which removes every `resonate-art-<pid>-*` whose process
-  is gone from `/proc`. Only the playing track's: asking for every row would enqueue a cover read
-  and a file write per row.
+  is gone from `/proc`. A queued row's cover is laid down when a client asks for that row —
+  `GetTracksMetadata` or a `TrackAdded` — never for every row unasked, which would enqueue a cover
+  read and a file write per row. Queued covers are kept apart from the playing ones
+  (`Shared::row_art`, `Pictures::queued_uri`), held while their row is in the queue — the poll's
+  `keep_rows` lets a row's go when it leaves — and at most `QUEUED_COVERS_KEPT` (32) files: a row
+  past that is named no cover rather than one a later row would remove. A file is removed only
+  where neither the playing covers nor a queued row names it, so the playing covers turning over
+  never takes a cover a queued row still names.
 - **What the catalog counted reaches the bus through `Host`**, since the service may not see the
   library. `xesam:useCount` and `xesam:lastUsed` come from `Host::heard`, taking the row's
   `MediaLocation` *and span* — a cue row is counted apart from its file, as `Library::track_played`
   keys a play on the pair — and answering `Option<Heard>`: `None` for no catalog or no row,
   `Some` with zero for an unplayed row, written as different metadata. `xesam:lastUsed` is an
-  ISO-8601 UTC stamp written by hand in `track.rs` over `resonate-core::CivilDate` (no date crate
-  in the tree; one civil-from-days function is cheaper, and the statistics chart reads its axis
-  through it); it is total, so a `SystemTime` before the epoch converts rather than saturating.
+  ISO-8601 UTC stamp written by hand in `track.rs` over `resonate-core::CivilDate` (a UTC stamp
+  wanting no zone, one civil-from-days function is all it needs; `Calendar` is for the listener's
+  days); it is total, so a `SystemTime` before the epoch converts rather than saturating.
   The reading is taken again the moment the row changes and otherwise at most every
   `HEARD_READ_EVERY` (1 s), not every 200 ms poll (a catalog read five times a second for a number
   that moves once a track); a `Metadata` watcher still sees a count move within a second whichever
@@ -114,7 +125,7 @@ property changes.
   `MediaInfo` the digest shares, the cover URI and that reading — so an unchanged poll neither
   rebuilds nor compares it, and the listed playlists are an `Arc<[PlaylistInfo]>` carried poll to
   poll: `publish_playlists` compares none of them where the poll holds the very `Arc` it held
-  before, and where the listing moved, `unheard_of` weighs it against a map of the last one's names
+  before, and where the listing moved, `moved` weighs it against a map of the last one's names
   in one pass rather than every playlist against every other.
 
 ## The name

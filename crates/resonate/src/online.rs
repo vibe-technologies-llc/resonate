@@ -27,6 +27,9 @@ use crate::{Error, Result, config::Config};
 static INTRODUCTION: OnceLock<Introduction> = OnceLock::new();
 
 #[cfg(feature = "online")]
+static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
+
+#[cfg(feature = "online")]
 fn identity(contact: Option<String>) -> Identity {
     Identity {
         contact,
@@ -36,7 +39,12 @@ fn identity(contact: Option<String>) -> Identity {
 
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    let introduction = INTRODUCTION.get_or_init(|| {
+    Arc::clone(CLIENT.get_or_init(|| Arc::new(Client::introduced(introduction(config).clone()))))
+}
+
+#[cfg(feature = "online")]
+fn introduction(config: &Config) -> &'static Introduction {
+    INTRODUCTION.get_or_init(|| {
         let said = identity(config.contact.clone());
         match config.read_from.clone() {
             Some(path) => {
@@ -48,8 +56,7 @@ fn client(config: &Config) -> Arc<Client> {
             }
             None => Introduction::as_(&said),
         }
-    });
-    Arc::new(Client::introduced(introduction.clone()))
+    })
 }
 
 #[cfg(feature = "online")]
@@ -151,10 +158,7 @@ pub fn recognisers(config: &Config) -> Recognisers {
     let client = client(config);
     let mut recognisers = Recognisers::none().and(Arc::new(Shazam::new(Arc::clone(&client))));
     if let Some(token) = config.audd_token.clone() {
-        recognisers = recognisers.and(Arc::new(Audd::new(Arc::clone(&client), token)));
-    }
-    if let Some(key) = config.acoustid_key.clone() {
-        recognisers = recognisers.and(Arc::new(AcoustId::new(client, key)));
+        recognisers = recognisers.and(Arc::new(Audd::new(client, token)));
     }
     recognisers
 }

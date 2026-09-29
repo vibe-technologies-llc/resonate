@@ -52,7 +52,32 @@ pub struct Answer {
     pub delivered: Option<Delivered>,
     pub refused: u64,
     pub late: u64,
+    pub passed_over: u64,
     pub cancelled: bool,
+}
+
+impl Answer {
+    pub fn heard_from_every_provider(&self) -> bool {
+        self.refused == 0 && self.late == 0 && self.passed_over == 0 && !self.cancelled
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Away {
+    providers: Vec<SourceId>,
+}
+
+impl Away {
+    pub fn note(&mut self, provider: &SourceId) {
+        if !self.holds(provider) {
+            tracing::warn!(%provider, "a provider is away and is not asked again this poll");
+            self.providers.push(provider.clone());
+        }
+    }
+
+    pub fn holds(&self, provider: &SourceId) -> bool {
+        self.providers.contains(provider)
+    }
 }
 
 enum Asked {
@@ -94,10 +119,14 @@ impl Providers {
             .any(|provider| provider.source().as_str() != UNPROVIDED)
     }
 
-    pub fn first(&self, identity: &Identity, asking: &Asking<'_>) -> Answer {
+    pub fn first(&self, identity: &Identity, asking: &Asking<'_>, away: &mut Away) -> Answer {
         let mut answer = Answer::default();
 
         for provider in &self.providers {
+            if away.holds(provider.source()) {
+                answer.passed_over += 1;
+                continue;
+            }
             match asked(provider, identity, asking) {
                 Asked::Answered(Ok(Obtained::Found(delivery))) => {
                     answer.delivered = Some(Delivered {
@@ -110,11 +139,15 @@ impl Providers {
                 Asked::Answered(Err(error)) => {
                     tracing::warn!(%error, provider = %provider.source(), title = %identity.title, "a provider refused");
                     answer.refused += 1;
+                    if error.is_the_provider_away() {
+                        away.note(provider.source());
+                    }
                 }
                 Asked::Unasked => answer.refused += 1,
                 Asked::Late => {
                     tracing::warn!(provider = %provider.source(), title = %identity.title, within = ?asking.within, "a provider did not answer in time and was left behind");
                     answer.late += 1;
+                    away.note(provider.source());
                 }
                 Asked::Cancelled => {
                     answer.cancelled = true;
@@ -240,7 +273,7 @@ mod tests {
             .and(Fixed::registered("shop", found))
             .and(Fixed::registered("later", found));
 
-        let answer = providers.first(&Identity::named("Echoes"), &patient());
+        let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
 
         assert_eq!(answer.refused, 1);
         let delivered = answer.delivered.expect("a delivery");
@@ -250,7 +283,8 @@ mod tests {
 
     #[test]
     fn nothing_registered_delivers_nothing() {
-        let answer = Providers::none().first(&Identity::named("Echoes"), &patient());
+        let answer =
+            Providers::none().first(&Identity::named("Echoes"), &patient(), &mut Away::default());
         assert!(answer.delivered.is_none());
         assert_eq!(answer.refused, 0);
     }
@@ -304,6 +338,7 @@ mod tests {
                 within: Duration::from_millis(100),
                 cancelled: &never,
             },
+            &mut Away::default(),
         );
 
         assert!(started.elapsed() < Duration::from_secs(2));
@@ -327,10 +362,83 @@ mod tests {
                 within: Duration::from_secs(60),
                 cancelled: &always,
             },
+            &mut Away::default(),
         );
 
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(answer.cancelled);
         assert!(answer.delivered.is_none());
+    }
+
+    fn unreachable() -> Result<Obtained> {
+        Err(Error::Io {
+            provider: SourceId::new("server").expect("a nameable source"),
+            op: ProviderOp::Search,
+            source: io::Error::from(io::ErrorKind::ConnectionRefused),
+        })
+    }
+
+    fn not_found() -> Result<Obtained> {
+        Err(Error::Refused {
+            provider: SourceId::new("server").expect("a nameable source"),
+            op: ProviderOp::Download,
+            status: 404,
+        })
+    }
+
+    #[test]
+    fn a_provider_that_cannot_be_reached_is_passed_over_for_the_rest_of_the_poll() {
+        let providers = Providers::none()
+            .and(Fixed::registered("server", unreachable))
+            .and(Fixed::registered("inbox", nothing));
+        let mut away = Away::default();
+
+        let first = providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+        let second = providers.first(&Identity::named("Time"), &patient(), &mut away);
+
+        assert_eq!((first.refused, first.passed_over), (1, 0));
+        assert_eq!((second.refused, second.passed_over), (0, 1));
+        assert!(away.holds(&SourceId::new("server").expect("a nameable source")));
+        assert!(!first.heard_from_every_provider());
+        assert!(!second.heard_from_every_provider());
+    }
+
+    #[test]
+    fn a_provider_refusing_one_want_is_asked_about_the_next() {
+        let providers = Providers::none().and(Fixed::registered("server", not_found));
+        let mut away = Away::default();
+
+        let first = providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+        let second = providers.first(&Identity::named("Time"), &patient(), &mut away);
+
+        assert_eq!((first.refused, second.refused), (1, 1));
+        assert_eq!(second.passed_over, 0);
+    }
+
+    #[test]
+    fn a_provider_left_behind_is_not_waited_on_again_in_the_same_poll() {
+        let providers = Providers::none().and(silent());
+        let mut away = Away::default();
+        let hurried = Asking {
+            within: Duration::from_millis(100),
+            cancelled: &never,
+        };
+
+        let first = providers.first(&Identity::named("Echoes"), &hurried, &mut away);
+        let started = Instant::now();
+        let second = providers.first(&Identity::named("Time"), &hurried, &mut away);
+
+        assert_eq!(first.late, 1);
+        assert_eq!((second.late, second.passed_over), (0, 1));
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn only_an_answer_every_provider_gave_is_heard_from_every_provider() {
+        let providers = Providers::none().and(Fixed::registered("inbox", nothing));
+
+        let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
+
+        assert!(answer.heard_from_every_provider());
     }
 }

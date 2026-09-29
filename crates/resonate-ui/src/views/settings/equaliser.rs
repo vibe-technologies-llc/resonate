@@ -1,7 +1,7 @@
 use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
+    App, BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
     PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Window, canvas,
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
@@ -210,12 +210,7 @@ impl RootView {
 
     pub(super) fn bands_group(&mut self, cx: &mut Context<Self>) -> Div {
         self.follow_the_binding(cx);
-        let rate = self
-            .player
-            .read(cx)
-            .state()
-            .output
-            .map_or(DRAWN_AT, |output| output.negotiated.rate);
+        let rate = self.curve_rate(cx);
 
         let model = self.equaliser.read(cx);
         let showing = model.shown_curve().cloned();
@@ -223,7 +218,7 @@ impl RootView {
         let preamp = model
             .shown()
             .map_or(Preamp::NONE, resonate_core::eq::Profile::preamp);
-        let peak = model.peak_db();
+        let peak = model.peak_db(rate);
         let chosen = model.chosen();
 
         let curve = self.curve(
@@ -1167,9 +1162,18 @@ impl RootView {
         cx.notify();
     }
 
+    fn curve_rate(&self, cx: &App) -> SampleRate {
+        self.player
+            .read(cx)
+            .state()
+            .output
+            .map_or(DRAWN_AT, |output| output.negotiated.rate)
+    }
+
     fn fit_the_preamp(&mut self, cx: &mut Context<Self>) {
+        let rate = self.curve_rate(cx);
         self.equaliser
-            .update(cx, |model, cx| model.fit_the_preamp(cx));
+            .update(cx, |model, cx| model.fit_the_preamp(rate, cx));
         self.tell_the_engine(cx);
         cx.notify();
     }

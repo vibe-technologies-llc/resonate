@@ -1,7 +1,7 @@
 use std::{fmt, io, path::PathBuf, result};
 
 use resonate_core::MediaLocation;
-use resonate_library::PlaylistName;
+use resonate_library::{PassKind, PlaylistName};
 use resonate_mpris::PlayerName;
 use resonate_pipewire::NodeName;
 use thiserror::Error;
@@ -393,6 +393,12 @@ pub enum Error {
     #[error("no sink named {0} is present in the graph")]
     SinkNotFound(NodeName),
 
+    #[error("--bit-perfect and --no-bit-perfect ask for opposite things; name one")]
+    BitPerfectBothWays,
+
+    #[error("the {} was cancelled; what it finished before is kept", pass_named(*pass))]
+    Cancelled { pass: PassKind },
+
     #[error("a tracing subscriber was already installed")]
     LoggingAlreadyInstalled,
 
@@ -453,6 +459,17 @@ pub enum Error {
 }
 
 pub type Result<T> = result::Result<T, Error>;
+
+const fn pass_named(pass: PassKind) -> &'static str {
+    match pass {
+        PassKind::Scan => "scan",
+        PassKind::Enrich => "lookup",
+        PassKind::Poll => "poll",
+        PassKind::Organise => "organising",
+        PassKind::Retag => "tagging",
+        PassKind::Import => "import into the vault",
+    }
+}
 
 #[cfg(test)]
 mod tests {

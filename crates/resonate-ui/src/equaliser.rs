@@ -15,7 +15,6 @@ use crate::{Bindings, models::Notice, toast};
 pub const CURVE_COLUMNS: usize = 192;
 pub const DRAWN_BETWEEN_MILLIBELS: i32 = 15_000;
 const PROFILE_SETTLES: Duration = Duration::from_millis(600);
-const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
 const FOUND_SHOWN: usize = 12;
 const Q_PER_NOTCH: f64 = 1.122_462_048_309_373;
 const Q_STEPS_PER_UNIT: f64 = 100.0;
@@ -172,6 +171,13 @@ struct Drawn {
     curve: Arc<[f64]>,
 }
 
+#[derive(Clone, Copy)]
+struct Peaked {
+    rate: SampleRate,
+    revision: u64,
+    peak: f64,
+}
+
 pub struct EqualiserModel {
     store: Store,
     corrections: Arc<Corrected>,
@@ -182,7 +188,7 @@ pub struct EqualiserModel {
     unsaved: bool,
     revision: u64,
     drawn: Option<Drawn>,
-    peaked: Kept<Option<(u64, f64)>>,
+    peaked: Kept<Option<Peaked>>,
     editing: Option<Editing>,
     shaping: Option<usize>,
     chosen: Option<usize>,
@@ -408,16 +414,19 @@ impl EqualiserModel {
         curve
     }
 
-    pub fn peak_db(&self) -> f64 {
-        if let Some((revision, peak)) = self.peaked.get()
-            && revision == self.revision
+    pub fn peak_db(&self, rate: SampleRate) -> f64 {
+        if let Some(peaked) = self.peaked.get()
+            && peaked.revision == self.revision
+            && peaked.rate == rate
         {
-            return peak;
+            return peaked.peak;
         }
-        let peak = self
-            .shown()
-            .map_or(0.0, |profile| profile.peak_db(DRAWN_AT));
-        self.peaked.set(Some((self.revision, peak)));
+        let peak = self.shown().map_or(0.0, |profile| profile.peak_db(rate));
+        self.peaked.set(Some(Peaked {
+            rate,
+            revision: self.revision,
+            peak,
+        }));
         peak
     }
 
@@ -491,13 +500,13 @@ impl EqualiserModel {
         let Some(mut band) = self.band(editing.row) else {
             return false;
         };
-        let Some(number) = resonate_eq::read_number(strip(typed, editing.cell)) else {
+        let Some(number) = read_typed(typed, editing.cell) else {
             self.notice = Some(Notice::Trouble(refused(editing.cell)));
             return false;
         };
 
         let read = match editing.cell {
-            Cell::Frequency => Frequency::from_hertz(number * scale(typed)).map(|held| {
+            Cell::Frequency => Frequency::from_hertz(number).map(|held| {
                 band.frequency = held;
             }),
             Cell::Gain => BandGain::from_decibels(number).map(|held| band.gain = held),
@@ -632,9 +641,9 @@ impl EqualiserModel {
         self.settle(cx);
     }
 
-    pub fn fit_the_preamp(&mut self, cx: &mut Context<Self>) {
+    pub fn fit_the_preamp(&mut self, rate: SampleRate, cx: &mut Context<Self>) {
         if let Some((_, profile)) = self.shown.as_mut() {
-            let fitted = profile.fitted_preamp(DRAWN_AT);
+            let fitted = profile.fitted_preamp(rate);
             profile.set_preamp(fitted);
         }
         self.settle(cx);
@@ -911,34 +920,51 @@ pub fn unused_name(kept: &[ProfileName], called: &str) -> ProfileName {
         .unwrap_or(plain)
 }
 
-fn strip(typed: &str, cell: Cell) -> &str {
+const HERTZ_A_KILOHERTZ: f64 = 1_000.0;
+const DIGITS_IN_A_THOUSANDS_GROUP: usize = 3;
+
+pub fn read_typed(typed: &str, cell: Cell) -> Option<f64> {
     let typed = typed.trim();
-    let without = match cell {
-        Cell::Frequency => typed
-            .strip_suffix("khz")
-            .or_else(|| typed.strip_suffix("kHz"))
-            .or_else(|| typed.strip_suffix("kHZ"))
-            .or_else(|| typed.strip_suffix("k"))
-            .or_else(|| typed.strip_suffix("K"))
-            .or_else(|| typed.strip_suffix("hz"))
-            .or_else(|| typed.strip_suffix("Hz"))
-            .or_else(|| typed.strip_suffix("HZ")),
-        Cell::Gain => typed
-            .strip_suffix("dB")
-            .or_else(|| typed.strip_suffix("db"))
-            .or_else(|| typed.strip_suffix("DB")),
-        Cell::Q => None,
-    };
-    without.unwrap_or(typed).trim()
+    match cell {
+        Cell::Frequency => {
+            if let Some(kilohertz) = without_unit(typed, "khz").or_else(|| without_unit(typed, "k"))
+            {
+                return resonate_eq::read_number(kilohertz)
+                    .map(|number| number * HERTZ_A_KILOHERTZ);
+            }
+            let hertz = without_unit(typed, "hz").unwrap_or(typed);
+            if grouped_in_thousands(hertz) {
+                resonate_eq::read_number(&hertz.replace(',', ""))
+            } else {
+                resonate_eq::read_number(hertz)
+            }
+        }
+        Cell::Gain => resonate_eq::read_number(without_unit(typed, "db").unwrap_or(typed)),
+        Cell::Q => resonate_eq::read_number(typed),
+    }
 }
 
-fn scale(typed: &str) -> f64 {
-    let folded = typed.trim().to_lowercase();
-    if folded.ends_with("khz") || folded.ends_with('k') {
-        1_000.0
-    } else {
-        1.0
-    }
+fn without_unit<'a>(typed: &'a str, unit: &str) -> Option<&'a str> {
+    let cut = typed.len().checked_sub(unit.len())?;
+    let spelled = typed.get(cut..)?;
+    spelled
+        .eq_ignore_ascii_case(unit)
+        .then(|| typed[..cut].trim_end())
+}
+
+fn grouped_in_thousands(number: &str) -> bool {
+    let whole = number.split_once('.').map_or(number, |(whole, _)| whole);
+    let mut groups = whole.split(',');
+    let leading = groups.next().unwrap_or_default();
+    let rest: Vec<&str> = groups.collect();
+    let digits = |group: &str| group.bytes().all(|byte| byte.is_ascii_digit());
+
+    !rest.is_empty()
+        && (1..=DIGITS_IN_A_THOUSANDS_GROUP).contains(&leading.len())
+        && digits(leading)
+        && rest
+            .iter()
+            .all(|group| group.len() == DIGITS_IN_A_THOUSANDS_GROUP && digits(group))
 }
 
 fn refused(cell: Cell) -> String {
@@ -1129,5 +1155,77 @@ mod tests {
             ),
             named("Studio Monitors 3")
         );
+    }
+
+    #[test]
+    fn a_frequency_typed_with_a_thousands_comma_or_any_spelling_of_a_unit_reads_as_meant() {
+        let hertz = |typed: &str| read_typed(typed, Cell::Frequency);
+
+        assert_eq!(hertz("1,000 Hz"), Some(1_000.0));
+        assert_eq!(hertz("1,000"), Some(1_000.0));
+        assert_eq!(hertz("12,500.5 hz"), Some(12_500.5));
+        assert_eq!(hertz("12,5"), Some(12.5));
+        assert_eq!(hertz("2 KHz"), Some(2_000.0));
+        assert_eq!(hertz("2KHZ"), Some(2_000.0));
+        assert_eq!(hertz("1,5 kHz"), Some(1_500.0));
+        assert_eq!(hertz("3K"), Some(3_000.0));
+        assert_eq!(hertz("440 hZ"), Some(440.0));
+        assert_eq!(hertz("1,00,000"), None);
+        assert_eq!(read_typed("-3 DB", Cell::Gain), Some(-3.0));
+        assert_eq!(read_typed("1,5", Cell::Q), Some(1.5));
+    }
+
+    #[gpui::test]
+    fn the_peak_and_the_fitted_preamp_are_worked_at_the_rate_the_curve_is_drawn_at(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder =
+            std::env::temp_dir().join(format!("resonate-ui-equaliser-peak-{}", std::process::id()));
+        let store = Store::at(folder.clone());
+        let name = named("Treble");
+        let treble = Band::new(
+            BandKind::HighShelf,
+            Frequency::from_hertz(16_000.0).expect("a frequency"),
+            BandGain::from_decibels(6.0).expect("a gain"),
+            Q::BUTTERWORTH,
+        );
+        let profile = Profile::new(Preamp::NONE, vec![treble]).expect("a profile");
+        store.keep(&name, &profile).expect("the profile is kept");
+        let model = cx.new(|_| {
+            let mut model = EqualiserModel::new(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings {
+                    enabled: true,
+                    fallback: Some(Binding::Profile(name)),
+                    by_sink: Vec::new(),
+                },
+            );
+            model.show(None);
+            model
+        });
+
+        let (at_48, at_96) = model.read_with(cx, |model, _| {
+            (
+                model.peak_db(SampleRate::HZ_48000),
+                model.peak_db(SampleRate::HZ_96000),
+            )
+        });
+        model.update(cx, |model, cx| {
+            model.fit_the_preamp(SampleRate::HZ_96000, cx);
+        });
+        let fitted = model.read_with(cx, |model, _| model.shown().map(Profile::preamp));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!((at_48 - profile.peak_db(SampleRate::HZ_48000)).abs() < 1e-9);
+        assert!((at_96 - profile.peak_db(SampleRate::HZ_96000)).abs() < 1e-9);
+        assert!(
+            (at_48 - at_96).abs() > 0.1,
+            "a 16 kHz shelf peaks alike at 48 and 96 kHz, so the rate is not weighed"
+        );
+        assert_eq!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_96000)));
+        assert_ne!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_48000)));
     }
 }

@@ -14,6 +14,18 @@ macro_rules! key {
     (quieter) => {
         "ctrl-down"
     };
+    (mute) => {
+        "ctrl-m"
+    };
+    (seek_further) => {
+        "shift-right"
+    };
+    (seek_further_back) => {
+        "shift-left"
+    };
+    (queue) => {
+        "ctrl-u"
+    };
     (shuffle) => {
         "h"
     };
@@ -118,12 +130,16 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 31] = [
+    const NAMED: [&str; 35] = [
         key!(play_pause),
         key!(previous),
         key!(next),
         key!(louder),
         key!(quieter),
+        key!(mute),
+        key!(seek_further),
+        key!(seek_further_back),
+        key!(queue),
         key!(shuffle),
         key!(repeat),
         key!(listen),

@@ -1,7 +1,17 @@
 use crate::cli::{
-    DitherArg, FilterPhaseArg, NoiseShapingArg, PlaylistOrderArg, QualityArg, RowOrderArg, SortArg,
-    WindowArg,
+    DitherArg, FilterPhaseArg, NoiseShapingArg, PlaylistOrderArg, QualityArg, RepeatArg,
+    RowOrderArg, SortArg, WindowArg,
 };
+
+impl From<RepeatArg> for resonate_engine::RepeatMode {
+    fn from(repeat: RepeatArg) -> Self {
+        match repeat {
+            RepeatArg::Off => Self::Off,
+            RepeatArg::Track => Self::Track,
+            RepeatArg::Queue => Self::Queue,
+        }
+    }
+}
 
 impl From<FilterPhaseArg> for resonate_engine::FilterPhase {
     fn from(phase: FilterPhaseArg) -> Self {

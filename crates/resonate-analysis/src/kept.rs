@@ -14,12 +14,12 @@ use crate::{
     Analysis, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum, Stereo, Study,
     envelope::ENVELOPE_LANES,
     spectrogram::SPECTROGRAM_ROWS,
-    verdict::{Weighed, judged},
+    verdict::{JUDGED_UNDER, Weighed, judged},
 };
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 1;
+const WRITTEN_AS: u8 = 2;
 
 const KEPT_AS: &str = "analysis";
 
@@ -254,6 +254,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     let mut writer = Writer(Vec::new());
     writer.0.extend_from_slice(MAGIC);
     writer.u8(WRITTEN_AS);
+    writer.u32(JUDGED_UNDER);
 
     let study = &analysis.study;
     let examined = &study.examined;
@@ -320,7 +321,10 @@ fn written(analysis: &Analysis) -> Vec<u8> {
 
 fn read(bytes: &[u8]) -> Option<Analysis> {
     let mut reader = Reader(bytes);
-    if reader.taken(MAGIC.len())? != MAGIC || reader.u8()? != WRITTEN_AS {
+    if reader.taken(MAGIC.len())? != MAGIC
+        || reader.u8()? != WRITTEN_AS
+        || reader.u32()? != JUDGED_UNDER
+    {
         return None;
     }
 
@@ -560,7 +564,17 @@ mod tests {
 
         assert_eq!(read(&bytes), Some(analysis));
         assert_eq!(read(&bytes[..bytes.len() - 1]), None);
-        assert_eq!(read(b"RSAN\x02"), None);
+        assert_eq!(read(b"RSAN\x01"), None);
+    }
+
+    #[test]
+    fn an_analysis_taken_under_another_heuristic_is_not_read_back() {
+        let mut bytes = written(&analysed());
+        let stamped_at = MAGIC.len() + 1;
+
+        bytes[stamped_at..stamped_at + 4].copy_from_slice(&(JUDGED_UNDER - 1).to_le_bytes());
+
+        assert_eq!(read(&bytes), None);
     }
 
     #[test]

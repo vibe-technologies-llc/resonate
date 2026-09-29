@@ -555,7 +555,9 @@ impl Spellings {
                 at += 1;
                 continue;
             };
-            word.phrase |= word.column.is_some() && written.contains(char::is_whitespace);
+            if word.column.is_some() && written.contains(char::is_whitespace) {
+                word.reach = word.reach.at_least_a_phrase();
+            }
             word.text = written;
             search.clauses.drain(at + 1..at + span);
             named = true;
@@ -610,7 +612,7 @@ impl Spellings {
     }
 
     fn correct(&self, word: &mut Word) -> bool {
-        if word.phrase
+        if word.reach.is_phrased()
             && let Some(written) = self.instead_of_the_whole(&word.text, word.column)
         {
             word.text = written;
@@ -643,7 +645,9 @@ impl Spellings {
 
         written.push_str(word.text.get(after..).unwrap_or_default());
         word.text = written;
-        word.phrase |= widened && word.column.is_some();
+        if widened && word.column.is_some() {
+            word.reach = word.reach.at_least_a_phrase();
+        }
         true
     }
 }
@@ -658,7 +662,7 @@ fn one_run_of(clause: &Clause) -> Option<(&Option<Column>, String)> {
     let [Condition::Word(word)] = asked.all.as_slice() else {
         return None;
     };
-    if word.phrase {
+    if word.reach.is_phrased() {
         return None;
     }
     let runs = lettered_runs(&word.text);

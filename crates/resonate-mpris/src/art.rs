@@ -13,13 +13,16 @@ use std::{
     },
 };
 
+use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_core::{MediaLocation, TrackId};
-use resonate_engine::CoverArt;
+use resonate_engine::{CoverArt, QueueItem};
 
 const FOLDER: &str = "resonate-art";
 
 const COVERS_KEPT: usize = 8;
+
+const QUEUED_COVERS_KEPT: usize = 32;
 
 const RUNNING_PROCESSES: &str = "/proc";
 
@@ -42,6 +45,36 @@ pub(crate) struct Pictures {
 struct Laid {
     made: bool,
     drawn: VecDeque<Drawn>,
+    queued: AHashMap<TrackId, Drawn>,
+}
+
+impl Laid {
+    fn names(&self, path: &Path) -> bool {
+        self.drawn.iter().any(|held| held.path == path)
+            || self.queued.values().any(|held| held.path == path)
+    }
+
+    fn let_go_of(&self, path: &Path) {
+        if !self.names(path) {
+            let _ = fs::remove_file(path);
+        }
+    }
+
+    fn room_for_queued(&self, path: &Path, track: TrackId) -> bool {
+        let files: AHashSet<&Path> = self
+            .queued
+            .iter()
+            .filter(|(row, _)| **row != track)
+            .map(|(_, held)| held.path.as_path())
+            .collect();
+        files.contains(path) || files.len() < QUEUED_COVERS_KEPT
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kept {
+    Playing,
+    Queued,
 }
 
 struct Drawn {
@@ -67,14 +100,42 @@ impl Pictures {
             track,
             art: Arc::downgrade(art),
         };
-        self.laid_down(Some(playing), art)
+        self.laid_down(Some(playing), art, Kept::Playing)
+    }
+
+    pub(crate) fn queued_uri(&self, track: TrackId, art: &Arc<CoverArt>) -> Option<String> {
+        let queued = Playing {
+            track,
+            art: Arc::downgrade(art),
+        };
+        self.laid_down(Some(queued), art, Kept::Queued)
     }
 
     pub(crate) fn uri_of(&self, art: &CoverArt) -> Option<String> {
-        self.laid_down(None, art)
+        self.laid_down(None, art, Kept::Playing)
     }
 
-    fn laid_down(&self, playing: Option<Playing>, art: &CoverArt) -> Option<String> {
+    pub(crate) fn keep_rows(&self, queue: &[QueueItem]) {
+        let mut laid = self.drawn.lock();
+        if laid.queued.is_empty() {
+            return;
+        }
+        let held: AHashSet<TrackId> = queue.iter().map(|item| item.id).collect();
+
+        let mut gone = Vec::new();
+        laid.queued.retain(|track, drawn| {
+            let stays = held.contains(track);
+            if !stays {
+                gone.push(drawn.path.clone());
+            }
+            stays
+        });
+        for path in gone {
+            laid.let_go_of(&path);
+        }
+    }
+
+    fn laid_down(&self, playing: Option<Playing>, art: &CoverArt, kept: Kept) -> Option<String> {
         let path = {
             let mut laid = self.drawn.lock();
             if !laid.made {
@@ -88,20 +149,31 @@ impl Pictures {
                 }
                 laid.made = true;
             }
-            if let Some(playing) = playing.as_ref()
-                && let Some(held) = laid.drawn.iter().find(|held| {
-                    held.playing
-                        .as_ref()
-                        .is_some_and(|drawn_for| drawn_for.is(playing))
-                })
-            {
+            let drawn_for = |held: &&Drawn| {
+                held.playing
+                    .as_ref()
+                    .zip(playing.as_ref())
+                    .is_some_and(|(drawn_for, playing)| drawn_for.is(playing))
+            };
+            let held = match (kept, playing.as_ref()) {
+                (Kept::Playing, _) => laid.drawn.iter().find(drawn_for),
+                (Kept::Queued, Some(queued)) => laid.queued.get(&queued.track).filter(drawn_for),
+                (Kept::Queued, None) => None,
+            };
+            if let Some(held) = held {
                 return Some(held.uri.clone());
             }
-            self.folder.0.join(format!(
+            let path = self.folder.0.join(format!(
                 "{:016x}.{}",
                 digest_of(&art.bytes),
                 art.format.extension()
-            ))
+            ));
+            if let (Kept::Queued, Some(queued)) = (kept, playing.as_ref())
+                && !laid.room_for_queued(&path, queued.track)
+            {
+                return None;
+            }
+            path
         };
 
         let laying = self.laying.lock();
@@ -122,18 +194,25 @@ impl Pictures {
             let _ = fs::remove_file(&path);
             return None;
         }
-        let drawn = &mut laid.drawn;
-        drawn.push_back(Drawn {
+        let drawn = Drawn {
             playing,
             path,
             uri: uri.clone(),
-        });
-        while drawn.len() > COVERS_KEPT {
-            let Some(gone) = drawn.pop_front() else {
-                break;
-            };
-            if !drawn.iter().any(|held| held.path == gone.path) {
-                let _ = fs::remove_file(&gone.path);
+        };
+        match (kept, drawn.playing.as_ref().map(|queued| queued.track)) {
+            (Kept::Queued, Some(track)) => {
+                if let Some(replaced) = laid.queued.insert(track, drawn) {
+                    laid.let_go_of(&replaced.path);
+                }
+            }
+            (Kept::Queued, None) | (Kept::Playing, _) => {
+                laid.drawn.push_back(drawn);
+                while laid.drawn.len() > COVERS_KEPT {
+                    let Some(gone) = laid.drawn.pop_front() else {
+                        break;
+                    };
+                    laid.let_go_of(&gone.path);
+                }
             }
         }
         Some(uri)
@@ -146,6 +225,7 @@ impl Pictures {
         }
         laid.made = false;
         laid.drawn.clear();
+        laid.queued.clear();
     }
 }
 
@@ -327,6 +407,68 @@ mod tests {
             .expect("the folder")
             .count();
         assert_eq!(held, COVERS_KEPT);
+        pictures.forget();
+    }
+
+    fn queued(ids: &[u64]) -> Vec<QueueItem> {
+        ids.iter()
+            .map(|id| QueueItem {
+                id: track(*id),
+                location: MediaLocation::local(format!("/music/{id}.flac")),
+                span: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_queued_rows_cover_outlives_the_playing_ones_and_goes_with_its_row() {
+        let pictures = Pictures::default();
+
+        let next = pictures
+            .queued_uri(track(100), &cover(100))
+            .expect("the queued row's cover");
+        for number in 1..=(COVERS_KEPT as u64 + 1) {
+            pictures
+                .uri(track(number), &cover(number))
+                .expect("a cover");
+        }
+
+        assert!(
+            laid(&next).exists(),
+            "the playing covers turned over took a queued row's cover with them"
+        );
+
+        pictures.keep_rows(&queued(&[100]));
+        assert!(laid(&next).exists(), "a row still queued lost its cover");
+
+        pictures.keep_rows(&queued(&[1]));
+        assert!(
+            !laid(&next).exists(),
+            "a cover outlived the row it was laid for"
+        );
+        pictures.forget();
+    }
+
+    #[test]
+    fn a_queued_row_past_the_covers_kept_is_named_no_cover_rather_than_one_that_dies() {
+        let pictures = Pictures::default();
+        let album = cover(1);
+
+        let mut named = Vec::new();
+        for number in 1..=(QUEUED_COVERS_KEPT as u64) {
+            named.push(
+                pictures
+                    .queued_uri(track(number), &cover(number))
+                    .expect("room for this cover"),
+            );
+        }
+        let same_album = pictures
+            .queued_uri(track(1_000), &album)
+            .expect("a cover already laid down costs no room");
+
+        assert_eq!(same_album, named[0]);
+        assert_eq!(pictures.queued_uri(track(2_000), &cover(2_000)), None);
+        assert!(named.iter().all(|uri| laid(uri).exists()));
         pictures.forget();
     }
 

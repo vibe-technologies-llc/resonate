@@ -44,11 +44,18 @@ object; the library reaches `study` for the enrichment's studies.
   the units, so a stream of unknown length ends in at most `ENVELOPE_COLUMNS` or
   `SPECTROGRAM_COLUMNS` columns, all whole but the last. `Envelope::condensed` reaches any width,
   reading each output column off the frames it spans.
-- **The spectrum is a Hann-windowed transform over the mono mix, sized by the rate**: 4 096 points
-  at 44.1 and 48 kHz, doubling per doubling of the rate, so a bin is ~11 Hz anywhere; scaled so a
-  full-scale sine on a bin reads 0 dB. The long-term average leaves out every window quieter than
-  `SILENT_BELOW_DB`, since fades and gaps would pull it towards the floor it is weighed against;
-  `Spectrum::heard` is how much was loud enough to count. The spectrogram keeps each row's loudest
+- **The spectrum is a Hann-windowed transform of every channel but the LFE, sized by the rate**:
+  4 096 points at 44.1 and 48 kHz, doubling per doubling of the rate, so a bin is ~11 Hz anywhere;
+  each bin the mean of the channels' powers, scaled so a full-scale sine on a bin in every channel
+  reads 0 dB. Not a mono mix: a mix cancels a stereo pair near −1 correlation to near silence,
+  which left it `NotJudged`, and sums the LFE's rumble in with the speakers
+  (`a_stereo_file_in_opposite_phase_is_judged_by_what_its_channels_hold`,
+  `the_low_frequency_channel_is_left_out_of_the_spectrum`). Two channels go through one complex
+  transform, one as its real half and one as its imaginary, each bin's pair of powers read off the
+  bin and its mirror, so a stereo file costs the single transform a mix did and a 5.1 one three.
+  The long-term average leaves out every window whose mean square over those channels is quieter
+  than `SILENT_BELOW_DB`, since fades and gaps would pull it towards the floor it is weighed
+  against; `Spectrum::heard` is how much was loud enough to count. The spectrogram keeps each row's loudest
   bin on a linear axis from nothing to Nyquist, where a lowpass wall is a horizontal line (a curve
   on a logarithmic one). `Spectrogram::painted` writes it as a `resonate_codec::Raster` of BGRA
   pixels through a `Ramp` the caller passes, so the theme stays in the window.
@@ -80,11 +87,17 @@ object; the library reaches `study` for the enrichment's studies.
   `Configuration::preset_test2` (the preset libchromaprint and AcoustID default to), fed 16-bit
   samples for `PRINTED_FOR`, compressed and written in URL-safe base64 without padding, which is
   what AcoustID reads. `resonate_core::Chromaprint` carries it with the whole track's length, the
-  duration a lookup is asked with. A stream the printer refuses to start is a debug record and
-  `print: None`, never a failed analysis.
-- **A clip is printed and signed as well as a track.** `print_clip` runs the same `Printing` over a
-  recorded buffer, so AcoustID is asked about a snippet with the print a file would get.
-  `signature_of` is Shazam's signature, written from the format as documented rather than any
+  duration a lookup is asked with. `print` stops decoding once the print is full only where the
+  container declares a length; one that declares none is decoded on to its end, printing nothing
+  more, so the length asked with is the stream's rather than the two minutes printed
+  (`a_stream_that_declares_no_length_is_printed_as_long_as_it_plays`). A stream the printer refuses
+  to start is a debug record and `print: None`, never a failed analysis.
+- **A clip is signed, never printed.** AcoustID's lookup filters by the `duration` it is sent,
+  read as the whole recording's, and matches prints taken from a recording's start; a clip Listen
+  heard has neither — its own twelve seconds sent as the length matched only recordings twelve
+  seconds long — so no clip is sent to AcoustID. Listen asks the services that match a snippet,
+  Shazam and AudD, and AcoustID is asked only about a file printed whole, by the lookup and the
+  Analysis pane. `signature_of` is Shazam's signature, written from the format as documented rather than any
   client's source: the clip mixed to mono, resampled to 16 kHz through `resonate-dsp`'s `Resampler`
   at `Balanced`, the middle twelve seconds kept and scaled to the 16-bit range; a 2 048-point Hann
   transform every 128 samples, its power over 2¹⁷ held in a ring of 256 frames beside a spread
@@ -109,9 +122,12 @@ to the window's `Player` through `Player::keeping_analyses` — named by an FNV-
 size and modification time, so a rewritten file or a cut taken again is a name nothing answers to.
 `Player::analyse` asks it before decoding and keeps what it decoded, so the pane opens on a track
 drawn before a restart without reading the file. `kept::written`'s layout is a magic, a version,
-every field of the study, the envelope and the spectrogram, little-endian; the judgement is *not*
-written — `read` runs `judged` over the kept spectrum and levels, so a kept analysis is weighed
-under this build's verdict. The reader trusts none of its own shape: an envelope naming no lane or
+the `JUDGED_UNDER` it was taken under, every field of the study, the envelope and the spectrogram,
+little-endian. A file stamped under another `JUDGED_UNDER` reads as nothing, as the catalog studies
+a track again whole on a bump rather than judging it again, so the pane never shows a verdict of
+this build beside a loudness, true peak or print of an older one
+(`an_analysis_taken_under_another_heuristic_is_not_read_back`). The judgement is *not* written —
+`read` runs `judged` over the kept spectrum and levels. The reader trusts none of its own shape: an envelope naming no lane or
 more than `ENVELOPE_LANES`, or columns of no frames over frames, reads as nothing, and
 `Envelope::condensed` answers nothing for either however it was built — an index past the lanes
 and a division by zero once reached the pane
@@ -128,8 +144,9 @@ every failure is a debug record and a decode. The headless commands keep nothing
 
 `verdict.rs` is pure: a `Weighed` of codec, rate, declared depth, spectrum and levels in, a
 `Judgement` out — a `Verdict` (`Genuine`, `Suspect`, `Fake`, `Lossy`, `NotJudged`) with typed
-`Finding`s. `JUDGED_UNDER` names the heuristic and is bumped by hand whenever its answer could
-change, since a stored study is weighed against it.
+`Finding`s. `JUDGED_UNDER` names the heuristic and is bumped by hand whenever its answer, or a
+measure a study keeps, could change, since a stored study and a kept analysis are weighed against
+it.
 
 - **A wall is a steep drop to a floor that stays there.** The spectrum is read in 100 Hz bands up
   to `TOP_GUARD` of Nyquist. An edge is a wall where the mean of the bands from a kilohertz to
@@ -148,7 +165,7 @@ change, since a stored study is weighed against it.
   `judged` runs `wall_in` over both and `lower_of` takes the lower wall where both find one, the
   one there is otherwise, so a burst no longer hides a cutoff and a steady wall reads where it
   always did. The histogram is `BUCKETS` (161) `u32` counters a band — ~140 kB at 44.1 kHz,
-  ~620 kB at 192 kHz — and a stored study is judged again under `JUDGED_UNDER` 2.
+  ~620 kB at 192 kHz.
   `a_transcode_splattered_above_its_wall_by_clipping_is_still_fake` is the claim.
 - **Where the wall stands is what it means.** At or under `LOSSY_CEILING_HZ` (19.5 kHz) it is where
   a lossy encoder cuts: `Fake`, with a `LossyGuess` read off LAME's lowpass table; up to

@@ -17,6 +17,8 @@ use crate::{
     },
 };
 
+const SECONDS_A_MINUTE: u64 = 60;
+
 const NO_SINKS: &str = "No sinks are present in the graph.";
 
 const BLUETOOTH_NOTE: &str = "Experimental, and only for a device PipeWire names as Bluetooth. \
@@ -217,57 +219,50 @@ impl Choice for GraphRate {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BufferDepth {
-    Tight,
-    Short,
-    Standard,
-    Deep,
-}
-
-impl BufferDepth {
-    const fn held(self) -> Duration {
-        Duration::from_millis(match self {
-            Self::Tight => 100,
-            Self::Short => 250,
-            Self::Standard => 500,
-            Self::Deep => 1_000,
-        })
-    }
-
-    fn of(held: Duration) -> Option<Self> {
-        Self::ALL.iter().copied().find(|depth| depth.held() == held)
-    }
-}
+struct BufferDepth(Duration);
 
 impl Choice for BufferDepth {
-    const ALL: &'static [Self] = &[Self::Tight, Self::Short, Self::Standard, Self::Deep];
+    const ALL: &'static [Self] = &[
+        Self(Duration::from_millis(100)),
+        Self(Duration::from_millis(250)),
+        Self(Duration::from_millis(500)),
+        Self(Duration::from_millis(1_000)),
+    ];
 
     fn label(self) -> &'static str {
-        match self {
-            Self::Tight => "100 ms",
-            Self::Short => "250 ms",
-            Self::Standard => "500 ms",
-            Self::Deep => "1 s",
+        match self.0.as_millis() {
+            100 => "100 ms",
+            250 => "250 ms",
+            500 => "500 ms",
+            _ => "1 s",
         }
     }
 
+    fn in_force(self) -> SharedString {
+        in_milliseconds(self.0)
+    }
+
     fn meaning(self) -> SharedString {
-        SharedString::new_static(match self {
-            Self::Tight => {
+        SharedString::new_static(match self.0.as_millis() {
+            100 => {
                 "A volume or equaliser change is heard almost at once, but a busy machine has \
                  the least room before the sound breaks up."
             }
-            Self::Short => "Quick to answer, with room for a moment's load on the machine.",
-            Self::Standard => {
+            250 => "Quick to answer, with room for a moment's load on the machine.",
+            500 => {
                 "Room for a busy machine or a slow disc without a break in the sound; a volume \
                  change is still heard within half a second."
             }
-            Self::Deep => {
+            _ => {
                 "The most room for a busy machine or a network share, at the cost of up to a \
                  second before a volume or equaliser change is heard."
             }
         })
     }
+}
+
+fn in_milliseconds(held: Duration) -> SharedString {
+    SharedString::from(format!("{} ms", held.as_millis()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,6 +285,10 @@ impl Choice for LeadIn {
             1_000 => "1 s",
             _ => "1.5 s",
         }
+    }
+
+    fn in_force(self) -> SharedString {
+        in_milliseconds(self.0)
     }
 
     fn meaning(self) -> SharedString {
@@ -321,6 +320,15 @@ impl Choice for KeptAwake {
         }
     }
 
+    fn in_force(self) -> SharedString {
+        let seconds = self.0.as_secs();
+        SharedString::from(if seconds.is_multiple_of(SECONDS_A_MINUTE) {
+            format!("{} min", seconds / SECONDS_A_MINUTE)
+        } else {
+            format!("{seconds} s")
+        })
+    }
+
     fn meaning(self) -> SharedString {
         SharedString::from(format!(
             "A pause keeps the headphones fed with silence for {}, so playing again is heard at \
@@ -333,7 +341,6 @@ impl Choice for KeptAwake {
 impl RootView {
     pub(super) fn bluetooth_group(&mut self, cx: &mut Context<Self>) -> Div {
         let wake = self.player.read(cx).output_settings().bluetooth;
-        let chosen = |held: Duration, table: &[Duration]| table.contains(&held);
 
         kit::section_body()
             .child(self.in_the_ring(
@@ -361,11 +368,7 @@ impl RootView {
                     "Lead-in",
                     self.choices(
                         "bluetooth-lead",
-                        chosen(
-                            wake.lead,
-                            &LeadIn::ALL.iter().map(|lead| lead.0).collect::<Vec<_>>(),
-                        )
-                        .then_some(LeadIn(wake.lead)),
+                        LeadIn(wake.lead),
                         cx,
                         move |this, lead: LeadIn, cx| {
                             let wake = this.player.read(cx).output_settings().bluetooth;
@@ -384,14 +387,7 @@ impl RootView {
                     "Kept awake through a pause",
                     self.choices(
                         "bluetooth-awake",
-                        chosen(
-                            wake.awake_for,
-                            &KeptAwake::ALL
-                                .iter()
-                                .map(|awake| awake.0)
-                                .collect::<Vec<_>>(),
-                        )
-                        .then_some(KeptAwake(wake.awake_for)),
+                        KeptAwake(wake.awake_for),
                         cx,
                         move |this, awake: KeptAwake, cx| {
                             let wake = this.player.read(cx).output_settings().bluetooth;
@@ -628,7 +624,7 @@ impl RootView {
 
         kit::section_body().child(self.choices(
             "sample-rate",
-            Some(SourceRate::of(prefer)),
+            SourceRate::of(prefer),
             cx,
             |this, rate: SourceRate, cx| {
                 this.send(Command::SetBitPerfect(rate.matches_the_file()), cx);
@@ -642,7 +638,7 @@ impl RootView {
 
         kit::section_body().child(self.choices(
             "graph-rate",
-            Some(GraphRate::of(forced)),
+            GraphRate::of(forced),
             cx,
             |this, rate: GraphRate, cx| {
                 this.send(Command::SetForceGraphRate(rate.asks_to_switch()), cx);
@@ -652,22 +648,17 @@ impl RootView {
     }
 
     pub(super) fn buffer_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let held = self.player.read(cx).output_settings().buffer;
-        let depth = BufferDepth::of(held);
+        let held = BufferDepth(self.player.read(cx).output_settings().buffer);
 
-        kit::section_body()
-            .child(
-                self.choices("buffer", depth, cx, |this, depth: BufferDepth, cx| {
-                    this.send(Command::SetBuffer(depth.held()), cx);
-                    this.store(&Setting::Buffer(depth.held()), cx);
-                }),
-            )
-            .when(depth.is_none(), |body| {
-                body.child(note(format!(
-                    "{} ms is in force, which is none of these.",
-                    held.as_millis()
-                )))
-            })
+        kit::section_body().child(self.choices(
+            "buffer",
+            held,
+            cx,
+            |this, depth: BufferDepth, cx| {
+                this.send(Command::SetBuffer(depth.0), cx);
+                this.store(&Setting::Buffer(depth.0), cx);
+            },
+        ))
     }
 
     pub(super) fn device_volume_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -757,4 +748,37 @@ fn described(name: impl IntoElement) -> Div {
         .min_w(px(0.0))
         .gap_1()
         .child(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::views::settings::said_under;
+
+    #[test]
+    fn a_length_off_a_table_says_what_is_in_force_where_one_on_it_says_what_it_means() {
+        assert_eq!(
+            said_under(LeadIn(Duration::from_millis(1_200))),
+            "1200 ms is in force, which is none of these."
+        );
+        assert_eq!(
+            said_under(KeptAwake(Duration::from_secs(90))),
+            "90 s is in force, which is none of these."
+        );
+        assert_eq!(
+            said_under(KeptAwake(Duration::from_secs(120))),
+            "2 min is in force, which is none of these."
+        );
+        assert_eq!(
+            said_under(BufferDepth(Duration::from_millis(300))),
+            "300 ms is in force, which is none of these."
+        );
+
+        for listed in LeadIn::ALL {
+            assert_eq!(said_under(*listed), listed.meaning());
+        }
+        for listed in BufferDepth::ALL {
+            assert_eq!(said_under(*listed), listed.meaning());
+        }
+    }
 }

@@ -38,6 +38,7 @@ pub(crate) fn outgrows_a_wave(frames: Frames, channels: ChannelCount) -> bool {
     u128::from(frames.get()) * u128::from(channels.get()) * sample_bytes > u128::from(LARGEST_PCM)
 }
 pub(crate) const ARCHIVED_AT: i32 = 19;
+const PACKED_FRAME_BYTES: u64 = 8 << 20;
 const FORETOLD_FROM_BYTES: u64 = 32 << 20;
 const SLICES_FORETOLD_FROM: u64 = 4;
 const SLICE_BYTES: usize = 2 << 20;
@@ -143,32 +144,51 @@ impl<W: Write> Write for Counted<W> {
 }
 
 pub(crate) fn compressed(from: &Path, into: &Path, smaller_than: Option<u64>) -> Result<Packed> {
+    compressed_in_frames(from, into, smaller_than, PACKED_FRAME_BYTES)
+}
+
+pub(crate) fn compressed_in_frames(
+    from: &Path,
+    into: &Path,
+    smaller_than: Option<u64>,
+    frame_bytes: u64,
+) -> Result<Packed> {
     let written = |source| Error::io(VaultOp::Write, into, source);
-    let source = File::open(from).map_err(|source| Error::io(VaultOp::Read, from, source))?;
+    let read = |source| Error::io(VaultOp::Read, from, source);
+    let source = File::open(from).map_err(read)?;
+    let length = source.metadata().map_err(read)?.len();
     let target = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
-    let counted = Counted {
+    let mut counted = Counted {
         inner: BufWriter::new(target),
         written: 0,
     };
-    let mut encoder = zstd::Encoder::new(counted, ARCHIVED_AT).map_err(written)?;
+    let outgrown =
+        |counted: &Counted<_>| smaller_than.is_some_and(|ceiling| counted.written >= ceiling);
 
     let mut reading = std::io::BufReader::new(source);
     let mut buffer = vec![0_u8; PACKED_A_READ_AT_A_TIME];
-    loop {
-        let read = reading
-            .read(&mut buffer)
-            .map_err(|source| Error::io(VaultOp::Read, from, source))?;
-        if read == 0 {
-            break;
+    let mut left = length;
+    while left > 0 {
+        let framed = left.min(frame_bytes);
+        let mut encoder = zstd::Encoder::new(&mut counted, ARCHIVED_AT).map_err(written)?;
+        encoder
+            .set_pledged_src_size(Some(framed))
+            .map_err(written)?;
+        let mut owed = framed;
+        while owed > 0 {
+            let taken = usize::try_from(owed.min(buffer.len() as u64)).unwrap_or(buffer.len());
+            reading.read_exact(&mut buffer[..taken]).map_err(read)?;
+            encoder.write_all(&buffer[..taken]).map_err(written)?;
+            owed -= taken as u64;
+            if outgrown(encoder.get_ref()) {
+                return Ok(Packed::NoSmaller);
+            }
         }
-        encoder.write_all(&buffer[..read]).map_err(written)?;
-        if smaller_than.is_some_and(|ceiling| encoder.get_ref().written >= ceiling) {
-            return Ok(Packed::NoSmaller);
-        }
+        encoder.finish().map_err(written)?;
+        left -= framed;
     }
 
-    let counted = encoder.finish().map_err(written)?;
-    if smaller_than.is_some_and(|ceiling| counted.written >= ceiling) {
+    if outgrown(&counted) {
         return Ok(Packed::NoSmaller);
     }
     let file = counted

@@ -33,14 +33,14 @@ use crate::{
     BusOp, Error, Heard, Host, PlaylistInfo, PlaylistOrder, Playlists, Result,
     art::Pictures,
     desktop::Errands,
-    interfaces::{Owed, OwnInterface, PlayerInterface, Root, Shared, waiting_to_play},
+    interfaces::{Owed, OwnInterface, PlayerInterface, Root, RowArt, Shared, waiting_to_play},
     notify::{Shown, shown},
-    playlists::{PlaylistsInterface, listed, unheard_of},
+    playlists::{PlaylistsInterface, listed, moved},
     track::{
         PlaybackStatus, Sleep, metadata, micros, no_track, playing_digest, queued_metadata,
         sleep_status, sounding, track_path,
     },
-    tracklist::{Change, Edit, TrackList, after_row, change},
+    tracklist::{Change, Edit, Sample, TrackList, after_row, change_between},
 };
 
 pub(crate) const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
@@ -334,6 +334,7 @@ struct Collection {
 
 struct Watched {
     queue: Arc<Vec<QueueItem>>,
+    queue_revision: u64,
     playlists: Collection,
     playback: PlaybackState,
     repeat: RepeatMode,
@@ -354,6 +355,15 @@ struct Watched {
     waiting: u32,
     playhead: Option<Playhead>,
     reads: u64,
+}
+
+impl Watched {
+    fn sampled(&self) -> Sample<'_> {
+        Sample {
+            rows: &self.queue,
+            revision: self.queue_revision,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -565,6 +575,7 @@ fn snapshot(
 
     Watched {
         queue,
+        queue_revision: queued.revision,
         playlists: collect(playlists, held_playlists),
         playback: state.playback,
         repeat: state.repeat,
@@ -661,6 +672,7 @@ fn publish_tracks(
     let emitter = tracks.signal_emitter();
 
     if !Arc::ptr_eq(&before.queue, &now.queue) {
+        shared.pictures.keep_rows(&now.queue);
         publish_queue_moves(tracks, shared, before, now);
     }
 
@@ -687,7 +699,7 @@ fn publish_queue_moves(
 ) {
     let emitter = tracks.signal_emitter();
 
-    match change(&before.queue, &now.queue) {
+    match change_between(before.sampled(), now.sampled()) {
         Change::Unchanged => {}
         Change::Edited(edits) => {
             let until = Instant::now() + ANNOUNCE_BUDGET;
@@ -710,12 +722,17 @@ fn publish_queue_moves(
                                     .media_within(&item.location, item.span, patience);
                             let state = shared.player.state();
                             let digest = shared.player.digest();
+                            let playing = shared.art(&state, digest.as_ref());
+                            let cover = shared.row_art(item, &state, playing.as_ref());
+                            if media.is_none() || matches!(cover, RowArt::NotYet) {
+                                shared.owed.note(item.id);
+                            }
                             let metadata = queued_metadata(
                                 item,
                                 &state,
                                 digest.as_ref(),
                                 media.as_deref(),
-                                shared.art(&state, digest.as_ref()),
+                                cover.uri(),
                                 shared.host.heard(&item.location, item.span),
                             );
                             report(zbus::block_on(TrackList::track_added(
@@ -754,31 +771,39 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
     }
     let rows: AHashMap<TrackId, &QueueItem> =
         now.queue.iter().map(|item| (item.id, item)).collect();
+    let state = shared.player.state();
+    let digest = shared.player.digest();
+    let playing = shared.art(&state, digest.as_ref());
+
     let mut landed = Vec::new();
     let mut waiting = Vec::new();
     for track in owed {
         let Some(item) = rows.get(&track).copied() else {
             continue;
         };
-        match shared.player.tags_read(&item.location, item.span) {
-            TagsRead::Answered(media) => landed.push((track, item, Some(media))),
-            TagsRead::Nothing => landed.push((track, item, None)),
-            TagsRead::NotYet => waiting.push(track),
+        let media = match shared.player.tags_read(&item.location, item.span) {
+            TagsRead::Answered(media) => Some(media),
+            TagsRead::Nothing => None,
+            TagsRead::NotYet => {
+                waiting.push(track);
+                continue;
+            }
+        };
+        match shared.row_art(item, &state, playing.as_ref()) {
+            RowArt::Settled(cover) => landed.push((track, item, media, cover)),
+            RowArt::NotYet => waiting.push(track),
         }
     }
     shared.owed.owed_again(waiting);
 
     let emitter = tracks.signal_emitter();
-    let state = shared.player.state();
-    let digest = shared.player.digest();
-    let art = shared.art(&state, digest.as_ref());
-    for (track, item, media) in landed {
+    for (track, item, media, cover) in landed {
         let metadata = queued_metadata(
             item,
             &state,
             digest.as_ref(),
             media.as_deref(),
-            art.clone(),
+            cover,
             shared.host.heard(&item.location, item.span),
         );
         report(zbus::block_on(TrackList::track_metadata_changed(
@@ -815,9 +840,6 @@ fn publish_playlists(
     let emitter = collected.signal_emitter();
     let iface = collected.get();
 
-    if before.rows.len() != now.rows.len() {
-        report(zbus::block_on(iface.playlist_count_changed(emitter)));
-    }
     if before.playing != now.playing {
         report(zbus::block_on(iface.active_playlist_changed(emitter)));
     }
@@ -825,7 +847,11 @@ fn publish_playlists(
     if Arc::ptr_eq(&before.rows, &now.rows) {
         return;
     }
-    for row in unheard_of(&before.rows, &now.rows) {
+    let moved = moved(&before.rows, &now.rows);
+    if moved.arrived_or_left {
+        report(zbus::block_on(iface.playlist_count_changed(emitter)));
+    }
+    for row in moved.renamed {
         report(zbus::block_on(PlaylistsInterface::playlist_changed(
             emitter,
             listed(row.clone()),

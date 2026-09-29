@@ -25,6 +25,7 @@ use crate::{
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
     reference::credited_as,
     studies::{self, Agreement, Claims, HEARD_AT_LEAST, HeardAs, Studies, ToStudy},
+    sung,
 };
 
 pub const RETRY_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
@@ -70,6 +71,8 @@ const STRICT_SCORE: u8 = 95;
 const EXACT_SCORE: u8 = 100;
 
 const RECORDING_MAY_DIFFER_BY: Duration = Duration::from_secs(5);
+
+const REFUSALS_THAT_END_A_PASS: u32 = 10;
 
 #[derive(Clone, Debug)]
 pub struct EnrichOptions {
@@ -294,6 +297,7 @@ fn run(
         pictures: &pictures,
         claims: &claims,
         refusals: Cell::new(0),
+        refused_in_a_row: Cell::new(0),
         pictured: RefCell::new(AHashSet::new()),
         covered: RefCell::new(AHashSet::new()),
     };
@@ -304,6 +308,14 @@ fn run(
                 error = %source,
                 ?op,
                 "the reference could not be reached, and the pass ends here"
+            );
+            Some(op)
+        }
+        Err(Error::RefusedInARow { op, refusals }) => {
+            tracing::warn!(
+                ?op,
+                refusals,
+                "the reference refused every lookup for a while, and the pass ends here"
             );
             Some(op)
         }
@@ -429,12 +441,12 @@ fn sing(
         }
         Err(Error::Refused { op, status }) => {
             tracing::warn!(?op, status, %track, "the lyric service refused");
-            progress.refuse();
+            refused(library, progress, &asking, track);
             return Sang::Asked;
         }
         Err(Error::Unreadable { op }) => {
             tracing::warn!(?op, %track, "the lyric service answered with something this build cannot read");
-            progress.refuse();
+            refused(library, progress, &asking, track);
             return Sang::Asked;
         }
         Err(error) => {
@@ -453,6 +465,13 @@ fn sing(
     }
 
     Sang::Asked
+}
+
+fn refused(library: &Library, progress: &EnrichProgress, asking: &sung::Asking, track: TrackId) {
+    progress.refuse();
+    if let Err(error) = library.note_lyrics_refused(asking) {
+        tracing::warn!(%error, %track, "a refused lyric will be asked for again on the next pass");
+    }
 }
 
 const PICTURES_ASKED: usize = 64;
@@ -593,17 +612,27 @@ fn land_portrait(
     artist: ArtistId,
     found: Result<Option<CoverArt>>,
 ) {
-    let Some(art) = answered(progress, found) else {
-        return;
-    };
-    match library.land_portrait(artist, &art) {
-        Ok(true) => {
-            progress.portraits.fetch_add(1, Ordering::Relaxed);
-        }
-        Ok(false) => {}
+    let settled = match found {
+        Ok(None) => true,
+        Ok(Some(art)) => match library.land_portrait(artist, &art) {
+            Ok(landed) => {
+                if landed {
+                    progress.portraits.fetch_add(1, Ordering::Relaxed);
+                }
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, %artist, "a portrait the reference answered with was dropped");
+                false
+            }
+        },
         Err(error) => {
-            tracing::warn!(%error, %artist, "a portrait the reference answered with was dropped")
+            answered(progress, Err(error));
+            false
         }
+    };
+    if settled && let Err(error) = library.note_portrait_asked(artist) {
+        tracing::warn!(%error, %artist, "a portrait asked for will be asked for again");
     }
 }
 
@@ -644,6 +673,11 @@ fn note_finished(library: &Library) {
 
 enum Heard<T> {
     Answered(T),
+    Refused,
+}
+
+enum ReleasesRead {
+    Kept,
     Refused,
 }
 
@@ -1258,6 +1292,7 @@ struct Pass<'a> {
     pictures: &'a Pictures,
     claims: &'a Claims,
     refusals: Cell<u32>,
+    refused_in_a_row: Cell<u32>,
     pictured: RefCell<AHashSet<ArtistId>>,
     covered: RefCell<AHashSet<AlbumId>>,
 }
@@ -1374,10 +1409,13 @@ impl Pass<'_> {
 
     fn heard<T>(&self, answered: Result<T>) -> Result<Heard<T>> {
         match answered {
-            Ok(value) => Ok(Heard::Answered(value)),
+            Ok(value) => {
+                self.refused_in_a_row.set(0);
+                Ok(Heard::Answered(value))
+            }
             Err(Error::Refused { op, status }) => {
                 tracing::warn!(?op, status, "the reference refused a lookup");
-                self.note_a_refusal();
+                self.note_a_refusal(op)?;
                 Ok(Heard::Refused)
             }
             Err(Error::Unreadable { op }) => {
@@ -1385,16 +1423,22 @@ impl Pass<'_> {
                     ?op,
                     "the reference answered with something this build cannot read"
                 );
-                self.note_a_refusal();
+                self.note_a_refusal(op)?;
                 Ok(Heard::Refused)
             }
             Err(other) => Err(other),
         }
     }
 
-    fn note_a_refusal(&self) {
+    fn note_a_refusal(&self, op: LookupOp) -> Result<()> {
         self.refusals.set(self.refusals.get().saturating_add(1));
         self.progress.refuse();
+        let refusals = self.refused_in_a_row.get().saturating_add(1);
+        self.refused_in_a_row.set(refusals);
+        if refusals >= REFUSALS_THAT_END_A_PASS {
+            return Err(Error::RefusedInARow { op, refusals });
+        }
+        Ok(())
     }
 
     fn refusals(&self) -> Refusals {
@@ -1618,11 +1662,26 @@ impl Pass<'_> {
 
     fn cover(&self, album: &AlbumToAsk, release: &Release) {
         self.covered.borrow_mut().insert(album.id);
-        self.want(Picture::Cover {
-            album: album.id,
-            release: release.id.clone(),
-            group: release.group.clone(),
-        });
+        let picture = match (release.has_front_cover, &release.group) {
+            (true, group) => Picture::Cover {
+                album: album.id,
+                release: release.id.clone(),
+                group: group.clone(),
+            },
+            (false, Some(group)) => Picture::OfTheGroup {
+                album: album.id,
+                group: group.clone(),
+            },
+            (false, None) => {
+                tracing::debug!(
+                    album = %album.id,
+                    release = %release.id,
+                    "the release is said to have no cover and names no group, so none is asked for"
+                );
+                return;
+            }
+        };
+        self.want(picture);
     }
 
     fn credits(&self, credits: &[Credit]) -> Result<()> {
@@ -1888,7 +1947,9 @@ impl Pass<'_> {
             return self.library.stamp_artist_asked(id, self.fruitlessly(since));
         };
         self.library.land_artist(artist.id, &profile)?;
-        self.discography(artist.id, &profile.mbid)?;
+        if let ReleasesRead::Refused = self.discography(artist.id, &profile.mbid)? {
+            self.library.stamp_artist_asked(id, Fruitless::Refused)?;
+        }
         if !artist.has_portrait && profile.may_be_pictured() {
             self.portrait(artist.id, profile.links.clone());
         }
@@ -1918,9 +1979,15 @@ impl Pass<'_> {
         Ok(())
     }
 
-    fn discography(&self, artist: ArtistId, mbid: &Mbid) -> Result<()> {
-        let Heard::Answered(held) = self.heard(self.reference.release_groups_of(mbid, 0))? else {
-            return Ok(());
+    fn discography(&self, artist: ArtistId, mbid: &Mbid) -> Result<ReleasesRead> {
+        let held = match self.heard(self.reference.release_groups_of(mbid, 0)) {
+            Ok(Heard::Answered(held)) => held,
+            Ok(Heard::Refused) => return Ok(ReleasesRead::Refused),
+            Err(ended) => {
+                self.library
+                    .stamp_artist_asked(artist, Fruitless::Refused)?;
+                return Err(ended);
+            }
         };
         let kept: Vec<ArtistRelease> = held.releases.into_iter().filter(worth_keeping).collect();
         let written =
@@ -1929,7 +1996,7 @@ impl Pass<'_> {
         self.progress
             .releases_found
             .fetch_add(written as u64, Ordering::Relaxed);
-        Ok(())
+        Ok(ReleasesRead::Kept)
     }
 
     fn profile_of(&self, artist: &ArtistToAsk) -> Result<Option<ArtistProfile>> {

@@ -4,8 +4,8 @@ use ahash::AHashSet;
 use parking_lot::Mutex;
 use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
 use resonate_engine::{
-    Command, Placement, Player, PlayerState, QueueItem, RepeatMode, StreamDigest, TrackState,
-    unclaimed_id,
+    ArtRead, Command, Placement, Player, PlayerState, QueueItem, RepeatMode, StreamDigest,
+    TrackState, unclaimed_id,
 };
 use zbus::{
     fdo, interface,
@@ -48,6 +48,20 @@ impl Owed {
     }
 }
 
+pub(crate) enum RowArt {
+    Settled(Option<String>),
+    NotYet,
+}
+
+impl RowArt {
+    pub(crate) fn uri(self) -> Option<String> {
+        match self {
+            Self::Settled(uri) => uri,
+            Self::NotYet => None,
+        }
+    }
+}
+
 pub(crate) struct Shared {
     pub(crate) player: Arc<Player>,
     pub(crate) host: Arc<dyn Host>,
@@ -76,6 +90,22 @@ impl Shared {
         let art = self.player.art(&digest.location)?;
 
         self.pictures.uri(current.id, &art)
+    }
+
+    pub(crate) fn row_art(
+        &self,
+        item: &QueueItem,
+        state: &PlayerState,
+        playing: Option<&String>,
+    ) -> RowArt {
+        if state.current.is_some_and(|current| current.id == item.id) {
+            return RowArt::Settled(playing.cloned());
+        }
+        match self.player.art_read(&item.location) {
+            ArtRead::Answered(art) => RowArt::Settled(self.pictures.queued_uri(item.id, &art)),
+            ArtRead::Nothing => RowArt::Settled(None),
+            ArtRead::NotYet => RowArt::NotYet,
+        }
     }
 
     pub(crate) fn heard(&self, state: &PlayerState, queue: &[QueueItem]) -> Option<Heard> {

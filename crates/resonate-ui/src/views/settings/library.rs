@@ -60,6 +60,13 @@ impl Choice for HistoryKept {
         }
     }
 
+    fn in_force(self) -> SharedString {
+        match self {
+            Self::Forever => SharedString::new_static(self.label()),
+            Self::Days(days) => SharedString::from(format!("{days} days")),
+        }
+    }
+
     fn meaning(self) -> SharedString {
         match self {
             Self::Forever => SharedString::new_static(
@@ -519,12 +526,9 @@ impl RootView {
         kit::section_body()
             .child(kit::field(
                 "Keep what was listened to",
-                self.choices(
-                    "history-kept",
-                    Some(kept),
-                    cx,
-                    |this, kept: HistoryKept, cx| this.ask_to_keep_the_history(kept, cx),
-                ),
+                self.choices("history-kept", kept, cx, |this, kept: HistoryKept, cx| {
+                    this.ask_to_keep_the_history(kept, cx)
+                }),
             ))
             .when_some(armed, |body, armed| {
                 body.child(note(format!(
@@ -1487,6 +1491,7 @@ const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::views::settings::said_under;
 
     #[test]
     fn only_a_shorter_span_forgets_listens() {
@@ -1500,5 +1505,19 @@ mod tests {
         assert!(!forgets_listens(year, forever));
         assert!(!forgets_listens(year, year));
         assert!(!forgets_listens(forever, forever));
+    }
+
+    #[test]
+    fn a_span_of_days_off_the_table_says_how_many_are_kept() {
+        let quarter = HistoryKept::for_days(90).expect("a span of days");
+
+        assert_eq!(
+            said_under(quarter),
+            "90 days is in force, which is none of these."
+        );
+        assert_eq!(
+            said_under(HistoryKept::Forever),
+            HistoryKept::Forever.meaning()
+        );
     }
 }

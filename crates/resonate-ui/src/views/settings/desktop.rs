@@ -140,7 +140,7 @@ impl RootView {
                 "Shows",
                 self.choices(
                     "discord-shows",
-                    Some(presence.shown),
+                    presence.shown,
                     cx,
                     |this, shown: Shown, cx| {
                         this.present(
@@ -155,7 +155,7 @@ impl RootView {
                 "Picture",
                 self.choices(
                     "discord-art",
-                    Some(presence.pictured),
+                    presence.pictured,
                     cx,
                     |this, pictured: Pictured, cx| {
                         this.present(

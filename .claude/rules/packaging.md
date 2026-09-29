@@ -38,3 +38,19 @@ plus its own id and this player claiming `resonate`. Notifications talk to
 sockets and the Discord and Vesktop runtime directories the client searches; a Snap install of
 Discord lives on the host `/tmp`, outside the sandbox. No release is published, so the manifest
 takes the directory rather than a tarball and the metainfo names no `<release>`.
+
+**Every package installs the one `resonate.desktop` and `resonate.svg`, and the Flatpak renames
+them as it builds.** flatpak-builder exports only what is named after the app id, so the manifest
+carries `rename-desktop-file: resonate.desktop` and `rename-icon: resonate`: the entry becomes
+`org.resonate.Resonate.desktop` with `X-Flatpak-RenamedFrom=resonate.desktop;` and
+`Icon=org.resonate.Resonate`, the icon `org.resonate.Resonate.svg`, and the metainfo's
+`<launchable type="desktop-id">`, which names `resonate.desktop` as the other packages install it,
+is rewritten to the renamed one. `StartupWMClass=resonate` is left alone, so the window's `APP_ID`
+still matches it under Flatpak, and the file in `packaging/` keeps the name the window's tests read
+it by. `crates/resonate/tests/packaging.rs` holds the manifest to this
+(`the_flatpak_exports_the_desktop_entry_and_icon_under_its_id`).
+
+**`packaging/.SRCINFO` is `makepkg --printsrcinfo`'s output for the PKGBUILD beside it**, committed
+because the AUR reads it rather than the PKGBUILD; a change to the PKGBUILD regenerates it in the
+same commit, and `the_srcinfo_says_what_the_pkgbuild_says` fails where `pkgver`, `pkgrel`, `arch`,
+`license`, `depends`, `makedepends` or `options` disagree.

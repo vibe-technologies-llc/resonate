@@ -129,7 +129,9 @@ impl Edit {
     }
 
     pub(crate) fn set_content(&mut self, content: String) {
-        self.history.keep(self.snapshot());
+        if content != self.content {
+            self.history.keep(self.snapshot());
+        }
         self.content = content;
         let end = self.content.len();
         self.selection = end..end;
@@ -179,11 +181,17 @@ impl Edit {
     }
 
     fn edited(&mut self, span: Span, range: Range<usize>, text: &str) {
+        let range = self.clamped(range);
+        if self.slice(range.clone()) == text {
+            let at = range.end;
+            self.selection = at..at;
+            self.reversed = false;
+            return;
+        }
         if !self.history.resumes(span, &self.selection) {
             self.history.keep(self.snapshot());
         }
 
-        let range = self.clamped(range);
         let mut next = String::with_capacity(self.content.len() + text.len());
         next.push_str(self.slice(0..range.start));
         next.push_str(text);
@@ -753,5 +761,47 @@ mod tests {
 
         assert_eq!(edit.content(), "\u{304b}\u{306a}");
         assert_eq!(edit.cursor(), 6);
+    }
+
+    #[test]
+    fn a_removal_changing_nothing_is_no_step_and_leaves_what_was_undone_to_redo() {
+        let mut edit = edit("dark");
+        edit.insert(" side");
+        assert!(edit.undo());
+
+        edit.move_to(0);
+        edit.remove(Removal::Backward);
+        edit.remove(Removal::WordBackward);
+
+        assert!(edit.redo());
+        assert_eq!(edit.content(), "dark side");
+    }
+
+    #[test]
+    fn content_set_to_what_it_already_is_is_no_step() {
+        let mut edit = edit("dark");
+        edit.insert(" side");
+        assert!(edit.undo());
+
+        edit.set_content("dark".to_owned());
+
+        assert!(edit.redo());
+        assert_eq!(edit.content(), "dark side");
+        assert!(edit.undo());
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "");
+        assert!(!edit.undo());
+    }
+
+    #[test]
+    fn pasting_over_a_selection_what_it_already_holds_moves_the_caret_and_keeps_no_step() {
+        let mut edit = edit("dark side");
+        edit.select(5..9);
+        edit.paste("side");
+
+        assert_eq!(edit.content(), "dark side");
+        assert_eq!(edit.selection(), 9..9);
+        assert!(edit.undo());
+        assert_eq!(edit.content(), "");
     }
 }

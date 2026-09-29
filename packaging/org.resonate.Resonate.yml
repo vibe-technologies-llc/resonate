@@ -5,6 +5,8 @@ sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 command: resonate
+rename-desktop-file: resonate.desktop
+rename-icon: resonate
 finish-args:
   - --share=ipc
   - --socket=wayland
@@ -53,7 +55,6 @@ modules:
         install -Dm755 target/release/resonate /app/bin/resonate
         install -Dm644 packaging/resonate.desktop /app/share/applications/resonate.desktop
         install -Dm644 packaging/resonate.svg /app/share/icons/hicolor/scalable/apps/resonate.svg
-        install -Dm644 packaging/resonate.svg /app/share/icons/hicolor/scalable/apps/org.resonate.Resonate.svg
         install -Dm644 packaging/org.resonate.Resonate.metainfo.xml /app/share/metainfo/org.resonate.Resonate.metainfo.xml
         install -Dm644 LICENSE /app/share/licenses/resonate/LICENSE
         install -Dm644 COPYRIGHT /app/share/licenses/resonate/COPYRIGHT

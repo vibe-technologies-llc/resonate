@@ -41,11 +41,54 @@ pub enum Error {
     NotAnExtension,
 }
 
+const SERVER_TROUBLE: u16 = 500;
+
+impl Error {
+    pub fn is_the_provider_away(&self) -> bool {
+        match self {
+            Self::Io { .. } => true,
+            Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
+            Self::Unreadable { .. } | Self::TurnedAway { .. } | Self::NotAnExtension => false,
+        }
+    }
+}
+
 pub type Result<T> = result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_provider_that_cannot_be_reached_or_whose_server_fails_is_away_and_one_refusing_a_want_is_not()
+     {
+        let provider = SourceId::new("shop").expect("a nameable source");
+        let unreachable = Error::Io {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            source: io::Error::from(io::ErrorKind::ConnectionRefused),
+        };
+        let down = Error::Refused {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            status: 503,
+        };
+        let not_found = Error::Refused {
+            provider: provider.clone(),
+            op: ProviderOp::Download,
+            status: 404,
+        };
+        let turned_away = Error::TurnedAway {
+            provider,
+            op: ProviderOp::Search,
+            code: 70,
+        };
+
+        assert!(unreachable.is_the_provider_away());
+        assert!(down.is_the_provider_away());
+        assert!(!not_found.is_the_provider_away());
+        assert!(!turned_away.is_the_provider_away());
+    }
 
     #[test]
     fn error_stays_small_enough_for_result_large_err() {

@@ -54,6 +54,14 @@ pub enum Error {
     #[error("{path} is not a folder that can be scanned", path = path.display())]
     NoSuchFolder { path: PathBuf },
 
+    #[error("{landed} of the {asked} rows reached the queue before the player failed")]
+    QueuedPartway {
+        landed: usize,
+        asked: usize,
+        #[source]
+        source: resonate_mpris::Error,
+    },
+
     #[error(transparent)]
     Core(#[from] resonate_core::Error),
 
@@ -149,6 +157,9 @@ pub enum Refusal {
     #[error("the message is not a JSON-RPC 2.0 request or notification")]
     NotARequest,
 
+    #[error("the batch holds no message")]
+    EmptyBatch,
+
     #[error("the message runs past the {longest} bytes a message may take")]
     TooLong { longest: usize },
 
@@ -215,6 +226,13 @@ pub enum Refusal {
     #[error("{field} is outside the range {tool} takes")]
     OutOfRange { tool: Tool, field: &'static str },
 
+    #[error("{tool} takes no more than {most} {field}")]
+    TooMany {
+        tool: Tool,
+        field: &'static str,
+        most: usize,
+    },
+
     #[error("{field} is not a value {tool} can read")]
     Unreadable { tool: Tool, field: &'static str },
 }
@@ -246,7 +264,7 @@ impl Refusal {
     pub const fn code(&self) -> Code {
         match self {
             Self::Unparsed(_) => Code::ParseError,
-            Self::NotARequest | Self::TooLong { .. } => Code::InvalidRequest,
+            Self::NotARequest | Self::EmptyBatch | Self::TooLong { .. } => Code::InvalidRequest,
             Self::UnknownMethod(_) => Code::MethodNotFound,
             Self::UnknownResource(_) => Code::ResourceNotFound,
             Self::BadParameters { .. }
@@ -260,6 +278,7 @@ impl Refusal {
             | Self::AtLeastOneOf { .. }
             | Self::AtMostOneOf { .. }
             | Self::OutOfRange { .. }
+            | Self::TooMany { .. }
             | Self::Unreadable { .. } => Code::InvalidParams,
         }
     }

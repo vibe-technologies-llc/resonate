@@ -1,10 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use resonate_library::{
-    Form, ImportOptions, ImportSummary, Library, Sources, Vault, VaultObject, Wanted,
+    Form, ImportOptions, ImportSummary, Library, PassKind, Sources, Vault, VaultObject, Wanted,
 };
 
-use crate::{Result, cli::VaultArgs, info::bytes_text, table::Table, until_told};
+use crate::{Result, cli::VaultArgs, finished, info::bytes_text, table::Table, until_told};
 
 const WRITES_SHOWN: usize = 20;
 
@@ -98,7 +98,7 @@ fn import(library: &Library, args: &VaultArgs) -> Result<()> {
     )?)?;
 
     print!("{}", imported(&summary, args.apply));
-    Ok(())
+    finished(PassKind::Import, summary.cancelled)
 }
 
 fn kept_as(wanted: &Wanted) -> String {

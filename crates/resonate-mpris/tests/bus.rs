@@ -2790,3 +2790,52 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
         "a press on Play/Pause to pause",
     );
 }
+
+#[test]
+fn a_queued_row_carrying_a_picture_is_described_with_a_cover_the_desktop_can_open() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    harness.load_all(&[tree.wav("bare.wav"), tree.pictured("next.wav")]);
+    harness.wait_for(|harness| harness.status() == "Playing", "playback to start");
+    harness.wait_for(
+        |harness| harness.tracks().len() == 2,
+        "the track list to publish",
+    );
+
+    let list = harness.proxy(TRACK_LIST);
+    let rows = harness.tracks();
+    let described = || {
+        list.call::<_, _, Vec<HashMap<String, OwnedValue>>>("GetTracksMetadata", &rows)
+            .expect("GetTracksMetadata is served")
+    };
+    harness.wait_for(
+        |_| {
+            described()
+                .get(1)
+                .and_then(|fields| text(fields, "mpris:artUrl"))
+                .is_some()
+        },
+        "the queued row's cover to reach the bus",
+    );
+
+    let fields = described();
+    let named = fields
+        .get(1)
+        .and_then(|fields| text(fields, "mpris:artUrl"))
+        .expect("a cover URI");
+    let laid = MediaLocation::from_uri(&named).expect("a local location");
+
+    assert_eq!(
+        fs::read(laid.as_path().expect("a path")).expect("the cover reads back"),
+        png()
+    );
+    assert!(
+        fields
+            .first()
+            .and_then(|fields| text(fields, "mpris:artUrl"))
+            .is_none(),
+        "the playing row, carrying no picture, was named the next row's cover"
+    );
+}

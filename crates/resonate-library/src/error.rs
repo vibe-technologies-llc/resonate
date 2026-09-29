@@ -218,6 +218,9 @@ pub enum Error {
     #[error("the reference answered {op:?} with something this build cannot read")]
     Unreadable { op: LookupOp },
 
+    #[error("the reference refused {refusals} lookups in a row, the last of them {op:?}")]
+    RefusedInARow { op: LookupOp, refusals: u32 },
+
     #[error("a playlist is already named {name}")]
     DuplicatePlaylist { name: PlaylistName },
 

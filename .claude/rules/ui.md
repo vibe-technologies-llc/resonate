@@ -111,7 +111,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   selection the last left, so a typed word is one step, a run of backspaces one, and an input method
   revising a preedit one however often it revises. A paste, a cut and a clear are `Span::Discrete` and
   never join what came before, which makes `ctrl-a` over the lot, and escape, recoverable. Whitespace
-  closes a typing run, so undo walks back a word at a time. The history is `Edit`'s, not the view's, so
+  closes a typing run, so undo walks back a word at a time. **An edit that changes nothing is no step**:
+  `Edit::edited` weighs what the range holds against what would replace it, and a backspace at the
+  start, a delete at the end or a paste of what is selected only moves the caret, keeping no snapshot
+  and leaving what was undone to redo; `set_content` with the text already there does the same. The history is `Edit`'s, not the view's, so
   it is tested without a window. It holds 128 steps (`UNDO_DEPTH`) and lives only as long as the run,
   and escape clears the field and blurs it in one stroke, so what it threw away is out of reach until a
   click puts the caret back: the three keys are bound under `SEARCH_CONTEXT` and a blurred field never
@@ -202,17 +205,25 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `jump_where_typed` making it once they do. The queue pane asks as it draws, so the names are usually
   there before the first letter. They were once read on the first keystroke, on the render thread, at up
   to two SQLite reads a row through a cache smaller than a long queue.
-- **Backspace drops a typed letter before it drops a reach.** A jump *sets* the reach, so the other order
-  would have made backspacing a mistyped letter take out the row the jump just landed on. `drop_typed`
-  answers false whenever nothing is live, so with no pill up the key does what it always did. Escape
-  clears a live type-ahead after the magnified cover and the notice and before `dismiss_search`: those two
-  stand until taken down while this one takes itself down after a second, and somebody abandoning a jump
-  has not asked for their search to be cleared.
+- **Backspace drops a typed letter before it drops a reach, and never drops the row a jump landed on.**
+  A jump *sets* the reach, so the other order would have made backspacing a mistyped letter take out the
+  row the jump just landed on. `drop_typed` answers false whenever nothing is live, and the pill lapses
+  after `HELD_FOR`, so a typo noticed a second late would still have taken the row: `jumped_to` notes the
+  reach it set in `landed_by_a_jump`, and while the reach is still that one in the pane in front
+  (`stands_where_a_jump_landed`) backspace does nothing. Any reach made by hand — the reach keys through
+  `reach_by_hand`, a press through `reach_at`, a move, a drop — forgets it, so a row reached deliberately
+  after a jump is backspaced away as ever, and `delete` takes a jumped-to row, being no typing key.
+  Escape clears a live type-ahead after the magnified cover and the notice and before `dismiss_search`:
+  those two stand until taken down while this one takes itself down after a second, and somebody
+  abandoning a jump has not asked for their search to be cleared.
 - **Typing anywhere still searches, which is why it does not take focus.** `RootView::typed` appends to
   the field without focusing it, so `space` stays play/pause until a click puts the caret in. `space`,
   `s`, `h` and `r` are bound under `!Search && !Control`, and so are `left`, `right`, `ctrl-left` and
   `ctrl-right`, which the transport would otherwise take from the caret, and the reach, move, undo and
-  redo keys. An action fires before any `on_key_down` listener and stops propagation, and a keystroke
+  redo keys. So are the four that reach what was once the pointer's alone: `shift-right` and
+  `shift-left` seek `SEEK_FURTHER_SECONDS` (30) where the plain arrows seek five, `ctrl-m` is the
+  speaker's `toggle_mute` and `ctrl-u` the queue button's `toggle_queue` — held to control-letters and
+  shifted arrows because a bare letter here is one the search can no longer be typed with. An action fires before any `on_key_down` listener and stops propagation, and a keystroke
   reaching neither is what the platform hands the input handler, so a key bound with no predicate could
   never reach the query. **Which predicate a key carries is structural, not per-line**:
   `answering_anywhere` (no predicate), `answering_away_from_a_field` (`!Search && !Control`),
@@ -230,9 +241,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **Escape away from the field is a chain, and a notice is in it.** `RootView::typed` hears escape
   outside the search field, `LeaveSearch` being bound under `SEARCH_CONTEXT` alone: an action fires before
   any `on_key_down` listener and stops propagation, so binding escape under `!Search` too would take the
-  key off the handler answering it. The order is the match arms: the Listen sheet closes first, then a
-  magnified cover shrinks, then a shown record is cleared, then a standing toast is taken down through
-  `toast::dismiss`, then a live type-ahead stops (`stop_typing`), and only then does `dismiss_search`
+  key off the handler answering it. The order is the match arms, what stands over the pane before what
+  stands beside it: the Listen sheet closes first, then a magnified cover shrinks, then the playlist
+  picker closes (`stop_naming`), then a shown record is cleared, then an open menu closes, then a
+  standing toast is taken down through `toast::dismiss`, then a live type-ahead stops (`stop_typing`),
+  and only then does `dismiss_search`
   close the naming row, clear the query, or — the query already empty — step back through
   `RootView::step_back`, the seam the page's way-back presses. That last step makes a scope escapable:
   opening an artist from the tracks pane leaves the pane and narrows it, so without a key the only way
@@ -250,6 +263,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   needs its own arm in `dismiss_search`; the AutoEq search's, `leave_looking`, clears it and its
   results and hands focus back, where escape there once cleared the library search or stepped back a
   pane (`escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
+- **What stands over the pane holds the pane's keys back.** A menu, the playlist picker, a magnified
+  cover, a record card or the Listen sheet is `something_stands_over_the_pane`, and while one does the
+  reach, page, widen, move, `enter`, `delete`, undo and redo keys and every typed letter or backspace
+  answer nothing: focus returns to the window wherever the pointer or a closed field leaves it, and
+  the pane behind was otherwise edited through the sheet. The check sits in each gesture rather than
+  on the bindings, so a button or a future caller is held back too; `reach_row` and
+  `play_reached_rows` step and press the menu first, the menu answering those keys itself. Escape is
+  the one key still heard, taking the sheet down (`views/root.rs`'s driven tests hold each sheet).
 - **A slider is grabbed on the press and followed from a window-wide surface, not the rail.**
   `views/slider.rs` owns both rails: the press starts a `Grab`, and `drag_surface` — an absolutely
   positioned child of the app that occludes while held — carries the move and release listeners, a
@@ -261,8 +282,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   costs one gap. The wheel over the volume cluster is a notch of `VOLUME_A_NOTCH` — a touchpad's pixels
   counted in `PIXELS_A_NOTCH` — while `ResonateApp::scroll_volume` says so, and `RootView::volume_aimed`
   is what a run of notches or held keys adds to: the engine publishes the new volume a poll later, so
-  reading it back each notch lost all notches but one in a poll. **A press on the speaker mutes, and
-  mute is not a volume.** `RootView::toggle_mute` sends `Volume::MUTE` and keeps the level it was heard
+  reading it back each notch lost all notches but one in a poll. **A press on the speaker, or `ctrl-m`,
+  mutes, and mute is not a volume.** `RootView::toggle_mute` sends `Volume::MUTE` and keeps the level it was heard
   at in `muted_from` without storing anything, so a run quit while muted opens at the chosen level, not
   nothing. `muted_at` reads the pair only while the engine still publishes nothing, so a volume set over
   the bus ends the mute; a second press, a wheel notch, `ctrl-up` and `ctrl-down` all restart from the
@@ -309,8 +330,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   and a deep accent is written in paper, a pale one in pitch. It takes a colour rather than reading the
   worn accent, `kit::dot_swatch` drawing its check on an accent not yet worn. The semantic colours come
   off the worn accents rather than a second list: `bit_perfect`, `lossless` and `done` are its green,
-  `repacked` its blue, `dithered` its amber, `failure` its red, `converted` and `lossy` the muted grey,
-  so a colour means one thing in the playback bar's signal path, the inspector's stages, a row's format
+  `repacked` its blue, `dithered` its amber, `failure` its red, `suspect` its peach, `converted` and
+  `lossy` the muted grey, so a colour means one thing in the playback bar's signal path, the inspector's stages, a row's format
   badge and a device's badge whatever palette is worn. `theme::tinted` makes a colour a wash — a
   selected chip, the playing row, a badge's ground — so no second palette of washes is kept in step, and
   `theme::selection` is the accent worn thin.
@@ -334,8 +355,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   Solarized's `base0` reads at 4.8:1, so its text is `base2` and muted `base1`, and its violet, orange and
   red carry their ink at 4.5:1 only on a pitch of pure black, which its pitch is rather than a lifted
   accent. `theme.rs`'s tests walk every theme crossed with every accent — and none — and hold contrast to
-  the recognised bars: 7:1 for text on the panes and cards, 4.5:1 for text on what is raised, for muted
-  text and for what is written on an accent fill, and 3:1 for the accent against the panes. Nord's
+  the recognised bars: 7:1 for text on the panes and cards, 4.5:1 for text on what is raised, for
+  `muted` on the panes and on what is raised, for `faint` on the panes and for what is written on an
+  accent fill, and 3:1 for the accent against the panes, with the three inks stepping down from `text`
+  through `muted` to `faint` on the ground. `faint` is text — a count, a key, a year, a placeholder —
+  not decoration, so it is held to the body bar: where a published palette's own step reaches it the
+  step is quoted (Catppuccin's `overlay2` is faint and `subtext0` muted, Frappé's `subtext1` muted, its
+  `subtext0` reading at 4.3:1 on `surface0`; Gruvbox's `fg4`; Solarized's `base0`), and elsewhere the
+  palette's faint is lifted along its own hue until it reads, the ramp's `THIRD_INK` included. Nord's
   aurora red is the one colour that could not carry its ink at 4.5:1 and is drawn a fifth of the way
   towards `nord6` so it can — what the guard is for, rather than trusting a famous palette.
 - **A palette is quoted or ramped, and hand-writing twenty is how one drifts.** A quoted `Flavour` is a
@@ -480,6 +507,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   than a line under the heading standing as long as the offer did; *Put back* stays in the heading and
   sends the rows as a `Command::Insert` at `Placement::At` the row they came out of. The rows are kept as
   `QueueItem`s, not ids, `one_id_each` minting new ones on the way back in.
+- **Dropping rows leaves the reach on a row that is still there.** `drop_rows` weighs how many rows
+  the list held before the drop, and `Reach::after_dropping` lands on the first row after the gap —
+  what moved up into it — or the row now last where the drop took the end, and nothing where it took
+  every row. The reach used to stay on the dropped span's first row, which past the end of a shorter
+  list drew no mark while `reach_in` pulled the next `delete` back onto the last row — a row that was
+  never highlighted.
 - **A run of gestures is walked back one at a time, and nothing queued since takes the walk away.**
   `TakenBack` is the bounded stack `TakenOut` sits in: *Put back* pops the top and sends its rows as a
   `Command::Insert` at the row after the one they followed — `TakenOut::after`, the id of the row before
@@ -833,6 +866,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   moved the play order. A playlist marks a row only while `Library::playing_playlist` names it, which it
   does only while the queue holds the rows it was loaded with: the mark is sound exactly as long as the
   queue *is* that playlist, and a row added or dropped — by the window or over the bus — ends that.
+- **An edit never cancels the one before it.** `LibraryModel::edited_then` holds one task in `_edit`, and
+  replacing it dropped an edit spawned a moment earlier before it ran — its write, its toast and its
+  reload gone. Each new edit takes the one before out of the slot and awaits it first, so edits run
+  in the order asked and none is lost (`two_edits_asked_for_at_once_both_land`); `track_passed` and
+  the two `listened` writes on `_settled` chain the same way, a settled play's length no longer dropped
+  by the next play's first hearing.
 - **A narrower read never cancels a wider one.** A read replaces `_load`, dropping the one in flight —
   right between two whole reads, but it lost the browse panes where a playlist edit's `ThePlaylists` read
   landed on top of a scan's closing `Everything`: the listing kept the rows the scan had just pruned.
@@ -1249,7 +1288,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   tab, the visualiser's Scope segment, a track's menu and an entry of it, the playlist picker, a queued
   row dragged below another, a suggestion card, the equaliser curve pressed, dragged and right-pressed,
   the settings body scrolled, and the Listen sheet with its segments and microphone chips — planted
-  through `ListenModel::hearing_of`, a microphone being PipeWire's to list. **What it found**: pressing
+  through `ListenModel::hearing_of`, a microphone being PipeWire's to list. `views/root.rs` drives the
+  keys the same way: the queue's reach dropped from its end, a backspace after a lapsed jump, each sheet
+  holding the pane's keys back, escape taking a menu before a toast, `ctrl-m` and `ctrl-u`, and two
+  playlist edits asked for in one breath. **What it found**: pressing
   the curve with the equaliser off turned it on, which showed the switch's note above and moved the
   curve out from under the press shaping it, and the put-back mark appearing in a group's header grew
   the header; the note is now always there and `kit::section_header` holds a row control's height, so a
@@ -1300,8 +1342,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   baseline, so the axis has no holes, and a run longer than `BARS_AT_MOST` (120) folds whole days into
   one bar rather than drawing a year a pixel at a time. The axis reads *today*, *yesterday* and
   otherwise the date, *29 Jan*, with the year where it is not this one, through
-  `resonate-core::CivilDate` — the UTC day the history buckets a play into, so bar and date always
-  agree.
+  `resonate-core::CivilDate` of the day `Calendar::local` says each bar's midnight and now fall on —
+  the calendar the history buckets a play by, so bar and date always agree. `Chart::of` reads the local
+  calendar and `Chart::in_calendar` takes one, which is how the tests hold the axis to UTC and to a
+  zone east of it (`a_day_is_dated_in_the_listeners_calendar_rather_than_greenwichs`).
 - **A suggestion card reads its rows off the frame.** `RootView::with_the_rows_of` is
   `with_everything_listed`'s sibling: a suggestion is a search that may name the whole library, so Play
   and Add to queue read it on the background executor before acting. *Save* is `Library::save_query`
@@ -1390,14 +1434,19 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   nightly decision, and a key with no control is what the settings rebuild went hunting.
 - **The queue is reached from the playback bar, not the sidebar.** `Pane::BROWSE` is what the sidebar
   lists and `Pane::Settings` is pinned under it by a `justify_between`; `Pane::Queue` is reached only
-  through the bar's queue button, a `toggle` like shuffle and repeat carrying the accent that says it is
+  through the bar's queue button or `ctrl-u`, a `toggle` like shuffle and repeat carrying the accent that says it is
   open. It carries no count: the queue's heading says how long it is, and a figure beside the one icon
   in the cluster that had one read as a badge to clear. `RootView::behind_queue` remembers the pane the
   button covered, so a second press returns to it rather than a default.
 - **The queue follows the row that started playing, only while it is the pane in front.**
-  `RootView::following` is a `Following` — the row last scrolled to and nothing else — and
-  `Following::follows` is the whole decision: the row `PlayerState::queue_position` names, or nothing
-  where the row has not moved since the last scroll, `self.pane` is not `Pane::Queue`, or nothing plays.
+  `RootView::following` is a `Following` — the `PlayingRow` last shown: the row
+  `PlayerState::queue_position` names, the playing track's id and the `queue_stamp` of the queue it is
+  a row of, all three off one published state — and `Following::follows` is the whole decision: the
+  row, or nothing where `self.pane` is not `Pane::Queue`, nothing plays, or the playing row has not
+  *moved on*. It moves on where another track plays, or where the row changed inside the same queue —
+  the same track queued twice and stepped onto; a row moved only because rows above it were dropped,
+  dragged or put back changes the stamp and keeps the track, so it is recorded and not scrolled to,
+  where following the index threw the view away from the rows being edited.
   It rides the `cx.observe(&player, …)` `count_a_play` rides, and lifts the *NOW PLAYING* heading to the
   pane's top — `QueueParts::opens_at` is that line, and `lift_the_playing_row` scrolls to it strictly,
   gpui's plain `scroll_to_item` doing nothing for a line already in view — so what was heard is above
@@ -1410,8 +1459,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   where it was scrolls nothing, so a queue scrolled away by hand stays until the track changes. A row
   that moved while another pane was in front is not recorded as shown, so the first poll after the queue
   returns lands on it — the list's left row is no longer the playing one, and scrolling a list nobody
-  watches only yanks it later. `Following` is arithmetic over an `Option<usize>`, so `views/root.rs`
-  tests it without a window as `views/reorder.rs` tests `Step::landing`.
+  watches only yanks it later. `Following` is arithmetic over an `Option<PlayingRow>`, so
+  `views/root.rs` tests it without a window as `views/reorder.rs` tests `Step::landing`.
 - **The *Reads* row reads back the search box rather than claiming anything about a listing.**
   `listing::reads` is one chip per clause off `Search::reads`, standing in every pane's heading — under
   the tracks pane's, the playlists index's and an opened playlist's, and beside the albums and artists
@@ -1747,7 +1796,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   is reached with the reach following, `enter` plays its first row and `delete` takes the reached rows
   away through the ✕'s `drop_rows`, gated on `Rows::are_edited` in a playlist as the ✕ is. `backspace`
   over a reached row drops it too rather than silently editing the search, as `typed` once did:
-  `drop_reached` answers whether it acted and the query is edited only where it did not.
+  `drop_reached` answers whether it acted and the query is edited only where it did not — unless a
+  type-ahead jump put the reach there, which backspace leaves standing.
   `RootView::acting_on` is what every row gesture asks: the reach where the pressed row is inside it,
   that row alone where not, so the ✕, the arrows and the queue marks need no selection of their own. It
   is drawn as a 2-unit accent edge and a faint accent wash every reorderable row reserves in
@@ -1920,8 +1970,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `Menu::at(…).does(…).under(…).apart()` builds one and `menu::opens_a_menu` attaches it to any element,
   so a pane says what a press offers and never how a menu is drawn. It renders as
   `deferred(anchored().position(at).snap_to_window_with_margin(…))` over an occluding scrim taking the
-  outside press, and is one `Option<Menu>` on `RootView` with one arm at the head of `dismiss_search` —
-  `adding`'s and `magnified`'s shape. It is not built on `tooltip`, which `hint.rs`'s source-walking
+  outside press, and is one `Option<Menu>` on `RootView` with one arm in escape's chain, after the
+  sheets and before a toast, and one at the head of `dismiss_search` — `adding`'s and `magnified`'s
+  shape. It is not built on `tooltip`, which `hint.rs`'s source-walking
   test forbids and which neither a press nor a scroll takes down. It needs no key context: `up`, `down`
   and `enter` already name actions this window handles, so `reach_row` and `play_reached_rows` step and
   press the menu before reaching for a row. **`on_click` never fires for a right press**, gpui 0.2.2
@@ -1954,7 +2005,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   named `resonate-clipboard` answers each `send` with the bytes until the source is cancelled — which the
   next copy, ours or anyone's, does, so at most one such thread lives. Where the compositor offers no data
   control — GNOME keeps it to privileged clients — it falls back to gpui's own write, which works
-  whenever the window was last reached by keyboard. It is `wayland-client` and `wayland-protocols` with
+  whenever the window was last reached by keyboard. **The UI thread never waits for the answer, and a
+  late one cannot overwrite the fallback.** `copy_through` starts the thread and a foreground task
+  racing its oneshot answer against an `ANSWERED_WITHIN` timer; the fallback is written only once the
+  compositor refused or the timer won. Which side got there first is one `Claim`, an atomic settled
+  once: the thread claims it just before `set_selection`, the task gives it up when the timer fires,
+  and whichever loses stands down — a thread finding the claim given up destroys its source unset, and
+  a task finding it claimed waits for the round trip rather than writing. It used to block the frame
+  for up to 250 ms on `recv_timeout`, and a thread answering after that set the selection over the
+  text the fallback had just written. `clipboard.rs`'s tests drive both sides with a stand-in offer. It is `wayland-client` and `wayland-protocols` with
   `staging`, both already linked by gpui, and no `unsafe`: the descriptor arrives as an `OwnedFd` and is
   written through a `File`. It was proved against a headless `kwin_wayland --virtual` on a socket of its
   own, read back with `wl-paste`, and is not a test, a copy in a desktop session being the listener's
@@ -2033,8 +2092,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   own detector knows, and a DAC that does not decode it plays the markers as full-scale white noise.
   `pipeline.rs`'s `no_setting_the_pane_offers_can_produce_a_marked_plan_with_a_stage_in_it` already held
   `dop: true` fixed, so its claim covers the pane now it can set it.
-- **The buffer is offered as four fixed depths**, so a `buffer-ms` outside them is reported under the
-  choices rather than marked — why `choices` takes an `Option`. The resampler group prints `SincParams`'
+- **A value off a choice's table is said, never left unlit.** `RootView::choices` takes the value in
+  force, not an `Option`: a segment is lit where it equals one of `Choice::ALL`, and where none does
+  `said_under` writes *… is in force, which is none of these.* in place of a meaning, through
+  `Choice::in_force` — the label by default, which a closed enum always has, and the figure itself for
+  the choices whose key reads any number: `buffer-ms`, `listen-for`, `bluetooth-lead-ms`,
+  `bluetooth-awake-s`, the two ReplayGain trims and a `history-kept` of days the table does not offer.
+  Those choices are newtypes over what the key holds (`BufferDepth(Duration)`, `ClipLength(Duration)`,
+  `PreAmp(Trim)`), not enums of the rungs, so the pane cannot turn an off-table value into `None` and
+  forget to say so; each module's tests hold the sentence. The resampler group prints `SincParams`'
   four numbers on hover rather than describing a level in adjectives. A device named in the file but
   absent from the graph marks no row, and the group says so. The volume is debounced so a held key
   rewrites `config.toml` once rather than per repeat, and it is the playback bar's control, not a
@@ -2165,9 +2231,18 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the clip and puts the sheet back at `Idle`, so a song named after Stop or after closing is neither told
   to the desktop nor drawn. `listening.rs` is the model and `views/listen.rs` the drawing. `ListenModel`
   holds the `Listens` the binary handed in and walks one `Stage` — `Recording` with the `Hearing` the bar
-  is drawn from, `Asking`, then `Found`, `Unknown`, `Silent`, `Unreached` or `NoService` where no
-  recogniser is registered — recording and asking each on the background executor, so the frame never
-  waits on PipeWire or a network. A found song is a card: the cover at `theme::listen_cover()`, title,
+  is drawn from and the source it records, `Asking`, then `Found`, `Unknown`, `Silent`, `Unreached`,
+  `Offline` or `NoService` — recording and asking each on the background executor, so the frame never
+  waits on PipeWire or a network. `listen` takes whether Online is on *now*, read off
+  `ResonateApp::online` by `RootView::listen_now`: off is `Offline` and nothing is recorded, so Online
+  switched off in the run stops Listen reaching Shazam though its recognisers were built at the start;
+  on with no recogniser registered is `NoService`, which says they come at the next start — Online was
+  off when the run began, or the build has no network — rather than claiming Online is off
+  (`online_switched_on_in_this_run_is_not_said_to_be_off`). The recording note names the source in the
+  stage, not the one chosen, and the source segments and microphone chips take no press while
+  `is_listening` — `listen_from` refuses one too — so a press mid-recording neither changes the next
+  source nor misnames this one
+  (`a_source_pressed_while_recording_is_refused_and_the_recording_names_its_own`). A found song is a card: the cover at `theme::listen_cover()`, title,
   artist, album and year, which service named it, and *Listen again*, *Open* where the service gave a
   link and *Find it* — `search_instead` and `choose_pane(Pane::Tracks)` over title and artist, so a held
   track is one press away and one not held lands on the search listing what the catalog and MusicBrainz

@@ -5205,6 +5205,7 @@ dependencies = [
  "encoding_rs",
  "proptest",
  "thiserror 2.0.21",
+ "tz-rs",
  "unicode-normalization",
 ]
 
@@ -5392,6 +5393,7 @@ name = "resonate-subsonic"
 version = "0.1.0"
 dependencies = [
  "md-5 0.11.0",
+ "parking_lot",
  "resonate-core",
  "resonate-providers",
  "serde",
@@ -7188,6 +7190,12 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "tz-rs"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fc6c929ffa10fb34f4a3c7e9a73620a83ef2e85e47f9ec3381b8289e6762f42"
 
 [[package]]
 name = "uds_windows"

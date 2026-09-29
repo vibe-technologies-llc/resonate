@@ -44,7 +44,7 @@ use crate::{
     history, import, likeness,
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
-    playlist,
+    playlist, resumed,
     retag::{self, Followed, TrackToTag},
     scan, schema, scrobble, search, share, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
@@ -198,7 +198,7 @@ const ARTIST_COLUMNS: &str = concat!(
 
 const LINKS_OF_UNPICTURED_ARTISTS: &str = "SELECT l.artist_id, l.relation, l.provider, l.url
        FROM artist_links l JOIN artists r ON r.id = l.artist_id
-      WHERE r.portrait IS NULL
+      WHERE r.portrait IS NULL AND (r.portrait_asked IS NULL OR r.portrait_asked < ?1)
       ORDER BY l.artist_id, l.url";
 
 const WHAT_AN_ARTIST_HOLDS: &str = "SELECT count(DISTINCT album_id), count(*),
@@ -252,7 +252,9 @@ const TRACKS_TO_VAULT: &str = "SELECT tracks.id, tracks.path, tracks.span_start,
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN vault_objects ON vault_objects.key = tracks.vault_key
-      WHERE (tracks.vault_key IS NULL OR coalesce(vault_objects.encoding, 0) < ?)";
+      WHERE (tracks.vault_key IS NULL OR coalesce(vault_objects.encoding, 0) < ?)
+        AND NOT EXISTS (SELECT 1 FROM vault_refused
+                         WHERE vault_refused.track_id = tracks.id AND vault_refused.under >= ?)";
 
 const TRACKS_IN_THE_VAULT: &str = "SELECT tracks.id, tracks.path
        FROM tracks
@@ -738,7 +740,7 @@ const NAMED_TABLES: [&str; 4] = ["tracks", "albums", "artists", "artist_genres"]
 const NAMES_MOVED: &str = "names_moved";
 const PLANS_MOVED: &str = "plans_moved";
 
-const PLANNED_FROM: [(&str, Option<&[&str]>); 7] = [
+const PLANNED_FROM: [(&str, Option<&[&str]>); 8] = [
     (
         "tracks",
         Some(&[
@@ -789,6 +791,7 @@ const PLANNED_FROM: [(&str, Option<&[&str]>); 7] = [
     ("release_tracks", None),
     ("release_media", None),
     ("vault_objects", None),
+    ("vault_refused", None),
 ];
 const TEMPORARY: &str = "temp";
 
@@ -1748,6 +1751,10 @@ impl Library {
         scan::forget_the_gone(&self.inner, gone)
     }
 
+    pub fn retire(&self, folder: &Path) -> Result<u64> {
+        scan::retire(&self.inner, folder)
+    }
+
     pub fn retag(&self, tags: Arc<dyn TagSink>, options: RetagOptions) -> Result<RetagHandle> {
         retag::start(self.shared(), tags, options)
     }
@@ -2107,8 +2114,31 @@ impl Library {
                     "UPDATE tracks SET vault_key = ?1, vault_path = ?2 WHERE id = ?3",
                     params![key, held, row.id.get() as i64],
                 )
+                .map_err(|source| Error::store(StoreOp::Update, source))?;
+
+            transaction
+                .execute(
+                    "DELETE FROM vault_refused WHERE track_id = ?1",
+                    params![row.id.get() as i64],
+                )
                 .map(|_| ())
-                .map_err(|source| Error::store(StoreOp::Update, source))
+                .map_err(|source| Error::store(StoreOp::Delete, source))
+        })
+    }
+
+    pub(crate) fn note_vault_refused(&self, row: &TrackToVault) -> Result<()> {
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO vault_refused (track_id, under) VALUES (?1, ?2)
+                     ON CONFLICT(track_id) DO UPDATE SET under = excluded.under",
+                    params![
+                        row.id.get() as i64,
+                        i64::from(Encoding::OF_THIS_BUILD.get())
+                    ],
+                )
+                .map(|_| ())
+                .map_err(|source| Error::store(StoreOp::Insert, source))
         })
     }
 
@@ -2240,16 +2270,23 @@ impl Library {
         Ok(TrackId::new(id as u64)?)
     }
 
-    pub(crate) fn note_vaulted_cover(&self, album: AlbumId, kept: &KeptCover) -> Result<bool> {
+    pub(crate) fn note_vaulted_cover(
+        &self,
+        album: AlbumId,
+        kept: &KeptCover,
+        encoded: &CoverArt,
+    ) -> Result<bool> {
         let within = self.inner.within_the_vault(&kept.path)?;
-        self.inner
-            .write(|transaction| enriched::vault_the_cover(transaction, album, kept.key, &within))
+        self.inner.write(|transaction| {
+            enriched::vault_the_cover(transaction, album, kept.key, &within, &encoded.bytes)
+        })
     }
 
     pub(crate) fn tracks_to_vault(&self, roots: &[PathBuf]) -> Result<Vec<TrackToVault>> {
         let named = rooted(roots)?;
         let sql = and_roots(TRACKS_TO_VAULT, named.len());
-        let mut asked = vec![Value::Integer(i64::from(Encoding::OF_THIS_BUILD.get()))];
+        let this_build = Value::Integer(i64::from(Encoding::OF_THIS_BUILD.get()));
+        let mut asked = vec![this_build.clone(), this_build];
         asked.extend(named);
 
         self.inner.read(|connection| {
@@ -2443,14 +2480,25 @@ impl Library {
             .write(|transaction| enriched::note_cover_asked(transaction, album, SystemTime::now()))
     }
 
+    pub(crate) fn note_portrait_asked(&self, artist: ArtistId) -> Result<()> {
+        self.inner.write(|transaction| {
+            enriched::note_portrait_asked(transaction, artist, SystemTime::now())
+        })
+    }
+
     pub fn artists_wanting_a_portrait(&self) -> Result<Vec<PortraitWanted>> {
+        let asked_before = enriched::portraits_asked_before(SystemTime::now());
         self.inner.read(|connection| {
-            let held: Vec<(i64, Link)> =
-                rows(connection, LINKS_OF_UNPICTURED_ARTISTS, Vec::new(), |row| {
+            let held: Vec<(i64, Link)> = rows(
+                connection,
+                LINKS_OF_UNPICTURED_ARTISTS,
+                vec![Value::from(asked_before)],
+                |row| {
                     let artist: i64 = row.get(0)?;
 
                     Ok(read_link(row, 1)?.map(|link| (artist, link)))
-                })?;
+                },
+            )?;
 
             let mut wanting: Vec<PortraitWanted> = Vec::new();
             for (artist, link) in held {
@@ -2735,6 +2783,17 @@ impl Library {
         self.inner.read(|connection| sung::asking(connection, id))
     }
 
+    pub(crate) fn note_lyrics_refused(&self, asking: &sung::Asking) -> Result<()> {
+        self.inner.write(|transaction| {
+            sung::note_refused(
+                transaction,
+                &asking.path,
+                asking.span_start,
+                SystemTime::now(),
+            )
+        })
+    }
+
     pub(crate) fn keep_lyrics_of(
         &self,
         asking: &sung::Asking,
@@ -2752,7 +2811,10 @@ impl Library {
     }
 
     pub fn resumption(&self) -> Result<Option<Resumption>> {
-        self.inner.read(|connection| {
+        self.inner.read(|reading| {
+            let connection = reading
+                .unchecked_transaction()
+                .map_err(|source| Error::store(StoreOp::Transaction, source))?;
             let Some((row, at, shuffle, next)) = connection
                 .query_row(
                     "SELECT row, at, shuffle, next_first, next_last FROM resume WHERE id = 1",
@@ -2796,9 +2858,10 @@ impl Library {
                 let Some(location) = MediaLocation::from_uri(&uri) else {
                     tracing::warn!(
                         uri,
-                        "a kept queue row names nothing openable; none is resumed"
+                        "a kept queue row names nothing openable; the rest are resumed"
                     );
-                    return Ok(None);
+                    rows.push(None);
+                    continue;
                 };
                 let held = match location.as_path().map(store::path_text) {
                     Some(Ok(path)) => held
@@ -2810,11 +2873,11 @@ impl Library {
                         .and_then(|id| TrackId::new(id as u64).ok()),
                     _ => None,
                 };
-                rows.push(Resumable {
+                rows.push(Some(Resumable {
                     location,
                     span,
                     held,
-                });
+                }));
             }
 
             let mut statement = connection
@@ -2825,14 +2888,15 @@ impl Library {
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-            Ok((!rows.is_empty()).then(|| Resumption {
+            Ok(resumed::Kept {
                 rows,
                 order,
                 row: row.max(0) as usize,
                 at: Frames(at.max(0) as u64),
                 shuffle,
                 next,
-            }))
+            }
+            .resumed())
         })
     }
 
@@ -3736,6 +3800,7 @@ fn matching(texts: &[Option<&str>]) -> Option<Matching> {
         .iter()
         .flatten()
         .map(|text| Search::read(text))
+        .filter(|search| !search.is_empty())
         .collect();
     if asking.is_empty() {
         return Some(Matching::default());
@@ -3745,8 +3810,8 @@ fn matching(texts: &[Option<&str>]) -> Option<Matching> {
     let mut narrowing: Vec<Narrowing> = Vec::new();
     for clause in asking.iter().flat_map(|search| &search.clauses) {
         match clause.lone_word() {
-            Some(word) => ranked.push(word),
-            None => narrowing.extend(any_of(clause)),
+            Some(word) if word.reach != search::Reach::Whole => ranked.push(word),
+            _ => narrowing.extend(any_of(clause)),
         }
     }
 
@@ -3777,7 +3842,7 @@ fn matching(texts: &[Option<&str>]) -> Option<Matching> {
 }
 
 pub(crate) fn cuts_matching(text: &str, row: &str) -> Option<Narrowing> {
-    let matching = matching(&[Some(text)])?;
+    let matching = matching(&[Some(text)]).filter(Matching::narrows)?;
 
     Some(Narrowing {
         sql: format!(
@@ -3825,6 +3890,7 @@ fn all_of(asked: &Asked) -> Option<Narrowing> {
 
 fn narrowed(condition: &Condition) -> Option<Narrowing> {
     match condition {
+        Condition::Word(word) if word.reach == search::Reach::Whole => named(word),
         Condition::Word(word) => Some(Narrowing {
             sql: INDEX_LOOKUP.to_owned(),
             binds: vec![Value::Text(indexed(&[word])?)],
@@ -3836,6 +3902,50 @@ fn narrowed(condition: &Condition) -> Option<Narrowing> {
         }
     }
 }
+
+fn named(word: &Word) -> Option<Narrowing> {
+    let looked_up = Value::Text(indexed(&[word])?);
+    let words = Value::Text(store::words_of(&word.text));
+
+    let (sql, binds) = match word.column {
+        Some(Column::Title) => (
+            format!("({INDEX_LOOKUP} AND {TITLED_AS_A_WHOLE})"),
+            vec![looked_up, words],
+        ),
+        Some(Column::Genre) => (
+            format!("({INDEX_LOOKUP} AND {FILED_UNDER_A_WHOLE_GENRE})"),
+            vec![looked_up, words.clone(), words],
+        ),
+        Some(Column::Artist) => (
+            BY_AN_ARTIST_NAMED_AS_A_WHOLE.to_owned(),
+            vec![words.clone(), words],
+        ),
+        Some(Column::Album) => (
+            ON_AN_ALBUM_NAMED_AS_A_WHOLE.to_owned(),
+            vec![words.clone(), words],
+        ),
+        Some(Column::Lyrics) | None => (INDEX_LOOKUP.to_owned(), vec![looked_up]),
+    };
+
+    Some(Narrowing { sql, binds })
+}
+
+const TITLED_AS_A_WHOLE: &str = "words_of(tracks.title) = ?";
+
+const FILED_UNDER_A_WHOLE_GENRE: &str = "(words_of(tracks.genre) = ?
+      OR tracks.artist_id IN (SELECT artist_id FROM artist_genres WHERE words_of(name) = ?))";
+
+const BY_AN_ARTIST_NAMED_AS_A_WHOLE: &str = "(tracks.artist_id IN
+         (SELECT id FROM artists WHERE words_of(name) = ?)
+      OR tracks.id IN
+         (SELECT c.track_id FROM track_credits c JOIN artists r ON r.id = c.artist_id
+           WHERE words_of(r.name) = ?))";
+
+const ON_AN_ALBUM_NAMED_AS_A_WHOLE: &str = concat!(
+    "tracks.album_id IN (SELECT a.id FROM albums a WHERE words_of(",
+    album_title!(),
+    ") = ? OR words_of(a.title) = ?)"
+);
 
 fn joined(mut held: Vec<String>, by: &str) -> Option<String> {
     match held.len() {
@@ -3858,7 +3968,7 @@ fn indexed(words: &[&Word]) -> Option<String> {
             Some(column) => format!("{} : ", column.name()),
             None => format!("{{{}}} : ", *WHAT_A_BARE_WORD_REACHES),
         };
-        if word.phrase {
+        if word.reach.is_phrased() {
             matched.push(format!("{scoped}\"{}\"", pieces.join(" ")));
             continue;
         }
@@ -3920,14 +4030,11 @@ fn filtered(term: Term, binds: &mut Vec<Value>) -> String {
                 compare.operator()
             )
         }
-        Term::Length { compare, length } => {
-            binds.push(Value::Real(length.as_secs_f64()));
-            format!(
-                "(tracks.duration IS NOT NULL \
-                 AND tracks.duration * 1.0 / tracks.sample_rate {} ?)",
-                compare.operator()
-            )
-        }
+        Term::Length {
+            compare,
+            length,
+            grain,
+        } => lengths(compare, length, grain, binds),
         Term::Rate { compare, hertz } => {
             binds.push(Value::Integer(i64::from(hertz)));
             format!("tracks.sample_rate {} ?", compare.operator())
@@ -3940,6 +4047,33 @@ fn filtered(term: Term, binds: &mut Vec<Value>) -> String {
         Term::Shape(shape) => shaped(shape),
     }
 }
+
+fn lengths(
+    compare: Compare,
+    length: Duration,
+    grain: search::Grain,
+    binds: &mut Vec<Value>,
+) -> String {
+    let from = length.as_secs_f64();
+    let past = from + grain.span().as_secs_f64();
+    let bounds: &[(&str, f64)] = match compare {
+        Compare::Below => &[("<", from)],
+        Compare::AtMost => &[("<", past)],
+        Compare::Exactly => &[(">=", from), ("<", past)],
+        Compare::AtLeast => &[(">=", from)],
+        Compare::Above => &[(">=", past)],
+    };
+
+    let mut sql = "(tracks.duration IS NOT NULL".to_owned();
+    for (operator, bound) in bounds {
+        sql.push_str(&format!(" AND {SECONDS_LONG} {operator} ?"));
+        binds.push(Value::Real(*bound));
+    }
+    sql.push(')');
+    sql
+}
+
+const SECONDS_LONG: &str = "tracks.duration * 1.0 / tracks.sample_rate";
 
 fn shaped(shape: Shape) -> String {
     match shape {
@@ -4409,56 +4543,124 @@ struct Reading {
     down: &'static str,
 }
 
+macro_rules! track_ids_rising {
+    () => {
+        ", tracks.id"
+    };
+}
+
+macro_rules! track_ids_falling {
+    () => {
+        ", tracks.id DESC"
+    };
+}
+
+macro_rules! album_ids_rising {
+    () => {
+        ", a.id"
+    };
+}
+
+macro_rules! album_ids_falling {
+    () => {
+        ", a.id DESC"
+    };
+}
+
+macro_rules! artist_ids_rising {
+    () => {
+        ", r.id"
+    };
+}
+
+macro_rules! artist_ids_falling {
+    () => {
+        ", r.id DESC"
+    };
+}
+
 const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static str {
     let order = match sort {
         SortOrder::Relevance if ranked => Reading {
-            up: "rank",
-            down: "rank DESC",
+            up: concat!("rank", track_ids_rising!()),
+            down: concat!("rank DESC", track_ids_falling!()),
         },
         SortOrder::Relevance | SortOrder::AlbumThenTrack => Reading {
-            up: "tracks.album_id, tracks.disc_number, tracks.track_number, \
+            up: concat!(
+                "tracks.album_id, tracks.disc_number, tracks.track_number, \
                  tracks.title COLLATE NOCASE",
-            down: "tracks.album_id DESC, tracks.disc_number DESC, tracks.track_number DESC, \
+                track_ids_rising!()
+            ),
+            down: concat!(
+                "tracks.album_id DESC, tracks.disc_number DESC, tracks.track_number DESC, \
                    tracks.title COLLATE NOCASE DESC",
+                track_ids_falling!()
+            ),
         },
         SortOrder::Title => Reading {
-            up: "tracks.title COLLATE NOCASE",
-            down: "tracks.title COLLATE NOCASE DESC",
+            up: concat!("tracks.title COLLATE NOCASE", track_ids_rising!()),
+            down: concat!("tracks.title COLLATE NOCASE DESC", track_ids_falling!()),
         },
         SortOrder::Artist => Reading {
-            up: "tracks.artist COLLATE NOCASE, tracks.album_id, tracks.disc_number, \
+            up: concat!(
+                "tracks.artist COLLATE NOCASE, tracks.album_id, tracks.disc_number, \
                  tracks.track_number",
-            down: "tracks.artist COLLATE NOCASE DESC, tracks.album_id DESC, \
+                track_ids_rising!()
+            ),
+            down: concat!(
+                "tracks.artist COLLATE NOCASE DESC, tracks.album_id DESC, \
                    tracks.disc_number DESC, tracks.track_number DESC",
+                track_ids_falling!()
+            ),
         },
         SortOrder::DateAdded => Reading {
-            up: "tracks.added",
-            down: "tracks.added DESC",
+            up: concat!("tracks.added", track_ids_falling!()),
+            down: concat!("tracks.added DESC", track_ids_rising!()),
         },
         SortOrder::Duration => Reading {
-            up: "tracks.duration",
-            down: "tracks.duration DESC",
+            up: concat!("tracks.duration", track_ids_rising!()),
+            down: concat!("tracks.duration DESC", track_ids_falling!()),
         },
         SortOrder::Plays => Reading {
-            up: "tracks.plays, tracks.title COLLATE NOCASE DESC",
-            down: "tracks.plays DESC, tracks.title COLLATE NOCASE",
+            up: concat!(
+                "tracks.plays, tracks.title COLLATE NOCASE DESC",
+                track_ids_falling!()
+            ),
+            down: concat!(
+                "tracks.plays DESC, tracks.title COLLATE NOCASE",
+                track_ids_rising!()
+            ),
         },
         SortOrder::Played => Reading {
-            up: "tracks.played, tracks.title COLLATE NOCASE DESC",
-            down: "tracks.played DESC, tracks.title COLLATE NOCASE",
+            up: concat!(
+                "tracks.played, tracks.title COLLATE NOCASE DESC",
+                track_ids_falling!()
+            ),
+            down: concat!(
+                "tracks.played DESC, tracks.title COLLATE NOCASE",
+                track_ids_rising!()
+            ),
         },
         SortOrder::Favourited => Reading {
-            up: "tracks.favourite, tracks.title COLLATE NOCASE DESC",
-            down: "tracks.favourite DESC, tracks.title COLLATE NOCASE",
+            up: concat!(
+                "tracks.favourite, tracks.title COLLATE NOCASE DESC",
+                track_ids_falling!()
+            ),
+            down: concat!(
+                "tracks.favourite DESC, tracks.title COLLATE NOCASE",
+                track_ids_rising!()
+            ),
         },
         SortOrder::PlaysThisMonth => Reading {
             up: concat!(
                 heard_this_month!(),
-                ", tracks.plays, tracks.title COLLATE NOCASE DESC"
+                ", tracks.plays, tracks.title COLLATE NOCASE DESC",
+                track_ids_falling!()
             ),
             down: concat!(
                 heard_this_month!(),
-                " DESC, tracks.plays DESC, tracks.title COLLATE NOCASE"
+                " DESC, tracks.plays DESC, tracks.title COLLATE NOCASE",
+                track_ids_rising!()
             ),
         },
     };
@@ -4469,64 +4671,98 @@ const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static
 const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &'static str {
     let order = match sort {
         AlbumOrder::Relevance if ranked => Reading {
-            up: concat!("matched.score, ", album_title!(), " COLLATE NOCASE"),
+            up: concat!(
+                "matched.score, ",
+                album_title!(),
+                " COLLATE NOCASE",
+                album_ids_rising!()
+            ),
             down: concat!(
                 "matched.score DESC, ",
                 album_title!(),
-                " COLLATE NOCASE DESC"
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
             ),
         },
         AlbumOrder::Relevance | AlbumOrder::Title => Reading {
-            up: concat!(album_title!(), " COLLATE NOCASE"),
-            down: concat!(album_title!(), " COLLATE NOCASE DESC"),
+            up: concat!(album_title!(), " COLLATE NOCASE", album_ids_rising!()),
+            down: concat!(album_title!(), " COLLATE NOCASE DESC", album_ids_falling!()),
         },
         AlbumOrder::Artist => Reading {
             up: concat!(
                 album_owner!(),
                 " COLLATE NOCASE, a.year, ",
                 album_title!(),
-                " COLLATE NOCASE"
+                " COLLATE NOCASE",
+                album_ids_rising!()
             ),
             down: concat!(
                 album_owner!(),
                 " COLLATE NOCASE DESC, a.year DESC, ",
                 album_title!(),
-                " COLLATE NOCASE DESC"
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
             ),
         },
         AlbumOrder::Year => Reading {
             up: concat!(
                 "a.year IS NULL, a.year, ",
                 album_title!(),
-                " COLLATE NOCASE"
+                " COLLATE NOCASE",
+                album_ids_rising!()
             ),
             down: concat!(
                 "a.year IS NULL DESC, a.year DESC, ",
                 album_title!(),
-                " COLLATE NOCASE DESC"
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
             ),
         },
         AlbumOrder::Tracks => Reading {
-            up: concat!(album_tracks!(), ", ", album_title!(), " COLLATE NOCASE"),
+            up: concat!(
+                album_tracks!(),
+                ", ",
+                album_title!(),
+                " COLLATE NOCASE",
+                album_ids_rising!()
+            ),
             down: concat!(
                 album_tracks!(),
                 " DESC, ",
                 album_title!(),
-                " COLLATE NOCASE DESC"
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
             ),
         },
         AlbumOrder::Added => Reading {
-            up: concat!(album_added!(), ", ", album_title!(), " COLLATE NOCASE"),
+            up: concat!(
+                album_added!(),
+                ", ",
+                album_title!(),
+                " COLLATE NOCASE",
+                album_ids_rising!()
+            ),
             down: concat!(
                 album_added!(),
                 " DESC, ",
                 album_title!(),
-                " COLLATE NOCASE DESC"
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
             ),
         },
         AlbumOrder::Favourited => Reading {
-            up: concat!("a.favourite, ", album_title!(), " COLLATE NOCASE"),
-            down: concat!("a.favourite DESC, ", album_title!(), " COLLATE NOCASE DESC"),
+            up: concat!(
+                "a.favourite, ",
+                album_title!(),
+                " COLLATE NOCASE",
+                album_ids_rising!()
+            ),
+            down: concat!(
+                "a.favourite DESC, ",
+                album_title!(),
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
+            ),
         },
     };
 
@@ -4536,24 +4772,46 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
 const fn artist_order_by(sort: ArtistOrder, reading: Direction, ranked: bool) -> &'static str {
     let order = match sort {
         ArtistOrder::Relevance if ranked => Reading {
-            up: "matched.score, r.name COLLATE NOCASE",
-            down: "matched.score DESC, r.name COLLATE NOCASE DESC",
+            up: concat!("matched.score, r.name COLLATE NOCASE", artist_ids_rising!()),
+            down: concat!(
+                "matched.score DESC, r.name COLLATE NOCASE DESC",
+                artist_ids_falling!()
+            ),
         },
         ArtistOrder::Relevance | ArtistOrder::Name => Reading {
-            up: "r.name COLLATE NOCASE",
-            down: "r.name COLLATE NOCASE DESC",
+            up: concat!("r.name COLLATE NOCASE", artist_ids_rising!()),
+            down: concat!("r.name COLLATE NOCASE DESC", artist_ids_falling!()),
         },
         ArtistOrder::Albums => Reading {
-            up: concat!(artist_albums!(), ", r.name COLLATE NOCASE"),
-            down: concat!(artist_albums!(), " DESC, r.name COLLATE NOCASE DESC"),
+            up: concat!(
+                artist_albums!(),
+                ", r.name COLLATE NOCASE",
+                artist_ids_rising!()
+            ),
+            down: concat!(
+                artist_albums!(),
+                " DESC, r.name COLLATE NOCASE DESC",
+                artist_ids_falling!()
+            ),
         },
         ArtistOrder::Tracks => Reading {
-            up: concat!(artist_tracks!(), ", r.name COLLATE NOCASE"),
-            down: concat!(artist_tracks!(), " DESC, r.name COLLATE NOCASE DESC"),
+            up: concat!(
+                artist_tracks!(),
+                ", r.name COLLATE NOCASE",
+                artist_ids_rising!()
+            ),
+            down: concat!(
+                artist_tracks!(),
+                " DESC, r.name COLLATE NOCASE DESC",
+                artist_ids_falling!()
+            ),
         },
         ArtistOrder::Favourited => Reading {
-            up: "r.favourite, r.name COLLATE NOCASE",
-            down: "r.favourite DESC, r.name COLLATE NOCASE DESC",
+            up: concat!("r.favourite, r.name COLLATE NOCASE", artist_ids_rising!()),
+            down: concat!(
+                "r.favourite DESC, r.name COLLATE NOCASE DESC",
+                artist_ids_falling!()
+            ),
         },
     };
 
@@ -5380,6 +5638,35 @@ mod tests {
                     "{sort:?} read {reading:?} sorts the whole table before the limit lands: \
                      {steps:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
+        for ranked in [false, true] {
+            for reading in Direction::ALL {
+                for sort in SortOrder::ALL {
+                    let order = order_by(sort, reading, ranked);
+                    assert!(
+                        order.ends_with(", tracks.id") || order.ends_with(", tracks.id DESC"),
+                        "{sort:?} read {reading:?} ends on a tie: {order}"
+                    );
+                }
+                for sort in AlbumOrder::ALL {
+                    let order = album_order_by(sort, reading, ranked);
+                    assert!(
+                        order.ends_with(", a.id") || order.ends_with(", a.id DESC"),
+                        "{sort:?} read {reading:?} ends on a tie: {order}"
+                    );
+                }
+                for sort in ArtistOrder::ALL {
+                    let order = artist_order_by(sort, reading, ranked);
+                    assert!(
+                        order.ends_with(", r.id") || order.ends_with(", r.id DESC"),
+                        "{sort:?} read {reading:?} ends on a tie: {order}"
+                    );
+                }
             }
         }
     }

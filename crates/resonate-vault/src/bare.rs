@@ -10,6 +10,7 @@ use crate::{
     blanks::{self, Blank},
     chunks::{self, Layout},
     error::{Error, Result, VaultOp},
+    key::{KEY_BYTES, VaultKey},
     ogg::{self, Renumbering},
 };
 
@@ -19,6 +20,8 @@ const LAST_BLOCK: u8 = 0x80;
 const BLOCK_KIND: u8 = 0x7f;
 const STREAM_INFO: u8 = 0;
 const MOST_METADATA_BYTES: u64 = 64 << 20;
+const STREAM_INFO_BYTES: usize = 34;
+const STREAM_INFO_DIGEST_AT: usize = STREAM_INFO_BYTES - KEY_BYTES;
 
 const ID3V2_MAGIC: &[u8; 3] = b"ID3";
 const ID3V2_HEADER_BYTES: u64 = 10;
@@ -92,6 +95,25 @@ pub(crate) fn bare(
             .map_err(|source| Error::io(VaultOp::Read, named, source))?;
     }
     Ok(found)
+}
+
+pub(crate) fn declared_digest(stream: &mut Box<dyn MediaStream>) -> Option<VaultKey> {
+    let length = stream.seek(SeekFrom::End(0)).ok()?;
+    let from = past_leading_tags(stream, length)?;
+    let magic = read_at::<{ FLAC_MAGIC.len() }>(stream, from)?;
+    if magic != FLAC_MAGIC {
+        return None;
+    }
+    let mut header = [0_u8; METADATA_HEADER_BYTES];
+    stream.read_exact(&mut header).ok()?;
+    let length = u32::from_be_bytes([0, header[1], header[2], header[3]]);
+    if header[0] & BLOCK_KIND != STREAM_INFO || (length as usize) < STREAM_INFO_BYTES {
+        return None;
+    }
+    let mut held = [0_u8; STREAM_INFO_BYTES];
+    stream.read_exact(&mut held).ok()?;
+    let digest: [u8; KEY_BYTES] = held[STREAM_INFO_DIGEST_AT..].try_into().ok()?;
+    (digest != [0; KEY_BYTES]).then(|| VaultKey::of(digest))
 }
 
 fn blanked(
@@ -460,6 +482,26 @@ mod tests {
         wanted.extend(block(STREAM_INFO, true, &stream_info));
         assert_eq!(bare.expect("a FLAC head").head, wanted);
         assert_eq!(rest, b"the frames that follow");
+    }
+
+    #[test]
+    fn a_flac_behind_an_id3_tag_declares_the_digest_its_stream_info_carries() {
+        let digest: [u8; KEY_BYTES] = std::array::from_fn(|at| at as u8 + 1);
+        let mut stream_info = vec![7_u8; STREAM_INFO_DIGEST_AT];
+        stream_info.extend_from_slice(&digest);
+        let mut whole = id3v2(b"a tag stacked in front", false);
+        whole.extend_from_slice(&FLAC_MAGIC);
+        whole.extend(block(STREAM_INFO, true, &stream_info));
+        let mut unsigned = FLAC_MAGIC.to_vec();
+        unsigned.extend(block(STREAM_INFO, true, &[7_u8; STREAM_INFO_BYTES]));
+        unsigned[FLAC_MAGIC.len() + METADATA_HEADER_BYTES + STREAM_INFO_DIGEST_AT..].fill(0);
+
+        assert_eq!(
+            declared_digest(&mut streamed(whole)),
+            Some(VaultKey::of(digest))
+        );
+        assert_eq!(declared_digest(&mut streamed(unsigned)), None);
+        assert_eq!(declared_digest(&mut streamed(b"RIFF".to_vec())), None);
     }
 
     #[test]

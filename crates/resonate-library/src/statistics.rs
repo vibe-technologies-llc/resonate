@@ -1,6 +1,9 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use resonate_core::{AlbumId, ArtistId, TrackId};
+use resonate_core::{AlbumId, ArtistId, Calendar, TrackId};
 use rusqlite::{Connection, params};
 
 use crate::{Error, Result, StoreOp, db::Inner, store};
@@ -15,7 +18,8 @@ const A_MONTH: Duration = Duration::from_secs(DAYS_IN_A_MONTH * SECONDS_PER_DAY)
 const A_YEAR: Duration = Duration::from_secs(DAYS_IN_A_YEAR * SECONDS_PER_DAY);
 
 const NANOS_PER_SECOND: i64 = 1_000_000_000;
-const NANOS_PER_DAY: i64 = SECONDS_PER_DAY as i64 * NANOS_PER_SECOND;
+const SECONDS_PER_QUARTER_HOUR: i64 = 15 * 60;
+const NANOS_PER_QUARTER_HOUR: i64 = SECONDS_PER_QUARTER_HOUR * NANOS_PER_SECOND;
 
 const SINCE_THE_BEGINNING: i64 = i64::MIN;
 
@@ -56,24 +60,27 @@ const THE_ARTISTS_MOST_LISTENED_TO: &str =
       ORDER BY listened DESC, count(*) DESC, r.name COLLATE NOCASE
       LIMIT ?2";
 
-const WHAT_WAS_HEARD_EACH_DAY: &str = "SELECT day, sum(plays), sum(listened) FROM (
-         SELECT l.at / ?1 AS day, count(*) AS plays, coalesce(sum(l.heard), 0) AS listened
+const WHAT_WAS_HEARD_EACH_QUARTER_HOUR: &str = "SELECT quarter, sum(plays), sum(listened) FROM (
+         SELECT l.at / ?1 AS quarter, count(*) AS plays,
+                coalesce(sum(l.heard), 0) AS listened
            FROM listens l
           WHERE l.at >= ?2
-          GROUP BY day
+          GROUP BY quarter
          UNION ALL
-         SELECT p.at / ?1 AS day, 0 AS plays, coalesce(sum(p.heard), 0) AS listened
+         SELECT p.at / ?1 AS quarter, 0 AS plays,
+                coalesce(sum(p.heard), 0) AS listened
            FROM passes p
           WHERE p.at >= ?2
-          GROUP BY day
+          GROUP BY quarter
          UNION ALL
-         SELECT u.at / ?1 AS day, count(*) AS plays, coalesce(sum(u.heard), 0) AS listened
+         SELECT u.at / ?1 AS quarter, count(*) AS plays,
+                coalesce(sum(u.heard), 0) AS listened
            FROM unheld_listens u
           WHERE u.at >= ?2
-          GROUP BY day
+          GROUP BY quarter
       )
-      GROUP BY day
-      ORDER BY day";
+      GROUP BY quarter
+      ORDER BY quarter";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Window {
@@ -140,7 +147,7 @@ pub struct Day {
 }
 
 struct Counted {
-    day: i64,
+    period: i64,
     plays: i64,
     listened: i64,
 }
@@ -195,16 +202,25 @@ pub(crate) fn most_listened(inner: &Inner, window: Window, most: usize) -> Resul
 }
 
 pub(crate) fn listening_by_day(inner: &Inner, window: Window) -> Result<Vec<Day>> {
+    listening_by_day_in(inner, window, &Calendar::local(), SystemTime::now())
+}
+
+fn listening_by_day_in(
+    inner: &Inner,
+    window: Window,
+    calendar: &Calendar,
+    now: SystemTime,
+) -> Result<Vec<Day>> {
     let since = from_when(window);
-    let counted = inner.read(|connection| {
+    let quarters = inner.read(|connection| {
         let mut statement = connection
-            .prepare(WHAT_WAS_HEARD_EACH_DAY)
+            .prepare(WHAT_WAS_HEARD_EACH_QUARTER_HOUR)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
         statement
-            .query_map(params![NANOS_PER_DAY, since], |row| {
+            .query_map(params![NANOS_PER_QUARTER_HOUR, since], |row| {
                 Ok(Counted {
-                    day: row.get(0)?,
+                    period: row.get(0)?,
                     plays: row.get(1)?,
                     listened: row.get(2)?,
                 })
@@ -212,12 +228,31 @@ pub(crate) fn listening_by_day(inner: &Inner, window: Window) -> Result<Vec<Day>
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
+    let counted = into_days(&quarters, calendar);
 
     Ok(filled(
         &counted,
-        first_day(window, &counted),
-        day_of(SystemTime::now()),
+        first_day(window, &counted, calendar),
+        calendar.day_of(now),
+        calendar,
     ))
+}
+
+fn into_days(quarters: &[Counted], calendar: &Calendar) -> Vec<Counted> {
+    let mut days: BTreeMap<i64, Counted> = BTreeMap::new();
+    for quarter in quarters {
+        let day = calendar.day_of(store::from_nanos(
+            quarter.period.saturating_mul(NANOS_PER_QUARTER_HOUR),
+        ));
+        let held = days.entry(day).or_insert(Counted {
+            period: day,
+            plays: 0,
+            listened: 0,
+        });
+        held.plays = held.plays.saturating_add(quarter.plays);
+        held.listened = held.listened.saturating_add(quarter.listened);
+    }
+    days.into_values().collect()
 }
 
 fn listened<Id>(
@@ -254,27 +289,27 @@ fn listened<Id>(
         .collect()
 }
 
-fn first_day(window: Window, counted: &[Counted]) -> Option<i64> {
+fn first_day(window: Window, counted: &[Counted], calendar: &Calendar) -> Option<i64> {
     match window.since() {
-        Some(since) => Some(day_of(since)),
-        None => counted.first().map(|heard| heard.day),
+        Some(since) => Some(calendar.day_of(since)),
+        None => counted.first().map(|heard| heard.period),
     }
 }
 
-fn filled(counted: &[Counted], from: Option<i64>, today: i64) -> Vec<Day> {
+fn filled(counted: &[Counted], from: Option<i64>, today: i64, calendar: &Calendar) -> Vec<Day> {
     let Some(from) = from else {
         return Vec::new();
     };
     let mut held = counted
         .iter()
-        .filter(|heard| (from..=today).contains(&heard.day))
+        .filter(|heard| (from..=today).contains(&heard.period))
         .peekable();
     let mut days = Vec::new();
 
     for day in from..=today {
-        let heard = held.next_if(|heard| heard.day == day);
+        let heard = held.next_if(|heard| heard.period == day);
         days.push(Day {
-            at: midnight_of(day),
+            at: calendar.midnight_of(day),
             plays: heard.map_or(0, |heard| how_many(heard.plays)),
             listened: heard.map_or(Duration::ZERO, |heard| how_long(heard.listened)),
         });
@@ -285,14 +320,6 @@ fn filled(counted: &[Counted], from: Option<i64>, today: i64) -> Vec<Day> {
 
 fn from_when(window: Window) -> i64 {
     window.since().map_or(SINCE_THE_BEGINNING, store::to_nanos)
-}
-
-fn day_of(at: SystemTime) -> i64 {
-    store::to_nanos(at).div_euclid(NANOS_PER_DAY)
-}
-
-fn midnight_of(day: i64) -> SystemTime {
-    store::from_nanos(day.saturating_mul(NANOS_PER_DAY))
 }
 
 fn how_many(counted: i64) -> u64 {
@@ -313,6 +340,8 @@ mod tests {
     const A_MINUTE: Duration = Duration::from_secs(60);
     const TWO_DAYS: Duration = Duration::from_secs(2 * SECONDS_PER_DAY);
     const A_FORTNIGHT: Duration = Duration::from_secs(14 * SECONDS_PER_DAY);
+    const LATE_IN_A_UTC_DAY: Duration = Duration::from_secs(23 * 60 * 60);
+    const TWO_HOURS_EAST: i32 = 2 * 60 * 60;
 
     fn counted_at(library: &Library, title: &str, listens: &[(Duration, Duration)]) {
         library
@@ -447,9 +476,13 @@ mod tests {
             &[(Duration::ZERO, A_MINUTE), (TWO_DAYS, A_MINUTE)],
         );
 
-        let drawn = library
-            .listening_by_day(Window::Week)
-            .expect("the catalog answers for a week");
+        let drawn = listening_by_day_in(
+            library.inner(),
+            Window::Week,
+            &Calendar::utc(),
+            SystemTime::now(),
+        )
+        .expect("the catalog answers for a week");
         assert_eq!(drawn.len(), 8, "a week is the day it began and seven since");
         assert!(
             drawn.windows(2).all(|pair| {
@@ -473,18 +506,55 @@ mod tests {
     }
 
     #[test]
-    fn a_day_is_the_midnight_it_began_at() {
-        let day = day_of(UNIX_EPOCH + Duration::from_secs(SECONDS_PER_DAY * 3 + 4_000));
-        assert_eq!(day, 3);
+    fn a_listen_late_in_a_utc_day_is_counted_on_the_day_the_listener_was_living() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let now = SystemTime::now();
+        let today_began_in_utc = UNIX_EPOCH
+            + Duration::from_secs(
+                now.duration_since(UNIX_EPOCH)
+                    .expect("the clock reads after the epoch")
+                    .as_secs()
+                    / SECONDS_PER_DAY
+                    * SECONDS_PER_DAY,
+            );
+        let late_yesterday = now
+            .duration_since(
+                today_began_in_utc - Duration::from_secs(SECONDS_PER_DAY) + LATE_IN_A_UTC_DAY,
+            )
+            .expect("late yesterday was before now");
+        counted_at(&library, "Late", &[(late_yesterday, A_MINUTE)]);
+
+        let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
+        let drawn_east = listening_by_day_in(library.inner(), Window::Week, &east, now)
+            .expect("the catalog answers for a week");
+        let drawn_in_utc =
+            listening_by_day_in(library.inner(), Window::Week, &Calendar::utc(), now)
+                .expect("the catalog answers for a week");
+
+        let played_on = |drawn: &[Day], calendar: &Calendar| {
+            drawn
+                .iter()
+                .find(|day| day.plays > 0)
+                .map(|day| calendar.day_of(day.at))
+        };
+        let yesterday_in_utc = Calendar::utc().day_of(now) - 1;
         assert_eq!(
-            midnight_of(day),
-            UNIX_EPOCH + Duration::from_secs(SECONDS_PER_DAY * 3)
+            played_on(&drawn_in_utc, &Calendar::utc()),
+            Some(yesterday_in_utc)
+        );
+        assert_eq!(played_on(&drawn_east, &east), Some(yesterday_in_utc + 1));
+        assert!(
+            drawn_east
+                .iter()
+                .all(|day| east.midnight_of(east.day_of(day.at)) == day.at),
+            "a day drawn east of Greenwich does not begin at its own midnight"
         );
     }
 
     #[test]
     fn a_chart_of_nothing_at_all_draws_nothing() {
-        assert!(filled(&[], None, 10).is_empty());
-        assert!(filled(&[], Some(11), 10).is_empty());
+        let calendar = Calendar::utc();
+        assert!(filled(&[], None, 10, &calendar).is_empty());
+        assert!(filled(&[], Some(11), 10, &calendar).is_empty());
     }
 }

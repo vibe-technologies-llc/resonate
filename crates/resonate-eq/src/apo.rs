@@ -331,9 +331,8 @@ pub fn read(text: &str) -> Result<Reading> {
                 ..band
             }),
             Some(_) => {
-                return Err(Error::Domain(resonate_core::Error::TooManyBands(
-                    bands.len() + 1,
-                )));
+                tracing::debug!(line, "a filter past the bands a profile holds");
+                passed_over += 1;
             }
             None => {
                 tracing::debug!(line, "a filter line this build could not read");
@@ -628,13 +627,19 @@ mod tests {
 
         let wide = "x".repeat(LARGEST_PROFILE + 1);
         assert!(matches!(read(&wide), Err(Error::TooLarge { .. })));
+    }
 
-        let many = (1..=MAX_BANDS + 1)
-            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 1 dB Q 1\n"))
+    #[test]
+    fn a_filter_past_the_bands_a_profile_holds_is_passed_over_like_any_unreadable_line() {
+        let many = (1..=MAX_BANDS + 2)
+            .map(|at| format!("Filter {at}: ON PK Fc {} Hz Gain 1 dB Q 1\n", 100 * at))
             .collect::<String>();
-        assert!(matches!(
-            read(&many),
-            Err(Error::Domain(resonate_core::Error::TooManyBands(_)))
-        ));
+
+        let reading = read(&many).expect("the first bands still read");
+        let last = reading.profile.bands().last().copied().expect("bands");
+
+        assert_eq!(reading.profile.bands().len(), MAX_BANDS);
+        assert_eq!(reading.passed_over, 2);
+        assert_eq!(last.frequency.centihertz(), 10_000 * MAX_BANDS as u32);
     }
 }

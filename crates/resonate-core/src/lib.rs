@@ -1,5 +1,6 @@
 mod appearance;
 mod buffer;
+mod calendar;
 mod channel;
 mod date;
 pub mod eq;
@@ -25,6 +26,7 @@ mod volume;
 pub use crate::{
     appearance::{Accent, Appearance, ScrollbarMode, TextSize, Theme},
     buffer::{AudioBuffer, SampleData},
+    calendar::Calendar,
     channel::{ChannelCount, ChannelLayout, ChannelPosition},
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     error::{Error, Result},
@@ -34,7 +36,9 @@ pub use crate::{
     id::{AlbumId, ArtistId, ListenId, PlaylistId, ReleaseTrackId, TrackId, WantId},
     identity::{Isrc, Mbid},
     link::{Link, Relation, Service},
-    media::{Locator, MediaLocation, SourceId, uri_escaped, uri_unescaped},
+    media::{
+        AUDIO_EXTENSIONS, Locator, MediaLocation, SourceId, names_audio, uri_escaped, uri_unescaped,
+    },
     presence::{AppId, Icon, Pictured, Presence, Shown},
     print::Chromaprint,
     resume::{Reordered, Resumable, Resumption, plays_in},

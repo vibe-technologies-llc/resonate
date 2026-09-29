@@ -1,9 +1,7 @@
 use std::{cmp::Reverse, sync::Arc, time::Duration};
 
-use resonate_analysis::print_clip;
 use resonate_core::{Chromaprint, Mbid, SourceId};
 use resonate_library::{Credit, Fingerprints, LookupOp, Printed, RecordingMatch, Sounded};
-use resonate_listen::{Clip, Heard as HeardClip, Recogniser};
 use serde::Deserialize;
 
 use crate::{Client, Host, client::Posted, query::Params};
@@ -13,7 +11,6 @@ const ANSWERED: &str = "ok";
 const WHAT_IS_ASKED_FOR: &str = "recordings";
 const WHOLE_SCORE: f64 = 100.0;
 const SHORTEST_LENGTH: u64 = 1;
-const A_CLIP_HEARD_AT_LEAST: u8 = 50;
 
 #[derive(Deserialize)]
 struct Answer {
@@ -97,43 +94,6 @@ fn lookup(key: &str, print: &Chromaprint, length: Duration) -> Params {
             &length.as_secs().max(SHORTEST_LENGTH).to_string(),
         )
         .with("fingerprint", print.encoded())
-}
-
-impl Recogniser for AcoustId {
-    fn service(&self) -> &SourceId {
-        &self.source
-    }
-
-    fn recognise(&self, clip: &Clip) -> resonate_listen::Result<Option<HeardClip>> {
-        let Some(print) = print_clip(&clip.samples, clip.rate.hz(), usize::from(clip.channels))
-        else {
-            return Ok(None);
-        };
-        let printed = self
-            .looked_up(&print, clip.length())
-            .map_err(|error| error.into_listen_error(self.source.clone()))?;
-        Ok(heard_clip(printed, &self.source))
-    }
-}
-
-fn heard_clip(printed: Printed, service: &SourceId) -> Option<HeardClip> {
-    let Printed::Recognised(matches) = printed else {
-        return None;
-    };
-    let best = matches
-        .into_iter()
-        .find(|found| found.score >= A_CLIP_HEARD_AT_LEAST)?;
-    Some(HeardClip {
-        artist: Some(best.credited_as()).filter(|artist| !artist.is_empty()),
-        title: best.title,
-        album: None,
-        year: None,
-        isrc: best.isrcs.first().cloned(),
-        recording: Some(best.recording),
-        picture: None,
-        link: None,
-        by: service.clone(),
-    })
 }
 
 fn printed(answer: Option<Answer>) -> Printed {
@@ -226,17 +186,6 @@ mod tests {
         assert_eq!(second.credit[1].name, "Friends");
         assert_eq!(second.credit[1].mbid, None);
         assert_eq!(second.length, Some(Duration::from_millis(212_400)));
-    }
-
-    #[test]
-    fn a_clip_is_named_by_its_best_match_above_half_a_score() {
-        let source = SourceId::new(ACOUSTID).expect("a service name");
-        let heard = heard_clip(answered(LOOKUP), &source).expect("a match above half");
-        assert_eq!(heard.title, "Lower Your Eyelids to Die With the Sun");
-        assert_eq!(heard.artist.as_deref(), Some("M83"));
-        assert!(heard.recording.is_some());
-        assert_eq!(heard.by, source);
-        assert_eq!(heard_clip(Printed::Nothing, &source), None);
     }
 
     #[test]

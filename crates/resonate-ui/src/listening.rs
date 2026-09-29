@@ -26,12 +26,16 @@ pub(crate) struct Found {
 #[derive(Clone)]
 pub(crate) enum Stage {
     Idle,
-    Recording(Arc<Hearing>),
+    Recording {
+        hearing: Arc<Hearing>,
+        from: Listening,
+    },
     Asking,
     Found(Found),
     Unknown,
     Silent,
     Unreached,
+    Offline,
     NoService,
 }
 
@@ -83,13 +87,21 @@ impl ListenModel {
     }
 
     #[cfg(test)]
+    pub(crate) fn recording_without_a_device(&mut self) {
+        self.stage = Stage::Recording {
+            hearing: Hearing::new(),
+            from: self.from.clone(),
+        };
+    }
+
+    #[cfg(test)]
     pub(crate) fn hearing_of(&mut self, microphones: Vec<(String, String)>) {
         self.microphones = microphones;
         self.listing = Task::ready(());
     }
 
     pub(crate) const fn is_listening(&self) -> bool {
-        matches!(self.stage, Stage::Recording(_) | Stage::Asking)
+        matches!(self.stage, Stage::Recording { .. } | Stage::Asking)
     }
 
     pub(crate) fn choose(&mut self, from: Listening, cx: &mut Context<Self>) {
@@ -125,8 +137,13 @@ impl ListenModel {
         });
     }
 
-    pub(crate) fn listen(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn listen(&mut self, online: bool, cx: &mut Context<Self>) {
         if self.is_listening() {
+            return;
+        }
+        if !online {
+            self.stage = Stage::Offline;
+            cx.notify();
             return;
         }
         let listens = self.listens.clone();
@@ -137,8 +154,11 @@ impl ListenModel {
         }
 
         let hearing = Hearing::new();
-        self.stage = Stage::Recording(Arc::clone(&hearing));
         let from = self.from.clone();
+        self.stage = Stage::Recording {
+            hearing: Arc::clone(&hearing),
+            from: from.clone(),
+        };
         let length = self.length;
         let recognisers = Arc::clone(&listens.recognisers);
         let heard_through = Arc::clone(&hearing);
@@ -182,7 +202,7 @@ impl ListenModel {
     }
 
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
-        if let Stage::Recording(hearing) = &self.stage {
+        if let Stage::Recording { hearing, .. } = &self.stage {
             hearing.stop();
         }
         if self.is_listening() {
@@ -197,7 +217,7 @@ impl ListenModel {
             loop {
                 cx.background_executor().timer(PROGRESS_EVERY).await;
                 let recording = this.update(cx, |this, cx| {
-                    let recording = matches!(this.stage, Stage::Recording(_));
+                    let recording = matches!(this.stage, Stage::Recording { .. });
                     if recording {
                         cx.notify();
                     }

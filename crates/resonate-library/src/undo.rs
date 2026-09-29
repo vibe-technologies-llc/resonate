@@ -26,10 +26,33 @@ pub enum Edit {
     Kept,
 }
 
-impl Edit {
-    const fn moves_rows(self) -> bool {
-        !matches!(self, Self::Renamed | Self::Revised)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Reach {
+    Unmoved,
+    Whole,
+    Appended,
+    From(usize),
+}
+
+impl Reach {
+    fn settled(self, transaction: &Transaction<'_>, id: PlaylistId) -> Result<Reached> {
+        Ok(match self {
+            Self::Unmoved => Reached::Unmoved,
+            Self::Whole => Reached::Whole,
+            Self::From(first) => Reached::From(first as i64),
+            Self::Appended => match playlist::kept_in(transaction, id)? {
+                Some(_) => Reached::Whole,
+                None => Reached::From(playlist::tail(transaction, id)?),
+            },
+        })
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reached {
+    Unmoved,
+    Whole,
+    From(i64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +66,7 @@ pub struct Undoable {
 pub(crate) struct Step {
     edit: Edit,
     playlist: PlaylistId,
+    reached: Reached,
     standing: Standing,
 }
 
@@ -97,23 +121,26 @@ pub(crate) fn edited<T>(
     inner: &Inner,
     id: PlaylistId,
     edit: Edit,
+    reach: Reach,
     change: impl FnOnce(&Transaction<'_>) -> Result<Change<T>>,
 ) -> Result<T> {
     let (value, held) = inner.write(|transaction| {
-        let before = held_in(transaction, id, edit)?;
+        let reached = reach.settled(transaction, id)?;
+        let before = held_in(transaction, id, reached)?;
 
         Ok(match change(transaction)? {
-            Change::Made(value) => (value, before),
+            Change::Made(value) => (value, before.map(|held| (reached, held))),
             Change::Nothing(value) => (value, None),
         })
     })?;
 
-    if let Some(held) = held {
+    if let Some((reached, held)) = held {
         note(
             inner,
             Step {
                 edit,
                 playlist: id,
+                reached,
                 standing: Standing::Was(held),
             },
         );
@@ -127,13 +154,25 @@ pub(crate) fn started<T>(
     name: &PlaylistName,
     change: impl FnOnce(&Transaction<'_>) -> Result<(PlaylistId, T)>,
 ) -> Result<T> {
-    let (id, value) = inner.write(change)?;
+    started_under_a_name_found(inner, edit, |transaction| {
+        let (id, value) = change(transaction)?;
+        Ok((id, name.clone(), value))
+    })
+}
+
+pub(crate) fn started_under_a_name_found<T>(
+    inner: &Inner,
+    edit: Edit,
+    change: impl FnOnce(&Transaction<'_>) -> Result<(PlaylistId, PlaylistName, T)>,
+) -> Result<T> {
+    let (id, name, value) = inner.write(change)?;
 
     note(
         inner,
         Step {
             edit,
             playlist: id,
+            reached: Reached::Whole,
             standing: Standing::Fresh(name.as_str().to_owned()),
         },
     );
@@ -178,15 +217,16 @@ fn walk(
     let id = step.playlist;
 
     let put_back = inner.write(|transaction| {
-        let standing = standing_in(transaction, id, step.named(), step.edit)?;
+        let standing = standing_in(transaction, id, step.named(), step.reached)?;
         match &step.standing {
-            Standing::Was(held) => restored(transaction, id, held)?,
+            Standing::Was(held) => restored(transaction, id, held, step.reached)?,
             Standing::Fresh(_) => discarded(transaction, id)?,
         }
 
         Ok(Step {
             edit: step.edit,
             playlist: id,
+            reached: step.reached,
             standing,
         })
     });
@@ -228,22 +268,52 @@ fn standing_in(
     transaction: &Transaction<'_>,
     id: PlaylistId,
     named: &str,
-    edit: Edit,
+    reached: Reached,
 ) -> Result<Standing> {
-    Ok(match held_in(transaction, id, edit)? {
+    Ok(match held_in(transaction, id, reached)? {
         Some(held) => Standing::Was(held),
         None => Standing::Fresh(named.to_owned()),
     })
 }
 
-fn restored(transaction: &Transaction<'_>, id: PlaylistId, held: &Held) -> Result<()> {
+fn restored(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    held: &Held,
+    reached: Reached,
+) -> Result<()> {
     let name = PlaylistName::new(held.name.as_str());
     playlist::refuse_duplicate(transaction, &name, Some(id))?;
 
-    match held.rows.as_deref() {
-        Some(rows) => rewritten(transaction, id, held, rows),
-        None => written_over(transaction, id, held),
+    let rows = held.rows.as_deref().unwrap_or_default();
+    match reached {
+        Reached::Unmoved => written_over(transaction, id, held),
+        Reached::Whole => rewritten(transaction, id, held, rows),
+        Reached::From(first) => {
+            written_over(transaction, id, held)?;
+            rewritten_from(transaction, id, first, rows)
+        }
     }
+}
+
+fn rewritten_from(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    first: i64,
+    rows: &[playlist::Row],
+) -> Result<()> {
+    transaction
+        .execute(
+            "DELETE FROM playlist_entries WHERE playlist_id = ?1 AND position >= ?2",
+            params![id.get() as i64, first],
+        )
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
+    let landing = playlist::tail(transaction, id)?;
+    for (position, row) in (landing..).zip(rows) {
+        playlist::insert(transaction, id, position, row)?;
+    }
+    Ok(())
 }
 
 fn written_over(transaction: &Transaction<'_>, id: PlaylistId, held: &Held) -> Result<()> {
@@ -344,7 +414,11 @@ fn discarded(transaction: &Transaction<'_>, id: PlaylistId) -> Result<()> {
     Ok(())
 }
 
-fn held_in(transaction: &Transaction<'_>, id: PlaylistId, edit: Edit) -> Result<Option<Held>> {
+fn held_in(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    reached: Reached,
+) -> Result<Option<Held>> {
     let standing = transaction
         .query_row(
             "SELECT name, created, modified, played, plays, kept_order, kept_reading, pinned
@@ -383,10 +457,11 @@ fn held_in(transaction: &Transaction<'_>, id: PlaylistId, edit: Edit) -> Result<
             .map(|(order, reading)| playlist::wanted_kept(id, order, reading))
             .transpose()?,
         query: playlist::asked_in(transaction, id)?,
-        rows: edit
-            .moves_rows()
-            .then(|| playlist::rows(transaction, id))
-            .transpose()?,
+        rows: match reached {
+            Reached::Unmoved => None,
+            Reached::Whole => Some(playlist::rows(transaction, id)?),
+            Reached::From(first) => Some(playlist::rows_from(transaction, id, first)?),
+        },
     }))
 }
 

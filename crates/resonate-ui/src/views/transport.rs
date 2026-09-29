@@ -43,14 +43,14 @@ const PLAY_HINT: &str = keyed!("Play", key!(play_pause));
 
 const PAUSE_HINT: &str = keyed!("Pause", key!(play_pause));
 
-const QUEUE_HINT: &str = "Show what is queued";
+const QUEUE_HINT: &str = keyed!("Show what is queued", key!(queue));
 
-const QUEUE_OPEN_HINT: &str = "Back to the pane the queue covered";
+const QUEUE_OPEN_HINT: &str = keyed!("Back to the pane the queue covered", key!(queue));
 
 pub(crate) const COVER_HINT: &str = "See the cover full size";
 
 const VOLUME_HINT: &str = concat!(
-    keyed!("Mute", "click"),
+    keyed!("Mute", "click", key!(mute)),
     ". ",
     keyed!("Louder", key!(louder)),
     ". ",
@@ -58,7 +58,7 @@ const VOLUME_HINT: &str = concat!(
 );
 
 const VOLUME_HINT_WHEELED: &str = concat!(
-    keyed!("Mute", "click"),
+    keyed!("Mute", "click", key!(mute)),
     ". ",
     keyed!("Louder", "the wheel", key!(louder)),
     ". ",
@@ -79,7 +79,13 @@ const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
 
 const UNMUTE_HINT: &str = concat!(
     "Muted. ",
-    keyed!("Hear it again", "click", "the wheel", key!(louder))
+    keyed!(
+        "Hear it again",
+        "click",
+        "the wheel",
+        key!(louder),
+        key!(mute)
+    )
 );
 
 const VOLUME_A_NOTCH: f32 = 0.05;

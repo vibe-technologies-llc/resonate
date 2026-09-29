@@ -60,9 +60,9 @@ use resonate_engine::{
 use resonate_library::{
     Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
     HistoryKept, Kept, Layout, Library, Listen, LookupOp, MissingTrack, Move, OrganiseOptions,
-    OrganiseSummary, PassHandle, Playing, Playlist, PlaylistName, PlaylistOrder, PollOptions,
-    Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, Search, SortOrder,
-    StudyFilter, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
+    OrganiseSummary, PassHandle, PassKind, Playing, Playlist, PlaylistName, PlaylistOrder,
+    PollOptions, Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions,
+    Search, SortOrder, StudyFilter, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -74,7 +74,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-    cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, Sub},
+    cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, Sub, TransportArgs},
     config::Config,
     error::{ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
@@ -149,6 +149,7 @@ fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    one_way_on_bit_perfect(&cli)?;
     init_logging()?;
     let config = config::load(cli.config.as_deref())?;
 
@@ -203,7 +204,7 @@ fn run() -> Result<()> {
                 misnamed: *misnamed,
             },
         ),
-        Some(Sub::Scan { roots }) => scan(&open_library(&cli, &config)?, &config, roots),
+        Some(Sub::Scan(wanted)) => scan(&open_library(&cli, &config)?, &config, wanted),
         Some(Sub::Roots) => roots(&open_library(&cli, &config)?),
         Some(Sub::Enrich { refresh, albums }) => enrich(
             &open_library(&cli, &config)?,
@@ -258,7 +259,11 @@ fn run() -> Result<()> {
                 walk_back: *undo,
             },
         ),
-        Some(Sub::Play { files, sleep }) => play(&cli, &config, files, sleep.as_deref()),
+        Some(Sub::Play {
+            files,
+            sleep,
+            transport,
+        }) => play(&cli, &config, files, sleep.as_deref(), transport),
         Some(Sub::Queue(wanted)) => queue_onto_a_running_player(&cli, &config, wanted),
         Some(Sub::Players) => players(),
         Some(Sub::Playlists {
@@ -552,7 +557,8 @@ fn comes_out_of(sink: &SinkInfo) -> String {
     }
 }
 
-fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
+fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
+    let roots = &wanted.roots;
     for root in roots {
         if !root.is_dir() {
             return Err(Error::MissingLibraryRoot { path: root.clone() });
@@ -561,13 +567,7 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
     }
 
     let workers = thread::available_parallelism().unwrap_or(NonZeroUsize::MIN);
-    let handle = library.scan(resonate_library::ScanOptions {
-        roots: roots.to_vec(),
-        incremental: true,
-        follow_symlinks: false,
-        extract_cover_art: true,
-        workers,
-    })?;
+    let handle = library.scan(scan_options(wanted, workers))?;
 
     let summary = until_told(handle)?;
     let stats = summary.stats;
@@ -583,8 +583,8 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
     );
     if summary.cancelled {
         println!("cancelled");
-        return Ok(());
     }
+    finished(PassKind::Scan, summary.cancelled)?;
 
     if config.enriches_after_scan()
         && let Some(reference) = online::reference(config)
@@ -606,8 +606,19 @@ fn scan(library: &Library, config: &Config, roots: &[PathBuf]) -> Result<()> {
             )?,
         )?)?;
         print!("{}", enriched(&summary));
+        finished(PassKind::Enrich, summary.cancelled)?;
     }
     Ok(())
+}
+
+fn scan_options(wanted: &ScanArgs, workers: NonZeroUsize) -> ScanOptions {
+    ScanOptions {
+        roots: wanted.roots.clone(),
+        incremental: !wanted.full,
+        follow_symlinks: wanted.follow_links,
+        extract_cover_art: true,
+        workers,
+    }
 }
 
 fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<()> {
@@ -623,7 +634,7 @@ fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<
         options,
     )?)?;
     print!("{}", enriched(&summary));
-    Ok(())
+    finished(PassKind::Enrich, summary.cancelled)
 }
 
 fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOptions> {
@@ -912,7 +923,7 @@ fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
     if summary.cancelled {
         println!("cancelled");
     }
-    Ok(())
+    finished(PassKind::Poll, summary.cancelled)
 }
 
 fn roots(library: &Library) -> Result<()> {
@@ -922,25 +933,49 @@ fn roots(library: &Library) -> Result<()> {
     Ok(())
 }
 
-fn forget(library: &Library, roots: &[PathBuf]) -> Result<()> {
-    let sources = Sources::local();
-    for root in roots {
-        if library.remove_root(root)? {
-            println!("forgot {}", root.display());
-            continue;
-        }
-        let named = location_of_argument(root.as_os_str(), &sources);
-        match named.as_path() {
-            Some(delivered) if library.forget_delivered(delivered)? => {
+#[derive(Debug, PartialEq, Eq)]
+enum Forgotten {
+    Root,
+    Delivered(PathBuf),
+    Gone(u64),
+    Nothing,
+}
+
+fn forget(library: &Library, named: &[PathBuf]) -> Result<()> {
+    for argument in named {
+        match forgotten(library, argument)? {
+            Forgotten::Root => println!("forgot {}", argument.display()),
+            Forgotten::Delivered(delivered) => {
                 println!("forgot the delivered {}", delivered.display());
             }
-            _ => println!(
-                "{} was neither a library root nor a delivered track",
-                root.display()
+            Forgotten::Gone(1) => println!("forgot 1 track gone from {}", argument.display()),
+            Forgotten::Gone(tracks) => {
+                println!("forgot {tracks} tracks gone from {}", argument.display());
+            }
+            Forgotten::Nothing => println!(
+                "{} was neither a library root, a delivered track nor a folder holding a track \
+                 that is gone",
+                argument.display()
             ),
         }
     }
     Ok(())
+}
+
+fn forgotten(library: &Library, argument: &Path) -> Result<Forgotten> {
+    if library.remove_root(argument)? {
+        return Ok(Forgotten::Root);
+    }
+    let named = location_of_argument(argument.as_os_str(), &Sources::local());
+    let path = named.as_path().unwrap_or(argument);
+    if library.forget_delivered(path)? {
+        return Ok(Forgotten::Delivered(path.to_path_buf()));
+    }
+
+    Ok(match library.retire(path)? {
+        0 => Forgotten::Nothing,
+        tracks => Forgotten::Gone(tracks),
+    })
 }
 
 fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<()> {
@@ -954,7 +989,7 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
     )?)?;
 
     print!("{}", tagged(&summary, &library.roots()?, apply));
-    Ok(())
+    finished(PassKind::Retag, summary.cancelled)
 }
 
 fn pictured(picture: &CoverArt) -> String {
@@ -1105,7 +1140,7 @@ fn organise(
         return Ok(());
     }
     print!("{}", organised(&summary, &library.roots()?, how.apply));
-    Ok(())
+    finished(PassKind::Organise, summary.cancelled)
 }
 
 fn until_told<Progress, Summary>(handle: PassHandle<Progress, Summary>) -> Result<Summary>
@@ -1115,6 +1150,14 @@ where
     let progress = Arc::clone(handle.progress());
     let _interrupting = signals::cancel_when_told(move || progress.cancel());
     Ok(handle.join()?)
+}
+
+const fn finished(pass: PassKind, cancelled: bool) -> Result<()> {
+    if cancelled {
+        Err(Error::Cancelled { pass })
+    } else {
+        Ok(())
+    }
 }
 
 fn filed_from(roots: &[PathBuf]) -> Vec<PathBuf> {
@@ -1523,6 +1566,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         Some(library),
         whole.then_some(found.id),
         None,
+        &TransportArgs::default(),
     )
 }
 
@@ -1752,7 +1796,13 @@ fn not_on_disk(missing: usize) -> String {
     }
 }
 
-fn play(cli: &Cli, config: &Config, arguments: &[OsString], spec: Option<&str>) -> Result<()> {
+fn play(
+    cli: &Cli,
+    config: &Config,
+    arguments: &[OsString],
+    spec: Option<&str>,
+    transport: &TransportArgs,
+) -> Result<()> {
     let asleep = spec.map(sleep::Sleep::read).transpose()?;
     let library = catalog(cli, config);
 
@@ -1771,6 +1821,7 @@ fn play(cli: &Cli, config: &Config, arguments: &[OsString], spec: Option<&str>) 
         library,
         None,
         asleep.and_then(sleep::Sleep::until),
+        transport,
     )
 }
 
@@ -1868,19 +1919,24 @@ fn play_queue(
     library: Option<Arc<Library>>,
     playing: Option<PlaylistId>,
     asleep: Option<Until>,
+    transport: &TransportArgs,
 ) -> Result<()> {
     let sources = playing_from(library.as_deref());
-    let player = Arc::new(Player::with_sources(
-        engine_config(cli, config),
-        Arc::clone(&sources),
-    )?);
+    let mut engine = engine_config(cli, config);
+    if let Some(percent) = transport.volume {
+        engine.volume = at_percent(percent)?;
+    }
+    let player = Arc::new(Player::with_sources(engine, Arc::clone(&sources))?);
     confirm_sink(&player, wanted_sink(cli, config).as_ref());
     let queue = stamp_of(&items);
-    player.send(Command::Load {
-        items,
-        start_at: 0,
-        autoplay: true,
-    })?;
+    let start_at = if transport.shuffle {
+        anywhere_in(items.len())
+    } else {
+        0
+    };
+    for command in set_out(transport, items, start_at) {
+        player.send(command)?;
+    }
     if let Some(library) = library.as_ref() {
         library.set_playing_playlist(playing.map(|playlist| Playing { playlist, queue }));
     }
@@ -1976,6 +2032,33 @@ fn play_queue(
     drop(mpris);
     drop(player);
     Ok(())
+}
+
+fn at_percent(percent: u8) -> Result<Volume> {
+    Ok(Volume::new(f32::from(percent) / 100.0)?)
+}
+
+fn anywhere_in(rows: usize) -> usize {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|since| since.subsec_nanos() as usize)
+        .unwrap_or_default();
+
+    now.checked_rem(rows).unwrap_or_default()
+}
+
+fn set_out(transport: &TransportArgs, items: Vec<QueueItem>, start_at: usize) -> Vec<Command> {
+    let shuffle = transport.shuffle.then_some(Command::SetShuffle(true));
+    let repeat = transport
+        .repeat
+        .map(|repeat| Command::SetRepeat(repeat.into()));
+    let load = Command::Load {
+        items,
+        start_at,
+        autoplay: true,
+    };
+
+    shuffle.into_iter().chain(repeat).chain([load]).collect()
 }
 
 fn count_a_play(
@@ -2125,6 +2208,22 @@ pub(crate) fn impulse_at(path: &Path) -> Option<Arc<Impulse>> {
     }
 }
 
+const fn one_way_on_bit_perfect(cli: &Cli) -> Result<()> {
+    if cli.bit_perfect && cli.no_bit_perfect {
+        Err(Error::BitPerfectBothWays)
+    } else {
+        Ok(())
+    }
+}
+
+const fn bit_perfect_asked(cli: &Cli) -> Option<bool> {
+    match (cli.bit_perfect, cli.no_bit_perfect) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        (false, false) => None,
+    }
+}
+
 fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
     let defaults = EngineConfig::default();
     EngineConfig {
@@ -2154,8 +2253,9 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
             pre_amp: config.pre_amp.unwrap_or(defaults.levelling.pre_amp),
             untagged: config.untagged.unwrap_or(defaults.levelling.untagged),
         },
-        prefer_bit_perfect: !cli.no_bit_perfect
-            && config.bit_perfect.unwrap_or(defaults.prefer_bit_perfect),
+        prefer_bit_perfect: bit_perfect_asked(cli)
+            .or(config.bit_perfect)
+            .unwrap_or(defaults.prefer_bit_perfect),
         dop: config.dop.unwrap_or(defaults.dop),
         dsd_like_pcm: config.dsd_like_pcm.unwrap_or(defaults.dsd_like_pcm),
         device_volume: config.device_volume.unwrap_or(defaults.device_volume),
@@ -2330,7 +2430,7 @@ fn handed_to(window: &Running, arguments: &[OsString]) -> Result<()> {
 #[cfg(not(feature = "ui"))]
 fn launch(cli: Cli, config: Config, _library: Arc<Library>) -> Result<()> {
     if !cli.files.is_empty() {
-        return play(&cli, &config, &cli.files, None);
+        return play(&cli, &config, &cli.files, None, &TransportArgs::default());
     }
     let player = Player::new(engine_config(&cli, &config))?;
     confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
@@ -2542,6 +2642,7 @@ mod tests {
     use resonate_core::SourceId;
 
     use super::*;
+    use crate::cli::RepeatArg;
 
     fn located(argument: &str) -> Option<MediaLocation> {
         queue_items(&[OsString::from(argument)])
@@ -2794,5 +2895,234 @@ mod tests {
             )),
             MediaLocation::from_uri("subsonic:track/1")
         );
+    }
+
+    fn parsed(arguments: &[&str]) -> Cli {
+        Cli::try_parse_from(arguments.iter().copied())
+            .unwrap_or_else(|error| panic!("{arguments:?} was refused: {error}"))
+    }
+
+    fn transport_of(arguments: &[&str]) -> TransportArgs {
+        match parsed(arguments).command {
+            Some(Sub::Play { transport, .. }) => transport,
+            other => panic!("{arguments:?} is not play: {other:?}"),
+        }
+    }
+
+    fn scan_of(arguments: &[&str]) -> ScanOptions {
+        match parsed(arguments).command {
+            Some(Sub::Scan(wanted)) => scan_options(&wanted, NonZeroUsize::MIN),
+            other => panic!("{arguments:?} is not scan: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bit_perfect_is_asked_for_or_refused_for_one_run_and_never_both() {
+        let asked = |arguments: &[&str]| bit_perfect_asked(&parsed(arguments));
+        let refused = |arguments: &[&str]| {
+            matches!(
+                one_way_on_bit_perfect(&parsed(arguments)),
+                Err(Error::BitPerfectBothWays)
+            )
+        };
+
+        assert_eq!(asked(&["resonate", "sinks"]), None);
+        assert_eq!(asked(&["resonate", "--bit-perfect", "sinks"]), Some(true));
+        assert_eq!(asked(&["resonate", "sinks", "--bit-perfect"]), Some(true));
+        assert_eq!(
+            asked(&["resonate", "sinks", "--no-bit-perfect"]),
+            Some(false)
+        );
+        assert!(!refused(&["resonate", "sinks", "--bit-perfect"]));
+        assert!(refused(&[
+            "resonate",
+            "--no-bit-perfect",
+            "--bit-perfect",
+            "sinks"
+        ]));
+        assert!(refused(&[
+            "resonate",
+            "--no-bit-perfect",
+            "sinks",
+            "--bit-perfect"
+        ]));
+        assert!(refused(&[
+            "resonate",
+            "--bit-perfect",
+            "sinks",
+            "--no-bit-perfect"
+        ]));
+    }
+
+    #[test]
+    fn play_takes_shuffle_repeat_and_a_volume_for_the_run() {
+        let bare = transport_of(&["resonate", "play", "a.flac"]);
+        let set = transport_of(&[
+            "resonate",
+            "play",
+            "a.flac",
+            "--shuffle",
+            "--repeat",
+            "track",
+            "--volume",
+            "40",
+        ]);
+        let refused = |volume: &str| {
+            Cli::try_parse_from(["resonate", "play", "a.flac", "--volume", volume]).is_err()
+        };
+
+        assert!(!bare.shuffle);
+        assert_eq!(bare.repeat, None);
+        assert_eq!(bare.volume, None);
+        assert!(set.shuffle);
+        assert_eq!(set.repeat, Some(RepeatArg::Track));
+        assert_eq!(set.volume, Some(40));
+        assert!(refused("101"));
+        assert!(refused("-1"));
+        assert!(!refused("0"));
+        assert!(!refused("100"));
+        assert_eq!(at_percent(40).ok(), Volume::new(0.4).ok());
+        assert_eq!(at_percent(100).ok(), Some(Volume::MAX));
+    }
+
+    #[test]
+    fn the_transport_is_set_before_the_queue_loads_so_the_first_track_is_already_shuffled() {
+        let set = transport_of(&[
+            "resonate",
+            "play",
+            "a.flac",
+            "--shuffle",
+            "--repeat",
+            "queue",
+        ]);
+        let bare = transport_of(&["resonate", "play", "a.flac"]);
+
+        let commands = set_out(&set, Vec::new(), 3);
+        let loaded = set_out(&bare, Vec::new(), 0);
+
+        assert_eq!(
+            commands,
+            vec![
+                Command::SetShuffle(true),
+                Command::SetRepeat(RepeatMode::Queue),
+                Command::Load {
+                    items: Vec::new(),
+                    start_at: 3,
+                    autoplay: true,
+                },
+            ]
+        );
+        assert_eq!(
+            loaded,
+            vec![Command::Load {
+                items: Vec::new(),
+                start_at: 0,
+                autoplay: true,
+            }]
+        );
+        assert_eq!(anywhere_in(0), 0);
+        assert!(anywhere_in(7) < 7);
+    }
+
+    #[test]
+    fn a_scan_reads_every_file_and_follows_links_only_where_asked() {
+        let usual = scan_of(&["resonate", "scan", "/music"]);
+        let asked = scan_of(&["resonate", "scan", "--full", "--follow-links", "/music"]);
+
+        assert!(usual.incremental);
+        assert!(!usual.follow_symlinks);
+        assert_eq!(usual.roots, vec![PathBuf::from("/music")]);
+        assert!(!asked.incremental);
+        assert!(asked.follow_symlinks);
+        assert_eq!(asked.roots, vec![PathBuf::from("/music")]);
+    }
+
+    fn silent_wave(seconds_tenths: u32) -> Vec<u8> {
+        const CHANNELS: u16 = 2;
+        const BITS: u16 = 16;
+        const RATE: u32 = 44_100;
+
+        let block_align = CHANNELS * BITS / 8;
+        let frames = RATE / 10 * seconds_tenths;
+        let data = vec![0_u8; frames as usize * usize::from(block_align)];
+        let mut format = Vec::new();
+        format.extend_from_slice(&1_u16.to_le_bytes());
+        format.extend_from_slice(&CHANNELS.to_le_bytes());
+        format.extend_from_slice(&RATE.to_le_bytes());
+        format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+        format.extend_from_slice(&block_align.to_le_bytes());
+        format.extend_from_slice(&BITS.to_le_bytes());
+
+        let mut body = b"WAVE".to_vec();
+        for (id, payload) in [(b"fmt ", format.as_slice()), (b"data", data.as_slice())] {
+            body.extend_from_slice(id);
+            body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            body.extend_from_slice(payload);
+        }
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        file.extend_from_slice(&body);
+        file
+    }
+
+    #[test]
+    fn forgetting_a_folder_inside_a_root_drops_the_tracks_gone_from_it_and_keeps_the_rest() {
+        let root = env::temp_dir().join(format!("resonate-forget-{}", process::id()));
+        let retired = root.join("retired");
+        let kept = root.join("kept");
+        fs::create_dir_all(&retired).expect("a scratch folder");
+        fs::create_dir_all(&kept).expect("a scratch folder");
+        fs::write(retired.join("a.wav"), silent_wave(1)).expect("a track");
+        fs::write(retired.join("b.wav"), silent_wave(1)).expect("a track");
+        fs::write(kept.join("c.wav"), silent_wave(1)).expect("a track");
+        let library = Library::open_in_memory().expect("a catalog");
+        library.add_root(&root).expect("a root");
+
+        let scanned = library
+            .scan(ScanOptions {
+                roots: vec![root.clone()],
+                incremental: true,
+                follow_symlinks: false,
+                extract_cover_art: false,
+                workers: NonZeroUsize::MIN,
+            })
+            .and_then(PassHandle::join)
+            .expect("a scan");
+        fs::remove_file(retired.join("a.wav")).expect("a track taken away");
+        fs::remove_file(kept.join("c.wav")).expect("a track taken away");
+        let from_the_folder = forgotten(&library, &retired).expect("a forget");
+        let from_nowhere = forgotten(&library, &root.join("never")).expect("a forget");
+        let left = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the tracks");
+        let the_root = forgotten(&library, &root).expect("a forget");
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        assert_eq!(scanned.stats.added, 3);
+        assert_eq!(from_the_folder, Forgotten::Gone(1));
+        assert_eq!(from_nowhere, Forgotten::Nothing);
+        assert_eq!(
+            left.len(),
+            2,
+            "a present file or one outside the folder lost its row"
+        );
+        assert_eq!(the_root, Forgotten::Root);
+    }
+
+    #[test]
+    fn a_cancelled_pass_answers_an_error_so_the_command_exits_1() {
+        assert!(finished(PassKind::Scan, false).is_ok());
+        assert!(matches!(
+            finished(PassKind::Scan, true),
+            Err(Error::Cancelled {
+                pass: PassKind::Scan
+            })
+        ));
+        assert!(matches!(
+            finished(PassKind::Import, true),
+            Err(Error::Cancelled {
+                pass: PassKind::Import
+            })
+        ));
     }
 }

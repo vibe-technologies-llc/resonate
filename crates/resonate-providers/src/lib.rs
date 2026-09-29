@@ -7,5 +7,5 @@ pub use crate::{
     delivery::{Delivered, Delivery, Extension, Obtained},
     error::{Error, ProviderOp, Result},
     identity::Identity,
-    provider::{Answer, Asking, Provider, Providers, Unprovided},
+    provider::{Answer, Asking, Away, Provider, Providers, Unprovided},
 };

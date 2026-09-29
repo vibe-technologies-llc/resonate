@@ -273,11 +273,11 @@ pub(crate) fn queued_metadata(
     state: &PlayerState,
     digest: Option<&Arc<StreamDigest>>,
     media: Option<&MediaInfo>,
-    playing_art: Option<String>,
+    art: Option<String>,
     heard: Option<Heard>,
 ) -> HashMap<String, OwnedValue> {
     if state.current.is_some_and(|current| current.id == item.id) {
-        return metadata(state, digest, playing_art, heard);
+        return metadata(state, digest, art, heard);
     }
 
     let mut fields = HashMap::new();
@@ -293,6 +293,9 @@ pub(crate) fn queued_metadata(
     );
     title_by_file(&mut fields, &item.location);
     absorb_plays(&mut fields, heard);
+    if let Some(art) = art {
+        insert(&mut fields, "mpris:artUrl", art);
+    }
 
     let Some(media) = media else {
         return fields;

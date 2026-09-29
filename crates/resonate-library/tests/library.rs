@@ -1481,7 +1481,11 @@ fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
 
     assert_eq!(library.search("Sanctuary", 10)?.tracks.len(), 1);
     assert_eq!(library.search("nothing here", 10)?.tracks.len(), 0);
-    assert_eq!(library.search("   ", 10)?.tracks.len(), 0);
+    assert_eq!(
+        library.search("   ", 10)?.tracks.len(),
+        2,
+        "a search asking nothing should hold everything, as no search does"
+    );
     Ok(())
 }
 
@@ -11363,12 +11367,15 @@ fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
 
-    let refusing = Arc::new(Fake::new(Canned {
-        releases: vec![orbits(orbits_rows(), Vec::new())],
-        artists: vec![orbiters()],
-        found_artists: vec![artist_match(100, "The Orbiters")],
-        ..Canned::default()
-    }));
+    let refusing = Arc::new(
+        Fake::new(Canned {
+            releases: vec![orbits(orbits_rows(), Vec::new())],
+            artists: vec![orbiters()],
+            found_artists: vec![artist_match(100, "The Orbiters")],
+            ..Canned::default()
+        })
+        .faulting(LookupOp::Portrait, 0, Fault::Refused),
+    );
     enrich(&library, &refusing, false)?;
     assert_eq!(
         refusing.called(LookupOp::Portrait),
@@ -16086,7 +16093,7 @@ fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result
     let texts = asked(&suggestions);
     assert!(texts.contains(&"year:1990-1999"), "{texts:?}");
     assert!(texts.contains(&"genre:\"Progressive Rock\""), "{texts:?}");
-    assert!(texts.contains(&"artist:\"The Orbiters\""), "{texts:?}");
+    assert!(texts.contains(&"artist:=\"The Orbiters\""), "{texts:?}");
     assert!(texts.contains(&"plays:0"), "{texts:?}");
     Ok(())
 }
@@ -19035,4 +19042,347 @@ fn the_row_of(counted: &resonate_library::Counted) -> &Track {
         .track
         .as_ref()
         .expect("the play was counted against a row")
+}
+
+#[test]
+fn what_is_playing_is_billed_with_the_code_and_the_release_group_the_catalog_holds() -> Result<()> {
+    const GROUP: &str = "2a9b3ef6-6e5f-3b51-9d4a-4f29fd2b6c41";
+
+    let tree = Tree::new();
+    let heard = tree.write(
+        "1.wav",
+        &Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters")
+            .text(ALBUM, "Winter")
+            .text(ISRC, "gb-aye-71-00195")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let grouped = beside(&database)
+        .execute(
+            "UPDATE albums SET release_group = ?1 WHERE title = 'Winter'",
+            [GROUP],
+        )
+        .expect("the album row is writable");
+    let billed = library
+        .billed_as(&MediaLocation::local(heard), None)?
+        .expect("a scanned track the service can be told of");
+
+    assert_eq!(grouped, 1);
+    assert_eq!(billed.isrc, Some(Isrc::new("GBAYE7100195")?));
+    assert_eq!(billed.release_group, Some(Mbid::new(GROUP)?));
+    Ok(())
+}
+
+struct Unanswering {
+    source: SourceId,
+    failure: fn(SourceId) -> resonate_providers::Error,
+    asked: Mutex<usize>,
+}
+
+impl Unanswering {
+    fn new(source: &str, failure: fn(SourceId) -> resonate_providers::Error) -> Arc<Self> {
+        Arc::new(Self {
+            source: SourceId::new(source).expect("a nameable source"),
+            failure,
+            asked: Mutex::new(0),
+        })
+    }
+
+    fn asked(&self) -> usize {
+        *self.asked.lock()
+    }
+}
+
+impl Provider for Unanswering {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
+        *self.asked.lock() += 1;
+        Err((self.failure)(self.source.clone()))
+    }
+}
+
+fn unreachable_server(provider: SourceId) -> resonate_providers::Error {
+    resonate_providers::Error::Io {
+        provider,
+        op: resonate_providers::ProviderOp::Search,
+        source: io::Error::from(io::ErrorKind::ConnectionRefused),
+    }
+}
+
+fn wrong_password(provider: SourceId) -> resonate_providers::Error {
+    resonate_providers::Error::TurnedAway {
+        provider,
+        op: resonate_providers::ProviderOp::Search,
+        code: 40,
+    }
+}
+
+fn wanted_every_missing_row(library: &Library) -> Result<()> {
+    let album = only_album(library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    for missing in library
+        .release_tracks(album.id)?
+        .into_iter()
+        .filter(|row| row.track.is_none())
+    {
+        library.want(missing.id)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    wanted_san_tropez(&library)?;
+    let server = Unanswering::new("server", wrong_password);
+    let providers = Arc::new(Providers::none().and(Arc::clone(&server) as Arc<dyn Provider>));
+
+    let summary = library
+        .poll(Arc::clone(&providers), PollOptions::default())?
+        .join()?;
+    assert_eq!(summary.stats.asked, 1);
+    assert_eq!(summary.stats.refused, 1);
+    assert_eq!(summary.stats.nothing, 0);
+    assert_eq!(library.wants()?[0].tried, None);
+    assert!(library.is_a_want_due(PollOptions::default())?);
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+    assert_eq!(summary.stats.asked, 1);
+    assert_eq!(server.asked(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_want_one_provider_answered_and_another_refused_stays_due() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_san_tropez(&library)?;
+    let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
+    let server = Unanswering::new("server", wrong_password);
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&quiet) as Arc<dyn Provider>)
+            .and(Arc::clone(&server) as Arc<dyn Provider>),
+    );
+
+    library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(quiet.asked().len(), 1);
+    assert_eq!(library.wants()?[0].tried, None);
+    Ok(())
+}
+
+#[test]
+fn a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_every_missing_row(&library)?;
+    let wanted = library.wants()?.len();
+    assert!(
+        wanted > 1,
+        "the poll is to be asked about more than one want"
+    );
+    let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
+    let server = Unanswering::new("server", unreachable_server);
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&server) as Arc<dyn Provider>)
+            .and(Arc::clone(&quiet) as Arc<dyn Provider>),
+    );
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(summary.stats.asked, wanted as u64);
+    assert_eq!(server.asked(), 1);
+    assert_eq!(quiet.asked().len(), wanted);
+    assert!(library.wants()?.iter().all(|want| want.tried.is_none()));
+    Ok(())
+}
+
+#[test]
+fn a_portrait_the_reference_answered_it_lacks_is_not_looked_for_again_the_next_pass() -> Result<()>
+{
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let empty_handed = Arc::new(Fake::new(Canned {
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        artists: vec![orbiters()],
+        found_artists: vec![artist_match(100, "The Orbiters")],
+        ..Canned::default()
+    }));
+    enrich(&library, &empty_handed, false)?;
+    assert_eq!(empty_handed.called(LookupOp::Portrait), 1);
+
+    let later = Arc::new(Fake::new(Canned::default()));
+    enrich(&library, &later, false)?;
+
+    assert_eq!(
+        later.called(LookupOp::Portrait),
+        0,
+        "a portrait the reference said it lacks was asked for again on the very next pass"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_itself() -> Result<()>
+{
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let fake = Arc::new(Fake::new(Canned {
+        releases: vec![Release {
+            has_front_cover: false,
+            ..orbits(orbits_rows(), Vec::new())
+        }],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    let pictures: Vec<Called> = fake
+        .calls()
+        .into_iter()
+        .filter(|called| called.op() == LookupOp::Cover)
+        .collect();
+    assert_eq!(pictures, vec![Called::GroupCover(mbid(RELEASE_GROUP))]);
+    Ok(())
+}
+
+#[test]
+fn a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one() -> Result<()> {
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let fake = Arc::new(Fake::new(Canned {
+        releases: vec![Release {
+            has_front_cover: false,
+            group: None,
+            ..orbits(orbits_rows(), Vec::new())
+        }],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    assert!(
+        only_album(&library)?.mbid.is_some(),
+        "the release did not land"
+    );
+    assert_eq!(fake.called(LookupOp::Cover), 0);
+
+    let later = Arc::new(Fake::new(Canned::default()));
+    enrich(&library, &later, false)?;
+    assert_eq!(
+        later.called(LookupOp::Cover),
+        0,
+        "the sweep asked the archive for a cover the release said it lacks"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_discography_refused_as_its_artist_landed_is_asked_for_again_within_the_hour() -> Result<()> {
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let fake = Arc::new(
+        Fake::new(Canned {
+            releases: vec![orbits(orbits_rows(), Vec::new())],
+            artists: vec![orbiters()],
+            found_artists: vec![artist_match(100, "The Orbiters")],
+            ..Canned::default()
+        })
+        .faulting(LookupOp::ReleaseGroupsOfArtist, 0, Fault::Refused),
+    );
+    enrich(&library, &fake, false)?;
+    assert_eq!(fake.called(LookupOp::ReleaseGroupsOfArtist), 1);
+
+    let artist = artist_named(&library, "The Orbiters")?;
+    assert!(artist.mbid.is_some(), "the profile did not land");
+    let an_hour_on = Waits {
+        refused_again_after: Duration::ZERO,
+        ..WAITED
+    };
+    assert!(!library.artist_is_due(artist.id, WAITED, false)?);
+    assert!(
+        library.artist_is_due(artist.id, an_hour_on, false)?,
+        "an artist whose discography was refused waits out the month"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
+    const ALBUMS: usize = 12;
+    const ENDS_AFTER: u64 = 10;
+
+    let tree = Tree::new();
+    for nth in 0..ALBUMS {
+        tree.write(
+            &format!("{nth}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Song {nth}"))
+                .text(ARTIST, &format!("Singer {nth}"))
+                .text(ALBUM, &format!("Album {nth}"))
+                .build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let mut fake = Fake::new(Canned::default());
+    for nth in 0..ALBUMS * 4 {
+        for op in [
+            LookupOp::FindRelease,
+            LookupOp::FindReleaseGroup,
+            LookupOp::FindRecording,
+            LookupOp::FindArtist,
+        ] {
+            fake = fake.faulting(op, nth, Fault::Refused);
+        }
+    }
+    let fake = Arc::new(fake);
+    let summary = enrich(&library, &fake, false)?;
+
+    assert!(summary.stopped_by.is_some(), "the pass refused to the end");
+    assert_eq!(summary.stats.refused, ENDS_AFTER);
+    assert_eq!(fake.calls().len() as u64, ENDS_AFTER);
+    Ok(())
+}
+
+#[test]
+fn a_lyric_the_service_refused_is_not_asked_for_again_on_the_next_pass() -> Result<()> {
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let fake = Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Refused));
+    enrich(&library, &fake, false)?;
+    assert_eq!(fake.sung().len(), ORBITS_TITLES.len());
+
+    assert_eq!(
+        library.lyrics_to_ask(false)?,
+        Vec::new(),
+        "a refused lyric is due again at once"
+    );
+    assert_eq!(library.lyrics_to_ask(true)?.len(), ORBITS_TITLES.len());
+    Ok(())
 }

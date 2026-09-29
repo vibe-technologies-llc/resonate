@@ -143,6 +143,7 @@ struct Standing {
     asleep: Option<Asleep>,
     calls: Vec<Call>,
     described: Vec<usize>,
+    queueing_fails_after: Option<usize>,
 }
 
 impl Default for Standing {
@@ -157,6 +158,7 @@ impl Default for Standing {
             asleep: None,
             calls: Vec::new(),
             described: Vec::new(),
+            queueing_fails_after: None,
         }
     }
 }
@@ -297,16 +299,21 @@ impl Controlling for Handle {
     }
 
     fn queue(&self, rows: &[Row], queueing: Queueing) -> resonate_mpris::Result<usize> {
+        let fails_after = self.0.borrow().queueing_fails_after;
+        let landing = fails_after.map_or(rows.len(), |after| after.min(rows.len()));
         {
             let mut standing = self.0.borrow_mut();
             let first = standing.rows.len() as u64 + 1_000;
             let minted: Vec<Described> = (first..)
-                .zip(rows)
+                .zip(&rows[..landing])
                 .map(|(id, _)| row(id, "Queued"))
                 .collect();
             standing.rows.extend(minted);
         }
         self.called(Call::Queue(rows.to_vec(), queueing))?;
+        if fails_after.is_some() {
+            return Err(resonate_mpris::Error::ThreadStopped);
+        }
         Ok(rows.len())
     }
 
@@ -494,7 +501,7 @@ fn a_broken_envelope_is_a_json_rpc_error_rather_than_a_tool_failure() {
         error_code(&server, &json!({ "id": 1, "method": "ping" })),
         -32_600
     );
-    assert_eq!(error_code(&server, &json!([1, 2])), -32_600);
+    assert_eq!(error_code(&server, &json!([])), -32_600);
     assert_eq!(
         error_code(
             &server,
@@ -905,6 +912,10 @@ fn a_transport_gesture_answers_with_what_the_player_reads_back_once_it_has_lande
     assert_eq!(sought["moved_seconds"], 30.0);
     assert_eq!(sought["position_seconds"], 30.0);
     assert_eq!(sought["track"]["title"], "Time");
+
+    let rewound = called(&server, "seek", json!({ "seconds": -100 }));
+    assert_eq!(rewound["moved_seconds"], -30.0);
+    assert_eq!(rewound["position_seconds"], 0.0);
 
     let louder = called(&server, "set_volume", json!({ "percent": 25 }));
     assert_eq!(louder["volume_percent"], 25.0);
@@ -1911,4 +1922,274 @@ fn a_completion_naming_nothing_offered_is_refused() {
             "{params}"
         );
     }
+}
+
+#[test]
+fn a_batch_is_answered_as_one_array_in_the_order_it_was_asked() {
+    let server = nothing_running();
+    let batch = json!([
+        request("ping", json!({})),
+        { "jsonrpc": "2.0", "method": "notifications/initialized" },
+        { "id": 8, "method": "ping" },
+        5,
+        { "jsonrpc": "2.0", "id": "last", "method": "tools/list" },
+    ]);
+
+    let answered = asked(&server, &batch).expect("a batch holding requests to be answered");
+
+    let answers = answered
+        .as_array()
+        .expect("a batch to be answered with an array");
+    assert_eq!(answers.len(), 4, "{answered}");
+    assert_eq!(answers[0]["id"], 7);
+    assert_eq!(answers[0]["result"], json!({}));
+    assert_eq!(answers[1]["id"], 8);
+    assert_eq!(answers[1]["error"]["code"], -32_600);
+    assert_eq!(answers[2]["id"], Value::Null);
+    assert_eq!(answers[2]["error"]["code"], -32_600);
+    assert_eq!(answers[3]["id"], "last");
+    assert!(answers[3]["result"]["tools"].is_array());
+}
+
+#[test]
+fn a_batch_of_notifications_alone_is_never_answered() {
+    let server = nothing_running();
+    let batch = json!([
+        { "jsonrpc": "2.0", "method": "notifications/initialized" },
+        { "jsonrpc": "2.0", "id": 3, "result": {} },
+    ]);
+    let input = format!("{batch}\n{}\n", request("ping", json!({})));
+    let mut output = Vec::new();
+
+    server
+        .serve(input.as_bytes(), &mut output)
+        .expect("serving to end with its input");
+
+    let lines: Vec<Value> = String::from_utf8(output)
+        .expect("the output to be text")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each line to be one message"))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![json!({ "jsonrpc": "2.0", "id": 7, "result": {} })]
+    );
+}
+
+#[test]
+fn more_ids_than_a_search_may_answer_are_refused() {
+    let server = nothing_running();
+    let too_many: Vec<u64> = (1..=1_001).collect();
+
+    for (tool, arguments) in [
+        ("add_to_queue", json!({ "track_ids": too_many })),
+        (
+            "add_to_playlist",
+            json!({ "playlist": "Hours", "track_ids": too_many }),
+        ),
+        (
+            "create_playlist",
+            json!({ "name": "Hours", "track_ids": too_many }),
+        ),
+        ("mark_favourite", json!({ "album_ids": too_many })),
+        ("want_tracks", json!({ "release_track_ids": too_many })),
+    ] {
+        let answer = asked(
+            &server,
+            &request(
+                "tools/call",
+                json!({ "name": tool, "arguments": arguments }),
+            ),
+        )
+        .expect("a refusal to be answered");
+        assert_eq!(answer["error"]["code"], -32_602, "{tool}: {answer}");
+        assert!(
+            answer["error"]["message"]
+                .as_str()
+                .is_some_and(|said| said.contains("no more than 1000")),
+            "{tool}: {answer}"
+        );
+    }
+
+    let listed = result(&server, "tools/list", json!({}));
+    let id_lists: Vec<&Value> = listed["tools"]
+        .as_array()
+        .expect("a list of tools")
+        .iter()
+        .filter_map(|tool| tool["inputSchema"]["properties"].as_object())
+        .flat_map(|fields| fields.values())
+        .filter(|field| field["type"] == "array" && field["items"]["type"] == "integer")
+        .collect();
+    assert_eq!(id_lists.len(), 7);
+    assert!(
+        id_lists.iter().all(|field| field["maxItems"] == 1_000),
+        "{id_lists:?}"
+    );
+}
+
+#[test]
+fn a_queue_that_fails_partway_says_how_many_rows_landed() {
+    let tree = Tree::new();
+    tree.wav("a.wav", "Night Signal", "Hours", "1");
+    tree.wav("b.wav", "Signal Fire", "Hours", "2");
+    tree.wav("c.wav", "Signal Lost", "Hours", "3");
+    let (players, _) = Fake::with(Standing {
+        rows: vec![row(9, "Echoes")],
+        queueing_fails_after: Some(2),
+        ..Standing::default()
+    });
+    let server = server(scanned(&tree), players);
+
+    let said = failed(&server, "add_to_queue", json!({ "query": "signal" }));
+
+    assert!(
+        said.starts_with("2 of the 3 rows reached the queue"),
+        "{said}"
+    );
+    assert!(said.contains("service thread"), "{said}");
+}
+
+#[test]
+fn a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let catalog = tree.root.join("catalog.db");
+    let mut lock_path = catalog.clone().into_os_string();
+    lock_path.push(".walk");
+    let walking = fs::File::create(&lock_path).expect("a writable lock file");
+    walking.lock().expect("the walk lock to be free");
+    let server = server(
+        Library::open(&catalog).expect("a catalog on disk"),
+        Fake::default(),
+    );
+
+    let said = failed(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()] }),
+    );
+
+    let beside = Library::open(&catalog).expect("the same catalog opened again");
+    assert!(said.contains("already"), "{said}");
+    assert_eq!(
+        beside.roots().expect("the roots to read"),
+        Vec::<PathBuf>::new()
+    );
+    assert_eq!(
+        called(&server, "library_passes", json!({}))["scan"]["state"],
+        "idle"
+    );
+    drop(walking);
+}
+
+#[test]
+fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
+    const GIVEN_UP_AFTER: Duration = Duration::from_secs(20);
+
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = nothing_running();
+    let (stop, stoppable) = resonate_mcp::stoppable();
+    let (reading, mut writing) = io::pipe().expect("a pipe for the input");
+    let (heard, answering) = io::pipe().expect("a pipe for the output");
+    for message in [
+        request(
+            "initialize",
+            json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+        ),
+        request("resources/list", json!({})),
+        request(
+            "resources/subscribe",
+            json!({ "uri": "resonate://library/passes" }),
+        ),
+        request(
+            "tools/call",
+            json!({
+                "name": "start_scan",
+                "arguments": { "roots": [tree.root.display().to_string()] },
+            }),
+        ),
+        request(
+            "tools/call",
+            json!({
+                "name": "create_playlist",
+                "arguments": { "name": "Late Hours" },
+            }),
+        ),
+    ] {
+        writeln!(writing, "{message}").expect("the pipe takes a line");
+    }
+
+    let watcher = stop.clone();
+    let watching = std::thread::spawn(move || {
+        let mut told = Vec::new();
+        for line in io::BufRead::lines(BufReader::new(heard)) {
+            let message: Value =
+                serde_json::from_str(&line.expect("a line of output")).expect("one message");
+            told.push(message);
+            let methods: Vec<&Value> = told.iter().map(|message| &message["method"]).collect();
+            if methods.contains(&&json!("notifications/resources/updated"))
+                && methods.contains(&&json!("notifications/resources/list_changed"))
+            {
+                watcher.stop();
+            }
+        }
+        told
+    });
+    let backstop = stop.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(GIVEN_UP_AFTER);
+        backstop.stop();
+    });
+    server
+        .serve_until_stopped(BufReader::new(reading), answering, stoppable)
+        .expect("a session told to stop to end cleanly");
+    let told = watching.join().expect("the watching thread");
+
+    let initialised = &told[0]["result"]["capabilities"]["resources"];
+    assert_eq!(initialised["subscribe"], true, "{told:?}");
+    assert_eq!(initialised["listChanged"], true, "{told:?}");
+    assert_eq!(told[2]["result"], json!({}), "{told:?}");
+    assert!(
+        told.iter().any(|message| {
+            message["method"] == "notifications/resources/updated"
+                && message["params"]["uri"] == "resonate://library/passes"
+        }),
+        "{told:?}"
+    );
+    assert!(
+        told.iter()
+            .any(|message| message["method"] == "notifications/resources/list_changed"),
+        "{told:?}"
+    );
+    assert!(told.iter().all(|message| {
+        message.get("id").is_some()
+            || message["method"]
+                .as_str()
+                .is_some_and(|method| method.starts_with("notifications/"))
+    }));
+    drop(writing);
+}
+
+#[test]
+fn a_session_that_cannot_push_offers_no_subscription() {
+    let server = nothing_running();
+
+    let initialised = result(
+        &server,
+        "initialize",
+        json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
+    );
+
+    assert_eq!(initialised["capabilities"]["resources"]["subscribe"], false);
+    assert_eq!(
+        error_code(
+            &server,
+            &request(
+                "resources/subscribe",
+                json!({ "uri": "resonate://library/passes" })
+            )
+        ),
+        -32_601
+    );
 }

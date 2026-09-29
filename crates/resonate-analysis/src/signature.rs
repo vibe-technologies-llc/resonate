@@ -375,7 +375,6 @@ fn crc32(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::print_clip;
 
     fn word(bytes: &[u8], at: usize) -> u32 {
         u32::from_le_bytes(bytes[at..at + 4].try_into().expect("four bytes"))
@@ -505,11 +504,5 @@ mod tests {
         assert_eq!(standard_base64(b"Ma"), "TWE=");
         assert_eq!(standard_base64(b"M"), "TQ==");
         assert_eq!(standard_base64(&[0xfb, 0xff]), "+/8=");
-    }
-
-    #[test]
-    fn a_clip_can_be_printed_the_way_a_track_is() {
-        let clip = tone(&[330.0, 1_250.0, 2_900.0], SampleRate::HZ_48000, 8.0);
-        assert!(print_clip(&clip, 48_000, 1).is_some());
     }
 }

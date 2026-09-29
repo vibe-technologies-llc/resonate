@@ -81,15 +81,6 @@ fn sixteen_bit(sample: f32) -> i16 {
         .clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16
 }
 
-pub fn print_clip(interleaved: &[f32], rate: u32, channels: usize) -> Option<Chromaprint> {
-    let mut printing = Printing::new(rate, channels);
-    printing.note(interleaved);
-    let frames = interleaved.len() / channels.max(1);
-    printing.finished(Duration::from_secs_f64(
-        frames as f64 / f64::from(rate.max(1)),
-    ))
-}
-
 fn url_safe_base64(bytes: &[u8]) -> String {
     base64(bytes, URL_SAFE, false)
 }

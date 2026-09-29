@@ -46,6 +46,14 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   numbers from 1 — and the writer emits one wherever the next band's set differs, so a profile
   round-trips; a channel it cannot name passes the lines under it over rather than widening them to
   every channel, as does a `Preamp:` meant for some channels, a preamp here being one for all.
+- **A curve is one channel's, and a curve without a channel is the loudest channel's.**
+  `Profile::magnitude_db_on` and `response_on` weigh the bands `design_for` that channel, and
+  `channels_apart` names the channels some band reaches alone — empty where every band reaches
+  every channel, so one curve is the whole story. `magnitude_db`, `response` and `peak_db` weigh
+  each channel apart and the rest, and answer the loudest at each point: a left and a right boost
+  at one centre are 6 dB where summing them onto one curve made 12, and since the preamp is one for
+  all, *Fit the preamp* must hold the loudest channel under full scale.
+  `a_band_shaping_one_channel_is_heard_on_that_channel_alone` is the claim.
 - **`Band::new` normalises.** A kind reading no gain is never built carrying one, so a notch cannot
   hold a value nothing reads and two notches cannot compare unequal over it — which would republish
   `OutputSettings` for a difference that does not exist.
@@ -258,7 +266,11 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   EqualizerAPO text, hand-editable and readable by any other player. `.txt`, not `.apo` or `.eq`,
   is what AutoEq and EqualizerAPO write. A write stages and renames (the `settings::File`
   discipline). Not a SQLite table, because `resonate play` and `resonate eq` must work with no
-  catalog.
+  catalog. A `ProfileName` is at most `NAME_AT_MOST` (96) *bytes*, and `ProfileName::after` cuts a
+  file's stem at the last letter those bytes hold, so a name in any script is cut rather than
+  falling back to `profile` and two long imports keep two files. `Store::names` and
+  `Store::owners` walk the whole folder and keep the first `PROFILES_AT_MOST` (256) by name in a
+  bounded heap, so which are listed past the limit is the folder's alphabet, not its order on disc.
 - **An own curve is a profile file too, where no name can reach it.** `Store::own` and
   `Store::keep_own` read and write `own/every-other-device.txt` for the fallback and
   `own/device-<node.name>.txt` for a device, in the same text through the same staged write, so a
@@ -286,8 +298,9 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 - **A profile is read as far as it parses and never fails on a line** (the `lrc.rs` and `cue.rs`
   rule). Parameters are read by name, not position; `BW Oct` and `S` (slope) convert to the Q they
   stand for, a comma decimal reads, and a value past what a band holds is clamped rather than
-  dropped — the listener asked for as much as the build gives. Only `LARGEST_PROFILE`,
-  `LINES_AT_MOST` and `MAX_BANDS` refuse. `read_number` is exported so the pane's numeric cells agree
+  dropped — the listener asked for as much as the build gives. Only `LARGEST_PROFILE` and
+  `LINES_AT_MOST` refuse; a filter past `MAX_BANDS` is passed over and counted like any other
+  unreadable line, the first 32 kept. `read_number` is exported so the pane's numeric cells agree
   with the file reader about what a number is.
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** 127 points carry no bands,
   so the curve is fitted onto the 31 ISO third-octave centres at the third-octave Q (`Q::THIRD_OCTAVE`,
@@ -438,15 +451,23 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 - **The response is computed when the profile changes, not per frame**, keyed on a revision counter
   beside the rate — the `PlayerModel::condensed` rule, for 192 points of up to 32 biquads at 60 Hz.
   The curve is drawn *with* the preamp, as the signal gets it; the peak beside it is what the bands
-  reach before the preamp, what *Fit* sets it from, and is kept against the same revision
-  (`EqualiserModel::peaked`), so a render of the Bands group sweeps nothing. `Profile::response` and
+  reach before the preamp, what *Fit* sets it from, and is kept against the same revision and rate
+  (`EqualiserModel::peaked`), so a render of the Bands group sweeps nothing. All three are worked at
+  one rate, `RootView::curve_rate` — the stream's negotiated rate, 48 kHz with none open — since a
+  band near the top reads decibels apart at 48 and 96 kHz and a preamp fitted at the one clips or
+  gives away headroom at the other
+  (`the_peak_and_the_fitted_preamp_are_worked_at_the_rate_the_curve_is_drawn_at`). `Profile::response` and
   `Profile::peak_db` design each band once per sweep and turn each point's angle into its sines and
   cosines once for every section (`Turned`), where the sweep had designed every band again at each
   of its 256 points.
 - **One shared `Field` and an `Editing { row, cell }` cursor edit every cell** — ten bands times
   three numeric cells would be thirty entities where `RootView` holds three. A press opens the field
   in place, enter commits, escape and a press outside cancel, and a value outside its newtype's
-  bounds is refused into the pane's notice naming the limit.
+  bounds is refused into the pane's notice naming the limit. `equaliser::read_typed` reads a cell as a
+  person types it: a unit in any case (`Hz`, `KHz`, `k`, `dB`), `kHz` and `k` scaling by a thousand,
+  and a frequency in hertz whose commas group threes (`1,000`, `12,500.5`) read as thousands, where
+  any other comma is `read_number`'s decimal one (`12,5`, `1,5 kHz`) — a band typed at *1,000 Hz* sat
+  at 1 Hz.
 - **The pane owns the names, the engine the resolution.** `Bindings` reaches the window as `Online`
   does, only the pane needing a profile's *name*; every edit writes one entry through
   `Setting::EqualiserFor` and sends the whole resolved `Equalisation`. `Curve` is what the pane

@@ -17,6 +17,10 @@ const RATE: u32 = 44_100;
 const SECONDS: u32 = 12;
 const PERIOD: usize = 65_536;
 
+const RIFF_LENGTH_AT: usize = 4;
+const DATA_LENGTH_AT: usize = 40;
+const UNKNOWN_LENGTH: [u8; 4] = u32::MAX.to_le_bytes();
+
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
 struct Tree {
@@ -37,6 +41,15 @@ impl Tree {
     fn wave(&self, name: &str, rate: u32, bits: u16, samples: &[i32]) -> MediaLocation {
         let path = self.root.join(name);
         fs::write(&path, wave(rate, bits, samples)).expect("a written fixture");
+        MediaLocation::local(path)
+    }
+
+    fn streamed_wave(&self, name: &str, rate: u32, samples: &[i32]) -> MediaLocation {
+        let mut streamed = wave(rate, 16, samples);
+        streamed[RIFF_LENGTH_AT..RIFF_LENGTH_AT + 4].copy_from_slice(&UNKNOWN_LENGTH);
+        streamed[DATA_LENGTH_AT..DATA_LENGTH_AT + 4].copy_from_slice(&UNKNOWN_LENGTH);
+        let path = self.root.join(name);
+        fs::write(&path, streamed).expect("a written fixture");
         MediaLocation::local(path)
     }
 }
@@ -167,6 +180,29 @@ fn band_limited_noise_reaching_the_top_is_genuine_and_everything_is_drawn() {
 }
 
 #[test]
+fn a_stereo_file_in_opposite_phase_is_judged_by_what_its_channels_hold() {
+    let tree = Tree::new();
+    let period = noise_up_to(RATE, 21_700.0);
+    let opposed: Vec<i32> = (0..(RATE * SECONDS) as usize)
+        .flat_map(|frame| {
+            let sample = (period[frame % PERIOD] * 32_767.0) as i32;
+            [sample, -sample]
+        })
+        .collect();
+    let location = tree.wave("opposed.wav", RATE, 16, &opposed);
+
+    let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+
+    assert_eq!(
+        study.judgement.verdict,
+        Verdict::Genuine,
+        "{:?}",
+        study.judgement
+    );
+    assert!(study.spectrum.heard() > Duration::from_secs(10));
+}
+
+#[test]
 fn a_print_of_the_head_alone_is_the_print_the_whole_study_took() {
     let tree = Tree::new();
     let location = tree.wave("printed.wav", RATE, 16, &music(RATE, 16_000.0, 20_000.0));
@@ -179,6 +215,27 @@ fn a_print_of_the_head_alone_is_the_print_the_whole_study_took() {
         .expect("a printed head");
 
     assert_eq!(printed.encoded(), studied.encoded());
+}
+
+#[test]
+fn a_stream_that_declares_no_length_is_printed_as_long_as_it_plays() {
+    let tree = Tree::new();
+    let rate = 11_025;
+    let seconds = 150;
+    let period = noise_up_to(rate, 4_000.0);
+    let samples: Vec<i32> = (0..(rate * seconds) as usize)
+        .flat_map(|frame| {
+            let sample = (period[frame % PERIOD] * 20_000.0) as i32;
+            [sample, sample]
+        })
+        .collect();
+    let location = tree.streamed_wave("streamed.wav", rate, &samples);
+
+    let printed = print(&Sources::local(), &location, None, &Watch::default())
+        .expect("a print")
+        .expect("a printed stream");
+
+    assert_eq!(printed.length(), Duration::from_secs(u64::from(seconds)));
 }
 
 #[test]

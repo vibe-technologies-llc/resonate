@@ -8,7 +8,7 @@ use resonate_engine::NodeName;
 use resonate_listen::Listening;
 
 use crate::{
-    Pane, Setting,
+    Pane, ResonateApp, Setting,
     icons::{self, Icon},
     listening::{Found, Stage},
     theme,
@@ -27,15 +27,23 @@ const FIND_HINT: &str =
 const OPEN_HINT: &str = "Open the page the service keeps for it";
 const DESKTOP_HINT: &str = "Hear what the desktop is playing";
 const MICROPHONE_HINT: &str = "Hear a microphone";
+const OFFLINE: &str = "Online is off in the settings, so nothing can name what is heard.";
+const NO_SERVICE: &str = "Nothing can name what is heard until the next start: Online was off \
+                          when this run began, or this build carries no network.";
 
 impl RootView {
     pub(crate) fn open_the_listener(&mut self, cx: &mut Context<Self>) {
         self.listening_open = true;
-        self.listen.update(cx, |listen, cx| {
-            listen.look_for_microphones(cx);
-            listen.listen(cx);
-        });
+        self.listen
+            .update(cx, |listen, cx| listen.look_for_microphones(cx));
+        self.listen_now(cx);
         cx.notify();
+    }
+
+    fn listen_now(&mut self, cx: &mut Context<Self>) {
+        let online = cx.global::<ResonateApp>().online.enabled;
+        self.listen
+            .update(cx, |listen, cx| listen.listen(online, cx));
     }
 
     pub(crate) fn close_the_listener(&mut self, cx: &mut Context<Self>) {
@@ -45,6 +53,9 @@ impl RootView {
     }
 
     pub(crate) fn listen_from(&mut self, from: Listening, cx: &mut Context<Self>) {
+        if self.listen.read(cx).is_listening() {
+            return;
+        }
         self.store(&Setting::ListenFrom(from.clone()), cx);
         self.listen.update(cx, |listen, cx| listen.choose(from, cx));
     }
@@ -95,7 +106,7 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_listener(cx)))
             .child(self.listen_heading(listening, cx))
             .child(self.listen_sources(&from, &microphones, listening, cx))
-            .child(self.listen_stage(&stage, &from, length, cx))
+            .child(self.listen_stage(&stage, length, cx))
             .when(!earlier.is_empty(), |card| {
                 card.child(self.heard_earlier(&earlier, cx))
             });
@@ -152,19 +163,26 @@ impl RootView {
         listening: bool,
         cx: &mut Context<Self>,
     ) -> Div {
+        let pressable = !listening;
         let row = kit::segmented()
             .child(
                 kit::segment("listen-desktop", "Desktop", !from.is_a_microphone())
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.listen_from(Listening::Desktop, cx)),
-                    )
+                    .when(pressable, |segment| {
+                        segment.on_click(
+                            cx.listener(|this, _, _, cx| this.listen_from(Listening::Desktop, cx)),
+                        )
+                    })
+                    .when(listening, |segment| segment.cursor_default())
                     .names(DESKTOP_HINT),
             )
             .child(
                 kit::segment("listen-microphone", "Microphone", from.is_a_microphone())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.listen_from(Listening::Microphone(None), cx);
-                    }))
+                    .when(pressable, |segment| {
+                        segment.on_click(cx.listener(|this, _, _, cx| {
+                            this.listen_from(Listening::Microphone(None), cx);
+                        }))
+                    })
+                    .when(listening, |segment| segment.cursor_default())
                     .names(MICROPHONE_HINT),
             );
 
@@ -191,53 +209,42 @@ impl RootView {
                                 described.clone(),
                                 chosen.as_deref() == Some(name.as_str()),
                             )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
+                            .when(pressable, |chip| {
+                                chip.on_click(cx.listener(move |this, _, _, cx| {
                                     this.listen_from(
                                         Listening::Microphone(Some(NodeName::new(node.clone()))),
                                         cx,
                                     );
-                                },
-                            )),
+                                }))
+                            })
+                            .when(listening, |chip| chip.cursor_default()),
                         )
                     },
                 ))
             })
     }
 
-    fn listen_stage(
-        &self,
-        stage: &Stage,
-        from: &Listening,
-        length: std::time::Duration,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    fn listen_stage(&self, stage: &Stage, length: Duration, cx: &mut Context<Self>) -> Div {
         match stage {
-            Stage::Recording(hearing) => {
-                let heard_from = if from.is_a_microphone() {
-                    "the microphone"
-                } else {
-                    "what the desktop plays"
-                };
-                listen_note(format!(
-                    "Listening to {heard_from} for {} seconds…",
-                    length.as_secs()
-                ))
-                .child(
-                    div()
-                        .h(px(4.0))
-                        .w_full()
-                        .rounded_full()
-                        .bg(rgb(theme::raised()))
-                        .child(
-                            div()
-                                .h_full()
-                                .rounded_full()
-                                .bg(rgb(theme::accent()))
-                                .w(relative(hearing.share())),
-                        ),
-                )
-            }
+            Stage::Recording { hearing, from } => listen_note(format!(
+                "Listening to {} for {} seconds…",
+                heard_from(from),
+                length.as_secs()
+            ))
+            .child(
+                div()
+                    .h(px(4.0))
+                    .w_full()
+                    .rounded_full()
+                    .bg(rgb(theme::raised()))
+                    .child(
+                        div()
+                            .h_full()
+                            .rounded_full()
+                            .bg(rgb(theme::accent()))
+                            .w(relative(hearing.share())),
+                    ),
+            ),
             Stage::Asking => listen_note("Asking who it is…".to_owned()),
             Stage::Found(found) => self.found_card(found, cx),
             Stage::Unknown => {
@@ -249,9 +256,8 @@ impl RootView {
             Stage::Unreached => {
                 self.listen_again("The services that name a song could not be reached.", cx)
             }
-            Stage::NoService => listen_note(
-                "Online is off in the settings, so nothing can name what is heard.".to_owned(),
-            ),
+            Stage::Offline => listen_note(OFFLINE.to_owned()),
+            Stage::NoService => listen_note(NO_SERVICE.to_owned()),
             Stage::Idle => self.listen_again("Hear what is sounding and name it.", cx),
         }
     }
@@ -266,9 +272,7 @@ impl RootView {
                     LISTEN_HINT,
                     Tone::Primary,
                 )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.listen.update(cx, |listen, cx| listen.listen(cx));
-                })),
+                .on_click(cx.listener(|this, _, _, cx| this.listen_now(cx))),
             ),
         )
     }
@@ -351,9 +355,7 @@ impl RootView {
                             LISTEN_HINT,
                             Tone::Ghost,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.listen.update(cx, |listen, cx| listen.listen(cx));
-                        })),
+                        .on_click(cx.listener(|this, _, _, cx| this.listen_now(cx))),
                     )
                     .when_some(link, |actions, link| {
                         actions.child(
@@ -417,6 +419,13 @@ impl RootView {
     }
 }
 
+const fn heard_from(from: &Listening) -> &'static str {
+    match from {
+        Listening::Desktop => "what the desktop plays",
+        Listening::Microphone(_) => "the microphone",
+    }
+}
+
 fn sheet_actions() -> Div {
     div().flex().flex_wrap().items_center().gap_1p5().w_full()
 }
@@ -441,4 +450,72 @@ fn earlier_row(id: impl Into<gpui::ElementId>, said: String) -> Stateful<Div> {
         .cursor_pointer()
         .hover(|row| row.bg(rgb(theme::hover())))
         .child(said)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use gpui::TestAppContext;
+    use resonate_library::Library;
+    use resonate_listen::Listening;
+
+    use crate::{driven::Driven, listening::Stage};
+
+    fn catalog() -> Arc<Library> {
+        Arc::new(Library::open_in_memory().expect("a catalog in memory"))
+    }
+
+    fn stage(driven: &mut Driven) -> Stage {
+        driven.read(|root, cx| root.listen.read(cx).stage())
+    }
+
+    #[gpui::test]
+    fn a_source_pressed_while_recording_is_refused_and_the_recording_names_its_own(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.click("listen");
+        let listen = driven.read(|root, _| root.listen.clone());
+        driven.cx.update(|_, cx| {
+            listen.update(cx, |listen, cx| {
+                listen.recording_without_a_device();
+                cx.notify();
+            });
+        });
+        driven.settle();
+
+        driven.click("listen-microphone");
+
+        assert_eq!(
+            driven.read(|root, cx| root.listen.read(cx).from().clone()),
+            Listening::Desktop
+        );
+        assert!(matches!(
+            stage(&mut driven),
+            Stage::Recording {
+                from: Listening::Desktop,
+                ..
+            }
+        ));
+    }
+
+    #[gpui::test]
+    fn online_switched_on_in_this_run_is_not_said_to_be_off(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+
+        driven.click("listen");
+        assert!(matches!(stage(&mut driven), Stage::Offline));
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.close_the_listener(cx);
+                root.set_online(true, cx);
+                root.open_the_listener(cx);
+            });
+        });
+        driven.settle();
+        assert!(matches!(stage(&mut driven), Stage::NoService));
+    }
 }

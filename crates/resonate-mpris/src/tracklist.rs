@@ -14,7 +14,7 @@ use zbus::{
 };
 
 use crate::{
-    interfaces::Shared,
+    interfaces::{RowArt, Shared},
     track::{NO_TRACK, no_track, queued_metadata, track_of, track_path, unlisted_metadata},
 };
 
@@ -92,6 +92,19 @@ pub(crate) fn change(before: &[QueueItem], after: &[QueueItem]) -> Change {
     Change::Edited(edits)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Sample<'a> {
+    pub(crate) rows: &'a [QueueItem],
+    pub(crate) revision: u64,
+}
+
+pub(crate) fn change_between(before: Sample<'_>, after: Sample<'_>) -> Change {
+    match change(before.rows, after.rows) {
+        Change::Unchanged if before.revision != after.revision => Change::Replaced,
+        moved => moved,
+    }
+}
+
 fn longest_rising(values: &[usize]) -> Vec<usize> {
     let mut ends: Vec<usize> = Vec::new();
     let mut beneath: Vec<Option<usize>> = vec![None; values.len()];
@@ -161,7 +174,8 @@ impl TrackList {
                     item.span,
                     until.saturating_duration_since(Instant::now()),
                 );
-                if media.is_none() {
+                let cover = self.shared.row_art(item, &state, art.as_ref());
+                if media.is_none() || matches!(cover, RowArt::NotYet) {
                     self.shared.owed.note(item.id);
                 }
                 queued_metadata(
@@ -169,7 +183,7 @@ impl TrackList {
                     &state,
                     digest.as_ref(),
                     media.as_deref(),
-                    art.clone(),
+                    cover.uri(),
                     self.shared.host.heard(&item.location, item.span),
                 )
             })
@@ -383,6 +397,32 @@ mod tests {
         assert_eq!(
             change(&queue(&[1, 2]), &queue(&[3, 4, 5])),
             Change::Replaced
+        );
+    }
+
+    #[test]
+    fn a_row_that_came_and_went_between_two_samples_is_announced_as_the_list_replaced() {
+        let rows = queue(&[1, 2, 3]);
+        let sample = |revision| Sample {
+            rows: &rows,
+            revision,
+        };
+
+        assert_eq!(change_between(sample(4), sample(4)), Change::Unchanged);
+        assert_eq!(
+            change_between(sample(4), sample(6)),
+            Change::Replaced,
+            "an edit undone inside one poll went unannounced"
+        );
+        assert_eq!(
+            change_between(
+                sample(4),
+                Sample {
+                    rows: &queue(&[1, 2, 3, 9]),
+                    revision: 5,
+                }
+            ),
+            edited(&[Edit::Added { at: 3 }])
         );
     }
 

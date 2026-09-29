@@ -22,6 +22,7 @@ mod playlist;
 mod pls;
 mod query;
 mod reference;
+mod resumed;
 mod retag;
 mod scan;
 mod schema;
@@ -112,7 +113,10 @@ pub use crate::{
     },
     scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary},
     scrobble::{Billed, ListeningService, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Submitted},
-    search::{Asked, Clause, Column, Compare, Condition, Lit, Search, Shape, Term, Word},
+    search::{
+        Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,
+        Term, Word,
+    },
     share::Shared,
     spelling::Spellings,
     statistics::{Day, Listened, MostListened, Statistics, Window},

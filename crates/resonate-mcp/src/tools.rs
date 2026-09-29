@@ -428,11 +428,7 @@ impl Tool {
                 "limit": limit(QUEUED_BY_DEFAULT, "The most rows to answer with."),
             }),
             Self::AddToQueue => json!({
-                "track_ids": {
-                    "type": "array",
-                    "items": { "type": "integer", "minimum": 1 },
-                    "description": "Catalog track ids, queued in the order given.",
-                },
+                "track_ids": ids("Catalog track ids, queued in the order given."),
                 "query": {
                     "type": "string",
                     "description": "A search whose matches are queued in album order.",
@@ -606,8 +602,8 @@ impl Tool {
             }
             Self::WantTracks => {
                 let asked: WantingTracks = self.taken(arguments)?;
-                let release_tracks: Vec<ReleaseTrackId> = asked
-                    .release_track_ids
+                let release_tracks: Vec<ReleaseTrackId> = self
+                    .capped("release_track_ids", asked.release_track_ids)?
                     .into_iter()
                     .map(ReleaseTrackId::of)
                     .collect();
@@ -756,7 +752,7 @@ impl Tool {
         limit: Option<usize>,
     ) -> std::result::Result<Wanted, Refusal> {
         match (track_ids, query) {
-            (Some(ids), None) => Ok(Wanted::Tracks(ids.into_iter().map(TrackId::of).collect())),
+            (Some(ids), None) => Ok(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query)) => Ok(Wanted::Matching {
                 query,
                 most: rows(limit, QUEUED_BY_DEFAULT),
@@ -768,21 +764,42 @@ impl Tool {
         }
     }
 
+    fn track_ids(self, ids: Vec<NonZeroU64>) -> std::result::Result<Vec<TrackId>, Refusal> {
+        Ok(self
+            .capped("track_ids", ids)?
+            .into_iter()
+            .map(TrackId::of)
+            .collect())
+    }
+
+    fn capped(
+        self,
+        field: &'static str,
+        ids: Vec<NonZeroU64>,
+    ) -> std::result::Result<Vec<NonZeroU64>, Refusal> {
+        if ids.len() > MOST_ROWS {
+            return Err(Refusal::TooMany {
+                tool: self,
+                field,
+                most: MOST_ROWS,
+            });
+        }
+        Ok(ids)
+    }
+
     fn marking(self, arguments: Value) -> std::result::Result<Marking, Refusal> {
         let asked: Marked = self.taken(arguments)?;
-        let favoured: Vec<Favoured> = asked
-            .track_ids
+        let favoured: Vec<Favoured> = self
+            .capped("track_ids", asked.track_ids)?
             .into_iter()
             .map(|id| Favoured::Track(TrackId::of(id)))
             .chain(
-                asked
-                    .album_ids
+                self.capped("album_ids", asked.album_ids)?
                     .into_iter()
                     .map(|id| Favoured::Album(AlbumId::of(id))),
             )
             .chain(
-                asked
-                    .artist_ids
+                self.capped("artist_ids", asked.artist_ids)?
                     .into_iter()
                     .map(|id| Favoured::Artist(ArtistId::of(id))),
             )
@@ -804,9 +821,7 @@ impl Tool {
         let asked: Creating = self.taken(arguments)?;
         let filling = match (asked.track_ids, asked.query, asked.fills_from) {
             (None, None, None) => Filling::Empty,
-            (Some(ids), None, None) => {
-                Filling::Rows(Wanted::Tracks(ids.into_iter().map(TrackId::of).collect()))
-            }
+            (Some(ids), None, None) => Filling::Rows(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query), None) => Filling::Rows(Wanted::Matching {
                 query,
                 most: rows(asked.limit, QUEUED_BY_DEFAULT),
@@ -880,6 +895,7 @@ fn ids(description: &str) -> Value {
     json!({
         "type": "array",
         "items": { "type": "integer", "minimum": 1 },
+        "maxItems": MOST_ROWS,
         "description": description,
     })
 }

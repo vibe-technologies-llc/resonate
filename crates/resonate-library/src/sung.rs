@@ -3,7 +3,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use resonate_core::{Frames, SampleRate, TrackId};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::{Error, KeptLyrics, LyricText, LyricsAsked, Result, StoreOp, store};
+use crate::{
+    Error, KeptLyrics, LyricText, LyricsAsked, REFUSED_AGAIN_AFTER, Result, StoreOp, enriched,
+    store,
+};
 
 pub const MISSED_AGAIN_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -36,27 +39,41 @@ fn before(now: SystemTime, wait: Duration) -> i64 {
     store::to_nanos(now.checked_sub(wait).unwrap_or(UNIX_EPOCH))
 }
 
+fn refused_lately() -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM lyrics_refused r
+                  WHERE r.path = t.path AND r.span_start = t.span_start
+                    AND r.refused + {} > ?5)",
+        enriched::doubled("?4", "r.refusals")
+    )
+}
+
 pub(crate) fn to_ask(
     connection: &Connection,
     refresh: bool,
     now: SystemTime,
 ) -> Result<Vec<TrackId>> {
     let mut statement = connection
-        .prepare(
+        .prepare(&format!(
             "SELECT t.id FROM tracks t
                LEFT JOIN lyrics_kept k ON k.path = t.path AND k.span_start = t.span_start
-              WHERE ?1 OR k.path IS NULL
-                 OR (k.text IS NULL AND k.taken <= ?2)
-                 OR (k.text IS NOT NULL AND k.lyricsfile IS NULL AND k.taken <= ?3)
+              WHERE ?1
+                 OR ((k.path IS NULL
+                      OR (k.text IS NULL AND k.taken <= ?2)
+                      OR (k.text IS NOT NULL AND k.lyricsfile IS NULL AND k.taken <= ?3))
+                     AND NOT {})
               ORDER BY t.id",
-        )
+            refused_lately()
+        ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let found = statement
         .query_map(
             params![
                 refresh,
                 before(now, MISSED_AGAIN_AFTER),
-                before(now, BETTERED_AFTER)
+                before(now, BETTERED_AFTER),
+                i64::try_from(REFUSED_AGAIN_AFTER.as_nanos()).unwrap_or(i64::MAX),
+                store::to_nanos(now)
             ],
             |row| row.get::<_, i64>(0),
         )
@@ -182,6 +199,11 @@ pub(crate) fn keep(
         ],
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    tx.execute(
+        "DELETE FROM lyrics_refused WHERE path = ?1 AND span_start = ?2",
+        params![path, span_start],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
     store::index_what_is_sung(
         tx,
         path,
@@ -190,6 +212,23 @@ pub(crate) fn keep(
     )?;
 
     Ok(bettered)
+}
+
+pub(crate) fn note_refused(
+    tx: &Transaction<'_>,
+    path: &str,
+    span_start: i64,
+    now: SystemTime,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO lyrics_refused (path, span_start, refused, refusals) VALUES (?1, ?2, ?3, 1)
+         ON CONFLICT(path, span_start) DO UPDATE SET
+             refused  = excluded.refused,
+             refusals = lyrics_refused.refusals + 1",
+        params![path, span_start, store::to_nanos(now)],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Insert, source))
 }
 
 #[cfg(test)]

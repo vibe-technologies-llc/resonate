@@ -63,10 +63,16 @@ listener, every counted play, and only under a token.
   `an_introduction_that_follows_a_file_says_what_the_file_says_by_the_next_request` is the claim.
   `Online`, `Lrclib` and `AutoEq` each take an `Arc<Client>` — `Online::with_client`,
   `Lrclib::new`, `AutoEq::new` — so the three can share one; `Online::new` builds its own.
-- **A host is paced by reserving a slot, not by sleeping after a call.** `Client::pace` holds a
-  `BTreeMap<Host, Instant>` behind a `parking_lot::Mutex`: the next slot is the later of now and the
-  last slot plus the host's interval, written back under the lock and slept towards outside it, so
-  two threads asking one host queue behind each other rather than both measuring from one call.
+- **A host is paced by reserving a slot, not by sleeping after a call, in one queue per process.**
+  `Client::pace` reserves from a `Pacing` — a `BTreeMap<Host, Instant>` behind a
+  `parking_lot::Mutex` in an `Arc`: the next slot is the later of now and the last slot plus the
+  host's interval, written back under the lock and slept towards outside it, so two threads asking
+  one host queue behind each other rather than both measuring from one call. Every client
+  `Client::new` or `Client::introduced` builds shares the one `EVERY_CLIENT_IN_THE_PROCESS`, so the
+  reference, `ByEar`, `AcoustId`, the recognisers and any `Online` built beside them take turns at
+  MusicBrainz in one queue rather than each in a slot of its own, together asking faster than the
+  service allows (`every_client_in_the_process_takes_its_turn_in_one_queue_per_host`); only a
+  test's `Client::on_clock` gets a queue of its own.
   `MUSICBRAINZ_INTERVAL` is 1 s (that service's ask), `SHAZAM_INTERVAL` 3 s (no published limit,
   and a listener names a song at most every few seconds), `AUDD_INTERVAL` 1 s, `OTHERS_INTERVAL`
   250 ms for the rest. The clock is a `Clock` trait — `WallClock` in a run, `Faked` under test
@@ -77,14 +83,23 @@ listener, every counted play, and only under a token.
   or a busy service's cooling-off — rather than a place behind a queue there is none of. The tracks
   pane's *Asking MusicBrainz…* heading reads `ASKING_BESIDE_A_LOOKUP` wherever the library is
   enriching, the one case the wait is longer than a request.
-- **A 503 or 429 is asked three more times with the wait doubling, and `Retry-After` is read in
-  seconds and capped.** `Client::fetch` retries `SERVICE_UNAVAILABLE` (MusicBrainz's answer to a
-  client going too fast) and `TOO_MANY_REQUESTS` up to `BUSY_RETRIES` (3), each after `cooling_off`:
+- **A 503, 429, 502 or 504 is asked three more times with the wait doubling, and `Retry-After` is
+  read in seconds and capped.** `Client::exchange` retries what `busy` names —
+  `SERVICE_UNAVAILABLE` (MusicBrainz's answer to a client going too fast), `TOO_MANY_REQUESTS`, and
+  `BAD_GATEWAY` and `GATEWAY_TIMEOUT`, what a proxy in front of a service says for the same
+  overload (`a_gateway_that_failed_or_timed_out_is_asked_again_like_a_busy_service`) — up to
+  `BUSY_RETRIES` (3), each after `cooling_off`:
   the header's integer seconds where named, otherwise a default starting at
   `RETRY_AFTER_BY_DEFAULT` (2 s) and doubling per retry — 2, 4, 8 s — either capped at
   `RETRY_AFTER_AT_MOST` (10 s), since a pass must not park for the minutes a service may name. The
   fourth answer is returned whatever it says, so a service busy for a quarter-minute costs one album
-  its turn, not the pass. Proved against a scripted loopback `TcpListener` — `serving` answers each
+  its turn, not the pass. **A host busy through every retry is then asked once, not four times,
+  until it answers anything else**: the shared `Pacing` notes it in `stayed_busy`, and
+  `retries_owed` answers none for it, so the rest of an album's ladder — release group, phrase,
+  words — costs a request a rung against a service that is down rather than fourteen seconds a rung,
+  and the refusal reaches the library as `Refused` at once
+  (`a_host_busy_through_every_retry_is_asked_once_until_it_answers`). The first answer that is not
+  busy clears the mark. Proved against a scripted loopback `TcpListener` — `serving` answers each
   connection with the next status in its script and counts connections — on the same fake clock,
   asserting how often the socket was reached and each sleep:
   `a_busy_service_is_asked_three_more_times_with_the_wait_doubling_between`,
@@ -260,6 +275,14 @@ with a Commons one behind it. A link to any of these counts towards `may_be_pict
 enriched before a source joined is asked again by `look_again_for_portraits`. A picture refused with
 a status under 500 is a miss, not a refusal (`passed_over_when_refused`): a page taken down or a CDN
 not serving a region is a fact about that link, not a bad day to count against the artist.
+**A source that fails does not end the walk.** Every step goes through `Walk::tried`: a refusal
+under 500 is that miss; a refusal at or over it, an unreadable answer or one too large is kept as
+the walk's first failure and the next source asked, so a Commons, Wikidata or Wikipedia having a
+bad day does not hide the Apple, Spotify, Deezer or SoundCloud picture behind it; and only where
+nothing answers is that first failure what the library is told (`Walk::ended`), so the refusal is
+still counted against the artist. `Unreachable` alone ends the walk, since the library ends the pass
+on it anyway (`a_source_that_fails_is_passed_over_and_the_next_is_asked`,
+`a_walk_that_found_nothing_answers_its_first_refusal_and_a_miss_under_five_hundred_is_none`).
 
 - **Commons alone, scaled by the server.** `commons::named` reads four URL shapes on
   `commons.wikimedia.org`, with or without `www.`, over `http` or `https`: a `File:` page, an
@@ -279,7 +302,11 @@ not serving a region is a fact about that link, not a bad day to count against t
   narrowed to `P18` by name, so serde parses nothing else however many properties an entity has, and
   the entities map is std's `HashMap`, those keys coming off a network. `wikidata::entity` takes a
   `/wiki/Q…` or `/entity/Q…` URL and refuses anything not `Q` then digits, so a `Property:` page
-  names nothing. **The answered file name is escaped on the way into a path** through
+  names nothing. **A claim's rank is weighed**: `ClaimsDoc::best_picture` takes the first `P18`
+  ranked `preferred`, then the first `normal` (an unknown rank read as normal), and never a
+  `deprecated` one, which is how Wikidata keeps a picture it says is wrong
+  (`a_preferred_picture_is_taken_over_an_earlier_one_and_a_deprecated_one_never`); the Wikipedia
+  route reads its entity through the same. **The answered file name is escaped on the way into a path** through
   `query::escape_query` — the difference between a portrait and nothing, a P18 value being a plain
   file name and about half carrying spaces. `commons::file_path` does *not* escape, the name it cuts
   from a URL already being escaped. Measured over a 435-track scan: 8 artists of 50 had a portrait
@@ -351,7 +378,9 @@ test asks both routes.
   name for a batch). A listen is its moment in whole seconds — when it *began*, `listens.began`, which
   `Library::track_played` writes as the counted moment less what had been heard of the visit, and the
   counted moment for a listen kept before the column — the artist, the title and, where held, the
-  album, the recording, release and artist MBIDs, the track number and the length in milliseconds,
+  album, the recording, release, release group and artist MBIDs, the ISRC, the track number and the
+  length in milliseconds (`Billed::release_group` is the album's `release_group` and `Billed::isrc`
+  the track's `isrc`, both read by `billed_columns`),
   with `media_player`, `submission_client` and `submission_client_version` naming this build as its
   User-Agent does. An answer whose `status` is not `ok` is `Unreadable`; a status is `Refused` as
   every host's, which is how the library tells a malformed batch (400) from a refused token (401) and
@@ -392,9 +421,12 @@ test asks both routes.
   into the library's error under `LookupOp::Lyrics`.
 - **`/get` is exact, `/search` weighed.** `ask` asks `/get` with track name, artist name and, where
   known, album name and duration in whole seconds; a 404 falls through to `/search` on title and
-  artist, and `pick` takes the first answer that `names` the track — title and artist each folded to
+  artist, and `pick` weighs every answer that `names` the track — title and artist each folded to
   lowercase alphanumerics and compared for equality — and `lasts_about` as long, within
-  `LENGTH_MAY_DIFFER_BY` (30 s, the tolerance `Sidecar` gives a `[length:]`). An answer flagged
+  `LENGTH_MAY_DIFFER_BY` (30 s, the tolerance `Sidecar` gives a `[length:]`), and takes the best by
+  `Worded` — synced, then plain words, then wordless, then instrumental — and among equals the
+  nearest in length, a hit of unknown length after every known one and the first of true equals
+  (`a_synced_hit_is_taken_over_an_earlier_plain_one_and_the_nearest_in_length_among_equals`). An answer flagged
   `instrumental`, or carrying no words, is `None`, kept as a miss. Otherwise a `LyricText` of
   `syncedLyrics` where present and `plainLyrics` where not, with the answer's `lyricsfile` beside it
   **only where that document says more than its lines**: LRCLIB writes a Lyricsfile for every record,
@@ -419,9 +451,9 @@ test asks both routes.
 
 ## Recognising a clip
 
-- **Three services behind `resonate-listen`'s `Recogniser`, asked in order.** `online::recognisers`
-  registers `Shazam` wherever `online` is on, `Audd` where `audd-token` holds one and `AcoustId` where
-  `acoustid-key` does; `Recognisers::recognise` takes the first that names the song, and a silent clip
+- **Two services behind `resonate-listen`'s `Recogniser`, asked in order.** `online::recognisers`
+  registers `Shazam` wherever `online` is on and `Audd` where `audd-token` holds one — not AcoustID,
+  which cannot match a clip (`analysis.md`); `Recognisers::recognise` takes the first that names the song, and a silent clip
   is sent nowhere. A refusal is a `tracing` record and a name in `Recognition::refused`, not the end
   of the walk.
 - **The client POSTs as well as GETs, through one exchange.** `Client::exchange` is the loop that
@@ -447,10 +479,6 @@ test asks both routes.
   code; a `null` result is nothing heard. It reads title, artist, album, the year of `release_date`,
   the ISRC off Apple Music or MusicBrainz, the first MusicBrainz recording and the song link, and
   fetches the Apple Music artwork at 600 px through `AppleArtwork`.
-- **AcoustID is asked about a clip with the print a file would get.** `AcoustId` is a `Recogniser`
-  as well as a `Fingerprints`: it prints the clip with `print_clip`, asks the same `/lookup` through
-  `looked_up`, and names the clip by its best recording scored at `A_CLIP_HEARD_AT_LEAST` (50). Last,
-  because a snippet from mid-song rarely matches a print taken from the start.
 - **A file nothing else can name is named by ear, where the listener said so.** `ByEar` is a
   `Fingerprints` the binary registers after `AcoustId` wherever `online` is on, answering only while
   the shared `identify-by-sound` switch is on — `Fingerprints::answers`, which
@@ -502,6 +530,7 @@ build with the feature off has a `Corrected` answering nothing. Without the feat
 and the stubs, so `main.rs` reads the same names either way — `lyricists` compiled only into a `ui`
 build in both halves (nothing headless draws words), and `corrections` `ui`-gated in the featureless
 twin alone. Other files gate on the feature too — `providers.rs`, `submitting.rs`, `config.rs`, the
-two error variants and `Config::online_enabled` — but none names the crate's types. The reference,
-correction source and lyric provider are built over a client each rather than one between them,
-costing nothing the pacing cares about, their hosts not overlapping.
+two error variants and `Config::online_enabled` — but none names the crate's types. Every one of
+them — the reference, correction source, lyric provider, printers, recognisers and ListenBrainz — is
+built over the one `Arc<Client>` in `online::CLIENT`, made on first use over `INTRODUCTION`, so
+the process keeps one agent and its connections; the pacing would be shared across clients anyway.

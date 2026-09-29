@@ -41,6 +41,7 @@ const LONGEST_EXTENSION: usize = 8;
 const COPY_BYTES: usize = 1 << 20;
 const SIXTEEN_BIT_CEILING: u8 = 16;
 const LARGEST_DELIVERY: u64 = wave::LARGEST_PCM;
+const PROCESSES: &str = "/proc";
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
@@ -115,6 +116,12 @@ impl Weighing {
     fn fits(self, bytes: u64) -> bool {
         self.smaller_than.is_none_or(|was| bytes < was)
     }
+}
+
+enum Foretold {
+    Settled(Keeping),
+    Unforetold,
+    Misdeclared,
 }
 
 enum Landing {
@@ -206,11 +213,15 @@ impl Vault {
         let root = root
             .canonicalize()
             .map_err(|source| Error::io(VaultOp::Resolve, &root, source))?;
-        Ok(Self {
+        let vault = Self {
             root,
             drawings: Drawings::default(),
             landing: Mutex::new(()),
-        })
+        };
+        if let Err(error) = vault.swept(Sweeping::WhatCrashed) {
+            tracing::warn!(%error, "what a crashed import left in the vault's staging could not be swept");
+        }
+        Ok(vault)
     }
 
     pub fn root(&self) -> &Path {
@@ -342,9 +353,17 @@ impl Vault {
             Form::Kept => self.kept_whole(taking, codec, &info, Some(decoder))?,
             Form::Wave if outgrows_a_wave => Keeping::Refused(Refusal::TooLarge),
             Form::Wave => self.kept_as_wave(weighing, &mut decoder, info.spec, speakers, codec)?,
-            Form::Flac => {
-                self.kept_as_flac(weighing, &mut decoder, info.spec, speakers, bits, codec)?
-            }
+            Form::Flac => match self.foretold_flac(taking, weighing, &mut decoder, &info, bits)? {
+                Foretold::Settled(kept) => kept,
+                Foretold::Unforetold => {
+                    self.kept_as_flac(weighing, &mut decoder, info.spec, speakers, bits, codec)?
+                }
+                Foretold::Misdeclared => {
+                    let (mut again, _) = Decoder::open(taking.sources, taking.location)
+                        .map_err(|source| Error::codec(VaultOp::Read, source))?;
+                    self.kept_as_flac(weighing, &mut again, info.spec, speakers, bits, codec)?
+                }
+            },
         };
 
         let kept = match kept {
@@ -363,12 +382,12 @@ impl Vault {
         let target = self.cover_path(key);
 
         if target.is_file() {
-            let picture = cover::pixels_of_jxl(&self.read_inside(&target)?)?;
+            let (width, height) = cover::size_of_jxl(&self.read_inside(&target)?)?;
             return Ok(KeptCover {
                 key,
                 bytes: self.sized(&target)?,
-                width: picture.width(),
-                height: picture.height(),
+                width,
+                height,
                 path: target,
                 deduped: true,
             });
@@ -405,9 +424,10 @@ impl Vault {
             return Ok(drawn);
         }
 
+        let drawn_after = self.drawings.forgetting();
         let drawn = cover::drawable(&self.read_inside(path)?)?;
         if let Some(key) = key {
-            self.drawings.note(key, &drawn);
+            self.drawings.note(key, &drawn, drawn_after);
         }
         Ok(drawn)
     }
@@ -499,17 +519,74 @@ impl Vault {
     }
 
     pub fn sweep_the_staging(&self) -> Result<u64> {
+        self.swept(Sweeping::AllButTheLiving)
+    }
+
+    fn swept(&self, sweeping: Sweeping) -> Result<u64> {
         let folder = self.root.join(STAGING);
         let mut swept = 0;
         let reading =
             fs::read_dir(&folder).map_err(|source| Error::io(VaultOp::Walk, &folder, source))?;
         for entry in reading {
             let entry = entry.map_err(|source| Error::io(VaultOp::Walk, &folder, source))?;
-            if self.forget(&entry.path())? {
+            let path = entry.path();
+            if sweeping.takes(staged_by(&path)) && self.forget(&path)? {
                 swept += 1;
             }
         }
         Ok(swept)
+    }
+
+    fn foretold_flac(
+        &self,
+        taking: &Taking<'_>,
+        weighing: Weighing,
+        decoder: &mut Decoder,
+        info: &MediaInfo,
+        bits: u8,
+    ) -> Result<Foretold> {
+        let (format, stored) = flac_depth(bits);
+        let foretellable = !weighing.renewing
+            && taking.span.is_none()
+            && bits == stored
+            && Container::from_id(info.container) == Container::Flac;
+        if !foretellable {
+            return Ok(Foretold::Unforetold);
+        }
+
+        let mut media = taking
+            .sources
+            .open(taking.location)
+            .map_err(|source| Error::codec(VaultOp::Read, source))?;
+        let Some(declared) = bare::declared_digest(&mut media.stream) else {
+            return Ok(Foretold::Unforetold);
+        };
+        drop(media);
+        let target = self.object_path(declared, FLAC_EXTENSION);
+        let Some(standing) = self.standing(&target)? else {
+            return Ok(Foretold::Unforetold);
+        };
+
+        let heard = pcm_of(decoder, info, Some(format))?;
+        if heard.key != declared {
+            return Ok(Foretold::Misdeclared);
+        }
+        if !weighing.fits(standing) {
+            return Ok(Foretold::Settled(Keeping::Refused(Refusal::NoSmaller)));
+        }
+        Ok(Foretold::Settled(Landing::Deduped(standing).kept(Kept {
+            key: declared,
+            form: Form::Flac,
+            path: target,
+            bytes: 0,
+            was: 0,
+            spec: StreamSpec::new(info.spec.rate, info.spec.channels, format),
+            frames: heard.frames,
+            codec: Codec::from_id(info.codec),
+            deduped: false,
+            replaced: false,
+            declared: Box::default(),
+        })))
     }
 
     fn kept_as_flac(
@@ -521,11 +598,7 @@ impl Vault {
         bits: u8,
         codec: Codec,
     ) -> Result<Keeping> {
-        let (format, stored) = if bits <= SIXTEEN_BIT_CEILING {
-            (SampleFormat::S16, SIXTEEN_BIT_CEILING)
-        } else {
-            (SampleFormat::S24, WIDEST_FLAC_BITS)
-        };
+        let (format, stored) = flac_depth(bits);
         decoder.set_output_format(format);
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
@@ -685,10 +758,10 @@ impl Vault {
         unread: Option<Decoder>,
     ) -> Result<Keeping> {
         let went_in = match unread {
-            Some(decoder) => pcm_of(decoder, info, None),
+            Some(mut decoder) => pcm_of(&mut decoder, info, None),
             None => Decoder::open(taking.sources, taking.location)
                 .map_err(|source| Error::codec(VaultOp::Verify, source))
-                .and_then(|(decoder, info)| pcm_of(decoder, &info, None)),
+                .and_then(|(mut decoder, info)| pcm_of(&mut decoder, &info, None)),
         };
         let Ok(went_in) = went_in else {
             return Ok(Keeping::Refused(Refusal::NotValidated));
@@ -912,11 +985,17 @@ impl Vault {
     fn landed(&self, staging: &Path, target: &Path) -> Result<u64> {
         self.inside(staging)?;
         self.inside(target)?;
-        if let Some(folder) = target.parent() {
-            fs::create_dir_all(folder)
-                .map_err(|source| Error::io(VaultOp::MakeFolder, folder, source))?;
-        }
+        let folder = target.parent().ok_or_else(|| Error::OutsideTheVault {
+            path: target.to_path_buf(),
+        })?;
+        let made = !folder.is_dir();
+        fs::create_dir_all(folder)
+            .map_err(|source| Error::io(VaultOp::MakeFolder, folder, source))?;
         fs::rename(staging, target).map_err(|source| Error::io(VaultOp::Settle, target, source))?;
+        settled_folder(folder)?;
+        if made && let Some(above) = folder.parent() {
+            settled_folder(above)?;
+        }
         self.sized(target)
     }
 
@@ -980,6 +1059,48 @@ impl Vault {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sweeping {
+    WhatCrashed,
+    AllButTheLiving,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StagedBy {
+    Living,
+    Gone,
+    Unnamed,
+}
+
+impl Sweeping {
+    const fn takes(self, staged: StagedBy) -> bool {
+        match (self, staged) {
+            (_, StagedBy::Living) | (Self::WhatCrashed, StagedBy::Unnamed) => false,
+            (_, StagedBy::Gone) | (Self::AllButTheLiving, StagedBy::Unnamed) => true,
+        }
+    }
+}
+
+fn staged_by(path: &Path) -> StagedBy {
+    let pid = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split_once('-'))
+        .and_then(|(pid, _)| pid.parse::<u32>().ok());
+    match pid {
+        None => StagedBy::Unnamed,
+        Some(pid) if pid == process::id() || !Path::new(PROCESSES).is_dir() => StagedBy::Living,
+        Some(pid) if Path::new(PROCESSES).join(pid.to_string()).exists() => StagedBy::Living,
+        Some(_) => StagedBy::Gone,
+    }
+}
+
+fn settled_folder(folder: &Path) -> Result<()> {
+    File::open(folder)
+        .and_then(|opened| opened.sync_all())
+        .map_err(|source| Error::io(VaultOp::Settle, folder, source))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stripping {
     Bare(Container),
     Whole,
@@ -1023,12 +1144,20 @@ fn read_back_through(
     format: Option<SampleFormat>,
 ) -> Result<Heard> {
     let location = MediaLocation::local(path);
-    let (decoder, info) = Decoder::open(sources, &location)
+    let (mut decoder, info) = Decoder::open(sources, &location)
         .map_err(|source| Error::codec(VaultOp::Verify, source))?;
-    pcm_of(decoder, &info, format)
+    pcm_of(&mut decoder, &info, format)
 }
 
-fn pcm_of(mut decoder: Decoder, info: &MediaInfo, format: Option<SampleFormat>) -> Result<Heard> {
+const fn flac_depth(bits: u8) -> (SampleFormat, u8) {
+    if bits <= SIXTEEN_BIT_CEILING {
+        (SampleFormat::S16, SIXTEEN_BIT_CEILING)
+    } else {
+        (SampleFormat::S24, WIDEST_FLAC_BITS)
+    }
+}
+
+fn pcm_of(decoder: &mut Decoder, info: &MediaInfo, format: Option<SampleFormat>) -> Result<Heard> {
     let format = format.unwrap_or_else(|| {
         let bits = info
             .bits_per_coded_sample
@@ -1200,6 +1329,145 @@ mod tests {
             0
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_crashed_imports_staging_is_swept_when_the_vault_opens_and_a_living_ones_is_not() {
+        const PAST_EVERY_PID: u32 = (1 << 22) + 1;
+
+        let root = std::env::temp_dir().join(format!("resonate-vault-crashed-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        drop(Vault::make(&root).expect("a vault"));
+        let staging = root.join(STAGING);
+        let crashed = staging.join(format!("{PAST_EVERY_PID}-7.flac"));
+        let living = staging.join(format!("{}-7.flac", process::id()));
+        let unnamed = staging.join("stray.flac");
+        for path in [&crashed, &living, &unnamed] {
+            fs::write(path, b"half an object").expect("a staged write");
+        }
+
+        let vault = Vault::open(&root).expect("a vault");
+        let crashed_after_opening = crashed.exists();
+        let living_after_opening = living.exists();
+        let unnamed_after_opening = unnamed.exists();
+        let pruned = vault.sweep_the_staging().expect("a sweep");
+        let living_after_pruning = living.exists();
+        let unnamed_after_pruning = unnamed.exists();
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(!crashed_after_opening);
+        assert!(living_after_opening);
+        assert!(unnamed_after_opening);
+        assert_eq!(pruned, 1);
+        assert!(living_after_pruning);
+        assert!(!unnamed_after_pruning);
+    }
+
+    fn toned(frames: u32, seed: u32) -> Vec<u8> {
+        const RATE: u32 = 44_100;
+
+        let mut state = seed;
+        let mut data = Vec::with_capacity(frames as usize * 4);
+        for at in 0..frames {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = ((state >> 16) & 0xff) as i32 - 0x80;
+            let tone = ((f64::from(at) * 0.05).sin() * 6000.0) as i32;
+            for sample in [tone + noise, tone - noise] {
+                data.extend_from_slice(&(sample as i16).to_le_bytes());
+            }
+        }
+        let mut wave = b"RIFF".to_vec();
+        wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(b"WAVEfmt ");
+        wave.extend_from_slice(&16_u32.to_le_bytes());
+        wave.extend_from_slice(&1_u16.to_le_bytes());
+        wave.extend_from_slice(&2_u16.to_le_bytes());
+        wave.extend_from_slice(&RATE.to_le_bytes());
+        wave.extend_from_slice(&(RATE * 4).to_le_bytes());
+        wave.extend_from_slice(&4_u16.to_le_bytes());
+        wave.extend_from_slice(&16_u16.to_le_bytes());
+        wave.extend_from_slice(b"data");
+        wave.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(&data);
+        wave
+    }
+
+    fn padded_declaring(object: &[u8], digest: VaultKey) -> Vec<u8> {
+        const PADDING_LAST: u8 = 0x81;
+        const PADDING_BYTES: u32 = 8 << 10;
+        const STREAM_INFO_AT: usize = 4;
+        const BLOCK_HEADER_BYTES: usize = 4;
+        const STREAM_INFO_BYTES: usize = 34;
+        const FRAMES_AT: usize = STREAM_INFO_AT + BLOCK_HEADER_BYTES + STREAM_INFO_BYTES;
+        const DIGEST_AT: usize = FRAMES_AT - crate::key::KEY_BYTES;
+
+        let mut copy = object[..FRAMES_AT].to_vec();
+        copy[STREAM_INFO_AT] = 0;
+        copy[DIGEST_AT..FRAMES_AT].copy_from_slice(digest.as_bytes());
+        copy.push(PADDING_LAST);
+        copy.extend_from_slice(&PADDING_BYTES.to_be_bytes()[1..]);
+        copy.extend_from_slice(&[0; PADDING_BYTES as usize]);
+        copy.extend_from_slice(&object[FRAMES_AT..]);
+        copy
+    }
+
+    fn kept_from(vault: &Vault, path: &Path) -> Kept {
+        match vault
+            .keep(&Taking {
+                sources: &Sources::local(),
+                location: &MediaLocation::local(path),
+                span: None,
+                renewing: false,
+            })
+            .expect("a keeping")
+        {
+            Keeping::Kept(kept) => kept,
+            Keeping::Refused(refusal) => panic!("refused as {refusal:?}"),
+        }
+    }
+
+    fn encodes_begun() -> usize {
+        flac::ENCODES_BEGUN.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn a_flac_declaring_the_digest_of_an_object_standing_is_deduped_without_an_encode() {
+        let root = std::env::temp_dir().join(format!("resonate-vault-foretold-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let vault = Vault::make(root.join("vault")).expect("a vault");
+        let first = root.join("first.wav");
+        let second = root.join("second.wav");
+        fs::write(&first, toned(40_000, 0x1234_5678)).expect("a written source");
+        fs::write(&second, toned(40_000, 0x0bad_f00d)).expect("a written source");
+        let landed = kept_from(&vault, &first);
+        let other = kept_from(&vault, &second);
+        let object = fs::read(&landed.path).expect("the landed object");
+        let other_object = fs::read(&other.path).expect("the other object");
+        let copy = root.join("copy.flac");
+        let lying = root.join("lying.flac");
+        fs::write(&copy, padded_declaring(&object, landed.key)).expect("a copy");
+        fs::write(&lying, padded_declaring(&other_object, landed.key)).expect("a lying copy");
+
+        let before = encodes_begun();
+        let deduped = kept_from(&vault, &copy);
+        let after_the_copy = encodes_begun();
+        let weighed = kept_from(&vault, &lying);
+        let after_the_lie = encodes_begun();
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(landed.form, Form::Flac);
+        assert!(!landed.deduped);
+        assert!(deduped.deduped);
+        assert_eq!(deduped.key, landed.key);
+        assert_eq!(deduped.path, landed.path);
+        assert_eq!(deduped.frames, landed.frames);
+        assert_eq!(after_the_copy, before, "a duplicate was encoded again");
+        assert_eq!(
+            weighed.key, other.key,
+            "a declared digest was taken on trust"
+        );
+        assert!(weighed.deduped);
+        assert_eq!(after_the_lie, after_the_copy + 1);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use crate::{
     loudness::Metering,
     print::Printing,
     spectrogram::Spectrographing,
-    spectrum::Transforming,
+    spectrum::{Transforming, heard_channels},
     verdict::{Weighed, judged},
 };
 
@@ -92,7 +92,8 @@ pub fn print(
     let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
     let mut normalised = Vec::new();
     let mut frames = 0_u64;
-    while !printing.is_full() {
+    let length_is_declared = info.duration.is_some();
+    while !(printing.is_full() && length_is_declared) {
         if watch.stopped() {
             return Err(Error::Stopped);
         }
@@ -102,8 +103,10 @@ pub fn print(
         if status == DecodeStatus::EndOfStream {
             break;
         }
-        normalise(block.data(), &mut normalised);
-        printing.note(&normalised);
+        if !printing.is_full() {
+            normalise(block.data(), &mut normalised);
+            printing.note(&normalised);
+        }
         frames += block.frames() as u64;
     }
 
@@ -132,6 +135,7 @@ pub fn excerpt(
 
     let rate = info.spec.rate;
     let channels = usize::from(info.spec.channels.count().get());
+    let heard = heard_channels(&info.speakers.placements(info.spec.channels.count().get()));
     let start = Frames::from_duration(from, rate);
     if info.is_seekable
         && start != Frames::ZERO
@@ -157,7 +161,7 @@ pub fn excerpt(
             break;
         }
         normalise(block.data(), &mut normalised);
-        mix_down(&normalised, channels, &mut mixed);
+        mix_down(&normalised, channels, &heard, &mut mixed);
         let room = wanted - mono.len();
         mono.extend_from_slice(&mixed[..mixed.len().min(room)]);
     }
@@ -245,18 +249,15 @@ fn walked<D: Drawing>(
         length: Duration::ZERO,
     };
 
-    let mut transforming = Transforming::new(rate.hz());
+    let placements = info.speakers.placements(info.spec.channels.count().get());
+    let mut transforming = Transforming::new(rate.hz(), &placements);
     let mut drawn = drawing(&examined, transforming.points());
     let mut leveling = Leveling::new(channels, format);
-    let mut metering = Metering::new(
-        &info.speakers.placements(info.spec.channels.count().get()),
-        rate.hz(),
-    );
+    let mut metering = Metering::new(&placements, rate.hz());
     let mut printing = Printing::new(rate.hz(), channels);
 
     let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
     let mut normalised = Vec::new();
-    let mut mono = Vec::new();
     let mut frames = 0_u64;
     loop {
         if watch.stopped() {
@@ -270,12 +271,11 @@ fn walked<D: Drawing>(
         }
 
         normalise(block.data(), &mut normalised);
-        mix_down(&normalised, channels, &mut mono);
         leveling.note(block.data(), &normalised);
         metering.note(&normalised);
         printing.note(&normalised);
         drawn.note_block(&normalised);
-        transforming.note(&mono, |powers| drawn.note_transform(powers));
+        transforming.note(&normalised, |powers| drawn.note_transform(powers));
 
         frames += block.frames() as u64;
         watch.reached(Frames(frames), info.duration);
@@ -326,13 +326,13 @@ const fn finite_or_silent(sample: f32) -> f32 {
     if sample.is_finite() { sample } else { 0.0 }
 }
 
-fn mix_down(interleaved: &[f32], channels: usize, into: &mut Vec<f32>) {
+fn mix_down(interleaved: &[f32], channels: usize, heard: &[usize], into: &mut Vec<f32>) {
     into.clear();
-    let share = 1.0 / channels.max(1) as f32;
+    let share = 1.0 / heard.len().max(1) as f32;
     into.extend(
         interleaved
             .chunks_exact(channels.max(1))
-            .map(|frame| frame.iter().sum::<f32>() * share),
+            .map(|frame| heard.iter().map(|channel| frame[*channel]).sum::<f32>() * share),
     );
 }
 

@@ -2,21 +2,34 @@ use std::{
     fmt::Write as _,
     io::Read,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use md5::{Digest, Md5};
+use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid, SourceId};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Provider, ProviderOp, Result,
 };
 use serde::Deserialize;
-use ureq::Agent;
+use ureq::{
+    Agent, Body,
+    http::{self, header::RETRY_AFTER},
+};
 
 const SUBSONIC: &str = "subsonic";
 const SPOKEN_AS: &str = "1.16.1";
 const CALLED: &str = "resonate";
-const SONGS_ASKED: &str = "40";
+const SONGS_A_PAGE: usize = 40;
+const PAGES_AT_MOST: usize = 5;
+const ASKED_APART: Duration = Duration::from_millis(250);
+const RETRIES_AT_MOST: u32 = 3;
+const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
+const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
+const TOO_MANY_REQUESTS: u16 = 429;
+const UNAVAILABLE: u16 = 503;
+const DOCUMENT_TYPES: [&str; 3] = ["text/", "json", "xml"];
 const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
 const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
@@ -35,6 +48,7 @@ pub struct Subsonic {
     server: Server,
     agent: Agent,
     salted: AtomicU64,
+    next_asked: Mutex<Instant>,
 }
 
 #[derive(Deserialize)]
@@ -85,7 +99,7 @@ enum Isrcs {
 
 impl Isrcs {
     fn holds(&self, isrc: &Isrc) -> bool {
-        let named = |held: &String| held.trim().eq_ignore_ascii_case(isrc.as_str());
+        let named = |held: &String| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc);
         match self {
             Self::None => false,
             Self::One(held) => named(held),
@@ -113,6 +127,43 @@ fn the_one_asked_for<'a>(identity: &Identity, songs: &'a [Song]) -> Option<&'a S
             .as_ref()
             .and_then(|isrc| songs.iter().find(|song| song.isrc.holds(isrc)))
     })
+}
+
+fn wordings(identity: &Identity) -> Vec<String> {
+    let title = identity.title.trim();
+    if title.is_empty() {
+        return Vec::new();
+    }
+    let artist = identity
+        .artist
+        .as_deref()
+        .map(str::trim)
+        .filter(|artist| !artist.is_empty());
+
+    artist
+        .map(|artist| format!("{title} {artist}"))
+        .into_iter()
+        .chain([title.to_owned()])
+        .collect()
+}
+
+fn is_a_document(mime: Option<&str>) -> bool {
+    mime.is_some_and(|mime| {
+        let mime = mime.to_ascii_lowercase();
+        DOCUMENT_TYPES.iter().any(|kind| mime.contains(kind))
+    })
+}
+
+fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
+    response
+        .headers()
+        .get(RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+        .map(Duration::from_secs)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -145,7 +196,61 @@ impl Subsonic {
             server,
             agent: config.new_agent(),
             salted: AtomicU64::new(0),
+            next_asked: Mutex::new(Instant::now()),
         }
+    }
+
+    fn paced(&self) {
+        let mut next = self.next_asked.lock();
+        let wait = next.saturating_duration_since(Instant::now());
+        if !wait.is_zero() {
+            thread::sleep(wait);
+        }
+        *next = Instant::now() + ASKED_APART;
+    }
+
+    fn called(&self, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
+        let mut retried = 0;
+        loop {
+            self.paced();
+            let response = self
+                .agent
+                .get(url)
+                .call()
+                .map_err(|error| self.unreachable(op, error))?;
+            if response.status().is_success() {
+                return Ok(response);
+            }
+            let status = response.status().as_u16();
+            if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
+                let wait = retry_after(&response)
+                    .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
+                    .min(LONGEST_RETRY_AFTER);
+                tracing::debug!(
+                    status,
+                    ?wait,
+                    ?op,
+                    "the Subsonic server asked to be asked later"
+                );
+                thread::sleep(wait);
+                retried += 1;
+                continue;
+            }
+            return Err(Error::Refused {
+                provider: self.source.clone(),
+                op,
+                status,
+            });
+        }
+    }
+
+    fn read_whole(&self, op: ProviderOp, response: http::Response<Body>) -> Result<Vec<u8>> {
+        response
+            .into_body()
+            .with_config()
+            .limit(LARGEST_ANSWER)
+            .read_to_vec()
+            .map_err(|error| self.unreachable(op, error))
     }
 
     fn salt(&self) -> String {
@@ -192,37 +297,36 @@ impl Subsonic {
         }
     }
 
-    fn searched(&self, words: &str) -> Result<Vec<Song>> {
+    fn searched(&self, words: &str, offset: usize) -> Result<Vec<Song>> {
         let op = ProviderOp::Search;
         let url = self.url(
             "search3",
             &[
                 ("query", words),
-                ("songCount", SONGS_ASKED),
+                ("songCount", &SONGS_A_PAGE.to_string()),
+                ("songOffset", &offset.to_string()),
                 ("artistCount", "0"),
                 ("albumCount", "0"),
             ],
         );
-        let response = self
-            .agent
-            .get(&url)
-            .call()
-            .map_err(|error| self.unreachable(op, error))?;
-        let status = response.status().as_u16();
-        if !response.status().is_success() {
-            return Err(Error::Refused {
-                provider: self.source.clone(),
-                op,
-                status,
-            });
-        }
-        let bytes = response
-            .into_body()
-            .with_config()
-            .limit(LARGEST_ANSWER)
-            .read_to_vec()
-            .map_err(|error| self.unreachable(op, error))?;
+        let response = self.called(op, &url)?;
+        let bytes = self.read_whole(op, response)?;
         self.read(&bytes, op)
+    }
+
+    fn found(&self, identity: &Identity) -> Result<Option<Song>> {
+        for words in wordings(identity) {
+            for page in 0..PAGES_AT_MOST {
+                let songs = self.searched(&words, page * SONGS_A_PAGE)?;
+                if let Some(song) = the_one_asked_for(identity, &songs) {
+                    return Ok(Some(song.clone()));
+                }
+                if songs.len() < SONGS_A_PAGE {
+                    break;
+                }
+            }
+        }
+        Ok(None)
     }
 
     fn read(&self, bytes: &[u8], op: ProviderOp) -> Result<Vec<Song>> {
@@ -240,19 +344,19 @@ impl Subsonic {
         Ok(answer.response.found.unwrap_or_default().song)
     }
 
+    fn refusal_in(&self, bytes: &[u8], op: ProviderOp) -> Error {
+        match self.read(bytes, op) {
+            Err(error) => error,
+            Ok(_) => self.unreadable(op),
+        }
+    }
+
     fn downloaded(&self, song: &Song) -> Result<Box<dyn Read + Send>> {
         let op = ProviderOp::Download;
-        let response = self
-            .agent
-            .get(&self.url("download", &[("id", &song.id)]))
-            .call()
-            .map_err(|error| self.unreachable(op, error))?;
-        if !response.status().is_success() {
-            return Err(Error::Refused {
-                provider: self.source.clone(),
-                op,
-                status: response.status().as_u16(),
-            });
+        let response = self.called(op, &self.url("download", &[("id", &song.id)]))?;
+        if is_a_document(response.body().mime_type()) {
+            let bytes = self.read_whole(op, response)?;
+            return Err(self.refusal_in(&bytes, op));
         }
         Ok(Box::new(response.into_body().into_reader()))
     }
@@ -279,12 +383,7 @@ impl Provider for Subsonic {
         if identity.recording.is_none() && identity.isrc.is_none() {
             return Ok(Obtained::Nothing);
         }
-        let words = identity.title.trim();
-        if words.is_empty() {
-            return Ok(Obtained::Nothing);
-        }
-        let songs = self.searched(words)?;
-        let Some(song) = the_one_asked_for(identity, &songs) else {
+        let Some(song) = self.found(identity)? else {
             return Ok(Obtained::Nothing);
         };
         let Some(extension) = song
@@ -297,7 +396,7 @@ impl Provider for Subsonic {
         Ok(Obtained::Found(Delivery::Stream {
             key: song.id.clone().into_boxed_str(),
             extension,
-            reader: self.downloaded(song)?,
+            reader: self.downloaded(&song)?,
         }))
     }
 }

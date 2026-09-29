@@ -54,11 +54,7 @@ pub fn settle(tx: &Transaction<'_>, walked: &[PathBuf], mounted: &[PathBuf]) -> 
         if unwalked || mounted.contains(&volume) || holds_a_row(tx, &volume)? {
             continue;
         }
-        tx.execute(
-            "DELETE FROM volumes WHERE path = ?1",
-            params![store::path_text(&volume)?],
-        )
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        forget(tx, &volume)?;
     }
     Ok(())
 }
@@ -72,4 +68,23 @@ fn holds_a_row(connection: &Connection, volume: &Path) -> Result<bool> {
             |row| row.get(0),
         )
         .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub fn retire_at_or_under(tx: &Transaction<'_>, folder: &Path) -> Result<()> {
+    for volume in held(tx)? {
+        if !volume.starts_with(folder) || holds_a_row(tx, &volume)? {
+            continue;
+        }
+        forget(tx, &volume)?;
+    }
+    Ok(())
+}
+
+fn forget(tx: &Transaction<'_>, volume: &Path) -> Result<()> {
+    tx.execute(
+        "DELETE FROM volumes WHERE path = ?1",
+        params![store::path_text(volume)?],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Delete, source))
 }

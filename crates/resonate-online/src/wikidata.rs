@@ -20,19 +20,34 @@ pub(crate) fn pictured(client: &Client, url: &str) -> Result<Option<String>> {
     Ok(held
         .entities
         .get(&entity)
-        .and_then(|held| held.claims.pictured.iter().find_map(named))
+        .and_then(|held| held.claims.best_picture())
         .and_then(commons::scaled))
 }
 
 pub(crate) fn pictured_among(held: &EntityDoc) -> Option<String> {
     held.entities
         .values()
-        .find_map(|held| held.claims.pictured.iter().find_map(named))
+        .find_map(|held| held.claims.best_picture())
         .and_then(commons::scaled)
 }
 
-fn named(claim: &ClaimDoc) -> Option<&str> {
-    Some(claim.mainsnak.datavalue.as_ref()?.value.as_str())
+impl ClaimsDoc {
+    fn best_picture(&self) -> Option<&str> {
+        [Rank::Preferred, Rank::Normal]
+            .into_iter()
+            .find_map(|rank| {
+                self.pictured
+                    .iter()
+                    .filter(|claim| claim.rank == rank)
+                    .find_map(ClaimDoc::named)
+            })
+    }
+}
+
+impl ClaimDoc {
+    fn named(&self) -> Option<&str> {
+        Some(self.mainsnak.datavalue.as_ref()?.value.as_str())
+    }
 }
 
 pub(crate) fn entity(url: &str) -> Option<String> {
@@ -75,6 +90,18 @@ struct ClaimsDoc {
 #[derive(Debug, Deserialize)]
 struct ClaimDoc {
     mainsnak: SnakDoc,
+    #[serde(default)]
+    rank: Rank,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Rank {
+    Preferred,
+    Deprecated,
+    #[default]
+    #[serde(other)]
+    Normal,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,8 +149,40 @@ mod tests {
             .expect("the document names the entity it was asked for");
 
         assert_eq!(
-            claims.claims.pictured.iter().find_map(named),
+            claims.claims.best_picture(),
             Some("PinkFloyd1973_retouched.jpg")
+        );
+    }
+
+    fn claims(ranked: &[(&str, &str)]) -> ClaimsDoc {
+        let pictured: Vec<serde_json::Value> = ranked
+            .iter()
+            .map(|(file, rank)| {
+                serde_json::json!({
+                    "mainsnak": { "datavalue": { "value": file, "type": "string" } },
+                    "type": "statement",
+                    "rank": rank,
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({ "P18": pictured }))
+            .expect("the claims read back")
+    }
+
+    #[test]
+    fn a_preferred_picture_is_taken_over_an_earlier_one_and_a_deprecated_one_never() {
+        assert_eq!(
+            claims(&[("Old.jpg", "normal"), ("Chosen.jpg", "preferred")]).best_picture(),
+            Some("Chosen.jpg")
+        );
+        assert_eq!(
+            claims(&[("Wrong.jpg", "deprecated"), ("Right.jpg", "normal")]).best_picture(),
+            Some("Right.jpg")
+        );
+        assert_eq!(claims(&[("Wrong.jpg", "deprecated")]).best_picture(), None);
+        assert_eq!(
+            claims(&[("First.jpg", "normal"), ("Second.jpg", "normal")]).best_picture(),
+            Some("First.jpg")
         );
     }
 }

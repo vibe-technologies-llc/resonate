@@ -16,8 +16,33 @@ the Arch, Fedora and Flatpak packages install what they find under
 `target/release/build/resonate-*/out`. The cost: `cli.rs` may name `std` and `clap` and no
 workspace crate, since the build script links neither — `vocabulary.rs` turns a `QualityArg` into
 an `engine::Quality`. `--config`, `--library`, `--vault`, `--sink`, `--quality`, `--filter-phase`,
-`--dither`, `--noise-shaping` and `--no-bit-perfect` are `global`, reading the same before and
-after the subcommand.
+`--dither`, `--noise-shaping`, `--bit-perfect` and `--no-bit-perfect` are `global`, reading the
+same before and after the subcommand. The last two undo the `bit-perfect` key either way for one
+run, and both at once is `Error::BitPerfectBothWays`, checked in `run` rather than by clap: a
+`global` flag is propagated into the subcommand, where clap's `conflicts_with` and
+`overrides_with` no longer see the one given before it
+(`bit_perfect_is_asked_for_or_refused_for_one_run_and_never_both`).
+
+**`resonate play` sets the transport for its run.** `--shuffle`, `--repeat off|track|queue` and
+`--volume <PERCENT>` are `cli::TransportArgs`, flattened into `play`. The volume is a whole
+percent from 0 to 100 — the position the readout draws and `+`/`-` step, not a gain — and
+replaces the `volume` key in the engine's starting config; shuffle and repeat are sent before the
+`Load`, so the queue loads already shuffled from a row picked anywhere in it, as the window's
+*Shuffle* does, rather than always opening on the first file named
+(`the_transport_is_set_before_the_queue_loads_so_the_first_track_is_already_shuffled`).
+
+**`resonate scan` is incremental and stays off links unless told.** `--full` reads every file
+again, whatever its size and time say; `--follow-links` walks into a link to a file or folder,
+the walk's own `visited` set reading a folder two links reach once and leaving a link into a root
+to that root's walk.
+
+**`resonate forget` reads each argument as the first of three things it names**: a root, which
+`Library::remove_root` drops with every track under it; the path or URI `resonate wants` lists a
+delivery under, which `forget_delivered` drops and makes due again; or else a folder, which
+`Library::retire` empties of every row whose file is gone — even on a drive that is not mounted,
+the one place a scan keeps such rows — while a file still there keeps its row
+(`forgetting_a_folder_inside_a_root_drops_the_tracks_gone_from_it_and_keeps_the_rest`). A folder
+holding nothing gone says it named none of the three.
 
 ## Reading a file argument
 
@@ -109,7 +134,10 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   `poll`, `tag`, `organise` and `vault --import` run through `until_told`, which puts
   `signals::cancel_when_told` over the pass: the first `SIGINT` or `SIGTERM` calls the pass's
   `cancel`, so the file being written is finished, the catalog follows and the summary says
-  `cancelled`; a second leaves at once. The six handles are one `resonate_library::PassHandle` over
+  `cancelled`; a second leaves at once. A cancelled pass then answers `Error::Cancelled { pass }`
+  through `finished`, so the command exits 1 and a script can tell a pass cut short from one that
+  ran out (`a_cancelled_pass_answers_an_error_so_the_command_exits_1`); a scan cancelled asks the
+  reference nothing after it. The six handles are one `resonate_library::PassHandle` over
   each pass's progress and summary (`ScanHandle` and the rest are aliases) whose progress is
   `Cancelling`, and a thread that dies answers `Error::Stopped { pass }` naming its `PassKind`;
   `until_told` is generic over it, so a seventh pass is an alias and a `PassKind` variant, not a
@@ -150,14 +178,14 @@ that will not read costs its key alone.** `Config::take` reads one key and answe
 or a `window-size` from another build no longer fails every command — `sleep off` and `mcp`
 included — while a file that is not TOML still does
 (`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
-collects the refusals, so each reader's refusal is still asserted. Eight of
+collects the refusals, so each reader's refusal is still asserted. Nine of
 the seventy have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
-`noise-shaping` and `bit-perfect` (as `--no-bit-perfect`); the other sixty-two are set only by the
-settings pane and the file:
+`noise-shaping`, `bit-perfect` (as `--bit-perfect` and `--no-bit-perfect`) and `volume` (as
+`play --volume`, a percent); the other sixty-one are set only by the settings pane and the file:
 
 - the output's `true-peak`, `restore-lossy`, `replay-gain`, `replay-gain-pre-amp`,
   `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
-  `bluetooth-lead-ms`, `bluetooth-awake-s`, `device-volume`, `volume` and `buffer-ms`;
+  `bluetooth-lead-ms`, `bluetooth-awake-s`, `device-volume` and `buffer-ms`;
 - the window's `theme`, `accent`, `text-size`, `minimise-button`, `maximise-button`,
   `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab`, `tab-counts`, `remember-tab`,
   `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category` and

@@ -25,8 +25,8 @@ playback as the guiding constraint.
   and validated by decoding it back, that never writes to the library it was imported from.
 - **An equaliser** bound per output device, reading EqualizerAPO and AutoEq GraphicEQ files and
   fetching the AutoEq measurement for a pair of headphones.
-- **Listen**: record what the desktop or a microphone is playing and name the song through Shazam,
-  AudD or AcoustID.
+- **Listen**: record what the desktop or a microphone is playing and name the song through Shazam
+  or AudD.
 - Optional **Discord presence** and a **Model Context Protocol** server that hands the catalog and
   the running player to a language model.
 
@@ -168,8 +168,7 @@ that lookup can reach MusicBrainz, the Cover Art Archive, Wikimedia Commons, Wik
 AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops every one of those.
 
 Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
-yours. AudD is sent the clip only where `audd-token` is set, and AcoustID is asked only where
-`acoustid-key` is set.
+yours. AudD is sent the clip only where `audd-token` is set.
 
 ListenBrainz is sent what was heard only where `listenbrainz-token` is set, and a Subsonic server is
 asked for wanted tracks only where `subsonic`, `subsonic-user` and `subsonic-password` name one of

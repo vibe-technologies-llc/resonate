@@ -294,9 +294,6 @@ impl Passes {
                 path: missing.clone(),
             });
         }
-        for root in roots {
-            library.add_root(root)?;
-        }
 
         let handle = library.scan(ScanOptions {
             roots: roots.to_vec(),

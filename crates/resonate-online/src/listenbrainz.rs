@@ -113,6 +113,12 @@ fn metadata(told: &Billed) -> Value {
     if let Some(release) = &told.release {
         additional.insert("release_mbid".to_owned(), Value::from(release.as_str()));
     }
+    if let Some(group) = &told.release_group {
+        additional.insert("release_group_mbid".to_owned(), Value::from(group.as_str()));
+    }
+    if let Some(isrc) = &told.isrc {
+        additional.insert("isrc".to_owned(), Value::from(isrc.as_str()));
+    }
     if let Some(artist) = &told.artist_mbid {
         additional.insert("artist_mbids".to_owned(), json!([artist.as_str()]));
     }
@@ -140,7 +146,7 @@ fn milliseconds(length: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use resonate_core::ListenId;
-    use resonate_library::Mbid;
+    use resonate_library::{Isrc, Mbid};
 
     use super::*;
 
@@ -159,7 +165,9 @@ mod tests {
             album: None,
             recording: None,
             release: None,
+            release_group: None,
             artist_mbid: None,
+            isrc: None,
             number: None,
             length: None,
         }
@@ -226,9 +234,13 @@ mod tests {
                 release: Some(
                     Mbid::new("aadf62d6-d475-42e0-b622-e6da7a59fdf7").expect("a well-formed mbid"),
                 ),
+                release_group: Some(
+                    Mbid::new("2a9b3ef6-6e5f-3b51-9d4a-4f29fd2b6c41").expect("a well-formed mbid"),
+                ),
                 artist_mbid: Some(
                     Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("a well-formed mbid"),
                 ),
+                isrc: Some(Isrc::new("GBN9Y1100065").expect("a well-formed isrc")),
                 number: Some(6),
                 length: Some(Duration::from_millis(1_412_500)),
                 ..billed("Echoes")
@@ -246,6 +258,11 @@ mod tests {
             additional["release_mbid"],
             "aadf62d6-d475-42e0-b622-e6da7a59fdf7"
         );
+        assert_eq!(
+            additional["release_group_mbid"],
+            "2a9b3ef6-6e5f-3b51-9d4a-4f29fd2b6c41"
+        );
+        assert_eq!(additional["isrc"], "GBN9Y1100065");
         assert_eq!(
             additional["artist_mbids"],
             json!(["83d91898-7763-47d7-b03b-b92132375c47"])

@@ -64,11 +64,19 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   shuffled queue come back playing as it played and unshuffle into its album, and
   `resonate-core::plays_in` is the whole of how it is trusted: an order naming each row exactly once
   is taken as it stands, and anything else — wrong length, a repeat, a row the queue lacks — gives
-  back the load order, so no reading of it refuses a queue. A URI no longer naming a location does
-  refuse the whole resumption rather than dropping a row, a queue one row short being one whose kept
-  position names the wrong track. `keep_resumption` replaces rows, order and place in one
-  transaction, so a queue is never half of one run and half of another, and writing no rows discards
-  the queue — `resumption` answers `None` for an empty one, as before anything has played.
+  back the load order, so no reading of it refuses a queue. A URI no longer naming a location drops
+  that row alone: `resumed::Kept` holds each read row as an `Option<Resumable>` and renumbers over what
+  is left — the order walked in play order with the dropped rows taken out, the kept position moved to
+  where the same track now stands and the queued-next span closed over the gap — so the place still
+  names the track it named; where the playing row itself is the one dropped, the queue resumes at the
+  start of the row after it, `at` put back to nothing, and only a queue none of whose rows open is
+  `None`. A queue whose every row opens comes back exactly as kept, order and all
+  (`a_kept_queue_row_that_will_not_open_is_dropped_and_the_rest_resumed`). `keep_resumption` replaces
+  rows, order and place in one transaction, and `resumption` reads the three tables inside one read
+  transaction (`unchecked_transaction` on the reader), so another process's keep landing between two
+  of the reads cannot hand back one run's rows under another's order or place; a queue is never half of
+  one run and half of another either way. Writing no rows discards the queue — `resumption` answers
+  `None` for an empty one, as before anything has played.
 - **A favourite is when, not whether.** `tracks.favourite`, `albums.favourite` and
   `artists.favourite` are nullable nanosecond stamps, so the column saying a row is a favourite also
   orders the favourites by when they were marked; a boolean would buy nothing and cost a second
@@ -106,8 +114,17 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and the three most-heard lists read `listens` alone, a pass being time and not a play.
   `Library::statistics`, `most_listened` and `listening_by_day` are bounded by `listens.at >= ?` so
   the index serves each, and `most_listened` answers the three lists from one `read`, a pane costing
-  one connection, not three. A day is bucketed by dividing the stamp rather than by a calendar, no
-  date crate being in the tree and one civil-from-days being cheaper than one; a day nothing was played
+  one connection, not three. **A day is the listener's, not Greenwich's.** `listening_by_day` groups
+  the stamps by the quarter hour in SQL and folds each quarter into the day `resonate_core::Calendar`
+  says it fell on — `Calendar::local`, the zone `TZ` or `/etc/localtime` names, read through `tz-rs` on
+  every call so a zone changed under a running window is followed, and UTC where none can be read. A
+  quarter hour because every offset in use and every transition between two is whole quarters, so no
+  bucket straddles a local midnight or a clock change, and the rows the read answers are bounded by the
+  quarters anything was heard in rather than by the listens. Each `Day::at` is the calendar's own
+  midnight, so a day the clocks change on is 23 or 25 hours long, and one whose midnight the clocks
+  skip begins at its first hour (`Calendar::midnight_of`); *today* is the calendar's day of now, and a
+  listen at 23:30 UTC east of Greenwich lands on the day the listener was living
+  (`a_listen_late_in_a_utc_day_is_counted_on_the_day_the_listener_was_living`). A day nothing was played
   on is written as a zero row, so nothing downstream draws around a gap. Nothing is stored that the
   history does not already say. `most_listened` may sort on a `count(*)` because it is its own read,
   not a `SortOrder` — why the Statistics pane can answer what was heard most this month and the tracks
@@ -226,7 +243,14 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   temporary B-tree, what a full sort before the `LIMIT` reads as. The cost is eight order indexes on
   `tracks` written per stored row where there were three. `resonate playlist --reverse` turns `--sort`
   round as well as `--order`, and without either the grammar refuses it (the `ordered` group) rather
-  than taking a flag that would do nothing.
+  than taking a flag that would do nothing. **Every order ends on the row's own id** — `tracks.id`,
+  and `a.id` and `r.id` in the albums and artists orders below — so rows tied on every column still
+  have one place, and paging with `LIMIT` and `OFFSET` neither repeats nor drops one among them. The
+  id runs as an index's rowid tail runs, rising where the order walks its index forward (`plays DESC,
+  title, tracks.id`) and falling where it walks it back, so the tie costs no sort; the
+  `track_ids_rising!` and `track_ids_falling!` macros spell it, and
+  `every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie` is the claim beside the index
+  guard. A playlist listing already ended on `p.id`.
 - **The albums and artists panes have orders too, deliberately with no index behind them.**
   `AlbumOrder` is relevance, title, artist, year, track count, when a track of it was last added and
   favourited; `ArtistOrder` is relevance, name, album count, track count and favourited;
@@ -413,13 +437,29 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and is not walked, and `tidy_the_roots_beside` and `forget_the_gone` skip a path on one
   (`a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone`,
   `a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted`). Nothing moves
-  out of an unmounted volume, so no pairing is lost.
+  out of an unmounted volume, so no pairing is lost. **A volume retired for good is the listener's to
+  say.** `Library::retire` takes a folder at or inside a root — a volume's mount point or any folder —
+  and forgets every row at or under it whose file is not there, an unmounted volume's included, then
+  drops each `volumes` row at or under it that no longer holds a row (`volumes::retire_at_or_under`);
+  `forget_the_gone` is the same walk (`forget_at_or_under`) with the unmounted volumes guarded. A file
+  that *is* there keeps its row, the next scan finding it again anyway, so retiring a mounted drive
+  forgets nothing. It takes the `Walk` guard, as `forget_the_gone` does
+  (`a_volume_retired_for_good_forgets_its_rows_and_is_no_longer_remembered`,
+  `a_folder_whose_files_are_still_there_is_not_retired`).
 - **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned over
   and skipped rather than failing the scan and the prune with it. A symlink is
   weighed only where it names a directory, and one naming a directory this walk has been down is
   stepped past rather than read as a cycle, so two albums linked to one shared folder walk it once
   instead of aborting — the set is what a cycle runs into on its second pass through the link, so
-  skipping still terminates. Not stepped past is a probe worker that panicked: `run` joins every one
+  skipping still terminates. A link whose canonical target is inside a registered root, or holds one,
+  is never followed (`Walking::reaches_a_root`, over every root `roots` holds, not only the walked):
+  the set holds only link targets, so a link to a folder inside its own root was walked beside the
+  folder itself and every file behind it stored twice, once under each path, and a link into another
+  root filed that root's files under this one as well. What is inside a root is walked by its own path
+  from its own root, and what holds a root would walk the root again from above
+  (`a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time`,
+  `a_link_to_a_folder_holding_the_root_is_not_walked_back_into_it`,
+  `a_link_into_another_root_leaves_its_files_to_that_root`). Not stepped past is a probe worker that panicked: `run` joins every one
   and answers `Error::Stopped` naming the scan's `PassKind` before the prune, a scan with short counts
   pruning rows it never reached. A failing commit drops the result channel's receiver before anything
   is joined, so probe workers blocked sending wake to a closed channel, their exit closes the job
@@ -882,14 +922,26 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
 - **`asked` and `answered` are the two clocks, `asks` and `refusals` the columns they are read with,
   and `Waits` the three waits in one value.** `due_again` writes the clause for a table's alias, and
   `albums`, `tracks` and `artists` are each read through it: never asked, asked and unanswered longer
-  ago than the wait its `asks` earned, answered more than `REFRESH_AFTER` (thirty days) ago, or anything
-  under `refresh`. `Waits` carries `retry_after`, `refused_again_after` and `refresh_after` together
+  ago than the wait its `asks` earned, answered more than `REFRESH_AFTER` (thirty days) ago and not
+  asked in vain since, or anything under `refresh`. **An answer asked again in vain waits its turn like
+  any other ask**: a landing zeroes `asks` and `refusals`, so a row carrying either since its answer was
+  stamped by a fruitless ask after it, and is due only once `waited_its_turn` — where the clause once
+  read `answered < ?4` alone, and a stale row the reference missed or refused was due on every pass
+  (`a_stale_answer_asked_again_in_vain_waits_its_turn_like_any_other_ask` in `enriched.rs`). The same
+  reading makes an answered row carrying a refusal due once it has waited, stale or not — how an
+  artist whose discography was refused is asked again within the hour
+  (`an_answer_whose_companion_ask_was_refused_is_asked_again_once_it_has_waited`). `Waits` carries `retry_after`, `refused_again_after` and `refresh_after` together
   rather than as three `Duration`s a caller could swap; `WAITS` is this build's, and a test builds its
   own. What a failure does depends on which it is, through `Pass::heard`: `Error::Unreachable` ends the
   pass and stamps nothing, so `EnrichSummary::stopped_by` names the `LookupOp` and a run with no network
   asks the same albums next time rather than writing a day's silence into every one; `Refused` and
   `Unreadable` count in `refusals`, stamp `asked` and carry on, one refused album saying nothing about
-  the next. Landing a release or profile stamps both, inside the transaction writing it.
+  the next — **until `REFUSALS_THAT_END_A_PASS` (10) come in a row**: `Pass::refused_in_a_row` counts
+  them, any answer puts it back to nothing, and the tenth is `Error::RefusedInARow`, which ends the
+  pass as `Unreachable` does, `stopped_by` naming its op and the row being asked left unstamped — a
+  service refusing everything having said something about the next album after all
+  (`a_reference_refusing_lookup_after_lookup_ends_the_pass`). Landing a release or profile stamps
+  both, inside the transaction writing it.
 - **A row answering nothing is asked half as often each time, and an answer puts the wait back.**
   `asks` counts the stampings a row took without an answer — every `stamp_*_asked` carrying
   `Fruitless::Missed` steps it — and `due_again` waits `RETRY_AFTER` (24 h) doubled that many times,
@@ -1261,7 +1313,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `resonate missing --artist` prints it; `Library::unheld_releases` lists them under a cap by artist and
   first release date, `ArtistDetail::releases_unheld` counts one artist's, and
   `Library::missing_counted` answers a `Missing` — those beside the release rows with no `track_id`,
-  which `Library::missing_tracks` lists in album order with each row's `WantId`.
+  which `Library::missing_tracks` lists in album order with each row's `WantId`. **A discography that
+  did not arrive is asked for again within the hour**: `land_artist` has already stamped the profile
+  `answered`, so a refused `release_groups_of` stamps the artist `Fruitless::Refused` beside it, and
+  an unreachable or ending one does the same before the pass ends — the refusal count making the
+  answered row due after `REFUSED_AGAIN_AFTER`, where it once sat with an empty discography for
+  `REFRESH_AFTER` (`a_discography_refused_as_its_artist_landed_is_asked_for_again_within_the_hour`).
   `an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_what_it_does_not_hold` and
   `the_rows_an_album_is_short_of_are_listed_with_their_wants` are the readers' claims.
 - **What the catalog is short of is narrowed by the words typed, each half answering with what it
@@ -1295,7 +1352,16 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   past it `albums_wanting_a_cover` reads the stamp as none, somebody perhaps having uploaded the sleeve,
   and the answer stamps it for another month either way — at the archive's pace one request a month per
   uncovered album, a library of hundreds spending a few minutes
-  (`a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again`). An album landed as its group
+  (`a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again`). **A release MusicBrainz says
+  has no front cover is not asked of the archive for one.** `Release::has_front_cover` is the
+  release's `cover-art-archive.front`, and `land_release` keeps it as `albums.front_cover` (a
+  `MIGRATIONS` step; `NULL` for a release landed before it, read as perhaps); `Pass::cover` asks the
+  group's cover instead where the release names a group, and nothing where it names none, and
+  `albums_wanting_a_cover` offers such an album as `CoverFrom::Group` or not at all — so the archive
+  is not asked every month about a sleeve MusicBrainz already says is not there, and the release's
+  monthly refresh is what notices one uploaded since
+  (`a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_itself`,
+  `a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one`). An album landed as its group
   asks `group_cover` under the same two conditions, so what the group route lacks is a release's rows,
   never a sleeve. A portrait is the same shape: `land_portrait` writes under `portrait IS NULL`, asked
   only where the profile's links name a picture and none is held.
@@ -1304,11 +1370,17 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   whose outcome feeds no column — so a fetch failing on a bad day waited out the thirty-day
   `REFRESH_AFTER` with nothing recording it. `Library::artists_wanting_a_portrait` reads every artist
   with `portrait IS NULL` whose stored `artist_links` name a picture, and
-  `Pass::look_again_for_portraits` asks for each at run's end — no column and no MusicBrainz request,
-  the links having been stored since enrichment landed and never read back — and `Pass::pictured`
-  keeps it from asking twice, an artist the pass already asked about not asked again by the sweep.
-  Without that set the pictures, fetched on their own threads, would race the sweep's read of
-  `portrait IS NULL`.
+  `Pass::look_again_for_portraits` asks for each at run's end — no MusicBrainz request, the links
+  having been stored since enrichment landed and never read back — and `Pass::pictured` keeps it from
+  asking twice, an artist the pass already asked about not asked again by the sweep. Without that set
+  the pictures, fetched on their own threads, would race the sweep's read of `portrait IS NULL`.
+  **A miss is remembered as a cover's is**: `artists.portrait_asked` (a `MIGRATIONS` step) is stamped
+  once the picture sources *answered*, with a picture or with none, never where the fetch failed, and
+  the sweep passes over an artist stamped within `PORTRAITS_ASKED_AGAIN_AFTER` (30 days) — so an
+  artist no source holds a picture of is asked about once a month rather than on every pass
+  (`a_portrait_the_reference_answered_it_lacks_is_not_looked_for_again_the_next_pass`), while one
+  whose fetch was refused is still looked for again
+  (`a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference_twice`).
 - **A link is a relation, a service and a URL, both names read off the reference's own words.**
   `Relation::of_type` matches the exact type string MusicBrainz writes — `streaming`, `free
   streaming`, `official homepage`, `image` and the rest of `Relation::TYPES` — else `Relation::Other`;
@@ -1333,7 +1405,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and `wants.offered` is the vault object's URI. With no vault a file's own URI is the offer and a stream
   is dropped, having nowhere to be kept; that, a vault refusal and a vault failure each count `unkept`
   and offer nothing, so `offered` never names what cannot be opened. `note_tried` keeps an earlier offer
-  where the new pass found none. `providers.md` has the rest.
+  where the new pass found none, and is not called where a provider refused, ran late or was passed over
+  as away, the want staying due. `providers.md` has the rest.
 - **A lyric fetched once is kept, and so is a miss; what is kept only gets better.** `lyrics_kept` is
   keyed by `(path, span_start)` as `tracks` is, so a cue row keeps its words apart from the file's;
   `text` is `NULL` for a remembered miss and `taken` says when last asked. A kept row is a `KeptLyrics`
@@ -1357,7 +1430,13 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   under `refresh` — cut to `at_most` like the other queues, and `EnrichOptions::lyrics` turns the walk
   off (the `fetch-lyrics` key). `Verses` is one thread, as `Pictures` is two: LRCLIB is paced apart from
   MusicBrainz, so the words cost the pass nothing but the wait at its end. A refusal is counted and the
-  row left unkept to be asked again; an unreachable service ends the walk, not the pass. A delivered row
+  row left unkept to be asked again, but not on the very next pass: `lyrics_refused` (a `MIGRATIONS`
+  step, keyed as `lyrics_kept` is) holds when the row was last refused and how many times in a row,
+  `sung::note_refused` steps it, `sung::keep` removes it, and `lyrics_to_ask` passes over a row
+  refused within `REFUSED_AGAIN_AFTER` doubled per refusal under the same `doubled` cap the lookup's
+  rows wait by — a table of its own rather than a `lyrics_kept` row, whose `NULL` text already means a
+  miss the window reads (`a_lyric_the_service_refused_is_not_asked_for_again_on_the_next_pass`). An
+  unreachable service ends the walk, not the pass. A delivered row
   is a row like any other here and has its words fetched too. `Lyricists::find` walking every provider
   for the most finely timed answer is why a file's plain words give way to a synced set fetched for it
   (`lyrics.md`).
@@ -1835,6 +1914,42 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   the way to search either literally. No bracketing: a denial reaches one token and an alternation one
   flat run, so `-a or b` is "not a, or b" and `-(a b)` cannot be written — De Morgan by hand says it.
   `and` is no word the grammar knows, everything being joined by it already.
+- **A search asking nothing holds everything, however it was typed.** A word is a condition only
+  where `search::pieces_of` finds a letter or digit in it, those pieces being all that ever reaches the
+  index, so `!!!`, `+/-`, `-!!!` and `artist:?` are dropped at the parse and an `or` closes over the gap
+  (`moon !!! or sun` reads `moon or sun`). `db::matching` passes over a `Search` holding no clause, so a
+  box of punctuation, a blank saved query and no text at all are one answer: the catalog. Each once
+  became an FTS `MATCH` of nothing and answered no rows. A drop is the one reader kept refusing:
+  `cuts_matching` answers `None` where the matching `narrows` nothing, so a text asking nothing removes
+  no row — nothing empties a list in one gesture.
+  `a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything` and
+  `a_saved_query_with_no_search_fills_itself_with_the_whole_catalog` in `tests/search.rs` are the
+  claims.
+- **A number is read as meant, to the precision it was typed in.** A `Term::Length` carries a `Grain`
+  — the finest `ClockUnit` a component names and how many decimals its count was written to — and is
+  weighed as the track's length cut down to that grain: `length:3:30` and `length:3m30s` hold
+  210 ≤ s < 211, `length:3m` every track of three minutes and some seconds, `length:3.5m` the six
+  seconds from 3:30, `length:<=3:30` everything below 3:31 and `length:>3:30` everything from it, as
+  a pane draws a length. It was a float equality, holding only a track exactly 210.000 s long, where
+  `added:` and `played:` already read an exact value as a span. `Display for Term` writes a length
+  down to its grain, zero components and decimals kept (`length:180` reads back `length:3m0s`,
+  `length:0.50s` as itself), so it reads back as the same term. A range typed high end first is the
+  range it names — `bounded` puts the two bounds in order, so `year:2000-1990` is `year:1990-2000` —
+  and a bare rate below `A_BARE_RATE_IS_IN_KILOHERTZ_BELOW` (1 000) is kilohertz, no file being
+  sampled that slowly: `rate:44.1` is 44 100 Hz, `rate:96` 96 000, and `rate:500hz` still 500, written
+  back with its unit. *Long players* is `length:>=10m`, ten minutes and over.
+- **`=` asks for a whole name, where a word or phrase asks for a run inside one.** A phrase matches
+  its tokens anywhere in a column, so `artist:"Air"` holds *Air Supply*. `artist:=Air` and
+  `artist:="Air Supply"` are `Reach::Whole` (beside `Begins` and `Phrase`), `Display for Word`
+  writing them quoted; an `=` inside the quotes is part of the phrase, and `lyrics:` takes no whole
+  name, the words sung being no name. `db::named` weighs a whole name through the `words_of` SQL
+  function `store::words_of` registers, both sides folded and split alike: an artist is by id —
+  `tracks.artist_id` or a `track_credits` member whose name is it, the artist pane's own reading —
+  an album its billed or scanned title, a title and a genre (the track's or its artist's) the column
+  itself behind the phrase's `INDEX_LOOKUP`, which narrows the rows the function is asked of. A whole
+  name is never ranked, reaching the `WHERE` as a denial does. The artist mixes `suggest.rs` offers
+  are whole names, so a mix for *Air* is *Air*'s
+  (`an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it`).
 - **`tracks_fts` holds the fold of a name, not the name, and the query is folded with it.** What is
   indexed is `folded_letters` of the title, the billed artist, the album and the genres (and, apart, the
   lyrics), and `db::indexed` folds every piece of a typed word the same way before it becomes a `MATCH`,
@@ -2063,10 +2178,10 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   trusted: `move_in_playlist` answers false where either end of the span or the row dropped on is past
   the playlist's end, and `remove_from_playlist` takes rows from the first named to the list's end and
   refuses a span starting past it. A span of any length costs one row's two writes — the whole reason
-  `Span` reaches the SQL rather than the pane sending an edit per row. Every row-moving edit reads the
-  whole playlist, `undo::edited` taking a restore point before each: an append writing one row reads a
-  thousand paths on a list of a thousand. Only the local source can be in one — `add_to_playlist`
-  refuses a `MediaLocation` naming another.
+  `Span` reaches the SQL rather than the pane sending an edit per row. The restore point `undo::edited`
+  takes before each reads only the rows from where the edit can reach (`Undo` below), so an append to a
+  list in hand reads none and removing or moving a span reads from its first row on. Only the local
+  source can be in one — `add_to_playlist` refuses a `MediaLocation` naming another.
 - **A name is one name however written, and the column says so.** `playlists.folded` holds
   `playlist::folded` — Rust's `to_lowercase`, folding every alphabet rather than SQLite's `NOCASE`
   ASCII, then NFC, folding one letter's spellings into each other — and carries the `UNIQUE`, so two
@@ -2087,9 +2202,12 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   connection, so `Error::UnknownPlaylist` and `Error::NotAList` cannot be answered from a state the write
   no longer sees. The passes dropping rows share the discipline: `Going` is the question — `Gone`,
   `Doubled`, `Unwanted` (gone or doubled, for a tidy) or `Matching` — and `asked_of` asks it of the rows
-  `numbered` read inside that transaction, so no closure names a row it never looked at. A refused edit
-  still pays the whole-playlist read `undo::edited` takes first. `copy_playlist` is the exception by
-  design: it reads the source outside the transaction it lands in, a copy being the source as it stood.
+  `numbered` read inside that transaction, so no closure names a row it never looked at. The filesystem
+  is the one thing not asked inside it: `gone_from` stats each distinct path first, through a reader, so
+  a slow or downed mount holds no write lock, and `Gone` and `Unwanted` carry the paths it found gone — a
+  row landing between the two reads was never weighed and stays. A refused edit still pays the restore
+  point `undo::edited` takes first. `copy_playlist` is the exception by design: it reads the source
+  outside the transaction it lands in, a copy being the source as it stood.
 - **A playlist holds a list or fills itself from a query, and both answer through
   `playlist_entries`.** A row in `playlist_queries` makes one a saved query: the search text, the
   `SortOrder` and the row cap — a `TrackQuery` without the album and artist. `Library::playlist_entries`
@@ -2172,11 +2290,15 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   memory as locations and a write per row, plus the order re-read where the target is kept.
 - **A playlist is duplicated whole, and a duplicate is one step to walk back.**
   `Library::duplicate_playlist` makes a playlist under the first free of *NAME (copy)*, *NAME (copy 2)*
-  and on, in one `undo::started` step: a list's rows are copied as stored, spans and all, with its kept
-  order, and a saved query gets the same search, order and cap rather than being frozen into its current
-  rows (`copy_playlist` out of a query does that). The pin, the plays and when played stay with the
-  source. The window offers *Duplicate* in the menu of a playlist card, a playlist row and the opened
-  playlist's more mark. `a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name` and
+  and on, in one `undo::started_under_a_name_found` step — the source's name read and the free one
+  weighed inside the write that takes it, so two processes duplicating one playlist at once each land
+  under a name of their own rather than one refused as `DuplicatePlaylist`
+  (`two_catalogs_duplicating_one_playlist_at_once_each_find_a_free_name`): a list's rows are copied as
+  stored, spans and all, with its kept order, and a saved query gets the same search, order and cap
+  rather than being frozen into its current rows (`copy_playlist` out of a query does that). The pin,
+  the plays and when played stay with the source. The window offers *Duplicate* in the menu of a
+  playlist card, a playlist row and the opened playlist's more mark.
+  `a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name` and
   `a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had` are the claims.
 - **What pictures a playlist is the covered albums its rows reach first.**
   `Library::playlist_pictures` answers at most the covers asked for, one per distinct picture through
@@ -2247,12 +2369,14 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
 
 - **A playlist edit is one step to walk back, and a step is the playlist as it stood.** `undo.rs` is
   the whole of it. `undo::edited` wraps every mutator's transaction: it reads the playlist's name, kept
-  order, saved query and rows before the change and keeps that restore point only where the change moved
-  something (`Change::Made` and `Change::Nothing`) — an edit writing nothing leaves nothing to put back.
+  order, saved query and the rows its `Reach` names before the change and keeps that restore point only
+  where the change moved something (`Change::Made` and `Change::Nothing`) — an edit writing nothing
+  leaves nothing to put back.
   `undo::started` is the other half, for gestures creating a playlist, whose restore point is its not
-  existing. `Library::undo` takes the newest step and writes it back whole — one `DELETE` of the playlist
-  row, cascading its entries and query away, then a dense rewrite — so a discarded playlist returns under
-  its id, while `played` and `plays` are read off the row rather than restored, a play not being an edit.
+  existing. `Library::undo` takes the newest step and writes it back — a whole one as one `DELETE` of the
+  playlist row, cascading its entries and query away, then a dense rewrite — so a discarded playlist
+  returns under its id, while `played` and `plays` are read off the row rather than restored, a play
+  not being an edit.
   Why `Library::start_playlist` and `Library::revise_query` are single calls: the window's gesture is
   name-and-rows and name-and-search, and two library calls would be two steps. The stack is
   `Inner::steps`, bounded at 32 steps (`STEPS_HELD`) and 50 000 rows (`ROWS_HELD`) and living only as
@@ -2260,13 +2384,22 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   the oldest, not the largest. A play counted between an edit and its undo is not taken back — `played`
   and `plays` are read off the row — but the date last changed is, so an edit walked back does not leave
   it climbing a *Last changed* listing.
-- **A step holds the rows only where its edit could have moved one.** `Edit::moves_rows` says so, and
-  `Renamed` and `Revised` are the two answering `false`, so neither reads the paths under a playlist nor
-  counts them against the stack's 50 000. Such a step is put back by `written_over`, an `UPDATE` of the
-  playlist row and a rewrite of its query where it has one, not the `DELETE` that would cascade the
-  entries away — which is why the rows-holding path is the one reading `played` and `plays` back off the
-  row it is about to delete. Both halves of `undo::walk` read the shape from the step's own `Edit`, so a
-  rename's inverse is a rename holding no more than the rename did.
+- **A step holds only the rows its edit could have moved.** The mutator names a `Reach` and
+  `Reach::settled` turns it into the step's `Reached` inside the transaction: `Unmoved` for a rename and
+  a revision, which read no path under the playlist and count none against the stack's 50 000; `From`
+  the first row an edit can touch — a removed span's first row, the nearer end of a move, and for an
+  append (`Reach::Appended`) the list's length, so one row added to a list of 100 000 holds none; and
+  `Whole` for a discard, a sort, a keep, the passes dropping rows and an append to a kept list, whose
+  re-sort may move any row. An `Unmoved` step is put back by `written_over`, an `UPDATE` of the playlist
+  row and a rewrite of its query where it has one; a `From` step by `written_over` and then
+  `rewritten_from`, deleting every row from its first on and writing the held tail back from wherever
+  the list now ends, so the positions stay dense; only a `Whole` step takes the `DELETE` that cascades
+  the entries away — which is why that path is the one reading `played` and `plays` back off the row it
+  is about to delete. Both halves of `undo::walk` read the shape from the step's own `Reached`, so the
+  inverse holds the same tail the step did, and a created playlist's step is `Whole`, its inverse being
+  the playlist whole. What a tail still costs is a span removed or moved near the top of a long list,
+  whose tail is nearly the whole of it.
+  `an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached` is the claim.
 - **A step is walked either way, and walking it writes the step back the other way.** `undo::walk` is
   `Library::undo` and `Library::redo` alike: it pops a step off one stack, reads the standing it is
   about to overwrite, applies the step and pushes what it read onto the other — so `Inner::walked` holds
@@ -2293,7 +2426,12 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   `xspf.rs` the job; `sheet::parse`, split from `sheet::read`, reads a sheet with no file. What the
   three share lives there once — a row's seconds, artist and title as a `Described`, the
   relative-or-absolute path rule, percent escaping both ways, and the staged rename over the target that
-  stops a crash mid-write truncating a sheet. Writing picks the format from the target's extension, M3U
+  stops a crash mid-write truncating a sheet. The stage is a hidden sibling of its own —
+  `.<name>.<pid>-<n>.new` (`staging_name_for`), made `create_new` so it can never be a file of the
+  listener's or another export's — written and `sync_all`ed before the rename, and removed wherever the
+  write or the rename failed, so a refused export leaves nothing beside its target
+  (`an_export_that_fails_leaves_nothing_staged_beside_its_target`). Writing picks the format from the
+  target's extension, M3U
   where the name declares nothing; reading picks it from the content, so a sheet under the wrong
   extension still reads. Everything a sheet says about a *track* is read past — a `playlist_entries` row
   is a path, so `#EXTINF:`, `TitleN`/`LengthN` and `<title>`/`<creator>`/`<duration>` are written and
@@ -2314,9 +2452,17 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   `--add` is added as the rows it cuts, through the `sheet_cuts` `resonate play` and `resonate queue`
   read one through, not as a row naming the sheet. A row is written as a path only where
   `sheet::as_a_row` finds the path reads back as itself, else as an escaped `file://` URI, which carries
-  a `#`, a line break or a scheme of its own through M3U and PLS. `sheet::canonical` settles a path the
-  filesystem cannot answer for lexically — absolute, `.` and `..` taken out — so a sheet imported while
-  a mount is down still names what a later scan will store. A row holding a backslash and no forward
+  a `#`, a line break or a scheme of its own through M3U and PLS. The parse settles a path lexically
+  alone (`settled` in `sheet.rs`) — absolute, `.` and `..` taken out, no link followed — so it asks the
+  filesystem nothing, and `playlist::cuts_of` settles each row against the catalog: the path as written
+  where a track holds it, else the path under a root that a folder of it resolves to — the scan storing
+  a root canonical and whatever is beneath it as walked, a followed link's own name included — else its
+  canonical path; where the catalog holds none of the three the row is the canonical path, or the
+  lexical one where the file is not there to resolve, so a sheet imported while a mount is down still
+  names what a later scan will store. Canonicalising every row once lost a file a scan under
+  `follow_symlinks` stored through its link
+  (`a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_row`). A row holding a
+  backslash and no forward
   slash is a path a Windows player wrote, and `forward_separated` reads it with its separators turned,
   so `..\Music\01.mp3` resolves beside the sheet rather than as one oddly named file. The reverse is
   held too: `reads_back_as_itself` refuses a row `forward_separated` would turn, so our file named
@@ -2337,16 +2483,27 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   truncated sheet says so rather than importing quietly short. M3U and XSPF declare no count, so only a
   PLS can say it lost rows, and a sheet holding more than promised is taken whole silently. Import
   resolves and stats every row, so a sheet naming a downed network mount reports each row missing rather
-  than waiting, while a symlink stays unresolved, only the filesystem knowing where it points; nothing
-  tells a file grown between the two reads from one that lied about its size.
+  than waiting; nothing tells a file grown between the two reads from one that lied about its size.
+  **A tidy drops only what is surely gone.** `gone_from` weighs a row's file gone only where the stat
+  answers `NotFound` or `NotADirectory` — any other failure, a permission or an `EIO`, keeping the row —
+  and the path is on no volume `volumes::is_mounted` finds unmounted and under no root whose directory
+  is missing, and the nearest folder above it that stands holds something: an unmounted mount point
+  reads as an empty folder or none, so a stick's rows are kept whether the catalog ever noted its volume
+  or not. The price is a file deleted with the last of its folder's contents staying until the folder
+  goes (`a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
+  `a_prune_keeps_the_rows_under_a_root_that_is_not_there`).
 - **A cue row leaves as its file and the times VLC reads, and comes back as the cut.** M3U, PLS and
   XSPF name files, so a cut row is written as its file and, where the format can say it, the start and
   stop VLC honours: `#EXTVLCOPT:start-time=` and `stop-time=` lines before an M3U row, and the same two
   options as `<vlc:option>` inside a track's VLC `<extension>` in XSPF, the playlist element declaring the
   `vlc` namespace. The seconds are the cut's frames at the track's rate, rounded to the nanosecond, and
-  reading back probes the file for its rate and rounds again, landing on the written frame at every rate
-  the workspace holds — a frame is never shorter than 1.3 µs. A row whose file will not probe, or a PLS
-  row (no word for a region), is the whole file, and `Sheet::locations` holds `Listed` rows — a location
+  reading back takes the rate the catalog holds for the row's path, or probes the file once an import —
+  `probed_rate` keeping each file's answer, so a sheet cutting one image into twenty rows opens it once —
+  and rounds again, landing on the written frame at every rate the workspace holds — a frame is never
+  shorter than 1.3 µs
+  (`a_timed_row_takes_its_rate_from_the_catalog_rather_than_probing_the_file`). A row whose file the
+  catalog lacks and will not probe, or a PLS row (no word for a region), is the whole file, and
+  `Sheet::locations` holds `Listed` rows — a location
   and its `Timed` — so the parse stays free of I/O and the fuzz target reaches it as before.
   `a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds` is the claim.
 - **`xspf.rs` reads its own markup, and every leniency in it is deliberate.** A tag ends at the first
@@ -2361,6 +2518,10 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   namespaces both calling something `track` are one element; it knows the five entities XML defines and a
   numeric reference — decimal, or hexadecimal after `x` or `X`, both allowed — and nothing else; and it
   trusts the nesting, so a sheet never closing an opened element carries its base to everything after.
+  Writing is strict where reading is lenient: `marked_up` escapes the five entities and leaves out every
+  character XML 1.0 forbids (`is_an_xml_character` — the C0 controls but tab, line feed and carriage
+  return, and U+FFFE and U+FFFF), which not even a numeric reference may carry, so a title holding
+  U+0001 writes a sheet VLC and Kodi read rather than one they refuse.
 
 ## The MPRIS seam
 
@@ -2373,11 +2534,11 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   than quietly answered under another, `UserDefined` among them, a playlist's own order not being one the
   bus can ask by name. `PlaylistCount`, `ActivePlaylist` and `PlaylistChanged` are diffed from the
   player properties' 200 ms poll, against a listing re-read only when `Library::playlists_revision` moves.
-  `unheard_of` is the question the diff asks of every row — a playlist the listing held under another
-  name, or not at all — so `PlaylistChanged` announces an arrival as well as a rename, what a sample
-  holding an addition and a removal at once must say: the count is the same and correctly stays, and the
-  spec names no signal for a playlist that left, so a client learns of it by re-reading `GetPlaylists` on
-  the arrival it was told of. Neither of the seam's two reads is `Library::playlists` — a grouped pass
+  `moved` is the question the diff asks of every row: a playlist the listing held under another name
+  is `PlaylistChanged`, which the spec keeps for a name or icon changed, and a playlist that arrived or
+  left is `PlaylistCount` announced — even where a sample holding an addition and a removal at once
+  leaves the count the same, since the spec names no signal for a playlist made or gone and a client
+  learns of either by re-reading `GetPlaylists` when the count is announced. Neither of the seam's two reads is `Library::playlists` — a grouped pass
   over every row of every playlist and a `count(*)` per saved query, where the bus keeps only each row's
   id and name: `Playlists::count` is `Library::playlist_count`, one `count(*)` over `playlists`, and
   `Playlists::listing` is `Library::playlist_names`, selecting id and name with no join and taking the

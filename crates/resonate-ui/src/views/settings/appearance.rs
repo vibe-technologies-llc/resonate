@@ -195,7 +195,7 @@ impl RootView {
             "Text size",
             self.choices(
                 "text-size",
-                Some(worn.text_size),
+                worn.text_size,
                 cx,
                 |this, size: TextSize, cx| {
                     this.wear(
@@ -278,15 +278,10 @@ impl RootView {
 
         kit::section_body().child(kit::field(
             "Draw scrollbars",
-            self.choices(
-                "scrollbars",
-                Some(mode),
-                cx,
-                |this, mode: ScrollbarMode, cx| {
-                    this.draw_scrollbars(mode, cx);
-                    this.store(&Setting::Scrollbars(mode), cx);
-                },
-            ),
+            self.choices("scrollbars", mode, cx, |this, mode: ScrollbarMode, cx| {
+                this.draw_scrollbars(mode, cx);
+                this.store(&Setting::Scrollbars(mode), cx);
+            }),
         ))
     }
 

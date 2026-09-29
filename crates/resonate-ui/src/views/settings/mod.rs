@@ -67,7 +67,22 @@ trait Choice: Copy + PartialEq + 'static {
         None
     }
 
+    fn in_force(self) -> SharedString {
+        SharedString::new_static(self.label())
+    }
+
     fn meaning(self) -> SharedString;
+}
+
+fn said_under<T: Choice>(held: T) -> SharedString {
+    if T::ALL.contains(&held) {
+        held.meaning()
+    } else {
+        SharedString::from(format!(
+            "{} is in force, which is none of these.",
+            held.in_force()
+        ))
+    }
 }
 
 impl RootView {
@@ -702,7 +717,7 @@ impl RootView {
     fn choices<T: Choice>(
         &self,
         id: &'static str,
-        chosen: Option<T>,
+        held: T,
         cx: &mut Context<Self>,
         taken: impl Fn(&mut Self, T, &mut Context<Self>) + Copy + 'static,
     ) -> Div {
@@ -712,7 +727,7 @@ impl RootView {
             let value = *value;
             row = row.child(
                 self.option_in_the_ring(
-                    kit::segment((id, index), value.label(), chosen == Some(value))
+                    kit::segment((id, index), value.label(), held == value)
                         .when_some(value.detail(), |option, detail| option.names(detail)),
                     id,
                     index,
@@ -727,9 +742,7 @@ impl RootView {
             .flex_col()
             .gap_2()
             .child(div().flex().child(row))
-            .when_some(chosen, |column, chosen| {
-                column.child(note(chosen.meaning()))
-            })
+            .child(note(said_under(held)))
     }
 
     fn option_in_the_ring(

@@ -57,6 +57,8 @@ const DECODES_AT_ONCE: usize = 4;
 
 const SEEK_STEP_SECONDS: i64 = 5;
 
+const SEEK_FURTHER_SECONDS: i64 = 30;
+
 pub(crate) const WINDOW_CONTEXT: &str = "Resonate";
 pub(crate) const SEARCH_CONTEXT: &str = "Search";
 pub(crate) const CONTROL_CONTEXT: &str = "Control";
@@ -73,6 +75,10 @@ actions!(
         Previous,
         SeekForward,
         SeekBackward,
+        SeekFurtherForward,
+        SeekFurtherBackward,
+        ToggleMute,
+        ToggleQueue,
         ToggleShuffle,
         CycleRepeat,
         VolumeUp,
@@ -674,6 +680,10 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
         KeyBinding::new("s", Stop, typed),
         KeyBinding::new("right", SeekForward, typed),
         KeyBinding::new("left", SeekBackward, typed),
+        KeyBinding::new(key!(seek_further), SeekFurtherForward, typed),
+        KeyBinding::new(key!(seek_further_back), SeekFurtherBackward, typed),
+        KeyBinding::new(key!(mute), ToggleMute, typed),
+        KeyBinding::new(key!(queue), ToggleQueue, typed),
         KeyBinding::new(key!(next), Next, typed),
         KeyBinding::new(key!(previous), Previous, typed),
         KeyBinding::new(key!(shuffle), ToggleShuffle, typed),
@@ -734,6 +744,10 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
 
 pub const fn seek_step() -> i64 {
     SEEK_STEP_SECONDS
+}
+
+pub(crate) const fn seek_further() -> i64 {
+    SEEK_FURTHER_SECONDS
 }
 
 pub struct Bus {

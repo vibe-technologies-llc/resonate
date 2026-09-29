@@ -90,24 +90,40 @@ pub(crate) fn listed(playlist: PlaylistInfo) -> Listed {
     (playlist_path(playlist.id), playlist.name, String::new())
 }
 
-pub(crate) fn unheard_of<'a>(
-    before: &[PlaylistInfo],
-    now: &'a [PlaylistInfo],
-) -> Vec<&'a PlaylistInfo> {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Moved<'a> {
+    pub(crate) renamed: Vec<&'a PlaylistInfo>,
+    pub(crate) arrived_or_left: bool,
+}
+
+pub(crate) fn moved<'a>(before: &[PlaylistInfo], now: &'a [PlaylistInfo]) -> Moved<'a> {
     let named: AHashMap<PlaylistId, &str> = before
         .iter()
         .map(|held| (held.id, held.name.as_str()))
         .collect();
-    now.iter()
-        .filter(|row| named.get(&row.id) != Some(&row.name.as_str()))
-        .collect()
+
+    let mut renamed = Vec::new();
+    let mut still_held = 0;
+    for row in now {
+        if let Some(name) = named.get(&row.id) {
+            still_held += 1;
+            if *name != row.name {
+                renamed.push(row);
+            }
+        }
+    }
+
+    Moved {
+        renamed,
+        arrived_or_left: still_held != now.len() || still_held != before.len(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use resonate_core::PlaylistId;
 
-    use super::{PlaylistInfo, unheard_of};
+    use super::{Moved, PlaylistInfo, moved};
 
     fn listing(named: &[(u64, &str)]) -> Vec<PlaylistInfo> {
         named
@@ -123,20 +139,35 @@ mod tests {
     fn a_playlist_the_listing_already_held_under_that_name_is_announced_as_nothing() {
         let held = listing(&[(1, "Evening jazz"), (2, "Workout")]);
 
-        assert!(unheard_of(&held, &held).is_empty());
+        assert_eq!(moved(&held, &held), Moved::default());
     }
 
     #[test]
-    fn a_playlist_that_arrived_is_announced_though_another_left_beside_it() {
-        let before = listing(&[(1, "Evening jazz"), (2, "Workout")]);
+    fn a_playlist_just_made_moves_the_listing_and_is_no_playlist_changed() {
+        let before = listing(&[(1, "Evening jazz")]);
         let now = listing(&[(1, "Evening jazz"), (3, "Road trip")]);
 
         assert_eq!(
-            unheard_of(&before, &now)
-                .into_iter()
-                .map(|row| row.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["Road trip"],
+            moved(&before, &now),
+            Moved {
+                renamed: Vec::new(),
+                arrived_or_left: true,
+            },
+            "a playlist just made was announced as a playlist changed"
+        );
+        assert!(moved(&now, &before).arrived_or_left);
+    }
+
+    #[test]
+    fn a_playlist_that_arrived_as_another_left_moves_the_listing_though_the_count_did_not() {
+        let before = listing(&[(1, "Evening jazz"), (2, "Workout")]);
+        let now = listing(&[(1, "Evening jazz"), (3, "Road trip")]);
+
+        let seen = moved(&before, &now);
+
+        assert!(seen.renamed.is_empty());
+        assert!(
+            seen.arrived_or_left,
             "a listing the same length carried a playlist nothing announced"
         );
     }
@@ -146,6 +177,12 @@ mod tests {
         let before = listing(&[(1, "Evening jazz")]);
         let now = listing(&[(1, "Late night jazz")]);
 
-        assert_eq!(unheard_of(&before, &now), vec![&now[0]]);
+        assert_eq!(
+            moved(&before, &now),
+            Moved {
+                renamed: vec![&now[0]],
+                arrived_or_left: false,
+            }
+        );
     }
 }

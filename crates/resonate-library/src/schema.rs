@@ -114,6 +114,27 @@ const MIGRATIONS: &[&str] = &[
      BEGIN
          DELETE FROM unstudied WHERE track_id = new.id;
      END;",
+    "ALTER TABLE albums ADD COLUMN front_cover INTEGER;
+     ALTER TABLE artists ADD COLUMN portrait_asked INTEGER;
+     CREATE TABLE lyrics_refused (
+         path       TEXT NOT NULL,
+         span_start INTEGER NOT NULL,
+         refused    INTEGER NOT NULL,
+         refusals   INTEGER NOT NULL,
+         PRIMARY KEY (path, span_start)
+     ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE vault_refused (
+         track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+         under    INTEGER NOT NULL
+     ) STRICT;
+     CREATE TRIGGER vault_refused_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM vault_refused WHERE track_id = new.id;
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

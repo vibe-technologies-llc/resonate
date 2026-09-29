@@ -13,9 +13,9 @@ use gpui::{
     Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
     UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
-use resonate_core::{AlbumId, MediaLocation, PlaylistId, Span, Volume};
+use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume};
 use resonate_engine::{
-    Command, Counting, Keeping, Listening, Placement, QueueItem, RepeatMode, stamp_of,
+    Command, Counting, Keeping, Listening, Placement, PlayerState, QueueItem, RepeatMode, stamp_of,
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
@@ -31,8 +31,9 @@ use crate::{
         LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, Pause, PlayReached, Previous,
         PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst,
         ReachLast, ReachNext, ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit,
-        SeekBackward, SeekForward, Stop, TabOnward, TogglePlayPause, ToggleShuffle, UndoEdit,
-        VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_step,
+        SeekBackward, SeekForward, SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward,
+        ToggleMute, TogglePlayPause, ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp,
+        WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_further, seek_step,
     },
     format,
     icons::{self, Icon},
@@ -223,23 +224,49 @@ enum Pointer {
     Gone,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PlayingRow {
+    row: usize,
+    track: Option<TrackId>,
+    queue: QueueStamp,
+}
+
+impl PlayingRow {
+    fn of(state: &PlayerState) -> Option<Self> {
+        Some(Self {
+            row: state.queue_position?,
+            track: state.current.as_ref().map(|current| current.id),
+            queue: state.queue_stamp,
+        })
+    }
+
+    fn moved_on_from(self, shown: Self) -> bool {
+        let another_track = self.track != shown.track;
+        let stepped_within_the_same_queue = self.queue == shown.queue && self.row != shown.row;
+
+        another_track || stepped_within_the_same_queue
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Following {
-    shown: Option<usize>,
+    shown: Option<PlayingRow>,
 }
 
 impl Following {
-    fn follows(&mut self, playing: Option<usize>, queue_is_shown: bool) -> Option<usize> {
-        let Some(row) = playing else {
+    fn follows(&mut self, playing: Option<PlayingRow>, queue_is_shown: bool) -> Option<usize> {
+        let Some(now) = playing else {
             self.shown = None;
             return None;
         };
-        if !queue_is_shown || self.shown == Some(row) {
+        if !queue_is_shown {
             return None;
         }
 
-        self.shown = Some(row);
-        Some(row)
+        let shown = self.shown.replace(now);
+        shown
+            .is_none_or(|shown| now.moved_on_from(shown))
+            .then_some(now.row)
     }
 }
 
@@ -510,6 +537,7 @@ pub struct RootView {
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
     reach: Option<Reach>,
+    landed_by_a_jump: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
     pub(crate) queue_height: Rc<Cell<Pixels>>,
     pub(crate) creeping: Option<Creeping>,
@@ -906,6 +934,7 @@ impl RootView {
             record: None,
             left_at: AHashMap::new(),
             reach: None,
+            landed_by_a_jump: None,
             reached_unseen: Rc::default(),
             queue_height: Rc::default(),
             creeping: None,
@@ -1008,7 +1037,7 @@ impl RootView {
     }
 
     fn follow_the_playing_row(&mut self, player: &Entity<PlayerModel>, cx: &App) {
-        let playing = player.read(cx).state().queue_position;
+        let playing = PlayingRow::of(player.read(cx).state());
         if self
             .following
             .follows(playing, self.pane == Pane::Queue)
@@ -1317,6 +1346,9 @@ impl RootView {
     }
 
     pub(crate) fn undo_edit(&mut self, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
         if self.pane == Pane::Queue && self.put_the_queue_back(cx) {
             return;
         }
@@ -1324,6 +1356,9 @@ impl RootView {
     }
 
     pub(crate) fn redo_edit(&mut self, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
         if self.pane == Pane::Queue && self.take_the_queue_out_again(cx) {
             return;
         }
@@ -1650,6 +1685,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let held = self.reach.filter(|reach| reach.shift == shift);
+        self.landed_by_a_jump = None;
         self.reach = Some(match (extending, held) {
             (true, Some(reach)) => Reach {
                 shift,
@@ -1662,14 +1698,15 @@ impl RootView {
     }
 
     fn reach_row(&mut self, step: Step, cx: &mut Context<Self>) {
-        self.stop_typing(cx);
+        self.reach_by_hand(cx);
         if self.step_the_menu(
             match step {
                 Step::Above => -1,
                 Step::Below => 1,
             },
             cx,
-        ) {
+        ) || self.something_stands_over_the_pane()
+        {
             return;
         }
 
@@ -1689,7 +1726,10 @@ impl RootView {
     }
 
     fn reach_the_end(&mut self, step: Step, cx: &mut Context<Self>) {
-        self.stop_typing(cx);
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
@@ -1704,7 +1744,10 @@ impl RootView {
     }
 
     fn reach_a_page(&mut self, step: Step, cx: &mut Context<Self>) {
-        self.stop_typing(cx);
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
@@ -1724,7 +1767,10 @@ impl RootView {
     }
 
     fn reach_everything(&mut self, cx: &mut Context<Self>) {
-        self.stop_typing(cx);
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
@@ -1738,6 +1784,9 @@ impl RootView {
     }
 
     fn drop_reached(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.something_stands_over_the_pane() {
+            return false;
+        }
         let Some((shift, held)) = self.reachable(cx) else {
             return false;
         };
@@ -1787,7 +1836,10 @@ impl RootView {
     }
 
     fn widen_reach(&mut self, step: Step, cx: &mut Context<Self>) {
-        self.stop_typing(cx);
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
@@ -1808,6 +1860,9 @@ impl RootView {
     }
 
     fn move_reached_rows(&mut self, step: Step, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
         let Some((shift, held)) = self.movable(cx) else {
             return;
         };
@@ -1820,12 +1875,13 @@ impl RootView {
 
         self.shift_rows(shift, reach.rows(), to, cx);
         self.reach = Some(reach.stepped(step));
+        self.landed_by_a_jump = None;
         self.show_row(shift, to, cx);
         cx.notify();
     }
 
     fn play_reached_rows(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.press_the_menu(window, cx) {
+        if self.press_the_menu(window, cx) || self.something_stands_over_the_pane() {
             return;
         }
 
@@ -1902,7 +1958,7 @@ impl RootView {
     }
 
     pub(crate) fn drop_rows(&mut self, shift: Shift, rows: Span, cx: &mut Context<Self>) {
-        match shift {
+        let held = match shift {
             Shift::Queue => {
                 let queued = self.player.read(cx).queue();
                 let kept = self.took_out.keeping(&queued, rows);
@@ -1910,14 +1966,20 @@ impl RootView {
                 if let Some(kept) = kept {
                     toast::tell(took_out(kept), cx);
                 }
+                queued.len()
             }
-            Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
-                library.remove_from_playlist(playlist, rows, cx);
-            }),
+            Shift::Playlist(playlist) => {
+                let held = self.library.read(cx).entries().len();
+                self.library.update(cx, |library, cx| {
+                    library.remove_from_playlist(playlist, rows, cx);
+                });
+                held
+            }
             Shift::Listing(_) => return,
-        }
+        };
 
-        self.reach = Some(Reach::at(shift, rows.first()));
+        self.reach = Reach::after_dropping(shift, rows, held);
+        self.landed_by_a_jump = None;
         cx.notify();
     }
 
@@ -2530,21 +2592,29 @@ impl RootView {
         }
 
         match keystroke.key.as_str() {
-            "backspace" => {
-                if !self.drop_typed(cx) && !self.drop_reached(cx) {
-                    self.search.update(cx, |search, cx| search.drop_last(cx));
-                }
-            }
             "escape" if self.listening_open => self.close_the_listener(cx),
             "escape" if self.magnified.is_some() => self.shrink_cover(cx),
+            "escape" if self.adding.is_some() => self.stop_naming(window, cx),
             "escape" if self.record.is_some() => {
                 self.record = None;
                 cx.notify();
+            }
+            "escape" if self.menu.is_some() => {
+                self.close_the_menu(cx);
             }
             "escape" if Self::noticed(cx) => toast::dismiss(cx),
             "escape" => {
                 if !self.stop_typing(cx) {
                     self.dismiss_search(window, cx);
+                }
+            }
+            _ if self.something_stands_over_the_pane() => {}
+            "backspace" => {
+                if !self.drop_typed(cx)
+                    && !self.stands_where_a_jump_landed(cx)
+                    && !self.drop_reached(cx)
+                {
+                    self.search.update(cx, |search, cx| search.drop_last(cx));
                 }
             }
             _ => {
@@ -2623,6 +2693,7 @@ impl RootView {
             return;
         };
         self.reach_at(shift, row, false, cx);
+        self.landed_by_a_jump = self.reach;
         self.show_row(shift, row, cx);
     }
 
@@ -2636,6 +2707,30 @@ impl RootView {
             });
             let _ = stopped;
         });
+    }
+
+    pub(crate) const fn something_stands_over_the_pane(&self) -> bool {
+        self.menu.is_some()
+            || self.adding.is_some()
+            || self.magnified.is_some()
+            || self.record.is_some()
+            || self.listening_open
+    }
+
+    fn reach_by_hand(&mut self, cx: &mut Context<Self>) {
+        self.stop_typing(cx);
+        self.landed_by_a_jump = None;
+    }
+
+    fn stands_where_a_jump_landed(&self, cx: &App) -> bool {
+        let Some(landed) = self.landed_by_a_jump else {
+            return false;
+        };
+
+        self.reach == Some(landed)
+            && self
+                .reachable(cx)
+                .is_some_and(|(shift, _)| shift == landed.shift)
     }
 
     fn stop_typing(&mut self, cx: &mut Context<Self>) -> bool {
@@ -3563,6 +3658,14 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
                 this.seek_by(-seek_step(), cx);
             }))
+            .on_action(cx.listener(|this, _: &SeekFurtherForward, _, cx| {
+                this.seek_by(seek_further(), cx);
+            }))
+            .on_action(cx.listener(|this, _: &SeekFurtherBackward, _, cx| {
+                this.seek_by(-seek_further(), cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMute, _, cx| this.toggle_mute(cx)))
+            .on_action(cx.listener(|this, _: &ToggleQueue, _, cx| this.toggle_queue(cx)))
             .on_action(cx.listener(|this, _: &ToggleShuffle, _, cx| {
                 let shuffle = this.player.read(cx).state().shuffle;
                 this.send(Command::SetShuffle(!shuffle), cx);
@@ -3775,7 +3878,8 @@ mod tests {
     use resonate_core::{AlbumId, ArtistId};
 
     use super::{
-        Following, Landing, LeftAt, Pane, Step, UnderThePointer, in_front_of, landing, stepped_pane,
+        Following, Landing, LeftAt, Pane, PlayingRow, QueueStamp, Step, TrackId, UnderThePointer,
+        in_front_of, landing, stepped_pane,
     };
     use crate::{Selection, Tabs};
 
@@ -3903,39 +4007,93 @@ mod tests {
 
     const BEHIND_ANOTHER_PANE: bool = false;
 
+    fn track(id: u64) -> Option<TrackId> {
+        TrackId::new(id).ok()
+    }
+
+    fn queue_of(rows: &[u64]) -> QueueStamp {
+        QueueStamp::of(rows)
+    }
+
+    fn playing(row: usize, id: u64, queue: QueueStamp) -> Option<PlayingRow> {
+        Some(PlayingRow {
+            row,
+            track: track(id),
+            queue,
+        })
+    }
+
     #[test]
     fn the_queue_is_scrolled_to_the_row_that_started_playing() {
+        let queue = queue_of(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
         let mut following = Following::default();
 
-        assert_eq!(following.follows(Some(7), ON_SCREEN), Some(7));
-        assert_eq!(following.follows(Some(8), ON_SCREEN), Some(8));
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), Some(7));
+        assert_eq!(following.follows(playing(8, 9, queue), ON_SCREEN), Some(8));
     }
 
     #[test]
     fn a_redraw_that_leaves_the_playing_row_where_it_was_scrolls_nothing() {
+        let queue = queue_of(&[1, 2, 3, 4, 5, 6, 7, 8]);
         let mut following = Following::default();
 
-        assert_eq!(following.follows(Some(7), ON_SCREEN), Some(7));
-        assert_eq!(following.follows(Some(7), ON_SCREEN), None);
-        assert_eq!(following.follows(Some(7), ON_SCREEN), None);
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), Some(7));
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), None);
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), None);
+    }
+
+    #[test]
+    fn rows_taken_out_above_the_playing_one_move_it_without_scrolling() {
+        let before = queue_of(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        let after = queue_of(&[1, 4, 5, 6, 7, 8]);
+        let mut following = Following::default();
+
+        assert_eq!(following.follows(playing(7, 8, before), ON_SCREEN), Some(7));
+        assert_eq!(following.follows(playing(5, 8, after), ON_SCREEN), None);
+        assert_eq!(following.follows(playing(5, 8, after), ON_SCREEN), None);
+    }
+
+    #[test]
+    fn a_step_onto_the_same_track_queued_twice_still_scrolls_to_it() {
+        let queue = queue_of(&[1, 2, 3]);
+        let mut following = Following::default();
+
+        assert_eq!(following.follows(playing(0, 4, queue), ON_SCREEN), Some(0));
+        assert_eq!(following.follows(playing(2, 4, queue), ON_SCREEN), Some(2));
+    }
+
+    #[test]
+    fn another_track_starting_as_the_queue_changes_is_scrolled_to() {
+        let before = queue_of(&[1, 2, 3]);
+        let after = queue_of(&[1, 3]);
+        let mut following = Following::default();
+
+        assert_eq!(following.follows(playing(1, 2, before), ON_SCREEN), Some(1));
+        assert_eq!(following.follows(playing(1, 3, after), ON_SCREEN), Some(1));
     }
 
     #[test]
     fn a_queue_nobody_is_looking_at_is_not_scrolled_until_it_is_drawn_again() {
+        let queue = queue_of(&[1, 2, 3, 4, 5, 6, 7, 8]);
         let mut following = Following::default();
 
-        assert_eq!(following.follows(Some(7), BEHIND_ANOTHER_PANE), None);
-        assert_eq!(following.follows(Some(7), ON_SCREEN), Some(7));
+        assert_eq!(
+            following.follows(playing(7, 8, queue), BEHIND_ANOTHER_PANE),
+            None
+        );
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), Some(7));
     }
 
     #[test]
     fn a_queue_that_has_stopped_is_followed_nowhere_and_taken_up_afresh() {
+        let queue = queue_of(&[1, 2, 3, 4, 5, 6, 7, 8]);
         let mut following = Following::default();
 
-        assert_eq!(following.follows(Some(7), ON_SCREEN), Some(7));
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), Some(7));
         assert_eq!(following.follows(None, ON_SCREEN), None);
-        assert_eq!(following.follows(Some(7), ON_SCREEN), Some(7));
+        assert_eq!(following.follows(playing(7, 8, queue), ON_SCREEN), Some(7));
     }
+
     #[test]
     fn the_pane_keys_walk_the_sidebar_and_wrap_at_either_end() {
         let listed = Pane::BROWSE;
@@ -4001,5 +4159,287 @@ mod tests {
         assert!(Pane::Suggestions.is_shown(Tabs::AS_BUILT));
         assert!(!Pane::Missing.is_shown(Tabs::AS_BUILT));
         assert!(Pane::Missing.is_shown(EVERY_TAB));
+    }
+
+    mod driven {
+        use std::{path::PathBuf, sync::Arc};
+
+        use gpui::TestAppContext;
+        use resonate_core::{Span, Volume};
+        use resonate_library::{Cut, Direction, Library, PlaylistOrder};
+
+        use crate::{
+            Notice,
+            driven::{Driven, Folder},
+            toast,
+            views::{
+                menu::Menu,
+                playlists::Held,
+                reorder::{Reach, Shift},
+                root::{Magnified, Pane, RootView},
+            },
+        };
+
+        fn catalog() -> Arc<Library> {
+            Arc::new(Library::open_in_memory().expect("a catalog in memory"))
+        }
+
+        fn queued(folder: &Folder, names: &[&str]) -> Vec<PathBuf> {
+            names
+                .iter()
+                .map(|name| folder.tone(&format!("{name}.wav"), 1))
+                .collect()
+        }
+
+        fn queue_open(cx: &mut TestAppContext, folder: &Folder, names: &[&str]) -> Driven {
+            let files = queued(folder, names);
+            let mut driven = Driven::opened_in(cx, catalog(), folder);
+            driven.play(&files);
+            driven.click("queue");
+            driven.focus_the_window();
+            driven
+        }
+
+        fn reach(driven: &mut Driven) -> Option<Reach> {
+            driven.read(|root, _| root.reach)
+        }
+
+        impl Driven {
+            fn focus_the_window(&mut self) {
+                let root = self.root.clone();
+                self.cx
+                    .update(|window, cx| window.focus(&root.read(cx).focus));
+                self.settle();
+            }
+
+            fn lapse_the_type_ahead(&mut self) {
+                let root = self.root.clone();
+                self.cx.update(|_, cx| {
+                    root.update(cx, |root, cx| root.stop_typing(cx));
+                });
+                self.settle();
+                assert!(self.read(|root, _| root.type_ahead.typed().is_none()));
+            }
+        }
+
+        #[gpui::test]
+        fn deleting_the_last_rows_leaves_the_reach_on_the_row_now_last_and_delete_takes_that(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+            let before = driven.queue();
+
+            driven.cx.simulate_keystrokes("end shift-up delete");
+            driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+            assert_eq!(reach(&mut driven), Some(Reach::at(Shift::Queue, 1)));
+
+            driven.cx.simulate_keystrokes("delete");
+            driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+            assert_eq!(driven.queue(), [before[0]]);
+            assert_eq!(reach(&mut driven), Some(Reach::at(Shift::Queue, 0)));
+
+            driven.cx.simulate_keystrokes("delete");
+            driven.until(|root, cx| root.player.read(cx).queue().is_empty());
+
+            assert_eq!(reach(&mut driven), None);
+        }
+
+        #[gpui::test]
+        fn backspace_after_a_jump_has_lapsed_takes_nothing_out_of_the_queue(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["alpha", "bravo", "charlie"]);
+
+            driven.cx.simulate_keystrokes("c->c");
+            driven.until(|root, _| root.reach == Some(Reach::at(Shift::Queue, 2)));
+            driven.lapse_the_type_ahead();
+
+            driven.cx.simulate_keystrokes("backspace");
+            driven.settle();
+
+            assert_eq!(driven.queue().len(), 3);
+
+            driven.cx.simulate_keystrokes("delete");
+            driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+        }
+
+        #[gpui::test]
+        fn a_row_reached_by_hand_after_a_jump_is_taken_out_by_backspace(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["alpha", "bravo", "charlie"]);
+
+            driven.cx.simulate_keystrokes("c->c");
+            driven.until(|root, _| root.reach == Some(Reach::at(Shift::Queue, 2)));
+            driven.lapse_the_type_ahead();
+
+            driven.cx.simulate_keystrokes("up backspace");
+            driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+        }
+
+        fn nothing_behind_the_sheet_answers(driven: &mut Driven, rows: usize) {
+            let queue = driven.queue();
+
+            driven
+                .cx
+                .simulate_keystrokes("delete enter backspace alt-up down ctrl-z");
+            driven.cx.simulate_keystrokes("t->t");
+            driven.settle();
+
+            assert_eq!(driven.queue(), queue);
+            assert_eq!(queue.len(), rows);
+            assert_eq!(reach(driven), Some(Reach::at(Shift::Queue, 1)));
+            assert!(driven.read(|root, cx| {
+                root.type_ahead.typed().is_none() && root.search.read(cx).text().is_empty()
+            }));
+        }
+
+        #[gpui::test]
+        fn the_playlist_picker_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            driven.cx.simulate_keystrokes("down down");
+            let root = driven.root.clone();
+
+            driven.cx.update(|window, cx| {
+                root.update(cx, |root, cx| {
+                    let rows: Arc<[Cut]> = Arc::from(Vec::new());
+                    root.adding = Some(Held::of(rows));
+                    window.focus(&root.focus);
+                    cx.notify();
+                });
+            });
+            driven.settle();
+            nothing_behind_the_sheet_answers(&mut driven, 3);
+
+            driven.cx.simulate_keystrokes("escape");
+            assert!(driven.read(|root, _| root.adding.is_none()));
+        }
+
+        #[gpui::test]
+        fn the_magnified_cover_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            driven.cx.simulate_keystrokes("down down");
+            let location = driven.read(|root, cx| root.player.read(cx).queue()[0].location.clone());
+            let root = driven.root.clone();
+
+            driven.cx.update(|window, cx| {
+                root.update(cx, |root, cx| {
+                    root.magnify(Magnified::File(location), cx);
+                    window.focus(&root.focus);
+                });
+            });
+            driven.settle();
+            nothing_behind_the_sheet_answers(&mut driven, 3);
+        }
+
+        #[gpui::test]
+        fn the_listen_sheet_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            driven.cx.simulate_keystrokes("down down");
+            let root = driven.root.clone();
+
+            driven.cx.update(|window, cx| {
+                root.update(cx, |root, cx| {
+                    root.listening_open = true;
+                    window.focus(&root.focus);
+                    cx.notify();
+                });
+            });
+            driven.settle();
+            nothing_behind_the_sheet_answers(&mut driven, 3);
+        }
+
+        #[gpui::test]
+        fn escape_closes_an_open_menu_before_it_takes_a_toast_down(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one"]);
+            let root = driven.root.clone();
+
+            driven.cx.update(|_, cx| {
+                toast::tell(Notice::Done("Queued".to_owned()), cx);
+                root.update(cx, |root, cx| {
+                    root.menu = Some(Menu::at(gpui::point(gpui::px(40.0), gpui::px(40.0))));
+                    cx.notify();
+                });
+            });
+            driven.settle();
+
+            driven.cx.simulate_keystrokes("escape");
+            assert!(driven.read(|root, cx| root.menu.is_none() && RootView::noticed(cx)));
+
+            driven.cx.simulate_keystrokes("escape");
+            assert!(driven.read(|_, cx| !RootView::noticed(cx)));
+        }
+
+        #[gpui::test]
+        fn a_key_opens_the_queue_and_the_same_key_goes_back_to_the_pane_it_covered(
+            cx: &mut TestAppContext,
+        ) {
+            let mut driven = Driven::open(cx, catalog());
+            driven.focus_the_window();
+            let behind = driven.read(|root, _| root.pane);
+
+            driven.cx.simulate_keystrokes("ctrl-u");
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
+
+            driven.cx.simulate_keystrokes("ctrl-u");
+            assert_eq!(driven.read(|root, _| root.pane), behind);
+        }
+
+        #[gpui::test]
+        fn a_key_mutes_and_the_same_key_brings_back_the_level_it_was_heard_at(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one"]);
+            let heard_at = driven.read(|root, cx| root.player.read(cx).state().volume);
+
+            driven.cx.simulate_keystrokes("ctrl-m");
+            driven.until(|root, cx| root.player.read(cx).state().volume == Volume::MUTE);
+
+            driven.cx.simulate_keystrokes("ctrl-m");
+            driven.until(|root, cx| root.player.read(cx).state().volume == heard_at);
+        }
+
+        #[gpui::test]
+        fn two_edits_asked_for_at_once_both_land(cx: &mut TestAppContext) {
+            let library = catalog();
+            let mut driven = Driven::open(cx, Arc::clone(&library));
+            let model = driven.read(|root, _| root.library.clone());
+
+            driven.cx.update(|_, cx| {
+                model.update(cx, |model, cx| {
+                    model.create_playlist("Meddle".to_owned(), Vec::new(), cx);
+                    model.create_playlist("Animals".to_owned(), Vec::new(), cx);
+                });
+            });
+            driven.until(|_, _| {
+                library
+                    .playlist_lists(PlaylistOrder::Name, Direction::Ascending)
+                    .is_ok_and(|lists| lists.len() == 2)
+            });
+        }
+
+        #[gpui::test]
+        fn deleting_every_row_leaves_nothing_reached(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let root = driven.root.clone();
+
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| {
+                    root.drop_rows(Shift::Queue, Span::between(0, 1), cx);
+                });
+            });
+            driven.until(|root, cx| root.player.read(cx).queue().is_empty());
+
+            assert_eq!(reach(&mut driven), None);
+        }
     }
 }

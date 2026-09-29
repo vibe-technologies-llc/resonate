@@ -9,8 +9,8 @@ use resonate_library::{
 };
 
 use crate::{
-    Client, Identity, apple, commons, coverart, deezer, lrclib, musicbrainz, soundcloud, spotify,
-    wikidata, wikipedia,
+    Client, Error, Identity, Result, apple, client::passed_over_when_refused, commons, coverart,
+    deezer, lrclib, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -110,61 +110,152 @@ impl Reference for Online {
     }
 
     fn portrait(&self, links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {
+        let mut walk = Walk::default();
+
         for url in resonate_library::portrait_urls(links) {
-            if let Some(held) = commons::portrait(&self.client, url)? {
+            if let Some(held) = walk.tried(commons::portrait(&self.client, url))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::wikidata_urls(links) {
-            let Some(scaled) = wikidata::pictured(&self.client, url)? else {
+            let Some(scaled) = walk.tried(wikidata::pictured(&self.client, url))? else {
                 continue;
             };
-            if let Some(held) = commons::fetch(&self.client, &scaled)? {
+            if let Some(held) = walk.tried(commons::fetch(&self.client, &scaled))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::wikipedia_urls(links) {
-            let Some(scaled) = wikipedia::pictured(&self.client, url)? else {
+            let Some(scaled) = walk.tried(wikipedia::pictured(&self.client, url))? else {
                 continue;
             };
-            if let Some(held) = commons::fetch(&self.client, &scaled)? {
+            if let Some(held) = walk.tried(commons::fetch(&self.client, &scaled))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::apple_music_urls(links) {
-            if let Some(held) = apple::portrait(&self.client, url)? {
+            if let Some(held) = walk.tried(apple::portrait(&self.client, url))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::spotify_urls(links) {
-            if let Some(held) = spotify::portrait(&self.client, url)? {
+            if let Some(held) = walk.tried(spotify::portrait(&self.client, url))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::deezer_urls(links) {
-            if let Some(held) = deezer::portrait(&self.client, url)? {
+            if let Some(held) = walk.tried(deezer::portrait(&self.client, url))? {
                 return Ok(Some(held));
             }
         }
 
         for url in resonate_library::soundcloud_urls(links) {
-            if let Some(held) = soundcloud::portrait(&self.client, url)? {
+            if let Some(held) = walk.tried(soundcloud::portrait(&self.client, url))? {
                 return Ok(Some(held));
             }
         }
 
-        Ok(None)
+        Ok(walk.ended()?)
+    }
+}
+
+#[derive(Default)]
+struct Walk {
+    first_failure: Option<Error>,
+}
+
+impl Walk {
+    fn tried<T>(&mut self, answered: Result<Option<T>>) -> Result<Option<T>> {
+        match passed_over_when_refused(answered) {
+            Ok(held) => Ok(held),
+            Err(unreachable @ Error::Unreachable { .. }) => Err(unreachable),
+            Err(failed) => {
+                tracing::debug!(%failed, "a portrait source failed; the next is tried");
+                self.first_failure.get_or_insert(failed);
+                Ok(None)
+            }
+        }
+    }
+
+    fn ended<T>(self) -> Result<Option<T>> {
+        self.first_failure.map_or(Ok(None), Err)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
+    use resonate_library::LookupOp;
+
     use super::*;
+    use crate::Host;
+
+    fn refused(host: Host, status: u16) -> Result<Option<&'static str>> {
+        Err(Error::Refused {
+            host,
+            op: LookupOp::Portrait,
+            status,
+        })
+    }
+
+    #[test]
+    fn a_source_that_fails_is_passed_over_and_the_next_is_asked() {
+        let mut walk = Walk::default();
+
+        assert_eq!(walk.tried(refused(Host::Commons, 403)).ok(), Some(None));
+        assert_eq!(walk.tried(refused(Host::Wikidata, 500)).ok(), Some(None));
+        assert_eq!(
+            walk.tried::<&str>(Err(Error::Unreadable {
+                host: Host::Wikidata,
+                op: LookupOp::Portrait,
+            }))
+            .ok(),
+            Some(None)
+        );
+        assert_eq!(
+            walk.tried(Ok(Some("apple's picture"))).ok(),
+            Some(Some("apple's picture"))
+        );
+    }
+
+    #[test]
+    fn a_walk_that_found_nothing_answers_its_first_refusal_and_a_miss_under_five_hundred_is_none() {
+        let mut walk = Walk::default();
+        let _ = walk.tried(refused(Host::Commons, 404));
+        let _ = walk.tried(refused(Host::Spotify, 403));
+        assert!(matches!(walk.ended::<()>(), Ok(None)));
+
+        let mut walk = Walk::default();
+        let _ = walk.tried(refused(Host::Wikidata, 502));
+        let _ = walk.tried(refused(Host::Commons, 500));
+        let _ = walk.tried::<()>(Ok(None));
+        assert!(matches!(
+            walk.ended::<()>(),
+            Err(Error::Refused {
+                host: Host::Wikidata,
+                status: 502,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_source_that_cannot_be_reached_ends_the_walk() {
+        let mut walk = Walk::default();
+
+        let answered = walk.tried::<()>(Err(Error::Unreachable {
+            host: Host::Wikidata,
+            op: LookupOp::Portrait,
+            source: io::Error::from(io::ErrorKind::TimedOut),
+        }));
+        assert!(matches!(answered, Err(Error::Unreachable { .. })));
+    }
 
     #[test]
     fn the_reference_is_named_musicbrainz_and_shares_one_client() {

@@ -24,6 +24,11 @@ use crate::{
 
 const TUKEY_ALPHA: f32 = 0.4;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ENCODES_BEGUN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 pub(crate) struct Encoded {
     pub(crate) key: VaultKey,
     pub(crate) frames: Frames,
@@ -88,6 +93,8 @@ pub(crate) fn encode(
     let rate = spec.rate.hz() as usize;
     let whole_block = BLOCK_FRAMES * channels;
     let config = at_the_most_compression()?;
+    #[cfg(test)]
+    ENCODES_BEGUN.with(|begun| begun.set(begun.get() + 1));
 
     let mut stream = unencodable(Stream::new(rate, channels, depth), spec, bits)?;
     unencodable(

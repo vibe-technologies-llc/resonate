@@ -440,13 +440,23 @@ fn element_of(tag: &str) -> &str {
 fn marked_up(text: &str) -> String {
     let mut written = String::with_capacity(text.len());
 
-    for character in text.chars() {
+    for character in text
+        .chars()
+        .filter(|character| is_an_xml_character(*character))
+    {
         match ENTITIES.iter().find(|(_, marked)| *marked == character) {
             Some((named, _)) => written.push_str(&format!("&{named};")),
             None => written.push(character),
         }
     }
     written
+}
+
+const fn is_an_xml_character(character: char) -> bool {
+    matches!(
+        character,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..
+    )
 }
 
 fn plain_text(text: &str) -> String {
@@ -510,6 +520,13 @@ mod tests {
             .iter()
             .filter_map(|held| held.location.as_path().map(Path::to_path_buf))
             .collect()
+    }
+
+    #[test]
+    fn a_character_xml_forbids_is_left_out_of_the_text_written_and_every_other_is_kept() {
+        let written = marked_up("Bell\u{1}s & \u{8}Whistles\u{FFFE}\u{FFFF}\t\u{7F}\u{1F3B5}");
+
+        assert_eq!(written, "Bells &amp; Whistles\t\u{7F}\u{1F3B5}");
     }
 
     #[test]
