@@ -1685,6 +1685,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 ## The sink
 
+- **A global leaving the registry takes its proxy with it, whatever it was told first.** A device's
+  proxy is dropped on `global_remove` whether or not a `Route` param ever arrived for it, so a card
+  unplugged before its routes were enumerated — a USB DAC pulled in its first moment, a Bluetooth
+  profile that never settled — does not keep a proxy and its listener until the client reconnects.
 - **The client outlives its daemon.** Everything a connection holds — the core, the registry, their
   listeners and the proxies bound through them — is one `Graph`, and `Reaching` makes one: the loop
   keeps its main loop and context for the process's life and connects a core through them as often as

@@ -1189,9 +1189,8 @@ fn watch_the_registry(
                 state.microphones.remove(&id);
                 state.profiles.remove(&id);
                 state.offered_profiles.remove(&id);
-                if state.ports.remove(&id).is_some() {
-                    devices.borrow_mut().remove(&id);
-                }
+                state.ports.remove(&id);
+                devices.borrow_mut().remove(&id);
                 if state.sinks.remove(&id).is_some() {
                     drop(state);
                     nodes.borrow_mut().remove(&id);
