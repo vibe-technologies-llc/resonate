@@ -190,11 +190,11 @@ impl MediaLocation {
     }
 
     pub fn from_uri(uri: &str) -> Option<Self> {
-        if let Some(encoded) = uri.strip_prefix(FILE_SCHEME) {
+        if let Some(encoded) = without_prefix_in_any_case(uri, FILE_SCHEME) {
             let encoded = encoded
                 .split_once(PATH_ENDS)
                 .map_or(encoded, |(path, _)| path);
-            let encoded = encoded.strip_prefix(FILE_LOCALHOST).unwrap_or(encoded);
+            let encoded = without_prefix_in_any_case(encoded, FILE_LOCALHOST).unwrap_or(encoded);
             if !encoded.starts_with(KEY_SEPARATOR) {
                 return None;
             }
@@ -203,7 +203,10 @@ impl MediaLocation {
 
         let (scheme, key) = uri.split_once(SOURCE_SEPARATOR)?;
         let key = String::from_utf8(uri_unescaped(key)?).ok()?;
-        Some(Self::new(SourceId::new(scheme).ok()?, key))
+        Some(Self::new(
+            SourceId::new(&scheme.to_ascii_lowercase()).ok()?,
+            key,
+        ))
     }
 
     pub fn extension(&self) -> Option<&str> {
@@ -214,6 +217,12 @@ impl MediaLocation {
                 .filter(|extension| !extension.is_empty()),
         }
     }
+}
+
+fn without_prefix_in_any_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = text.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix)
+        .then(|| &text[prefix.len()..])
 }
 
 pub fn uri_escaped(text: &[u8]) -> String {
@@ -425,7 +434,6 @@ mod tests {
     fn a_uri_no_source_could_answer_for_is_refused() {
         assert_eq!(MediaLocation::from_uri("file://relative/../a.mp3"), None);
         assert_eq!(MediaLocation::from_uri("file:///music/a%2.mp3"), None);
-        assert_eq!(MediaLocation::from_uri("Subsonic:track/1"), None);
         assert_eq!(MediaLocation::from_uri("nothing"), None);
         assert_eq!(MediaLocation::from_uri("local:music/a.mp3"), None);
         assert_eq!(MediaLocation::from_uri("/music/Pink Floyd/a:b.flac"), None);
@@ -433,6 +441,28 @@ mod tests {
             MediaLocation::from_uri("file://localhost/music/a.mp3"),
             Some(MediaLocation::local("/music/a.mp3"))
         );
+    }
+
+    #[test]
+    fn a_scheme_and_localhost_are_read_in_any_case() {
+        let echoes = Some(MediaLocation::local("/music/Echoes.flac"));
+
+        for uri in [
+            "FILE:///music/Echoes.flac",
+            "File://LocalHost/music/Echoes.flac",
+            "file://LOCALHOST/music/Echoes.flac",
+        ] {
+            assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
+        }
+        assert_eq!(
+            MediaLocation::from_uri("Subsonic:track/1"),
+            MediaLocation::from_uri("subsonic:track/1")
+        );
+        assert_eq!(
+            MediaLocation::from_uri("FILE:///music/Échoes.flac"),
+            Some(MediaLocation::local("/music/Échoes.flac"))
+        );
+        assert_eq!(MediaLocation::from_uri("fil"), None);
     }
 
     #[test]

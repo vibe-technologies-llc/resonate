@@ -154,9 +154,9 @@ fn run() -> Result<()> {
 
     match &cli.command {
         Some(Sub::Sinks) => list_sinks(),
-        Some(Sub::Explain { path }) => explain(&cli, &config, path),
+        Some(Sub::Explain { path }) => explain(&cli, &config, &local_path(path)),
         Some(Sub::Info { path, graph }) => info::print(
-            path,
+            &local_path(path),
             &sources_over(vault_already_kept(&cli, &config).as_ref()),
             &engine_config(&cli, &config),
             *graph,
@@ -287,7 +287,7 @@ fn run() -> Result<()> {
         Some(Sub::Share { file }) => share::print(
             &open_library(&cli, &config)?,
             online::reference(&config).as_deref(),
-            file.as_deref(),
+            file.as_deref().map(local_path).as_deref(),
         ),
         Some(Sub::Mcp { player }) => mcp::serve(&cli, &config, player.as_deref()),
         None => {
@@ -1599,7 +1599,7 @@ fn understood(text: Option<&str>) -> Option<String> {
 fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
     let sources = Sources::local();
     let mut wanted = Vec::with_capacity(paths.len());
-    for path in paths {
+    for path in paths.iter().map(|path| local_path(path)) {
         let location =
             MediaLocation::local(
                 path.canonicalize()
@@ -2397,6 +2397,14 @@ fn keep_the_queue(player: &Player, library: Option<&Library>, keeping: &mut Keep
 
 const SHEET_EXTENSION: &str = "cue";
 
+fn local_path(argument: &Path) -> PathBuf {
+    argument
+        .to_str()
+        .and_then(MediaLocation::from_uri)
+        .and_then(|named| named.as_path().map(Path::to_path_buf))
+        .unwrap_or_else(|| argument.to_path_buf())
+}
+
 fn location_of_argument(argument: &OsStr, sources: &Sources) -> MediaLocation {
     argument
         .to_str()
@@ -2560,6 +2568,26 @@ mod tests {
             panic!("--import beside --for was refused: {parsed:?}");
         };
         assert_eq!(wanted.r#for.as_deref(), Some("alsa_output.usb"));
+    }
+
+    #[test]
+    fn a_file_uri_names_the_file_a_command_reads_and_a_path_is_taken_as_written() {
+        assert_eq!(
+            local_path(Path::new("file:///music/Pink%20Floyd/Echoes.flac")),
+            Path::new("/music/Pink Floyd/Echoes.flac")
+        );
+        assert_eq!(
+            local_path(Path::new("FILE://localhost/music/a.flac")),
+            Path::new("/music/a.flac")
+        );
+        assert_eq!(
+            local_path(Path::new("music/a.flac")),
+            Path::new("music/a.flac")
+        );
+        assert_eq!(
+            local_path(Path::new("subsonic:track/1")),
+            Path::new("subsonic:track/1")
+        );
     }
 
     #[test]

@@ -35,7 +35,10 @@ library row by what it holds, and none of the three can read a relative path: `t
 Latin-1 name survives its URI rather than becoming U+FFFD and refusing to read back; only an opaque
 key is held to UTF-8. An argument is read as another source's URI only where its scheme names a
 source this build's `Sources` holds, so `01:intro.flac` is a file here, not a key under a source
-called `01`.
+called `01`. The scheme and `localhost` are read in any case, as RFC 3986 has them — `FILE://`,
+`file://LocalHost/`, `Subsonic:` (`a_scheme_and_localhost_are_read_in_any_case`). A command that
+reads a local file alone — `info`, `explain`, `share <file>`, `playlist --add` — takes a `file://`
+URI through `main::local_path`, the path it decodes to or the argument as written.
 
 **A row cut out of a file is named by its frames as well.** `to_uri_within` appends
 `#frames=START-END` — or `START-` for a cut running to the end — and `from_uri_within` reads it
