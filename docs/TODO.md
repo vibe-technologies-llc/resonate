@@ -42,9 +42,8 @@ service or a format — and is not worked until that moves; everything else is o
 ## Performance and scale
 - Undo snapshots every row of a playlist for each edit that moves rows, so one row added to a
   100 000-row playlist reads all of them under the write lock
-- The vault's FLAC path has no early out: a 24-bit rip that will lose is encoded whole, read back
-  whole and then decoded twice more to be kept, and a duplicate pays the encode and the read-back
-  before `Deduped` is known
+- A duplicate FLAC still pays its whole encode before `Deduped` is known, the key being the MD5 the
+  encode lays the samples into
 - A vault row refused — `NoSmaller`, `NotValidated` — is weighed again at full cost by every
   import, with nothing stamping the refusal against `Encoding::OF_THIS_BUILD`
 - `keep_cover` decodes a JXL whole to learn its size on every dedup hit, and `Unpacking` starts the

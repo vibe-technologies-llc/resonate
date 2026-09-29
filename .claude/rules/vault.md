@@ -64,7 +64,15 @@ comparison may overrule it.
 - **`Form::Flac`** — integer PCM, 8–24 bits, ≤ 8 channels, ≤ 96 kHz. A streaming
   `flacenc::source::Source` over `resonate_codec::Decoder`, so a track is never held whole, written
   frame by frame with the header rewritten at the end. It carries STREAMINFO and **nothing else**
-  (no VORBIS_COMMENT, PICTURE or SEEKTABLE): stripping is construction, not a later pass.
+  (no VORBIS_COMMENT, PICTURE or SEEKTABLE): stripping is construction, not a later pass. **It
+  stops paying once it has lost**: `flac::encode` counts what it wrote and, the moment that reaches
+  the source's weight, stops encoding and writing but goes on laying the samples into the MD5 the
+  key is — `Encoded::outgrew` — so a 24-bit rip that will lose costs a decode past that point rather
+  than the rest of an encode and a whole read-back
+  (`an_encode_that_outgrows_its_ceiling_stops_writing_but_still_names_the_samples`). An encode that
+  outgrew, or one whose key already has an object standing where the import is not a renewal, is
+  weighed against that object before any read-back: `Deduped` where it fits, `NoSmaller` where it
+  does not or none stands — a duplicate no longer read back whole before `Deduped` is known.
 - **`Form::Wave`** — PCM FLAC cannot hold: `SampleFormat::F32`, > 24 bits or > 96 kHz. A canonical
   `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, stripped by construction, zstd'd at `ARCHIVED_AT`;
   refused over `LARGEST_PCM`, the RIFF ceiling — before anything is staged where the source declares

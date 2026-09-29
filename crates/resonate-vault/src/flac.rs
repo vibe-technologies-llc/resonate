@@ -27,6 +27,28 @@ const TUKEY_ALPHA: f32 = 0.4;
 pub(crate) struct Encoded {
     pub(crate) key: VaultKey,
     pub(crate) frames: Frames,
+    pub(crate) outgrew: bool,
+}
+
+struct Writing<'a> {
+    file: File,
+    path: &'a Path,
+    written: u64,
+    ceiling: Option<u64>,
+}
+
+impl Writing<'_> {
+    fn outgrew(&self) -> bool {
+        self.ceiling.is_some_and(|ceiling| self.written >= ceiling)
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        self.file
+            .write_all(bytes)
+            .map_err(|source| Error::io(VaultOp::Write, self.path, source))?;
+        self.written += bytes.len() as u64;
+        Ok(())
+    }
 }
 
 pub(crate) fn at_the_most_compression() -> Result<Verified<config::Encoder>> {
@@ -59,6 +81,7 @@ pub(crate) fn encode(
     spec: StreamSpec,
     bits: u8,
     into: &Path,
+    ceiling: Option<u64>,
 ) -> Result<Encoded> {
     let channels = usize::from(spec.channel_count().get());
     let depth = usize::from(bits);
@@ -75,10 +98,14 @@ pub(crate) fn encode(
         bits,
     )?;
 
-    let mut file = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
-    let placeholder = written(&stream)?;
-    file.write_all(&placeholder)
-        .map_err(|source| Error::io(VaultOp::Write, into, source))?;
+    let file = File::create(into).map_err(|source| Error::io(VaultOp::Stage, into, source))?;
+    let mut writing = Writing {
+        file,
+        path: into,
+        written: 0,
+        ceiling,
+    };
+    writing.write(&written(&stream)?)?;
 
     let mut framebuf = unencodable(FrameBuf::with_size(channels, BLOCK_FRAMES), spec, bits)?;
     let mut context = Context::new(depth, channels);
@@ -104,8 +131,7 @@ pub(crate) fn encode(
                 &mut stream,
                 &mut framebuf,
                 &mut context,
-                &mut file,
-                into,
+                &mut writing,
                 &pending[at..at + whole_block],
             )?;
             at += whole_block;
@@ -119,14 +145,20 @@ pub(crate) fn encode(
             &mut stream,
             &mut framebuf,
             &mut context,
-            &mut file,
-            into,
+            &mut writing,
             &pending,
         )?;
     }
 
     let digest = context.md5_digest();
     let total = context.total_samples();
+    if writing.outgrew() {
+        return Ok(Encoded {
+            key: VaultKey::of(digest),
+            frames: Frames(total as u64),
+            outgrew: true,
+        });
+    }
     stream.stream_info_mut().set_md5_digest(&digest);
     stream.stream_info_mut().set_total_samples(total);
     unencodable(
@@ -138,6 +170,7 @@ pub(crate) fn encode(
     )?;
 
     let header = written(&stream)?;
+    let mut file = writing.file;
     file.seek(SeekFrom::Start(0))
         .map_err(|source| Error::io(VaultOp::Write, into, source))?;
     file.write_all(&header)
@@ -148,6 +181,7 @@ pub(crate) fn encode(
     Ok(Encoded {
         key: VaultKey::of(digest),
         frames: Frames(total as u64),
+        outgrew: false,
     })
 }
 
@@ -156,8 +190,7 @@ fn emit(
     stream: &mut Stream,
     framebuf: &mut FrameBuf,
     context: &mut Context,
-    file: &mut File,
-    path: &Path,
+    writing: &mut Writing<'_>,
     samples: &[i32],
 ) -> Result<()> {
     let mut filling = (&mut *framebuf, &mut *context);
@@ -165,6 +198,9 @@ fn emit(
         tracing::warn!(%source, "a block of samples could not be laid into a frame");
         Error::Encoding { op: FlacOp::Fill }
     })?;
+    if writing.outgrew() {
+        return Ok(());
+    }
 
     let number = context.current_frame_number().unwrap_or_default();
     let frame = encode_fixed_size_frame(config, framebuf, number, stream.stream_info()).map_err(
@@ -174,9 +210,7 @@ fn emit(
         },
     )?;
 
-    let bytes = written(&frame)?;
-    file.write_all(&bytes)
-        .map_err(|source| Error::io(VaultOp::Write, path, source))?;
+    writing.write(&written(&frame)?)?;
     stream.stream_info_mut().update_frame_info(&frame);
     Ok(())
 }
@@ -197,4 +231,79 @@ fn unencodable<T, E>(answered: std::result::Result<T, E>, spec: StreamSpec, bits
         channels: spec.channel_count().get(),
         bits,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, process};
+
+    use resonate_codec::Sources;
+    use resonate_core::{MediaLocation, SampleFormat};
+
+    use super::*;
+
+    const RATE: u32 = 44_100;
+    const FRAMES: u32 = 20_000;
+
+    fn noise_wave() -> Vec<u8> {
+        let mut state = 0x9e37_79b9_u32;
+        let mut data = Vec::with_capacity(FRAMES as usize * 4);
+        for _ in 0..FRAMES * 2 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            data.extend_from_slice(&((state >> 16) as i16).to_le_bytes());
+        }
+        let mut wave = b"RIFF".to_vec();
+        wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(b"WAVEfmt ");
+        wave.extend_from_slice(&16_u32.to_le_bytes());
+        wave.extend_from_slice(&1_u16.to_le_bytes());
+        wave.extend_from_slice(&2_u16.to_le_bytes());
+        wave.extend_from_slice(&RATE.to_le_bytes());
+        wave.extend_from_slice(&(RATE * 4).to_le_bytes());
+        wave.extend_from_slice(&4_u16.to_le_bytes());
+        wave.extend_from_slice(&16_u16.to_le_bytes());
+        wave.extend_from_slice(b"data");
+        wave.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wave.extend_from_slice(&data);
+        wave
+    }
+
+    fn encoded(source: &Path, into: &Path, ceiling: Option<u64>) -> Encoded {
+        let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(source))
+            .expect("a readable source");
+        decoder.set_output_format(SampleFormat::S16);
+        let spec = StreamSpec::new(info.spec.rate, info.spec.channels, SampleFormat::S16);
+        encode(&mut decoder, spec, 16, into, ceiling).expect("an encode")
+    }
+
+    #[test]
+    fn an_encode_that_outgrows_its_ceiling_stops_writing_but_still_names_the_samples() {
+        let folder = env::temp_dir().join(format!("resonate-vault-flac-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let source = folder.join("noise.wav");
+        fs::write(&source, noise_wave()).expect("a written source");
+        let whole_at = folder.join("whole.flac");
+        let cut_at = folder.join("cut.flac");
+
+        let whole = encoded(&source, &whole_at, None);
+        let ceiling = 4_096;
+        let cut = encoded(&source, &cut_at, Some(ceiling));
+        let whole_bytes = fs::metadata(&whole_at).expect("the whole encode").len();
+        let cut_bytes = fs::metadata(&cut_at).expect("the cut encode").len();
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(!whole.outgrew);
+        assert!(cut.outgrew);
+        assert_eq!(
+            cut.key, whole.key,
+            "an encode cut short named other samples"
+        );
+        assert_eq!(cut.frames, whole.frames);
+        assert!(
+            cut_bytes < whole_bytes / 2,
+            "an encode past its ceiling went on writing: {cut_bytes} of {whole_bytes}"
+        );
+    }
 }

@@ -530,7 +530,7 @@ impl Vault {
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let staging = self.staged(FLAC_EXTENSION)?;
-        let encoded = match flac::encode(decoder, spec, stored, &staging) {
+        let encoded = match flac::encode(decoder, spec, stored, &staging, weighing.smaller_than) {
             Ok(encoded) => encoded,
             Err(error) => {
                 self.discard(&staging)?;
@@ -541,6 +541,29 @@ impl Vault {
         if encoded.frames == Frames::ZERO {
             self.discard(&staging)?;
             return Ok(Keeping::Refused(Refusal::Empty));
+        }
+        let target = self.object_path(encoded.key, FLAC_EXTENSION);
+        if encoded.outgrew || (!weighing.renewing && target.is_file()) {
+            self.discard(&staging)?;
+            let Some(standing) = self.standing(&target)? else {
+                return Ok(Keeping::Refused(Refusal::NoSmaller));
+            };
+            if !weighing.fits(standing) {
+                return Ok(Keeping::Refused(Refusal::NoSmaller));
+            }
+            return Ok(Landing::Deduped(standing).kept(Kept {
+                key: encoded.key,
+                form: Form::Flac,
+                path: target,
+                bytes: 0,
+                was: 0,
+                spec,
+                frames: encoded.frames,
+                codec,
+                deduped: false,
+                replaced: false,
+                declared: Box::default(),
+            }));
         }
 
         self.settled(
@@ -848,6 +871,14 @@ impl Vault {
             self.discard(staging)?;
         }
         Ok(landing)
+    }
+
+    fn standing(&self, target: &Path) -> Result<Option<u64>> {
+        let _landing = self.landing.lock();
+        match target.is_file() {
+            true => self.sized(target).map(Some),
+            false => Ok(None),
+        }
     }
 
     fn read_back_packed(&self, path: &Path, format: Option<SampleFormat>) -> Result<Heard> {
