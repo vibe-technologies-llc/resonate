@@ -49,7 +49,7 @@ pub use resonate_codec::{
     Raster, Rated, Sources, StandIn, StoodIn, TagEdit, TagField, TagSet, TagSink, TagSource,
     Tagged,
 };
-pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service};
+pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service, TextEncoding};
 pub use resonate_vault::{
     Encoding, Form, HeldFile, Holdings, Keeping, Kept as KeptInVault, KeptCover,
     Refusal as VaultRefusal, Taking, Vault, VaultFiles, VaultKey,
@@ -83,8 +83,8 @@ pub use crate::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
         Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported, KeptCorrection, KeptIndex,
         KeptLyrics, Listen, Measured, Missing, MissingTrack, NamedPlaylist, Playing, Playlist,
-        PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned, ReleaseDetail, Released,
-        SheetEncoding, Track, TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
+        PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned, ReleaseDetail, Released, Track,
+        TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
     },
     organise::{
         Companion, DEFAULT_LAYOUT, Field, Layout, Move, OrganiseOptions, OrganiseProgress,

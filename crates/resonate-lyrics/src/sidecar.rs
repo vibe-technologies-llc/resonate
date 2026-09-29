@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::SourceId;
+use resonate_core::{SourceId, text};
 
 use crate::{
     Error, LARGEST_LYRICSFILE, LyricOp, LyricProvider, Lyrics, Result, Wanted, lrc, read_lyricsfile,
@@ -393,18 +393,21 @@ fn lowered(name: Option<&OsStr>) -> Option<String> {
     Some(name?.to_string_lossy().to_lowercase())
 }
 
-fn whole_lines_within_a_sheet(mut head: Vec<u8>) -> String {
-    if head.len() as u64 <= LARGEST_SIDECAR {
-        return String::from_utf8_lossy(&head).into_owned();
+fn whole_lines_within_a_sheet(head: Vec<u8>) -> String {
+    let cut_short = head.len() as u64 > LARGEST_SIDECAR;
+    let mut sheet = text::decoded(&head).0;
+    if !cut_short && sheet.len() as u64 <= LARGEST_SIDECAR {
+        return sheet;
     }
-    head.truncate(LARGEST_SIDECAR as usize);
-    let ended = head
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |last| last + 1);
-    head.truncate(ended);
 
-    String::from_utf8_lossy(&head).into_owned()
+    let mut within = sheet.len().min(LARGEST_SIDECAR as usize);
+    while !sheet.is_char_boundary(within) {
+        within -= 1;
+    }
+    sheet.truncate(within);
+    let ended = sheet.rfind('\n').map_or(0, |last| last + 1);
+    sheet.truncate(ended);
+    sheet
 }
 
 #[cfg(test)]
@@ -530,6 +533,25 @@ mod tests {
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(lyrics.source().as_str(), SIDECAR);
         assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    #[test]
+    fn an_lrc_written_in_a_legacy_code_page_is_read_in_it() {
+        let tree = Tree::new();
+        let sung = "[00:01.00]Группа крови на рукаве\n[00:05.00]Мой порядковый номер на рукаве";
+        let written = text::encoded(
+            sung,
+            resonate_core::TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251),
+        )
+        .expect("Cyrillic letters");
+        fs::write(tree.root.join("Кино.lrc"), written).expect("a writable temporary file");
+
+        let lyrics = found(&tree.track("Кино.flac")).expect("the file beside it");
+
+        assert_eq!(
+            lyrics.lines().first().map(|line| line.text.as_str()),
+            Some("Группа крови на рукаве")
+        );
     }
 
     const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");

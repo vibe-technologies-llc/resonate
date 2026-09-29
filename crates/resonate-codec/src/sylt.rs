@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::text::{legacy, wide};
+use resonate_core::{TextEncoding, text::decoded_as};
 
 pub(crate) const FRAME_IDS: [&str; 2] = ["SYLT", "SLT"];
 
@@ -54,9 +54,9 @@ impl Encoding {
 
     fn read(&mut self, bytes: &[u8]) -> String {
         match self {
-            Self::Latin1 => legacy(bytes),
+            Self::Latin1 => decoded_as(bytes, TextEncoding::WINDOWS_1252),
             Self::Utf8 => String::from_utf8_lossy(bytes).into_owned(),
-            Self::Utf16Be => wide(bytes, u16::from_be_bytes),
+            Self::Utf16Be => decoded_as(bytes, TextEncoding::Utf16Be),
             Self::Utf16 { little } => {
                 let body = if let Some(rest) = bytes.strip_prefix(&UTF16_LE_BOM) {
                     *little = true;
@@ -68,9 +68,9 @@ impl Encoding {
                     bytes
                 };
                 if *little {
-                    wide(body, u16::from_le_bytes)
+                    decoded_as(body, TextEncoding::Utf16Le)
                 } else {
-                    wide(body, u16::from_be_bytes)
+                    decoded_as(body, TextEncoding::Utf16Be)
                 }
             }
         }

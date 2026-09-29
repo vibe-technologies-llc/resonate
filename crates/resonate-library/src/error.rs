@@ -255,8 +255,8 @@ pub enum Error {
         limit: u64,
     },
 
-    #[error("{path} is not valid UTF-8, and a playlist file is read as text", path = path.display())]
-    NonUtf8PlaylistFile { path: PathBuf },
+    #[error("{path} is not text in any encoding a playlist file is read in", path = path.display())]
+    UnreadablePlaylistFile { path: PathBuf },
 
     #[error("{path} names no file a playlist could be written to", path = path.display())]
     NotAPlaylistFile { path: PathBuf },

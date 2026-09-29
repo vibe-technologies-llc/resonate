@@ -7,9 +7,9 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate};
+use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, text};
 
-use crate::{Error, PlaylistEntry, PlaylistFormat, Result, SheetEncoding, m3u, pls, store, xspf};
+use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf};
 
 const LARGEST_PLAYLIST_FILE: u64 = 8 * 1024 * 1024;
 
@@ -40,15 +40,6 @@ const LINE_BREAKS: [char; 2] = ['\n', '\r'];
 const UTF8_BY_DEFINITION: [&str; 2] = ["m3u8", "xspf"];
 
 const UNRESERVED: [char; 4] = ['-', '.', '_', '~'];
-
-const WINDOWS_1252_ABOVE_LATIN1: [char; 32] = [
-    '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}',
-    '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
-];
-
-const WINDOWS_1252_FLOOR: u8 = 0x80;
-
-const WINDOWS_1252_CEILING: u8 = 0x9f;
 
 pub const START_TIME: &str = "start-time=";
 
@@ -156,7 +147,7 @@ impl Sheet {
 pub struct Reading {
     pub sheet: Sheet,
     pub format: PlaylistFormat,
-    pub encoding: SheetEncoding,
+    pub encoding: TextEncoding,
 }
 
 pub struct Described {
@@ -411,34 +402,21 @@ fn sniffed(text: &str) -> PlaylistFormat {
     PlaylistFormat::M3u
 }
 
-fn decoded(path: &Path) -> Result<(String, SheetEncoding)> {
+fn decoded(path: &Path) -> Result<(String, TextEncoding)> {
     let bytes = within_the_limit(path)?;
+    let encoding = text::detected(&bytes);
 
-    match String::from_utf8(bytes) {
-        Ok(text) => Ok((without_a_mark(text), SheetEncoding::Utf8)),
-        Err(refused) => Ok((
-            legacy_text(path, refused.as_bytes())?,
-            SheetEncoding::Windows1252,
-        )),
-    }
-}
-
-fn legacy_text(path: &Path, bytes: &[u8]) -> Result<String> {
-    if declares_utf8(path) || bytes.contains(&NOTHING_TEXT_HOLDS) {
-        return Err(Error::NonUtf8PlaylistFile {
+    let unreadable = match encoding {
+        TextEncoding::Utf8 => false,
+        TextEncoding::Utf16Le | TextEncoding::Utf16Be => bytes.len() % encoding.unit_bytes() != 0,
+        TextEncoding::Legacy(_) => declares_utf8(path) || bytes.contains(&NOTHING_TEXT_HOLDS),
+    };
+    if unreadable {
+        return Err(Error::UnreadablePlaylistFile {
             path: path.to_path_buf(),
         });
     }
-
-    Ok(bytes
-        .iter()
-        .map(|byte| match byte {
-            WINDOWS_1252_FLOOR..=WINDOWS_1252_CEILING => {
-                WINDOWS_1252_ABOVE_LATIN1[usize::from(byte - WINDOWS_1252_FLOOR)]
-            }
-            byte => char::from(*byte),
-        })
-        .collect())
+    Ok((without_a_mark(text::decoded_as(&bytes, encoding)), encoding))
 }
 
 fn declares_utf8(path: &Path) -> bool {

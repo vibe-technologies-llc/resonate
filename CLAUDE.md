@@ -5,7 +5,7 @@ automatically where their `paths:` match:
 
 | File | Scope | Covers |
 |---|---|---|
-| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives |
+| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, every config key, the settings file |

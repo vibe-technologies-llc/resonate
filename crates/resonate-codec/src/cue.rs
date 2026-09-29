@@ -5,14 +5,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use resonate_core::{Decibels, FrameSpan, Frames, MediaLocation, SampleRate};
-
-use crate::{
-    Error, MediaInfo, ReplayGain, Result, TagSet,
-    source::Sources,
-    tags::Uppercased,
-    text::{TextEncoding, UTF8_BOM, decoded, encoded, legacy},
+use resonate_core::{
+    Decibels, FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding,
+    text::{UTF8_BOM, decoded, decoded_as, encoded},
 };
+
+use crate::{Error, MediaInfo, ReplayGain, Result, TagSet, source::Sources, tags::Uppercased};
 
 const SECTORS_PER_SECOND: u64 = 75;
 const MOST_TRACKS: usize = 999;
@@ -395,7 +393,12 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     let named = encoded(from, held.encoding)?;
     let at = the_run_on_the_file_line(sheet, &named, held.encoding)?;
     let Some(naming) = encoded(to, held.encoding) else {
-        return Some(carried_into_unicode(sheet, at..at + named.len(), to));
+        return Some(carried_into_unicode(
+            sheet,
+            held.encoding,
+            at..at + named.len(),
+            to,
+        ));
     };
 
     let mut written = Vec::with_capacity(sheet.len() + naming.len() - named.len());
@@ -405,14 +408,19 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     Some(written)
 }
 
-fn carried_into_unicode(sheet: &[u8], named: Range<usize>, to: &str) -> Vec<u8> {
+fn carried_into_unicode(
+    sheet: &[u8],
+    encoding: TextEncoding,
+    named: Range<usize>,
+    to: &str,
+) -> Vec<u8> {
     let body = if sheet.starts_with(&UTF8_BOM) {
         UTF8_BOM.len()
     } else {
         0
     };
-    let before = legacy(sheet.get(body..named.start).unwrap_or_default());
-    let after = legacy(sheet.get(named.end..).unwrap_or_default());
+    let before = decoded_as(sheet.get(body..named.start).unwrap_or_default(), encoding);
+    let after = decoded_as(sheet.get(named.end..).unwrap_or_default(), encoding);
 
     let mut written = Vec::with_capacity(UTF8_BOM.len() + before.len() + to.len() + after.len());
     written.extend_from_slice(&UTF8_BOM);
@@ -470,15 +478,12 @@ fn follows_a_file_command(sheet: &[u8], at: usize, encoding: TextEncoding) -> bo
 }
 
 const fn unit_bytes(encoding: TextEncoding) -> usize {
-    match encoding {
-        TextEncoding::Utf8 | TextEncoding::Windows1252 => 1,
-        TextEncoding::Utf16Le | TextEncoding::Utf16Be => 2,
-    }
+    encoding.unit_bytes()
 }
 
 fn character(piece: &[u8], encoding: TextEncoding) -> Option<char> {
     match (encoding, piece) {
-        (TextEncoding::Utf8 | TextEncoding::Windows1252, [byte]) => Some(char::from(*byte)),
+        (TextEncoding::Utf8 | TextEncoding::Legacy(_), [byte]) => Some(char::from(*byte)),
         (TextEncoding::Utf16Le, [low, high]) => {
             char::from_u32(u32::from(u16::from_le_bytes([*low, *high])))
         }
@@ -1407,6 +1412,23 @@ FILE "Meddle.flac" WAVE
     }
 
     #[test]
+    fn a_sheet_written_in_a_japanese_code_page_is_read_and_renamed_in_it() {
+        let japanese = TextEncoding::Legacy(resonate_core::LegacyEncoding::SHIFT_JIS);
+        let text = "PERFORMER \"植松伸夫\"\nTITLE \"ファイナルファンタジー オリジナル・サウンドトラック\"\nFILE \"ファイナルファンタジー.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"序曲\"\n    INDEX 01 00:00:00\n";
+        let bytes = encoded(text, japanese).expect("Japanese letters");
+
+        let sheet = read(&bytes);
+        assert_eq!(sheet.encoding, japanese);
+        assert_eq!(sheet.files[0].named, "ファイナルファンタジー.flac");
+        assert_eq!(sheet.files[0].tracks[0].tags.title.as_deref(), Some("序曲"));
+
+        let written =
+            renamed(&bytes, "ファイナルファンタジー.flac", "01 序曲.flac").expect("rewritten");
+        assert_eq!(read(&written).files[0].named, "01 序曲.flac");
+        assert_eq!(read(&written).encoding, japanese);
+    }
+
+    #[test]
     fn a_sheet_carrying_more_tracks_than_a_disc_could_stops_at_the_bound() {
         let mut text = String::from("FILE \"one.flac\" WAVE\n");
         for number in 0..MOST_TRACKS + 10 {
@@ -1544,7 +1566,7 @@ FILE "Meddle.flac" WAVE
             b".flac\" WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n",
         ]
         .concat();
-        assert_eq!(read(&legacy).encoding, TextEncoding::Windows1252);
+        assert_eq!(read(&legacy).encoding, TextEncoding::WINDOWS_1252);
 
         let written = renamed(&legacy, "Ecout\u{e9}.flac", "Przybyłowicz.flac")
             .expect("the sheet is rewritten");
@@ -1560,6 +1582,6 @@ FILE "Meddle.flac" WAVE
         );
 
         let kept = renamed(&legacy, "Ecout\u{e9}.flac", "Ecoute.flac").expect("it renames");
-        assert_eq!(read(&kept).encoding, TextEncoding::Windows1252);
+        assert_eq!(read(&kept).encoding, TextEncoding::WINDOWS_1252);
     }
 }

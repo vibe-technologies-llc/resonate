@@ -49,6 +49,8 @@ smallvec = { version = "1.16.2", default-features = false, features = ["union", 
 unicode-segmentation = { version = "1.13.3", default-features = false }
 unicode-width = { version = "0.2.2", default-features = false }
 unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
+encoding_rs = { version = "0.8.42", default-features = false, features = ["alloc"] }
+chardetng = { version = "1.0.0", default-features = false }
 image = {
     version = "0.25.10",
     default-features = false,

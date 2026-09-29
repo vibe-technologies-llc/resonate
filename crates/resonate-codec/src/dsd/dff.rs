@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, text::decoded};
 
 use crate::{
     Error, Result,
@@ -10,7 +10,6 @@ use crate::{
     },
     prescan::read_exact,
     source::MediaStream,
-    text::decoded,
 };
 
 const FORM_HEADER_BYTES: u64 = 12;

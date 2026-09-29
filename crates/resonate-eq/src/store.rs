@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use resonate_core::eq::Profile;
+use resonate_core::{eq::Profile, text};
 
 use crate::{Error, Result, StoreOp, apo};
 
@@ -142,11 +142,11 @@ impl Store {
             Err(source) => return Err(Self::failed(path, StoreOp::Read)(source)),
         };
 
-        let mut text = String::new();
+        let mut bytes = Vec::new();
         file.take(apo::LARGEST_PROFILE as u64 + 1)
-            .read_to_string(&mut text)
+            .read_to_end(&mut bytes)
             .map_err(Self::failed(path, StoreOp::Read))?;
-        Ok(Some(text))
+        Ok(Some(text::decoded(&bytes).0))
     }
 
     pub fn read(&self, name: &ProfileName) -> Result<Option<Profile>> {
@@ -443,6 +443,23 @@ mod tests {
             scratch.store.read(&name).expect("it reads"),
             Some(profile())
         );
+    }
+
+    #[test]
+    fn a_file_a_windows_editor_saved_as_utf_16_imports_as_the_bands_it_names() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let from = folder.join("measured.txt");
+        let mut wide = vec![0xFF, 0xFE];
+        for unit in apo::write(&profile()).encode_utf16() {
+            wide.extend_from_slice(&unit.to_le_bytes());
+        }
+        fs::write(&from, wide).expect("a writable file");
+
+        let (_, kept) = scratch.store.import(&from, None).expect("it imports");
+
+        assert_eq!(kept.profile, profile());
     }
 
     #[test]

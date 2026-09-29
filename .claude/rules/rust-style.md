@@ -45,3 +45,16 @@ name, a constructor enforcing it, or `CLAUDE.md` — not beside the field.
   `BTreeMap` so the device list is stable between runs.
 - **`parking_lot::{Mutex, RwLock}`, never `std::sync`'s.** No poisoning, so `lock()` / `read()` /
   `write()` return the guard with no `unwrap()`. `std::sync::{Arc, atomic}` are used normally.
+
+## Text read from a file
+
+- **Text a file of the listener's holds is read through `resonate_core::text`, never assumed to be
+  UTF-8.** `text::decoded` weighs a byte-order mark first (UTF-8, UTF-16LE, UTF-16BE), then valid
+  UTF-8, and only then asks `chardetng` which legacy code page the bytes are in — Windows-1252,
+  CP1251, Shift-JIS, GBK, Big5 and the rest `encoding_rs` knows — answering the `TextEncoding` beside
+  the text so a writer can put it back as it was (`text::encoded`, `None` where the code page has no
+  letter for it). A cue sheet, a playlist sheet, a RIFF `INFO` list (weighed whole, one guess for
+  every value), an LRC or `.txt` lyric sidecar and an EqualizerAPO profile go through it. Formats
+  that define their encoding — XSPF, a Lyricsfile, an ID3 frame's own encoding byte — read as
+  defined. In core because the codec, the library, the lyrics and the equaliser all read text and
+  none may see the others.

@@ -34,9 +34,9 @@ use resonate_library::{
     PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
     RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder,
-    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEncoding,
-    Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagField, TagSet, TagSink,
-    TagSource, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SortOrder,
+    Sought, Sources, StreamAsked, Suggestion, TagField, TagSet, TagSink, TagSource, TextEncoding,
+    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -3275,7 +3275,7 @@ fn a_playlist_file_neither_side_can_read_is_refused_by_name() -> Result<()> {
 
     assert!(matches!(
         library.import_playlist(&sheet, None),
-        Err(Error::NonUtf8PlaylistFile { .. })
+        Err(Error::UnreadablePlaylistFile { .. })
     ));
     assert!(
         library
@@ -3620,7 +3620,7 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
 
     let sheet = tree.write("legacy.m3u", &bytes);
     let imported = library.import_playlist(&sheet, None)?;
-    assert_eq!(imported.encoding, SheetEncoding::Windows1252);
+    assert_eq!(imported.encoding, TextEncoding::WINDOWS_1252);
     assert_eq!(
         imported.name, "Kvæld “Live”",
         "the bytes above Latin-1 were not read as Windows-1252"
@@ -3633,10 +3633,41 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     assert!(
         matches!(
             library.import_playlist(&strict, None),
-            Err(Error::NonUtf8PlaylistFile { .. })
+            Err(Error::UnreadablePlaylistFile { .. })
         ),
         "a sheet whose name declares UTF-8 was read as something else"
     );
+    Ok(())
+}
+
+#[test]
+fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    tree.write("Кино.wav", b"a file no scan has read");
+    let sheet = "#EXTM3U\n#PLAYLIST:Группа крови\nКино.wav\n";
+
+    let mut wide = vec![0xFF, 0xFE];
+    for unit in sheet.encode_utf16() {
+        wide.extend_from_slice(&unit.to_le_bytes());
+    }
+    let imported = library.import_playlist(&tree.write("wide.m3u8", &wide), None)?;
+    assert_eq!(imported.encoding, TextEncoding::Utf16Le);
+    assert_eq!(imported.name, "Группа крови");
+    assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Кино"]);
+
+    let cyrillic = resonate_core::text::encoded(
+        &sheet.replace("Группа крови", "Звезда по имени Солнце"),
+        TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251),
+    )
+    .expect("Cyrillic letters");
+    let imported = library.import_playlist(&tree.write("cyrillic.m3u", &cyrillic), None)?;
+    assert_eq!(
+        imported.encoding,
+        TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251)
+    );
+    assert_eq!(imported.name, "Звезда по имени Солнце");
+    assert_eq!(imported.missing, 0);
     Ok(())
 }
 

@@ -18,6 +18,7 @@ mod resume;
 mod rt;
 mod span;
 mod stamp;
+pub mod text;
 mod time;
 mod volume;
 
@@ -40,6 +41,7 @@ pub use crate::{
     rt::{RtFault, Silence},
     span::Span,
     stamp::QueueStamp,
+    text::{LegacyEncoding, TextEncoding},
     time::{FrameSpan, Frames},
     volume::{AppliedGain, Decibels, Gain, Trim, Volume},
 };

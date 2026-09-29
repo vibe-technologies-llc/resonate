@@ -226,7 +226,7 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
         Library::RootNotADirectory { .. } => "that isn't a folder",
         Library::RootInsideRoot { .. } => "that folder is already in the library",
         Library::NotARoot { .. } => "that folder isn't in the library",
-        Library::NotAPlaylistFile { .. } | Library::NonUtf8PlaylistFile { .. } => {
+        Library::NotAPlaylistFile { .. } | Library::UnreadablePlaylistFile { .. } => {
             "that file isn't a playlist Resonate can read"
         }
         _ => return None,

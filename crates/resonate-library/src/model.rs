@@ -7,7 +7,7 @@ use std::{
 use resonate_codec::{Codec, ReplayGain};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, Frames, ListenId, MediaLocation, PlaylistId, QueueStamp,
-    ReleaseTrackId, StreamSpec, TrackId, WantId,
+    ReleaseTrackId, StreamSpec, TextEncoding, TrackId, WantId,
 };
 use resonate_vault::{Encoding, Form, VaultKey};
 
@@ -453,22 +453,6 @@ impl PlaylistFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum SheetEncoding {
-    #[default]
-    Utf8,
-    Windows1252,
-}
-
-impl SheetEncoding {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Utf8 => "UTF-8",
-            Self::Windows1252 => "Windows-1252",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Exported {
     pub rows: usize,
@@ -485,5 +469,5 @@ pub struct Imported {
     pub missing: usize,
     pub short: usize,
     pub format: PlaylistFormat,
-    pub encoding: SheetEncoding,
+    pub encoding: TextEncoding,
 }

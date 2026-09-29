@@ -20,7 +20,9 @@ paths:
   `[workspace.dependencies]` if anything depends on it.
 - **The layering:**
   - `resonate-core` takes no symphonia, pipewire, gpui or serde (`cargo tree -p resonate-core`);
-    one would stop `resonate-dsp` being a leaf and grow the resampler's test cycle a full link.
+    one would stop `resonate-dsp` being a leaf and grow the resampler's test cycle a full link. It
+    does take `encoding_rs` and `chardetng`, pure Rust with no default features, for the one text
+    reader every crate reading a listener's files shares (`rust-style.md`).
   - `resonate-codec`, `resonate-dsp` and `resonate-pipewire` never depend on each other;
     `resonate-lyrics` and `resonate-eq` on none of gpui, the engine or the library; `resonate-dsp`
     on neither of those two, the equaliser's arithmetic being in `resonate-core::eq` so the

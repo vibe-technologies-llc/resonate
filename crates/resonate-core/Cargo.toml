@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+chardetng.workspace = true
+encoding_rs.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 

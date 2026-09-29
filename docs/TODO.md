@@ -25,9 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Formats
 - `INDEX 00` is thrown away, so a pregap between two tracks of one file plays as the tail of the row
   before it
-- A sheet that is neither UTF-8 nor UTF-16 with a mark is read as Windows-1252, so a CP1251, GBK,
-  Shift-JIS or Big5 `.cue` arrives as mojibake; a UTF-16 playlist sheet is refused outright, and
-  RIFF `INFO` strings, EqualizerAPO profiles and lyric sidecars are read as UTF-8 alone
 - A cue `FILE` naming a file in a subfolder of the sheet's is looked for beside the sheet alone, so a
   sheet at an album's root cutting `CD1/01.flac` claims nothing
 - RF64, BW64 and Wave64 are refused as unrecognised, so a WAVE past 4 GiB will not open; symphonia

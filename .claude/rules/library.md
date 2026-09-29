@@ -1666,10 +1666,10 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   UTF-16 sheet is walked in pairs and a `REM` or `TITLE` naming the same file is left alone) — so a BOM,
   a line ending and every other byte survive; and `staged_over` renames a staged file over the sheet, so
   a crash cannot truncate it. A file two `FILE` lines name leaves the sheet alone. A name the sheet's
-  encoding cannot hold can only be Windows-1252's, UTF-8 and UTF-16 holding every name, and that sheet
-  is carried into UTF-8 with a byte-order mark rather than left naming a vanished file:
-  `carried_into_unicode` reads every byte around the run through the reader's `legacy` table — one
-  character a byte, nothing lost, every line ending kept — and writes the new name between. The mark
+  encoding cannot hold can only be a legacy code page's, UTF-8 and UTF-16 holding every name, and that
+  sheet is carried into UTF-8 with a byte-order mark rather than left naming a vanished file:
+  `carried_into_unicode` reads the bytes around the run in the code page the sheet was read in —
+  every line ending kept — and writes the new name between. The mark
   tells a player that reads a markless sheet as the system code page that this one is not.
   `a_sheet_whose_encoding_has_no_letters_for_the_new_name_is_carried_into_unicode` is the claim.
 - **A sheet cutting a file travels with it whatever it is called, and one naming several files takes
@@ -2216,9 +2216,11 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   an `xml:base` written either way still resolves what sits under it; `file:/a.wav`, with no authority,
   reads as `file:///a.wav`, while `file:track.flac`, with no slash, stays a relative path. A row empty
   once trimmed — a PLS `File1=` with nothing after — names nothing and is counted as elsewhere, where it
-  once resolved to the sheet's own folder and was stored. A sheet not UTF-8 is read as Windows-1252,
-  unless its name declares UTF-8 (`.m3u8` and `.xspf` do) or its bytes hold a NUL, which no text sheet
-  does. Importing reconciles by count, not set: a row the playlist holds counts as already there, so a
+  once resolved to the sheet's own folder and was stored. A sheet is read as its byte-order mark says —
+  UTF-8 or UTF-16 either way round, one of odd length refused — else as UTF-8 where it is, else in the
+  code page `resonate_core::text` detects (`rust-style.md`'s text note), unless its name declares UTF-8
+  (`.m3u8` and `.xspf` do) or its bytes hold a NUL, which no text sheet does; either refusal is
+  `Error::UnreadablePlaylistFile`, and `Imported::encoding` says what it was read as. Importing reconciles by count, not set: a row the playlist holds counts as already there, so a
   sheet read twice is a no-op, while a file the *sheet itself* names twice is two rows,
   `add_to_playlist` letting one file be put in twice deliberately. A taken name is appended to rather
   than refused, making `import` and `resonate playlist <NAME> --add` one gesture. A `.cue` handed to

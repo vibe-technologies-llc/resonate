@@ -533,7 +533,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **A cue sheet is read as far as it parses and never fails.** An unknown command is skipped (as
   `lrc.rs` skips a bracket neither moment nor id tag), and rubbish yields a sheet naming nothing. Only
   the source and the `LARGEST_CUE_SHEET` ceiling (1 MiB) raise a `codec::Error`. Text is decoded by
-  BOM first, then valid UTF-8, then Windows-1252, EAC really writing UTF-16LE.
+  `resonate_core::text` (`rust-style.md`'s text note), EAC really writing UTF-16LE and a Russian or
+  Japanese rip CP1251 or Shift-JIS, and a sheet renamed is written back in the code page it was read
+  in.
 
 ## DSD
 

@@ -1,5 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
+use resonate_core::text::{decoded_as, detected};
+
 use crate::{
     TagName,
     prescan::{Opened, opened_first, past_id3, read_exact},
@@ -197,7 +199,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(source: &mut S, size: u64, into: &mut
         let Ok(body) = source.stream_position() else {
             break;
         };
-        let Some(value) = read_text(source, value_size) else {
+        let Some(value) = read_value(source, value_size) else {
             break;
         };
         let Some(next) = body.checked_add(taken) else {
@@ -209,15 +211,21 @@ fn read_info_list<S: Read + Seek + ?Sized>(source: &mut S, size: u64, into: &mut
         let Some(name) = four_cc(&header) else {
             break;
         };
-        if !value.is_empty() {
-            entries.push(InfoTag { name, value });
-        }
+        entries.push((name, value));
     }
 
-    into.append(&mut entries);
+    let encoding = detected(&entries.iter().fold(Vec::new(), |mut all, (_, value)| {
+        all.extend_from_slice(value);
+        all.push(b'\n');
+        all
+    }));
+    into.extend(entries.into_iter().filter_map(|(name, value)| {
+        let value = decoded_as(&value, encoding).trim().to_owned();
+        (!value.is_empty()).then_some(InfoTag { name, value })
+    }));
 }
 
-fn read_text<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<String> {
+fn read_value<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<Vec<u8>> {
     let mut bytes = vec![0_u8; usize::try_from(size.min(MAX_VALUE_BYTES)).ok()?];
     source.read_exact(&mut bytes).ok()?;
 
@@ -225,7 +233,8 @@ fn read_text<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<String> {
         .iter()
         .position(|byte| *byte == 0)
         .unwrap_or(bytes.len());
-    Some(String::from_utf8_lossy(bytes.get(..end)?).trim().to_owned())
+    bytes.truncate(end);
+    Some(bytes)
 }
 
 fn four_cc(header: &[u8; 8]) -> Option<TagName> {
@@ -255,6 +264,8 @@ fn riff_header_at<S: Read + Seek + ?Sized>(source: &mut S, start: u64) -> Option
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use resonate_core::{LegacyEncoding, TextEncoding, text::encoded};
 
     use super::*;
     use crate::prescan::PROBED_WITHIN;
@@ -365,6 +376,21 @@ mod tests {
         let found = read(&mut Cursor::new(file)).info;
 
         assert_eq!(named(&found), [("INAM", "Echoes"), ("IART", "Pink Floyd")]);
+    }
+
+    #[test]
+    fn an_info_list_in_a_legacy_code_page_is_read_in_it() {
+        let cyrillic = TextEncoding::Legacy(LegacyEncoding::WINDOWS_1251);
+        let mut body = INFO.to_vec();
+        for (id, value) in [(b"INAM", "Группа крови"), (b"IART", "Кино")] {
+            let mut terminated = encoded(value, cyrillic).expect("Cyrillic letters");
+            terminated.push(0);
+            chunk(&mut body, id, &terminated);
+        }
+
+        let found = read(&mut Cursor::new(wave(&[(b"LIST", body)]))).info;
+
+        assert_eq!(named(&found), [("INAM", "Группа крови"), ("IART", "Кино")]);
     }
 
     #[test]

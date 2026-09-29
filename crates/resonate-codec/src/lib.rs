@@ -21,7 +21,6 @@ mod spool;
 mod stream;
 mod sylt;
 mod tags;
-mod text;
 mod timeline;
 mod vorbis;
 mod wavpack;
@@ -54,7 +53,6 @@ pub use crate::{
         WINDOW, probe_stream,
     },
     tags::{Credits, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged},
-    text::TextEncoding,
     timeline::Timeline,
     writing::{FileTags, Popularity, RATED_BY, Rated, TagEdit, TagField, TagSink, Writing},
 };
