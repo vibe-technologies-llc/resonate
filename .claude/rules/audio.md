@@ -57,7 +57,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   and its revision is appended *last* to `Revisions`, outranking the `INFO` list and a leading tag.
   Its pictures ride on `Coded::chunk_pictures`, weighed before the reader's, so a cover written into
   a WAV reads back. `standard_info` reads every `INFO` id landing on a `TagSet` field, under each
-  name writers use and in any case; `IDIT` and `DTIM` are deliberately not among them — they date the
+  name writers use and in any case, and a number written with its total — an `ITRK` of `3/12`, a
+  Vorbis `TRACK` or `DISC` symphonia left unmapped — keeps the total too (`info_total`,
+  `Naming::total_beside`); `IDIT` and `DTIM` are deliberately not among them — they date the
   digitisation, and would put a rip day where the release year belongs.
 - **What the `TagSet` holds is the vocabulary; a name outside it stays a `RawTag`.** Every
   well-known name has a typed field: `credits` for the people a recording names — composer,

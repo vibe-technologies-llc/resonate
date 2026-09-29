@@ -389,6 +389,9 @@ impl Builder {
             if let Some(std) = standard_info(entry.name.as_str(), &entry.value) {
                 self.absorb_one(&std);
             }
+            if let Some(total) = info_total(entry.name.as_str(), &entry.value) {
+                self.absorb_one(&total);
+            }
         }
     }
 
@@ -401,6 +404,9 @@ impl Builder {
                 .or_else(|| loudness_gain(tag))
             {
                 self.absorb_one(&std);
+            }
+            if let Some(total) = naming.total_beside(tag) {
+                self.absorb_one(&total);
             }
             if let Some(sheet) = synchronised_lyrics(tag) {
                 self.synced_lyrics = Some(sheet);
@@ -537,6 +543,20 @@ impl Naming {
             (Self::Container, Some(std)) => Some(std.clone()),
             (Self::VorbisComment, None) => vorbis_comment(name, &tag.raw.value),
             (Self::Container, None) => None,
+        }
+    }
+
+    fn total_beside(self, tag: &Tag) -> Option<StandardTag> {
+        let (Self::VorbisComment, None, RawValue::String(value)) =
+            (self, tag.std.as_ref(), &tag.raw.value)
+        else {
+            return None;
+        };
+        let total = total_after_the_slash(value)?;
+        match Uppercased::of(scoped_name(tag.raw.key.as_str()))?.as_str() {
+            "TRACK" | "TRACKNUMBER" | "PART_NUMBER" => Some(StandardTag::TrackTotal(total)),
+            "DISC" | "DISCNUMBER" => Some(StandardTag::DiscTotal(total)),
+            _ => None,
         }
     }
 }
@@ -742,6 +762,19 @@ fn standard_info(name: &str, value: &str) -> Option<StandardTag> {
         _ => return None,
     };
     Some(std)
+}
+
+fn info_total(name: &str, value: &str) -> Option<StandardTag> {
+    let total = total_after_the_slash(value)?;
+    match Uppercased::of(name)?.as_str() {
+        "ITRK" | "IPRT" | "TRCK" => Some(StandardTag::TrackTotal(total)),
+        _ => None,
+    }
+}
+
+fn total_after_the_slash(value: &str) -> Option<u64> {
+    let (_, total) = value.split_once('/')?;
+    total.trim().parse().ok()
 }
 
 fn beats_per_minute(value: &str) -> Option<u64> {
@@ -973,6 +1006,32 @@ mod tests {
         ]);
 
         assert_eq!(set_of(&held).title.as_deref(), Some("Echoes"));
+    }
+
+    #[test]
+    fn a_number_carrying_its_total_after_a_slash_keeps_the_total() {
+        let vorbis = absorb(&[
+            keyed("TOTALTRACKS", "12"),
+            keyed("TRACK", "3/14"),
+            keyed("DISC", "2 / 3"),
+        ]);
+        assert_eq!(
+            (
+                vorbis.track_number,
+                vorbis.track_total,
+                vorbis.disc_number,
+                vorbis.disc_total
+            ),
+            (Some(3), Some(14), Some(2), Some(3))
+        );
+
+        let mut builder = Builder::default();
+        builder.absorb_info(&[info("ITRK", "3/12")]);
+        let riff = builder.finish();
+        assert_eq!((riff.track_number, riff.track_total), (Some(3), Some(12)));
+
+        let bare = absorb(&[keyed("TOTALTRACKS", "12"), keyed("TRACK", "3")]);
+        assert_eq!(bare.track_total, Some(12));
     }
 
     #[test]
