@@ -90,6 +90,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   rather than truncating, and a selection drag is followed from a `Window::on_mouse_event` registered in
   `paint`, the element's own `on_mouse_move` firing only while the pointer is over it — the reason
   `views/slider.rs` carries a drag surface.
+- **A secret is drawn as marks.** `Field::masked` — the Subsonic password and the AcoustID, AudD and
+  ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
+  offset the caret, selection, marked range and IME bounds hold to the drawn line and a pointer's
+  back, so editing is as a plain field's; a masked field copies and cuts nothing to the clipboard
+  (`a_masked_field_draws_a_mark_a_letter_and_maps_every_offset_both_ways`).
 - **The caret blinks as the desktop says.** `CaretBlink` is a shared half-period on `Stored` and
   `ResonateApp` — `as_built` half a second, `steady` holding it lit — and every field's blink task reads
   it afresh each tick, so what arrives after the window opened takes effect on the next, and a caret held

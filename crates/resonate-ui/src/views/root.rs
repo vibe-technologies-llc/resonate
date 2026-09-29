@@ -692,7 +692,7 @@ impl RootView {
         .detach();
 
         let acoustid = cx.new(|cx| {
-            let mut field = Field::new(ACOUSTID_PLACEHOLDER, window, cx);
+            let mut field = Field::new(ACOUSTID_PLACEHOLDER, window, cx).masked();
             field.hold(online.acoustid_key.clone(), cx);
             field
         });
@@ -702,7 +702,7 @@ impl RootView {
         .detach();
 
         let audd = cx.new(|cx| {
-            let mut field = Field::new(AUDD_PLACEHOLDER, window, cx);
+            let mut field = Field::new(AUDD_PLACEHOLDER, window, cx).masked();
             field.hold(online.audd_token.clone(), cx);
             field
         });
@@ -712,7 +712,7 @@ impl RootView {
         .detach();
 
         let listenbrainz = cx.new(|cx| {
-            let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx);
+            let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx).masked();
             field.hold(online.listenbrainz_token.clone(), cx);
             field
         });

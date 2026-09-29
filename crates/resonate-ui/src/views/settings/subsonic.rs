@@ -93,7 +93,11 @@ impl Account {
     ) -> [Entity<Field>; 3] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
-                let mut field = Field::new(account.placeholder(), window, cx);
+                let field = Field::new(account.placeholder(), window, cx);
+                let mut field = match account {
+                    Self::Password => field.masked(),
+                    Self::Server | Self::User => field,
+                };
                 field.hold(account.held(online), cx);
                 field
             });

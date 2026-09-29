@@ -48,6 +48,45 @@ actions!(
 
 pub(crate) struct Submitted;
 
+const MASK: char = '•';
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    Plainly,
+    Masked,
+}
+
+impl Shown {
+    fn text(self, content: &str) -> String {
+        match self {
+            Self::Plainly => content.to_owned(),
+            Self::Masked => MASK.to_string().repeat(content.chars().count()),
+        }
+    }
+
+    fn drawn_at(self, content: &str, offset: usize) -> usize {
+        match self {
+            Self::Plainly => offset,
+            Self::Masked => {
+                content
+                    .get(..offset)
+                    .map_or(0, |before| before.chars().count())
+                    * MASK.len_utf8()
+            }
+        }
+    }
+
+    fn content_at(self, content: &str, drawn: usize) -> usize {
+        match self {
+            Self::Plainly => drawn,
+            Self::Masked => content
+                .char_indices()
+                .nth(drawn / MASK.len_utf8())
+                .map_or(content.len(), |(at, _)| at),
+        }
+    }
+}
+
 pub(crate) fn bindings() -> Vec<KeyBinding> {
     let inside = Some(SEARCH_CONTEXT);
 
@@ -91,6 +130,7 @@ pub(crate) struct Field {
     edit: Edit,
     marked: Option<Range<usize>>,
     placeholder: SharedString,
+    shown: Shown,
     focus: FocusHandle,
     painted: Option<Painted>,
     scrolled_by: Pixels,
@@ -116,6 +156,7 @@ impl Field {
             edit: Edit::default(),
             marked: None,
             placeholder: SharedString::new_static(placeholder),
+            shown: Shown::Plainly,
             focus,
             painted: None,
             scrolled_by: px(0.0),
@@ -124,6 +165,11 @@ impl Field {
             lit: false,
             blink: Task::ready(()),
         }
+    }
+
+    pub(crate) const fn masked(mut self) -> Self {
+        self.shown = Shown::Masked;
+        self
     }
 
     pub(crate) const fn caret_is_lit(&self) -> bool {
@@ -296,7 +342,7 @@ impl Field {
 
     fn put_on_clipboard(&self, cx: &mut Context<Self>) -> bool {
         let selected = self.edit.selected();
-        if selected.is_empty() {
+        if selected.is_empty() || self.shown == Shown::Masked {
             return false;
         }
         clipboard::copy(selected.to_owned(), cx);
@@ -347,7 +393,8 @@ impl Field {
             return 0;
         };
         let x = position.x - painted.bounds.left() + painted.scrolled_by;
-        painted.line.closest_index_for_x(x)
+        self.shown
+            .content_at(self.edit.content(), painted.line.closest_index_for_x(x))
     }
 
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -557,16 +604,15 @@ impl EntityInputHandler for Field {
         let painted = self.painted.as_ref()?;
         let range = self.range_from_utf16(&range);
         let left = element_bounds.left() - painted.scrolled_by;
+        let drawn = |offset| {
+            painted
+                .line
+                .x_for_index(self.shown.drawn_at(self.edit.content(), offset))
+        };
 
         Some(Bounds::from_corners(
-            point(
-                left + painted.line.x_for_index(range.start),
-                element_bounds.top(),
-            ),
-            point(
-                left + painted.line.x_for_index(range.end),
-                element_bounds.bottom(),
-            ),
+            point(left + drawn(range.start), element_bounds.top()),
+            point(left + drawn(range.end), element_bounds.bottom()),
         ))
     }
 
@@ -642,20 +688,23 @@ impl Element for Line {
         let field = self.field.read(cx);
         let focused = field.focus.is_focused(window);
         let lit = field.caret_is_lit();
-        let selection = field.edit.selection();
-        let cursor = field.edit.cursor();
-        let empty = field.edit.content().is_empty();
+        let content = field.edit.content();
+        let drawn = |offset| field.shown.drawn_at(content, offset);
+        let selection = drawn(field.edit.selection().start)..drawn(field.edit.selection().end);
+        let cursor = drawn(field.edit.cursor());
+        let marked = field
+            .marked
+            .as_ref()
+            .map(|marked| drawn(marked.start)..drawn(marked.end));
+        let empty = content.is_empty();
         let held = field.scrolled_by;
 
         let (text, colour) = if empty && !focused {
             (field.placeholder.clone(), rgb(theme::faint()).into())
         } else {
-            (
-                SharedString::from(field.edit.content().to_owned()),
-                style.color,
-            )
+            (SharedString::from(field.shown.text(content)), style.color)
         };
-        let runs = runs_for(&text, colour, field.marked.as_ref(), &style.font());
+        let runs = runs_for(&text, colour, marked.as_ref(), &style.font());
 
         let line = window
             .text_system()
@@ -817,4 +866,33 @@ fn scrolled_to_show(caret: Pixels, line: Pixels, visible: Pixels, held: Pixels) 
     let trailing = (caret + caret_width - visible).max(px(0.0));
 
     held.min(caret).max(trailing).clamp(px(0.0), overflow)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_masked_field_draws_a_mark_a_letter_and_maps_every_offset_both_ways() {
+        let content = "añb€";
+        let masked = Shown::Masked;
+
+        assert_eq!(masked.text(content), "••••");
+        assert_eq!(masked.text(""), "");
+
+        for (letter, (offset, _)) in content.char_indices().enumerate() {
+            let drawn = letter * MASK.len_utf8();
+            assert_eq!(masked.drawn_at(content, offset), drawn);
+            assert_eq!(masked.content_at(content, drawn), offset);
+        }
+        assert_eq!(masked.drawn_at(content, content.len()), 4 * MASK.len_utf8());
+        assert_eq!(
+            masked.content_at(content, 4 * MASK.len_utf8()),
+            content.len()
+        );
+
+        assert_eq!(Shown::Plainly.text(content), content);
+        assert_eq!(Shown::Plainly.drawn_at(content, 3), 3);
+        assert_eq!(Shown::Plainly.content_at(content, 3), 3);
+    }
 }
