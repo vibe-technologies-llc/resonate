@@ -520,6 +520,13 @@ impl PlayerModel {
                     };
                     toast::tell(Notice::Trouble(said), cx);
                 }
+                Event::Waiting { track, error } => {
+                    tracing::warn!(%error, %track, "playback waits for a device");
+                    toast::tell(
+                        Notice::Trouble(toast::waits_for_a_device(error.cause()).to_owned()),
+                        cx,
+                    );
+                }
                 Event::CommandFailed { command, error } => {
                     tracing::warn!(%error, ?command, "the engine refused a command");
                     toast::tell(

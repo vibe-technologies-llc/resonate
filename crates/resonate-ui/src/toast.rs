@@ -263,6 +263,15 @@ pub(crate) fn would_not_play(cause: Cause, title: &str) -> String {
     }
 }
 
+pub(crate) const fn waits_for_a_device(cause: Cause) -> &'static str {
+    match cause {
+        Cause::NoDevice => {
+            "No speakers or headphones to play through — playing on once one is there"
+        }
+        _ => "The audio device stopped playing — playing on once one is there",
+    }
+}
+
 pub(crate) fn would_not_do(command: CommandKind, cause: Cause) -> String {
     match cause {
         Cause::Unreadable | Cause::Unsupported | Cause::Damaged => {

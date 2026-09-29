@@ -832,6 +832,20 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   pulling. A failing `backend.open` takes the whole `Output` with it likewise: the consumer went into
   the call and cannot come back, so an output outliving it would hold a ring with no stream and no way
   to open one.
+- **A device going is waited out, not billed to the row.** `Engine::fail` first hands its error to
+  `parked_for_a_device`: `NoSink`, `SinkGone` and `StreamFailed` with a track open close the output,
+  keep the row in `unbound` at the heard position, publish `Loading` (`Paused` where paused), mark
+  the sink list stale and raise `Event::Waiting` rather than `Event::Failed` — the window toasts
+  `toast::waits_for_a_device`, `resonate play` prints it. Every sink-list answer then ends in
+  `bind_the_row_waiting_for_a_device`, which binds the row again where it was heard: on the fallback
+  where the desktop has one, on the next device to appear where it has none, and a `NoSink` meanwhile
+  leaves it waiting. Before, a DAC unplugged with nothing else failed every row in turn and finished
+  the queue, and with a fallback the stream's failure arrived ahead of the list and skipped the
+  track. A stream that fails again within `GRAPH_BACK_WITHIN` of the last loss is the row's after
+  all — a format the device will not take — and fails it the usual way (`device_last_lost`). A
+  `Load` answering `NoSink` to its caller is unchanged: nothing was playing to wait
+  (`a_stream_failing_as_its_device_goes_moves_the_row_to_the_fallback_rather_than_skipping_it`,
+  `a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_where_it_was_heard`).
 - **The PCM ring carries `u8`, not `f32`.** An `f32` ring would convert every stream and break
   bit-accuracy for 32-bit sources a 24-bit mantissa cannot hold. Its depth is the buffer setting's to
   ask and `ring_capacity`'s to answer: clamped between `MIN_RING_FRAMES` (8 192) — or

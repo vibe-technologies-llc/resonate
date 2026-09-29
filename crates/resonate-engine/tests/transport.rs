@@ -27,7 +27,7 @@ use resonate_engine::{
     Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading, RepeatMode,
     ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo,
     SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, Surveyor, Tapped, Until, Words, stamp_of,
+    StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -2010,6 +2010,135 @@ fn a_stream_whose_device_goes_away_moves_to_the_one_the_desktop_falls_back_to() 
         &player,
         |player| playing(player) && bound_to(player) == Some(SinkId::new(2)),
         "the stream to move off the device that went",
+    );
+    Ok(())
+}
+
+fn fail_the_stream_as_the_graph_becomes(
+    graph: &Arc<Mutex<Graph>>,
+    edit: impl FnOnce(&mut Vec<SinkInfo>),
+) {
+    let mut held = graph.lock();
+    edit(&mut held.sinks);
+    let failed = held.events.as_ref().map(|events| {
+        events.send(StreamEvent::StateChanged {
+            from: StreamState::Streaming,
+            to: StreamState::Failed,
+        })
+    });
+    assert!(
+        failed.is_some_and(|sent| sent.is_ok()),
+        "the fake daemon could not fail the stream"
+    );
+}
+
+fn two_rows_playing_over(sinks: Vec<SinkInfo>) -> Result<(Player, Arc<Mutex<Graph>>, Pcm)> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+
+    let (player, graph) = player(sinks)?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    Ok((player, graph, source))
+}
+
+fn neither_failed_nor_finished(player: &Player) -> Vec<Event> {
+    let events: Vec<Event> = player.events().try_iter().collect();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Event::Failed { .. } | Event::QueueFinished)),
+        "a device going was billed to the row: {events:?}"
+    );
+    events
+}
+
+#[test]
+fn a_stream_failing_as_its_device_goes_moves_the_row_to_the_fallback_rather_than_skipping_it()
+-> Result<()> {
+    let (player, graph, _) = two_rows_playing_over(vec![
+        sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]),
+        arriving(),
+    ])?;
+
+    fail_the_stream_as_the_graph_becomes(&graph, |sinks| {
+        sinks.retain(|sink| sink.id != SinkId::new(1));
+        make_the_default(sinks, SinkId::new(2));
+    });
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(2)),
+        "the row to move to the device left",
+    );
+
+    assert!(plays(&player, 1), "{}", transport(&player));
+    let events = neither_failed_nor_finished(&player);
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::Waiting { .. })),
+        "the device going was not told: {events:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_where_it_was_heard()
+-> Result<()> {
+    let (player, graph, source) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert!(plays(&player, 1), "{}", transport(&player));
+    neither_failed_nor_finished(&player);
+
+    announce(
+        &graph,
+        SinkInfo {
+            id: SinkId::new(3),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
+        "the row to play on the device that came",
+    );
+    let heard = graph.lock().played.len();
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= heard + block,
+        "the row to play on",
+    );
+
+    assert!(plays(&player, 1), "{}", transport(&player));
+    neither_failed_nor_finished(&player);
+    assert!(
+        source.stream.starts_with(&graph.lock().played),
+        "the row did not play on from the frame the graph had last been handed"
     );
     Ok(())
 }

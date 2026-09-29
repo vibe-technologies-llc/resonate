@@ -210,6 +210,7 @@ pub enum Event {
     OutputChanged(OutputStatus),
     Underrun { missing: Frames },
     Failed { track: TrackId, error: Error },
+    Waiting { track: TrackId, error: Error },
     CommandFailed { command: CommandKind, error: Error },
 }
 

@@ -2032,6 +2032,10 @@ fn announce(event: Event) -> bool {
             eprintln!("track {track} failed");
             report(&error);
         }
+        Event::Waiting { track, error } => {
+            eprintln!("track {track} waits for a device");
+            report(&error);
+        }
         Event::CommandFailed { command, error } => {
             eprintln!("{command:?} rejected");
             report(&error);

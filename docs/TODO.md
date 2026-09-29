@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- `Engine::fail` takes every error for a bad track: a DAC unplugged with no other sink fails every
-  row in turn and finishes the queue, and one with a fallback sink skips the track rather than
-  rebinding it
 - The PipeWire client matches a metadata key only where it carries a value, so a cleared
   `clock.force-rate` or `default.audio.sink` leaves `forced_rate`, `clock_rate` or the default
   sink stale and announces no `DefaultChanged`

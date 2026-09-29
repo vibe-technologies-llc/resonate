@@ -520,6 +520,8 @@ pub struct Engine {
     rebind_owed: bool,
     graph_lost: Option<Instant>,
     graph_last_lost: Option<Instant>,
+    waiting_for_a_device: bool,
+    device_last_lost: Option<Instant>,
     heard_at_least: Option<Frames>,
     playing: bool,
     seeks: Seeks,
@@ -628,6 +630,8 @@ impl Engine {
             rebind_owed: false,
             graph_lost: None,
             graph_last_lost: None,
+            waiting_for_a_device: false,
+            device_last_lost: None,
             heard_at_least: None,
             playing: false,
             seeks: Seeks::default(),
@@ -1746,6 +1750,7 @@ impl Engine {
                 *self.published.sinks.write() = found.into();
                 self.follow_the_devices_volume();
                 self.follow_the_sink_it_would_choose();
+                self.bind_the_row_waiting_for_a_device();
             }
             Err(error) => tracing::warn!(%error, "the sink list could not be refreshed"),
         }
@@ -2274,9 +2279,84 @@ impl Engine {
         }
     }
 
+    fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
+        use resonate_pipewire::Error as Sink;
+
+        let had_a_stream = match &error {
+            Error::Sink(Sink::NoSink) => false,
+            Error::Sink(Sink::SinkGone { .. } | Sink::StreamFailed { .. }) => true,
+            _ => return Err(error),
+        };
+        let Some(track) = self.track.as_ref().map(|track| track.id) else {
+            return Err(error);
+        };
+        if had_a_stream {
+            let again = self
+                .device_last_lost
+                .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
+            if again {
+                return Err(error);
+            }
+            self.device_last_lost = Some(Instant::now());
+        }
+
+        tracing::warn!(%error, "the device went; the row waits for one to play on");
+        let at = self.unbound.unwrap_or_else(|| self.heard_position());
+        if let Some(output) = self.output.as_mut() {
+            output.close();
+        }
+        self.output = None;
+        self.unbound = Some(at);
+        self.transport = if self.playing {
+            TransportState::Loading
+        } else {
+            TransportState::Paused
+        };
+        self.waiting_for_a_device = true;
+        self.stale_sinks = true;
+        self.emit(Event::Waiting { track, error });
+        Ok(())
+    }
+
+    fn bind_the_row_waiting_for_a_device(&mut self) {
+        if !self.waiting_for_a_device {
+            return;
+        }
+        let at = self
+            .unbound
+            .filter(|_| self.track.is_some() && self.output.is_none());
+        let Some(at) = at else {
+            self.waiting_for_a_device = false;
+            return;
+        };
+        if !self.playing {
+            return;
+        }
+
+        match self.rebind(Some(at), None) {
+            Ok(()) => {
+                tracing::info!("a device is there again; the row plays on from where it was heard");
+                self.unbound = None;
+                self.waiting_for_a_device = false;
+            }
+            Err(Error::Sink(resonate_pipewire::Error::NoSink)) => {
+                tracing::debug!("still no device to play through");
+                self.transport = TransportState::Loading;
+            }
+            Err(error) => {
+                self.waiting_for_a_device = false;
+                self.fail(error);
+            }
+        }
+    }
+
     fn fail(&mut self, error: Error) {
         let mut error = error;
         loop {
+            error = match self.parked_for_a_device(error) {
+                Ok(()) => return,
+                Err(error) => error,
+            };
             tracing::error!(%error, "playback failed");
             match self.track.as_ref().map(|track| track.id).or(error.track()) {
                 Some(track) => self.emit(Event::Failed { track, error }),
