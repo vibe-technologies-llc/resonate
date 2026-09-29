@@ -87,9 +87,10 @@ paths:
   lyric sidecar weighs a declared title with; the library's is `playlist::folded`, a playlist name
   lowercased then composed so one letter has one spelling in `folded` whatever was typed. Its
   `std` feature is not default, and it brings `tinyvec` alone, keeping core a short link.
-- **`rustix`** is the binary's, for `termios` alone (beside `std`) — `resonate play`'s terminal a
-  key at a time with no `unsafe`. It was in the lockfile under zbus and libspa, so it adds a
-  feature, not a crate.
+- **`rustix`** is the binary's, for `termios` (beside `std`) — `resonate play`'s terminal a key at a
+  time with no `unsafe` — and `resonate-codec`'s, for `fs`: a tag write carries a file's extended
+  attributes onto its staged copy through `listxattr`, `getxattr` and `setxattr`, which `std` does
+  not reach. It was in the lockfile under zbus and libspa, so it adds features, not a crate.
 - **`unicode-width`** is what `Table` measures a column with rather than `chars().count()`: a CJK
   character takes two terminal columns and a combining mark none. Not `unicode-segmentation`, which
   counts graphemes and would still leave a CJK name a column short per character.

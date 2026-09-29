@@ -5189,6 +5189,7 @@ dependencies = [
  "opus-rs",
  "parking_lot",
  "resonate-core",
+ "rustix 1.1.5",
  "symphonia",
  "symphonia-codec-wavpack",
  "thiserror 2.0.21",

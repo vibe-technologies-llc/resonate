@@ -1448,7 +1448,19 @@ under Library is the window's way in, with the same preview-then-arm shape *Orga
   (`staged_beside`), the extension kept since lofty reads the kind off it — writes the tags into the
   copy, `sync_all`s it, renames it over the file and syncs the folder, removing the copy wherever any
   of that failed. The cost is a copy per write, the price `config::edited` and `organise`'s sheets pay
-  for the same promise.
+  for the same promise — `fs::copy` is `copy_file_range`, which btrfs and XFS answer with a clone
+  sharing the audio's extents, so there a copy costs the tag's bytes. **What the rename would lose is
+  kept.** A track reached through a symlink is written where the link points, staged beside the
+  target, so the link stays a link. The staged copy is given the file's owner, mode and extended
+  attributes (`carries_what_the_file_did` — `chown`, `set_permissions`, and every `listxattr` name,
+  ACLs and SELinux labels among them, through `rustix`); where any of that is refused — a file owned
+  by another user in a shared folder, a label only root may set — and wherever the file has a second
+  name (`nlink` over one), the whole tagged copy is instead written back into the file's own inode
+  (`written_back`), which keeps all of it and both names at the price of a second copy and a window
+  where the file is part rewritten, the synced staged copy standing beside it until the write-back is
+  synced (`a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link`,
+  `a_track_with_two_names_keeps_both_and_both_read_the_write`,
+  `a_tracks_extended_attributes_survive_a_write`).
 - **A row cut out of a shared file is never written to.** Twelve cue rows are twelve readings of one
   file with one set of tags between them, so a path holding more than one row — or one row carrying a
   span — is `Unwritten::Cut` and passed over whole: the reason `Library::track_played` keys a play on

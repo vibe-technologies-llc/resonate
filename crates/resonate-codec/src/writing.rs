@@ -1,7 +1,12 @@
 use std::{
+    ffi::{OsStr, OsString},
     fmt,
-    fs::{self, File},
+    fs::{self, File, Metadata, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
+    os::unix::{
+        ffi::OsStrExt as _,
+        fs::{self as unix_fs, MetadataExt as _},
+    },
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -15,6 +20,7 @@ use lofty::{
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
 use resonate_core::MediaLocation;
+use rustix::fs::XattrFlags;
 
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
@@ -255,7 +261,16 @@ impl TagSink for FileTags {
     }
 
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()> {
-        let path = self.writable(location)?;
+        let named = self.writable(location)?;
+        let linked = fs::symlink_metadata(named).is_ok_and(|held| held.is_symlink());
+        let resolved = match linked {
+            true => fs::canonicalize(named).map_err(|source| Error::Io {
+                location: location.clone(),
+                source,
+            })?,
+            false => named.to_path_buf(),
+        };
+        let path = resolved.as_path();
         let rechunked = match tag_in_front_of_a_riff(path) {
             Ok(Some(riff_at)) => {
                 let staged = staged_beside(path);
@@ -562,6 +577,7 @@ fn rate(tag: &mut Tag, popularity: Popularity) {
 }
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
+const ATTRIBUTE_READS_AT_MOST: usize = 4;
 
 fn staged_beside(path: &Path) -> PathBuf {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -574,12 +590,89 @@ fn staged_beside(path: &Path) -> PathBuf {
 }
 
 fn settled_over(staged: &Path, path: &Path) -> io::Result<()> {
+    let standing = fs::metadata(path)?;
     File::open(staged)?.sync_all()?;
+    if standing.nlink() > 1 || !carries_what_the_file_did(&standing, path, staged) {
+        return written_back(staged, path);
+    }
+
     fs::rename(staged, path)?;
     if let Some(folder) = path.parent() {
         File::open(folder)?.sync_all()?;
     }
     Ok(())
+}
+
+fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
+    let owned = unix_fs::chown(staged, Some(standing.uid()), Some(standing.gid()));
+    let moded = fs::set_permissions(staged, standing.permissions());
+    let attributed = attributes_of(path).and_then(|attributes| {
+        attributes.iter().try_for_each(|(name, value)| {
+            rustix::fs::setxattr(staged, name.as_os_str(), value, XattrFlags::empty())
+                .map_err(io::Error::from)
+        })
+    });
+
+    match (owned, moded, attributed) {
+        (Ok(()), Ok(()), Ok(())) => true,
+        (owned, moded, attributed) => {
+            tracing::debug!(
+                path = %path.display(),
+                owned = ?owned.err(),
+                moded = ?moded.err(),
+                attributed = ?attributed.err(),
+                "a staged copy cannot carry what the file did, so it is written back in place"
+            );
+            false
+        }
+    }
+}
+
+fn attributes_of(path: &Path) -> io::Result<Vec<(OsString, Vec<u8>)>> {
+    let listed = match read_sized(|buffer| rustix::fs::listxattr(path, buffer)) {
+        Ok(listed) => listed,
+        Err(error) if unsupported(&error) => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+
+    listed
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            let name = OsStr::from_bytes(name);
+            let value = read_sized(|buffer| rustix::fs::getxattr(path, name, buffer))?;
+            Ok((name.to_os_string(), value))
+        })
+        .collect()
+}
+
+fn read_sized(read: impl Fn(&mut [u8]) -> rustix::io::Result<usize>) -> io::Result<Vec<u8>> {
+    for _ in 0..ATTRIBUTE_READS_AT_MOST {
+        let wanted = read(&mut [])?;
+        let mut held = vec![0_u8; wanted];
+        match read(&mut held) {
+            Ok(read) => {
+                held.truncate(read);
+                return Ok(held);
+            }
+            Err(rustix::io::Errno::RANGE) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(rustix::io::Errno::RANGE.into())
+}
+
+fn unsupported(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(rustix::io::Errno::NOTSUP.raw_os_error())
+}
+
+fn written_back(staged: &Path, path: &Path) -> io::Result<()> {
+    let mut whole = File::open(staged)?;
+    let mut file = OpenOptions::new().write(true).open(path)?;
+    let length = io::copy(&mut whole, &mut file)?;
+    file.set_len(length)?;
+    file.sync_all()?;
+    fs::remove_file(staged)
 }
 
 fn front_cover(picture: &CoverArt) -> Picture {
@@ -1385,6 +1478,82 @@ mod tests {
             .expect("a readable WAV");
         assert_read_back(&read.tags, &edits);
         assert_eq!(read.picture, Pictured::Copied(cover));
+    }
+
+    fn titled(tags: &FileTags, location: &MediaLocation) -> Option<String> {
+        tags.read(location, Picturing::Whether)
+            .expect("a readable file")
+            .tags
+            .title
+    }
+
+    #[test]
+    fn a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link() {
+        let folder = Folder::new();
+        let target = folder.holding("echoes.flac", &flac());
+        let link = folder.root.join("linked.flac");
+        unix_fs::symlink(target.as_path().expect("a local file"), &link).expect("a link");
+        let linked = MediaLocation::local(&link);
+        let tags = FileTags::default();
+
+        tags.write(&linked, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a file written through its link");
+
+        assert!(
+            fs::symlink_metadata(&link).is_ok_and(|held| held.is_symlink()),
+            "the link became a file of its own"
+        );
+        assert_eq!(titled(&tags, &target).as_deref(), Some("Echoes"));
+    }
+
+    #[test]
+    fn a_track_with_two_names_keeps_both_and_both_read_the_write() {
+        let folder = Folder::new();
+        let first = folder.holding("echoes.flac", &flac());
+        let second = folder.root.join("also.flac");
+        fs::hard_link(first.as_path().expect("a local file"), &second).expect("a hard link");
+        let tags = FileTags::default();
+
+        tags.write(&first, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a hard-linked file written");
+
+        let also = MediaLocation::local(&second);
+        assert_eq!(titled(&tags, &also).as_deref(), Some("Echoes"));
+        assert_eq!(
+            fs::metadata(&second).expect("the second name").nlink(),
+            2,
+            "the write split the two names apart"
+        );
+        assert!(
+            fs::read_dir(&folder.root)
+                .expect("the folder")
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().starts_with('.')),
+            "a staged copy was left behind"
+        );
+    }
+
+    #[test]
+    fn a_tracks_extended_attributes_survive_a_write() {
+        const NAME: &str = "user.resonate.kept";
+
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        if rustix::fs::setxattr(&path, NAME, b"yes", XattrFlags::empty()).is_err() {
+            eprintln!("skipped: the temporary folder holds no extended attributes");
+            return;
+        }
+        let tags = FileTags::default();
+
+        tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a written file");
+
+        let mut held = [0_u8; 8];
+        let read =
+            rustix::fs::getxattr(&path, NAME, &mut held[..]).expect("the attribute is there");
+        assert_eq!(held.get(..read), Some(b"yes".as_slice()));
+        assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes"));
     }
 
     #[test]

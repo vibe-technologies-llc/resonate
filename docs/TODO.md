@@ -37,9 +37,8 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
-- Every tag write copies the whole file and renames the copy over it, so a symlinked track becomes
-  a regular file, hard links, ownership and extended attributes are lost, and a multi-gigabyte
-  file is copied for every edit
+- On a filesystem that cannot clone a file — ext4 — every tag write copies the whole file, and one
+  with a second name twice, so a multi-gigabyte file is copied for every edit
 - `TagField` holds 19 fields: genre, composer and the other credits, comment, BPM, compilation,
   grouping, copyright and ReplayGain are read and cannot be written
 
