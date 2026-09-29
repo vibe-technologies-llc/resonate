@@ -76,12 +76,7 @@ that no listener is waiting on, and is worked only once the categories above it 
   an LRC never does, only a Lyricsfile — so a held note can be put out under the dots early
 - `Lyrics` holds no translation beside the original, and no source says which singer owns a line:
   a second voice is read off overlapping lines alone, and a third is folded onto the two
-- A `.lyricsfile.yaml` beside a file is not read: the Lyricsfile reader is `resonate-online`'s,
-  so neither `Sidecar` nor a build without `online` has one
-- The Lyricsfile reader is not among the fuzz targets, which reach no crate that parses with serde
 - A word being sung is faded in whole rather than wiped across letter by letter
-- A sidecar's `[ti:]`, `[ar:]` and `[length:]` check reads a differently transliterated title as a
-  disagreement
 
 ## Later: Listen and recognition
 - Listen records one clip and asks once; nothing listens again on a miss or follows a stream from

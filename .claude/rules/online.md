@@ -445,8 +445,9 @@ and `resonate-core` for `SourceId`; nothing else in the workspace reaches it, so
   word, which is the LRC over again at four times the size. A document with a word timed, or a
   line ended anywhere but where the next begins, is the one kept. A failure on `/get` is a lyric
   error under `LyricOp::Fetch` and one on `/search` under `LyricOp::Search`.
-- **A Lyricsfile is read here, because it is YAML and YAML wants serde.** `lyricsfile::read` is
-  the reader: `serde-saphyr` with duplicate keys refused, one document, `MOST_NODES` and a depth
+- **A Lyricsfile is read by `resonate-lyrics`, and LRCLIB's answer goes through it.**
+  `read_lyricsfile` is the reader, and it lives beside the LRC reader so a `.lyricsfile.yaml`
+  sidecar is read by the same code an answer is — `lyrics.md` has the sidecar's side: `serde-saphyr` with duplicate keys refused, one document, `MOST_NODES` and a depth
   of `DEEPEST`, the text capped at `LARGEST_LYRICSFILE` before it is parsed, and `MOST_LINES` and
   `MOST_WORDS` after. Only version `1.0` is read — the draft says an unknown version must not be
   read as it — and `offset_ms` is ignored, because the draft has not said which way it runs. A

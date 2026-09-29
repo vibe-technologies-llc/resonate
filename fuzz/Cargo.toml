@@ -54,3 +54,10 @@ path = "fuzz_targets/playlist.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "lyricsfile"
+path = "fuzz_targets/lyricsfile.rs"
+test = false
+doc = false
+bench = false

@@ -1,6 +1,6 @@
 use std::{iter, time::Duration};
 
-use resonate_core::SourceId;
+use resonate_core::{SourceId, folded_letters};
 
 use crate::{Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted};
 
@@ -61,6 +61,18 @@ pub(crate) struct Declared {
 }
 
 impl Declared {
+    pub(crate) const fn about(
+        title: Option<String>,
+        artist: Option<String>,
+        length: Option<Duration>,
+    ) -> Self {
+        Self {
+            title,
+            artist,
+            length,
+        }
+    }
+
     pub(crate) fn names_another_track(&self, wanted: &Wanted) -> bool {
         disagree(self.title.as_deref(), wanted.title.as_deref())
             || disagree(self.artist.as_deref(), wanted.artist.as_deref())
@@ -73,11 +85,15 @@ fn disagree(declared: Option<&str>, wanted: Option<&str>) -> bool {
         return false;
     };
     let (declared, wanted) = (folded(declared), folded(wanted));
-    if declared.is_empty() || wanted.is_empty() {
+    if declared.is_empty() || wanted.is_empty() || transliterated(&declared, &wanted) {
         return false;
     }
 
     !declared.contains(&wanted) && !wanted.contains(&declared)
+}
+
+fn transliterated(one: &str, other: &str) -> bool {
+    one.is_ascii() != other.is_ascii()
 }
 
 fn runs_for_another_length(declared: Option<Duration>, wanted: Option<Duration>) -> bool {
@@ -89,9 +105,9 @@ fn runs_for_another_length(declared: Option<Duration>, wanted: Option<Duration>)
 }
 
 pub(crate) fn folded(text: &str) -> String {
-    text.chars()
+    folded_letters(text)
+        .chars()
         .filter(|glyph| glyph.is_alphanumeric())
-        .flat_map(char::to_lowercase)
         .collect()
 }
 
@@ -997,6 +1013,30 @@ mod tests {
             Some("Echoes (Live at Pompeii)"),
             Some("Pink Floyd feat. Roger Waters")
         )));
+    }
+
+    #[test]
+    fn a_name_written_in_another_script_or_without_its_marks_still_agrees() {
+        let romanised = sheet("[ti:Kukla]\n[ar:Marcin Przybylowicz]\n[00:01.00]la");
+        assert!(
+            !romanised
+                .declared
+                .names_another_track(&about(Some("Кукла"), Some("Marcin Przybyłowicz")))
+        );
+
+        let marked = sheet("[ti:Kıskanç]\n[00:01.00]la");
+        assert!(
+            !marked
+                .declared
+                .names_another_track(&about(Some("KISKANC"), None))
+        );
+
+        let cyrillic = sheet("[ti:Кукла]\n[00:01.00]la");
+        assert!(
+            cyrillic
+                .declared
+                .names_another_track(&about(Some("Звезда"), None))
+        );
     }
 
     #[test]

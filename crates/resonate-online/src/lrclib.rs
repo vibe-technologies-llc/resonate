@@ -2,10 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use resonate_core::SourceId;
 use resonate_library::{KeptLyrics, Library, LookupOp, LyricText, LyricsAsked};
-use resonate_lyrics::{LyricOp, LyricProvider, Lyrics, Wanted, read_lyrics};
+use resonate_lyrics::{LyricOp, LyricProvider, Lyrics, Wanted, read_lyrics, read_lyricsfile};
 use serde::Deserialize;
 
-use crate::{Client, Error, Host, lyricsfile, query::Params};
+use crate::{Client, Error, Host, query::Params};
 
 const LENGTH_MAY_DIFFER_BY: Duration = Duration::from_secs(30);
 const LRCLIB: &str = "lrclib";
@@ -36,7 +36,7 @@ impl Answer {
             return None;
         }
         let read = present(self.lyricsfile).and_then(|document| {
-            lyricsfile::read(source(), &document)
+            read_lyricsfile(source(), &document)
                 .map_err(|unread| tracing::debug!(?unread, id = ?self.id, "lrclib answered with a lyricsfile this build cannot read"))
                 .ok()
                 .map(|read| (document, read))
@@ -187,7 +187,7 @@ pub(crate) fn told(client: &Client, asked: &LyricsAsked) -> Result<Option<LyricT
 
 fn set_of(told: &LyricText) -> resonate_lyrics::Result<Option<Lyrics>> {
     if let Some(document) = &told.lyricsfile {
-        match lyricsfile::read(source(), document) {
+        match read_lyricsfile(source(), document) {
             Ok(read) if read.lyrics.is_some() => return Ok(read.lyrics),
             Ok(_) => {}
             Err(unread) => {
@@ -295,7 +295,8 @@ mod tests {
 
     const GET: &str = include_str!("../tests/fixtures/lrclib_get.json");
     const SEARCH: &str = include_str!("../tests/fixtures/lrclib_search.json");
-    const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");
+    const WORDED: &str =
+        include_str!("../../resonate-lyrics/tests/fixtures/lyricsfile_worded.yaml");
     const ECHOES_LASTS: Duration = Duration::from_secs(1412);
 
     fn found() -> Vec<Answer> {

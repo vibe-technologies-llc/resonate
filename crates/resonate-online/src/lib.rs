@@ -10,7 +10,6 @@ mod deezer;
 mod error;
 mod listenbrainz;
 mod lrclib;
-mod lyricsfile;
 mod musicbrainz;
 mod query;
 mod reference;

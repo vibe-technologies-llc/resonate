@@ -826,12 +826,13 @@ crate added to the layering refusals is added to the workflow's `refuse` lines.
 
 **The hand-rolled parsers are fuzzed from outside the workspace.** `fuzz/` is a crate of its own —
 its `[workspace]` table detaches it, so `unsafe_code = "forbid"` and the workspace's lints do not
-reach libfuzzer's macros. Five targets: `probe` drives `probe`, `probe_stream`, `probe_cover_art`,
+reach libfuzzer's macros. Six targets: `probe` drives `probe`, `probe_stream`, `probe_cover_art`,
 `probe_span` and a bounded `Decoder` over bytes served from memory by a `MediaProvider` of its own,
 which is how `riff.rs`, `matroska.rs`, `flac.rs`, `text.rs` and `dsd/` are reached through the
 public API rather than through a widened one; `boxes` and `cue` take the two readers that already
-answer to bytes. The other two need a seam, and it is `#[cfg(fuzzing)]` rather than public:
-`resonate_lyrics::read_an_lrc_sheet` and `resonate_library::read_a_playlist_sheet` are compiled
+answer to bytes. The other three need a seam, and it is `#[cfg(fuzzing)]` rather than public:
+`resonate_lyrics::read_an_lrc_sheet`, `resonate_lyrics::read_a_lyricsfile` and
+`resonate_library::read_a_playlist_sheet` are compiled
 only under the cfg cargo-fuzz sets, so the normal build's surface is unchanged and nothing in the
 tree carries an entry point with no caller. `sheet::parse` was split out of `sheet::read` for the
 second, which is the better factoring anyway: the reading of a sheet no longer needs a file.

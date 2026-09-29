@@ -10,10 +10,17 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::SourceId;
 
-use crate::{Error, LyricProvider, Lyrics, Result, Wanted, lrc};
+use crate::{
+    Error, LARGEST_LYRICSFILE, LyricOp, LyricProvider, Lyrics, Result, Wanted, lrc, read_lyricsfile,
+};
 
 const SIDECAR: &str = "sidecar";
-const BESIDE: [&str; 2] = ["lrc", "txt"];
+const BESIDE: [(&str, Written); 4] = [
+    (".lyricsfile.yaml", Written::Lyricsfile),
+    (".lyricsfile.yml", Written::Lyricsfile),
+    (".lrc", Written::Lrc),
+    (".txt", Written::Lrc),
+];
 const WITHIN: [&str; 3] = ["lyrics", "lyric", "lrc"];
 const LARGEST_SIDECAR: u64 = lrc::LARGEST_SHEET as u64;
 const FOLDERS_WALKED: usize = 32;
@@ -35,7 +42,7 @@ impl Default for Sidecar {
 }
 
 impl Sidecar {
-    fn text(&self, path: &Path) -> Result<Option<String>> {
+    fn head(&self, path: &Path, bound: u64) -> Result<Option<Vec<u8>>> {
         let file = match File::open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -46,11 +53,18 @@ impl Sidecar {
             return Ok(None);
         }
         let mut head = Vec::new();
-        file.take(LARGEST_SIDECAR.saturating_add(1))
+        file.take(bound.saturating_add(1))
             .read_to_end(&mut head)
             .map_err(|cause| self.unreachable(cause))?;
 
-        Ok(Some(whole_lines_within_a_sheet(head)))
+        Ok(Some(head))
+    }
+
+    fn unparsed(&self) -> Error {
+        Error::Unreadable {
+            provider: self.source.clone(),
+            op: LyricOp::Parse,
+        }
     }
 
     fn unreachable(&self, cause: io::Error) -> Error {
@@ -61,24 +75,44 @@ impl Sidecar {
     }
 
     fn held(&self, candidate: &Candidate, wanted: &Wanted) -> Result<Option<Lyrics>> {
-        let lyrics = self.read(&candidate.path, wanted)?;
+        let lyrics = self.read(candidate, wanted)?;
         Ok(match candidate.named {
             NamedAfter::TheFile => lyrics.and_then(|whole| wanted.cut_of_the_file(whole)),
             NamedAfter::TheTrack => lyrics,
         })
     }
 
-    fn read(&self, candidate: &Path, wanted: &Wanted) -> Result<Option<Lyrics>> {
-        let Some(text) = self.text(candidate)? else {
+    fn read(&self, candidate: &Candidate, wanted: &Wanted) -> Result<Option<Lyrics>> {
+        let (declared, lyrics) = match candidate.written {
+            Written::Lrc => {
+                let Some(head) = self.head(&candidate.path, LARGEST_SIDECAR)? else {
+                    return Ok(None);
+                };
+                let sheet = lrc::read(self.source.clone(), &whole_lines_within_a_sheet(head))?;
+                (sheet.declared, sheet.lyrics)
+            }
+            Written::Lyricsfile => {
+                let Some(head) = self.head(&candidate.path, LARGEST_LYRICSFILE as u64)? else {
+                    return Ok(None);
+                };
+                let text = String::from_utf8(head).map_err(|_| self.unparsed())?;
+                let document = read_lyricsfile(self.source.clone(), &text).map_err(|unread| {
+                    tracing::debug!(
+                        sidecar = %candidate.path.display(),
+                        ?unread,
+                        "a lyricsfile beside the track could not be read"
+                    );
+                    self.unparsed()
+                })?;
+                (document.declared, document.lyrics)
+            }
+        };
+        let Some(lyrics) = lyrics else {
             return Ok(None);
         };
-        let sheet = lrc::read(self.source.clone(), &text)?;
-        let Some(lyrics) = sheet.lyrics else {
-            return Ok(None);
-        };
-        if sheet.declared.names_another_track(wanted) {
+        if declared.names_another_track(wanted) {
             tracing::debug!(
-                sidecar = %candidate.display(),
+                sidecar = %candidate.path.display(),
                 "a sidecar declares itself to be another track"
             );
             return Ok(None);
@@ -118,6 +152,7 @@ impl Sidecar {
             .into_iter()
             .map(|(rank, path)| Candidate {
                 named: rank.named_after(),
+                written: BESIDE[rank.extension].1,
                 path,
             })
             .collect())
@@ -259,9 +294,16 @@ enum NamedAfter {
     TheTrack,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Written {
+    Lyricsfile,
+    Lrc,
+}
+
 struct Candidate {
     path: PathBuf,
     named: NamedAfter,
+    written: Written,
 }
 
 struct Named {
@@ -288,13 +330,15 @@ impl Named {
     }
 
     fn rank(&self, name: &Path, place: Place) -> Option<Rank> {
-        let extension = lowered(name.extension())?;
-        let extension = BESIDE.iter().position(|beside| *beside == extension)?;
-        let stem = lowered(name.file_stem())?;
+        let name = lowered(Some(name.as_os_str()))?;
+        let (extension, stem) = BESIDE.iter().enumerate().find_map(|(at, (ending, _))| {
+            let stem = name.strip_suffix(ending)?;
+            (!stem.is_empty()).then_some((at, stem))
+        })?;
 
         Some(Rank {
             extension,
-            name: self.names(&stem)?,
+            name: self.names(stem)?,
             place,
         })
     }
@@ -486,6 +530,44 @@ mod tests {
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert_eq!(lyrics.source().as_str(), SIDECAR);
         assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");
+
+    #[test]
+    fn a_lyricsfile_beside_the_track_is_read_word_by_word_ahead_of_an_lrc() {
+        let tree = Tree::new();
+        tree.write("Small Hours.lrc", LRC);
+        tree.write("Small Hours.lyricsfile.yaml", WORDED);
+
+        let lyrics = found(&tree.track("Small Hours.flac")).expect("the file beside it");
+
+        assert_eq!(lyrics.detail(), crate::Detail::Words);
+        assert_eq!(lyrics.lines()[0].text, "Stay until the morning");
+    }
+
+    #[test]
+    fn a_lyricsfile_declaring_another_song_gives_way_to_the_lrc_beside_it() {
+        let tree = Tree::new();
+        tree.write("Small Hours.lrc", LRC);
+        tree.write("Small Hours.lyricsfile.yml", WORDED);
+
+        let wanted = Wanted {
+            title: Some("Large Hours".to_owned()),
+            ..tree.track("Small Hours.flac")
+        };
+        let lyrics = found(&wanted).expect("the lrc beside it");
+
+        assert_eq!(lyrics.detail(), crate::Detail::Lines);
+    }
+
+    #[test]
+    fn a_lyricsfile_that_does_not_parse_gives_way_to_the_lrc_beside_it() {
+        let tree = Tree::new();
+        tree.write("Echoes.lrc", LRC);
+        tree.write("Echoes.lyricsfile.yaml", "version: '9.0'\n");
+
+        assert!(found(&tree.track("Echoes.flac")).is_some());
     }
 
     #[test]

@@ -73,9 +73,12 @@ paths:
   `Default for RandomState` impl that `AHashMap::new()` requires.
 - `tracing-subscriber` needs `env-filter` (not default) and `tracing-log` (default, keep it) —
   gpui logs through the `log` crate and its diagnostics vanish without the bridge.
-- `unicode-normalization` is `resonate-library`'s, and only `playlist::folded` reaches it: a
-  playlist name is lowercased and then composed, so one letter has one spelling in the `folded`
-  column whatever was typed. Its `std` feature is not in the default set.
+- `unicode-normalization` is `resonate-core`'s and `resonate-library`'s. Core's is
+  `folded_letters`, the one fold of a name into its bare letters, which the catalog keys an
+  artist and its search index by and the lyric sidecar weighs a declared title with; the
+  library's own is `playlist::folded`: a playlist name is lowercased and then composed, so one
+  letter has one spelling in the `folded` column whatever was typed. Its `std` feature is not in
+  the default set, and it brings `tinyvec` alone, so core stays a short link for the resampler.
 - `rustix` is the binary's, for `termios` alone — the feature that puts `resonate play`'s terminal
   a key at a time with no `unsafe` — beside `std`. The crate was in the lockfile already, under
   zbus and libspa, so what the dependency adds is the feature and not a crate.
@@ -112,7 +115,8 @@ paths:
   the same crate and version ureq already links, with `rust_backend` alone — for the one request
   body that is sent packed, AcoustID's lookup.
 - `serde` with `std` and `derive`, and `serde_json` with `std`, are `resonate-online`'s,
-  `resonate-mcp`'s and `resonate-discord`'s and nobody else's. Every `#[derive(Deserialize)]` in
+  `resonate-mcp`'s and `resonate-discord`'s and nobody else's — but for `serde` alone in
+  `resonate-lyrics`, which derives the private documents a Lyricsfile is read into. Every `#[derive(Deserialize)]` in
   the first is a private `…Doc` mapped by hand to a `resonate-library` type, in the second a
   private argument struct turned into a domain value before a tool runs, and in the third a
   private doc for a frame Discord's IPC speaks, so the library and `resonate-core` stay free of
@@ -120,8 +124,10 @@ paths:
   `serde` itself is in the `--exclude resonate-ui --no-default-features` build already, through
   `zbus`; `serde_json` is not, and `cargo tree -p resonate --no-default-features -i serde_json`
   finding nothing is the guard.
-- `serde-saphyr` is `resonate-online`'s alone, with `deserialize` and none of its default set,
-  which is its serialiser: it reads the YAML of LRCLIB's Lyricsfile and nothing writes one. It is
+- `serde-saphyr` is `resonate-lyrics`'s alone, with `deserialize` and none of its default set,
+  which is its serialiser: it reads the YAML of a Lyricsfile — LRCLIB's answer or a sidecar's —
+  and nothing writes one. It sits in the lyrics crate rather than the online one so a build
+  without `online` still reads a `.lyricsfile.yaml` beside a file. It is
   pure Rust over its own `granit-parser`, refuses a duplicated key by default — which the
   Lyricsfile draft asks a reader to — and takes a budget of nodes, depth and documents, which is
   what lets a document off the network be parsed at all. `serde_yaml` was archived and

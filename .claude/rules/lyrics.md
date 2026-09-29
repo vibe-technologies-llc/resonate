@@ -100,9 +100,9 @@ window.
   keyed by `(path, span_start)` the way `tracks` is, so a `Wanted` carries the `Option<FrameSpan>`
   the window fills from the queue item and a provider that keeps nothing ignores it. The kept row
   is read before any request and a miss is remembered for a week, so a track the service has no
-  words for costs one request a week rather than one per play. The Lyricsfile reader is the online
-  crate's too, because it is YAML and serde is that crate's; it builds its sets through the
-  constructors here, so what it reads is the same vocabulary everything else is.
+  words for costs one request a week rather than one per play. The Lyricsfile reader is this
+  crate's — `read_lyricsfile`, over `serde-saphyr` — so LRCLIB's answer and a sidecar beside the
+  file are read by one reader, and a build without `online` reads the sidecar all the same.
 - **`Lyricists` walks the providers and a refusal is not an answer.** `Lyricists::local` registers
   the two behind `Unsourced`, which answers with nothing and is the one source `has_a_source`
   discounts, so a build with neither says a source is not configured rather than that the track has
@@ -140,6 +140,20 @@ window.
   not published, are read exactly as they were before it existed, and `Wanted::duration` is what the
   window fills for it to weigh. `Embedded` is exempt for the same reason it is exempt from the
   title.
+- **A `.lyricsfile.yaml` beside a file is a sidecar, and the richest one.** `BESIDE` pairs each
+  ending the walk takes with how it is `Written` — `.lyricsfile.yaml` and `.lyricsfile.yml` ahead
+  of `.lrc` and `.txt` — and an ending is stripped whole, so `Echoes.lyricsfile.yaml` is named
+  after `echoes` like `Echoes.lrc` is. A Lyricsfile is read to `LARGEST_LYRICSFILE` and refused
+  past it rather than cut at a line, YAML being no use in halves; its `metadata` gives the
+  `title`, `artist` and `duration_ms` the `[ti:]`, `[ar:]` and `[length:]` check weighs, so one
+  declaring another song gives way to the `.lrc` beside it, and so does one that does not parse.
+  `a_lyricsfile_beside_the_track_is_read_word_by_word_ahead_of_an_lrc` is the claim.
+- **A name is weighed in the letters `folded_letters` spells, and a transliteration is no
+  disagreement.** `lrc::folded` folds through `resonate_core::folded_letters` — the catalog's own
+  fold, moved into core for this — so `Przybylowicz` agrees with `Przybyłowicz` and `KISKANC`
+  with `Kıskanç`; where one side folds to ASCII and the other does not, the two are written in
+  different scripts and nothing here can say whether *Kukla* is *Кукла*, so the check stands
+  aside rather than calling it another song. Two names in the same script are weighed as before.
 - **The sidecar walks folders rather than trying fixed names, and there are two of them.** `WITHIN`
   is the set of folder names it will descend into — `lyrics`, `lyric` and `lrc` — matched
   case-insensitively against the entries the parent walk already listed, so a `Lyrics/` under any

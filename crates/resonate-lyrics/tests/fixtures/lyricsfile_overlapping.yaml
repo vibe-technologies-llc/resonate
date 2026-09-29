@@ -1,0 +1,22 @@
+version: '1.0'
+
+metadata:
+  title: 'Two Voices'
+  artist: 'Example Duo'
+  language: 'en'
+
+lines:
+  - text: 'I will follow the river'
+    start_ms: 10000
+    end_ms: 15000
+  - text: 'Follow the river home'
+    start_ms: 12500
+    end_ms: 16500
+  - text: 'Home is where the river ends'
+    start_ms: 16000
+    end_ms: 19000
+
+plain: |
+  I will follow the river
+  Follow the river home
+  Home is where the river ends

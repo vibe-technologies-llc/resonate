@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use resonate_core::SourceId;
-use resonate_lyrics::{LyricLine, Lyrics, SungWord, Voice};
 use serde::Deserialize;
 use serde_saphyr::{Budget, Options};
 
+use crate::{LyricLine, Lyrics, SungWord, Voice, lrc::Declared};
+
 const VERSION: &str = "1.0";
 
-pub(crate) const LARGEST_LYRICSFILE: usize = 4 * 1024 * 1024;
+pub const LARGEST_LYRICSFILE: usize = 4 * 1024 * 1024;
 
 const MOST_LINES: usize = 20_000;
 
@@ -30,6 +31,12 @@ struct Document {
 
 #[derive(Deserialize)]
 struct Metadata {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    artist: Option<String>,
+    #[serde(default)]
+    duration_ms: Option<u64>,
     #[serde(default)]
     instrumental: Option<bool>,
 }
@@ -55,7 +62,7 @@ struct Word {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Unread {
+pub enum Unread {
     TooLarge,
     NotADocument,
     AnotherVersion,
@@ -63,12 +70,13 @@ pub(crate) enum Unread {
 }
 
 #[derive(Debug)]
-pub(crate) struct Read {
-    pub(crate) lyrics: Option<Lyrics>,
-    pub(crate) says_more_than_its_lines: bool,
+pub struct Lyricsfile {
+    pub lyrics: Option<Lyrics>,
+    pub says_more_than_its_lines: bool,
+    pub(crate) declared: Declared,
 }
 
-pub(crate) fn read(source: SourceId, text: &str) -> Result<Read, Unread> {
+pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {
     if text.len() > LARGEST_LYRICSFILE {
         return Err(Unread::TooLarge);
     }
@@ -80,15 +88,21 @@ pub(crate) fn read(source: SourceId, text: &str) -> Result<Read, Unread> {
     if document.version != VERSION {
         return Err(Unread::AnotherVersion);
     }
+    let declared = document
+        .metadata
+        .as_ref()
+        .map(Metadata::declared)
+        .unwrap_or_default();
     if document
         .metadata
         .as_ref()
         .and_then(|metadata| metadata.instrumental)
         .unwrap_or(false)
     {
-        return Ok(Read {
+        return Ok(Lyricsfile {
             lyrics: None,
             says_more_than_its_lines: false,
+            declared,
         });
     }
 
@@ -116,10 +130,21 @@ pub(crate) fn read(source: SourceId, text: &str) -> Result<Read, Unread> {
         .filter(|lyrics| !lyrics.is_empty())
     });
 
-    Ok(Read {
+    Ok(Lyricsfile {
         says_more_than_its_lines: says_more_than_its_lines && lyrics.is_some(),
         lyrics,
+        declared,
     })
+}
+
+impl Metadata {
+    fn declared(&self) -> Declared {
+        Declared::about(
+            self.title.clone(),
+            self.artist.clone(),
+            self.duration_ms.map(moment),
+        )
+    }
 }
 
 fn options() -> Options {
@@ -251,9 +276,8 @@ fn laid_over(text: &str, words: &[Word]) -> Option<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use resonate_lyrics::{Detail, Timing};
-
     use super::*;
+    use crate::{Detail, Timing};
 
     const WORDED: &str = include_str!("../tests/fixtures/lyricsfile_worded.yaml");
     const OVERLAPPING: &str = include_str!("../tests/fixtures/lyricsfile_overlapping.yaml");
@@ -263,8 +287,12 @@ mod tests {
         SourceId::new("lrclib").expect("a lowercase name")
     }
 
-    fn read_whole(text: &str) -> Read {
-        read(source(), text).expect("the document reads")
+    fn read_whole(text: &str) -> Lyricsfile {
+        read_lyricsfile(source(), text).expect("the document reads")
+    }
+
+    fn read(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {
+        read_lyricsfile(source, text)
     }
 
     #[test]

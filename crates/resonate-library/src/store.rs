@@ -10,6 +10,7 @@ use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
     Codec, CoverArt, ImageFormat, PacketDigest, ReplayGain, Sources, TagSet, probe_cover_art,
 };
+pub use resonate_core::folded_letters;
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
     StreamSpec, TrackId,
@@ -18,7 +19,6 @@ use resonate_vault::{Form, VaultKey};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, params, params_from_iter, types::Value,
 };
-use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn, Relation,
@@ -1081,40 +1081,6 @@ pub(crate) fn words_of(text: &str) -> String {
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-pub fn folded_letters(text: &str) -> String {
-    let mut folded = String::with_capacity(text.len());
-    for letter in text.to_lowercase().nfd() {
-        if is_combining_mark(letter) {
-            continue;
-        }
-        match spelled_out(letter) {
-            Some(plainly) => folded.push_str(plainly),
-            None => folded.push(letter),
-        }
-    }
-
-    folded
-}
-
-const fn spelled_out(letter: char) -> Option<&'static str> {
-    Some(match letter {
-        'ł' => "l",
-        'ø' => "o",
-        'đ' | 'ð' => "d",
-        'þ' => "th",
-        'ß' => "ss",
-        'æ' => "ae",
-        'œ' => "oe",
-        'ı' => "i",
-        'ħ' => "h",
-        'ŋ' => "n",
-        'ŧ' => "t",
-        'ĸ' => "k",
-        'ſ' => "s",
-        _ => return None,
-    })
 }
 
 pub(crate) fn marks_in(name: &str) -> usize {

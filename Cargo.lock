@@ -5181,6 +5181,7 @@ dependencies = [
  "bytemuck",
  "proptest",
  "thiserror 2.0.21",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -5281,6 +5282,8 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "resonate-core",
+ "serde",
+ "serde-saphyr",
  "thiserror 2.0.21",
  "tracing",
 ]
