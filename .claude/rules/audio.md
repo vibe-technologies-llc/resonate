@@ -1136,6 +1136,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 ## What the engine publishes
 
+- **An event is owed, not dropped, when nobody has drained the channel.** The 256 slots
+  `EVENT_SLOTS` holds fill while a front end is busy, and `emit` used to drop what did not fit, so a
+  run of track changes or a sustained underrun could push out the `QueueFinished` headless `play`
+  waits on. What does not fit waits in `events_owed`, in order, for `hand_over_what_is_owed` at the
+  end of every pass; past `EVENTS_OWED_AT_MOST` (1 024) the oldest goes with a warning. An
+  `Underrun` is the one event let go, a count read again next time, and it is told at most every
+  `UNDERRUNS_TOLD_EVERY` (1 s), the frames missing in between summed into it rather than one a pass
+  (`a_queue_that_runs_out_says_so_however_many_events_went_undrained_before_it`).
 - **What the engine publishes is one `Published` bundle, not a growing argument list.** It holds the
   `PlayerState`, `OutputSettings`, `StreamDigest`, the queue, the sink list and the `Tapped` the
   visualiser reads, each behind its own lock so a 60 Hz poll clones a pointer, and the one

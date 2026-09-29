@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- Engine events share one 256-slot channel that drops when full, and a sustained underrun raises
-  an `Underrun` every pass, so it can push out the `QueueFinished` the headless `play` waits on
 - `config.toml.lock` is made and never removed, and a staged config a killed process left is never
   swept
 

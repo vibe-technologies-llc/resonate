@@ -2548,6 +2548,50 @@ fn a_queue_that_runs_out_finishes_every_track_then_stops() -> Result<()> {
 }
 
 #[test]
+fn a_queue_that_runs_out_says_so_however_many_events_went_undrained_before_it() -> Result<()> {
+    const ROWS: u64 = 150;
+
+    let tree = Tree::new();
+    let source = pcm(16, 256);
+    let path = tree.write("short.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: (1..=ROWS).map(|id| track(&path, id)).collect(),
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| player.state().playback == PlaybackState::Stopped,
+        "the queue to run out",
+    );
+
+    let mut finished = 0;
+    let mut ended = false;
+    let deadline = Instant::now() + PATIENCE;
+    while !ended && Instant::now() < deadline {
+        for event in player.events().try_iter() {
+            match event {
+                Event::TrackFinished(_) => finished += 1,
+                Event::QueueFinished => ended = true,
+                _ => {}
+            }
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    assert!(
+        ended,
+        "the end of the queue was dropped behind {finished} finished tracks"
+    );
+    assert_eq!(finished, ROWS);
+    Ok(())
+}
+
+#[test]
 fn a_graph_that_lets_go_of_every_stream_stops_a_repeating_queue_rather_than_looping() -> Result<()>
 {
     let tree = Tree::new();

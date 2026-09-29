@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, Select, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_codec::{
     BoxLayout, DecodeStatus, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources,
     probe_boxes,
@@ -53,6 +53,8 @@ const DISCARD_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_RENEGOTIATIONS: u8 = 3;
 const GRAPH_BACK_WITHIN: Duration = Duration::from_secs(10);
 const FILLED_IN_ONE_GO: Duration = Duration::from_millis(20);
+const EVENTS_OWED_AT_MOST: usize = 1_024;
+const UNDERRUNS_TOLD_EVERY: Duration = Duration::from_secs(1);
 const LINK_NAPS_AFTER: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -529,6 +531,9 @@ pub struct Engine {
     graph_last_lost: Option<Instant>,
     graph_still_away: Option<Error>,
     fill_owed: bool,
+    events_owed: VecDeque<Event>,
+    underruns_told_at: Option<Instant>,
+    missing_untold: Frames,
     waiting_for_a_device: bool,
     device_last_lost: Option<Instant>,
     heard_at_least: Option<Frames>,
@@ -641,6 +646,9 @@ impl Engine {
             graph_last_lost: None,
             graph_still_away: None,
             fill_owed: false,
+            events_owed: VecDeque::new(),
+            underruns_told_at: None,
+            missing_untold: Frames::ZERO,
             waiting_for_a_device: false,
             device_last_lost: None,
             heard_at_least: None,
@@ -682,6 +690,7 @@ impl Engine {
                 self.heed_the_measured_peak();
                 self.settle_what_was_spooled();
                 self.doze();
+                self.hand_over_what_is_owed();
                 self.publish();
                 self.answer();
 
@@ -841,9 +850,42 @@ impl Engine {
         }
     }
 
-    fn emit(&self, event: Event) {
-        if self.events.try_send(event).is_err() {
+    fn emit(&mut self, event: Event) {
+        self.hand_over_what_is_owed();
+        if !self.events_owed.is_empty() {
+            self.owe(event);
+            return;
+        }
+        match self.events.try_send(event) {
+            Ok(()) | Err(TrySendError::Disconnected(_)) => {}
+            Err(TrySendError::Full(event)) => self.owe(event),
+        }
+    }
+
+    fn owe(&mut self, event: Event) {
+        if matches!(event, Event::Underrun { .. }) {
+            return;
+        }
+        if self.events_owed.len() == EVENTS_OWED_AT_MOST {
             tracing::warn!("an engine event was dropped; nothing is draining the event channel");
+            self.events_owed.pop_front();
+        }
+        self.events_owed.push_back(event);
+    }
+
+    fn hand_over_what_is_owed(&mut self) {
+        while let Some(event) = self.events_owed.pop_front() {
+            match self.events.try_send(event) {
+                Ok(()) => {}
+                Err(TrySendError::Full(event)) => {
+                    self.events_owed.push_front(event);
+                    return;
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    self.events_owed.clear();
+                    return;
+                }
+            }
         }
     }
 
@@ -869,7 +911,7 @@ impl Engine {
         self.answers.push(Answer { kind, reply });
     }
 
-    fn announce_a_refusal(&self, command: CommandKind, outcome: Result<()>) {
+    fn announce_a_refusal(&mut self, command: CommandKind, outcome: Result<()>) {
         if let Err(error) = outcome {
             self.emit(Event::CommandFailed { command, error });
         }
@@ -2217,6 +2259,15 @@ impl Engine {
             return;
         }
         output.status.underruns = output.status.underruns.saturating_add(seen);
+        self.missing_untold = self.missing_untold.saturating_add(missing);
+        if self
+            .underruns_told_at
+            .is_some_and(|told| told.elapsed() < UNDERRUNS_TOLD_EVERY)
+        {
+            return;
+        }
+        self.underruns_told_at = Some(Instant::now());
+        let missing = mem::replace(&mut self.missing_untold, Frames::ZERO);
         self.emit(Event::Underrun { missing });
     }
 
