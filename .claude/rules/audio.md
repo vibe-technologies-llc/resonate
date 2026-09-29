@@ -820,9 +820,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `RingProducer::is_abandoned` says the consumer was dropped — the graph thread gone with the
   `AudioSource` it was handed, as a daemon restart does, the client dropping every stream of the lost
   connection. `watch_graph` reads it once the stream is open, closes the output, keeps the row with the
-  heard position in `unbound` and publishes `Loading`; each pass after asks the backend for its sinks
-  and, once it answers, binds the row again at that frame, so a restarted daemon costs a gap, not the
-  track. It waits `GRAPH_BACK_WITHIN` (10 s) before failing the row with what the last try said, and a
+  heard position in `unbound` and publishes `Loading`; each pass after marks the sink list stale, so
+  the survey thread asks the backend for its sinks, and the answer landing binds the row again at that
+  frame (`bind_the_row_the_graph_let_go`), so a restarted daemon costs a gap, not the track, and the
+  engine is never held two seconds a pass by an enumeration in line — only where no survey thread
+  could start does `wait_for_the_graph_in_line` still ask there. It waits `GRAPH_BACK_WITHIN` (10 s)
+  before failing the row with what the last try said (`graph_still_away`), and a
   pause, a stop or another row ends the wait. A graph letting go again within ten seconds of the last
   time is not waited for: it raises `Error::LoopStopped`, so the transport skips and eventually stops
   rather than opening and losing streams for ever (`graph_last_lost` is that memory). Asking the sinks
@@ -846,6 +849,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Load` answering `NoSink` to its caller is unchanged: nothing was playing to wait
   (`a_stream_failing_as_its_device_goes_moves_the_row_to_the_fallback_rather_than_skipping_it`,
   `a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_where_it_was_heard`).
+- **A fill is a slice, not a loop to a full ring.** `Engine::fill` decodes and writes for at most
+  `FILLED_IN_ONE_GO` (20 ms) and answers `Filled::ForNow` where it stopped with room left; `pump`
+  keeps that as `fill_owed`, and `budget` answers no wait while it stands, so the next slice runs
+  once the pass has taken the commands waiting. A prime, a seek's refill or a `SetBuffer` deepening
+  the ring to seconds used to hold a Pause or a Stop behind the whole of it — 1.7 s behind a slow
+  source's twenty-second ring (`a_pause_is_answered_while_a_deep_ring_is_still_priming`).
 - **The PCM ring carries `u8`, not `f32`.** An `f32` ring would convert every stream and break
   bit-accuracy for 32-bit sources a 24-bit mantissa cannot hold. Its depth is the buffer setting's to
   ask and `ring_capacity`'s to answer: clamped between `MIN_RING_FRAMES` (8 192) — or

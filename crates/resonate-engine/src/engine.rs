@@ -52,7 +52,14 @@ const LARGEST_RING: u64 = 64 * 1024 * 1024;
 const DISCARD_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_RENEGOTIATIONS: u8 = 3;
 const GRAPH_BACK_WITHIN: Duration = Duration::from_secs(10);
+const FILLED_IN_ONE_GO: Duration = Duration::from_millis(20);
 const LINK_NAPS_AFTER: Duration = Duration::from_secs(3);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Filled {
+    AsFarAsItGoes,
+    ForNow,
+}
 
 struct Track {
     id: TrackId,
@@ -520,6 +527,8 @@ pub struct Engine {
     rebind_owed: bool,
     graph_lost: Option<Instant>,
     graph_last_lost: Option<Instant>,
+    graph_still_away: Option<Error>,
+    fill_owed: bool,
     waiting_for_a_device: bool,
     device_last_lost: Option<Instant>,
     heard_at_least: Option<Frames>,
@@ -630,6 +639,8 @@ impl Engine {
             rebind_owed: false,
             graph_lost: None,
             graph_last_lost: None,
+            graph_still_away: None,
+            fill_owed: false,
             waiting_for_a_device: false,
             device_last_lost: None,
             heard_at_least: None,
@@ -712,6 +723,9 @@ impl Engine {
     }
 
     fn budget(&self) -> Duration {
+        if self.fill_owed {
+            return Duration::ZERO;
+        }
         let budget = if self.at_rest() {
             AT_REST_TICK
         } else {
@@ -1751,6 +1765,11 @@ impl Engine {
                 self.follow_the_devices_volume();
                 self.follow_the_sink_it_would_choose();
                 self.bind_the_row_waiting_for_a_device();
+                self.bind_the_row_the_graph_let_go();
+            }
+            Err(error) if self.graph_lost.is_some() => {
+                tracing::debug!(%error, "the graph is not back yet");
+                self.graph_still_away = Some(Error::Sink(error));
             }
             Err(error) => tracing::warn!(%error, "the sink list could not be refreshed"),
         }
@@ -1881,6 +1900,7 @@ impl Engine {
     }
 
     fn pump(&mut self) {
+        self.fill_owed = false;
         let outcome = {
             let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
                 return;
@@ -1893,26 +1913,31 @@ impl Engine {
                 source,
             })
         };
-        if let Err(error) = outcome {
-            self.fail(error);
+        match outcome {
+            Ok(filled) => self.fill_owed = filled == Filled::ForNow,
+            Err(error) => self.fail(error),
         }
     }
 
-    fn fill(track: &mut Track, output: &mut Output) -> resonate_codec::Result<()> {
+    fn fill(track: &mut Track, output: &mut Output) -> resonate_codec::Result<Filled> {
         if output.producer.is_discarding() {
-            return Ok(());
+            return Ok(Filled::AsFarAsItGoes);
         }
         if output.draining.is_some() {
             Self::drain(output);
-            return Ok(());
+            return Ok(Filled::AsFarAsItGoes);
         }
 
+        let began = Instant::now();
         loop {
+            if began.elapsed() >= FILLED_IN_ONE_GO {
+                return Ok(Filled::ForNow);
+            }
             if track.undecoded() == 0 {
                 track.decoded_at = 0;
                 if track.decoder.next_block(&mut track.decoded)? == DecodeStatus::EndOfStream {
                     Self::flush(output);
-                    return Ok(());
+                    return Ok(Filled::AsFarAsItGoes);
                 }
                 track.sample_packet();
                 if track.decoded.frames() == 0 {
@@ -1923,7 +1948,7 @@ impl Engine {
             if output.plan.is_transparent() {
                 let written = output.producer.write_from(&track.decoded, track.decoded_at);
                 if written == 0 {
-                    return Ok(());
+                    return Ok(Filled::AsFarAsItGoes);
                 }
                 if let Some(tapping) = output.tapping.as_mut() {
                     tapping.record(&track.decoded, track.decoded_at, written);
@@ -1931,10 +1956,10 @@ impl Engine {
                 track.decoded_at = track.decoded_at.saturating_add(written);
             } else {
                 if output.producer.free_frames() < output.chain.max_output_frames() {
-                    return Ok(());
+                    return Ok(Filled::AsFarAsItGoes);
                 }
                 if !Self::convert(track, output) {
-                    return Ok(());
+                    return Ok(Filled::AsFarAsItGoes);
                 }
             }
         }
@@ -2092,15 +2117,57 @@ impl Engine {
         self.graph_lost = Some(Instant::now());
     }
 
+    fn row_the_graph_let_go(&self) -> Option<Frames> {
+        self.unbound
+            .filter(|_| self.playing && self.track.is_some() && self.output.is_none())
+    }
+
     fn wait_for_the_graph(&mut self, since: Instant) {
-        let at = self
-            .unbound
-            .filter(|_| self.playing && self.track.is_some() && self.output.is_none());
-        let Some(at) = at else {
+        let Some(at) = self.row_the_graph_let_go() else {
             self.graph_lost = None;
+            self.graph_still_away = None;
             return;
         };
+        if self.surveying.is_none() {
+            self.wait_for_the_graph_in_line(since, at);
+            return;
+        }
+        if since.elapsed() >= GRAPH_BACK_WITHIN {
+            self.graph_lost = None;
+            let away = self
+                .graph_still_away
+                .take()
+                .unwrap_or(Error::Sink(resonate_pipewire::Error::Disconnected));
+            self.fail(away);
+            return;
+        }
+        self.stale_sinks = true;
+        self.transport = TransportState::Loading;
+    }
 
+    fn bind_the_row_the_graph_let_go(&mut self) {
+        if self.graph_lost.is_none() {
+            return;
+        }
+        let Some(at) = self.row_the_graph_let_go() else {
+            return;
+        };
+        match self.rebind(Some(at), None) {
+            Ok(()) => {
+                tracing::info!("the graph is back; the row plays on from where it was heard");
+                self.unbound = None;
+                self.graph_lost = None;
+                self.graph_still_away = None;
+            }
+            Err(error) => {
+                tracing::debug!(%error, "the graph is not back yet");
+                self.graph_still_away = Some(error);
+                self.transport = TransportState::Loading;
+            }
+        }
+    }
+
+    fn wait_for_the_graph_in_line(&mut self, since: Instant, at: Frames) {
         let back = self
             .surveyor
             .enumerate_sinks(SINK_TIMEOUT)

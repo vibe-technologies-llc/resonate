@@ -436,6 +436,51 @@ impl MediaProvider for InMemory {
     }
 }
 
+struct Slowly {
+    held: Cursor<Vec<u8>>,
+    opened: Arc<AtomicBool>,
+}
+
+impl std::io::Read for Slowly {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        const A_READ_TAKES: Duration = Duration::from_millis(2);
+        const A_READ_AT_MOST: usize = 4_096;
+
+        self.opened.store(true, Ordering::Release);
+        thread::sleep(A_READ_TAKES);
+        let most = into.len().min(A_READ_AT_MOST);
+        self.held.read(&mut into[..most])
+    }
+}
+
+impl std::io::Seek for Slowly {
+    fn seek(&mut self, to: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.held.seek(to)
+    }
+}
+
+struct SlowToRead {
+    source: SourceId,
+    bytes: Vec<u8>,
+    opened: Arc<AtomicBool>,
+}
+
+impl MediaProvider for SlowToRead {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _: &MediaLocation) -> CodecResult<Media> {
+        Ok(Media {
+            stream: Box::new(Reading::new(Slowly {
+                held: Cursor::new(self.bytes.clone()),
+                opened: Arc::clone(&self.opened),
+            })),
+            hint: None,
+        })
+    }
+}
+
 struct ServesOnce {
     source: SourceId,
     key: String,
@@ -1803,6 +1848,54 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         &player,
         |_| graph.lock().opens == 2,
         "the stream owed a rebuild to be rebuilt once it could seek",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_pause_is_answered_while_a_deep_ring_is_still_priming() -> Result<()> {
+    const SECONDS_HELD: usize = 30;
+    const ANSWERED_WITHIN: Duration = Duration::from_millis(400);
+
+    let source = pcm(16, RATE as usize * SECONDS_HELD);
+    let named = SourceId::new("slow").expect("a lowercase name");
+    let opened = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(SlowToRead {
+        source: named.clone(),
+        bytes: source.file,
+        opened: Arc::clone(&opened),
+    }));
+    let (player, _graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+        EngineConfig {
+            buffer: Duration::from_secs(20),
+            ..config()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "slow.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(
+        &player,
+        |_| opened.load(Ordering::Acquire),
+        "the source to be read",
+    );
+    thread::sleep(Duration::from_millis(100));
+
+    let asked = Instant::now();
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    let answered_after = asked.elapsed();
+
+    assert!(
+        answered_after < ANSWERED_WITHIN,
+        "a pause waited {answered_after:?} behind the prime"
     );
     Ok(())
 }

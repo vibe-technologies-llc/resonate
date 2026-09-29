@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- `Engine::fill` loops until the ring is full with no time slice, so a prime, a seek's refill or a
-  large `SetBuffer` holds Pause and Stop behind it, and `wait_for_the_graph` enumerates the sinks
-  inline for up to two seconds a pass
 - A DSD read error or a DST frame that will not decode ends the track as though it had finished,
   because `fill` in `dsd/mod.rs` breaks on any error where every PCM codec raises one
 - An undecodable packet is dropped with no silence in its place, so the output is short by the
