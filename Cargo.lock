@@ -125,7 +125,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95097ef8efebf7b1e1d638b77935cfce25576163614427b464efe256bb8b2ec1"
 dependencies = [
  "crc32fast",
- "md-5",
+ "md-5 0.10.6",
 ]
 
 [[package]]
@@ -1913,7 +1913,7 @@ dependencies = [
  "crc",
  "crossbeam-channel",
  "heapless",
- "md-5",
+ "md-5 0.10.6",
  "num-traits",
  "rustversion",
  "seq-macro",
@@ -3731,6 +3731,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4280,7 +4290,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hkdf",
  "hmac",
- "md-5",
+ "md-5 0.10.6",
  "num",
  "num-bigint-dig",
  "pbkdf2",
@@ -5368,7 +5378,7 @@ dependencies = [
 name = "resonate-subsonic"
 version = "0.1.0"
 dependencies = [
- "md-5",
+ "md-5 0.11.0",
  "resonate-core",
  "resonate-providers",
  "serde",
