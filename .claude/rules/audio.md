@@ -690,6 +690,26 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   and `DITI` — the edited master's artist and title — fill only what the ID3 tag left empty. A `DIIN`
   text is bounded by `MAX_EDITED_TEXT_BYTES` and by its chunk, so a count claiming more than the chunk
   holds names nothing.
+- **A DSD file's ID3 tag is read whole, and its pictures are offered.** The tag a DSF's metadata
+  pointer names, or a DSDIFF's `ID3 ` chunk holds, is read to the length its own header declares —
+  the synchsafe size, the footer where the flag says — up to `MAX_METADATA_BYTES` (32 MiB), where a
+  flat 1 MiB read cut a tag carrying a large cover short and symphonia's `Id3v2Reader` refused the
+  whole of it, the title with it. `dsd::described` answers the tags and the revision's visuals
+  together, `OpenedDsd` keeps the visuals, and `container::Pictures` is what every picture question
+  asks — `Read` over a reader's attachments, chunk pictures and log, `Held` over a DSD file's — so
+  `probe_cover_art`, `probe_pictured` and the scan's `carries_a_picture` answer a DSD cover as any
+  other (`a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag`).
+- **A DSD file's channels are placed where it says, never by their count.** DSF's `fmt ` chunk names
+  a channel type — mono, stereo, three front, quad, front three and LFE, five, 5.1 — and DSDIFF's
+  `CHNL` an id per channel (`SLFT`/`MLFT`, `SRGT`/`MRGT`, `C   `, `LFE `, `LS  `, `RS  `);
+  `dsd::placed` turns either into a layout through `container::positioned_layout` and a `Speakers`
+  mask, as a PCM container's mask is. Read by count, a DSF of front three and an LFE was a quad and
+  its centre and LFE were played as the surrounds. A DSDIFF whose ids are not in the order the
+  layout's positions run (`dsd::in_order`), or one naming an id not listed, is `Discrete` and
+  unplaced, as is a DSF whose type disagrees with its count — the planes are never reordered, so a
+  placement that would need it is not claimed
+  (`a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count`,
+  `the_channels_are_placed_where_their_ids_say_and_left_unplaced_out_of_order`).
 - **DSF bit-reverses and DFF does not.** DSF's `fmt ` chunk declares `1` for LSB-first and `8` for
   MSB-first — checked against ffprobe, which reads a hand-built fixture of each as `dsd_lsbf_planar`
   and `dsd_msbf_planar` — while DFF is always MSB-first. The wrong way round yields recognisable,

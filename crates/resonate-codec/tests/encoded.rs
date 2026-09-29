@@ -12,8 +12,8 @@ use resonate_codec::{
     probe_cover_art, probe_stream,
 };
 use resonate_core::{
-    AudioBuffer, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat, SampleRate,
-    StreamSpec,
+    AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
+    SampleRate, StreamSpec,
 };
 
 const RATE: u32 = 44_100;
@@ -2219,6 +2219,119 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
         CueStart::Written(CueStamp::new(0, 0, 0))
     );
     assert_eq!(spans_of(&target), cut_spans());
+}
+
+fn id3_frame(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut frame = id.to_vec();
+    frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(body);
+    frame
+}
+
+fn id3_tag(frames: &[Vec<u8>], padding: usize) -> Vec<u8> {
+    let body: Vec<u8> = frames
+        .iter()
+        .flatten()
+        .copied()
+        .chain(std::iter::repeat_n(0, padding))
+        .collect();
+    let size = body.len() as u32;
+    let mut tag = b"ID3\x03\x00\x00".to_vec();
+    tag.extend_from_slice(&[
+        ((size >> 21) & 0x7F) as u8,
+        ((size >> 14) & 0x7F) as u8,
+        ((size >> 7) & 0x7F) as u8,
+        (size & 0x7F) as u8,
+    ]);
+    tag.extend_from_slice(&body);
+    tag
+}
+
+fn tagged_dsf(tag: &[u8]) -> Vec<u8> {
+    const METADATA_AT: usize = 20;
+    const TOTAL_AT: usize = 12;
+
+    let mut file = dsf(DSD64, 2, 1_000.0, BitsPerSample::LeastFirst);
+    let at = file.len() as u64;
+    file.extend_from_slice(tag);
+    let total = file.len() as u64;
+    file[METADATA_AT..METADATA_AT + 8].copy_from_slice(&at.to_le_bytes());
+    file[TOTAL_AT..TOTAL_AT + 8].copy_from_slice(&total.to_le_bytes());
+    file
+}
+
+#[test]
+fn a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag() {
+    const PAST_A_MEBIBYTE: usize = 3 << 20;
+
+    let mut picture = vec![0];
+    picture.extend_from_slice(b"image/png\0");
+    picture.push(3);
+    picture.push(0);
+    picture.extend_from_slice(&ONE_PIXEL_PNG);
+    let tag = id3_tag(
+        &[id3_frame(b"APIC", &picture), id3_frame(b"TIT2", b"\0Pulse")],
+        PAST_A_MEBIBYTE,
+    );
+
+    let tree = Tree::new();
+    let path = tree.at("tagged.dsf");
+    fs::write(&path, tagged_dsf(&tag)).expect("a dsf fixture");
+    let location = MediaLocation::local(&path);
+
+    let info = probe(&Sources::local(), &location).expect("a dsf probes");
+    let cover = probe_cover_art(&Sources::local(), &location).expect("a dsf opens");
+
+    assert_eq!(info.tags.title.as_deref(), Some("Pulse"));
+    assert_eq!(
+        cover.map(|art| art.bytes),
+        Some(ONE_PIXEL_PNG.to_vec()),
+        "the picture the DSF's tag carries was not offered"
+    );
+}
+
+#[test]
+fn a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count() {
+    const CHANNEL_TYPE_AT: usize = 48;
+
+    let cases: [(u16, u32, ChannelLayout); 7] = [
+        (2, 2, ChannelLayout::Stereo),
+        (
+            3,
+            3,
+            ChannelLayout::Discrete(ChannelCount::new(3).expect("three")),
+        ),
+        (4, 4, ChannelLayout::Quad),
+        (
+            4,
+            5,
+            ChannelLayout::Discrete(ChannelCount::new(4).expect("four")),
+        ),
+        (
+            5,
+            6,
+            ChannelLayout::Discrete(ChannelCount::new(5).expect("five")),
+        ),
+        (6, 7, ChannelLayout::Surround51),
+        (
+            4,
+            9,
+            ChannelLayout::Discrete(ChannelCount::new(4).expect("four")),
+        ),
+    ];
+
+    let tree = Tree::new();
+    for (channels, kind, layout) in cases {
+        let path = tree.at(&format!("{channels}-{kind}.dsf"));
+        let mut file = dsf(DSD64, channels, 1_000.0, BitsPerSample::LeastFirst);
+        file[CHANNEL_TYPE_AT..CHANNEL_TYPE_AT + 4].copy_from_slice(&kind.to_le_bytes());
+        fs::write(&path, file).expect("a dsf fixture");
+
+        let info = probe(&Sources::local(), &MediaLocation::local(&path)).expect("a dsf probes");
+        assert_eq!(info.spec.channels, layout, "channel type {kind}");
+        assert_eq!(info.speakers.is_named(), kind != 9, "channel type {kind}");
+    }
 }
 
 #[test]

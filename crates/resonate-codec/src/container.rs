@@ -73,7 +73,16 @@ pub(crate) struct OpenedDsd {
     pub(crate) layout: dsd::Layout,
     pub(crate) seekable: bool,
     pub(crate) tags: TagSet,
+    pub(crate) visuals: Vec<Visual>,
     pub(crate) spool: Option<Arc<Spool>>,
+}
+
+pub(crate) enum Pictures<'a> {
+    Read {
+        reader: &'a mut dyn FormatReader,
+        chunk: &'a [Visual],
+    },
+    Held(&'a [Visual]),
 }
 
 pub(crate) enum Opened {
@@ -96,10 +105,13 @@ impl Opened {
         }
     }
 
-    pub(crate) fn pictures_mut(&mut self) -> Option<(&mut dyn FormatReader, &[Visual])> {
+    pub(crate) fn pictures_mut(&mut self) -> Pictures<'_> {
         match self {
-            Self::Coded(coded) => Some((coded.reader.as_mut(), &coded.chunk_pictures)),
-            Self::Dsd(_) => None,
+            Self::Coded(coded) => Pictures::Read {
+                reader: coded.reader.as_mut(),
+                chunk: &coded.chunk_pictures,
+            },
+            Self::Dsd(held) => Pictures::Held(&held.visuals),
         }
     }
 
@@ -195,12 +207,13 @@ fn open_spooling_within(
 
     if let Some(container) = dsd::sniff(bytes.as_mut()) {
         let layout = dsd::layout(bytes.as_mut(), container, location)?;
-        let tags = dsd::tags(bytes.as_mut(), &layout);
+        let dsd::Described { tags, visuals } = dsd::described(bytes.as_mut(), &layout);
         return Ok(Opened::Dsd(Box::new(OpenedDsd {
             bytes,
             layout,
             seekable,
             tags,
+            visuals,
             spool,
         })));
     }
@@ -581,7 +594,7 @@ const FRONT_THREE_AND_LFE: Position = FRONT_PAIR
     .union(Position::FRONT_CENTER)
     .union(Position::LFE1);
 
-fn positioned_layout(positions: Position, count: ChannelCount) -> ChannelLayout {
+pub(crate) fn positioned_layout(positions: Position, count: ChannelCount) -> ChannelLayout {
     if matches!(count, ChannelCount::MONO | ChannelCount::STEREO) {
         return discrete_layout(count);
     }

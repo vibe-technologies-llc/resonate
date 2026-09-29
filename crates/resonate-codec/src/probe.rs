@@ -4,7 +4,12 @@ use symphonia::core::{
     meta::{StandardVisualKey, Visual},
 };
 
-use crate::{MediaInfo, Result, container, cue, source::Sources};
+use crate::{
+    MediaInfo, Result,
+    container::{self, Pictures},
+    cue,
+    source::Sources,
+};
 
 const MAX_COVER_BYTES: usize = 24 * 1024 * 1024;
 const COVER_PREFIX: &[u8] = b"cover";
@@ -138,17 +143,11 @@ pub fn probe_pictured(
     }
     let mut opened = container::open_media(sources, location)?;
     let info = opened.media_info(location)?;
-    let pictured = match (opened.pictures_mut(), picturing) {
-        (None, _) => Pictured::Bare,
-        (Some((reader, chunk)), Picturing::Whether) => {
-            if carries_cover_art(reader, chunk) {
-                Pictured::Carried
-            } else {
-                Pictured::Bare
-            }
-        }
-        (Some((reader, chunk)), Picturing::Copied) => {
-            cover_art(reader, chunk).map_or(Pictured::Bare, Pictured::Copied)
+    let pictured = match picturing {
+        Picturing::Whether if carries_cover_art(opened.pictures_mut()) => Pictured::Carried,
+        Picturing::Whether => Pictured::Bare,
+        Picturing::Copied => {
+            cover_art(opened.pictures_mut()).map_or(Pictured::Bare, Pictured::Copied)
         }
     };
 
@@ -172,9 +171,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 pub fn probe_scanned(sources: &Sources, location: &MediaLocation) -> Result<Scanned> {
     let mut opened = container::open_media(sources, location)?;
     let info = opened.media_info(location)?;
-    let carries_a_picture = opened
-        .pictures_mut()
-        .is_some_and(|(reader, chunk)| carries_cover_art(reader, chunk));
+    let carries_a_picture = carries_cover_art(opened.pictures_mut());
     let packets = opened
         .into_coded()
         .and_then(|coded| digest_of_the_first_packets(coded.reader, location));
@@ -216,17 +213,15 @@ fn digest_of_the_first_packets(
 
 pub fn probe_cover_art(sources: &Sources, location: &MediaLocation) -> Result<Option<CoverArt>> {
     let mut opened = container::open_media(sources, location)?;
-    Ok(opened
-        .pictures_mut()
-        .and_then(|(reader, chunk)| cover_art(reader, chunk)))
+    Ok(cover_art(opened.pictures_mut()))
 }
 
-fn cover_art(reader: &mut dyn FormatReader, chunk: &[Visual]) -> Option<CoverArt> {
-    picture(reader, chunk, &copied)
+fn cover_art(pictures: Pictures<'_>) -> Option<CoverArt> {
+    picture(pictures, &copied)
 }
 
-fn carries_cover_art(reader: &mut dyn FormatReader, chunk: &[Visual]) -> bool {
-    picture(reader, chunk, &|_, _| ()).is_some()
+fn carries_cover_art(pictures: Pictures<'_>) -> bool {
+    picture(pictures, &|_, _| ()).is_some()
 }
 
 fn copied(format: ImageFormat, data: &[u8]) -> CoverArt {
@@ -236,11 +231,11 @@ fn copied(format: ImageFormat, data: &[u8]) -> CoverArt {
     }
 }
 
-fn picture<T>(
-    reader: &mut dyn FormatReader,
-    chunk: &[Visual],
-    taken: &dyn Fn(ImageFormat, &[u8]) -> T,
-) -> Option<T> {
+fn picture<T>(pictures: Pictures<'_>, taken: &dyn Fn(ImageFormat, &[u8]) -> T) -> Option<T> {
+    let (reader, chunk) = match pictures {
+        Pictures::Read { reader, chunk } => (reader, chunk),
+        Pictures::Held(visuals) => return choose(visuals, taken),
+    };
     if let Some(art) = attached_cover(reader.attachments(), taken) {
         return Some(art);
     }

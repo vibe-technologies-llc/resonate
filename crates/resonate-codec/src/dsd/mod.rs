@@ -9,10 +9,16 @@ mod window;
 use std::io::{self, Read, Seek, SeekFrom};
 
 use resonate_core::{ChannelCount, ChannelLayout, Frames, MediaLocation};
+use symphonia::core::{
+    audio::{Channels, Position},
+    meta::Visual,
+};
 
 pub use crate::dsd::rate::{DsdRate, Packing};
 pub(crate) use crate::dsd::{dop::Dop, pcm::Decimator, rate::DOP_DECIMATION};
-use crate::{Error, MediaInfo, Result, source::MediaStream};
+use crate::{
+    Error, MediaInfo, Result, Speakers, TagSet, container::positioned_layout, source::MediaStream,
+};
 
 pub(crate) const MAX_DSD_CHANNELS: u16 = 8;
 pub(crate) const DSD_SILENCE: u8 = 0x69;
@@ -47,6 +53,7 @@ pub(crate) struct Layout {
     pub(crate) container: Container,
     pub(crate) rate: DsdRate,
     pub(crate) channels: ChannelLayout,
+    pub(crate) speakers: Speakers,
     pub(crate) samples: u64,
     pub(crate) data_at: u64,
     pub(crate) data_bytes: u64,
@@ -133,10 +140,17 @@ pub(crate) fn layout(
     }
 }
 
-pub(crate) fn channels(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Placed {
+    pub(crate) channels: ChannelLayout,
+    pub(crate) speakers: Speakers,
+}
+
+pub(crate) fn placed(
     count: u32,
+    positions: Option<Position>,
     location: &resonate_core::MediaLocation,
-) -> Result<ChannelLayout> {
+) -> Result<Placed> {
     let count = u16::try_from(count).unwrap_or(u16::MAX);
     if count == 0 || count > MAX_DSD_CHANNELS {
         return Err(Error::DsdFieldNotUsable {
@@ -145,7 +159,34 @@ pub(crate) fn channels(
             value: u64::from(count),
         });
     }
-    Ok(ChannelLayout::from_count(ChannelCount::new(count)?))
+    let count = ChannelCount::new(count)?;
+
+    let positions = positions.filter(|held| held.bits().count_ones() == u32::from(count.get()));
+    Ok(match positions {
+        Some(positions) => Placed {
+            channels: positioned_layout(positions, count),
+            speakers: Speakers::of(Some(&Channels::Positioned(positions))),
+        },
+        None => Placed {
+            channels: match count {
+                ChannelCount::MONO => ChannelLayout::Mono,
+                ChannelCount::STEREO => ChannelLayout::Stereo,
+                _ => ChannelLayout::Discrete(count),
+            },
+            speakers: Speakers::UNNAMED,
+        },
+    })
+}
+
+pub(crate) fn in_order(named: impl IntoIterator<Item = Position>) -> Option<Position> {
+    let mut placed = Position::empty();
+    for position in named {
+        if position.bits() <= placed.bits() || placed.intersects(position) {
+            return None;
+        }
+        placed |= position;
+    }
+    Some(placed)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -369,7 +410,7 @@ pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> M
             layout.channels,
             resonate_core::SampleFormat::S24,
         ),
-        speakers: crate::Speakers::UNNAMED,
+        speakers: layout.speakers,
         duration: Some(layout.frames()),
         encoder_delay: 0,
         encoder_padding: 0,
@@ -382,52 +423,84 @@ pub(crate) fn info(layout: &Layout, is_seekable: bool, tags: crate::TagSet) -> M
     }
 }
 
-const MAX_METADATA_BYTES: u64 = 1 << 20;
+const MAX_METADATA_BYTES: u64 = 32 << 20;
+const ID3_MAGIC: &[u8; 3] = b"ID3";
+const ID3_HEADER_BYTES: u64 = 10;
+const ID3_FOOTER_BYTES: u64 = 10;
+const ID3_HAS_A_FOOTER: u8 = 0x10;
+const ID3_FLAGS_AT: usize = 5;
+const ID3_SIZE_AT: usize = 6;
 
-pub(crate) fn tags(bytes: &mut dyn MediaStream, layout: &Layout) -> crate::TagSet {
-    let mut tags = embedded_tags(bytes, layout);
-    let Edited { artist, title } = layout.edited.clone();
-    tags.artist = tags.artist.or(artist);
-    tags.title = tags.title.or(title);
-    tags
+#[derive(Clone, Default)]
+pub(crate) struct Described {
+    pub(crate) tags: TagSet,
+    pub(crate) visuals: Vec<Visual>,
 }
 
-fn embedded_tags(bytes: &mut dyn MediaStream, layout: &Layout) -> crate::TagSet {
+pub(crate) fn described(bytes: &mut dyn MediaStream, layout: &Layout) -> Described {
+    let mut described = embedded(bytes, layout).unwrap_or_default();
+    let Edited { artist, title } = layout.edited.clone();
+    described.tags.artist = described.tags.artist.or(artist);
+    described.tags.title = described.tags.title.or(title);
+    described
+}
+
+fn embedded(bytes: &mut dyn MediaStream, layout: &Layout) -> Option<Described> {
     use symphonia::core::{
         io::{MediaSourceStream, MediaSourceStreamOptions},
         meta::{MetadataOptions, MetadataReader},
     };
 
-    let Some(at) = layout.metadata_at else {
-        return crate::TagSet::default();
-    };
-    if bytes.seek(SeekFrom::Start(at)).is_err() {
-        return crate::TagSet::default();
+    let at = layout.metadata_at?;
+    bytes.seek(SeekFrom::Start(at)).ok()?;
+    let mut header = [0_u8; ID3_HEADER_BYTES as usize];
+    bytes.read_exact(&mut header).ok()?;
+    let whole = id3_length(&header)?;
+    if whole > MAX_METADATA_BYTES {
+        tracing::debug!(
+            bytes = whole,
+            limit = MAX_METADATA_BYTES,
+            "passing over a DSD file's ID3 tag larger than one is read at"
+        );
+        return None;
     }
 
-    let mut held = Vec::new();
-    if bytes
-        .take(MAX_METADATA_BYTES)
+    let mut held = header.to_vec();
+    bytes
+        .take(whole - ID3_HEADER_BYTES)
         .read_to_end(&mut held)
-        .is_err()
-    {
-        return crate::TagSet::default();
-    }
+        .ok()?;
 
     let stream = MediaSourceStream::new(
         Box::new(std::io::Cursor::new(held)),
         MediaSourceStreamOptions::default(),
     );
-    let Ok(mut reader) =
-        symphonia::default::meta::Id3v2Reader::try_new(stream, MetadataOptions::default())
-    else {
-        return crate::TagSet::default();
-    };
-    let Ok(buffered) = reader.read_all() else {
-        return crate::TagSet::default();
-    };
+    let mut reader =
+        symphonia::default::meta::Id3v2Reader::try_new(stream, MetadataOptions::default()).ok()?;
+    let buffered = reader.read_all().ok()?;
 
-    crate::tags::from_revision(&buffered.revision)
+    Some(Described {
+        tags: crate::tags::from_revision(&buffered.revision),
+        visuals: buffered.revision.media.visuals,
+    })
+}
+
+fn id3_length(header: &[u8; ID3_HEADER_BYTES as usize]) -> Option<u64> {
+    if !header.starts_with(ID3_MAGIC) {
+        return None;
+    }
+    let size = header
+        .get(ID3_SIZE_AT..)?
+        .iter()
+        .try_fold(0_u64, |size, byte| {
+            (byte & 0x80 == 0).then(|| size << 7 | u64::from(*byte))
+        })?;
+    let footer = if header[ID3_FLAGS_AT] & ID3_HAS_A_FOOTER == 0 {
+        0
+    } else {
+        ID3_FOOTER_BYTES
+    };
+    Some(ID3_HEADER_BYTES + size + footer)
 }
 
 pub(crate) struct Stream {
@@ -595,6 +668,7 @@ mod tests {
             container: Container::Dsf,
             rate: DsdRate::new(DSD64).expect("dsd64"),
             channels: ChannelLayout::Mono,
+            speakers: Speakers::UNNAMED,
             samples: held * 8,
             data_at: 0,
             data_bytes: held,

@@ -1,12 +1,12 @@
 use std::io::SeekFrom;
 
 use resonate_core::MediaLocation;
+use symphonia::core::audio::Position;
 
 use crate::{
     Error, Result,
     dsd::{
-        BitOrder, Container, DsdChunk, DsdField, Edited, Interleave, Layout, channels,
-        rate::DsdRate,
+        BitOrder, Container, DsdChunk, DsdField, Edited, Interleave, Layout, placed, rate::DsdRate,
     },
     prescan::read_exact,
     source::MediaStream,
@@ -21,6 +21,14 @@ const FORMAT_VERSION: u32 = 1;
 const FORMAT_ID_RAW: u32 = 0;
 const BITS_LSB_FIRST: u32 = 1;
 const BITS_MSB_FIRST: u32 = 8;
+
+const MONO: u32 = 1;
+const STEREO: u32 = 2;
+const THREE: u32 = 3;
+const QUAD: u32 = 4;
+const FOUR: u32 = 5;
+const FIVE: u32 = 6;
+const FIVE_ONE: u32 = 7;
 
 pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Result<Layout> {
     bytes.seek(SeekFrom::Start(0)).map_err(|source| Error::Io {
@@ -48,8 +56,10 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         return Err(unusable(location, DsdField::FormatId, format_id.into()));
     }
 
+    let kind = u32::from_le_bytes(take4(&fmt, 20));
     let declared_channels = u32::from_le_bytes(take4(&fmt, 24));
-    let channels = channels(declared_channels, location)?;
+    let placed = placed(declared_channels, positions_of(kind), location)?;
+    let channels = placed.channels;
 
     let hz = u32::from_le_bytes(take4(&fmt, 28));
     let rate = DsdRate::new(hz).ok_or_else(|| Error::RateNotRepresentable {
@@ -87,6 +97,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         container: Container::Dsf,
         rate,
         channels,
+        speakers: placed.speakers,
         samples: samples.min(data_bytes / lanes * 8),
         data_at,
         data_bytes,
@@ -95,6 +106,21 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         metadata_at: (metadata_at > 0).then_some(metadata_at),
         edited: Edited::default(),
         packed: None,
+    })
+}
+
+fn positions_of(kind: u32) -> Option<Position> {
+    let front = Position::FRONT_LEFT | Position::FRONT_RIGHT;
+    let rear = Position::REAR_LEFT | Position::REAR_RIGHT;
+    Some(match kind {
+        MONO => Position::FRONT_CENTER,
+        STEREO => front,
+        THREE => front | Position::FRONT_CENTER,
+        QUAD => front | rear,
+        FOUR => front | Position::FRONT_CENTER | Position::LFE1,
+        FIVE => front | Position::FRONT_CENTER | rear,
+        FIVE_ONE => front | Position::FRONT_CENTER | Position::LFE1 | rear,
+        _ => return None,
     })
 }
 

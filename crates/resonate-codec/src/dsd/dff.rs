@@ -1,12 +1,13 @@
 use std::io::SeekFrom;
 
 use resonate_core::{MediaLocation, text::decoded};
+use symphonia::core::audio::Position;
 
 use crate::{
     Error, Result,
     dsd::{
         BitOrder, Compressed, Container, DsdChunk, Edited, Interleave, Layout, MAX_DSD_CHANNELS,
-        channels, dst, rate::DsdRate,
+        Placed, dst, in_order, placed, rate::DsdRate,
     },
     prescan::read_exact,
     source::MediaStream,
@@ -22,6 +23,7 @@ const EDITED_COUNT_BYTES: u64 = 4;
 const FRAME_INFO_BYTES: u64 = 6;
 const MOST_FRAMES_RESERVED: u64 = 1 << 20;
 const DST: &[u8; 4] = b"DST ";
+const CHANNEL_ID_BYTES: usize = 4;
 
 pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Result<Layout> {
     bytes.seek(SeekFrom::Start(0)).map_err(|source| Error::Io {
@@ -75,12 +77,13 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     let count = found
         .channels
         .ok_or_else(|| missing(location, DsdChunk::Channels))?;
+    let placed = placed(count, found.positions, location)?;
 
     if let Some(packed) = found.packed {
         return packed_layout(
             packed,
             rate,
-            count,
+            placed,
             found.metadata_at,
             found.edited,
             location,
@@ -92,7 +95,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         .ok_or_else(|| missing(location, DsdChunk::Data))?;
     let declared = found.data_bytes.unwrap_or(0);
 
-    let channels = channels(count, location)?;
+    let channels = placed.channels;
     let lanes = u64::from(channels.count().get());
     let held = bytes
         .byte_len()
@@ -103,6 +106,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         container: Container::Dff,
         rate,
         channels,
+        speakers: placed.speakers,
         samples: data_bytes / lanes * 8,
         data_at,
         data_bytes,
@@ -117,12 +121,12 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
 fn packed_layout(
     packed: Compressed,
     rate: DsdRate,
-    count: u32,
+    placed: Placed,
     metadata_at: Option<u64>,
     edited: Edited,
     location: &MediaLocation,
 ) -> Result<Layout> {
-    let channels = channels(count, location)?;
+    let channels = placed.channels;
     let lanes = u64::from(channels.count().get());
     let samples_a_frame = u64::from(rate.hz()) / dst::FRAMES_A_SECOND;
     if lanes as usize > dst::MOST_CHANNELS || !samples_a_frame.is_multiple_of(8) {
@@ -139,6 +143,7 @@ fn packed_layout(
         container: Container::Dff,
         rate,
         channels,
+        speakers: placed.speakers,
         samples: frames.saturating_mul(samples_a_frame),
         data_at: 0,
         data_bytes: frames
@@ -188,6 +193,7 @@ pub(crate) fn packed_frames(bytes: &mut dyn MediaStream, packed: Compressed) -> 
 struct Found {
     rate: Option<DsdRate>,
     channels: Option<u32>,
+    positions: Option<Position>,
     data_at: Option<u64>,
     data_bytes: Option<u64>,
     metadata_at: Option<u64>,
@@ -277,6 +283,11 @@ fn read_property(
                     .map(u16::from_be_bytes)
                     .unwrap_or(0);
                 found.channels = (count > 0 && count <= MAX_DSD_CHANNELS).then_some(count.into());
+                found.positions = found.channels.and_then(|_| {
+                    in_order((0..count).map_while(|_| {
+                        read_exact::<CHANNEL_ID_BYTES, _>(bytes).and_then(|id| position_of(&id))
+                    }))
+                });
             }
             b"CMPR" => {
                 if let Some(kind) = read_exact::<4, _>(bytes)
@@ -295,6 +306,18 @@ fn read_property(
         at = inner.saturating_add(held).saturating_add(held % 2);
     }
     Ok(())
+}
+
+fn position_of(id: &[u8; CHANNEL_ID_BYTES]) -> Option<Position> {
+    Some(match id {
+        b"SLFT" | b"MLFT" => Position::FRONT_LEFT,
+        b"SRGT" | b"MRGT" => Position::FRONT_RIGHT,
+        b"C   " => Position::FRONT_CENTER,
+        b"LFE " => Position::LFE1,
+        b"LS  " => Position::REAR_LEFT,
+        b"RS  " => Position::REAR_RIGHT,
+        _ => return None,
+    })
 }
 
 fn header(bytes: &mut dyn MediaStream, at: u64) -> Option<([u8; 4], u64)> {
@@ -321,8 +344,10 @@ fn missing(location: &MediaLocation, chunk: DsdChunk) -> Error {
 mod tests {
     use std::io::Cursor;
 
+    use resonate_core::{ChannelCount, ChannelLayout};
+
     use super::*;
-    use crate::{dsd::tags, source::Reading};
+    use crate::{dsd::described, source::Reading};
 
     const DSD64: u32 = 2_822_400;
 
@@ -361,12 +386,17 @@ mod tests {
     }
 
     fn dff(trailing: &[Vec<u8>]) -> Vec<u8> {
+        dff_of(&[b"SLFT", b"SRGT"], trailing)
+    }
+
+    fn dff_of(named: &[&[u8; 4]], trailing: &[Vec<u8>]) -> Vec<u8> {
+        let mut channels = (named.len() as u16).to_be_bytes().to_vec();
+        for id in named {
+            channels.extend_from_slice(*id);
+        }
         let mut sound = b"SND ".to_vec();
         sound.extend(chunk(b"FS  ", &DSD64.to_be_bytes()));
-        sound.extend(chunk(
-            b"CHNL",
-            &[0, 2, b'S', b'L', b'F', b'T', b'S', b'R', b'G', b'T'],
-        ));
+        sound.extend(chunk(b"CHNL", &channels));
         sound.extend(chunk(b"CMPR", b"DSD \x0enot compressed\x00"));
 
         let mut form = b"DSD ".to_vec();
@@ -382,7 +412,30 @@ mod tests {
     fn tags_of(bytes: Vec<u8>) -> crate::TagSet {
         let mut stream = Reading::new(Cursor::new(bytes));
         let layout = read(&mut stream, &MediaLocation::local("/music/a.dff")).expect("a dff reads");
-        tags(&mut stream, &layout)
+        described(&mut stream, &layout).tags
+    }
+
+    #[test]
+    fn the_channels_are_placed_where_their_ids_say_and_left_unplaced_out_of_order() {
+        let placed = |named: &[&[u8; 4]]| {
+            let mut stream = Reading::new(Cursor::new(dff_of(named, &[])));
+            let layout =
+                read(&mut stream, &MediaLocation::local("/music/a.dff")).expect("a dff reads");
+            (layout.channels, layout.speakers.is_named())
+        };
+        let four = ChannelLayout::Discrete(ChannelCount::new(4).expect("four"));
+
+        assert_eq!(
+            placed(&[b"MLFT", b"MRGT", b"C   ", b"LFE ", b"LS  ", b"RS  "]),
+            (ChannelLayout::Surround51, true)
+        );
+        assert_eq!(
+            placed(&[b"MLFT", b"MRGT", b"LS  ", b"RS  "]),
+            (ChannelLayout::Quad, true)
+        );
+        assert_eq!(placed(&[b"MLFT", b"MRGT", b"C   ", b"LFE "]), (four, true));
+        assert_eq!(placed(&[b"MLFT", b"MRGT", b"RS  ", b"LS  "]), (four, false));
+        assert_eq!(placed(&[b"MLFT", b"MRGT", b"C   ", b"XTRA"]), (four, false));
     }
 
     #[test]
