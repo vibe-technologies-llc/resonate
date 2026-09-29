@@ -338,6 +338,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   after the tags settled it is skipped rather than read again. A row a sheet cuts from a file is read
   through `probe_span` and says nothing about the picture, the picture being the file's and the
   whole-file row asked on its own.
+- **What the engine's catalog holds follows the file.** A read that failed — a share unmounted, a
+  file mid-copy — is `Look::Failed` with its time, answered as nothing but claimed again after
+  `READ_AGAIN_AFTER` (30 s), where `Nothing` is a read that found nothing and stands. Each entry
+  keeps the file's size and modification time (`Stamp`), and `looked_at` weighs them against the
+  disc at most every `LOOKED_AT_THE_FILE_EVERY` (5 s): an entry whose file moved — retagged, replaced,
+  mounted again — is forgotten and read afresh, so a queued row no longer holds its old name until
+  the LRU evicts it (`a_read_that_failed_is_asked_for_again_once_a_while_has_passed`,
+  `a_row_whose_file_changed_on_disc_is_read_again`). A row still being read is never weighed.
 - **A picture is weighed before it is copied.** symphonia has read a visual into its own buffer by
   the time `probe_cover_art` sees it, so the `to_vec` is a second copy of whatever the file embedded —
   and the engine's `ART_BYTES_HELD` bounds what the catalog *holds*, long after the allocation.

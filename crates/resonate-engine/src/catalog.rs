@@ -1,11 +1,12 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    fs,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use ahash::AHashMap;
@@ -26,6 +27,10 @@ const ROWS_ASKED: usize = 256;
 
 const PICTURES_ASKED: usize = 32;
 
+const READ_AGAIN_AFTER: Duration = Duration::from_secs(30);
+
+const LOOKED_AT_THE_FILE_EVERY: Duration = Duration::from_secs(5);
+
 #[derive(Default)]
 enum Look<T> {
     #[default]
@@ -33,6 +38,7 @@ enum Look<T> {
     Pending,
     Found(Arc<T>),
     Nothing,
+    Failed(Instant),
 }
 
 impl<T> Clone for Look<T> {
@@ -42,6 +48,7 @@ impl<T> Clone for Look<T> {
             Self::Pending => Self::Pending,
             Self::Found(found) => Self::Found(Arc::clone(found)),
             Self::Nothing => Self::Nothing,
+            Self::Failed(at) => Self::Failed(*at),
         }
     }
 }
@@ -50,13 +57,21 @@ impl<T> Look<T> {
     const fn is_pending(&self) -> bool {
         matches!(self, Self::Pending)
     }
+
+    fn is_due_again(&self) -> bool {
+        match self {
+            Self::Unasked => true,
+            Self::Failed(at) => at.elapsed() >= READ_AGAIN_AFTER,
+            Self::Pending | Self::Found(_) | Self::Nothing => false,
+        }
+    }
 }
 
 impl Look<CoverArt> {
     fn bytes(&self) -> usize {
         match self {
             Self::Found(art) => art.bytes.len(),
-            Self::Unasked | Self::Pending | Self::Nothing => 0,
+            Self::Unasked | Self::Pending | Self::Nothing | Self::Failed(_) => 0,
         }
     }
 
@@ -155,12 +170,29 @@ struct Cut {
     tags: Look<MediaInfo>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    bytes: u64,
+    modified: SystemTime,
+}
+
+impl Stamp {
+    fn of(location: &MediaLocation) -> Option<Self> {
+        let held = fs::metadata(location.as_path()?).ok()?;
+        Some(Self {
+            bytes: held.len(),
+            modified: held.modified().ok()?,
+        })
+    }
+}
+
 struct Entry {
     tags: Look<MediaInfo>,
     cuts: Vec<Cut>,
     art: Look<CoverArt>,
     used: u64,
+    stamp: Option<Stamp>,
+    stamped_at: Instant,
 }
 
 impl Entry {
@@ -224,23 +256,29 @@ impl Held {
     }
 
     fn claim_tags(&mut self, row: &Row) -> Claim<MediaInfo> {
-        match self.tags(row) {
+        let look = self.tags(row);
+        if look.is_due_again() {
+            self.keep_tags(row, Look::Pending);
+            return Claim::Ours;
+        }
+        match look {
             Look::Found(info) => Claim::Answered(Some(info)),
-            Look::Pending | Look::Nothing => Claim::Answered(None),
-            Look::Unasked => {
-                self.keep_tags(row, Look::Pending);
-                Claim::Ours
+            Look::Unasked | Look::Pending | Look::Nothing | Look::Failed(_) => {
+                Claim::Answered(None)
             }
         }
     }
 
     fn claim_art(&mut self, location: &MediaLocation) -> Claim<CoverArt> {
-        match self.art(location) {
+        let look = self.art(location);
+        if look.is_due_again() {
+            self.keep_art(location, Look::Pending);
+            return Claim::Ours;
+        }
+        match look {
             Look::Found(art) => Claim::Answered(Some(art)),
-            Look::Pending | Look::Nothing => Claim::Answered(None),
-            Look::Unasked => {
-                self.keep_art(location, Look::Pending);
-                Claim::Ours
+            Look::Unasked | Look::Pending | Look::Nothing | Look::Failed(_) => {
+                Claim::Answered(None)
             }
         }
     }
@@ -280,10 +318,27 @@ impl Held {
     }
 
     fn looked_at(&mut self, location: &MediaLocation) -> Option<&mut Entry> {
+        if self.file_moved_under(location) {
+            tracing::debug!(%location, "a queued item changed on disc; it is read again");
+            self.forget(location);
+            return None;
+        }
         if !self.made_current(location) {
             return None;
         }
         self.entries.get_mut(location)
+    }
+
+    fn file_moved_under(&mut self, location: &MediaLocation) -> bool {
+        let Some(entry) = self.entries.get_mut(location) else {
+            return false;
+        };
+        if entry.is_pending() || entry.stamped_at.elapsed() < LOOKED_AT_THE_FILE_EVERY {
+            return false;
+        }
+        entry.stamped_at = Instant::now();
+        let now = Stamp::of(location);
+        now != entry.stamp
     }
 
     fn made_current(&mut self, location: &MediaLocation) -> bool {
@@ -318,8 +373,12 @@ impl Held {
         self.entries.insert(
             named,
             Entry {
+                tags: Look::Unasked,
+                cuts: Vec::new(),
+                art: Look::Unasked,
                 used: now,
-                ..Entry::default()
+                stamp: Stamp::of(location),
+                stamped_at: Instant::now(),
             },
         );
         self.rows += 1;
@@ -422,7 +481,7 @@ impl Shelf {
     fn tags_read(&self, row: &Row) -> TagsRead {
         match self.held.lock().tags(row) {
             Look::Found(info) => TagsRead::Answered(info),
-            Look::Nothing => TagsRead::Nothing,
+            Look::Nothing | Look::Failed(_) => TagsRead::Nothing,
             Look::Unasked | Look::Pending => TagsRead::NotYet,
         }
     }
@@ -434,7 +493,7 @@ impl Shelf {
     fn art_read(&self, location: &MediaLocation) -> ArtRead {
         match self.held.lock().art(location) {
             Look::Found(art) => ArtRead::Answered(art),
-            Look::Nothing => ArtRead::Nothing,
+            Look::Nothing | Look::Failed(_) => ArtRead::Nothing,
             Look::Unasked | Look::Pending => ArtRead::NotYet,
         }
     }
@@ -458,7 +517,7 @@ impl Shelf {
         let look = match (pictured, held.art(location)) {
             (_, Look::Found(_)) | (Pictured::StoodIn | Pictured::Carried, _) => return,
             (Pictured::Copied(art), Look::Pending) => Look::Found(Arc::new(art)),
-            (Pictured::Copied(art), Look::Unasked | Look::Nothing) => {
+            (Pictured::Copied(art), Look::Unasked | Look::Nothing | Look::Failed(_)) => {
                 drop(held);
                 self.spares.lock().keep(location, art);
                 return;
@@ -578,7 +637,7 @@ impl Catalog {
             match held.tags(&row) {
                 Look::Found(info) => return Some(info),
                 Look::Pending => {}
-                Look::Nothing | Look::Unasked => return None,
+                Look::Nothing | Look::Unasked | Look::Failed(_) => return None,
             }
             if self.shelf.landed.wait_until(&mut held, until).timed_out() {
                 return None;
@@ -635,7 +694,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                     Err(error) => {
                         let location = &row.location;
                         tracing::debug!(%error, %location, "a queued item would not be read");
-                        Look::Nothing
+                        Look::Failed(Instant::now())
                     }
                 };
                 shelf.keep_tags(&row, look);
@@ -653,7 +712,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                     Ok(None) => Look::Nothing,
                     Err(error) => {
                         tracing::debug!(%error, %location, "a queued item would not be opened");
-                        Look::Nothing
+                        Look::Failed(Instant::now())
                     }
                 };
                 shelf.keep_art(&location, look);
@@ -882,7 +941,7 @@ mod tests {
             match held.art(location) {
                 Look::Pending => {}
                 Look::Found(art) => return Some(art),
-                Look::Nothing | Look::Unasked => return None,
+                Look::Nothing | Look::Unasked | Look::Failed(_) => return None,
             }
             if catalog
                 .shelf
@@ -951,6 +1010,55 @@ mod tests {
             "a row cut out of a file was held apart from the file"
         );
         assert_eq!(catalog.shelf.held.lock().rows, 2);
+    }
+
+    fn a_while_ago(past: Duration) -> Instant {
+        Instant::now()
+            .checked_sub(past)
+            .expect("a clock running for longer than the wait")
+    }
+
+    #[test]
+    fn a_read_that_failed_is_asked_for_again_once_a_while_has_passed() {
+        let row = Row::new(&MediaLocation::local("/music/unmounted/echoes.flac"), None);
+        let mut held = Held::default();
+
+        held.keep_tags(&row, Look::Failed(Instant::now()));
+        let at_once = held.claim_tags(&row);
+        held.keep_tags(&row, Look::Failed(a_while_ago(READ_AGAIN_AFTER * 2)));
+        let later = held.claim_tags(&row);
+        held.keep_tags(&row, Look::Nothing);
+        let found_nothing = held.claim_tags(&row);
+
+        assert!(matches!(at_once, Claim::Answered(None)));
+        assert!(
+            matches!(later, Claim::Ours),
+            "a failed read was never asked for again"
+        );
+        assert!(matches!(found_nothing, Claim::Answered(None)));
+    }
+
+    #[test]
+    fn a_row_whose_file_changed_on_disc_is_read_again() {
+        let file = Fixture::holding(&wav("Echoes", "Pink Floyd"));
+        let catalog = catalog();
+        let first = catalog
+            .media_within(&file.location(), None, PATIENCE)
+            .expect("a well-formed wav is read");
+
+        fs::write(&file.path, wav("Echoes (Live at Pompeii)", "Pink Floyd"))
+            .expect("a rewritable file");
+        if let Some(entry) = catalog.shelf.held.lock().entries.get_mut(&file.location()) {
+            entry.stamped_at = a_while_ago(LOOKED_AT_THE_FILE_EVERY * 2);
+        }
+        let again = catalog.media_within(&file.location(), None, PATIENCE);
+
+        assert_eq!(first.tags.title.as_deref(), Some("Echoes"));
+        assert_eq!(
+            again.and_then(|info| info.tags.title.clone()).as_deref(),
+            Some("Echoes (Live at Pompeii)"),
+            "a retagged file answered with what it said before"
+        );
     }
 
     #[test]
@@ -1231,7 +1339,7 @@ mod tests {
         let settled = Instant::now() + PATIENCE;
         while !matches!(
             catalog.shelf.held.lock().tags(&Row::new(again, None)),
-            Look::Nothing
+            Look::Failed(_)
         ) {
             assert!(
                 Instant::now() < settled,
