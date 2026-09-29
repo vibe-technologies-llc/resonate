@@ -46,8 +46,11 @@ window.
   `Lyrics::within` shifts a line's end and its words onto a cue row's clock with the line.
 - **The pane sweeps a word-timed line word by word.** Only a line `voices_in_play` names is
   swept: its unsung words are drawn at `UNSUNG_SHARE` of the lit colour, the sung ones at all of
-  it and the word being sung mixed between the two by how far through it the transport is, as
-  highlight runs over one `StyledText`, so the line wraps exactly as it would unswept. While a
+  it and the word being sung *wiped* across letter by letter: `wiped` lays how far through the
+  word the transport is over its letters — its trailing space left out, so the wipe ends on the
+  last one drawn — lights every letter behind the edge and mixes the one under it by the share of
+  it passed, a letter of several bytes being one letter. It is all highlight runs over one
+  `StyledText`, so the line wraps exactly as it would unswept. While a
   word is being sung the pane asks for a frame each frame, the position being read afresh every
   16 ms poll, so the sweep moves at the display's rate rather than the transport rail's step. The
   heading's badge says `WORD-SYNCED` for such a set.

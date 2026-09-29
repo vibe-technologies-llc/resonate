@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    ops::Range,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     AnyElement, Canvas, Context, Div, FontWeight, HighlightStyle, MouseMoveEvent, Pixels, Point,
@@ -636,20 +639,60 @@ fn swept(text: SharedString, sweep: &Sweep, unsung: u32, sung: u32) -> StyledTex
         color: Some(rgb(colour).into()),
         ..HighlightStyle::default()
     };
+    let wiped = wiped(&text, sweep);
     let mut runs = Vec::with_capacity(2);
-    if sweep.sung > 0 {
-        runs.push((0..sweep.sung, coloured(sung)));
+    if wiped.sung_to > 0 {
+        runs.push((0..wiped.sung_to, coloured(sung)));
     }
-    if let Some(singing) = &sweep.singing
-        && !singing.word.is_empty()
-    {
-        runs.push((
-            singing.word.clone(),
-            coloured(mixed(unsung, sung, singing.through)),
-        ));
+    if let Some((letter, share)) = wiped.blending {
+        runs.push((letter, coloured(mixed(unsung, sung, share))));
     }
 
     StyledText::new(text).with_highlights(runs)
+}
+
+#[derive(Debug, PartialEq)]
+struct Wiped {
+    sung_to: usize,
+    blending: Option<(Range<usize>, f32)>,
+}
+
+fn wiped(text: &str, sweep: &Sweep) -> Wiped {
+    let Some(singing) = sweep
+        .singing
+        .as_ref()
+        .filter(|singing| !singing.word.is_empty())
+    else {
+        return Wiped {
+            sung_to: sweep.sung,
+            blending: None,
+        };
+    };
+    let start = singing.word.start;
+    let letters: Vec<(usize, char)> = text
+        .get(singing.word.clone())
+        .unwrap_or_default()
+        .trim_end()
+        .char_indices()
+        .collect();
+    let across = singing.through.clamp(0.0, 1.0) * letters.len() as f32;
+    let whole = across.floor() as usize;
+    let share = across - whole as f32;
+    let Some(&(at, letter)) = letters.get(whole) else {
+        let end = letters
+            .last()
+            .map_or(start, |&(at, letter)| start + at + letter.len_utf8());
+        return Wiped {
+            sung_to: end,
+            blending: None,
+        };
+    };
+    let letter = start + at..start + at + letter.len_utf8();
+
+    Wiped {
+        sung_to: letter.start,
+        blending: (share > 0.0).then_some((letter, share)),
+    }
 }
 
 fn mixed(from: u32, to: u32, share: f32) -> u32 {
@@ -857,7 +900,54 @@ fn notice_of(text: SharedString) -> AnyElement {
 
 #[cfg(test)]
 mod tests {
+    use resonate_lyrics::Singing;
+
     use super::*;
+
+    fn singing(sung: usize, word: Range<usize>, through: f32) -> Sweep {
+        Sweep {
+            sung,
+            singing: Some(Singing { word, through }),
+        }
+    }
+
+    #[test]
+    fn a_word_being_sung_is_wiped_across_letter_by_letter() {
+        let text = "Stay until the morning";
+
+        assert_eq!(
+            wiped(text, &singing(5, 5..11, 0.0)),
+            Wiped {
+                sung_to: 5,
+                blending: None
+            }
+        );
+        assert_eq!(
+            wiped(text, &singing(5, 5..11, 0.5)),
+            Wiped {
+                sung_to: 7,
+                blending: Some((7..8, 0.5))
+            }
+        );
+        assert_eq!(
+            wiped(text, &singing(5, 5..11, 1.0)),
+            Wiped {
+                sung_to: 10,
+                blending: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_letter_written_in_several_bytes_is_wiped_whole() {
+        let text = "żółw";
+        let wiped = wiped(text, &singing(0, 0..text.len(), 0.3));
+
+        assert_eq!(wiped.sung_to, 2);
+        let (letter, share) = wiped.blending.expect("a letter half sung");
+        assert_eq!(&text[letter], "ó");
+        assert!((share - 0.2).abs() < 1e-4);
+    }
 
     fn crediting(credits: Credits) -> Option<Credit> {
         credited(&credits)
