@@ -196,7 +196,13 @@ What some of them mean:
   category to reopen; turning a switch off removes only its saved value.
 - `vault` has `--vault` (as `--library` outranks `library`) and defaults to
   `$XDG_DATA_HOME/resonate/vault`. A run not naming one opens the vault only where that folder
-  exists, so a build nobody imported into creates nothing and carries no vault.
+  exists, so a build nobody imported into creates nothing and carries no vault. **A vault is made
+  only where it is asked for** — `made_where_asked`: the default place, or a path `--vault` names
+  on this command line — through `Vault::make`; the `vault` key's path is opened with `Vault::open`,
+  which refuses a root that is not there (`vault::Error::NotThere`) rather than making `audio/`,
+  `covers/` and `staging/` under an empty mount point, so `resonate vault --import` against a vault
+  on an unmounted drive says so instead of filling the wrong disc
+  (`a_vault_opened_where_none_is_makes_nothing_there_and_one_made_is_opened_after`).
 
 **The settings pane writes through `resonate_ui::Settings`**, which the binary fills with
 `settings::File`. It edits the document with `toml_edit` rather than reserialising a parsed

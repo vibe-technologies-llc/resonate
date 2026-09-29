@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- `Vault::open` makes `audio/`, `covers/` and `staging/` wherever it is pointed, so a vault on an
-  unmounted drive becomes an empty vault on the wrong disc
 - The Discord socket search gives up at the first socket that answers `Close`, whatever the code,
   so a sibling `discord-ipc-N` or Vesktop is never tried; an `ERROR` frame during the handshake is
   dropped and waited out, and a reconnect is a fixed 15 s across some 120 candidate paths with no

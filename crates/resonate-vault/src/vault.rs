@@ -186,8 +186,18 @@ pub struct Holdings {
 }
 
 impl Vault {
+    pub fn make(root: impl Into<PathBuf>) -> Result<Self> {
+        let root = root.into();
+        fs::create_dir_all(&root)
+            .map_err(|source| Error::io(VaultOp::MakeFolder, &root, source))?;
+        Self::open(root)
+    }
+
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
+        if !root.is_dir() {
+            return Err(Error::NotThere { path: root });
+        }
         for folder in [AUDIO, COVERS, STAGING] {
             let made = root.join(folder);
             fs::create_dir_all(&made)
@@ -242,7 +252,7 @@ impl Vault {
                             | io::ErrorKind::ReadOnlyFilesystem
                     )
             }
-            Error::OutsideTheVault { .. } => true,
+            Error::OutsideTheVault { .. } | Error::NotThere { .. } => true,
             Error::NotAKey
             | Error::Codec { .. }
             | Error::Unencodable { .. }
@@ -1119,7 +1129,7 @@ mod tests {
     #[test]
     fn a_delivery_past_the_cap_is_refused_and_leaves_nothing_in_staging() {
         let root = std::env::temp_dir().join(format!("resonate-vault-unit-{}", process::id()));
-        let vault = Vault::open(&root).expect("a vault");
+        let vault = Vault::make(&root).expect("a vault");
         let mut delivery = Cursor::new(vec![0_u8; 65]);
 
         let kept = vault
@@ -1139,7 +1149,7 @@ mod tests {
     #[test]
     fn a_staging_file_is_taken_away_whatever_came_of_the_write() {
         let root = std::env::temp_dir().join(format!("resonate-vault-staging-{}", process::id()));
-        let vault = Vault::open(&root).expect("a vault");
+        let vault = Vault::make(&root).expect("a vault");
 
         let failed: Result<()> = (|| {
             let staging = vault.staged(FLAC_EXTENSION)?;
@@ -1164,7 +1174,7 @@ mod tests {
     #[test]
     fn a_path_within_the_vault_never_names_one_outside_it() {
         let root = std::env::temp_dir().join(format!("resonate-vault-within-{}", process::id()));
-        let vault = Vault::open(&root).expect("a vault");
+        let vault = Vault::make(&root).expect("a vault");
 
         assert!(vault.at(Path::new("../elsewhere")).is_err());
         assert!(vault.at(Path::new("/etc/passwd")).is_err());
@@ -1181,9 +1191,37 @@ mod tests {
     }
 
     #[test]
+    fn a_vault_opened_where_none_is_makes_nothing_there_and_one_made_is_opened_after() {
+        let mount =
+            std::env::temp_dir().join(format!("resonate-vault-unmounted-{}", process::id()));
+        let _ = fs::remove_dir_all(&mount);
+        fs::create_dir_all(&mount).expect("an empty mount point");
+        let root = mount.join("vault");
+
+        let opened = Vault::open(&root);
+        let left_bare = fs::read_dir(&mount).map(|entries| entries.count()).ok();
+        let made = Vault::make(&root).map(|vault| vault.root().to_path_buf());
+        let reopened = Vault::open(&root).is_ok();
+        let _ = fs::remove_dir_all(&mount);
+
+        assert!(
+            matches!(opened, Err(Error::NotThere { .. })),
+            "{:?}",
+            opened.err()
+        );
+        assert_eq!(
+            left_bare,
+            Some(0),
+            "opening a vault that was not there made one"
+        );
+        assert!(made.is_ok());
+        assert!(reopened);
+    }
+
+    #[test]
     fn a_failure_on_the_vaults_own_disc_is_told_from_one_of_the_source() {
         let root = std::env::temp_dir().join(format!("resonate-vault-failed-{}", process::id()));
-        let vault = Vault::open(&root).expect("a vault");
+        let vault = Vault::make(&root).expect("a vault");
         let failed = |path: PathBuf, kind: io::ErrorKind| Error::Io {
             op: VaultOp::Write,
             path,
@@ -1213,7 +1251,7 @@ mod tests {
     #[test]
     fn a_path_climbing_out_of_the_vault_is_not_held_by_it() {
         let root = std::env::temp_dir().join(format!("resonate-vault-climbing-{}", process::id()));
-        let vault = Vault::open(&root).expect("a vault");
+        let vault = Vault::make(&root).expect("a vault");
 
         let climbing = root.join("..").join("elsewhere.flac");
         let deeper = root.join("audio").join("..").join("..").join("etc");

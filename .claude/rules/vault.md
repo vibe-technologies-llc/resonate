@@ -154,7 +154,9 @@ returns through `?` leaving nothing, so a thousand failed imports leave no parti
 fallback to `Kept` follows a `NoSmaller` that landed nothing, so no object is orphaned in `audio/`.
 
 **The catalog names an object by where it sits inside the vault, never where the vault sits.**
-`Vault::open` canonicalises its root; `Vault::within` turns an answered path into the relative one
+`Vault::open` canonicalises a root that is there and makes the three folders inside it, never the
+root itself — `Vault::make` makes the root first, for the callers asked to (`binary.md`);
+`Vault::within` turns an answered path into the relative one
 `vault_path`, `vault_objects.path` and `cover_path` hold (`audio/ab/ab…7f.flac`); `Vault::at` turns
 it back, refusing anything not a run of plain names, so no stored value reaches outside. A vault
 opened as `./vault`, through a symlink or after a move is the same vault to catalog, stand-in and

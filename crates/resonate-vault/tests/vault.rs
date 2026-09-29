@@ -44,7 +44,7 @@ impl Tree {
     }
 
     fn vault(&self) -> Vault {
-        Vault::open(self.root.join("vault")).expect("a vault")
+        Vault::make(self.root.join("vault")).expect("a vault")
     }
 }
 

@@ -326,7 +326,16 @@ fn vault_path(cli: &Cli, config: &Config) -> Result<PathBuf> {
 }
 
 fn vault_asked_for(cli: &Cli, config: &Config) -> Result<Arc<Vault>> {
-    Ok(Arc::new(Vault::open(vault_path(cli, config)?)?))
+    let path = vault_path(cli, config)?;
+    Ok(Arc::new(if made_where_asked(cli, config) {
+        Vault::make(path)?
+    } else {
+        Vault::open(path)?
+    }))
+}
+
+const fn made_where_asked(cli: &Cli, config: &Config) -> bool {
+    cli.vault.is_some() || config.vault.is_none()
 }
 
 fn vault_already_kept(cli: &Cli, config: &Config) -> Option<Arc<Vault>> {
@@ -334,7 +343,12 @@ fn vault_already_kept(cli: &Cli, config: &Config) -> Option<Arc<Vault>> {
     if !path.is_dir() && cli.vault.is_none() {
         return None;
     }
-    match Vault::open(path) {
+    let opened = if cli.vault.is_some() {
+        Vault::make(path)
+    } else {
+        Vault::open(path)
+    };
+    match opened {
         Ok(vault) => Some(Arc::new(vault)),
         Err(error) => {
             tracing::warn!(%error, "the vault could not be opened; nothing will be kept in one");

@@ -45,6 +45,9 @@ pub enum Error {
     #[error("{path} is not inside the vault")]
     OutsideTheVault { path: PathBuf },
 
+    #[error("no vault is at {path}: the drive it is on may not be mounted", path = path.display())]
+    NotThere { path: PathBuf },
+
     #[error("a vault key is thirty-two hexadecimal letters")]
     NotAKey,
 

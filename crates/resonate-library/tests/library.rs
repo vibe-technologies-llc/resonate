@@ -17162,7 +17162,7 @@ fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<
             .text(ALBUM, "Meddle")
             .build(),
     );
-    let vault = Arc::new(Vault::open(tree.path().join("vault")).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(tree.path().join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
     scan(&library, &options(&tree))?;
     assert_eq!(vaulted(&library, true)?.stats.vaulted, 1);
@@ -17189,7 +17189,7 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
     );
     let orbits = orbits_tree();
     let database = tree.path().join("library.db");
-    let vault = Arc::new(Vault::open(orbits.path().join("vault")).expect("a writable vault"));
+    let vault = Arc::new(Vault::make(orbits.path().join("vault")).expect("a writable vault"));
     {
         let library = Library::open_with_vault(&database, vault)?;
         scan(&library, &options(&orbits))?;
