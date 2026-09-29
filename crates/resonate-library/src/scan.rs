@@ -30,6 +30,7 @@ use crate::{
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
+    volumes,
 };
 
 const MAX_DEPTH: NonZeroU8 = match NonZeroU8::new(32) {
@@ -310,12 +311,14 @@ impl Stored {
 #[derive(Default)]
 struct Known {
     rows: BTreeMap<String, Vec<Stored>>,
+    volumes: Vec<PathBuf>,
 }
 
 impl Known {
     fn under(inner: &Inner, roots: &[Root]) -> Result<Self> {
         let mut known = Self::default();
         inner.read(|connection| {
+            known.volumes = volumes::held(connection)?;
             let mut statement = connection
                 .prepare(
                     "SELECT path, id, file_size, modified, sheet_modified, probe_again FROM tracks
@@ -355,6 +358,16 @@ impl Known {
         Ok(known)
     }
 
+    fn is_a_volume(&self, directory: &Path) -> bool {
+        self.volumes.iter().any(|volume| volume == directory)
+    }
+
+    fn volumes_under<'a>(&'a self, root: &'a Path) -> impl Iterator<Item = &'a PathBuf> {
+        self.volumes
+            .iter()
+            .filter(move |volume| volume.starts_with(root))
+    }
+
     fn rows(&self, path: &str) -> &[Stored] {
         self.rows.get(path).map_or(&[], Vec::as_slice)
     }
@@ -375,6 +388,7 @@ impl Known {
 pub(crate) fn forget_the_gone(inner: &Arc<Inner>, named: &[PathBuf]) -> Result<u64> {
     let _walking = inner.walk_the_tree()?;
     inner.write(|transaction| {
+        let absent = volumes::absent(transaction)?;
         let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
         for path in named {
             let Some(text) = path.to_str() else {
@@ -386,7 +400,7 @@ pub(crate) fn forget_the_gone(inner: &Arc<Inner>, named: &[PathBuf]) -> Result<u
             };
             let (from, past) = walked_from(text);
             for (root, held) in store::rooted_paths_at(transaction, text, &from, &past)? {
-                if !held.exists() {
+                if !held.exists() && !volumes::is_on_an_absent_one(&held, &absent) {
                     gone.entry(root).or_default().push(held);
                 }
             }
@@ -404,7 +418,7 @@ pub(crate) fn forget_the_gone(inner: &Arc<Inner>, named: &[PathBuf]) -> Result<u
     })
 }
 
-fn walked_from(root: &str) -> (String, String) {
+pub(crate) fn walked_from(root: &str) -> (String, String) {
     let mut from = root.trim_end_matches(MAIN_SEPARATOR).to_owned();
     from.push(MAIN_SEPARATOR);
 
@@ -462,6 +476,7 @@ fn run(
 ) -> Result<ScanSummary> {
     let generation = store::to_nanos(SystemTime::now());
     let ids: Vec<i64> = roots.iter().map(|root| root.id).collect();
+    let walked_roots: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
     let known = Known::under(inner, &roots)?;
 
     let (work_tx, work_rx) = bounded::<Job>(QUEUE);
@@ -513,7 +528,7 @@ fn run(
         pass: PassKind::Scan,
     }));
     written?;
-    walked?;
+    let mounted = walked?;
     if lost {
         return Err(Error::Stopped {
             pass: PassKind::Scan,
@@ -528,6 +543,7 @@ fn run(
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
+        inner.write(|transaction| volumes::settle(transaction, &walked_roots, &mounted))?;
         inner.write(history::credit_the_unheld)?;
         let tidied = tidy_the_roots_beside(inner, &ids, progress)?;
         progress.removed.store(removed + tidied, Ordering::Relaxed);
@@ -653,6 +669,7 @@ fn tidy_the_roots_beside(
     progress: &ScanProgress,
 ) -> Result<u64> {
     let mut tidied = 0;
+    let absent = inner.read(volumes::absent)?;
     for root in roots_beside(inner, walked)? {
         if progress.is_cancelled() {
             break;
@@ -664,7 +681,7 @@ fn tidy_the_roots_beside(
         let gone: Vec<PathBuf> = inner
             .read(|connection| store::paths_under(connection, root.id))?
             .into_iter()
-            .filter(|path| !path.exists())
+            .filter(|path| !path.exists() && !volumes::is_on_an_absent_one(path, &absent))
             .collect();
         if gone.is_empty() {
             continue;
@@ -691,8 +708,9 @@ fn walk_all(
     progress: &ScanProgress,
     work: &Sender<Job>,
     vault: Option<&Path>,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let mut visited = AHashSet::new();
+    let mut mounted = Vec::new();
     for root in roots {
         let walking = Walking {
             known,
@@ -702,22 +720,50 @@ fn walk_all(
             work,
             vault,
         };
-        walk(&walking, &mut visited)?;
+        if !walk(&walking, &mut visited, &mut mounted)? || !kept_the_vanished_volumes(&walking) {
+            break;
+        }
     }
-    Ok(())
+    Ok(mounted)
 }
 
-fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
+fn kept_the_vanished_volumes(walking: &Walking<'_>) -> bool {
+    walking
+        .known
+        .volumes_under(&walking.root.path)
+        .filter(|volume| !volume.is_dir())
+        .all(|volume| {
+            tracing::warn!(path = %volume.display(), "keeping what the catalog holds on a volume whose mount point has gone");
+            kept_unread(walking, volume)
+        })
+}
+
+fn walk(
+    walking: &Walking<'_>,
+    visited: &mut AHashSet<PathBuf>,
+    mounted: &mut Vec<PathBuf>,
+) -> Result<bool> {
     let Walking {
         options, progress, ..
     } = *walking;
-    let mut stack = vec![(walking.root.path.clone(), 1_u8)];
+    let root = &walking.root.path;
+    let mut stack = vec![(root.clone(), 1_u8, root.parent().and_then(volumes::device))];
 
-    while let Some((directory, depth)) = stack.pop() {
+    while let Some((directory, depth, outer)) = stack.pop() {
         if progress.is_cancelled() {
-            return Ok(());
+            return Ok(false);
         }
         if walking.is_the_vault(&directory) {
+            continue;
+        }
+        let device = volumes::device(&directory);
+        if device.is_some() && outer.is_some() && device != outer {
+            mounted.push(directory.clone());
+        } else if walking.known.is_a_volume(&directory) {
+            tracing::warn!(path = %directory.display(), "keeping what the catalog holds on a volume that is not mounted");
+            if !kept_unread(walking, &directory) {
+                return Ok(false);
+            }
             continue;
         }
         if depth > MAX_DEPTH.get() {
@@ -737,7 +783,7 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
             Err(error) => {
                 tracing::warn!(%error, path = %directory.display(), "keeping what the catalog holds under a directory it could not read");
                 if !kept_unread(walking, &directory) {
-                    return Ok(());
+                    return Ok(false);
                 }
                 continue;
             }
@@ -745,7 +791,7 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
 
         for entry in entries.flatten() {
             if progress.is_cancelled() {
-                return Ok(());
+                return Ok(false);
             }
             let path = entry.path();
             let Ok(kind) = entry.file_type() else {
@@ -756,7 +802,7 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
                 continue;
             }
             if kind.is_dir() {
-                stack.push((path, depth.saturating_add(1)));
+                stack.push((path, depth.saturating_add(1), device));
                 continue;
             }
             if kind.is_file() && !is_a_sheet(&path) && !is_audio(&path) {
@@ -768,7 +814,7 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
                 Err(error) => {
                     tracing::debug!(%error, path = %path.display(), "keeping what the catalog holds at an unreadable entry");
                     if !kept_unread(walking, &path) {
-                        return Ok(());
+                        return Ok(false);
                     }
                     continue;
                 }
@@ -778,7 +824,7 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
                 continue;
             }
             if metadata.is_dir() {
-                stack.push((path, depth.saturating_add(1)));
+                stack.push((path, depth.saturating_add(1), device));
                 continue;
             }
             if !metadata.is_file() {
@@ -792,10 +838,10 @@ fn walk(walking: &Walking<'_>, visited: &mut AHashSet<PathBuf>) -> Result<()> {
         }
 
         if !directory_of(walking, &sheets, &audio)? {
-            return Ok(());
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 fn kept_unread(walking: &Walking<'_>, path: &Path) -> bool {

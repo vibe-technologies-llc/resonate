@@ -39,6 +39,7 @@ mod sung;
 mod supply;
 mod undo;
 mod vaulted;
+mod volumes;
 mod watch;
 mod xspf;
 

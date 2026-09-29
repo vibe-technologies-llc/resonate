@@ -379,9 +379,20 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   over the `BTreeMap` the rows are held in. Before, each was stepped past and the prune deleted the rows,
   and their plays, listens and favourites with them
   (`a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it`,
-  `a_folder_the_scan_cannot_read_keeps_every_row_under_it`). An *empty* folder is not guarded: a
-  mount point with nothing mounted reads exactly as a folder whose files were moved out, and keeping
-  those rows kept `moves::follow_the_moved` from pairing any move out of a folder emptied by it.
+  `a_folder_the_scan_cannot_read_keeps_every_row_under_it`). An *empty* folder is guarded only where
+  it was seen as a volume: a mount point with nothing mounted reads exactly as a folder whose files
+  were moved out, and keeping every empty folder's rows kept `moves::follow_the_moved` from pairing
+  any move out of a folder emptied by it.
+- **A volume seen mounted is remembered, and its rows kept while it is not.** The walk carries each
+  directory's parent's `st_dev` and notes a directory whose own differs — the root included, weighed
+  against its parent — as a volume; a followed link into another filesystem is one too.
+  `volumes::settle` writes them to `volumes` after the prune and drops a row for one no longer
+  mounted that no track sits under. A noted volume whose device is its parent's — the empty mount
+  point — or whose directory has gone stamps every row `Known::at_or_under` names as `Outcome::Kept`
+  and is not walked, and `tidy_the_roots_beside` and `forget_the_gone` skip a path on one
+  (`a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone`,
+  `a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted`). Nothing moves
+  out of an unmounted volume, so no pairing is lost.
 - **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned over
   and skipped rather than failing the scan and the prune with it. A symlink is
   weighed only where it names a directory, and one naming a directory this walk has been down is

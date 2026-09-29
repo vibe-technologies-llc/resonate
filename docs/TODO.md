@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
-  it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
-  were moved out
 - `Engine::fail` takes every error for a bad track: a DAC unplugged with no other sink fails every
   row in turn and finishes the queue, and one with a fallback sink skips the track rather than
   rebinding it
@@ -261,6 +258,8 @@ service or a format — and is not worked until that moves; everything else is o
   or drop rows among ties
 - The Missing pane stops at 5 000 rows without saying so, beside a count of every missing track,
   and a missing row or unheld release cannot be dismissed
+- A volume retired for good keeps its rows: nothing forgets a folder inside a root, only a whole
+  root
 - **Blocked on the format:** A cue row exported to PLS is its whole file, the format having no word
   for a region
 

@@ -87,6 +87,9 @@ const MIGRATIONS: &[&str] = &[
       WHERE packets IS NULL AND span_frames IS NULL AND root_id IS NOT NULL;",
     "ALTER TABLE playlist_queries ADD COLUMN reading INTEGER NOT NULL DEFAULT 0;
      UPDATE playlist_queries SET reading = 1, sort = sort - 16 WHERE sort >= 16;",
+    "CREATE TABLE volumes (
+         path TEXT PRIMARY KEY
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

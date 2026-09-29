@@ -1991,6 +1991,103 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.write(
+        "drive/album/one.wav",
+        &Wav::new().text(TITLE, "One").build(),
+    );
+    tree.write("drive/two.wav", &Wav::new().text(TITLE, "Two").build());
+    tree.write("home.wav", &Wav::new().text(TITLE, "Home").build());
+    let drive = tree
+        .path()
+        .canonicalize()
+        .expect("the fixture tree has a canonical path")
+        .join("drive");
+
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    beside(&database)
+        .execute(
+            "INSERT INTO volumes (path) VALUES (?1)",
+            [drive.to_str().expect("the fixture path is UTF-8")],
+        )
+        .expect("the catalog takes a volume");
+
+    fs::remove_dir_all(&drive).expect("the fixture drive can be emptied");
+    fs::create_dir(&drive).expect("the fixture mount point can be made");
+    let emptied = scan(&library, &options(&tree))?;
+
+    assert_eq!(emptied.removed, 0);
+    assert_eq!(titles(&all(&library)?), vec!["Home", "One", "Two"]);
+
+    fs::remove_dir(&drive).expect("the fixture mount point can be taken away");
+    let vanished = scan(&library, &options(&tree))?;
+
+    assert_eq!(vanished.removed, 0);
+    assert_eq!(library.forget_the_gone(&[drive])?, 0);
+    assert_eq!(titles(&all(&library)?), vec!["Home", "One", "Two"]);
+    Ok(())
+}
+
+#[test]
+fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted() -> Result<()> {
+    let tree = Tree::new();
+    let elsewhere = Path::new("/dev/shm").join(format!("resonate-volume-{}", process::id()));
+    if fs::create_dir_all(&elsewhere).is_err() {
+        eprintln!("skipping: no second volume to link into");
+        return Ok(());
+    }
+    let same_volume = fs::metadata(&elsewhere).map(|held| held.dev()).ok()
+        == fs::metadata(tree.path()).map(|held| held.dev()).ok();
+    if same_volume {
+        let _ = fs::remove_dir_all(&elsewhere);
+        eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
+        return Ok(());
+    }
+    fs::write(
+        elsewhere.join("far.wav"),
+        Wav::new().text(TITLE, "Far").build(),
+    )
+    .expect("the second volume is writable");
+    tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
+    let link = tree.path().join("far");
+    os::unix::fs::symlink(&elsewhere, &link).expect("the fixture tree takes a link");
+
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    let following = ScanOptions {
+        follow_symlinks: true,
+        ..options(&tree)
+    };
+    scan(&library, &following)?;
+    let noted: Vec<String> = beside(&database)
+        .prepare("SELECT path FROM volumes")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get(0))
+                .and_then(Iterator::collect)
+        })
+        .expect("the catalog lists its volumes");
+
+    fs::remove_file(&link).expect("the fixture link can be taken away");
+    fs::create_dir(&link).expect("the fixture mount point can be made");
+    let unmounted = scan(&library, &following);
+    let _ = fs::remove_dir_all(&elsewhere);
+
+    let canonical = tree
+        .path()
+        .canonicalize()
+        .expect("the fixture tree has a canonical path");
+    assert_eq!(noted, vec![canonical.join("far").display().to_string()]);
+    assert_eq!(unmounted?.removed, 0);
+    assert_eq!(titles(&all(&library)?), vec!["Far", "Near"]);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> Result<()> {
