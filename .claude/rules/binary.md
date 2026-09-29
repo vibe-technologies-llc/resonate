@@ -116,6 +116,9 @@ minute boundary rolls over rather than printing `1:60.000`, and saying so past a
 *listening* total is drawn by a second clock, `stats::heard_for`, since a year rounded to the
 millisecond is absurd; two readings, not one with a setting.
 
+**Logs go to stderr, whatever the subcommand.** Stdout is what a subcommand answers — a table, a
+link, `mcp`'s protocol — so `resonate share > link.txt` or a piped table holds no warning.
+
 `RESONATE_LOG` is read through `EnvFilter::try_new` rather than `try_from_env`, so an unparsable
 filter warns and falls back to `DEFAULT_LOG` where an unset variable silently takes it — the one
 setting where a silent fallback would hide the diagnostics being reached for.

@@ -69,11 +69,7 @@ use resonate_pipewire::{
 };
 use resonate_providers::Providers;
 use tracing_subscriber::{
-    EnvFilter,
-    filter::ParseError,
-    fmt::{self, writer::BoxMakeWriter},
-    layer::SubscriberExt as _,
-    util::SubscriberInitExt as _,
+    EnvFilter, filter::ParseError, fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
 
 use crate::{
@@ -121,11 +117,11 @@ fn report(error: &(dyn std::error::Error + 'static)) {
     }
 }
 
-fn init_logging(cli: &Cli) -> Result<()> {
+fn init_logging() -> Result<()> {
     let (filter, refused) = wanted_filter();
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_writer(logs_to(cli)))
+        .with(fmt::layer().with_writer(io::stderr))
         .try_init()
         .map_err(|_| Error::LoggingAlreadyInstalled)?;
 
@@ -137,13 +133,6 @@ fn init_logging(cli: &Cli) -> Result<()> {
         );
     }
     Ok(())
-}
-
-fn logs_to(cli: &Cli) -> BoxMakeWriter {
-    match cli.command {
-        Some(Sub::Mcp { .. }) => BoxMakeWriter::new(io::stderr),
-        _ => BoxMakeWriter::new(io::stdout),
-    }
 }
 
 fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
@@ -159,7 +148,7 @@ fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    init_logging(&cli)?;
+    init_logging()?;
     let config = config::load(cli.config.as_deref())?;
 
     match &cli.command {

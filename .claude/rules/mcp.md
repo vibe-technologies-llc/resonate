@@ -22,8 +22,7 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   the rest of it is passed over a buffer at a time, the session going on with the next line
   (`a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole`). The session ends with the
   input; a failed read or write is the one thing `serve` returns an `Error` for.
-- **Stdout is the protocol, so logs go to stderr for this subcommand alone.** `main::logs_to` picks
-  the writer from the parsed command, which is why `Cli::parse` runs before `init_logging`. A
+- **Stdout is the protocol.** Logs go to stderr, as they do for every subcommand (`binary.md`); a
   `println!` on the path of `mcp` corrupts the session.
 - **Refused and failed are two different answers.** A line that is not JSON, an envelope not
   JSON-RPC 2.0, an id `null` or neither string nor number, an unknown method, undeserialisable

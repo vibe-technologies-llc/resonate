@@ -170,8 +170,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
 ## Command line
-- Logs go to stdout for every subcommand but `mcp`, so a warning lands in `resonate share >
-  link.txt` and in a piped table
 - Escape on `play`'s line is read only when the next key arrives, which is then taken as a command
 - `play`'s input reads `f -9223372036854775808` through an overflowing `abs`, turns a seek past
   `i64::MAX` frames backwards, and seeks ten seconds on a number it could not read
