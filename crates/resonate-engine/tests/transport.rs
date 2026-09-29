@@ -23,10 +23,10 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
     EngineConfig, Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting,
-    Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement, PlaybackState, Player,
-    Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading, RepeatMode,
-    ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId, SinkInfo,
-    SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
+    Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement, PlaybackState,
+    Player, Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading,
+    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
+    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
     StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words, stamp_of,
 };
 
@@ -4428,6 +4428,172 @@ fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Re
     assert!(
         largest_step < 64,
         "the level stepped by {largest_step} where the equaliser came and went"
+    );
+    Ok(())
+}
+
+fn correcting_the_room(seconds_of_response: f64) -> EngineConfig {
+    let mut taps = vec![0.0; (f64::from(RATE) * seconds_of_response) as usize];
+    taps[0] = 1.0;
+    EngineConfig {
+        convolution: Some(Arc::new(
+            Impulse::new(SampleRate::HZ_44100, vec![taps]).expect("a response with taps"),
+        )),
+        ..config()
+    }
+}
+
+#[test]
+fn a_convolver_leaves_the_ring_as_deep_as_the_buffer_asks_whatever_its_tail() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("steady.wav", &steady(8_000, RATE as usize * 3));
+    let frame = frame_bytes(SampleFormat::S16);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = Player::with_backend(correcting_the_room(2.0), move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    thread::sleep(A_SHORT_DOZE);
+
+    let held = graph.lock().pull(RATE as usize * 8 * frame);
+
+    assert!(held > 0, "nothing reached the ring");
+    assert!(
+        held <= 16_384 * frame,
+        "a {} ms buffer held {} frames under a two-second response",
+        config().buffer.as_millis(),
+        held / frame
+    );
+    Ok(())
+}
+
+#[test]
+fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap() -> Result<()> {
+    let tree = Tree::new();
+    let level = 16_000_i16;
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * 4));
+    let halved = Arc::new(Equalisation {
+        enabled: true,
+        bound: BTreeMap::new(),
+        fallback: Some(Arc::new(
+            Profile::new(
+                Preamp::from_decibels(-6.0).expect("in range"),
+                vec![Band::new(
+                    BandKind::Peaking,
+                    Frequency::from_hertz(1_000.0).expect("in range"),
+                    BandGain::from_decibels(3.0).expect("in range"),
+                    Q::from_units(1.0).expect("in range"),
+                )],
+            )
+            .expect("one band"),
+        )),
+    });
+    let frame = frame_bytes(SampleFormat::S16);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = Player::with_backend(correcting_the_room(0.5), move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(8_192),
+        "the corrected level to play",
+    );
+
+    player
+        .request(Command::SetEqualisation(halved))?
+        .wait_for(PATIENCE)?;
+    let asked_at = graph.lock().played.len() / frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(asked_at + 40_000),
+        "the equaliser to take hold",
+    );
+
+    let played = graph.lock().played.clone();
+    let left: Vec<i32> = played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|frame| i32::from(i16::from_le_bytes([frame[0], frame[1]])))
+        .collect();
+    let music_from = left
+        .iter()
+        .position(|sample| sample.abs() > i32::from(level) / 4)
+        .expect("the music reached the graph");
+    let heard = &left[music_from..];
+    let largest_step = heard
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .max()
+        .unwrap_or_default();
+    let halfway = i32::from(level) / 2;
+
+    assert!(
+        heard
+            .last()
+            .is_some_and(|sample| (sample - halfway).abs() < 64),
+        "the equaliser had not taken the level down to half {} frames after it was asked for",
+        left.len() - asked_at
+    );
+    assert!(
+        largest_step < 64,
+        "the level stepped by {largest_step} where the equaliser came in under the convolver"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play() -> Result<()> {
+    let tree = Tree::new();
+    let music = RATE as usize / 4;
+    let path = tree.write("short.wav", &steady(8_000, music));
+    let frame = frame_bytes(SampleFormat::S16);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = Player::with_backend(correcting_the_room(1.0), move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |_, graph| graph.played.len() >= (music + 4_096) * frame,
+        "the music to play out and the tail to begin",
+    );
+
+    player
+        .request(Command::SetEqualisation(equalised(vec![(
+            1_000.0, 6.0, 1.0,
+        )])))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |player, _| player.state().playback == PlaybackState::Stopped,
+        "the queue to finish",
+    );
+
+    let played = graph.lock().played.len() / frame;
+    assert!(
+        played >= music + RATE as usize,
+        "{played} frames played of a quarter second's music under a second's response"
     );
     Ok(())
 }

@@ -292,6 +292,10 @@ impl Processor for Convolver {
         false
     }
 
+    fn is_carried_across_a_reshape(&self) -> bool {
+        true
+    }
+
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let count = self.channels.len().max(1);
         let frames = input.len() / count;

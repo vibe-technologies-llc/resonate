@@ -737,7 +737,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **Leaving or returning to unity gain, and switching the equaliser, reshape the chain in place.**
   `retune` builds the wanted plan against the open stream. Where `OutputPlan::same_shape_as` holds it
   retunes the chain it has; where not but `OutputPlan::becomes_on_the_same_stream` does — same
-  `stream`, `packing`, `remix` and `resample`, and under a resampler the same `restoration` — it builds
+  `stream`, `packing`, `remix`, `resample` and convolution (the same `Arc<Impulse>`, weighed by
+  pointer, so a retune never compares a response tap by tap), and under a resampler or a convolver
+  the same `restoration` — it builds
   the new chain with `build_chain` on the engine thread and swaps it in under the ring, stream and
   consumer it holds, so the ring still carries the negotiated format and nothing reaches the realtime
   thread. The new chain's gain stage is handed what the old one applied — `Chain::gain_amplitude`, or
@@ -755,17 +757,30 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   on eases in on the new chain (`eq.md`). A stage already at unity has nothing to ramp (`GainStage` does
   not ramp to where it stands), so the equaliser off at full volume swaps at once. A newer command drops
   what was waiting and is judged against the chain still running; a rebind replaces the `Output` and
-  the wait with it. **A resampler is carried across, not rebuilt.** Its history and phase cannot be
-  handed to a fresh one without a click — a new resampler starts from silence, and a steady level
-  stepped by a twentieth of full scale where the equaliser came and went — so where
-  `OutputPlan::carries_the_front_into` holds, `Chain::take_the_front` lifts the stages up to and
-  including the rate-changing one off the running chain, the rest is flushed into the ring as a whole
-  chain's would be, and `build_chain_after` builds the new stages behind the very resampler that ran.
+  the wait with it. **A resampler and a convolver are carried across, not rebuilt.** A resampler's
+  history and phase cannot be handed to a fresh one without a click — a new resampler starts from
+  silence, and a steady level stepped by a twentieth of full scale where the equaliser came and went —
+  and a convolver's is worse: flushing it put the response's whole decay, up to `LONGEST_IMPULSE`,
+  into the ring ahead of the music, and a fresh one opens on a partition of silence. So where
+  `OutputPlan::carries_the_front_into` holds — the plan has a resampler or a convolver and becomes on
+  the same stream — `Chain::take_the_front` lifts the stages up to and including the last one
+  `Processor::is_carried_across_a_reshape` names off the running chain, the rest is flushed into the
+  ring as a whole chain's would be, and `build_chain_after` builds the new stages behind the very
+  stages that ran. The room a swap waits for is what the stages *behind* the front hold
+  (`Chain::max_flush_frames_behind_the_front`), not the convolver's tail, which the pump never leaves
+  free; and while a swap waits for room and no ramp is running, the pump stops filling
+  (`Output::waits_for_room_to_reshape`), so the graph's pulls make the room rather than the pump
+  taking it back each pass. A swap landing while the ended track's tail is still draining from
+  `staged` flushes nothing and stages nothing, the old chain having nothing left to give and `staged`
+  being what `drain` still reads.
   `ChainBuilder::build` prepares only what it is handed new, `Restore::prepare` rebuilding its buffers.
   It used to rebind, so switching the equaliser while resampling cost a sink switch's gap.
   `switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its_level` and
-  `a_chain_split_at_its_resampler_goes_on_exactly_where_the_resampler_left_off` are the claims. A
-  restoration switched under a resampler still rebinds, standing in front of it; a volume or ReplayGain
+  `a_chain_split_at_its_resampler_goes_on_exactly_where_the_resampler_left_off`,
+  `a_convolver_is_carried_across_a_reshape_and_picks_up_where_it_left_off`,
+  `an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap` and
+  `an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play` are the claims. A
+  restoration switched under a resampler or a convolver still rebinds, standing in front of it; a volume or ReplayGain
   change under a resampler never does, a converting plan always carrying a gain stage (DSP) and being
   retuned rather than reshaped.
 - **A setting asking for the stream already open does not reopen it.** The rate policy, DoP and the
@@ -883,12 +898,18 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **The PCM ring carries `u8`, not `f32`.** An `f32` ring would convert every stream and break
   bit-accuracy for 32-bit sources a 24-bit mantissa cannot hold. Its depth is the buffer setting's to
   ask and `ring_capacity`'s to answer: clamped between `MIN_RING_FRAMES` (8 192) — or
-  `BLOCKS_A_RING_HOLDS` of the chain's widest block, where more — and what `LARGEST_RING` bytes come to
+  `BLOCKS_A_RING_HOLDS` of the widest block one pass through the chain writes
+  (`Chain::max_process_frames`), where more — and what `LARGEST_RING` bytes come to
   at the negotiated format, so a mistyped `buffer-ms` sizes a ring rather than aborting the process on
   the first open. The block is weighed because the converting `fill` writes only while the ring has room
   for one and `primed` waits for half the ring: an 8 kHz file upsampled onto a 192 kHz sink writes
   24 577 frames a block, which a 100 ms ring of 19 200 could never take, and the track sat in
-  `Buffering` with no error. `Frames::from_duration` and `StreamSpec::frames_to_bytes` saturate for the
+  `Buffering` with no error. A flush is not a block: a convolver's tail is handed on from `staged` a
+  ring's room at a time (`drain`), so it is weighed nowhere in the depth. Weighing it had a
+  ten-second response ring twenty seconds whatever `buffer-ms` said — every start and seek rendered
+  that much before there was sound, a volume change was heard that late, and the visualiser's tap
+  outgrew `LARGEST_TAP`
+  (`a_convolver_leaves_the_ring_as_deep_as_the_buffer_asks_whatever_its_tail`). `Frames::from_duration` and `StreamSpec::frames_to_bytes` saturate for the
   same reason. **The ring's depth is the engine's, never the graph's.** Every stream asks
   `LatencyRequest::Auto`, leaving `node.latency` to the daemon: a quantum is a few milliseconds shared by
   every client on the device, and a ring of 100 ms to a second written into it would drag the whole
@@ -1289,12 +1310,13 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 ## DSP
 
-- **The chain is remix, lossy restoration, resample, equaliser (or convolver), gain, the true-peak
-  guard and dither; the equaliser's own rules are `eq.md`'s.** It sits after the resampler because a
+- **The chain is remix, lossy restoration, resample, convolver, equaliser, gain, the true-peak guard
+  and dither; the equaliser's own rules are `eq.md`'s.** The equaliser sits after the resampler because a
   biquad's shape is warped by its design rate, so designing at the source rate would give one profile a
   different sound per track; before the gain because the volume slider is the listener's last word and
-  should attenuate a boost. An equaliser in force makes the plan `Converted`; a DoP-packed stream
-  refuses it outright.
+  should attenuate a boost. The convolver comes before it — both are linear, so the order changes
+  nothing heard — because that makes it part of the front a reshape carries (below). An equaliser in
+  force makes the plan `Converted`; a DoP-packed stream refuses it outright.
 - **The resampler's levels are one filter design at four lengths; High is the default.**
   `Quality::params` is the whole difference: `half_taps`, the windowed sinc's half-width in source
   samples; the phases the kernel is tabulated at; the cutoff as a fraction of the lower Nyquist; and

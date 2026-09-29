@@ -149,7 +149,7 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   resampler included.** Switching the equaliser on or off changes the plan's shape, and `retune`
   swaps a chain built from the new plan in under the stream it holds wherever
   `OutputPlan::becomes_on_the_same_stream` says it may (`audio.md` has how); under a resampler the
-  running one is carried into the new chain, history and all. An equalised plan always carries a
+  running one is carried into the new chain, history and all, and so is a convolver. An equalised plan always carries a
   gain stage, so neither swap steps the level, and the stage crossfades itself: `Easing` is what
   the engine tells it. A stage *entering* a playing stream starts wholly dry and blends toward its
   own output over `EASED_OVER` (40 ms), its biquads running on the real signal from the first frame,
@@ -186,7 +186,7 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 
 ## Room correction
 
-- **A measured impulse response is convolved with the stream after the equaliser.** `Impulse` is the
+- **A measured impulse response is convolved with the stream before the equaliser.** `Impulse` is the
   taps of each channel at the rate measured — a stereo response corrects each channel with its own,
   a mono one every channel alike, and one with fewer channels than the stream is read round again —
   and `Impulse::at` draws it again at the stream's rate through the `VeryHigh` resampler, skipping

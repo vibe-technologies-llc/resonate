@@ -12,6 +12,7 @@ pub struct Chain {
     input: StreamSpec,
     input_channels: usize,
     output_channels: usize,
+    max_process_frames: usize,
     max_output_frames: usize,
     max_flush_frames: usize,
     latency: f64,
@@ -48,16 +49,20 @@ impl Chain {
         }
     }
 
-    pub fn take_the_front(&mut self) -> Option<Front> {
-        let resampled_at = self
-            .specs
+    fn front_len(&self) -> Option<usize> {
+        self.stages
             .iter()
-            .enumerate()
-            .rev()
-            .find(|(at, spec)| spec.rate != self.stage_input(*at).rate)
-            .map(|(at, _)| at)?;
+            .rposition(|stage| stage.is_carried_across_a_reshape())
+            .map(|at| at + 1)
+    }
 
-        let taken = resampled_at + 1;
+    pub fn max_flush_frames_behind_the_front(&self) -> usize {
+        let taken = self.front_len().unwrap_or(0);
+        flushed_through(self.stages.get(taken..).unwrap_or_default())
+    }
+
+    pub fn take_the_front(&mut self) -> Option<Front> {
+        let taken = self.front_len()?;
         let front = Front {
             stages: self.stages.drain(..taken).collect(),
             specs: self.specs.drain(..taken).collect(),
@@ -66,20 +71,9 @@ impl Chain {
         self.widths.drain(..taken);
         self.input = front.output();
         self.input_channels = self.input.channel_count().get() as usize;
-        self.max_flush_frames = self.stages.iter().fold(0, |draining, stage| {
-            stage
-                .max_output_frames(draining)
-                .saturating_add(stage.max_flush_frames())
-        });
+        self.max_flush_frames = flushed_through(&self.stages);
         self.latency = 0.0;
         Some(front)
-    }
-
-    fn stage_input(&self, at: usize) -> StreamSpec {
-        at.checked_sub(1)
-            .and_then(|before| self.specs.get(before))
-            .copied()
-            .unwrap_or(self.input)
     }
 
     #[cfg(test)]
@@ -93,6 +87,10 @@ impl Chain {
 
     pub const fn latency_frames(&self) -> f64 {
         self.latency
+    }
+
+    pub const fn max_process_frames(&self) -> usize {
+        self.max_process_frames
     }
 
     pub const fn max_output_frames(&self) -> usize {
@@ -246,6 +244,14 @@ impl Chain {
     }
 }
 
+fn flushed_through(stages: &[Box<dyn Processor>]) -> usize {
+    stages.iter().fold(0, |draining, stage| {
+        stage
+            .max_output_frames(draining)
+            .saturating_add(stage.max_flush_frames())
+    })
+}
+
 pub struct ChainBuilder {
     input: StreamSpec,
     front: Option<Front>,
@@ -336,6 +342,7 @@ impl ChainBuilder {
             scratch: [vec![0.0; measure.samples], vec![0.0; measure.samples]],
             input: self.input,
             input_channels,
+            max_process_frames: measure.frames,
             max_output_frames: measure.frames.max(measure.draining),
             max_flush_frames: measure.draining,
             latency: measure.latency,
@@ -353,8 +360,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Dither, DitherKind, FilterPhase, GainConfig, GainStage, NoiseShaping, Quality, Remix,
-        Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, Tuning,
+        Convolver, Dither, DitherKind, FilterPhase, GainConfig, GainStage, Impulse, NoiseShaping,
+        Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, Tuning,
     };
 
     const BLOCK: usize = 512;
@@ -436,6 +443,61 @@ mod tests {
             straight[before.len()..],
             "the carried resampler did not pick up where it left off"
         );
+    }
+
+    #[test]
+    fn a_convolver_is_carried_across_a_reshape_and_picks_up_where_it_left_off() {
+        const BLOCKS: usize = 16;
+        let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
+            .map(|at| ((at as f64) * 0.013).sin() * 0.5)
+            .collect();
+        let blocks: Vec<&[f64]> = input.chunks(BLOCK * 2).collect();
+        let taps: Vec<f64> = (0..3_000)
+            .map(|at| (-(at as f64) / 300.0).exp() * 0.1)
+            .collect();
+        let impulse = Arc::new(Impulse::new(SampleRate::HZ_48000, vec![taps]).expect("an impulse"));
+        let convolved = || {
+            Chain::builder(spec(SampleRate::HZ_48000))
+                .max_frames_in(BLOCK)
+                .push(Box::new(Convolver::new(Arc::clone(&impulse))))
+        };
+        let run = |chain: &mut Chain, blocks: &[&[f64]]| {
+            let mut heard = Vec::new();
+            let mut output = vec![0.0; chain.max_output_frames() * 2];
+            for block in blocks {
+                let count = chain.process(block, &mut output);
+                heard.extend_from_slice(&output[..count.frames_out * 2]);
+            }
+            heard
+        };
+
+        let mut whole = convolved().build().expect("a convolver builds");
+        let straight = run(&mut whole, &blocks);
+
+        let mut attenuated = convolved()
+            .push(attenuator())
+            .build()
+            .expect("a convolver and a gain build");
+        assert_eq!(attenuated.max_process_frames(), BLOCK);
+        assert!(attenuated.max_flush_frames() > 3_000);
+        assert_eq!(attenuated.max_flush_frames_behind_the_front(), 0);
+        let before = run(&mut attenuated, &blocks[..BLOCKS / 2]);
+        let front = attenuated
+            .take_the_front()
+            .expect("a convolving chain has a front to carry");
+        let mut carried = Chain::builder_after(front)
+            .max_frames_in(BLOCK)
+            .build()
+            .expect("the carried convolver builds alone");
+        let after = run(&mut carried, &blocks[BLOCKS / 2..]);
+
+        for (heard, expected) in after.iter().zip(&straight[before.len()..]) {
+            assert!(
+                (heard - expected).abs() < 1e-12,
+                "the carried convolver did not pick up where it left off"
+            );
+        }
+        assert_eq!(after.len(), straight.len() - before.len());
     }
 
     #[test]

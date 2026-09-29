@@ -800,6 +800,10 @@ impl Processor for Resampler {
         self.config.input_rate == self.config.output_rate
     }
 
+    fn is_carried_across_a_reshape(&self) -> bool {
+        true
+    }
+
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let frames_in = self.append(input);
         let frames_out = self.emit(output);

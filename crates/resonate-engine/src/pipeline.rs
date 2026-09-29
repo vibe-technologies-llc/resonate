@@ -250,11 +250,16 @@ impl OutputPlan {
             && self.stream == wanted.stream
             && self.packing == wanted.packing
             && self.remix == wanted.remix
-            && (self.resample.is_none() || self.restoration == wanted.restoration)
+            && convolves_alike(self.convolution.as_ref(), wanted.convolution.as_ref())
+            && (!self.has_a_front() || self.restoration == wanted.restoration)
     }
 
     pub fn carries_the_front_into(&self, wanted: &Self) -> bool {
-        self.resample.is_some() && self.becomes_on_the_same_stream(wanted)
+        self.has_a_front() && self.becomes_on_the_same_stream(wanted)
+    }
+
+    const fn has_a_front(&self) -> bool {
+        self.resample.is_some() || self.convolution.is_some()
     }
 
     pub fn same_shape_as(&self, other: &Self) -> bool {
@@ -265,7 +270,7 @@ impl OutputPlan {
             && self.restoration == other.restoration
             && self.resample == other.resample
             && self.equalisation.is_some() == other.equalisation.is_some()
-            && self.convolution == other.convolution
+            && convolves_alike(self.convolution.as_ref(), other.convolution.as_ref())
             && self.dither_to == other.dither_to
             && self.shaping == other.shaping
             && self.gain.is_some() == other.gain.is_some()
@@ -317,6 +322,9 @@ impl OutputPlan {
                 max_frames_in: block,
             })?));
         }
+        if let Some(impulse) = self.convolution.as_ref() {
+            builder = builder.push(Box::new(Convolver::new(Arc::clone(impulse))));
+        }
         Ok(builder)
     }
 
@@ -326,9 +334,6 @@ impl OutputPlan {
                 Arc::clone(profile),
                 self.stream.rate,
             )));
-        }
-        if let Some(impulse) = self.convolution.as_ref() {
-            builder = builder.push(Box::new(Convolver::new(Arc::clone(impulse))));
         }
         if let Some(gain) = self.gain {
             builder = builder.push(Box::new(GainStage::new(gain)));
@@ -345,6 +350,14 @@ impl OutputPlan {
             )));
         }
         builder
+    }
+}
+
+fn convolves_alike(one: Option<&Arc<Impulse>>, other: Option<&Arc<Impulse>>) -> bool {
+    match (one, other) {
+        (Some(one), Some(other)) => Arc::ptr_eq(one, other),
+        (None, None) => true,
+        _ => false,
     }
 }
 

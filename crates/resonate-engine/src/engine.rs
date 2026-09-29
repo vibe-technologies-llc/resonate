@@ -327,7 +327,7 @@ impl Output {
                 source: error,
             })?;
 
-        let capacity = ring_capacity(config.buffer, plan.stream, chain.max_output_frames());
+        let capacity = ring_capacity(config.buffer, plan.stream, chain.max_process_frames());
         let (producer, consumer, monitor) = ring(plan.stream, capacity, plan.silence());
 
         let widened = vec![0.0; CHAIN_BLOCK * source.channel_count().get() as usize];
@@ -393,8 +393,17 @@ impl Output {
         self.status
     }
 
-    fn has_room_for_what_the_chain_holds(&self) -> bool {
-        self.producer.free_frames() >= self.chain.max_flush_frames()
+    fn has_room_for_what_the_chain_holds(&self, carrying_the_front: bool) -> bool {
+        let held = if carrying_the_front {
+            self.chain.max_flush_frames_behind_the_front()
+        } else {
+            self.chain.max_flush_frames()
+        };
+        self.producer.free_frames() >= held
+    }
+
+    fn waits_for_room_to_reshape(&self) -> bool {
+        self.settles_into.is_some() && !self.chain.is_ramping()
     }
 
     fn hand_on_what_the_chain_holds(&mut self) {
@@ -451,10 +460,10 @@ impl Output {
         if self.draining.is_some() {
             return true;
         }
-        if self.ended || self.producer.is_discarding() {
+        if self.ended || self.producer.is_discarding() || self.waits_for_room_to_reshape() {
             return false;
         }
-        self.producer.free_frames() >= self.chain.max_output_frames()
+        self.producer.free_frames() >= self.chain.max_process_frames()
     }
 
     fn holds_a_live_stream(&self) -> bool {
@@ -1583,7 +1592,7 @@ impl Engine {
         let capacity = ring_capacity(
             self.config.buffer,
             wanted.stream,
-            output.chain.max_output_frames(),
+            output.chain.max_process_frames(),
         );
         wanted.stream == output.plan.stream
             && wanted.packing == output.plan.packing
@@ -1746,16 +1755,16 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return Ok(());
         };
-        if !output.has_room_for_what_the_chain_holds() {
+        let still_filling = output.draining.is_none() && !output.ended;
+        let carries = output.plan.carries_the_front_into(&wanted);
+        if still_filling && !output.has_room_for_what_the_chain_holds(carries) {
             output.settles_into = Some(wanted);
             return Ok(());
         }
-        let front = output
-            .plan
-            .carries_the_front_into(&wanted)
-            .then(|| output.chain.take_the_front())
-            .flatten();
-        output.hand_on_what_the_chain_holds();
+        let front = carries.then(|| output.chain.take_the_front()).flatten();
+        if still_filling {
+            output.hand_on_what_the_chain_holds();
+        }
         let source = track.source();
         let built = match front {
             Some(front) => wanted.build_chain_after(front, &self.config, CHAIN_BLOCK),
@@ -2031,7 +2040,9 @@ impl Engine {
                 }
                 track.decoded_at = track.decoded_at.saturating_add(written);
             } else {
-                if output.producer.free_frames() < output.chain.max_output_frames() {
+                if output.producer.free_frames() < output.chain.max_process_frames()
+                    || output.waits_for_room_to_reshape()
+                {
                     return Ok(Filled::AsFarAsItGoes);
                 }
                 if !Self::convert(track, output) {

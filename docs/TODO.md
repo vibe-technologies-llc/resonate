@@ -13,14 +13,6 @@ service or a format — and is not worked until that moves; everything else is o
   ring's depth
 - Pause, stop, a seek and the sleep timer cut the waveform where it stands and resume from a sample
   that is not zero, so each can click; nothing fades, and the sleep timer does not fade out
-- Under a convolver the ring is sized to twice the impulse's tail whatever `buffer-ms` says — past
-  `LARGEST_RING` and past the visualiser's `LARGEST_TAP` — so every start and seek renders that
-  much before there is sound, and a volume or ReplayGain change is heard that late
-- Under a convolver a reshape flushes the impulse's whole tail into the ring ahead of the music,
-  and a reshape deferred for room waits on `free_frames() >= tail`, which the pump never leaves,
-  so an equaliser switched on mid-track may never apply
-- `swap_chain` flushes and stages a chain that is already draining, overwriting the tail `drain`
-  is still writing, so a volume or equaliser change just after a track ends cuts its tail
 - A convolution impulse is applied at the level it was written, with no normalisation or headroom,
   so a boosted one clips at the dither's clamp or pumps the true-peak guard
 - **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already
@@ -112,8 +104,6 @@ service or a format — and is not worked until that moves; everything else is o
   row
 - An unmeasured track is decoded whole again on every `SetReplayGain`, `SetLevelling` and
   `SetTruePeak`, because `Measured::Unmeasured` is not remembered
-- `same_shape_as` compares a convolver's impulse tap by tap on every retune — a volume tick —
-  because `Arc<Impulse>` equality is by value
 - The vault's FLAC path has no early out: a 24-bit rip that will lose is encoded whole, read back
   whole and then decoded twice more to be kept, and a duplicate pays the encode and the read-back
   before `Deduped` is known

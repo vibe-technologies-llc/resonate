@@ -52,6 +52,10 @@ pub trait Processor: Send {
 
     fn is_transparent(&self) -> bool;
 
+    fn is_carried_across_a_reshape(&self) -> bool {
+        false
+    }
+
     fn set_gain(
         &mut self,
         _volume: resonate_core::Volume,
