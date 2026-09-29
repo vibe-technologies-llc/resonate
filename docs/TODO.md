@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Privacy and security
-- `resonate mcp` reads a request with an unbounded `read_until`, so a client sending bytes with no
-  newline grows the line until the process is killed
 - `Vault::inside` and `holds` compare paths lexically, so `<root>/../x` passes; only `Vault::at`
   refuses a component that is not a plain name
 

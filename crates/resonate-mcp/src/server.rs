@@ -1,4 +1,4 @@
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, Read as _, Write};
 
 use resonate_library::Library;
 use serde::Deserialize;
@@ -16,6 +16,7 @@ use crate::{
 };
 
 const JSON_RPC: &str = "2.0";
+const LONGEST_MESSAGE: usize = 4 * 1024 * 1024;
 const LATEST_PROTOCOL: &str = "2025-06-18";
 const PROTOCOLS: [&str; 3] = [LATEST_PROTOCOL, "2025-03-26", "2024-11-05"];
 const SERVER_NAME: &str = "resonate";
@@ -54,6 +55,12 @@ pub struct Server {
     library: Library,
     players: Box<dyn Reach>,
     passes: Passes,
+}
+
+enum Line {
+    Ended,
+    Held,
+    TooLong,
 }
 
 enum Message {
@@ -143,20 +150,25 @@ impl Server {
         let mut line = Vec::new();
         loop {
             line.clear();
-            let read = input
-                .read_until(b'\n', &mut line)
-                .map_err(|source| Error::Stream {
-                    op: StreamOp::Read,
-                    source,
-                })?;
-            if read == 0 {
-                self.passes.drain();
-                return Ok(());
-            }
-            if line.trim_ascii().is_empty() {
-                continue;
-            }
-            let Some(answer) = self.answer(&line) else {
+            let read = next_line(&mut input, &mut line).map_err(|source| Error::Stream {
+                op: StreamOp::Read,
+                source,
+            })?;
+            let answer = match read {
+                Line::Ended => {
+                    self.passes.drain();
+                    return Ok(());
+                }
+                Line::TooLong => Some(refused(
+                    Value::Null,
+                    &Unanswered::Refused(Refusal::TooLong {
+                        longest: LONGEST_MESSAGE,
+                    }),
+                )),
+                Line::Held if line.trim_ascii().is_empty() => None,
+                Line::Held => self.answer(&line),
+            };
+            let Some(answer) = answer else {
                 continue;
             };
             writeln!(output, "{answer}")
@@ -229,6 +241,40 @@ impl Server {
                 Ok(asked.complete(&self.library)??)
             }
             other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
+        }
+    }
+}
+
+fn next_line(input: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> {
+    let read = input
+        .by_ref()
+        .take(LONGEST_MESSAGE as u64 + 1)
+        .read_until(b'\n', line)?;
+    if read == 0 {
+        return Ok(Line::Ended);
+    }
+    if line.len() <= LONGEST_MESSAGE || line.ends_with(b"\n") {
+        return Ok(Line::Held);
+    }
+    past_the_rest_of_the_line(input)?;
+    Ok(Line::TooLong)
+}
+
+fn past_the_rest_of_the_line(input: &mut impl BufRead) -> io::Result<()> {
+    loop {
+        let (used, ended) = {
+            let held = input.fill_buf()?;
+            if held.is_empty() {
+                return Ok(());
+            }
+            match held.iter().position(|byte| *byte == b'\n') {
+                Some(at) => (at + 1, true),
+                None => (held.len(), false),
+            }
+        };
+        input.consume(used);
+        if ended {
+            return Ok(());
         }
     }
 }

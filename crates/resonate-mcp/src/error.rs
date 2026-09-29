@@ -149,6 +149,9 @@ pub enum Refusal {
     #[error("the message is not a JSON-RPC 2.0 request or notification")]
     NotARequest,
 
+    #[error("the message runs past the {longest} bytes a message may take")]
+    TooLong { longest: usize },
+
     #[error("{0} is not a method this server answers")]
     UnknownMethod(MethodName),
 
@@ -243,7 +246,7 @@ impl Refusal {
     pub const fn code(&self) -> Code {
         match self {
             Self::Unparsed(_) => Code::ParseError,
-            Self::NotARequest => Code::InvalidRequest,
+            Self::NotARequest | Self::TooLong { .. } => Code::InvalidRequest,
             Self::UnknownMethod(_) => Code::MethodNotFound,
             Self::UnknownResource(_) => Code::ResourceNotFound,
             Self::BadParameters { .. }

@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     env, fs,
+    io::{self, BufReader, Read as _},
     num::NonZeroUsize,
     path::PathBuf,
     process,
@@ -1232,6 +1233,31 @@ fn a_line_that_is_not_text_is_refused_rather_than_ending_the_session() {
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("-32700"));
     assert!(lines[1].contains("\"result\":{}"));
+}
+
+#[test]
+fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
+    const FAR_PAST_THE_LONGEST: u64 = 16 * 1024 * 1024;
+
+    let server = nothing_running();
+    let long = io::repeat(b'a').take(FAR_PAST_THE_LONGEST);
+    let rest = format!("\n{}\n", request("ping", json!({})));
+    let input = BufReader::new(long.chain(rest.as_bytes()));
+    let mut output = Vec::new();
+
+    server
+        .serve(input, &mut output)
+        .expect("a long line not to end the session");
+
+    let lines: Vec<Value> = String::from_utf8(output)
+        .expect("the output to be text")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each line to be one message"))
+        .collect();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_eq!(lines[0]["error"]["code"], -32_600);
+    assert_eq!(lines[0]["id"], Value::Null);
+    assert_eq!(lines[1]["result"], json!({}));
 }
 
 fn once_settled(server: &Server, pass: &str) -> Value {
