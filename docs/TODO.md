@@ -25,8 +25,6 @@ service or a format — and is not worked until that moves; everything else is o
   so a boosted one clips at the dither's clamp or pumps the true-peak guard
 - With `device-volume` on, the slider writes one gain into every channel and `mute = false`, so it
   unmutes a muted device and flattens its balance
-- Repeating the queue under shuffle can play the last track of one pass first in the next, because
-  the wrap reshuffles with no guard
 - **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already
   queued — `pw_time.queued` has no safe setter in pipewire-rs 0.10 — so the position and the
   visualiser's frame are short by up to one cycle

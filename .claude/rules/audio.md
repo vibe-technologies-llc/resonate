@@ -1018,6 +1018,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   elsewhere lands after the row it follows in the shuffle, so a play-next made while shuffled still
   follows the playing row once unshuffled. Not kept across runs: a shuffled resumption comes back with
   the load order beneath it — unshuffling gives back the album, as the next note means.
+- **A shuffled pass never opens on the row the last one ended on.** A wrap under
+  `RepeatMode::Queue` reshuffles the whole order, and a fair shuffle puts the row just heard first
+  one time in the queue's length — every other wrap of a two-row queue. `reshuffle_after_a_pass`
+  swaps it with a row picked from the rest, so the same row is never heard twice running across a
+  pass (`a_new_shuffled_pass_never_opens_on_the_row_the_last_one_ended_on`). A one-row queue has
+  nothing to swap with and repeats it, as it must.
 - **A queue comes back in the order it was loaded and plays in the order it was playing.**
   `Resumption::rows` is the load order and `Resumption::order` the play order over it, one entry per
   playing position naming the loaded row there — the pair `Queue` holds as `items` and `order`, so

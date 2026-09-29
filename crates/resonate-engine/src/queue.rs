@@ -516,7 +516,7 @@ impl Queue {
             self.seat = Seat::InOrder;
         } else if self.repeat == RepeatMode::Queue && !self.order.is_empty() {
             if self.shuffle {
-                self.reshuffle();
+                self.reshuffle_after_a_pass();
             }
             self.after = 1;
             self.seat = Seat::InOrder;
@@ -819,6 +819,18 @@ impl Queue {
         self.after = 1;
     }
 
+    fn reshuffle_after_a_pass(&mut self) {
+        let last_heard = self.order.last().copied();
+        self.reshuffle();
+
+        let later = self.order.len().saturating_sub(1);
+        if later == 0 || self.order.first().copied() != last_heard {
+            return;
+        }
+        let elsewhere = 1 + self.shuffler.next_below(later);
+        self.order.swap(0, elsewhere);
+    }
+
     fn reshuffle(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         let mut remaining = self.order.len();
@@ -1056,6 +1068,27 @@ mod tests {
 
         seen.sort_unstable();
         assert_eq!(seen, (0..32).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_new_shuffled_pass_never_opens_on_the_row_the_last_one_ended_on() {
+        let mut queue = loaded(2, 0);
+        queue.set_shuffle(true);
+        queue.set_repeat(RepeatMode::Queue);
+
+        let mut heard = vec![queue.position().expect("the queue is not empty")];
+        for _ in 0..256 {
+            heard.push(
+                queue
+                    .advance(true)
+                    .expect("a repeating queue never runs out"),
+            );
+        }
+
+        assert!(
+            heard.windows(2).all(|pair| pair[0] != pair[1]),
+            "a row was heard twice in a row across a pass: {heard:?}"
+        );
     }
 
     #[test]
