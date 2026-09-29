@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- The PipeWire client matches a metadata key only where it carries a value, so a cleared
-  `clock.force-rate` or `default.audio.sink` leaves `forced_rate`, `clock_rate` or the default
-  sink stale and announces no `DefaultChanged`
 - The equaliser pane reads and writes the binding of the desktop's default sink rather than of the
   sink the engine plays through, so with a DAC chosen under Output a press on the curve binds the
   speakers and AutoEq suggests for them

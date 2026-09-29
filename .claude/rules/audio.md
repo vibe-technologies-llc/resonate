@@ -1649,6 +1649,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   is the claim: the same hosted daemon, killed under a recording and restarted, holds the capture's node
   a second time — read through `pw-cli`, since with no session manager nothing links a capture and no
   sound reaches it to weigh.
+- **A metadata key cleared is read as unset.** The `settings` and `default` metadata are read by
+  `Discovered::heard`, keyed by which object spoke (`HeldIn`): a key with no value clears what it
+  held — `clock.force-rate` no longer forced, `default.audio.sink` naming nothing — and a key of
+  nothing clears every key that object carries and no other's, as `pw-metadata -d` does. The default
+  sink announces `SinkChange::DefaultChanged` only where the name it reads moved. Matching only a
+  key carrying a value left `forced_rate`, `clock_rate` and the default sink stale and announced
+  nothing (`a_rate_key_cleared_or_zeroed_leaves_the_rate_unforced`,
+  `a_default_sink_cleared_is_forgotten_and_announced_once`,
+  `every_key_cleared_at_once_clears_only_what_that_metadata_holds`).
 - **The chosen sink is named, not numbered.** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, which `select_sink` matches on every stream open, a PipeWire id being assigned per object
   and a device unplugged and put back carrying a new one. `OutputStatus::sink` stays a `SinkId`,

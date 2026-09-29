@@ -195,7 +195,62 @@ struct Discovered {
     default_sink: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeldIn {
+    Settings,
+    Defaults,
+}
+
+impl HeldIn {
+    const fn keys(self) -> &'static [&'static str] {
+        match self {
+            Self::Settings => &[ALLOWED_RATES, CLOCK_RATE, FORCED_RATE],
+            Self::Defaults => &[DEFAULT_SINK, DEFAULT_SOURCE],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DefaultSink {
+    Stayed,
+    Moved,
+}
+
 impl Discovered {
+    fn heard(&mut self, held: HeldIn, key: Option<&str>, value: Option<&str>) -> DefaultSink {
+        let Some(key) = key else {
+            let mut moved = DefaultSink::Stayed;
+            for key in held.keys() {
+                if self.heard_key(key, None) == DefaultSink::Moved {
+                    moved = DefaultSink::Moved;
+                }
+            }
+            return moved;
+        };
+        self.heard_key(key, value)
+    }
+
+    fn heard_key(&mut self, key: &str, value: Option<&str>) -> DefaultSink {
+        match key {
+            ALLOWED_RATES => {
+                self.allowed_rates = value.map(parse_allowed_rates).unwrap_or_default()
+            }
+            CLOCK_RATE => self.clock_rate = value.and_then(parse_rate),
+            FORCED_RATE => self.forced_rate = value.and_then(parse_rate),
+            DEFAULT_SOURCE => self.default_source = value.and_then(parse_default_sink),
+            DEFAULT_SINK => {
+                let named = value.and_then(parse_default_sink);
+                if named == self.default_sink {
+                    return DefaultSink::Stayed;
+                }
+                self.default_sink = named;
+                return DefaultSink::Moved;
+            }
+            _ => {}
+        }
+        DefaultSink::Stayed
+    }
+
     fn snapshot(&self) -> Vec<SinkInfo> {
         self.sinks
             .iter()
@@ -1083,10 +1138,11 @@ fn watch_the_registry(
                     devices.borrow_mut().insert(global.id, (device, listener));
                 }
                 ObjectType::Metadata => {
-                    let which = node_property(global, METADATA_NAME).unwrap_or_default();
-                    if which != "settings" && which != "default" {
-                        return;
-                    }
+                    let held = match node_property(global, METADATA_NAME).as_deref() {
+                        Some("settings") => HeldIn::Settings,
+                        Some("default") => HeldIn::Defaults,
+                        _ => return,
+                    };
                     let Ok(metadata) = registry.bind::<Metadata, _>(global) else {
                         return;
                     };
@@ -1096,24 +1152,9 @@ fn watch_the_registry(
                             let shared = Arc::clone(&shared);
                             let announce = announce.clone();
                             move |_subject, key, _type, value| {
-                                match (key, value) {
-                                    (Some(ALLOWED_RATES), Some(value)) => {
-                                        shared.lock().allowed_rates = parse_allowed_rates(value);
-                                    }
-                                    (Some(CLOCK_RATE), Some(value)) => {
-                                        shared.lock().clock_rate = parse_rate(value);
-                                    }
-                                    (Some(FORCED_RATE), Some(value)) => {
-                                        shared.lock().forced_rate = parse_rate(value);
-                                    }
-                                    (Some(DEFAULT_SINK), Some(value)) => {
-                                        shared.lock().default_sink = parse_default_sink(value);
-                                        let _ = announce.try_send(SinkChange::DefaultChanged);
-                                    }
-                                    (Some(DEFAULT_SOURCE), Some(value)) => {
-                                        shared.lock().default_source = parse_default_sink(value);
-                                    }
-                                    _ => {}
+                                let moved = shared.lock().heard(held, key, value);
+                                if moved == DefaultSink::Moved {
+                                    let _ = announce.try_send(SinkChange::DefaultChanged);
                                 }
                                 0
                             }
@@ -1445,6 +1486,76 @@ mod tests {
             volume: None,
             muted: false,
         }
+    }
+
+    #[test]
+    fn a_rate_key_cleared_or_zeroed_leaves_the_rate_unforced() {
+        let mut graph = Discovered::default();
+
+        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
+        graph.heard(HeldIn::Settings, Some(CLOCK_RATE), Some("48000"));
+
+        assert_eq!(graph.forced_rate, Some(SampleRate::HZ_96000));
+        assert_eq!(graph.clock_rate, Some(SampleRate::HZ_48000));
+
+        graph.heard(HeldIn::Settings, Some(FORCED_RATE), None);
+
+        assert_eq!(graph.forced_rate, None);
+
+        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
+        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("0"));
+
+        assert_eq!(graph.forced_rate, None);
+        assert_eq!(graph.clock_rate, Some(SampleRate::HZ_48000));
+    }
+
+    #[test]
+    fn a_default_sink_cleared_is_forgotten_and_announced_once() {
+        const NAMED: &str = r#"{ "name": "alsa_output.test" }"#;
+
+        let mut graph = Discovered::default();
+
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED)),
+            DefaultSink::Moved
+        );
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED)),
+            DefaultSink::Stayed
+        );
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), None),
+            DefaultSink::Moved
+        );
+        assert_eq!(graph.default_sink, None);
+    }
+
+    #[test]
+    fn every_key_cleared_at_once_clears_only_what_that_metadata_holds() {
+        const NAMED: &str = r#"{ "name": "alsa_output.test" }"#;
+
+        let mut graph = Discovered::default();
+        graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED));
+        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
+        graph.heard(
+            HeldIn::Settings,
+            Some(ALLOWED_RATES),
+            Some("[ 44100 48000 ]"),
+        );
+
+        assert_eq!(
+            graph.heard(HeldIn::Settings, None, None),
+            DefaultSink::Stayed
+        );
+        assert_eq!(graph.forced_rate, None);
+        assert!(graph.allowed_rates.is_empty());
+        assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.test"));
+
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, None, None),
+            DefaultSink::Moved
+        );
+        assert_eq!(graph.default_sink, None);
     }
 
     #[test]
