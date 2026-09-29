@@ -9,8 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A folder inside a root on a drive not mounted reads as empty, so a scan prunes every row under
   it; only a root is guarded, by `is_there`, and an empty folder cannot be told from one whose files
   were moved out
-- `playlist_plays` has no foreign key and a playlist id is reused, so a playlist made after the
-  highest-numbered one was discarded inherits its plays this month
 - `retag` writes a page of files before it journals them, so a catalog error between the two
   leaves files changed with no undo and a catalog that disagrees with them
 - `prune_the_vault` forgets an object's row even where the file could not be taken away, and an

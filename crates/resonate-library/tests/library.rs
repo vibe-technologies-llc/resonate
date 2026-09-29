@@ -3626,6 +3626,34 @@ fn the_playlists_most_played_this_month_are_ordered_by_what_the_month_played() -
 }
 
 #[test]
+fn a_playlist_taking_the_id_of_one_discarded_starts_with_no_plays_this_month() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let anthems = library.create_playlist("Anthems")?;
+    let carols = library.create_playlist("Carols")?;
+    library.set_playing_playlist(loaded(anthems));
+    for _ in 0..3 {
+        library.set_playing_playlist(loaded(carols));
+    }
+    library.remove_playlist(carols)?;
+
+    let ballads = library.create_playlist("Ballads")?;
+    assert_eq!(
+        ballads, carols,
+        "the discarded playlist's id was not taken again"
+    );
+
+    assert_eq!(
+        read_as(
+            &library,
+            PlaylistOrder::PlaysThisMonth,
+            Direction::Descending
+        )?,
+        vec!["Anthems", "Ballads"]
+    );
+    Ok(())
+}
+
+#[test]
 fn the_playlists_are_listed_in_whatever_order_is_asked_for() -> Result<()> {
     let library = Library::open_in_memory()?;
     let anthems = library.create_playlist("Anthems")?;

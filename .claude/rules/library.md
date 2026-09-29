@@ -620,7 +620,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   with its last play — and `PlaylistOrder::PlaysThisMonth` counts it the same way, so a playlist's
   plays are a history, not one date and a total. It is apart from the playlist's row, with no cascade,
   since `undo.rs` re-creates a playlist from what it held and a cascade would lose the history on every
-  undo; the history's span ages it with the listens.
+  undo; the history's span ages it with the listens. SQLite hands a discarded playlist's id to the
+  next one made, so `playlist::created` clears whatever `playlist_plays` still holds under the id it
+  was given, and a new playlist starts with no plays this month
+  (`a_playlist_taking_the_id_of_one_discarded_starts_with_no_plays_this_month`).
   `the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard` and
   `the_playlists_most_played_this_month_are_ordered_by_what_the_month_played` are the claims.
 - **A file that moved is followed, not forgotten and found again.** A rename or move by hand —

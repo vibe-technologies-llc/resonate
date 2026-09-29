@@ -278,7 +278,22 @@ fn created(transaction: &Transaction<'_>, name: &PlaylistName) -> Result<Playlis
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
-    Ok(PlaylistId::new(transaction.last_insert_rowid() as u64)?)
+    let id = PlaylistId::new(transaction.last_insert_rowid() as u64)?;
+    forget_the_plays_of_a_discarded_holder(transaction, id)?;
+    Ok(id)
+}
+
+fn forget_the_plays_of_a_discarded_holder(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+) -> Result<()> {
+    transaction
+        .execute(
+            "DELETE FROM playlist_plays WHERE playlist_id = ?1",
+            params![id.get() as i64],
+        )
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
 pub fn rename(inner: &Inner, id: PlaylistId, name: &str) -> Result<()> {
