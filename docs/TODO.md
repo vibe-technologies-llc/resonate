@@ -5,9 +5,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
 service or a format — and is not worked until that moves; everything else is open to be done.
 
-## Defects
-- `resonate-online` declares `serde-saphyr` and uses nothing of it
-
 ## Privacy and security
 - `config::laid_down` creates the staged file under the umask and copies a mode only from a file
   already there, so the first setting written makes a `config.toml` holding

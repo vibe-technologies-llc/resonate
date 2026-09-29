@@ -124,9 +124,9 @@ paths:
   `cargo tree -p resonate --no-default-features -i serde_json` finding nothing is the guard.
 - **`serde-saphyr`** is `resonate-lyrics`'s, with `deserialize` and none of its default set (its
   serialiser): it reads the YAML of a Lyricsfile — LRCLIB's answer or a sidecar's — and nothing
-  writes one. It sits in the lyrics crate, not the online one — whose manifest declaring it too, with
-  nothing using it, is a defect on the roadmap — so a build without `online` still
-  reads a `.lyricsfile.yaml` beside a file. Pure Rust over its own `granit-parser`, it refuses a
+  writes one. It sits in the lyrics crate, not the online one, which reaches it through
+  `read_lyricsfile` alone — so a build without `online` still reads a `.lyricsfile.yaml` beside a
+  file. Pure Rust over its own `granit-parser`, it refuses a
   duplicated key by default (as the Lyricsfile draft asks a reader to) and takes a budget of nodes,
   depth and documents, which lets a document off the network be parsed at all. `serde_yaml` was
   archived and `yaml-rust2` has no serde side, which is the whole of why this one.
