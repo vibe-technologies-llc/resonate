@@ -2778,13 +2778,9 @@ fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
 
 fn read_back_from_an_ape_tag(read: &TagSet, edits: &[TagEdit]) {
     for edit in edits {
-        let wanted = match edit.field {
-            TagField::BeatsPerMinute => None,
-            _ => Some(edit.value.as_str()),
-        };
         assert_eq!(
             edit.field.read(read).as_deref(),
-            wanted,
+            Some(edit.value.as_str()),
             "{} did not read back as an APE tag holds it",
             edit.field
         );

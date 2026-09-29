@@ -18,6 +18,7 @@ use crate::{Pictured, Picturing, Result, prescan::Prescan, riff::InfoTag, sylt};
 const SEGMENT_TITLE: &str = "SEGMENT@TITLE";
 const CUE_SHEET: &str = "CUESHEET";
 const UNIQUE_FILE_IDENTIFIER: &str = "UFID";
+const MUSICIAN_CREDITS: &str = "TMCL";
 const IDENTIFIER_OWNER: &str = "OWNER";
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
@@ -622,6 +623,15 @@ fn id3_list(tag: &Tag) -> Vec<StandardTag> {
     let (None, RawValue::StringList(values)) = (&tag.std, &tag.raw.value) else {
         return Vec::new();
     };
+    if tag.raw.key.as_str() == MUSICIAN_CREDITS {
+        return values
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .filter(|[_, name]| !name.trim().is_empty())
+            .map(|[_, name]| StandardTag::Performer(Arc::new(name.clone())))
+            .collect();
+    }
     let listed: fn(Arc<String>) -> StandardTag = match tag.raw.key.as_str() {
         "TPE1" => StandardTag::Artist,
         "TPE2" => StandardTag::AlbumArtist,

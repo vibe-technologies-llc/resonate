@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
     fmt,
     fs::{self, File, Metadata, OpenOptions},
@@ -13,9 +14,12 @@ use std::{
 };
 
 use lofty::{
+    TextEncoding,
+    ape::{ApeItem, ApeTag},
     config::WriteOptions,
     error::FileEncodingError,
     file::{FileType, TaggedFileExt as _},
+    id3::v2::{Frame, FrameId, Id3v2Tag, KeyValueFrame},
     io::FileLike,
     picture::{MimeType, Picture, PictureType},
     probe::Probe,
@@ -75,6 +79,9 @@ pub enum TagField {
 }
 
 const COMPILED: &str = "1";
+const MUSICIAN_CREDITS: &str = "TMCL";
+const LISTED_APART: &str = "; ";
+const APE_BEATS: &str = "BPM";
 
 impl TagField {
     pub const ALL: [Self; 36] = [
@@ -205,9 +212,16 @@ impl TagField {
     fn key_in(self, kind: TagType) -> Option<ItemKey> {
         match (self, kind) {
             (Self::BeatsPerMinute, TagType::VorbisComments) => Some(ItemKey::Bpm),
-            (Self::BeatsPerMinute, TagType::Ape) => None,
+            (Self::BeatsPerMinute, TagType::Ape) | (Self::Performer, TagType::Id3v2) => None,
             (field, _) => Some(field.key()),
         }
+    }
+
+    const fn unkeyed_in(self, kind: TagType) -> bool {
+        matches!(
+            (self, kind),
+            (Self::BeatsPerMinute, TagType::Ape) | (Self::Performer, TagType::Id3v2)
+        )
     }
 
     const fn key(self) -> ItemKey {
@@ -506,10 +520,18 @@ impl FileTags {
             rate(tag, popularity);
         }
 
+        let unkeyed: Vec<(TagField, Option<&str>)> = writing
+            .edits
+            .iter()
+            .map(|edit| (edit.field, Some(edit.value.as_str())))
+            .chain(writing.taken.iter().map(|field| (*field, None)))
+            .filter(|(field, _)| field.unkeyed_in(tag.tag_type()))
+            .collect();
         let saving = Saving {
             kind,
             tag,
             counting,
+            unkeyed: &unkeyed,
             others: &others,
         };
         match rechunked {
@@ -638,17 +660,77 @@ const fn keeps_popularimeters(kind: TagType) -> bool {
 fn saved<F: FileLike>(
     tag: &Tag,
     counting: Option<Popularity>,
+    unkeyed: &[(TagField, Option<&str>)],
     file: &mut F,
 ) -> std::result::Result<(), FileEncodingError> {
-    let counted = counting
-        .and_then(|popularity| Counted::of(tag.clone()).map(|counted| (counted, popularity)));
-    match counted {
-        Some((mut counted, popularity)) => {
-            counted.count(popularity.plays);
-            counted.favour_in_ape(popularity.favourite);
-            counted.save(file)
+    let concrete = (counting.is_some() || !unkeyed.is_empty())
+        .then(|| Counted::of(tag.clone()))
+        .flatten();
+    let Some(mut counted) = concrete else {
+        return tag.save_to(file, WriteOptions::default());
+    };
+
+    if let Some(popularity) = counting {
+        counted.count(popularity.plays);
+        counted.favour_in_ape(popularity.favourite);
+    }
+    for (field, value) in unkeyed {
+        match (field, &mut counted) {
+            (TagField::Performer, Counted::Framed(frames)) => credit_performers(frames, *value),
+            (TagField::BeatsPerMinute, Counted::Ape(items)) => beat(items, *value),
+            _ => {}
         }
-        None => tag.save_to(file, WriteOptions::default()),
+    }
+    counted.save(file)
+}
+
+fn credit_performers(frames: &mut Id3v2Tag, performers: Option<&str>) {
+    let id = FrameId::Valid(MUSICIAN_CREDITS.into());
+    let named: Vec<&str> = performers
+        .into_iter()
+        .flat_map(|held| held.split(LISTED_APART))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    let standing: Vec<(String, String)> = frames
+        .remove(&id)
+        .filter_map(|frame| match frame {
+            Frame::KeyValue(credits) => Some(credits.key_value_pairs.into_owned()),
+            _ => None,
+        })
+        .flatten()
+        .map(|(role, name)| (role.into_owned(), name.into_owned()))
+        .collect();
+
+    let mut credited: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new();
+    for name in named {
+        if credited.iter().any(|(_, held)| held == name) {
+            continue;
+        }
+        let role = standing
+            .iter()
+            .find(|(_, held)| held == name)
+            .map_or_else(String::new, |(role, _)| role.clone());
+        credited.push((role.into(), name.to_owned().into()));
+    }
+    if credited.is_empty() {
+        return;
+    }
+    frames.insert(Frame::KeyValue(KeyValueFrame::new(
+        id,
+        TextEncoding::UTF8,
+        credited,
+    )));
+}
+
+fn beat(items: &mut ApeTag, beats: Option<&str>) {
+    items.remove(APE_BEATS);
+    let Some(beats) = beats else {
+        return;
+    };
+    match ApeItem::new(APE_BEATS.to_owned(), ItemValue::Text(beats.to_owned())) {
+        Ok(item) => items.insert(item),
+        Err(error) => tracing::debug!(%error, "a tempo could not be an APE item"),
     }
 }
 
@@ -680,6 +762,7 @@ struct Saving<'a> {
     kind: FileType,
     tag: &'a Tag,
     counting: Option<Popularity>,
+    unkeyed: &'a [(TagField, Option<&'a str>)],
     others: &'a [Tag],
 }
 
@@ -689,7 +772,7 @@ impl Saving<'_> {
         file: &mut F,
     ) -> std::result::Result<(), FileEncodingError> {
         file.rewind()?;
-        saved(self.tag, self.counting, file)?;
+        saved(self.tag, self.counting, self.unkeyed, file)?;
         self.others_written_into(file)
     }
 
@@ -723,7 +806,7 @@ impl Saving<'_> {
         let past = held[usize::try_from(head.length).unwrap_or(length)..].to_vec();
 
         let mut copy = io::Cursor::new(held);
-        saved(self.tag, self.counting, &mut copy)?;
+        saved(self.tag, self.counting, self.unkeyed, &mut copy)?;
         let written = copy.into_inner();
         let Some(written) = written.strip_suffix(past.as_slice()) else {
             return Ok(false);
@@ -1275,8 +1358,6 @@ mod tests {
         ]
     }
 
-    const UNHELD_BY_ID3: [TagField; 1] = [TagField::Performer];
-
     fn assert_read_back(tags: &TagSet, edits: &[TagEdit], unheld: &[TagField]) {
         assert_eq!(
             edits.len(),
@@ -1364,6 +1445,7 @@ mod tests {
                 kind,
                 tag,
                 counting: None,
+                unkeyed: &[],
                 others: &[],
             },
         )
@@ -1468,7 +1550,7 @@ mod tests {
                 .expect("a readable AIFF")
                 .tags,
             &edits,
-            &UNHELD_BY_ID3,
+            &[],
         );
     }
 
@@ -1646,6 +1728,140 @@ mod tests {
                 .rated(&location)
                 .expect("a readable FLAC"),
             Rated::Unrated { plays: Some(9) }
+        );
+    }
+
+    #[test]
+    fn a_write_keeps_the_comments_it_has_no_name_for() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut comments = VorbisComments::default();
+        comments.insert("MOOD".to_owned(), "calm".to_owned());
+        comments.insert("ACOUSTID_ID".to_owned(), "abc".to_owned());
+        comments
+            .save_to_path(&path, WriteOptions::default())
+            .expect("a commented FLAC");
+
+        FileTags::default()
+            .write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a written FLAC");
+
+        let kept = Counted::read(&path, FileType::Flac)
+            .expect("a readable FLAC")
+            .expect("comments");
+        let Counted::Commented(kept) = kept else {
+            panic!("a FLAC read as something other than comments");
+        };
+        assert_eq!(kept.get("MOOD"), Some("calm"));
+        assert_eq!(kept.get("ACOUSTID_ID"), Some("abc"));
+    }
+
+    #[test]
+    fn a_write_keeps_the_frames_it_has_no_name_for() {
+        use lofty::id3::v2::PrivateFrame;
+
+        let folder = Folder::new();
+        let location = folder.holding("echoes.mp3", &mp3());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut frames = Id3v2Tag::new();
+        frames.insert_user_text("MOOD".to_owned(), "calm".to_owned());
+        frames.insert(Frame::Private(PrivateFrame::new("resonate", vec![1, 2, 3])));
+        frames
+            .save_to_path(&path, WriteOptions::default())
+            .expect("a framed MP3");
+
+        FileTags::default()
+            .write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a written MP3");
+        FileTags::default()
+            .write(
+                &location,
+                rating(Popularity {
+                    favourite: true,
+                    plays: 3,
+                }),
+            )
+            .expect("a counted MP3");
+
+        let Some(Counted::Framed(kept)) =
+            Counted::read(&path, FileType::Mpeg).expect("a readable MP3")
+        else {
+            panic!("an MP3 read with no ID3v2 tag");
+        };
+        assert_eq!(kept.get_user_text("MOOD"), Some("calm"));
+        assert!(
+            kept.get(&FrameId::Valid("PRIV".into())).is_some(),
+            "a private frame was lost"
+        );
+    }
+
+    #[test]
+    fn a_performer_written_into_an_id3_tag_keeps_the_instrument_it_was_credited_with() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.mp3", &mp3());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut frames = Id3v2Tag::new();
+        frames.insert(Frame::KeyValue(KeyValueFrame::new(
+            FrameId::Valid(MUSICIAN_CREDITS.into()),
+            TextEncoding::UTF8,
+            vec![
+                (Cow::from("guitar"), Cow::from("David Gilmour")),
+                (Cow::from("bass"), Cow::from("Roger Waters")),
+            ],
+        )));
+        frames
+            .save_to_path(&path, WriteOptions::default())
+            .expect("a credited MP3");
+        let tags = FileTags::default();
+
+        tags.write(
+            &location,
+            just(&[edited(TagField::Performer, "David Gilmour; Nick Mason")]),
+        )
+        .expect("a written MP3");
+
+        let Some(Counted::Framed(kept)) =
+            Counted::read(&path, FileType::Mpeg).expect("a readable MP3")
+        else {
+            panic!("an MP3 read with no ID3v2 tag");
+        };
+        let Some(Frame::KeyValue(credits)) = kept.get(&FrameId::Valid(MUSICIAN_CREDITS.into()))
+        else {
+            panic!("no musician credits were written");
+        };
+        assert_eq!(
+            credits.key_value_pairs.as_ref(),
+            [
+                (Cow::from("guitar"), Cow::from("David Gilmour")),
+                (Cow::from(""), Cow::from("Nick Mason")),
+            ]
+        );
+        assert_eq!(
+            tags.read(&location, Picturing::Whether)
+                .expect("a readable MP3")
+                .tags
+                .credits
+                .performer
+                .as_deref(),
+            Some("David Gilmour; Nick Mason")
+        );
+
+        tags.write(
+            &location,
+            Writing {
+                taken: &[TagField::Performer],
+                ..just(&[])
+            },
+        )
+        .expect("a cleared MP3");
+        assert_eq!(
+            tags.read(&location, Picturing::Whether)
+                .expect("a readable MP3")
+                .tags
+                .credits
+                .performer,
+            None
         );
     }
 
@@ -1873,7 +2089,7 @@ mod tests {
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable WAV");
-        assert_read_back(&read.tags, &edits, &UNHELD_BY_ID3);
+        assert_read_back(&read.tags, &edits, &[]);
         assert_eq!(read.picture, Pictured::Copied(cover));
     }
 

@@ -38,8 +38,6 @@ service or a format — and is not worked until that moves; everything else is o
 - On a filesystem that cannot clone a file — ext4 — a tag write that grows past the tag's room, and
   every write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) or an Ogg, still
   copies the whole file, and one with a second name twice
-- A performer cannot be written into an ID3 tag nor BPM into an APE tag, lofty mapping no key for
-  either there
 
 ## Performance and scale
 - `browsed` reads albums, artists, tracks, three favourites lists, the statistics and the
