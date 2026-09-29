@@ -1,8 +1,11 @@
 #[cfg(feature = "mcp")]
-use std::{io, sync::Arc};
+use std::{
+    io::{self, BufReader},
+    sync::Arc,
+};
 
 #[cfg(feature = "mcp")]
-use resonate_mcp::{Lookups, OnTheBus, Server};
+use resonate_mcp::{Lookups, OnTheBus, Server, stoppable};
 #[cfg(feature = "mcp")]
 use resonate_mpris::PlayerName;
 
@@ -28,7 +31,9 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
         });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 
-    Ok(server.serve(io::stdin().lock(), io::stdout().lock())?)
+    let (stop, stoppable) = stoppable();
+    let _told = crate::signals::cancel_when_told(move || stop.stop());
+    Ok(server.serve_until_stopped(BufReader::new(io::stdin()), io::stdout().lock(), stoppable)?)
 }
 
 #[cfg(not(feature = "mcp"))]

@@ -1,7 +1,7 @@
 use std::{
     cell::RefCell,
     env, fs,
-    io::{self, BufReader, Read as _},
+    io::{self, BufReader, Read as _, Write as _},
     num::NonZeroUsize,
     path::PathBuf,
     process,
@@ -1258,6 +1258,38 @@ fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
     assert_eq!(lines[0]["error"]["code"], -32_600);
     assert_eq!(lines[0]["id"], Value::Null);
     assert_eq!(lines[1]["result"], json!({}));
+}
+
+#[test]
+fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = nothing_running();
+    let started = called(
+        &server,
+        "start_scan",
+        json!({ "roots": [tree.root.display().to_string()] }),
+    );
+    let (reading, mut writing) = io::pipe().expect("a pipe");
+    let (stop, stoppable) = resonate_mcp::stoppable();
+    writeln!(writing, "{}", request("ping", json!({}))).expect("the pipe takes a line");
+
+    let stopping = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        stop.stop();
+    });
+    let mut output = Vec::new();
+    server
+        .serve_until_stopped(BufReader::new(reading), &mut output, stoppable)
+        .expect("a session told to stop to end cleanly");
+    stopping.join().expect("the stopping thread");
+
+    let answered = String::from_utf8(output).expect("the output to be text");
+    let scan = called(&server, "library_passes", json!({}))["scan"].clone();
+    assert_eq!(started["started"], "scan");
+    assert!(answered.contains("\"result\":{}"), "{answered}");
+    assert_ne!(scan["state"], "running", "{scan}");
+    drop(writing);
 }
 
 fn once_settled(server: &Server, pass: &str) -> Value {

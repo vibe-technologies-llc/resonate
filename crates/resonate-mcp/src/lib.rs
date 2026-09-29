@@ -20,6 +20,6 @@ pub use crate::{
     passes::{Lookups, Pass},
     prompts::Prompt,
     resources::Resource,
-    server::Server,
+    server::{Server, Stop, Stoppable, stoppable},
     tools::Tool,
 };

@@ -1,4 +1,8 @@
-use std::io::{self, BufRead, Read as _, Write};
+use std::{
+    io::{self, BufRead, Read as _, Write},
+    sync::mpsc::{self, Receiver, SyncSender},
+    thread,
+};
 
 use resonate_library::Library;
 use serde::Deserialize;
@@ -61,6 +65,38 @@ enum Line {
     Ended,
     Held,
     TooLong,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Flow {
+    Going,
+    Ended,
+}
+
+enum Heard {
+    Read(io::Result<Line>, Vec<u8>),
+    Stop,
+}
+
+#[derive(Clone)]
+pub struct Stop(SyncSender<Heard>);
+
+impl Stop {
+    pub fn stop(&self) {
+        if self.0.send(Heard::Stop).is_err() {
+            tracing::debug!("the session had already ended when it was told to stop");
+        }
+    }
+}
+
+pub struct Stoppable {
+    sender: SyncSender<Heard>,
+    heard: Receiver<Heard>,
+}
+
+pub fn stoppable() -> (Stop, Stoppable) {
+    let (sender, heard) = mpsc::sync_channel(1);
+    (Stop(sender.clone()), Stoppable { sender, heard })
 }
 
 enum Message {
@@ -150,34 +186,71 @@ impl Server {
         let mut line = Vec::new();
         loop {
             line.clear();
-            let read = next_line(&mut input, &mut line).map_err(|source| Error::Stream {
+            let read = next_line(&mut input, &mut line);
+            if self.took(read, &line, &mut output)? == Flow::Ended {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn serve_until_stopped(
+        &self,
+        input: impl BufRead + Send + 'static,
+        mut output: impl Write,
+        stoppable: Stoppable,
+    ) -> Result<()> {
+        let Stoppable { sender, heard } = stoppable;
+        thread::Builder::new()
+            .name("resonate-mcp-read".to_owned())
+            .spawn(move || read_into(input, &sender))
+            .map_err(|source| Error::Stream {
                 op: StreamOp::Read,
                 source,
             })?;
-            let answer = match read {
-                Line::Ended => {
-                    self.passes.drain();
-                    return Ok(());
+
+        for told in heard {
+            match told {
+                Heard::Stop => break,
+                Heard::Read(read, line) => {
+                    if self.took(read, &line, &mut output)? == Flow::Ended {
+                        return Ok(());
+                    }
                 }
-                Line::TooLong => Some(refused(
-                    Value::Null,
-                    &Unanswered::Refused(Refusal::TooLong {
-                        longest: LONGEST_MESSAGE,
-                    }),
-                )),
-                Line::Held if line.trim_ascii().is_empty() => None,
-                Line::Held => self.answer(&line),
-            };
-            let Some(answer) = answer else {
-                continue;
-            };
-            writeln!(output, "{answer}")
-                .and_then(|()| output.flush())
-                .map_err(|source| Error::Stream {
-                    op: StreamOp::Write,
-                    source,
-                })?;
+            }
         }
+        self.passes.drain();
+        Ok(())
+    }
+
+    fn took(&self, read: io::Result<Line>, line: &[u8], output: &mut impl Write) -> Result<Flow> {
+        let read = read.map_err(|source| Error::Stream {
+            op: StreamOp::Read,
+            source,
+        })?;
+        let answer = match read {
+            Line::Ended => {
+                self.passes.drain();
+                return Ok(Flow::Ended);
+            }
+            Line::TooLong => Some(refused(
+                Value::Null,
+                &Unanswered::Refused(Refusal::TooLong {
+                    longest: LONGEST_MESSAGE,
+                }),
+            )),
+            Line::Held if line.trim_ascii().is_empty() => None,
+            Line::Held => self.answer(line),
+        };
+        let Some(answer) = answer else {
+            return Ok(Flow::Going);
+        };
+        writeln!(output, "{answer}")
+            .and_then(|()| output.flush())
+            .map_err(|source| Error::Stream {
+                op: StreamOp::Write,
+                source,
+            })?;
+        Ok(Flow::Going)
     }
 
     pub fn answer(&self, line: &[u8]) -> Option<Value> {
@@ -241,6 +314,17 @@ impl Server {
                 Ok(asked.complete(&self.library)??)
             }
             other => Err(Refusal::UnknownMethod(MethodName::new(other)).into()),
+        }
+    }
+}
+
+fn read_into(mut input: impl BufRead, sender: &SyncSender<Heard>) {
+    loop {
+        let mut line = Vec::new();
+        let read = next_line(&mut input, &mut line);
+        let last = !matches!(read, Ok(Line::Held | Line::TooLong));
+        if sender.send(Heard::Read(read, line)).is_err() || last {
+            return;
         }
     }
 }

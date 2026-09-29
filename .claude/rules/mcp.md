@@ -182,4 +182,10 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
 - **An ending session leaves no pass half-written.** `serve` drains the passes when the input ends
   — each running one cancelled and joined, so the file being written is finished and the catalog
   follows — and `Drop for Passes` drains them every other way out
-  (`a_session_that_ends_under_a_running_scan_waits_for_it_to_stop`).
+  (`a_session_that_ends_under_a_running_scan_waits_for_it_to_stop`). **A signal ends it the same
+  way.** `resonate mcp` serves through `serve_until_stopped`: stdin is read on a thread of its own
+  (`read_into`), each line sent over a one-slot channel the `Stop` handle `stoppable` makes sends
+  on too, and the binary hands `Stop::stop` to `signals::cancel_when_told`, so a client ending the
+  session with `SIGTERM` stops a scan or lookup at a file boundary rather than killing it mid-file,
+  with its input still open; a second signal leaves at once
+  (`a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained`).

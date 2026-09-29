@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Robustness
-- `resonate mcp` installs no signal handling, so a client ending a session with `SIGTERM` kills a
-  scan or a lookup mid-file rather than stopping it at a file boundary as every headless pass does
 - `resonate listen --seconds` is unbounded where `listen-for` is held to 4 to 60, and
   `Recording::holding` allocates the whole clip as atomics up front, so a large value aborts
 - The PipeWire client needs the daemon at start: a failed first `connect` ends the thread and the
