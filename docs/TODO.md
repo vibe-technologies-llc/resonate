@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- Importing or fetching a profile over the one already bound redraws the pane and never tells the
-  engine, which plays the old curve until some other edit
 - The ListenBrainz token field is missing from `RootView::editing`, so every character typed into
   it is typed into the library search as well
 - Escape in the AutoEq search field clears the library search or steps back a pane, because

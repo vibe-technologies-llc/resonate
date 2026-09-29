@@ -410,7 +410,10 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   bindings change and rewritten in place by every edit, so a publish is the cache and an unchanged
   curve keeps its pointer for `OutputSettings`' fast path. A save pending when the pane moves to
   another curve is written then, not cancelled with its waiting task; an import or fetch replacing a
-  shown file drops the unsaved copy rather than writing it back over the new one.
+  shown file drops the unsaved copy rather than writing it back over the new one. One replacing a
+  *bound* file raises `untold`, which the root view's observer takes with the notice and answers with
+  `tell_the_engine`, so the new curve is heard at once rather than after the next edit
+  (`a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next`).
 - **The wash runs to the zero line, not the box's bottom.** The bitrate graph washes to the floor, a
   bitrate being unsigned; an EQ curve is signed, and washing a cut to the floor draws it as a boost.
 - **The drawn range follows the curve and the axes say what it is.** `widest_drawn` takes the

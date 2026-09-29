@@ -189,6 +189,7 @@ pub struct EqualiserModel {
     found: Vec<Found>,
     looking: bool,
     notice: Option<Notice>,
+    untold: bool,
     _saved: Task<()>,
     _asked: Task<()>,
 }
@@ -215,6 +216,7 @@ impl EqualiserModel {
             found: Vec::new(),
             looking: false,
             notice: None,
+            untold: false,
             _saved: Task::ready(()),
             _asked: Task::ready(()),
         };
@@ -277,6 +279,12 @@ impl EqualiserModel {
 
     pub fn take_notice(&mut self) -> Option<Notice> {
         self.notice.take()
+    }
+
+    pub const fn take_untold(&mut self) -> bool {
+        let untold = self.untold;
+        self.untold = false;
+        untold
     }
 
     pub fn shown_curve(&self) -> Option<&Curve> {
@@ -360,8 +368,9 @@ impl EqualiserModel {
             self.shown = None;
             self.forget_the_rows();
         }
-        self.held.remove(&curve);
+        let was_bound = self.held.remove(&curve).is_some();
         self.gather();
+        self.untold |= was_bound;
     }
 
     fn step(&mut self) {
@@ -957,6 +966,64 @@ mod tests {
             BandGain::from_decibels(3.0).expect("a gain"),
             Q::BUTTERWORTH,
         )
+    }
+
+    #[test]
+    fn a_bound_profile_kept_again_over_itself_is_what_the_engine_is_told_next() {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-ui-equaliser-{}", std::process::id()));
+        let store = Store::at(folder.clone());
+        let name = named("Harman");
+        let dac = NodeName::new("alsa_output.dac");
+        let louder = Band {
+            gain: BandGain::from_decibels(6.0).expect("a gain"),
+            ..a_band()
+        };
+
+        store
+            .keep(
+                &name,
+                &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
+            )
+            .expect("the first profile is kept");
+        let mut model = EqualiserModel::new(
+            folder.clone(),
+            Arc::new(Corrected::uncorrected()),
+            Bindings {
+                enabled: true,
+                fallback: None,
+                by_sink: vec![(dac.clone(), Binding::Profile(name.clone()))],
+            },
+        );
+        store
+            .keep(
+                &name,
+                &Profile::new(Preamp::NONE, vec![louder]).expect("a profile"),
+            )
+            .expect("the second profile is kept over the first");
+        model.replaced(&name);
+        let untold = model.take_untold();
+        let told = model.equalisation();
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(
+            untold,
+            "a bound profile replaced was not marked for the engine"
+        );
+        assert!(!model.take_untold());
+        assert_eq!(
+            told.bound
+                .iter()
+                .find(|(sink, _)| **sink == dac)
+                .map(|(_, profile)| profile.bands().to_vec()),
+            Some(vec![louder])
+        );
+
+        model.replaced(&named("Unbound"));
+        assert!(
+            !model.take_untold(),
+            "a profile nothing binds was told to the engine"
+        );
     }
 
     #[test]

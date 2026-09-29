@@ -801,9 +801,14 @@ impl RootView {
         let equaliser = cx.new(|_| {
             EqualiserModel::new(places.equaliser.clone(), Arc::clone(&corrections), bindings)
         });
-        cx.observe(&equaliser, |_, equaliser, cx| {
-            if let Some(notice) = equaliser.update(cx, |model, _| model.take_notice()) {
+        cx.observe(&equaliser, |this, equaliser, cx| {
+            let (notice, untold) =
+                equaliser.update(cx, |model, _| (model.take_notice(), model.take_untold()));
+            if let Some(notice) = notice {
                 toast::tell(notice, cx);
+            }
+            if untold {
+                this.tell_the_engine(cx);
             }
         })
         .detach();
