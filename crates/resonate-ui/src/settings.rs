@@ -1,12 +1,16 @@
 use std::{
+    mem,
     path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
+use crossbeam_channel::Sender;
+use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
     Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
@@ -621,22 +625,139 @@ pub trait Present: Send + Sync {
     fn follow(&self, presence: &Presence);
 }
 
-pub trait Settings: Send + Sync {
-    fn store(&self, setting: &Setting) -> Result<()>;
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettingChange {
+    Store(Setting),
+    Forget(SettingKey),
+}
 
-    fn forget(&self, key: SettingKey) -> Result<()>;
+impl SettingChange {
+    pub fn key(&self) -> SettingKey {
+        match self {
+            Self::Store(setting) => setting.key(),
+            Self::Forget(key) => *key,
+        }
+    }
+}
+
+pub trait Settings: Send + Sync {
+    fn apply(&self, changes: &[SettingChange]) -> Result<()>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ephemeral;
 
 impl Settings for Ephemeral {
-    fn store(&self, _setting: &Setting) -> Result<()> {
+    fn apply(&self, _changes: &[SettingChange]) -> Result<()> {
         Ok(())
     }
+}
 
-    fn forget(&self, _key: SettingKey) -> Result<()> {
-        Ok(())
+const SETTINGS_WRITER_THREAD: &str = "resonate-settings";
+
+struct Batch {
+    changes: Vec<SettingChange>,
+    landed: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Batch {
+    fn written_by(self, settings: &dyn Settings) {
+        let written = settings.apply(&self.changes);
+        match self.landed {
+            Some(landed) => {
+                let _ = landed.send(written);
+            }
+            None => {
+                if let Err(error) = written {
+                    tracing::error!(%error, "the settings changed at the close could not be saved");
+                }
+            }
+        }
+    }
+}
+
+pub(crate) struct SettingsWriter {
+    settings: Arc<dyn Settings>,
+    pending: Vec<SettingChange>,
+    writing: bool,
+    sent: Option<Sender<Batch>>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl SettingsWriter {
+    pub(crate) fn over(settings: Arc<dyn Settings>) -> Self {
+        let (sent, heard) = crossbeam_channel::unbounded::<Batch>();
+        let writing = Arc::clone(&settings);
+        let worker = thread::Builder::new()
+            .name(SETTINGS_WRITER_THREAD.to_owned())
+            .spawn(move || {
+                for batch in heard {
+                    batch.written_by(writing.as_ref());
+                }
+            })
+            .inspect_err(|error| {
+                tracing::warn!(%error, "no thread writes the settings, so the window writes them itself");
+            })
+            .ok();
+
+        Self {
+            settings,
+            pending: Vec::new(),
+            writing: false,
+            sent: worker.is_some().then_some(sent),
+            worker,
+        }
+    }
+
+    pub(crate) fn change(&mut self, change: SettingChange) {
+        self.pending.push(change);
+    }
+
+    pub(crate) fn next_batch(&mut self) -> Option<oneshot::Receiver<Result<()>>> {
+        if self.writing || self.pending.is_empty() {
+            return None;
+        }
+        let (landed, heard) = oneshot::channel();
+        let batch = Batch {
+            changes: mem::take(&mut self.pending),
+            landed: Some(landed),
+        };
+        let unsent = match &self.sent {
+            Some(sent) => sent.send(batch).err().map(|unsent| unsent.0),
+            None => Some(batch),
+        };
+        if let Some(batch) = unsent {
+            batch.written_by(self.settings.as_ref());
+        }
+        self.writing = true;
+        Some(heard)
+    }
+
+    pub(crate) const fn landed(&mut self) {
+        self.writing = false;
+    }
+}
+
+impl Drop for SettingsWriter {
+    fn drop(&mut self) {
+        let changes = mem::take(&mut self.pending);
+        let batch = (!changes.is_empty()).then_some(Batch {
+            changes,
+            landed: None,
+        });
+        let unsent = match (self.sent.take(), batch) {
+            (Some(sent), Some(batch)) => sent.send(batch).err().map(|unsent| unsent.0),
+            (None, batch) => batch,
+            (Some(_), None) => None,
+        };
+        if let Some(batch) = unsent {
+            batch.written_by(self.settings.as_ref());
+        }
+        if let Some(worker) = self.worker.take()
+            && worker.join().is_err()
+        {
+            tracing::error!("the thread writing the settings panicked");
+        }
     }
 }
 

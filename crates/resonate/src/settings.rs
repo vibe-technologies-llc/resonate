@@ -8,13 +8,14 @@ use resonate_engine::{
 };
 use resonate_eq::Binding;
 use resonate_library::HistoryKept;
-use resonate_ui::{Setting, SettingKey, Settings};
+use resonate_ui::{Setting, SettingChange, SettingKey, Settings};
 use toml_edit::Value;
 
 use crate::{
     ConfigKey,
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
-    config, online,
+    config::{self, Editing},
+    online,
 };
 
 const MILLIBELS_PER_DECIBEL: f64 = 100.0;
@@ -27,251 +28,262 @@ impl File {
     pub const fn at(path: PathBuf) -> Self {
         Self { path }
     }
+}
 
-    fn written(&self, key: ConfigKey, value: Option<Value>) -> crate::Result<()> {
-        match value {
-            Some(value) => config::store(&self.path, key, value),
-            None => config::clear(&self.path, key),
+fn written(editing: &mut Editing<'_>, key: ConfigKey, value: Option<Value>) {
+    match value {
+        Some(value) => editing.store(key, value),
+        None => editing.clear(key),
+    }
+}
+
+fn bound(
+    editing: &mut Editing<'_>,
+    sink: &NodeName,
+    binding: Option<&Binding>,
+) -> crate::Result<()> {
+    match binding {
+        Some(binding) => editing.store_in_table(
+            ConfigKey::EqualiserFor,
+            sink.as_str(),
+            config::written(binding),
+        ),
+        None => {
+            editing.clear_in_table(ConfigKey::EqualiserFor, sink.as_str());
+            Ok(())
         }
-    }
-
-    fn bound(&self, sink: &NodeName, binding: Option<&Binding>) -> crate::Result<()> {
-        match binding {
-            Some(binding) => config::store_in_table(
-                &self.path,
-                ConfigKey::EqualiserFor,
-                sink.as_str(),
-                config::written(binding),
-            ),
-            None => config::clear_in_table(&self.path, ConfigKey::EqualiserFor, sink.as_str()),
-        }
-    }
-
-    fn bound_by_the_rest(&self, binding: Option<&Binding>) -> crate::Result<()> {
-        self.written(ConfigKey::EqualiserProfile, binding.map(config::written))
-    }
-
-    fn forget_key(&self, setting: SettingKey, key: ConfigKey) -> resonate_ui::Result<()> {
-        config::clear(&self.path, key).map_err(|error| {
-            tracing::error!(%error, key = %key, "the setting could not be taken out of the file");
-            resonate_ui::Error::SettingNotStored { key: setting }
-        })
     }
 }
 
 impl Settings for File {
-    fn store(&self, setting: &Setting) -> resonate_ui::Result<()> {
-        let (key, value): (ConfigKey, Option<Value>) = match setting {
-            Setting::EqualiserFor { sink, binding } => {
-                return written_as_a_binding(setting, self.bound(sink, binding.as_ref()));
-            }
-            Setting::EqualiserProfile(binding) => {
-                return written_as_a_binding(setting, self.bound_by_the_rest(binding.as_ref()));
-            }
-            Setting::Sink(name) => (
-                ConfigKey::Sink,
-                name.as_ref().map(|name| name.as_str().into()),
-            ),
-            Setting::Quality(quality) => (ConfigKey::Quality, Some(quality_text(*quality).into())),
-            Setting::FilterPhase(phase) => {
-                (ConfigKey::FilterPhase, Some(phase_text(*phase).into()))
-            }
-            Setting::TruePeak(guarded) => (ConfigKey::TruePeak, Some((*guarded).into())),
-            Setting::Restoration(restoration) => {
-                (ConfigKey::RestoreLossy, Some(restoration.as_str().into()))
-            }
-            Setting::Dither(dither) => (ConfigKey::Dither, Some(dither_text(*dither).into())),
-            Setting::NoiseShaping(shaping) => {
-                (ConfigKey::NoiseShaping, Some(shaping_text(*shaping).into()))
-            }
-            Setting::ReplayGain(mode) => {
-                (ConfigKey::ReplayGain, Some(replay_gain_text(*mode).into()))
-            }
-            Setting::PreAmp(trim) => (ConfigKey::ReplayGainPreAmp, Some(decibels_of(*trim).into())),
-            Setting::Untagged(trim) => (
-                ConfigKey::ReplayGainUntagged,
-                Some(decibels_of(*trim).into()),
-            ),
-            Setting::BitPerfect(wanted) => (ConfigKey::BitPerfect, Some((*wanted).into())),
-            Setting::Dop(marked) => (ConfigKey::Dop, Some((*marked).into())),
-            Setting::DsdLikePcm(raised) => (ConfigKey::DsdLikePcm, Some((*raised).into())),
-            Setting::DeviceVolume(handed) => (ConfigKey::DeviceVolume, Some((*handed).into())),
-            Setting::ForceGraphRate(forced) => (ConfigKey::ForceGraphRate, Some((*forced).into())),
-            Setting::BluetoothWake(on) => (ConfigKey::BluetoothWake, Some((*on).into())),
-            Setting::BluetoothLead(lead) => {
-                let millis = i64::try_from(lead.as_millis())
-                    .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-                (ConfigKey::BluetoothLeadMs, Some(millis.into()))
-            }
-            Setting::BluetoothAwake(awake) => {
-                let seconds = i64::try_from(awake.as_secs())
-                    .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-                (ConfigKey::BluetoothAwakeS, Some(seconds.into()))
-            }
-            Setting::Buffer(held) => {
-                let millis = i64::try_from(held.as_millis())
-                    .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-                (ConfigKey::BufferMs, Some(millis.into()))
-            }
-            Setting::Volume(volume) => (ConfigKey::Volume, Some(f64::from(volume.get()).into())),
-            Setting::Theme(theme) => (ConfigKey::Theme, Some(theme.as_str().into())),
-            Setting::Accent(accent) => (
-                ConfigKey::Accent,
-                accent.map(|accent| accent.as_str().into()),
-            ),
-            Setting::TextSize(size) => (ConfigKey::TextSize, Some(size.as_str().into())),
-            Setting::Online(enabled) => (ConfigKey::Online, Some((*enabled).into())),
-            Setting::EnrichAfterScan(after_scan) => {
-                (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
-            }
-            Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
-            Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
-            Setting::IdentifyBySound(hears) => (ConfigKey::IdentifyBySound, Some((*hears).into())),
-            Setting::SkipUnderRepeat(skip) => (
-                ConfigKey::SkipRepeatsQueue,
-                Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
-            ),
-            Setting::PreviousRestarts(previous) => (
-                ConfigKey::PreviousRestarts,
-                Some((*previous == PreviousRestarts::RestartsTheTrack).into()),
-            ),
-            Setting::Contact(contact) => {
-                let contact = contact.trim();
-                (
-                    ConfigKey::Contact,
-                    (!contact.is_empty()).then(|| contact.into()),
-                )
-            }
-            Setting::AcoustidKey(key) => {
-                let key = key.trim();
-                (
-                    ConfigKey::AcoustidKey,
-                    (!key.is_empty()).then(|| key.into()),
-                )
-            }
-            Setting::AuddToken(token) => {
-                let token = token.trim();
-                (
-                    ConfigKey::AuddToken,
-                    (!token.is_empty()).then(|| token.into()),
-                )
-            }
-            Setting::ListenbrainzToken(token) => {
-                let token = token.trim();
-                (
-                    ConfigKey::ListenbrainzToken,
-                    (!token.is_empty()).then(|| token.into()),
-                )
-            }
-            Setting::ListenFrom(from) => (ConfigKey::ListenFrom, Some(from.written().into())),
-            Setting::ListenFor(length) => (
-                ConfigKey::ListenFor,
-                Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into()),
-            ),
-            Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
-            Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
-            Setting::HistoryKept(kept) => (
-                ConfigKey::HistoryKept,
-                Some(match kept {
-                    HistoryKept::Forever => kept.to_string().into(),
-                    HistoryKept::Days(days) => i64::from(days.get()).into(),
-                }),
-            ),
-            Setting::Notify(tells) => (ConfigKey::Notify, Some((*tells).into())),
-            Setting::Discord(on) => (ConfigKey::Discord, Some((*on).into())),
-            Setting::DiscordApp(app) => {
-                (ConfigKey::DiscordApp, app.map(|app| app.to_string().into()))
-            }
-            Setting::DiscordShows(shown) => (ConfigKey::DiscordShows, Some(shown.as_str().into())),
-            Setting::DiscordArt(pictured) => {
-                (ConfigKey::DiscordArt, Some(pictured.as_str().into()))
-            }
-            Setting::DiscordIcon(icon) => (
-                ConfigKey::DiscordIcon,
-                icon.as_ref().map(|icon| icon.as_str().into()),
-            ),
-            Setting::DiscordProgress(shown) => (ConfigKey::DiscordProgress, Some((*shown).into())),
-            Setting::DiscordPaused(stays) => (ConfigKey::DiscordPaused, Some((*stays).into())),
-            Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
-            Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
-            Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
-            Setting::Scrollbars(mode) => (ConfigKey::Scrollbars, Some(mode.as_str().into())),
-            Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
-            Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
-            Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
-            Setting::RememberTab(remember) => (ConfigKey::RememberTab, Some((*remember).into())),
-            Setting::LastTab(tab) => (ConfigKey::LastTab, Some(tab.as_str().into())),
-            Setting::RememberWindowSize(remember) => {
-                (ConfigKey::RememberWindowSize, Some((*remember).into()))
-            }
-            Setting::WindowSize(size) => (
-                ConfigKey::WindowSize,
-                Some(format!("{}x{}", size.width(), size.height()).into()),
-            ),
-            Setting::RememberSettingsCategory(remember) => (
-                ConfigKey::RememberSettingsCategory,
-                Some((*remember).into()),
-            ),
-            Setting::LastSettingsCategory(category) => (
-                ConfigKey::LastSettingsCategory,
-                Some(category.as_str().into()),
-            ),
-            Setting::OrganiseAs(template) => {
-                (ConfigKey::OrganiseAs, Some(template.as_str().into()))
-            }
-            Setting::Inbox(folder) => {
-                let folder = folder
-                    .to_str()
-                    .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-                (ConfigKey::Inbox, Some(folder.into()))
-            }
-            Setting::Convolution(held) => {
-                let held = held
-                    .as_deref()
-                    .map(|path| {
-                        path.to_str()
-                            .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })
-                    })
-                    .transpose()?;
-                (ConfigKey::Convolution, held.map(Into::into))
-            }
-            Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
-            Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
-            Setting::SubsonicPassword(given) => {
-                given_or_cleared(ConfigKey::SubsonicPassword, given)
-            }
+    fn apply(&self, changes: &[SettingChange]) -> resonate_ui::Result<()> {
+        let Some(first) = changes.first() else {
+            return Ok(());
         };
-
-        self.written(key, value).map_err(|error| {
-            tracing::error!(%error, %key, "the settings file could not be written");
-            resonate_ui::Error::SettingNotStored { key: setting.key() }
-        })?;
-        if let Setting::Contact(contact) = setting {
-            online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
+        let mut refused = None;
+        let written = config::edit(&self.path, |editing| {
+            for change in changes {
+                let applied = match change {
+                    SettingChange::Store(setting) => stored(editing, setting),
+                    SettingChange::Forget(key) => {
+                        forgotten(editing, *key);
+                        Ok(())
+                    }
+                };
+                if let Err(error) = applied {
+                    refused.get_or_insert(error);
+                }
+            }
+            Ok(())
+        });
+        if let Err(error) = written {
+            tracing::error!(%error, "the settings file could not be written");
+            return Err(resonate_ui::Error::SettingNotStored { key: first.key() });
         }
-        Ok(())
+
+        for change in changes {
+            match change {
+                SettingChange::Store(Setting::Contact(contact)) => {
+                    online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
+                }
+                SettingChange::Forget(SettingKey::Contact) => online::introduce(None),
+                _ => {}
+            }
+        }
+        refused.map_or(Ok(()), Err)
     }
+}
 
-    fn forget(&self, key: SettingKey) -> resonate_ui::Result<()> {
-        match key {
-            SettingKey::RememberTab => {
-                self.forget_key(key, ConfigKey::RememberTab)?;
-                self.forget_key(key, ConfigKey::LastTab)?;
-            }
-            SettingKey::RememberWindowSize => {
-                self.forget_key(key, ConfigKey::RememberWindowSize)?;
-                self.forget_key(key, ConfigKey::WindowSize)?;
-            }
-            SettingKey::RememberSettingsCategory => {
-                self.forget_key(key, ConfigKey::RememberSettingsCategory)?;
-                self.forget_key(key, ConfigKey::LastSettingsCategory)?;
-            }
-            _ => self.forget_key(key, named(key))?,
+fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<()> {
+    let (key, value): (ConfigKey, Option<Value>) = match setting {
+        Setting::EqualiserFor { sink, binding } => {
+            return written_as_a_binding(setting, bound(editing, sink, binding.as_ref()));
         }
-        if key == SettingKey::Contact {
-            online::introduce(None);
+        Setting::EqualiserProfile(binding) => (
+            ConfigKey::EqualiserProfile,
+            binding.as_ref().map(config::written),
+        ),
+        Setting::Sink(name) => (
+            ConfigKey::Sink,
+            name.as_ref().map(|name| name.as_str().into()),
+        ),
+        Setting::Quality(quality) => (ConfigKey::Quality, Some(quality_text(*quality).into())),
+        Setting::FilterPhase(phase) => (ConfigKey::FilterPhase, Some(phase_text(*phase).into())),
+        Setting::TruePeak(guarded) => (ConfigKey::TruePeak, Some((*guarded).into())),
+        Setting::Restoration(restoration) => {
+            (ConfigKey::RestoreLossy, Some(restoration.as_str().into()))
         }
-        Ok(())
+        Setting::Dither(dither) => (ConfigKey::Dither, Some(dither_text(*dither).into())),
+        Setting::NoiseShaping(shaping) => {
+            (ConfigKey::NoiseShaping, Some(shaping_text(*shaping).into()))
+        }
+        Setting::ReplayGain(mode) => (ConfigKey::ReplayGain, Some(replay_gain_text(*mode).into())),
+        Setting::PreAmp(trim) => (ConfigKey::ReplayGainPreAmp, Some(decibels_of(*trim).into())),
+        Setting::Untagged(trim) => (
+            ConfigKey::ReplayGainUntagged,
+            Some(decibels_of(*trim).into()),
+        ),
+        Setting::BitPerfect(wanted) => (ConfigKey::BitPerfect, Some((*wanted).into())),
+        Setting::Dop(marked) => (ConfigKey::Dop, Some((*marked).into())),
+        Setting::DsdLikePcm(raised) => (ConfigKey::DsdLikePcm, Some((*raised).into())),
+        Setting::DeviceVolume(handed) => (ConfigKey::DeviceVolume, Some((*handed).into())),
+        Setting::ForceGraphRate(forced) => (ConfigKey::ForceGraphRate, Some((*forced).into())),
+        Setting::BluetoothWake(on) => (ConfigKey::BluetoothWake, Some((*on).into())),
+        Setting::BluetoothLead(lead) => {
+            let millis = i64::try_from(lead.as_millis())
+                .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::BluetoothLeadMs, Some(millis.into()))
+        }
+        Setting::BluetoothAwake(awake) => {
+            let seconds = i64::try_from(awake.as_secs())
+                .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::BluetoothAwakeS, Some(seconds.into()))
+        }
+        Setting::Buffer(held) => {
+            let millis = i64::try_from(held.as_millis())
+                .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::BufferMs, Some(millis.into()))
+        }
+        Setting::Volume(volume) => (ConfigKey::Volume, Some(f64::from(volume.get()).into())),
+        Setting::Theme(theme) => (ConfigKey::Theme, Some(theme.as_str().into())),
+        Setting::Accent(accent) => (
+            ConfigKey::Accent,
+            accent.map(|accent| accent.as_str().into()),
+        ),
+        Setting::TextSize(size) => (ConfigKey::TextSize, Some(size.as_str().into())),
+        Setting::Online(enabled) => (ConfigKey::Online, Some((*enabled).into())),
+        Setting::EnrichAfterScan(after_scan) => {
+            (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
+        }
+        Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
+        Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
+        Setting::IdentifyBySound(hears) => (ConfigKey::IdentifyBySound, Some((*hears).into())),
+        Setting::SkipUnderRepeat(skip) => (
+            ConfigKey::SkipRepeatsQueue,
+            Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
+        ),
+        Setting::PreviousRestarts(previous) => (
+            ConfigKey::PreviousRestarts,
+            Some((*previous == PreviousRestarts::RestartsTheTrack).into()),
+        ),
+        Setting::Contact(contact) => {
+            let contact = contact.trim();
+            (
+                ConfigKey::Contact,
+                (!contact.is_empty()).then(|| contact.into()),
+            )
+        }
+        Setting::AcoustidKey(key) => {
+            let key = key.trim();
+            (
+                ConfigKey::AcoustidKey,
+                (!key.is_empty()).then(|| key.into()),
+            )
+        }
+        Setting::AuddToken(token) => {
+            let token = token.trim();
+            (
+                ConfigKey::AuddToken,
+                (!token.is_empty()).then(|| token.into()),
+            )
+        }
+        Setting::ListenbrainzToken(token) => {
+            let token = token.trim();
+            (
+                ConfigKey::ListenbrainzToken,
+                (!token.is_empty()).then(|| token.into()),
+            )
+        }
+        Setting::ListenFrom(from) => (ConfigKey::ListenFrom, Some(from.written().into())),
+        Setting::ListenFor(length) => (
+            ConfigKey::ListenFor,
+            Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into()),
+        ),
+        Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
+        Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
+        Setting::HistoryKept(kept) => (
+            ConfigKey::HistoryKept,
+            Some(match kept {
+                HistoryKept::Forever => kept.to_string().into(),
+                HistoryKept::Days(days) => i64::from(days.get()).into(),
+            }),
+        ),
+        Setting::Notify(tells) => (ConfigKey::Notify, Some((*tells).into())),
+        Setting::Discord(on) => (ConfigKey::Discord, Some((*on).into())),
+        Setting::DiscordApp(app) => (ConfigKey::DiscordApp, app.map(|app| app.to_string().into())),
+        Setting::DiscordShows(shown) => (ConfigKey::DiscordShows, Some(shown.as_str().into())),
+        Setting::DiscordArt(pictured) => (ConfigKey::DiscordArt, Some(pictured.as_str().into())),
+        Setting::DiscordIcon(icon) => (
+            ConfigKey::DiscordIcon,
+            icon.as_ref().map(|icon| icon.as_str().into()),
+        ),
+        Setting::DiscordProgress(shown) => (ConfigKey::DiscordProgress, Some((*shown).into())),
+        Setting::DiscordPaused(stays) => (ConfigKey::DiscordPaused, Some((*stays).into())),
+        Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
+        Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
+        Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
+        Setting::Scrollbars(mode) => (ConfigKey::Scrollbars, Some(mode.as_str().into())),
+        Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
+        Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
+        Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
+        Setting::RememberTab(remember) => (ConfigKey::RememberTab, Some((*remember).into())),
+        Setting::LastTab(tab) => (ConfigKey::LastTab, Some(tab.as_str().into())),
+        Setting::RememberWindowSize(remember) => {
+            (ConfigKey::RememberWindowSize, Some((*remember).into()))
+        }
+        Setting::WindowSize(size) => (
+            ConfigKey::WindowSize,
+            Some(format!("{}x{}", size.width(), size.height()).into()),
+        ),
+        Setting::RememberSettingsCategory(remember) => (
+            ConfigKey::RememberSettingsCategory,
+            Some((*remember).into()),
+        ),
+        Setting::LastSettingsCategory(category) => (
+            ConfigKey::LastSettingsCategory,
+            Some(category.as_str().into()),
+        ),
+        Setting::OrganiseAs(template) => (ConfigKey::OrganiseAs, Some(template.as_str().into())),
+        Setting::Inbox(folder) => {
+            let folder = folder
+                .to_str()
+                .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::Inbox, Some(folder.into()))
+        }
+        Setting::Convolution(held) => {
+            let held = held
+                .as_deref()
+                .map(|path| {
+                    path.to_str()
+                        .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })
+                })
+                .transpose()?;
+            (ConfigKey::Convolution, held.map(Into::into))
+        }
+        Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
+        Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
+        Setting::SubsonicPassword(given) => given_or_cleared(ConfigKey::SubsonicPassword, given),
+    };
+
+    written(editing, key, value);
+    Ok(())
+}
+
+fn forgotten(editing: &mut Editing<'_>, key: SettingKey) {
+    match key {
+        SettingKey::RememberTab => {
+            editing.clear(ConfigKey::RememberTab);
+            editing.clear(ConfigKey::LastTab);
+        }
+        SettingKey::RememberWindowSize => {
+            editing.clear(ConfigKey::RememberWindowSize);
+            editing.clear(ConfigKey::WindowSize);
+        }
+        SettingKey::RememberSettingsCategory => {
+            editing.clear(ConfigKey::RememberSettingsCategory);
+            editing.clear(ConfigKey::LastSettingsCategory);
+        }
+        _ => editing.clear(named(key)),
     }
 }
 
@@ -397,7 +409,7 @@ const fn replay_gain_text(mode: ReplayGainMode) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, process};
+    use std::{env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
 
     use resonate_core::{Accent, AppId, Pictured, Presence, Shown, TextSize, Theme};
 
@@ -414,7 +426,7 @@ mod tests {
             NoiseShaping::Lipshitz,
             NoiseShaping::Threshold,
         ] {
-            file.store(&Setting::NoiseShaping(shaping))
+            file.apply(&[SettingChange::Store(Setting::NoiseShaping(shaping))])
                 .expect("a writable temporary directory");
             assert_eq!(
                 config::load(Some(&path))
@@ -434,9 +446,9 @@ mod tests {
         let raised = Trim::from_millibels(300).expect("a trim");
         let lowered = Trim::from_millibels(-650).expect("a trim");
 
-        file.store(&Setting::PreAmp(raised))
+        file.apply(&[SettingChange::Store(Setting::PreAmp(raised))])
             .expect("a writable temporary directory");
-        file.store(&Setting::Untagged(lowered))
+        file.apply(&[SettingChange::Store(Setting::Untagged(lowered))])
             .expect("a writable temporary directory");
         let read = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -452,13 +464,15 @@ mod tests {
         let file = File::at(path.clone());
         let sink = NodeName::new("alsa_output.usb-Topping_E30-00.analog-stereo");
 
-        file.store(&Setting::EqualiserFor {
+        file.apply(&[SettingChange::Store(Setting::EqualiserFor {
             sink: sink.clone(),
             binding: Some(Binding::Own),
-        })
+        })])
         .expect("a writable temporary directory");
-        file.store(&Setting::EqualiserProfile(Some(Binding::Own)))
-            .expect("a writable temporary directory");
+        file.apply(&[SettingChange::Store(Setting::EqualiserProfile(Some(
+            Binding::Own,
+        )))])
+        .expect("a writable temporary directory");
 
         let bindings = config::load(Some(&path))
             .expect("the file reads back")
@@ -470,10 +484,10 @@ mod tests {
         );
         assert_eq!(bindings.fallback(), Some(&Binding::Own));
 
-        file.store(&Setting::EqualiserFor {
+        file.apply(&[SettingChange::Store(Setting::EqualiserFor {
             sink: sink.clone(),
             binding: None,
-        })
+        })])
         .expect("a writable temporary directory");
         let bindings = config::load(Some(&path))
             .expect("the file reads back")
@@ -491,12 +505,12 @@ mod tests {
         let file = File::at(path.clone());
         let inbox = PathBuf::from("/music/inbox");
 
-        file.store(&Setting::Inbox(inbox.clone()))
+        file.apply(&[SettingChange::Store(Setting::Inbox(inbox.clone()))])
             .expect("a writable temporary directory");
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .inbox;
-        file.forget(SettingKey::Inbox)
+        file.apply(&[SettingChange::Forget(SettingKey::Inbox)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path))
             .expect("the file reads back")
@@ -505,6 +519,43 @@ mod tests {
 
         assert_eq!(named, Some(inbox));
         assert_eq!(forgotten, None);
+    }
+
+    #[test]
+    fn a_batch_lands_whole_in_one_write_and_a_refused_setting_leaves_the_rest() {
+        let folder = env::temp_dir().join(format!("resonate-settings-batch-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let unwritable = PathBuf::from(OsStr::from_bytes(b"/music/\xff"));
+
+        let refused = file.apply(&[
+            SettingChange::Store(Setting::Inbox(PathBuf::from("/music/inbox"))),
+            SettingChange::Store(Setting::Inbox(unwritable)),
+            SettingChange::Store(Setting::Resume(false)),
+            SettingChange::Store(Setting::Notify(false)),
+            SettingChange::Forget(SettingKey::Notify),
+        ]);
+        let read = config::load(Some(&path)).expect("the file reads back");
+        let staged = fs::read_dir(&folder)
+            .expect("the folder")
+            .flatten()
+            .filter(|entry| entry.path() != path)
+            .count();
+        let _ = fs::remove_dir_all(folder);
+
+        assert!(matches!(
+            refused,
+            Err(resonate_ui::Error::SettingNotStored {
+                key: SettingKey::Inbox
+            })
+        ));
+        assert_eq!(read.inbox, Some(PathBuf::from("/music/inbox")));
+        assert_eq!(read.resume, Some(false));
+        assert_eq!(
+            read.notify, None,
+            "a setting forgotten after it was stored stood"
+        );
+        assert_eq!(staged, 0, "a write left something beside the file");
     }
 
     #[test]
@@ -531,13 +582,13 @@ mod tests {
             Setting::DiscordProgress(named.progress),
             Setting::DiscordPaused(named.while_paused),
         ] {
-            file.store(&setting)
+            file.apply(&[SettingChange::Store(setting)])
                 .expect("a writable temporary directory");
         }
         let read = config::load(Some(&path))
             .expect("the file reads back")
             .presence();
-        file.store(&Setting::DiscordApp(None))
+        file.apply(&[SettingChange::Store(Setting::DiscordApp(None))])
             .expect("a writable temporary directory");
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);

@@ -210,8 +210,12 @@ What some of them mean:
 
 **The settings pane writes through `resonate_ui::Settings`**, which the binary fills with
 `settings::File`. It edits the document with `toml_edit` rather than reserialising a parsed
-`Config`, so a hand-written file keeps its comments and key order. Every writer — `config::store`,
-`clear`, `store_in_table`, `clear_in_table` — goes through the private `edited`, which follows a symlinked
+`Config`, so a hand-written file keeps its comments and key order. `settings::File::apply` takes a
+whole batch of `SettingChange`s through one `config::edit`, whose `Editing` stores and clears keys and
+table entries on the one document and writes only if something moved; a setting the file cannot say
+— a folder not in UTF-8 — is refused as `SettingNotStored` while the rest of its batch lands
+(`a_batch_lands_whole_in_one_write_and_a_refused_setting_leaves_the_rest`). Every writer —
+`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit` — follows a symlinked
 `config.toml` to its file, holds a lock on the folder the file sits in for the whole
 read-edit-write (so a window and a `resonate eq` beside it cannot write over each other, and no lock
 file is left beside it), sweeps what a killed writer left there — a `config.toml.<pid>-<n>.new` and

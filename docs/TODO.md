@@ -40,8 +40,6 @@ service or a format — and is not worked until that moves; everything else is o
   copies the whole file, and one with a second name twice
 
 ## Performance and scale
-- Every setting written is a locked read-modify-write with two `sync_all`s on the UI thread, so
-  *Reset everything* is some fifty of them in a row
 - Undo snapshots every row of a playlist for each edit that moves rows, so one row added to a
   100 000-row playlist reads all of them under the write lock
 - Move detection fingerprints its candidates — a whole decode each — inside the scan's write

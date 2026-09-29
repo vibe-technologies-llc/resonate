@@ -197,7 +197,7 @@ impl RootView {
             .child(note(BY_SOUND_NOTE))
     }
 
-    pub(crate) fn set_by_sound(&self, by_sound: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_by_sound(&mut self, by_sound: bool, cx: &mut Context<Self>) {
         cx.global::<ResonateApp>()
             .by_sound
             .store(by_sound, Ordering::Release);
@@ -428,28 +428,28 @@ impl RootView {
 }
 
 impl RootView {
-    pub(crate) fn set_online(&self, on: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_online(&mut self, on: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.enabled = on);
         self.library
             .update(cx, |library, cx| library.set_online(on, cx));
         self.store(&Setting::Online(on), cx);
     }
 
-    pub(crate) fn set_after_scan(&self, after_scan: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_after_scan(&mut self, after_scan: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.after_scan = after_scan);
         self.library
             .update(cx, |library, cx| library.set_after_scan(after_scan, cx));
         self.store(&Setting::EnrichAfterScan(after_scan), cx);
     }
 
-    pub(crate) fn set_studies(&self, studies: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_studies(&mut self, studies: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.studies = studies);
         self.library
             .update(cx, |library, cx| library.set_studies(studies, cx));
         self.store(&Setting::Study(studies), cx);
     }
 
-    pub(crate) fn set_lyrics(&self, lyrics: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_lyrics(&mut self, lyrics: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.lyrics = lyrics);
         self.library
             .update(cx, |library, cx| library.set_lyrics(lyrics, cx));

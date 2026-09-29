@@ -1892,8 +1892,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   its header; the footer carries *Reset <category>* for every category with a key to put back, and
   About's *Reset everything* arms on the first press and fires on the second, a modal not being in this
   crate's vocabulary. Putting a setting back is two moves: the default is sent and the key *taken out of
-  the file* through `Settings::forget`, so a build whose default later changes is followed rather than
-  pinned. A group with no key — the folders, the scan, *Look up now*, all three of About's — offers no
+  the file* through `SettingChange::Forget`, so a build whose default later changes is followed
+  rather than pinned. **A setting is written off the render thread, and a run of them is one write.**
+  `RootView::store` and `RootView::forget` hand a `SettingChange` to `SettingsWriter`, which sends
+  what gathered to a thread of its own (`resonate-settings`) as one batch, one batch in flight at a
+  time and whatever arrives meanwhile the next; `Settings::apply` takes the whole batch. So *Reset
+  everything* — some fifty changes — is a write or two, where each was a locked read-modify-write
+  with two `sync_all`s on the UI thread, and dragging a slider costs the frame nothing. A batch that
+  failed is one toast; dropping the writer, as the window closes, sends what is still gathered and
+  joins the thread, so nothing changed at the last moment is lost. A group with no key — the folders, the scan, *Look up now*, all three of About's — offers no
   mark, which a test holds.
 - **A setting is found by typing rather than by remembering which tab holds it.** `RootView::finding`
   is the pane's own `Field`, reached by `ctrl-,` or a press, counted by `RootView::editing` so the

@@ -548,7 +548,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn keep_the_history(&self, kept: HistoryKept, cx: &mut Context<Self>) {
+    pub(crate) fn keep_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.history_kept = kept);
         self.library
             .update(cx, |library, cx| library.age_the_history(kept, cx));
@@ -605,7 +605,7 @@ impl RootView {
         ))
     }
 
-    pub(crate) fn set_resume(&self, resume: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_resume(&mut self, resume: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.resume = resume);
         self.library
             .update(cx, |library, cx| library.set_resume(resume, cx));
@@ -820,7 +820,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn set_organise_as(&self, template: String, cx: &mut Context<Self>) {
+    pub(crate) fn set_organise_as(&mut self, template: String, cx: &mut Context<Self>) {
         self.organising
             .update(cx, |organising, cx| organising.hold(template.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.organise_as = template.clone());
@@ -1436,7 +1436,7 @@ impl RootView {
         .detach();
     }
 
-    fn set_inbox(&self, folder: PathBuf, cx: &mut Context<Self>) {
+    fn set_inbox(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
         self.store(&Setting::Inbox(folder.clone()), cx);
         self.library
             .update(cx, |library, cx| library.set_inbox(Some(folder), cx));

@@ -24,7 +24,7 @@ use resonate_library::{
 
 use crate::{
     Consulted, Drawn, EqualiserModel, LibraryModel, LyricsModel, Notice, PlayerModel, ResonateApp,
-    Selection, Setting, Settings, Tabs, WindowSize,
+    Selection, Setting, SettingChange, SettingKey, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
@@ -38,6 +38,7 @@ use crate::{
     icons::{self, Icon},
     listening::ListenModel,
     models::{Picture, Scale},
+    settings::SettingsWriter,
     theme,
     toast::{self, Toaster},
     views::{
@@ -430,7 +431,7 @@ pub struct RootView {
     pub(crate) analysis: Entity<AnalysisModel>,
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) listening_open: bool,
-    pub(crate) settings: Arc<dyn Settings>,
+    pub(crate) settings_written: SettingsWriter,
     pub(crate) pane: Pane,
     pub(crate) settings_category: Category,
     pub(crate) settings_scroll: ScrollHandle,
@@ -823,7 +824,7 @@ impl RootView {
             analysis,
             listen,
             listening_open: false,
-            settings,
+            settings_written: SettingsWriter::over(settings),
             pane,
             settings_category,
             settings_scroll: ScrollHandle::new(),
@@ -1047,13 +1048,34 @@ impl RootView {
         self.send(Command::SetShuffle(true), cx);
     }
 
-    pub(crate) fn store(&self, setting: &Setting, cx: &mut Context<Self>) {
-        let Err(error) = self.settings.store(setting) else {
+    pub(crate) fn store(&mut self, setting: &Setting, cx: &mut Context<Self>) {
+        self.settings_written
+            .change(SettingChange::Store(setting.clone()));
+        self.write_the_settings(cx);
+    }
+
+    pub(crate) fn forget(&mut self, key: SettingKey, cx: &mut Context<Self>) {
+        self.settings_written.change(SettingChange::Forget(key));
+        self.write_the_settings(cx);
+    }
+
+    fn write_the_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(landed) = self.settings_written.next_batch() else {
             return;
         };
-        tracing::error!(%error, ?setting, "a setting could not be saved");
-
-        toast::tell(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
+        cx.spawn(async move |this, cx| {
+            let written = landed.await;
+            let landed = this.update(cx, |this, cx| {
+                this.settings_written.landed();
+                if let Ok(Err(error)) = written {
+                    tracing::error!(%error, "a setting could not be saved");
+                    toast::tell(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
+                }
+                this.write_the_settings(cx);
+            });
+            let _ = landed;
+        })
+        .detach();
     }
 
     pub(crate) fn play(&mut self, tracks: &[Track], start_at: usize, cx: &mut Context<Self>) {

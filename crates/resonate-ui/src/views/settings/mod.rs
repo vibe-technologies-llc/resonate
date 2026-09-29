@@ -28,14 +28,14 @@ pub(crate) use crate::views::settings::{
     subsonic::Account,
 };
 use crate::{
-    AppIcon, Notice, ResonateApp, Setting, SettingKey,
+    AppIcon, ResonateApp, Setting,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     theme,
     views::{
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
-        root::{RootView, SETTING_UNSAVED},
+        root::RootView,
         scrollbar::Scrollbars,
         settings::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
@@ -756,15 +756,6 @@ impl RootView {
             .on_click(cx.listener(move |this, _, window, cx| clicked(this, window, cx)))
     }
 
-    fn forget(&self, key: SettingKey, cx: &mut Context<Self>) {
-        let Err(error) = self.settings.forget(key) else {
-            return;
-        };
-        tracing::error!(%error, ?key, "a setting could not be taken out of the file");
-
-        self.report(Notice::Trouble(SETTING_UNSAVED.to_owned()), cx);
-    }
-
     pub(crate) fn dress(&self, dressed: Appearance, cx: &mut Context<Self>) {
         theme::wear(dressed);
         cx.global::<ResonateApp>()
@@ -773,7 +764,7 @@ impl RootView {
         cx.refresh_windows();
     }
 
-    pub(crate) fn wear(&self, dressed: Appearance, setting: &Setting, cx: &mut Context<Self>) {
+    pub(crate) fn wear(&mut self, dressed: Appearance, setting: &Setting, cx: &mut Context<Self>) {
         self.dress(dressed, cx);
         self.store(setting, cx);
     }

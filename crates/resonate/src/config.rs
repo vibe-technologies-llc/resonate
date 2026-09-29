@@ -681,16 +681,73 @@ pub fn written(binding: &Binding) -> toml_edit::Value {
     }
 }
 
+pub struct Editing<'d> {
+    document: &'d mut DocumentMut,
+    target: &'d Path,
+    changed: bool,
+}
+
+impl Editing<'_> {
+    pub fn store(&mut self, key: ConfigKey, value: impl Into<toml_edit::Value>) {
+        self.document[key.as_str()] = toml_edit::value(value);
+        self.changed = true;
+    }
+
+    pub fn clear(&mut self, key: ConfigKey) {
+        self.changed |= self.document.remove(key.as_str()).is_some();
+    }
+
+    pub fn store_in_table(
+        &mut self,
+        key: ConfigKey,
+        entry: &str,
+        value: impl Into<toml_edit::Value>,
+    ) -> Result<()> {
+        let held = self.document.entry(key.as_str()).or_insert_with(|| {
+            let mut fresh = Table::new();
+            fresh.decor_mut().set_prefix("\n");
+            Item::Table(fresh)
+        });
+        let table = held.as_table_like_mut().ok_or_else(|| Error::ConfigType {
+            path: self.target.to_path_buf(),
+            key,
+            expected: ValueKind::Table,
+        })?;
+
+        table.insert(entry, toml_edit::value(value));
+        self.changed = true;
+        Ok(())
+    }
+
+    pub fn clear_in_table(&mut self, key: ConfigKey, entry: &str) {
+        let Some(table) = self
+            .document
+            .get_mut(key.as_str())
+            .and_then(Item::as_table_like_mut)
+        else {
+            return;
+        };
+        if table.remove(entry).is_none() {
+            return;
+        }
+        if table.is_empty() {
+            self.document.remove(key.as_str());
+        }
+        self.changed = true;
+    }
+}
+
 pub fn store(path: &Path, key: ConfigKey, value: impl Into<toml_edit::Value>) -> Result<()> {
-    edited(path, |document, _| {
-        document[key.as_str()] = toml_edit::value(value);
-        Ok(true)
+    edit(path, |editing| {
+        editing.store(key, value);
+        Ok(())
     })
 }
 
 pub fn clear(path: &Path, key: ConfigKey) -> Result<()> {
-    edited(path, |document, _| {
-        Ok(document.remove(key.as_str()).is_some())
+    edit(path, |editing| {
+        editing.clear(key);
+        Ok(())
     })
 }
 
@@ -700,42 +757,17 @@ pub fn store_in_table(
     entry: &str,
     value: impl Into<toml_edit::Value>,
 ) -> Result<()> {
-    edited(path, |document, target| {
-        let held = document.entry(key.as_str()).or_insert_with(|| {
-            let mut fresh = Table::new();
-            fresh.decor_mut().set_prefix("\n");
-            Item::Table(fresh)
-        });
-        let table = held.as_table_like_mut().ok_or_else(|| Error::ConfigType {
-            path: target.to_path_buf(),
-            key,
-            expected: ValueKind::Table,
-        })?;
-
-        table.insert(entry, toml_edit::value(value));
-        Ok(true)
-    })
+    edit(path, |editing| editing.store_in_table(key, entry, value))
 }
 
 pub fn clear_in_table(path: &Path, key: ConfigKey, entry: &str) -> Result<()> {
-    edited(path, |document, _| {
-        let Some(table) = document
-            .get_mut(key.as_str())
-            .and_then(Item::as_table_like_mut)
-        else {
-            return Ok(false);
-        };
-        if table.remove(entry).is_none() {
-            return Ok(false);
-        }
-        if table.is_empty() {
-            document.remove(key.as_str());
-        }
-        Ok(true)
+    edit(path, |editing| {
+        editing.clear_in_table(key, entry);
+        Ok(())
     })
 }
 
-fn edited(path: &Path, edit: impl FnOnce(&mut DocumentMut, &Path) -> Result<bool>) -> Result<()> {
+pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> Result<()> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|source| Error::CreateDir {
@@ -746,7 +778,13 @@ fn edited(path: &Path, edit: impl FnOnce(&mut DocumentMut, &Path) -> Result<bool
 
     let _alone = held_alone(&target)?;
     let mut document = document(&target, &read_or_empty(&target)?)?;
-    if !edit(&mut document, &target)? {
+    let mut editing = Editing {
+        document: &mut document,
+        target: &target,
+        changed: false,
+    };
+    edits(&mut editing)?;
+    if !editing.changed {
         return Ok(());
     }
     write(&target, &document.to_string())

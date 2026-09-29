@@ -88,7 +88,7 @@ impl RootView {
             .child(note(NOTIFICATIONS_NOTE))
     }
 
-    pub(crate) fn set_notify(&self, notify: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_notify(&mut self, notify: bool, cx: &mut Context<Self>) {
         cx.global::<ResonateApp>()
             .notify
             .store(notify, Ordering::Release);
@@ -273,7 +273,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn put_discord_back(&self, cx: &mut Context<Self>) {
+    pub(crate) fn put_discord_back(&mut self, cx: &mut Context<Self>) {
         self.discord_app
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.presented(
@@ -285,7 +285,7 @@ impl RootView {
         );
     }
 
-    pub(crate) fn put_discord_shows_back(&self, cx: &mut Context<Self>) {
+    pub(crate) fn put_discord_shows_back(&mut self, cx: &mut Context<Self>) {
         self.discord_icon
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.presented(
@@ -302,7 +302,7 @@ impl RootView {
     }
 
     fn present(
-        &self,
+        &mut self,
         change: impl FnOnce(&mut Presence),
         setting: &Setting,
         cx: &mut Context<Self>,

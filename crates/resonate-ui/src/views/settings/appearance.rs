@@ -486,7 +486,7 @@ impl RootView {
         });
     }
 
-    pub(crate) fn remember_current_tab(&self, cx: &mut Context<Self>) {
+    pub(crate) fn remember_current_tab(&mut self, cx: &mut Context<Self>) {
         if !self.remember_tab {
             return;
         }
@@ -498,7 +498,7 @@ impl RootView {
         self.store(&Setting::LastTab(tab), cx);
     }
 
-    pub(crate) fn remember_current_settings_category(&self, cx: &mut Context<Self>) {
+    pub(crate) fn remember_current_settings_category(&mut self, cx: &mut Context<Self>) {
         if !self.remember_settings_category
             || cx.global::<ResonateApp>().last_settings_category == self.settings_category
         {
