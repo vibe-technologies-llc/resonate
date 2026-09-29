@@ -14,6 +14,7 @@ const MOST_TRACKS: usize = 999;
 const LARGEST_CUE_SHEET: u64 = 1 << 20;
 const SHEET_EXTENSIONS: [&str; 2] = ["cue", "CUE"];
 const FILE_COMMAND: &str = "FILE";
+const FIRST_INDEX: u32 = 1;
 const BYTE_ORDER_MARK: char = '\u{feff}';
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -78,6 +79,14 @@ impl CueStart {
             Self::Sampled(frames) => frames,
         }
     }
+
+    fn is_before(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Written(one), Self::Written(other)) => one < other,
+            (Self::Sampled(one), Self::Sampled(other)) => one < other,
+            (Self::Written(_), Self::Sampled(_)) | (Self::Sampled(_), Self::Written(_)) => false,
+        }
+    }
 }
 
 impl Default for CueStart {
@@ -138,6 +147,7 @@ impl CueFile {
         let start = track.start.at(rate);
 
         let span = match self.tracks.get(index + 1) {
+            Some(next) if next.start.at(rate) < start => return None,
             Some(next) => FrameSpan::between(start, next.start.at(rate)),
             None => FrameSpan::starting(start),
         };
@@ -151,6 +161,19 @@ impl CueFile {
         self.audio_tracks()
             .map(|(_, track)| track)
             .find(|track| track.start.at(rate) == start)
+    }
+
+    pub(crate) fn heard_from_the_head(&mut self) {
+        let Some(first) = self.tracks.first_mut() else {
+            return;
+        };
+        if first.kind != CueTrackKind::Audio {
+            return;
+        }
+        first.start = match first.start {
+            CueStart::Written(_) => CueStart::Written(CueStamp::default()),
+            CueStart::Sampled(_) => CueStart::Sampled(Frames::ZERO),
+        };
     }
 
     pub fn audio_tracks(&self) -> impl Iterator<Item = (usize, &CueTrack)> {
@@ -364,6 +387,7 @@ enum Indexed {
     Not,
     Provisionally,
     AtTheFirst,
+    Unreadably,
 }
 
 impl Reading {
@@ -394,7 +418,7 @@ impl Reading {
     fn file(&mut self, rest: &str) {
         let named = quoted(strip_file_type(rest));
         let crossing = match self.indexed {
-            Indexed::AtTheFirst => None,
+            Indexed::AtTheFirst | Indexed::Unreadably => None,
             Indexed::Not | Indexed::Provisionally if named.is_empty() => None,
             Indexed::Not | Indexed::Provisionally => self.open.take(),
         };
@@ -447,11 +471,14 @@ impl Reading {
             return;
         };
         let Some(stamp) = fields.next().and_then(CueStamp::read) else {
+            if number == FIRST_INDEX && self.indexed != Indexed::AtTheFirst {
+                self.indexed = Indexed::Unreadably;
+            }
             return;
         };
 
         self.indexed = match (number, self.indexed) {
-            (1, _) => Indexed::AtTheFirst,
+            (FIRST_INDEX, _) => Indexed::AtTheFirst,
             (_, Indexed::Not) => Indexed::Provisionally,
             _ => return,
         };
@@ -523,6 +550,22 @@ impl Reading {
         let Some(file) = self.files.last_mut() else {
             return;
         };
+        if self.indexed == Indexed::Unreadably {
+            tracing::debug!(
+                track = track.number,
+                "a cue track whose first index does not read is left out"
+            );
+            return;
+        }
+        if let Some(before) = file.tracks.last()
+            && track.start.is_before(before.start)
+        {
+            tracing::debug!(
+                track = track.number,
+                "a cue track starting before the one ahead of it is left out"
+            );
+            return;
+        }
         if file.tracks.len() >= MOST_TRACKS {
             if !self.dropped {
                 tracing::warn!(
@@ -541,8 +584,12 @@ impl Reading {
 
         let album = self.album;
         let mut files = self.files;
+        let total = files
+            .iter()
+            .map(|file| file.audio_tracks().count())
+            .sum::<usize>() as u32;
         for file in &mut files {
-            let total = file.tracks.len() as u32;
+            file.heard_from_the_head();
             for track in &mut file.tracks {
                 let number = track.number;
                 settle(&mut track.tags, &album, total);
@@ -611,10 +658,7 @@ fn closing_quote(rest: &str) -> Option<usize> {
     if !rest.starts_with('"') {
         return None;
     }
-    rest.char_indices()
-        .skip(1)
-        .find(|(_, held)| *held == '"')
-        .map(|(at, _)| at)
+    rest.rfind('"').filter(|at| *at > 0)
 }
 
 fn quoted(value: &str) -> String {
@@ -622,7 +666,7 @@ fn quoted(value: &str) -> String {
     let Some(rest) = value.strip_prefix('"') else {
         return value.to_owned();
     };
-    match rest.split_once('"') {
+    match rest.rsplit_once('"') {
         Some((held, _)) => held.to_owned(),
         None => rest.to_owned(),
     }
@@ -800,13 +844,14 @@ FILE "Meddle.flac" WAVE
         let sheet = read(
             b"FILE \"a.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n TRACK 02 AUDIO\n  INDEX 01 5000000000000000:00:00\n",
         );
-        assert!(
+        assert_eq!(
             sheet.files[0]
                 .tracks
                 .iter()
-                .all(|track| track.start == CueStart::Written(CueStamp::default())),
-            "a stamp past what a minute count holds was read: {:?}",
-            sheet.files[0].tracks
+                .map(|track| (track.number, track.start))
+                .collect::<Vec<_>>(),
+            vec![(1, CueStart::Written(CueStamp::default()))],
+            "a stamp past what a minute count holds was read"
         );
 
         let longest = CueStamp::new(u32::MAX, 59, 74);
@@ -945,6 +990,125 @@ FILE "Meddle.flac" WAVE
 
         assert_eq!(sheet.encoding, TextEncoding::Utf16Le);
         assert_eq!(sheet.files[0].named, "Écoute.flac");
+    }
+
+    #[test]
+    fn a_sheet_of_one_file_a_track_counts_every_audio_track_it_names() {
+        let sheet = read(
+            b"FILE \"01.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n\
+              FILE \"02.flac\" WAVE\n TRACK 02 AUDIO\n  INDEX 01 00:00:00\n\
+              FILE \"03.flac\" WAVE\n TRACK 03 AUDIO\n  INDEX 01 00:00:00\n\
+              FILE \"disc.bin\" BINARY\n TRACK 04 MODE1/2352\n  INDEX 01 00:00:00\n",
+        );
+
+        let totals = sheet
+            .files
+            .iter()
+            .flat_map(|file| &file.tracks)
+            .map(|track| (track.number, track.tags.track_total))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            totals,
+            vec![(1, Some(3)), (2, Some(3)), (3, Some(3)), (4, Some(3))]
+        );
+    }
+
+    #[test]
+    fn a_track_whose_first_index_does_not_read_is_left_out_rather_than_overlapping() {
+        let sheet = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 00 03:58:00\n    INDEX 01 04:0x:00\n  TRACK 03 AUDIO\n    INDEX 01 08:00:00\n",
+        );
+        let file = &sheet.files[0];
+
+        assert_eq!(
+            file.tracks
+                .iter()
+                .map(|track| track.number)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(file.tracks[0].tags.track_total, Some(2));
+        assert_eq!(
+            file.span_of(0, SampleRate::HZ_44100, None)
+                .and_then(FrameSpan::end),
+            Some(CueStamp::new(8, 0, 0).at(SampleRate::HZ_44100))
+        );
+    }
+
+    #[test]
+    fn a_track_starting_before_the_one_ahead_of_it_is_left_out() {
+        let sheet = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 05:00:00\n  TRACK 03 AUDIO\n    INDEX 01 03:00:00\n  TRACK 04 AUDIO\n    TITLE \"Never indexed\"\n  TRACK 05 AUDIO\n    INDEX 01 07:00:00\n",
+        );
+        let file = &sheet.files[0];
+
+        assert_eq!(
+            file.tracks
+                .iter()
+                .map(|track| track.number)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 5]
+        );
+    }
+
+    #[test]
+    fn a_span_whose_next_track_starts_earlier_is_refused_rather_than_turned_round() {
+        let file = CueFile {
+            named: "one.flac".to_owned(),
+            tracks: vec![
+                CueTrack {
+                    start: CueStart::Sampled(Frames(44_100)),
+                    ..CueTrack::default()
+                },
+                CueTrack {
+                    start: CueStart::Sampled(Frames(10)),
+                    ..CueTrack::default()
+                },
+            ],
+        };
+
+        assert_eq!(file.span_of(0, SampleRate::HZ_44100, None), None);
+    }
+
+    #[test]
+    fn audio_before_the_first_index_of_a_file_is_the_first_tracks() {
+        let hidden = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 03:25:12\n  TRACK 02 AUDIO\n    INDEX 01 07:00:00\n",
+        );
+        assert_eq!(
+            hidden.files[0].tracks[0].start,
+            CueStart::Written(CueStamp::default())
+        );
+
+        let prepended = read(
+            b"FILE \"01.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"02.flac\" WAVE\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:10\n",
+        );
+        assert_eq!(
+            prepended.files[1].tracks[0].start,
+            CueStart::Written(CueStamp::default()),
+            "the gap at the head of a file belonged to no row"
+        );
+
+        let mixed = read(
+            b"FILE \"disc.bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:10:00\n",
+        );
+        assert_eq!(
+            mixed.files[0].tracks[1].start,
+            CueStart::Written(CueStamp::new(0, 10, 0))
+        );
+    }
+
+    #[test]
+    fn a_value_carrying_quotes_of_its_own_is_read_to_its_last_quote() {
+        let sheet = read(
+            b"TITLE \"The \"Real\" Album\"\nFILE \"The \"Real\" Thing.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"The \"Real\" Thing\"\n    PERFORMER Unquoted Artist\n    INDEX 01 00:00:00\n",
+        );
+        let track = &sheet.files[0].tracks[0];
+
+        assert_eq!(sheet.files[0].named, "The \"Real\" Thing.flac");
+        assert_eq!(track.tags.title.as_deref(), Some("The \"Real\" Thing"));
+        assert_eq!(track.tags.album.as_deref(), Some("The \"Real\" Album"));
+        assert_eq!(track.tags.artist.as_deref(), Some("Unquoted Artist"));
     }
 
     #[test]

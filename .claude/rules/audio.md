@@ -500,6 +500,18 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   track, never scanned. `Reading::file` carries a track that has not reached its `INDEX 01` across the
   `FILE` line with its start put back to the head of the new file, so the gap stays at the end of the
   track before and each file is one whole row.
+- **What a sheet cannot place is left out, and what it does not name is the first track's.** A track
+  whose `INDEX 01` does not read (`Indexed::Unreadably`) is dropped at its close rather than starting
+  at the head of the file over track 1, and so is a track starting before the one ahead of it in its
+  file — out of order, or never indexed after a track that was — so no two rows of one file overlap;
+  `CueFile::span_of` refuses a next track starting earlier rather than letting `FrameSpan::between`
+  turn the pair round, the block reader keeping no such order. `CueFile::heard_from_the_head` starts
+  a file's first track at its head wherever it is audio, so a hidden track before track 1's
+  `INDEX 01` and the gap a "gaps prepended" rip puts at the head of each file play as part of the
+  track they lead into rather than belonging to no row; both readers call it. `track_total` is the
+  audio tracks of the whole sheet, so a sheet of one `FILE` a track bills each as one of twelve and a
+  data track is not counted. A quoted value runs to the *last* quote on its line, so EAC's
+  `TITLE "The "Real" Thing"` and a `FILE` name holding quotes read whole.
 - **A cue sheet is read as far as it parses and never fails.** An unknown command is skipped (as
   `lrc.rs` skips a bracket neither moment nor id tag), and rubbish yields a sheet naming nothing. Only
   the source and the `LARGEST_CUE_SHEET` ceiling (1 MiB) raise a `codec::Error`. Text is decoded by

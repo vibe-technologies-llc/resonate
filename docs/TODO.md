@@ -23,14 +23,8 @@ service or a format — and is not worked until that moves; everything else is o
   card here offers 48 kHz alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- A `.cue`'s `track_total` counts the rows of each `FILE`, so a sheet of one `FILE` per track
-  bills every row as one of one, and a data track is counted with the audio
-- A cue track whose `INDEX 01` will not parse starts at nothing and overlaps track 1 rather than
-  being refused, and `FrameSpan::between` reads a start past the next track's the other way round
-- `INDEX 00` is thrown away, so audio before track 1's `INDEX 01` belongs to no row and a pregap
-  plays as the tail of the row before it
-- A quoted cue value is cut at its first inner quote, so EAC's `TITLE "The "Real" Thing"` reads
-  as `The `
+- `INDEX 00` is thrown away, so a pregap between two tracks of one file plays as the tail of the row
+  before it
 - A sheet that is neither UTF-8 nor UTF-16 with a mark is read as Windows-1252, so a CP1251, GBK,
   Shift-JIS or Big5 `.cue` arrives as mojibake; a UTF-16 playlist sheet is refused outright, and
   RIFF `INFO` strings, EqualizerAPO profiles and lyric sidecars are read as UTF-8 alone

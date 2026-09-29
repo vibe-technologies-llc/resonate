@@ -172,10 +172,12 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
         at = past;
     }
 
-    Some(CueFile {
+    let mut cut = CueFile {
         named: String::new(),
         tracks,
-    })
+    };
+    cut.heard_from_the_head();
+    Some(cut)
 }
 
 fn cue_track(record: &[u8], points: &[u8], lead_out: u8) -> CueTrack {
@@ -413,6 +415,25 @@ mod tests {
             cut.tracks[1].start,
             CueStart::Sampled(Frames(15_773_100 + 88_200))
         );
+    }
+
+    #[test]
+    fn audio_ahead_of_the_first_tracks_first_index_is_the_first_tracks() {
+        let mut tracks = meddle();
+        tracks[0].points.insert(
+            0,
+            Point {
+                offset: 0,
+                number: 0,
+            },
+        );
+        tracks[0].points[1].offset = 9_000_000;
+
+        let cut = found(flac(&[(CUESHEET, cuesheet(&tracks, None))]))
+            .cue
+            .expect("an embedded sheet");
+
+        assert_eq!(cut.tracks[0].start, CueStart::Sampled(Frames::ZERO));
     }
 
     #[test]
