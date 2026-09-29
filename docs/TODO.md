@@ -1,63 +1,72 @@
 # Roadmap
 
 Categories run from most to least important. Everything under a `Later:` heading is a nice-to-have
-that no listener is waiting on, and is worked only once the categories above it are quiet.
+that no listener is waiting on, and is worked only once the categories above it are quiet. An item
+marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
+service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Playback and output
-- A device with no volume of its own is still turned by the stream, so anything under 100 % leaves
-  bit-perfect there
-- Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and
-  so does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
+- **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
+  anything under 100 % leaves bit-perfect there
+- Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
+  does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
   ring's depth
-- A stream's reported delay misses the frames in buffers it has already queued — `pw_time.queued`
-  has no safe setter in pipewire-rs 0.10 — so the position and the visualiser's frame are short by
-  up to one cycle
-- `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
-  the same one; a per-device rate is the driver node's own clock, which the registry publishes
-  nowhere
+- **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already
+  queued — `pw_time.queued` has no safe setter in pipewire-rs 0.10 — so the position and the
+  visualiser's frame are short by up to one cycle
+- **Blocked on PipeWire:** `SinkInfo::current_rate` is the graph-wide rate from the settings
+  metadata, so every sink reports the same one; a per-device rate is the driver node's own clock,
+  which the registry publishes nowhere
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
-- Nothing has proved a forced graph rate change against hardware — the only card here offers 48 kHz
-  alone — nor DoP against a DAC that decodes it
+- **Blocked on hardware:** Nothing has proved a forced graph rate change against hardware — the only
+  card here offers 48 kHz alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- A 32-bit stereo Monkey's Audio — integers or floats — is refused, because `ape-decoder` narrows
-  the side channel to 32 bits before undoing it
-- A `.wvc` correction file beside a hybrid WavPack is never opened, so the file plays and is billed
-  as lossy: `symphonia-codec-wavpack` 0.1.1 reads a held zero's correction from the wrong range,
-  and applying one waits on the crate being fixed upstream
-- A file embedding a huge picture still costs one materialisation, because symphonia reads it into
-  a buffer of its own before `probe_cover_art` can weigh it
-- Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead` reader
+- **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
+  because `ape-decoder` narrows the side channel to 32 bits before undoing it
+- **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is
+  never opened, so the file plays and is billed as lossy: `symphonia-codec-wavpack` 0.1.1 reads a
+  held zero's correction from the wrong range, and applying one waits on the crate being fixed
+  upstream
+- **Blocked on symphonia:** A file embedding a huge picture still costs one materialisation, because
+  symphonia reads it into a buffer of its own before `probe_cover_art` can weigh it
+- **Blocked on symphonia:** Opus mapping families 2, 3 and 255 are refused by symphonia's `OpusHead`
+  reader
 
 ## Performance and scale
-- Every frame the visualiser or the lyrics pane asks for is a whole-window paint on the GPU;
-  gpui draws the scene whole, so only a newer gpui avoids it
+- **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
+  paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
 
 ## Library
-- A cue row exported to PLS is its whole file, the format having no word for a region
+- **Blocked on the format:** A cue row exported to PLS is its whole file, the format having no word
+  for a region
 
 ## Identification
 - An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
   measured the same as its source by every spectral feature `analysis.md` lists, and no FhG encode
   was weighed
-- AcoustID has never been reached with a real key; its fixture is written from the documentation
+- **Blocked on a registered key:** AcoustID has never been reached with a real key; its fixture is
+  written from the documentation
 
 ## Search
-- A lyric reaches only a row the catalog holds; no keyless service indexes lyric text
+- **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
+  lyric text
 
 ## Testing
 - *Take this name* is checked by eye alone: driving it wants a recognition the catalog holds, which
   no fake fingerprinter hands the analysis pane yet
-- A microphone recording has not been proved against real sound reaching a microphone
+- **Blocked on hardware:** A microphone recording has not been proved against real sound reaching a
+  microphone
 
 ## Later: Sources and providers
-- The service links an `Identity` carries are read by nothing: no provider asks Tidal, Bandcamp or
-  Discogs, whose pages the links name
+- **Blocked on the services:** The service links an `Identity` carries are read by nothing: no
+  provider asks Tidal, Bandcamp or Discogs, whose pages the links name
 
 ## Later: The vault
-- `flacenc` 0.5.1 caps the Rice parameter at 14, the rate at 96 kHz and the depth at 24 bits, so a
-  24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz rip is never a FLAC
+- **Blocked on `flacenc`:** `flacenc` 0.5.1 caps the Rice parameter at 14, the rate at 96 kHz and
+  the depth at 24 bits, so a 24-bit rip loses to `flac -8` by some 15 % and is kept, and a 192 kHz
+  rip is never a FLAC
 
 ## Later: Tagging and organising
 - A cue-cut row is never written, and an album landed as a release group gets no totals
@@ -66,25 +75,28 @@ that no listener is waiting on, and is worked only once the categories above it 
 ## Later: Equaliser and DSP extras
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
-- A downmix folds by position alone: a `Discrete(n)` source is truncated one for one, and a
-  stream's own downmix coefficients are not read
-- Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
-  1 024-frame window, and leaves the first second and a half of an unstudied track unextended
+- A downmix folds by position alone: a `Discrete(n)` source is truncated one for one, and a stream's
+  own downmix coefficients are not read
+- Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its 1
+  024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- When a line goes out is guessed from how long its text is wherever the sheet gives it no end —
-  an LRC never does, only a Lyricsfile — so a held note can be put out under the dots early
-- `Lyrics` holds no translation beside the original, and no source says which singer owns a line:
-  a second voice is read off overlapping lines alone, and a third is folded onto the two
+- **Blocked on the format:** When a line goes out is guessed from how long its text is wherever the
+  sheet gives it no end — an LRC never does, only a Lyricsfile — so a held note can be put out under
+  the dots early
+- **Blocked on the sources:** `Lyrics` holds no translation beside the original, and no source says
+  which singer owns a line: a second voice is read off overlapping lines alone, and a third is
+  folded onto the two
 
 ## Later: Listen and recognition
 - Listen records one clip and asks once; nothing listens again on a miss or follows a stream from
   song to song
-- Shazam is reached through an undocumented endpoint, so a change on its side stops recognition
+- **Blocked on Shazam:** Shazam is reached through an undocumented endpoint, so a change on its side
+  stops recognition
 
 ## Later: Visualiser
-- The spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at
-  20 kHz at every rate
+- The spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at 20 kHz
+  at every rate
 - The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
 - The plot opens empty for up to a buffer's depth, because the tap runs only while the pane is in
   front
@@ -103,5 +115,6 @@ that no listener is waiting on, and is worked only once the categories above it 
   made the edit
 
 ## Later: Packaging
-- gpui pulls `stacksafe` and with it `proc-macro-error2`, whose `E0365` future-incompatibility
-  warning becomes a hard error in a future rustc. Only a `[patch]` or a newer gpui fixes it
+- **Blocked on gpui:** gpui pulls `stacksafe` and with it `proc-macro-error2`, whose `E0365`
+  future-incompatibility warning becomes a hard error in a future rustc. Only a `[patch]` or a newer
+  gpui fixes it
