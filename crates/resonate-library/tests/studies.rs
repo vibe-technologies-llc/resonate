@@ -927,6 +927,56 @@ fn a_file_that_changed_forgets_its_study_and_is_studied_again() -> Result<()> {
 }
 
 #[test]
+fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_asked_again()
+-> Result<()> {
+    let tree = Tree::new();
+    let sound = song(21_700.0, 6, &[(TITLE, "Broken"), (ARTIST, "Ada")]);
+    let path = tree.write("broken.wav", &sound);
+    let library = scanned(&tree)?;
+    let stamped = fs::metadata(&path)
+        .and_then(|held| held.modified())
+        .expect("the file's mtime");
+    let laid_down = |bytes: &[u8]| {
+        fs::write(&path, bytes).expect("a writable temporary file");
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(stamped))
+            .expect("the mtime is put back");
+    };
+    let location = MediaLocation::local(&path);
+
+    laid_down(&vec![0; sound.len()]);
+    let failed = enriched(&library, Silent::new(), Fingerprinters::none())?;
+    assert_eq!(failed.stats.studied, 0);
+    assert!(library.study_of(&location, None)?.is_none());
+
+    laid_down(&sound);
+    let again = enriched(&library, Silent::new(), Fingerprinters::none())?;
+    assert_eq!(
+        again.stats.studied, 0,
+        "a track that would not decode was decoded again"
+    );
+
+    let refreshed = library
+        .enrich(
+            Arc::new(Silent::new()),
+            Arc::new(Fingerprinters::none()),
+            EnrichOptions {
+                refresh: true,
+                ..EnrichOptions::default()
+            },
+        )?
+        .join()?;
+    assert_eq!(
+        refreshed.stats.studied, 1,
+        "asking again did not study it again"
+    );
+    assert!(library.study_of(&location, None)?.is_some());
+    Ok(())
+}
+
+#[test]
 fn a_vaulted_row_whose_file_has_gone_is_studied_out_of_its_object() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

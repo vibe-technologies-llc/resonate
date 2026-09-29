@@ -3343,6 +3343,16 @@ impl Library {
             .write(|transaction| studies::write_study(transaction, track, study, SystemTime::now()))
     }
 
+    pub(crate) fn note_unstudied(&self, track: TrackId) -> Result<()> {
+        self.inner
+            .write(|transaction| studies::write_unstudied(transaction, track))
+    }
+
+    pub(crate) fn will_not_study(&self, track: TrackId) -> Result<bool> {
+        self.inner
+            .read(|connection| studies::will_not_study(connection, track))
+    }
+
     pub fn take_what_was_heard(&self, track: TrackId) -> Result<Option<HeardAs>> {
         self.inner.write(|transaction| {
             enriched::land_what_was_heard(transaction, track, SystemTime::now())

@@ -42,8 +42,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Performance and scale
 - Undo snapshots every row of a playlist for each edit that moves rows, so one row added to a
   100 000-row playlist reads all of them under the write lock
-- A track that will not decode is decoded again by every lookup, because a failed study writes no
-  row
 - An unmeasured track is decoded whole again on every `SetReplayGain`, `SetLevelling` and
   `SetTruePeak`, because `Measured::Unmeasured` is not remembered
 - The vault's FLAC path has no early out: a 24-bit rip that will lose is encoded whole, read back

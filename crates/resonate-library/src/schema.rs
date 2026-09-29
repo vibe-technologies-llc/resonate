@@ -102,6 +102,18 @@ const MIGRATIONS: &[&str] = &[
         SET picture_id = (SELECT p.id FROM retagged_pictures p WHERE p.picture = retagged.picture),
             picture = NULL
       WHERE picture IS NOT NULL;",
+    "CREATE TABLE unstudied (
+         track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+         under    INTEGER NOT NULL
+     ) STRICT;
+     CREATE TRIGGER unstudied_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM unstudied WHERE track_id = new.id;
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

@@ -1780,6 +1780,13 @@ impl Pass<'_> {
     }
 
     fn studied_now(&self, track: &TrackToAsk) -> Option<Chromaprint> {
+        match self.library.will_not_study(track.id) {
+            Ok(true) => return None,
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(%error, track = %track.id, "whether a track would study could not be read");
+            }
+        }
         let study = match resonate_analysis::study(
             &self.library.sources(),
             &track.location,
@@ -1787,8 +1794,10 @@ impl Pass<'_> {
             self.progress,
         ) {
             Ok(study) => study,
+            Err(resonate_analysis::Error::Stopped) => return None,
             Err(error) => {
                 tracing::debug!(%error, track = %track.id, "a track could not be studied to be fingerprinted");
+                studies::unstudied(self.library, track.id);
                 return None;
             }
         };

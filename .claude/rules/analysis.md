@@ -197,7 +197,13 @@ change, since a stored study is weighed against it.
   `Agreement`. `track_studies_forget_a_changed_file` deletes the row wherever an update moves size,
   mtime or span, so the next lookup studies the file again; a rescan of an unchanged file keeps it.
   A trigger rather than an upsert clause, because every path rewriting those columns is then
-  covered by existing.
+  covered by existing. **A study that fails is kept as failed.** A track that will not decode wrote
+  no row, so every lookup decoded it again; `unstudied` holds its id under the `JUDGED_UNDER` it
+  failed at, `to_study` passes it over and the fingerprint route (`Library::will_not_study`) asks
+  nothing of it, until `unstudied_forget_a_changed_file` — the same trigger on the same columns —
+  sees the file change, `JUDGED_UNDER` moves, or a `refresh` asks every track again; a study that
+  lands takes the mark away. A stopped study is not a failure and leaves none
+  (`a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_asked_again`).
 - **The enrichment studies every track beside the pass.** `Studies` is a pool of
   `available_parallelism / 2` threads (at least one) named `resonate-study-<n>`, drawing off one
   shared counter, started before the pass and joined after the pictures. `to_study` is every track

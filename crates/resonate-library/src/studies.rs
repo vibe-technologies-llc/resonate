@@ -239,7 +239,29 @@ pub(crate) fn write_study(
         ],
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    tx.prepare_cached("DELETE FROM unstudied WHERE track_id = ?1")
+        .and_then(|mut statement| statement.execute(params![track.get() as i64]))
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
     Ok(())
+}
+
+pub(crate) fn write_unstudied(tx: &Transaction<'_>, track: TrackId) -> Result<()> {
+    tx.prepare_cached("INSERT OR REPLACE INTO unstudied (track_id, under) VALUES (?1, ?2)")
+        .and_then(|mut statement| {
+            statement.execute(params![track.get() as i64, i64::from(JUDGED_UNDER)])
+        })
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    Ok(())
+}
+
+pub(crate) fn will_not_study(connection: &Connection, track: TrackId) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM unstudied WHERE track_id = ?1 AND under = ?2)",
+            params![track.get() as i64, i64::from(JUDGED_UNDER)],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub(crate) fn write_recognition(
@@ -420,9 +442,11 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
             "SELECT t.id, t.path, t.span_start, t.span_frames,
                     s.track_id IS NOT NULL AND s.studied_under = ?1, s.print, s.print_length
                FROM tracks t LEFT JOIN track_studies s ON s.track_id = t.id
-              WHERE s.track_id IS NULL
-                 OR s.studied_under != ?1
-                 OR (s.print IS NOT NULL AND (s.recognised IS NULL OR ?2))
+              WHERE (s.track_id IS NULL
+                     OR s.studied_under != ?1
+                     OR (s.print IS NOT NULL AND (s.recognised IS NULL OR ?2)))
+                AND (?2 OR NOT EXISTS (SELECT 1 FROM unstudied u
+                                        WHERE u.track_id = t.id AND u.under = ?1))
               ORDER BY t.id",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -609,6 +633,7 @@ fn studied_now(
         Err(resonate_analysis::Error::Stopped) => return None,
         Err(error) => {
             tracing::debug!(%error, location = %asked.location, "a track could not be studied");
+            unstudied(library, asked.id);
             return None;
         }
     };
@@ -618,6 +643,12 @@ fn studied_now(
     }
     progress.note_studied(study.judgement.verdict);
     Some(study.print)
+}
+
+pub(crate) fn unstudied(library: &Library, track: TrackId) {
+    if let Err(error) = library.note_unstudied(track) {
+        tracing::warn!(%error, %track, "a study that failed was not kept as failed");
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
