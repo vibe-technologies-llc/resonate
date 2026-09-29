@@ -12,6 +12,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, Silence, StreamSpec};
@@ -19,10 +20,20 @@ use resonate_pipewire::AudioSource;
 
 const FAULT_SLOTS: usize = 64;
 
+pub const FADED_OVER: Duration = Duration::from_millis(10);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entering {
+    Whole,
+    FadedIn,
+}
+
 pub fn ring(
     spec: StreamSpec,
     capacity: Frames,
     silence: Silence,
+    fade: Frames,
+    entering: Entering,
 ) -> (RingProducer, RingConsumer, RingMonitor) {
     let bytes_per_frame = spec.bytes_per_frame();
     let bytes = spec.frames_to_bytes(capacity) as usize;
@@ -32,7 +43,14 @@ pub fn ring(
     let starved = Arc::new(AtomicU64::new(0));
     let discard = Discard::default();
     let hold = Hold::default();
+    let fader = Fader::default();
+    fader.over.store(fade.get().max(1), Ordering::Release);
     let prime = bytes / bytes_per_frame.get() as usize / 2;
+    let fades = matches!(silence, Silence::Unmarked) && fade > Frames::ZERO;
+    let level = match entering {
+        Entering::FadedIn if fades => SILENT,
+        Entering::Whole | Entering::FadedIn => WHOLE,
+    };
 
     (
         RingProducer {
@@ -40,6 +58,7 @@ pub fn ring(
             bytes_per_frame,
             discard: discard.clone(),
             hold: hold.clone(),
+            fader: fader.clone(),
             requested: 0,
         },
         RingConsumer {
@@ -47,6 +66,10 @@ pub fn ring(
             bytes_per_frame,
             discard,
             hold,
+            fader,
+            format: spec.format,
+            fades,
+            level,
             seen: 0,
             silent: false,
             silence,
@@ -75,21 +98,51 @@ struct Discard {
 
 #[derive(Clone, Default)]
 struct Hold {
-    held: Arc<AtomicBool>,
     lead_in: Arc<AtomicU64>,
 }
+
+#[derive(Clone, Default)]
+struct Fader {
+    silenced: Arc<AtomicBool>,
+    over: Arc<AtomicU64>,
+    quiet: Arc<AtomicBool>,
+    pulls: Arc<AtomicU64>,
+}
+
+const WHOLE: f64 = 1.0;
+const SILENT: f64 = 0.0;
 
 pub struct RingProducer {
     inner: rtrb::Producer<u8>,
     bytes_per_frame: NonZeroU32,
     discard: Discard,
     hold: Hold,
+    fader: Fader,
     requested: u64,
 }
 
 impl RingProducer {
-    pub fn hold(&self, held: bool) {
-        self.hold.held.store(held, Ordering::Release);
+    pub fn fade_out(&self, over: Frames) {
+        self.fader.over.store(over.get().max(1), Ordering::Release);
+        self.fader.silenced.store(true, Ordering::Release);
+    }
+
+    pub fn fade_in(&self, over: Frames) {
+        self.fader.over.store(over.get().max(1), Ordering::Release);
+        self.fader.quiet.store(false, Ordering::Release);
+        self.fader.silenced.store(false, Ordering::Release);
+    }
+
+    pub fn is_fading_out(&self) -> bool {
+        self.fader.silenced.load(Ordering::Acquire)
+    }
+
+    pub fn is_quiet(&self) -> bool {
+        self.fader.quiet.load(Ordering::Acquire)
+    }
+
+    pub fn pulls(&self) -> u64 {
+        self.fader.pulls.load(Ordering::Relaxed)
     }
 
     pub fn lead_in(&self, frames: Frames) {
@@ -146,6 +199,10 @@ pub struct RingConsumer {
     bytes_per_frame: NonZeroU32,
     discard: Discard,
     hold: Hold,
+    fader: Fader,
+    format: SampleFormat,
+    fades: bool,
+    level: f64,
     seen: u64,
     silent: bool,
     silence: Silence,
@@ -160,12 +217,23 @@ impl RingConsumer {
         self.inner.slots() / self.bytes_per_frame.get() as usize
     }
 
+    fn discard_is_asked(&self) -> bool {
+        self.discard.requested.load(Ordering::Acquire) != self.seen
+    }
+
+    fn fades_before_the_discard(&self) -> bool {
+        self.fades && !self.silent && self.level > SILENT && self.available_frames() > 0
+    }
+
     fn apply_discard(&mut self) {
         let requested = self.discard.requested.load(Ordering::Acquire);
         if requested == self.seen {
             return;
         }
         self.seen = requested;
+        if self.fades {
+            self.level = SILENT;
+        }
         self.silent = true;
 
         if let Ok(stale) = self.inner.read_chunk(self.inner.slots()) {
@@ -175,9 +243,6 @@ impl RingConsumer {
     }
 
     fn held(&self, frames: usize) -> bool {
-        if self.hold.held.load(Ordering::Acquire) {
-            return true;
-        }
         let lead = self.hold.lead_in.load(Ordering::Acquire);
         if lead == 0 {
             return false;
@@ -252,12 +317,21 @@ impl RingConsumer {
 
 impl AudioSource for RingConsumer {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
+        self.fader.pulls.fetch_add(1, Ordering::Relaxed);
+        if self.discard_is_asked() && self.fades_before_the_discard() {
+            return self.fade_into_the_discard(dst);
+        }
         self.apply_discard();
         if self.held(dst.len() / self.stride()) {
             return self.hush(dst);
         }
         if self.refilling() {
             return self.pad(dst);
+        }
+        let silenced = self.fader.silenced.load(Ordering::Acquire);
+        if silenced && (!self.fades || self.level <= SILENT) {
+            self.fader.quiet.store(true, Ordering::Release);
+            return self.hush(dst);
         }
 
         let stride = self.stride();
@@ -267,12 +341,19 @@ impl AudioSource for RingConsumer {
         };
 
         let wanted = rest.len() / stride;
-        let frames = wanted.min(self.available_frames());
+        let most = if silenced {
+            self.frames_until_silent()
+        } else {
+            wanted
+        };
+        let frames = wanted.min(self.available_frames()).min(most);
         let Some(whole) = rest.get_mut(..frames.saturating_mul(stride)) else {
             return spliced;
         };
 
         let (popped, _) = self.inner.pop_partial_slice(whole);
+        let target = if silenced { SILENT } else { WHOLE };
+        self.ramp(popped, target);
         let taken = popped.len() / stride;
         let filled = spliced.saturating_add(popped.len());
         if let Some(last) = popped
@@ -283,6 +364,13 @@ impl AudioSource for RingConsumer {
             self.silence.follows(last);
         }
 
+        if silenced && self.level <= SILENT {
+            self.fader.quiet.store(true, Ordering::Release);
+            return match dst.get_mut(filled..) {
+                Some(gap) => filled.saturating_add(self.hush(gap)),
+                None => filled,
+            };
+        }
         if taken == wanted {
             return filled;
         }
@@ -297,6 +385,80 @@ impl AudioSource for RingConsumer {
         match dst.get_mut(filled..) {
             Some(gap) => filled.saturating_add(self.pad(gap)),
             None => filled,
+        }
+    }
+}
+
+impl RingConsumer {
+    fn step(&self) -> f64 {
+        WHOLE / self.fader.over.load(Ordering::Acquire).max(1) as f64
+    }
+
+    fn frames_until_silent(&self) -> usize {
+        (self.level / self.step()).ceil() as usize
+    }
+
+    fn fade_into_the_discard(&mut self, dst: &mut [u8]) -> usize {
+        let stride = self.stride();
+        let frames = (dst.len() / stride)
+            .min(self.available_frames())
+            .min(self.frames_until_silent());
+        let faded = match dst.get_mut(..frames.saturating_mul(stride)) {
+            Some(whole) => {
+                let (popped, _) = self.inner.pop_partial_slice(whole);
+                self.ramp(popped, SILENT);
+                popped.len()
+            }
+            None => 0,
+        };
+        if self.level <= SILENT || self.available_frames() == 0 {
+            self.apply_discard();
+        }
+        match dst.get_mut(faded..) {
+            Some(gap) => faded.saturating_add(self.hush(gap)),
+            None => faded,
+        }
+    }
+
+    fn ramp(&mut self, frames: &mut [u8], target: f64) {
+        if !self.fades {
+            return;
+        }
+        let step = self.step();
+        let stride = self.stride();
+        for frame in frames.chunks_exact_mut(stride) {
+            if self.level >= WHOLE && target >= WHOLE {
+                return;
+            }
+            self.level = if target > self.level {
+                (self.level + step).min(target)
+            } else {
+                (self.level - step).max(target)
+            };
+            scale(frame, self.format, self.level);
+        }
+    }
+}
+
+fn scale(frame: &mut [u8], format: SampleFormat, level: f64) {
+    match format {
+        SampleFormat::S16 => {
+            for sample in frame.as_chunks_mut::<2>().0 {
+                let scaled = (f64::from(i16::from_ne_bytes(*sample)) * level).round() as i16;
+                *sample = scaled.to_ne_bytes();
+            }
+        }
+        SampleFormat::S24 | SampleFormat::S32 => {
+            for sample in frame.as_chunks_mut::<4>().0 {
+                let scaled = (f64::from(i32::from_ne_bytes(*sample)) * level).round() as i32;
+                *sample = scaled.to_ne_bytes();
+            }
+        }
+        SampleFormat::F32 => {
+            for sample in frame.as_chunks_mut::<4>().0 {
+                let scaled = (f64::from(f32::from_ne_bytes(*sample)) * level) as f32;
+                *sample = scaled.to_ne_bytes();
+            }
         }
     }
 }
@@ -345,6 +507,24 @@ mod tests {
     use super::*;
 
     const DOP_SILENT_PAIR: [u8; 2] = [0x69, 0x69];
+    const UNFADED: Frames = Frames::ZERO;
+    const FADED_OVER: Frames = Frames(4);
+
+    fn steady(frames: usize) -> AudioBuffer {
+        let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), frames);
+        if let SampleData::S16(store) = buffer.data_mut() {
+            store.fill(1_000);
+        }
+        buffer
+    }
+
+    fn left_of(sunk: &[u8]) -> Vec<i16> {
+        sunk.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|frame| i16::from_ne_bytes([frame[0], frame[1]]))
+            .collect()
+    }
 
     fn spec(format: SampleFormat) -> StreamSpec {
         StreamSpec::new(SampleRate::HZ_44100, ChannelLayout::Stereo, format)
@@ -378,8 +558,13 @@ mod tests {
 
     #[test]
     fn capacity_is_reported_in_frames_not_bytes() {
-        let (producer, consumer, _) =
-            ring(spec(SampleFormat::S24), Frames(1024), Silence::Unmarked);
+        let (producer, consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(1024),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
 
         assert_eq!(producer.free_frames(), 1024);
         assert_eq!(consumer.available_frames(), 0);
@@ -393,7 +578,13 @@ mod tests {
             ChannelLayout::Stereo,
             SampleFormat::F32,
         );
-        let (producer, consumer, _) = ring(spec, Frames(256), Silence::Unmarked);
+        let (producer, consumer, _) = ring(
+            spec,
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         drop(consumer);
         assert!(producer.is_abandoned());
     }
@@ -407,8 +598,13 @@ mod tests {
             SampleFormat::F32,
         ] {
             let source = ramp(format, 128);
-            let (mut producer, mut consumer, _) =
-                ring(spec(format), Frames(256), Silence::Unmarked);
+            let (mut producer, mut consumer, _) = ring(
+                spec(format),
+                Frames(256),
+                Silence::Unmarked,
+                UNFADED,
+                Entering::Whole,
+            );
 
             assert_eq!(producer.write(&source), 128);
 
@@ -421,8 +617,13 @@ mod tests {
     #[test]
     fn a_write_that_does_not_fit_stops_on_a_frame_boundary() {
         let source = ramp(SampleFormat::S16, 100);
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S16), Frames(64), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
 
         let written = producer.write(&source);
         assert!(written < 100);
@@ -436,8 +637,13 @@ mod tests {
     #[test]
     fn write_from_resumes_where_the_previous_write_stopped() {
         let source = ramp(SampleFormat::S32, 200);
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S32), Frames(64), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S32),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
 
         let mut written = 0;
         let mut sunk = Vec::new();
@@ -453,8 +659,13 @@ mod tests {
 
     #[test]
     fn a_short_read_raises_exactly_one_underrun_and_counts_what_was_missing() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S16), Frames(64), Silence::Unmarked);
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 10));
 
         let mut sunk = vec![0_u8; 32 * 4];
@@ -467,8 +678,13 @@ mod tests {
 
     #[test]
     fn a_full_read_raises_nothing() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S16), Frames(64), Silence::Unmarked);
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 32));
 
         let mut sunk = vec![0_u8; 32 * 4];
@@ -479,8 +695,13 @@ mod tests {
 
     #[test]
     fn faults_beyond_the_queues_depth_are_counted_rather_than_lost() {
-        let (_producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S16), Frames(64), Silence::Unmarked);
+        let (_producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
 
         let mut sunk = vec![0_u8; 4];
         for _ in 0..FAULT_SLOTS + 10 {
@@ -507,8 +728,13 @@ mod tests {
 
     #[test]
     fn what_a_starve_cost_is_counted_and_the_end_of_a_track_is_not_a_starve() {
-        let (mut producer, mut consumer, faults) =
-            ring(spec(SampleFormat::S16), Frames(64), Silence::Unmarked);
+        let (mut producer, mut consumer, faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 10));
 
         let mut sunk = vec![0_u8; 32 * 4];
@@ -532,8 +758,13 @@ mod tests {
 
     #[test]
     fn a_discard_drops_what_the_consumer_has_not_read_and_nothing_the_producer_writes_after() {
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 128));
 
         producer.discard_buffered();
@@ -553,8 +784,13 @@ mod tests {
 
     #[test]
     fn a_ring_refilling_after_a_discard_plays_silence_rather_than_a_stutter() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 200));
         producer.discard_buffered();
 
@@ -574,30 +810,120 @@ mod tests {
     }
 
     #[test]
-    fn a_held_ring_feeds_the_graph_silence_and_keeps_every_frame_it_holds() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
-        producer.write(&ramp(SampleFormat::S16, 64));
-        producer.hold(true);
-
-        let mut sunk = vec![0xff_u8; 32 * 4];
-        assert_eq!(consumer.fill(&mut sunk), sunk.len());
-        assert!(
-            sunk.iter().all(|byte| *byte == 0),
-            "a held ring played sound"
+    fn a_ring_faded_out_ramps_to_silence_then_keeps_every_frame_it_still_holds() {
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
         );
-        assert_eq!(consumer.available_frames(), 64);
+        producer.write(&steady(64));
+        producer.fade_out(FADED_OVER);
 
-        producer.hold(false);
+        let mut sunk = vec![0xff_u8; 8 * 4];
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
-        assert_eq!(consumer.available_frames(), 32);
+        assert_eq!(left_of(&sunk), vec![750, 500, 250, 0, 0, 0, 0, 0]);
+        assert!(producer.is_quiet());
+        assert_eq!(consumer.available_frames(), 60);
+
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert!(left_of(&sunk).iter().all(|sample| *sample == 0));
+        assert_eq!(consumer.available_frames(), 60, "a quiet ring played on");
+
+        producer.fade_in(FADED_OVER);
+        assert!(!producer.is_quiet());
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(
+            left_of(&sunk),
+            vec![250, 500, 750, 1_000, 1_000, 1_000, 1_000, 1_000]
+        );
         assert_eq!(faults.next_fault(), None);
     }
 
     #[test]
+    fn a_seek_fades_out_what_the_ring_held_and_fades_in_what_follows() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
+        );
+        producer.write(&steady(128));
+        producer.discard_buffered();
+
+        let mut sunk = vec![0xff_u8; 8 * 4];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(left_of(&sunk), vec![750, 500, 250, 0, 0, 0, 0, 0]);
+        assert!(!producer.is_discarding());
+
+        assert_eq!(producer.write(&steady(128)), 128);
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(
+            left_of(&sunk),
+            vec![250, 500, 750, 1_000, 1_000, 1_000, 1_000, 1_000]
+        );
+    }
+
+    #[test]
+    fn a_ring_entering_mid_track_fades_in_and_one_entering_whole_does_not() {
+        for (entering, opens_on) in [(Entering::FadedIn, 250), (Entering::Whole, 1_000)] {
+            let (mut producer, mut consumer, _) = ring(
+                spec(SampleFormat::S16),
+                Frames(64),
+                Silence::Unmarked,
+                FADED_OVER,
+                entering,
+            );
+            producer.write(&steady(16));
+
+            let mut sunk = vec![0_u8; 4 * 4];
+            consumer.fill(&mut sunk);
+            assert_eq!(left_of(&sunk).first().copied(), Some(opens_on));
+        }
+    }
+
+    #[test]
+    fn a_marked_ring_is_never_scaled_and_goes_quiet_on_its_markers() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            FADED_OVER,
+            Entering::FadedIn,
+        );
+        let carried = dop(16, 0);
+        producer.write(&carried);
+
+        let mut sunk = vec![0_u8; 8 * 8];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(sunk, carried.as_bytes()[..sunk.len()]);
+
+        producer.fade_out(FADED_OVER);
+        let mut hushed = vec![0_u8; 4 * 8];
+        assert_eq!(consumer.fill(&mut hushed), hushed.len());
+        assert!(producer.is_quiet());
+        assert_eq!(
+            consumer.available_frames(),
+            8,
+            "a marked ring played on when faded"
+        );
+        assert!(
+            hushed.iter().any(|byte| *byte != 0),
+            "a marked ring went quiet on zeros"
+        );
+    }
+
+    #[test]
     fn a_lead_in_is_silence_before_the_first_frame_and_then_the_ring_plays() {
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 64));
         producer.lead_in(Frames(48));
 
@@ -618,8 +944,13 @@ mod tests {
 
     #[test]
     fn a_tail_shorter_than_the_priming_mark_still_reaches_the_graph() {
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.discard_buffered();
 
         let mut sunk = vec![0_u8; 32 * 4];
@@ -633,8 +964,13 @@ mod tests {
 
     #[test]
     fn a_marked_ring_refilling_after_a_discard_carries_its_markers_through_the_gap() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S24), Frames(256), marked());
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S24, 200));
         producer.discard_buffered();
 
@@ -672,7 +1008,13 @@ mod tests {
 
     #[test]
     fn a_marked_ring_keeps_its_parity_across_the_callbacks_of_one_gap() {
-        let (mut producer, mut consumer, _) = ring(spec(SampleFormat::S24), Frames(256), marked());
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+        );
         producer.discard_buffered();
 
         let mut first = vec![0_u8; 8];
@@ -731,8 +1073,13 @@ mod tests {
 
     #[test]
     fn a_marked_ring_starved_mid_track_covers_the_gap_rather_than_handing_over_a_short_chunk() {
-        let (mut producer, mut consumer, mut faults) =
-            ring(spec(SampleFormat::S24), Frames(256), marked());
+        let (mut producer, mut consumer, mut faults) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&dop(8, 0));
 
         let mut sunk = vec![0_u8; 16 * 8];
@@ -752,7 +1099,13 @@ mod tests {
 
     #[test]
     fn a_marked_ring_at_the_end_of_a_track_hands_over_the_short_chunk_it_holds() {
-        let (mut producer, mut consumer, _) = ring(spec(SampleFormat::S24), Frames(256), marked());
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&dop(8, 0));
         producer.finish();
 
@@ -766,7 +1119,13 @@ mod tests {
 
     #[test]
     fn audio_spliced_back_after_a_starve_lands_on_the_marker_that_follows() {
-        let (mut producer, mut consumer, _) = ring(spec(SampleFormat::S24), Frames(256), marked());
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&dop(8, 0));
 
         let mut first = vec![0_u8; 15 * 8];
@@ -793,8 +1152,13 @@ mod tests {
 
     #[test]
     fn an_unmarked_ring_starved_mid_track_is_handed_over_exactly_as_it_was() {
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S16), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.write(&ramp(SampleFormat::S16, 8));
 
         let mut sunk = vec![0xAA_u8; 16 * 4];
@@ -807,8 +1171,13 @@ mod tests {
 
     #[test]
     fn an_unmarked_ring_leaves_the_prime_window_to_the_graph() {
-        let (mut producer, mut consumer, _) =
-            ring(spec(SampleFormat::S24), Frames(256), Silence::Unmarked);
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+        );
         producer.discard_buffered();
 
         let mut sunk = vec![0xAA_u8; 32 * 8];

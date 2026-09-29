@@ -22,12 +22,13 @@ use resonate_core::{
 };
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
-    EngineConfig, Equalisation, Error as EngineError, Event, Frequency, HardwareVolume, Hinting,
-    Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement, PlaybackState,
-    Player, Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem, Reading,
-    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words, stamp_of,
+    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, HardwareVolume,
+    Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement,
+    PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, ProfileIndex, Q, QueueItem,
+    Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats,
+    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words,
+    stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -683,6 +684,36 @@ fn wait_for(player: &Player, mut ready: impl FnMut(&Player) -> bool, what: &str)
     panic!("timed out waiting for {what}; {}", transport(player));
 }
 
+fn heard_as_faded_in(played: &[u8], expected: &[u8]) -> bool {
+    let stride = frame_bytes(SampleFormat::S16);
+    let Some(expected) = expected.get(..played.len()) else {
+        return false;
+    };
+    let Some(from) = played
+        .iter()
+        .zip(expected)
+        .position(|(one, other)| one != other)
+    else {
+        return true;
+    };
+    let from = from / stride * stride;
+    let faded = Frames::from_duration(FADED_OVER, SampleRate::HZ_44100).get() as usize * stride;
+    let until = (from + faded).min(played.len());
+    let samples = |bytes: &[u8]| -> Vec<i16> {
+        bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|sample| i16::from_le_bytes(*sample))
+            .collect()
+    };
+    let no_louder = samples(&played[from..until])
+        .iter()
+        .zip(samples(&expected[from..until]))
+        .all(|(heard, written)| heard.unsigned_abs() <= written.unsigned_abs());
+    no_louder && played[until..] == expected[until..]
+}
+
 fn transport(player: &Player) -> String {
     let state = player.state();
     format!(
@@ -1205,7 +1236,13 @@ fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<(
         &player,
         &graph,
         BLOCK_FRAMES * stride,
-        |_, graph| graph.played.ends_with(tail),
+        |_, graph| {
+            graph
+                .played
+                .len()
+                .checked_sub(tail.len())
+                .is_some_and(|from| heard_as_faded_in(&graph.played[from..], tail))
+        },
         "the audio after the seek to play",
     );
 
@@ -1406,7 +1443,7 @@ fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() 
 
     let tail = source.stream.split_at(target.get() as usize * stride).1;
     assert!(
-        tail.starts_with(&played),
+        heard_as_faded_in(&played, tail),
         "the audio waiting for the graph was not the audio at the seek target"
     );
     Ok(())
@@ -1460,7 +1497,7 @@ fn a_pause_caught_between_a_seek_and_the_graph_rebuilds_the_ring_rather_than_par
 
     let tail = source.stream.split_at(target.get() as usize * stride).1;
     assert!(
-        tail.starts_with(&played),
+        heard_as_faded_in(&played, tail),
         "the ring a pause caught mid-seek did not hold the audio at the seek target"
     );
     Ok(())
@@ -1509,7 +1546,7 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
     assert_eq!(player.state().current.map(|track| track.id.get()), Some(1));
     let played = graph.lock().played.clone();
     assert!(
-        source.stream.starts_with(&played),
+        heard_as_faded_in(&played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
     );
     assert!(
@@ -2314,7 +2351,7 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
     assert!(plays(&player, 1), "{}", transport(&player));
     neither_failed_nor_finished(&player);
     assert!(
-        source.stream.starts_with(&graph.lock().played),
+        heard_as_faded_in(&graph.lock().played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
     );
     Ok(())
@@ -4970,9 +5007,11 @@ fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
     );
 
     let graph = graph.lock();
-    assert_eq!(
-        &graph.played[..tail],
-        &source.stream[source.stream.len() - tail..],
+    assert!(
+        heard_as_faded_in(
+            &graph.played[..tail],
+            &source.stream[source.stream.len() - tail..]
+        ),
         "a resumed track handed the graph bytes from somewhere other than where it was left"
     );
     Ok(())
@@ -5268,6 +5307,145 @@ fn a_sleep_timer_pauses_the_transport_when_its_time_is_out() -> Result<()> {
         "the sleep timer dropped the track rather than pausing it"
     );
     assert_eq!(graph.lock().opens, 1, "the sleep timer reopened the stream");
+    Ok(())
+}
+
+fn left_channel(played: &[u8]) -> Vec<i32> {
+    played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|frame| i32::from(i16::from_le_bytes([frame[0], frame[1]])))
+        .collect()
+}
+
+fn largest_step(samples: &[i32]) -> i32 {
+    samples
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .max()
+        .unwrap_or_default()
+}
+
+fn a_steady_level_playing(level: i16) -> Result<(Player, Arc<Mutex<Graph>>)> {
+    let tree = Tree::new();
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * 6));
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= 4_096 * frame_bytes(SampleFormat::S16),
+        "the steady level to play",
+    );
+    Ok((player, graph))
+}
+
+#[test]
+fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
+    let level = 16_000_i16;
+    let (player, graph) = a_steady_level_playing(level)?;
+    let pull = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
+
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        pull,
+        |_, graph| !graph.active,
+        "the graph to stand down once the level had faded out",
+    );
+    let paused_at = graph.lock().played.len();
+    let faded_out = left_channel(&graph.lock().played);
+
+    player.request(Command::Play)?.wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        pull,
+        |_, graph| graph.played.len() >= paused_at + 2_048 * frame_bytes(SampleFormat::S16),
+        "the level to come back",
+    );
+    let heard = left_channel(&graph.lock().played);
+
+    assert_eq!(
+        faded_out.last().copied(),
+        Some(0),
+        "the pause cut rather than faded"
+    );
+    assert!(
+        largest_step(&faded_out) < 64,
+        "the pause stepped the level by {}",
+        largest_step(&faded_out)
+    );
+    assert_eq!(heard.last().copied(), Some(i32::from(level)));
+    assert!(
+        largest_step(&heard) < 64,
+        "the level stepped by {} where it came back",
+        largest_step(&heard)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
+    let (player, graph) = a_steady_level_playing(16_000)?;
+
+    player.request(Command::Stop)?.wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.closes == 1,
+        "the stream to close once the level had faded out",
+    );
+    let heard = left_channel(&graph.lock().played);
+
+    assert_eq!(
+        heard.last().copied(),
+        Some(0),
+        "the stop cut rather than faded"
+    );
+    assert!(
+        largest_step(&heard) < 64,
+        "the stop stepped the level by {}",
+        largest_step(&heard)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
+    let (player, graph) = a_steady_level_playing(16_000)?;
+
+    player
+        .request(Command::SleepUntil(Some(Until::After(A_SHORT_DOZE))))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| paused(player),
+        "the sleep timer to pause the transport",
+    );
+    let heard = left_channel(&graph.lock().played);
+
+    assert_eq!(
+        heard.last().copied(),
+        Some(0),
+        "the timer cut the music rather than faded it"
+    );
+    assert!(
+        largest_step(&heard) < 16,
+        "the timer's fade stepped the level by {}",
+        largest_step(&heard)
+    );
     Ok(())
 }
 

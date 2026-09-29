@@ -707,18 +707,45 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   is `on`, a `lead` and an `awake_for` — the `bluetooth-wake`, `bluetooth-lead-ms` and
   `bluetooth-awake-s` keys, the Output category's *Bluetooth* group — and touches only a sink
   `SinkInfo::is_bluetooth` names (a `bluez_output.` or `bluez_sink.` node). Two things change there.
-  **A pause holds the ring rather than the stream**: `RingProducer::hold` makes the consumer feed the
-  graph real silence — zeros for PCM, the marked word for DoP — without consuming a frame, the stream
-  stays active and the link up, and `Output::awake_since` says since when; Play lets go and is heard at
-  once, and once `awake_for` has passed `let_the_link_rest` stands the stream down as a pause always
+  **A pause fades the ring out rather than standing the stream down**: the fade every pause takes (below)
+  ends with the consumer feeding the graph real silence — zeros for PCM, the marked word for DoP —
+  without consuming a frame, the stream stays active and the link up, and `Output::awake_since` says
+  since when; Play fades back in and is heard at once, and once `awake_for` has passed `let_the_link_rest` stands the stream down as a pause always
   did, so the headphones still sleep, `budget` waking the loop for that moment. **A stream starting on
   a link that has slept opens on silence**: `RingProducer::lead_in` hands the consumer a count of
   frames to pad before reading the ring, spent a callback at a time, so the clock stays at the start
   until the lead is out and nothing of the track plays into a waking link. Whether the link slept is
   `Engine::sounded` — the sink and the last moment a stream on it was active or held, noted every pass
   — against `LINK_NAPS_AFTER`, so a track change, reopening within milliseconds, pays no lead and no
-  gap. `a_held_ring_feeds_the_graph_silence_and_keeps_every_frame_it_holds` and
+  gap. `a_ring_faded_out_ramps_to_silence_then_keeps_every_frame_it_still_holds` and
   `a_lead_in_is_silence_before_the_first_frame_and_then_the_ring_plays` are the ring's claims.
+- **Nothing the listener does cuts the waveform where it stands; it fades over `FADED_OVER`.**
+  Deactivating a stream, closing it or dropping what the ring holds stops the music mid-cycle and
+  resumes it on a sample that is not zero, a click each time. The fade has to be the consumer's,
+  the ring already holding up to `buffer-ms` of rendered audio when a pause arrives: `Fader` is
+  shared by the ring's two ends, the producer asking for silence or sound (`fade_out`, `fade_in`, the
+  frames a whole fade takes) and the consumer walking its `level` toward it a frame at a time,
+  scaling the popped samples in their own format (`scale`: `i16`, the `i32` a 24- or 32-bit sample
+  sits in, `f32`), popping no further than the frames the fade needs and then feeding silence
+  without consuming, and saying so through `is_quiet`. Away from a fade the level is exactly one and
+  nothing is touched, so a stream is bit for bit what it was. A DoP ring is never scaled — a marker
+  multiplied is noise — and goes quiet at once on its marked silence. **Pause** asks for silence and
+  stands the stream down once the consumer is quiet (`finish_fading`), or once `quiet_within` has
+  passed — the fade and two sink latencies, between 40 and 400 ms — where the graph never pulled to
+  hear it; **Play** asks for sound again and activates. **Stop, a track change and every rebind**
+  retire the output rather than closing it: it fades out as `Engine::retiring` and is closed once
+  quiet, and `promote` opens no new stream until it is, the client holding one playback stream at a
+  time — a hand-picked track starts a fade's length later rather than on a click. **A seek in place**
+  fades the old audio out before the consumer drops it (`fade_into_the_discard`) and the new audio
+  back in as the refill starts playing. **A stream opened mid-track** — a rebind at a position, a
+  seek the ring could not take, a resumption — opens `Entering::FadedIn`; one opened at a track's
+  start opens whole, so a gapless run and a bit-perfect first frame are untouched. Only a stream the
+  graph is actually pulling fades: the consumer counts its pulls and `Output::is_sounding` wants one
+  within `PULLED_WITHIN` (250 ms), so a paused, primed or starved stream closes at once rather than
+  waiting on a fade nobody hears. `a_pause_fades_the_level_out_and_a_play_fades_it_back_in`,
+  `a_stop_fades_the_level_out_before_the_stream_closes`,
+  `a_seek_fades_out_what_the_ring_held_and_fades_in_what_follows` and
+  `a_marked_ring_is_never_scaled_and_goes_quiet_on_its_markers` are the claims.
 - **A seek does not reopen the stream.** rtrb gives the producer no way to drop what the consumer has
   not read, so the ring carries a discard epoch: the engine bumps it and stops writing, the graph
   thread drains every slot it holds on its next callback and acknowledges, and only then does the
@@ -1117,7 +1144,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   engine is never at rest, so the 1 s `AT_REST_TICK` never applies). The end-of variants need no clock,
   only the edges in `skip` — and the wrap is the one that would be missed, `advance` never answering
   `None` under `RepeatMode::Queue`, so `Queue::wraps_next` reads the same two fields `advance` decides
-  the wrap from, the question living beside the decision. The timer outlives a track change, a seek, a
+  the wrap from, the question living beside the decision. **It fades the music out over its last
+  `SLEEP_FADES_OVER` (10 s)** rather than stopping it on a beat: `sleep_is_due_in` answers what is
+  left of a delay, or of the track where it ends the track or ends the queue on its last row
+  (`Queue::ends_with_this_row`) with a known length, and once that is inside the ten seconds
+  `fade_toward_sleep` asks the ring for silence over exactly what is left, so the pause lands on
+  quiet. A timer cancelled or pushed back mid-fade brings the level back; a track change mid-fade
+  opens whole and is faded again over what remains
+  (`a_sleep_timer_fades_the_music_out_before_it_pauses`). The timer outlives a track change, a seek, a
   pause and a new load: it is a timer on the listener, not the transport. A delay is held to
   `LONGEST_SLEEP`, a day, as it is set, so a `SetSleep` of `u64::MAX` seconds or a minute count
   `resonate sleep` saturated reads back as a day rather than an `Instant` overflowing on the engine

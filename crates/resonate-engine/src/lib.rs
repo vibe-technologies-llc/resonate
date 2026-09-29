@@ -62,7 +62,7 @@ pub use crate::{
     },
     player::Player,
     queue::{Placement, QueueItem, Queued, Unclaimed, stamp_of, unclaimed_id},
-    ring::{RingConsumer, RingMonitor, RingProducer, ring},
+    ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     sleep::{Asleep, Until},
     state::{
         Event, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, Seeks,

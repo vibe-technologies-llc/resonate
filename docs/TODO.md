@@ -11,8 +11,6 @@ service or a format — and is not worked until that moves; everything else is o
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
   ring's depth
-- Pause, stop, a seek and the sleep timer cut the waveform where it stands and resume from a sample
-  that is not zero, so each can click; nothing fades, and the sleep timer does not fade out
 - **Blocked on pipewire-rs:** A stream's reported delay misses the frames in buffers it has already
   queued — `pw_time.queued` has no safe setter in pipewire-rs 0.10 — so the position and the
   visualiser's frame are short by up to one cycle

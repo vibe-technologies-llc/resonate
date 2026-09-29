@@ -498,6 +498,13 @@ impl Queue {
             && self.after >= self.order.len()
     }
 
+    pub fn ends_with_this_row(&self) -> bool {
+        self.repeat == RepeatMode::Off
+            && self.seat != Seat::Nowhere
+            && self.waiting().is_empty()
+            && self.after >= self.order.len()
+    }
+
     pub fn advance(&mut self, natural: bool) -> Option<usize> {
         if self.seat == Seat::Nowhere {
             return None;

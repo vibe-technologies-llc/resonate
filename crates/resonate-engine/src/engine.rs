@@ -31,7 +31,7 @@ use crate::{
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{Queue, QueueItem, Queued, Removal},
-    ring::{RingConsumer, RingMonitor, RingProducer, ring},
+    ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     surveying::{Surveyed, Surveying},
 };
 
@@ -56,6 +56,10 @@ const FILLED_IN_ONE_GO: Duration = Duration::from_millis(20);
 const EVENTS_OWED_AT_MOST: usize = 1_024;
 const UNDERRUNS_TOLD_EVERY: Duration = Duration::from_secs(1);
 const LINK_NAPS_AFTER: Duration = Duration::from_secs(3);
+const QUIET_WITHIN_AT_LEAST: Duration = Duration::from_millis(40);
+const QUIET_WITHIN_AT_MOST: Duration = Duration::from_millis(400);
+const SLEEP_FADES_OVER: Duration = Duration::from_secs(10);
+const PULLED_WITHIN: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filled {
@@ -285,6 +289,15 @@ struct Output {
     silent_until: Option<Instant>,
     discarding_since: Option<Instant>,
     settles_into: Option<OutputPlan>,
+    active: bool,
+    quietening_since: Option<Instant>,
+    sleep_fading: bool,
+    last_pulled: Option<(u64, Instant)>,
+}
+
+struct Retiring {
+    output: Output,
+    since: Instant,
 }
 
 fn chosen_sink<'s>(sinks: &'s [SinkInfo], named: Option<&NodeName>) -> Option<&'s SinkInfo> {
@@ -302,6 +315,7 @@ impl Output {
         config: &EngineConfig,
         target: Option<StreamSpec>,
         listening: &Arc<AtomicBool>,
+        entering: Entering,
     ) -> Result<Self> {
         let source = track.source();
         let decoded = track.decoded();
@@ -328,7 +342,9 @@ impl Output {
             })?;
 
         let capacity = ring_capacity(config.buffer, plan.stream, chain.max_process_frames());
-        let (producer, consumer, monitor) = ring(plan.stream, capacity, plan.silence());
+        let fade = Frames::from_duration(FADED_OVER, plan.stream.rate);
+        let (producer, consumer, monitor) =
+            ring(plan.stream, capacity, plan.silence(), fade, entering);
 
         let widened = vec![0.0; CHAIN_BLOCK * source.channel_count().get() as usize];
         let carrier = vec![0.0; carried_samples(&chain, plan.stream)];
@@ -377,7 +393,49 @@ impl Output {
             silent_until: None,
             discarding_since: None,
             settles_into: None,
+            active: false,
+            quietening_since: None,
+            sleep_fading: false,
+            last_pulled: None,
         })
+    }
+
+    fn fade(&self) -> Frames {
+        Frames::from_duration(FADED_OVER, self.plan.stream.rate)
+    }
+
+    fn quiet_within(&self) -> Duration {
+        let behind = self.latency().to_duration(self.plan.stream.rate);
+        (FADED_OVER + behind * 2).clamp(QUIET_WITHIN_AT_LEAST, QUIET_WITHIN_AT_MOST)
+    }
+
+    fn has_gone_quiet(&self, since: Instant) -> bool {
+        self.producer.is_quiet() || since.elapsed() >= self.quiet_within()
+    }
+
+    fn note_the_pulls(&mut self) {
+        let pulls = self.producer.pulls();
+        if self.last_pulled.is_none_or(|(seen, _)| seen != pulls) {
+            self.last_pulled = Some((pulls, Instant::now()));
+        }
+    }
+
+    fn is_sounding(&self) -> bool {
+        self.active
+            && self.stream.is_some()
+            && !self.producer.is_quiet()
+            && self
+                .last_pulled
+                .is_some_and(|(pulls, at)| pulls > 0 && at.elapsed() < PULLED_WITHIN)
+    }
+
+    fn activate(&mut self, active: bool) -> Result<()> {
+        let Some(stream) = self.stream.as_ref() else {
+            return Ok(());
+        };
+        stream.set_active(active)?;
+        self.active = active;
+        Ok(())
     }
 
     fn take_chain(&mut self, chain: Chain, plan: OutputPlan) -> OutputStatus {
@@ -535,6 +593,7 @@ pub struct Engine {
     transport: TransportState,
     track: Option<Track>,
     output: Option<Output>,
+    retiring: Option<Retiring>,
     unbound: Option<Frames>,
     rebind_owed: bool,
     graph_lost: Option<Instant>,
@@ -650,6 +709,7 @@ impl Engine {
             transport: TransportState::Idle,
             track: None,
             output: None,
+            retiring: None,
             unbound: None,
             rebind_owed: false,
             graph_lost: None,
@@ -691,6 +751,7 @@ impl Engine {
                 self.watch_discard();
                 self.pump();
                 self.finish_reshaping();
+                self.finish_fading();
                 self.promote();
                 self.collect_faults();
                 self.poll_stream();
@@ -713,6 +774,7 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.close();
         }
+        self.close_what_was_retiring();
         if let Some(surveying) = self.surveying.as_mut() {
             surveying.stop();
         }
@@ -757,7 +819,13 @@ impl Engine {
             }
         };
 
+        let budget = if self.is_fading() {
+            budget.min(FADED_OVER)
+        } else {
+            budget
+        };
         let budget = match self.sleep.and_then(Sleeping::left) {
+            Some(left) if left > SLEEP_FADES_OVER => budget.min(left - SLEEP_FADES_OVER),
             Some(left) => budget.min(left),
             None => budget,
         };
@@ -765,6 +833,14 @@ impl Engine {
             Some(left) => budget.min(left),
             None => budget,
         }
+    }
+
+    fn is_fading(&self) -> bool {
+        self.retiring.is_some()
+            || self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.quietening_since.is_some())
     }
 
     fn kept_awake_for(&self) -> Option<Duration> {
@@ -825,16 +901,14 @@ impl Engine {
             return;
         }
         output.awake_since = None;
-        if let Some(stream) = output.stream.as_ref()
-            && let Err(error) = stream.set_active(false)
-        {
+        if let Err(error) = output.activate(false) {
             tracing::warn!(%error, "the stream kept awake would not stand down");
         }
-        output.producer.hold(false);
     }
 
     fn at_rest(&self) -> bool {
         if self.playing
+            || self.is_fading()
             || self.sleep.is_some()
             || self.graph_lost.is_some()
             || self.stale_sinks
@@ -1125,12 +1199,14 @@ impl Engine {
             }
             Command::SleepUntil(until) => {
                 self.sleep = until.map(Sleeping::set);
+                self.wake_from_the_sleep_fade();
                 Ok(())
             }
         }
     }
 
     fn doze(&mut self) {
+        self.fade_toward_sleep();
         if !self.sleep.is_some_and(Sleeping::is_out) {
             return;
         }
@@ -1140,6 +1216,59 @@ impl Engine {
         }
         if let Err(error) = self.pause() {
             tracing::warn!(%error, "the sleep timer could not pause the transport");
+        }
+    }
+
+    fn sleep_is_due_in(&self) -> Option<Duration> {
+        let sleeping = self.sleep?;
+        if let Some(left) = sleeping.left() {
+            return Some(left);
+        }
+        let ends_here = sleeping.ends_the_track()
+            || (sleeping.ends_the_queue() && self.queue.ends_with_this_row());
+        if !ends_here {
+            return None;
+        }
+        let track = self.track.as_ref()?;
+        let left = track.info.duration?.saturating_sub(self.position());
+        Some(left.to_duration(track.info.spec.rate))
+    }
+
+    fn fade_toward_sleep(&mut self) {
+        let Some(left) = self
+            .sleep_is_due_in()
+            .filter(|left| *left <= SLEEP_FADES_OVER)
+        else {
+            return;
+        };
+        let playing = self.playing;
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        output.note_the_pulls();
+        if !playing || output.sleep_fading || !output.is_sounding() {
+            return;
+        }
+        output.sleep_fading = true;
+        output
+            .producer
+            .fade_out(Frames::from_duration(left, output.plan.stream.rate));
+    }
+
+    fn wake_from_the_sleep_fade(&mut self) {
+        if self
+            .sleep_is_due_in()
+            .is_some_and(|left| left <= SLEEP_FADES_OVER)
+        {
+            return;
+        }
+        let playing = self.playing;
+        let Some(output) = self.output.as_mut().filter(|output| output.sleep_fading) else {
+            return;
+        };
+        output.sleep_fading = false;
+        if playing {
+            output.producer.fade_in(output.fade());
         }
     }
 
@@ -1234,11 +1363,13 @@ impl Engine {
         if self.transport == TransportState::Paused {
             self.transport = TransportState::Playing;
         }
-        if let Some(output) = self.output.as_mut()
-            && output.awake_since.take().is_some()
-        {
-            output.producer.hold(false);
-            return Ok(());
+        if let Some(output) = self.output.as_mut() {
+            output.producer.fade_in(output.fade());
+            output.quietening_since = None;
+            output.sleep_fading = false;
+            if output.awake_since.take().is_some() {
+                return Ok(());
+            }
         }
         self.wake_the_link();
         self.set_active(true)
@@ -1259,35 +1390,81 @@ impl Engine {
         if self.transport == TransportState::Playing {
             self.transport = TransportState::Paused;
         }
-        if self.keeps_the_link_awake()
-            && let Some(output) = self.output.as_mut()
-        {
-            output.producer.hold(true);
+        let keeps_the_link_awake = self.keeps_the_link_awake();
+        let Some(output) = self.output.as_mut() else {
+            return Ok(());
+        };
+        output.note_the_pulls();
+        output.producer.fade_out(output.fade());
+        if keeps_the_link_awake {
             output.awake_since = Some(Instant::now());
             return Ok(());
         }
-        self.set_active(false)
+        if output.is_sounding() {
+            output.quietening_since = Some(Instant::now());
+            return Ok(());
+        }
+        output.activate(false)
     }
 
     fn set_active(&mut self, active: bool) -> Result<()> {
-        let Some(stream) = self
-            .output
-            .as_ref()
-            .and_then(|output| output.stream.as_ref())
-        else {
+        let Some(output) = self.output.as_mut() else {
             return Ok(());
         };
-        stream.set_active(active)?;
-        Ok(())
+        output.activate(active)
+    }
+
+    fn retire_the_output(&mut self) {
+        let Some(mut output) = self.output.take() else {
+            return;
+        };
+        output.note_the_pulls();
+        self.close_what_was_retiring();
+        if !output.is_sounding() {
+            output.close();
+            return;
+        }
+        output.producer.fade_out(output.fade());
+        self.retiring = Some(Retiring {
+            output,
+            since: Instant::now(),
+        });
+    }
+
+    fn close_what_was_retiring(&mut self) {
+        if let Some(mut retiring) = self.retiring.take() {
+            retiring.output.close();
+        }
+    }
+
+    fn finish_fading(&mut self) {
+        let retired = self
+            .retiring
+            .as_ref()
+            .is_some_and(|retiring| retiring.output.has_gone_quiet(retiring.since));
+        if retired {
+            self.close_what_was_retiring();
+        }
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        output.note_the_pulls();
+        let quiet = output
+            .quietening_since
+            .is_some_and(|since| output.has_gone_quiet(since));
+        if !quiet {
+            return;
+        }
+        output.quietening_since = None;
+        if let Err(error) = output.activate(false) {
+            tracing::warn!(%error, "the stream would not stand down once it had faded out");
+        }
     }
 
     fn stop(&mut self) {
         self.playing = false;
         self.failures = 0;
-        if let Some(output) = self.output.as_mut() {
-            output.close();
-        }
-        self.output = None;
+        self.retire_the_output();
         self.track = None;
         self.opening = None;
         self.unbound = None;
@@ -1512,10 +1689,7 @@ impl Engine {
             return Err(Error::QueueEmpty);
         };
 
-        if let Some(output) = self.output.as_mut() {
-            output.close();
-        }
-        self.output = None;
+        self.retire_the_output();
         self.track = None;
         self.opening = None;
         self.heard_at_least = None;
@@ -1604,10 +1778,7 @@ impl Engine {
             return Ok(());
         }
         let resumes_at = at.unwrap_or_else(|| self.position());
-        if let Some(output) = self.output.as_mut() {
-            output.close();
-        }
-        self.output = None;
+        self.retire_the_output();
 
         let bound = self.bind(at, target);
         if bound.is_err() && self.track.is_some() {
@@ -1638,12 +1809,18 @@ impl Engine {
         let Some(track) = self.track.as_ref() else {
             return Ok(());
         };
+        let entering = if at.unwrap_or_else(|| track.decoder.position()) > Frames::ZERO {
+            Entering::FadedIn
+        } else {
+            Entering::Whole
+        };
         let output = Output::open(
             track,
             &sink,
             &self.config,
             target,
             &self.published.listening,
+            entering,
         )?;
 
         let delivery = output.plan.delivery();
@@ -2121,7 +2298,7 @@ impl Engine {
         let Some(output) = self.output.as_ref() else {
             return;
         };
-        if output.stream.is_some() || !output.primed() {
+        if output.stream.is_some() || !output.primed() || self.retiring.is_some() {
             return;
         }
 
@@ -2154,11 +2331,16 @@ impl Engine {
 
         match self.backend.open(&request, Box::new(consumer)) {
             Ok(stream) => {
-                if let Err(error) = stream.set_active(self.playing) {
-                    tracing::warn!(%error, "the stream would not take its initial active state");
-                }
+                let active = match stream.set_active(self.playing) {
+                    Ok(()) => self.playing,
+                    Err(error) => {
+                        tracing::warn!(%error, "the stream would not take its initial active state");
+                        false
+                    }
+                };
                 if let Some(output) = self.output.as_mut() {
                     output.stream = Some(stream);
+                    output.active = active;
                 }
                 self.transport = if self.playing {
                     TransportState::Playing

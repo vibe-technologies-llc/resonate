@@ -33,8 +33,9 @@ Inside the RT module and everything it calls:
   exhaustively with no arm for a fault that cannot arrive.
 
 Three modules are the RT path, each with that `#![deny(...)]` list at its head:
-`resonate-engine/src/ring.rs`, what the graph pulls from; `resonate-pipewire/src/process.rs`, the
-callback itself — the playback `Cycle` and the capture `Hearing`, which reads each quantum's chunk by
+`resonate-engine/src/ring.rs`, what the graph pulls from — its fader scales samples in place through
+`as_chunks_mut`, never indexing, and takes its fade length and target from atomics;
+`resonate-pipewire/src/process.rs`, the callback itself — the playback `Cycle` and the capture `Hearing`, which reads each quantum's chunk by
 its own offset and size and hands the bytes to an `AudioSink`; and `resonate-listen/src/recording.rs`,
 the `AudioSink` a recording is kept in — a preallocated run of `AtomicU32` holding f32 bits and an
 atomic count, filled with `Relaxed` stores and published with one `Release`, so a quantum is taken
