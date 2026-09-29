@@ -350,6 +350,7 @@ pub enum SinkChange {
     DefaultChanged,
     Turned(SinkId),
     Switched(SinkId),
+    Reformatted(SinkId),
 }
 
 #[cfg(test)]

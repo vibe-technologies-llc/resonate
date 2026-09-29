@@ -14,7 +14,7 @@ use std::{
 use crossbeam_channel::{Receiver, Sender, bounded};
 use libspa::{
     param::{
-        ParamType,
+        ParamInfoFlags, ParamType,
         audio::{AudioInfoRaw, MAX_CHANNELS},
     },
     pod::{Object, Pod, Value, deserialize::PodDeserializer, serialize::PodSerializer},
@@ -166,9 +166,19 @@ struct SinkRecord {
     device: Option<u32>,
     seat: Option<i32>,
     formats: BTreeMap<u32, Vec<SinkFormats>>,
+    format_serial: Option<bool>,
 }
 
 impl SinkRecord {
+    fn formats_moved(&mut self, serial: bool) -> bool {
+        let was = self.format_serial.replace(serial);
+        if was.is_none_or(|was| was == serial) {
+            return false;
+        }
+        self.formats.clear();
+        true
+    }
+
     fn advertised(&self) -> Vec<SinkFormats> {
         self.formats.values().flatten().cloned().collect()
     }
@@ -985,6 +995,7 @@ fn watch_the_registry(
                             .and_then(|above| above.parse().ok()),
                         seat: None,
                         formats: BTreeMap::new(),
+                        format_serial: None,
                     };
                     shared.lock().sinks.insert(global.id, record);
 
@@ -995,8 +1006,38 @@ fn watch_the_registry(
                         .add_listener_local()
                         .info({
                             let shared = Arc::clone(&shared);
+                            let nodes = Rc::clone(&nodes);
+                            let announce = announce.clone();
                             let id = global.id;
                             move |info| {
+                                if info.change_mask().contains(NodeChangeMask::PARAMS) {
+                                    let serial = info
+                                        .params()
+                                        .iter()
+                                        .find(|param| param.id() == ParamType::EnumFormat)
+                                        .map(|param| {
+                                            param.flags().contains(ParamInfoFlags::SERIAL)
+                                        });
+                                    let moved = serial.is_some_and(|serial| {
+                                        shared
+                                            .lock()
+                                            .sinks
+                                            .get_mut(&id)
+                                            .is_some_and(|record| record.formats_moved(serial))
+                                    });
+                                    if moved {
+                                        if let Some((node, _)) = nodes.borrow().get(&id) {
+                                            node.enum_params(
+                                                0,
+                                                Some(ParamType::EnumFormat),
+                                                0,
+                                                u32::MAX,
+                                            );
+                                        }
+                                        let _ = announce
+                                            .try_send(SinkChange::Reformatted(SinkId::new(id)));
+                                    }
+                                }
                                 if !info.change_mask().contains(NodeChangeMask::PROPS) {
                                     return;
                                 }
@@ -1485,7 +1526,29 @@ mod tests {
             device,
             seat: Some(1),
             formats: BTreeMap::new(),
+            format_serial: None,
         }
+    }
+
+    #[test]
+    fn a_sinks_formats_are_read_again_only_when_the_node_says_they_moved() {
+        let mut record = sink(true, Some(49));
+        record.formats.insert(3, Vec::new());
+
+        assert!(
+            !record.formats_moved(false),
+            "the first sighting enumerated again"
+        );
+        assert!(!record.formats_moved(false));
+        assert_eq!(record.formats.len(), 1);
+
+        assert!(record.formats_moved(true));
+        assert!(
+            record.formats.is_empty(),
+            "a stale index outlived the enumeration"
+        );
+        assert!(!record.formats_moved(true));
+        assert!(record.formats_moved(false));
     }
 
     fn headphones(plugged: Plugged) -> SinkPort {

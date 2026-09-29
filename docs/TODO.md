@@ -29,9 +29,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on PipeWire:** `SinkInfo::current_rate` is the graph-wide rate from the settings
   metadata, so every sink reports the same one; a per-device rate is the driver node's own clock,
   which the registry publishes nowhere
-- A sink's formats are enumerated once, at bind: its params are not subscribed to and a stale
-  index is never dropped, so a port or EDID change that keeps the node leaves the negotiation
-  reading the old list
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
 - **Blocked on hardware:** Nothing has proved a forced graph rate change against hardware — the only

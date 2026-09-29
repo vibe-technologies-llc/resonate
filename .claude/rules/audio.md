@@ -1685,6 +1685,16 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 ## The sink
 
+- **A sink's formats are read again whenever the node says they moved.** A port switched or an EDID
+  read again can change what a node advertises while the node stays, so its `info` event is watched
+  for `PARAMS`: the `EnumFormat` entry's `SERIAL` flag flips on every change, `SinkRecord::formats_moved`
+  compares it with the last seen (the first sighting only records it, the bind having enumerated
+  already), drops every index held and asks for `EnumFormat` again, and `SinkChange::Reformatted`
+  has the engine survey the graph afresh. The survey's round trip is issued after the enumeration, so
+  it reads the new list rather than an empty one. The seq a `param` event carries is not the one
+  `Node::enum_params` was handed but the proxy's asynchronous reply number, which pipewire-rs 0.10
+  does not return, so replies cannot be told apart by enumeration; results of an older enumeration
+  still in flight when a second change lands would be kept beside the new ones until the next.
 - **A global leaving the registry takes its proxy with it, whatever it was told first.** A device's
   proxy is dropped on `global_remove` whether or not a `Route` param ever arrived for it, so a card
   unplugged before its routes were enumerated — a USB DAC pulled in its first moment, a Bluetooth
