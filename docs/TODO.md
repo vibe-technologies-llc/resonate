@@ -5,8 +5,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
 service or a format — and is not worked until that moves; everything else is open to be done.
 
-## Robustness
-
 ## Playback and output
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
   anything under 100 % leaves bit-perfect there
