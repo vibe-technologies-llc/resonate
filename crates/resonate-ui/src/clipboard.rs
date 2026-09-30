@@ -5,7 +5,7 @@ use std::{
     pin::{Pin, pin},
     sync::{
         Arc,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
     },
     task::Poll,
     thread,
@@ -13,7 +13,8 @@ use std::{
 };
 
 use futures_channel::oneshot;
-use gpui::{App, ClipboardItem, Task};
+use gpui::{App, ClipboardItem, Global, Task};
+use parking_lot::{Mutex, MutexGuard};
 use wayland_client::{
     Connection, Dispatch, EventQueue, QueueHandle, delegate_noop, event_created_child,
     globals::{GlobalListContents, registry_queue_init},
@@ -45,11 +46,44 @@ const TAKEN_BY_THE_COMPOSITOR: u8 = 1;
 const GIVEN_UP: u8 = 2;
 
 #[derive(Debug, Default)]
-struct Claim(AtomicU8);
+struct Issued {
+    newest: AtomicU64,
+    handing_over: Mutex<()>,
+}
+
+#[derive(Default)]
+struct Copies(Arc<Issued>);
+
+impl Global for Copies {}
+
+#[derive(Debug, Default)]
+struct Claim {
+    settled: AtomicU8,
+    ticket: u64,
+    issued: Arc<Issued>,
+}
 
 impl Claim {
+    fn issued_in(cx: &mut App) -> Self {
+        let issued = Arc::clone(&cx.default_global::<Copies>().0);
+        let ticket = issued.newest.fetch_add(1, Ordering::AcqRel) + 1;
+        Self {
+            settled: AtomicU8::new(WAITING),
+            ticket,
+            issued,
+        }
+    }
+
+    fn is_the_newest(&self) -> bool {
+        self.issued.newest.load(Ordering::Acquire) == self.ticket
+    }
+
+    fn handing_over(&self) -> MutexGuard<'_, ()> {
+        self.issued.handing_over.lock()
+    }
+
     fn for_the_compositor(&self) -> bool {
-        self.settle(TAKEN_BY_THE_COMPOSITOR)
+        self.is_the_newest() && self.settle(TAKEN_BY_THE_COMPOSITOR)
     }
 
     fn given_up(&self) -> bool {
@@ -57,7 +91,7 @@ impl Claim {
     }
 
     fn settle(&self, on: u8) -> bool {
-        self.0
+        self.settled
             .compare_exchange(WAITING, on, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
@@ -79,7 +113,7 @@ fn copy_through(
     offer: impl FnOnce(Vec<u8>, &Claim, Told) + Send + 'static,
     cx: &mut App,
 ) {
-    let claim = Arc::new(Claim::default());
+    let claim = Arc::new(Claim::issued_in(cx));
     let (told, heard) = oneshot::channel();
     let served = text.as_bytes().to_vec();
     let serving = Arc::clone(&claim);
@@ -98,7 +132,7 @@ fn copy_through(
             Answer::Late(_) if claim.given_up() => false,
             Answer::Late(heard) => heard.await.unwrap_or(false),
         };
-        if !taken {
+        if !taken && claim.is_the_newest() {
             let written = cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
             let _ = written;
         }
@@ -175,6 +209,7 @@ fn offer(offering: &mut Offering, claim: &Claim) -> Option<Offered> {
     for kind in TEXT_TYPES {
         source.offer(kind.to_owned());
     }
+    let handing_over = claim.handing_over();
     if !claim.for_the_compositor() {
         tracing::debug!("the window gave up on the compositor before it could be handed the copy");
         source.destroy();
@@ -188,6 +223,7 @@ fn offer(offering: &mut Offering, claim: &Claim) -> Option<Offered> {
         .roundtrip(offering)
         .map_err(|error| tracing::debug!(%error, "the compositor did not take the copy"))
         .ok()?;
+    drop(handing_over);
 
     Some(Offered {
         queue,
@@ -356,6 +392,46 @@ mod tests {
         cx.run_until_parked();
 
         assert_eq!(held(cx).as_deref(), Some("Brain Damage"));
+    }
+
+    #[gpui::test]
+    fn a_copy_outrun_by_a_later_one_neither_claims_the_compositor_nor_writes_the_fallback(
+        cx: &mut TestAppContext,
+    ) {
+        let (release, released) = mpsc::channel::<()>();
+        let (claimed, claiming) = mpsc::channel();
+        let (later, answering) = mpsc::channel();
+
+        cx.update(|cx| {
+            copy_through(
+                "Speak to Me".to_owned(),
+                move |_, claim: &Claim, told: Told| {
+                    let _ = released.recv();
+                    let taken = claim.for_the_compositor();
+                    let _ = told.send(taken);
+                    let _ = claimed.send(taken);
+                },
+                cx,
+            );
+            copy_through(
+                "Breathe".to_owned(),
+                move |_, _: &Claim, told: Told| {
+                    let _ = told.send(false);
+                    let _ = later.send(());
+                },
+                cx,
+            );
+        });
+        let _ = answering.recv();
+        cx.run_until_parked();
+        assert_eq!(held(cx).as_deref(), Some("Breathe"));
+
+        let _ = release.send(());
+        assert_eq!(claiming.recv(), Ok(false));
+        cx.run_until_parked();
+        cx.executor().advance_clock(ANSWERED_WITHIN);
+        cx.run_until_parked();
+        assert_eq!(held(cx).as_deref(), Some("Breathe"));
     }
 
     #[test]

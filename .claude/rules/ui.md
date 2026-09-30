@@ -2021,7 +2021,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   and whichever loses stands down — a thread finding the claim given up destroys its source unset, and
   a task finding it claimed waits for the round trip rather than writing. It used to block the frame
   for up to 250 ms on `recv_timeout`, and a thread answering after that set the selection over the
-  text the fallback had just written. `clipboard.rs`'s tests drive both sides with a stand-in offer. It is `wayland-client` and `wayland-protocols` with
+  text the fallback had just written. **A later copy wins, however the round trips land.** Each copy
+  takes a ticket from `Copies`, a gpui global counting what the window has asked to copy, and only the
+  newest may claim the compositor or write the fallback; a thread's claim, `set_selection` and round
+  trip run under `Issued::handing_over`, one lock across every copy, so an older copy whose connection
+  was slow finds itself outrun and stands down rather than setting the selection over a quicker
+  second one (`a_copy_outrun_by_a_later_one_neither_claims_the_compositor_nor_writes_the_fallback`).
+  The counter is per `App` rather than a static, so the tests' windows do not outrun each other.
+  `clipboard.rs`'s tests drive both sides with a stand-in offer. It is `wayland-client` and `wayland-protocols` with
   `staging`, both already linked by gpui, and no `unsafe`: the descriptor arrives as an `OwnedFd` and is
   written through a `File`. It was proved against a headless `kwin_wayland --virtual` on a socket of its
   own, read back with `wl-paste`, and is not a test, a copy in a desktop session being the listener's

@@ -68,8 +68,6 @@ service or a format — and is not worked until that moves; everything else is o
 - The equaliser curve draws one line for every channel, so a band shaping the left alone is drawn
   as the loudest channel's rather than beside the right's (`Profile::response_on` and
   `channels_apart` answer each channel's)
-- Two copies in flight can land out of order: a first copy whose compositor round trip is slow sets
-  the selection after a quicker second one
 
 ## Keyboard and accessibility
 - Only Settings and the search field take focus: the transport, the sidebar, the heading buttons,
