@@ -250,6 +250,12 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
             (ConfigKey::Inbox, Some(folder.into()))
         }
+        Setting::MusicFolder(folder) => {
+            let folder = folder
+                .to_str()
+                .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
+            (ConfigKey::MusicFolder, Some(folder.into()))
+        }
         Setting::Convolution(held) => {
             let held = held
                 .as_deref()
@@ -358,6 +364,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
         SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
         SettingKey::Inbox => ConfigKey::Inbox,
+        SettingKey::MusicFolder => ConfigKey::MusicFolder,
         SettingKey::Convolution => ConfigKey::Convolution,
         SettingKey::Subsonic => ConfigKey::Subsonic,
         SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
@@ -518,6 +525,29 @@ mod tests {
         let _ = fs::remove_dir_all(folder);
 
         assert_eq!(named, Some(inbox));
+        assert_eq!(forgotten, None);
+    }
+
+    #[test]
+    fn a_music_folder_the_pane_names_reads_back_and_one_put_back_is_gone() {
+        let folder = env::temp_dir().join(format!("resonate-settings-music-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let music = PathBuf::from("/music/library");
+
+        file.apply(&[SettingChange::Store(Setting::MusicFolder(music.clone()))])
+            .expect("a writable temporary directory");
+        let named = config::load(Some(&path))
+            .expect("the file reads back")
+            .music_folder;
+        file.apply(&[SettingChange::Forget(SettingKey::MusicFolder)])
+            .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path))
+            .expect("the file reads back")
+            .music_folder;
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(named, Some(music));
         assert_eq!(forgotten, None);
     }
 

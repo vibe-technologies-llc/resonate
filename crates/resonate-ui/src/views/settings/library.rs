@@ -14,7 +14,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Notice, Pass, Planned, ResonateApp, Setting, format,
+    Notice, Pass, Planned, ResonateApp, Setting, SettingKey, format,
     icons::{self, Icon},
     theme, toast,
     views::{
@@ -26,6 +26,21 @@ use crate::{
 };
 
 const FOLDER_GROUP: &str = "folder";
+
+const NO_MUSIC_FOLDER: &str = "No primary music folder is chosen. Choose the folder new songs should \
+                               be kept in.";
+
+const MUSIC_FOLDER_NOTE: &str = "Songs added to the library are copied here and left as they came. \
+                                 The folder is scanned like the ones below, so what lands in it \
+                                 joins the library.";
+
+const MUSIC_FOLDER_GONE: &str = "This folder is not there now. If it is on a drive, mount it \
+                                 before adding songs.";
+
+const IN_THE_VAULT: &str = "That folder is inside the vault, which keeps its own objects. Choose \
+                            a folder outside it.";
+
+const NOT_A_FOLDER: &str = "That is not a folder";
 
 const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker; type the folder instead";
 
@@ -1342,6 +1357,112 @@ const INBOX_NOTE: &str = "A file directly inside it named by the recording's Mus
                           never written to.";
 
 impl RootView {
+    pub(super) fn music_folder_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let gone = folder.as_deref().is_some_and(|folder| !folder.is_dir());
+
+        kit::section_body()
+            .child(match &folder {
+                Some(folder) => div().child(folder_row(folder)),
+                None => div().child(note(NO_MUSIC_FOLDER)),
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(action(
+                        "choose-music-folder",
+                        "Choose folder…",
+                        Icon::Folder,
+                        false,
+                        |this, _, cx| this.choose_the_music_folder(cx),
+                        self,
+                        cx,
+                    ))
+                    .when(folder.is_some(), |row| {
+                        row.child(action(
+                            "clear-music-folder",
+                            "Clear",
+                            Icon::Close,
+                            false,
+                            |this, _, cx| this.forget_the_music_folder(cx),
+                            self,
+                            cx,
+                        ))
+                    }),
+            )
+            .when(gone, |body| body.child(note(MUSIC_FOLDER_GONE)))
+            .child(note(MUSIC_FOLDER_NOTE))
+    }
+
+    fn choose_the_music_folder(&self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some(SharedString::new_static("Choose")),
+        });
+
+        cx.spawn(async move |this, cx| {
+            let chosen = match picked.await {
+                Ok(Ok(Some(chosen))) => chosen,
+                Ok(Ok(None)) | Err(_) => return,
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "the folder picker could not be opened");
+                    let reported = this.update(cx, |_, cx| {
+                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
+                    });
+                    let _ = reported;
+                    return;
+                }
+            };
+            let Some(folder) = chosen.into_iter().next() else {
+                return;
+            };
+
+            let named = this.update(cx, |this, cx| this.set_the_music_folder(folder, cx));
+            let _ = named;
+        })
+        .detach();
+    }
+
+    pub(crate) fn set_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+        let vault = self.library.read(cx).vault_root();
+        let folder = folder.canonicalize().unwrap_or(folder);
+        if let Some(refusal) = unusable_as_the_music_folder(&folder, vault.as_deref()) {
+            self.report(Notice::Trouble(refusal.to_owned()), cx);
+            return;
+        }
+
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.music_folder = Some(folder.clone());
+        });
+        self.store(&Setting::MusicFolder(folder.clone()), cx);
+
+        let reached = self
+            .library
+            .read(cx)
+            .roots()
+            .iter()
+            .any(|root| folder.starts_with(root));
+        if !reached {
+            self.library
+                .update(cx, |library, cx| library.add_roots(vec![folder], cx));
+        }
+        cx.notify();
+    }
+
+    fn forget_the_music_folder(&mut self, cx: &mut Context<Self>) {
+        self.clear_the_music_folder(cx);
+        self.forget(SettingKey::MusicFolder, cx);
+    }
+
+    pub(crate) fn clear_the_music_folder(&mut self, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.music_folder = None);
+        cx.notify();
+    }
+
     pub(super) fn inbox_group(&mut self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let inbox = library.inbox().map(Path::to_path_buf);
@@ -1353,7 +1474,7 @@ impl RootView {
 
         kit::section_body()
             .child(match &inbox {
-                Some(folder) => div().child(inbox_row(folder)),
+                Some(folder) => div().child(folder_row(folder)),
                 None => div().child(note(NO_INBOX)),
             })
             .child(
@@ -1447,7 +1568,7 @@ impl RootView {
     }
 }
 
-fn inbox_row(folder: &Path) -> Div {
+fn folder_row(folder: &Path) -> Div {
     div()
         .flex()
         .items_center()
@@ -1474,6 +1595,15 @@ fn inbox_row(folder: &Path) -> Div {
         )
 }
 
+fn unusable_as_the_music_folder(folder: &Path, vault: Option<&Path>) -> Option<&'static str> {
+    if !folder.is_dir() {
+        return Some(NOT_A_FOLDER);
+    }
+    vault
+        .filter(|vault| folder.starts_with(vault))
+        .map(|_| IN_THE_VAULT)
+}
+
 fn asked_of_the_inbox(stats: PollStats) -> String {
     format!(
         "asked {} · kept {} · not kept {} · nothing {} · refused {} · late {}",
@@ -1492,6 +1622,30 @@ const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
 mod tests {
     use super::*;
     use crate::views::settings::said_under;
+
+    #[test]
+    fn a_music_folder_is_a_folder_outside_the_vault() {
+        let held =
+            std::env::temp_dir().join(format!("resonate-music-folder-{}", std::process::id()));
+        let vault = held.join("vault");
+        let inside = vault.join("audio");
+        let outside = held.join("music");
+        std::fs::create_dir_all(&inside).expect("a writable temporary directory");
+        std::fs::create_dir_all(&outside).expect("a writable temporary directory");
+
+        let unnamed = unusable_as_the_music_folder(&outside, None);
+        let beside = unusable_as_the_music_folder(&outside, Some(&vault));
+        let within = unusable_as_the_music_folder(&inside, Some(&vault));
+        let itself = unusable_as_the_music_folder(&vault, Some(&vault));
+        let missing = unusable_as_the_music_folder(&held.join("nowhere"), None);
+        let _ = std::fs::remove_dir_all(&held);
+
+        assert_eq!(unnamed, None);
+        assert_eq!(beside, None);
+        assert_eq!(within, Some(IN_THE_VAULT));
+        assert_eq!(itself, Some(IN_THE_VAULT));
+        assert_eq!(missing, Some(NOT_A_FOLDER));
+    }
 
     #[test]
     fn only_a_shorter_span_forgets_listens() {

@@ -81,6 +81,7 @@ pub(crate) enum Group {
     Bands,
     Measured,
     RoomCorrection,
+    MusicFolder,
     Folders,
     Scanning,
     Refreshing,
@@ -118,7 +119,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 52] = [
+    pub(crate) const ALL: [Self; 53] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -137,6 +138,7 @@ impl Group {
         Self::Bands,
         Self::Measured,
         Self::RoomCorrection,
+        Self::MusicFolder,
         Self::Folders,
         Self::Scanning,
         Self::Refreshing,
@@ -193,7 +195,8 @@ impl Group {
             | Self::Bands
             | Self::Measured
             | Self::RoomCorrection => Category::Equaliser,
-            Self::Folders
+            Self::MusicFolder
+            | Self::Folders
             | Self::Scanning
             | Self::Refreshing
             | Self::Tagging
@@ -250,6 +253,7 @@ impl Group {
             Self::Bands => "Bands",
             Self::Measured => "Measured corrections",
             Self::RoomCorrection => "Room correction",
+            Self::MusicFolder => "Primary music folder",
             Self::Folders => "Music folders",
             Self::Scanning => "Scanning",
             Self::Refreshing => "Refreshing",
@@ -307,6 +311,7 @@ impl Group {
             Self::Bands => BANDS_HINT,
             Self::Measured => MEASURED_HINT,
             Self::RoomCorrection => ROOM_HINT,
+            Self::MusicFolder => MUSIC_FOLDER_HINT,
             Self::Folders => FOLDERS_HINT,
             Self::Scanning => SCANNING_HINT,
             Self::Refreshing => REFRESHING_HINT,
@@ -390,6 +395,10 @@ impl Group {
             Self::RoomCorrection => {
                 "convolution impulse response ir fir room correction speakers rew drc \
                  measurement wav"
+            }
+            Self::MusicFolder => {
+                "primary main default home directory destination import add copy drop drag \
+                 songs files library outside vault"
             }
             Self::Folders => "roots directories add scan music path",
             Self::Scanning => "rescan stop enrich tags index",
@@ -502,6 +511,7 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
+            Self::MusicFolder => &[SettingKey::MusicFolder],
             Self::RoomCorrection => &[SettingKey::Convolution],
             Self::Subsonic => &[
                 SettingKey::Subsonic,
@@ -794,6 +804,12 @@ pub(crate) const REPLAY_GAIN_HINT: &str = "Plays every track at the loudness its
                                            loudness asks for. The pre-amp is added to every gain, \
                                            and a track neither tagged nor studied is played at the \
                                            gain chosen for it instead.";
+
+pub(crate) const MUSIC_FOLDER_HINT: &str = "The one folder new songs are kept in. It is an ordinary \
+                                            folder of the files as they came, outside the vault, \
+                                            and is scanned like any other. Choosing it adds it to \
+                                            the music folders below if they do not already \
+                                            reach it.";
 
 pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks. Adding one scans it straight \
                                        away; dropping one forgets every track that came from it, \

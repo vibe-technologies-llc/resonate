@@ -243,6 +243,7 @@ impl Driven {
                 notify: Arc::new(AtomicBool::new(false)),
                 by_sound: Arc::new(AtomicBool::new(false)),
                 convolution: None,
+                music_folder: None,
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
                 caret: crate::CaretBlink::as_built(),

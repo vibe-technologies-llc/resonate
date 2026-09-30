@@ -1944,7 +1944,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   arithmetic: `Standing` is everything the pane can put back — the `OutputSettings`, the `Appearance`,
   the online, lyrics, listening, resumption, desktop, Discord, convolution and window switches and
   choices, and
-  whether each typed value (contact, keys, tokens, template, inbox, Subsonic) is given — `differs` weighs
+  whether each typed value (contact, keys, tokens, template, inbox, music folder, Subsonic) is given — `differs` weighs
   it against `Standing::as_built` (`EngineConfig::default()`, `Appearance::DEFAULT` and the rest), and
   `puts_back` answers the commands restoring it. A section whose value differs grows an `Icon::Undo` in
   its header; the footer carries *Reset <category>* for every category with a key to put back, and

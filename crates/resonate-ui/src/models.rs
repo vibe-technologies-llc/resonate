@@ -3446,6 +3446,10 @@ impl LibraryModel {
         self.library.vault().is_some()
     }
 
+    pub fn vault_root(&self) -> Option<PathBuf> {
+        self.library.vault().map(|vault| vault.root().to_path_buf())
+    }
+
     pub fn is_importing(&self) -> bool {
         self.work.importing().is_some()
     }

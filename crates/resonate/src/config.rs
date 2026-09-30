@@ -152,6 +152,7 @@ pub struct Config {
     pub remember_settings_category: Option<bool>,
     pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
+    pub music_folder: Option<PathBuf>,
     pub convolution: Option<PathBuf>,
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
@@ -509,6 +510,9 @@ impl Config {
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
             ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
+            ConfigKey::MusicFolder => {
+                config.music_folder = given(at.string(value)?).map(PathBuf::from);
+            }
             ConfigKey::Convolution => {
                 config.convolution = given(at.string(value)?).map(PathBuf::from);
             }
@@ -1128,6 +1132,20 @@ mod tests {
         assert_eq!(config.inbox, None);
 
         assert_eq!(Config::default().inbox, None);
+    }
+
+    #[test]
+    fn a_music_folder_is_read_as_a_folder_and_a_blank_one_is_none() {
+        let config = read("music-folder = \"/music/library\"").expect("a well formed document");
+        assert_eq!(
+            config.music_folder.as_deref(),
+            Some(Path::new("/music/library"))
+        );
+
+        let config = read("music-folder = \"  \"").expect("a well formed document");
+        assert_eq!(config.music_folder, None);
+
+        assert_eq!(Config::default().music_folder, None);
     }
 
     #[test]

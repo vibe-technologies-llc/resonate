@@ -65,6 +65,7 @@ pub enum ConfigKey {
     RememberSettingsCategory,
     LastSettingsCategory,
     Inbox,
+    MusicFolder,
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
@@ -83,7 +84,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 70] = [
+    pub const ALL: [Self; 71] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -139,6 +140,7 @@ impl ConfigKey {
         Self::RememberSettingsCategory,
         Self::LastSettingsCategory,
         Self::Inbox,
+        Self::MusicFolder,
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
@@ -213,6 +215,7 @@ impl ConfigKey {
             Self::RememberSettingsCategory => "remember-settings-category",
             Self::LastSettingsCategory => "last-settings-category",
             Self::Inbox => "inbox",
+            Self::MusicFolder => "music-folder",
             Self::Subsonic => "subsonic",
             Self::SubsonicUser => "subsonic-user",
             Self::SubsonicPassword => "subsonic-password",

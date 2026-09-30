@@ -2390,6 +2390,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             notify,
             by_sound,
             convolution: config.convolution.clone(),
+            music_folder: config.music_folder.clone(),
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             scrollbars: config.scrollbars(),
