@@ -208,7 +208,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .min_w(px(0.0))
+                            .min_w(px(theme::heading_name()))
                             .gap_1()
                             .child(kit::eyebrow("LIBRARY"))
                             .child(kit::title("Albums"))
@@ -532,7 +532,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .min_w(px(0.0))
+                            .min_w(px(theme::heading_name()))
                             .gap_1()
                             .child(kit::eyebrow("LIBRARY"))
                             .child(kit::title("Artists"))
@@ -720,6 +720,7 @@ impl RootView {
                         TRACK_CONTROLS
                     },
                     sorting::tracks_sorted(self, cx),
+                    &self.columns_fit,
                     cx,
                 ))
             })
@@ -844,6 +845,7 @@ impl RootView {
                     .map_or_else(Lit::new, |name| search.lit(name, Column::Artist)),
             )
         };
+        let fitted = self.columns_fit.shown();
         let number = match (in_an_album, track.track_number) {
             (true, Some(number)) => SharedString::from(number.to_string()),
             (true, None) => SharedString::new_static(""),
@@ -896,8 +898,12 @@ impl RootView {
                 .flex_shrink()
                 .ends_in_an_ellipsis(),
             ))
-            .child(listing::format_cell(Some((track.codec, track.spec))))
-            .child(listing::heard(track.plays, track.played, self.drawn_at()))
+            .when(fitted.format, |row| {
+                row.child(listing::format_cell(Some((track.codec, track.spec))))
+            })
+            .when(fitted.heard, |row| {
+                row.child(listing::heard(track.plays, track.played, self.drawn_at()))
+            })
             .child(listing::length_cell(SharedString::from(
                 track
                     .duration
@@ -1043,6 +1049,7 @@ impl RootView {
             _ => None,
         };
         let mark = self.want_mark(asks, cx);
+        let fitted = self.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
             Beside::AnAlbum | Beside::ARun => (title, Lit::new(), Lit::new()),
             Beside::ASearch { .. } => {
@@ -1105,7 +1112,10 @@ impl RootView {
                         ),
                     ),
                 },
-                |row, format| row.child(format).child(listing::unheard()),
+                |row, format| {
+                    row.when(fitted.format, |row| row.child(format))
+                        .when(fitted.heard, |row| row.child(listing::unheard()))
+                },
             )
             .child(listing::length_cell(length).text_color(rgb(theme::faint())))
             .child(

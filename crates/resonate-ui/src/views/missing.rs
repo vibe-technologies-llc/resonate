@@ -123,7 +123,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .min_w(px(0.0))
+                            .min_w(px(theme::heading_name()))
                             .gap_1()
                             .child(kit::eyebrow("COLLECTION"))
                             .child(kit::title("Missing"))

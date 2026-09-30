@@ -755,6 +755,7 @@ impl RootView {
                     true,
                     rows.control_count(),
                     sorting::playlist_sorted(self),
+                    &self.columns_fit,
                     cx,
                 ))
             })
@@ -1186,6 +1187,7 @@ impl RootView {
         let span = entry.span();
         let title = drawn.title.clone();
         let artist = drawn.artist.clone();
+        let fitted = self.columns_fit.shown();
         let listed = row(current)
             .id(listing::keyed_by("entry", &(&entry.cut, index)))
             .group(ROW_GROUP)
@@ -1209,8 +1211,12 @@ impl RootView {
                 .flex_shrink()
                 .ends_in_an_ellipsis(),
             ))
-            .child(listing::format_cell(drawn.shape))
-            .child(listing::heard(drawn.plays, drawn.played, self.drawn_at()))
+            .when(fitted.format, |row| {
+                row.child(listing::format_cell(drawn.shape))
+            })
+            .when(fitted.heard, |row| {
+                row.child(listing::heard(drawn.plays, drawn.played, self.drawn_at()))
+            })
             .child(listing::length_cell(drawn.length))
             .child(
                 row_controls()

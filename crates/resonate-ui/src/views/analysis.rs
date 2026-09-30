@@ -8,7 +8,6 @@ use resonate_engine::{Analysis, Finding, Reach, Verdict};
 use resonate_library::{Agreement, HeardAs};
 
 use crate::{
-    Selection,
     analysis::{Drawn, Hearing, Row, Studying},
     analysis_plot::{
         SPECTRUM_CEILING_DB, SPECTRUM_FLOOR_DB, SPECTRUM_MARKED_EVERY_DB, frequency_marks,
@@ -19,7 +18,6 @@ use crate::{
     models::Notice,
     theme, toast,
     views::{
-        browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
         inspector::{beside, card, fields},
         kit::{self, EndsInAnEllipsis as _},
@@ -168,29 +166,13 @@ impl RootView {
     ) -> Div {
         kit::heading().child(
             kit::heading_row()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_1()
-                        .child(kit::eyebrow("ANALYSIS"))
-                        .child(kit::linked_title(self.opens(
-                            "analysis-title",
-                            playing.title.clone(),
-                            OPEN_ALBUM_HINT,
-                            playing.cover.album.map(Selection::Album),
-                            cx,
-                        )))
-                        .child(kit::linked_subtitle(self.opens(
-                            "analysis-artist",
-                            playing.artist.clone(),
-                            OPEN_ARTIST_HINT,
-                            playing.artist_id.map(Selection::Artist),
-                            cx,
-                        ))),
-                )
+                .child(self.playing_heading(
+                    "ANALYSIS",
+                    "analysis-title",
+                    "analysis-artist",
+                    playing,
+                    cx,
+                ))
                 .child(
                     kit::actions()
                         .children(readback.map(kit::figure))

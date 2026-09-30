@@ -49,7 +49,13 @@ impl RootView {
             .child(kit::linked_title(copied_on_a_right_click(
                 self.opens(
                     "inspected-title",
-                    playing.title.clone(),
+                    kit::cut_to_fit(
+                        playing.title.clone(),
+                        self.inspected_room.get(),
+                        theme::ui(FontWeight::SEMIBOLD),
+                        px(theme::text_xl()),
+                        cx,
+                    ),
                     OPEN_ALBUM_HINT,
                     playing.cover.album.map(Selection::Album),
                     cx,
@@ -158,6 +164,7 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
 
     div()
         .flex()
+        .flex_wrap()
         .gap_2()
         .child(stage(
             "SOURCE",

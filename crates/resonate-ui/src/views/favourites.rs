@@ -7,6 +7,7 @@ use resonate_library::{Album, Artist, Track};
 use crate::{
     Favourited, format,
     icons::Icon,
+    theme,
     views::{
         browser::{Plays, TRACK_CONTROLS},
         kit, listing,
@@ -103,6 +104,7 @@ impl RootView {
                 true,
                 TRACK_CONTROLS,
                 sorting::unsorted(),
+                &self.columns_fit,
                 cx,
             ))
             .child(
@@ -153,7 +155,7 @@ fn favourites_heading(held: Favourited, reads: &[String]) -> Div {
                     .flex()
                     .flex_col()
                     .flex_1()
-                    .min_w(px(0.0))
+                    .min_w(px(theme::heading_name()))
                     .gap_1()
                     .child(kit::eyebrow("COLLECTION"))
                     .child(kit::title("Favourites"))

@@ -439,8 +439,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `kit::heading` holds a `kit::heading_row` — an eyebrow naming the section (*LIBRARY*, *COLLECTION*,
   *NOW PLAYING*, *SETTINGS*), a `kit::title`, a `kit::subtitle` with the counts and total length, and
   `kit::actions` on the right — and under it the *Reads* chips and a naming row where a pane has one.
-  The actions wrap inside at most 64 % of the row, keeping a long playlist name from being ground to a
-  letter by thirteen controls. **An album or artist is not a pane heading with a picture bolted on**: it
+  **The name keeps its room and the actions drop under it.** Every name block holds
+  `theme::heading_name()` at least and `kit::heading_row` wraps, so where the name's least and the
+  actions do not fit side by side the actions take a line of their own under it, up to the whole row
+  and wrapping inside it: a long playlist name is not ground to a letter by thirteen controls, and no
+  action is pushed off the pane. The actions once wrapped inside 64 % of the row beside a name free to
+  shrink to nothing; at the 720 px window the queue's *Save as a playlist* ran off the edge, and the
+  settings pane's 400 px find field, wider than its 64 %, spilled left over the subtitle. **An album or artist is not a pane heading with a picture bolted on**: it
   is `album_page_heading` and `artist_page_heading`, a `kit::way_back` at top left and a `kit::hero`
   under it — the album cover, the portrait and an opened suggestion's art each a square of the text
   column's own height, decoded at `Drawn::OnThePage` so a page hero stays sharp at scale 2. The column
@@ -481,7 +486,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics, inspector, visualiser and
   analysis headings name the playing track through `opens`, and under `kit::title`'s block box the link
   was laid out at no width, the heading drawing its ellipsis alone; `linked_title` is the same face as a
-  flex row holding the link `keeps_its_width`, the by-line's artist's shape. The artist under it is
+  flex row holding the link `keeps_its_width`, the by-line's artist's shape. **Such a link is cut
+  before it is drawn**, gpui never truncating a no-wrap text past its first measure:
+  `RootView::playing_heading` is the eyebrow, title and artist the lyrics, visualiser and analysis
+  headings share, measuring itself into `heading_room` a frame behind and cutting both names there with
+  `kit::cut_to_fit`, and the inspector cuts its title at `inspected_room`. Uncut, a long title was
+  sliced by the pane's edge with no ellipsis. `by_line` cuts the artist at its room as well, the album
+  taking what is left, so an artist longer than the panel ends in one too. The artist under it is
   `kit::linked_subtitle` for the same reason and a second: `kit::subtitle` over an `opens` stretched the
   link across the whole column, so a press well right of the name still opened the artist.
 - **A track row is the same eight cells wherever drawn.** `listing::columns` is the header the tracks
@@ -497,6 +508,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the tag takes room from the title rather than pushing every later cell along, and both text cells end in
   an ellipsis rather than a square cut. The playing row draws `listing::playing_mark` in the number cell
   and its title in the accent. A row's controls sit in `browser::row_controls`, invisible until hovered.
+  **A listing narrower than its columns gives up HEARD, then FORMAT, before the names.**
+  `listing::Shown::within` weighs the width the header measured into `RootView::columns_fit` — a
+  `listing::Fitting` — against the fixed cells, `NAMES_AT_LEAST` for title and artist together and the
+  controls that listing draws; `columns` publishes what it chose and every row reads it back, so header
+  and rows cannot disagree, and a row is laid out with the `COLUMN_GAP` and `ROW_INSET` the arithmetic
+  counts. An unmeasured header draws every column. Before, fixed cells a pane had no room for ran past its
+  edge — LENGTH clipped to *LENGT*, the header's FORMAT over the rows' titles — while title and artist
+  were ground to nothing (`a_narrowing_listing_gives_up_what_was_heard_then_the_format_before_the_names`).
   Track rows keep their Play next and Add to queue controls; the tracks heading carries Play and Shuffle
   for the whole listing and no Add to playlist.
 - **Whatever a gesture takes out of the queue is kept, and a toast says so.** A playlist edit answers
@@ -950,7 +969,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   hover, a scroll or a frame asked inside a region notifies that region alone, gpui naming the view a
   listener was painted under. A cached view is laid out from a style, not its content, so
   `Region::laid_out` declares each one's size — header and playback bar at fixed heights, sidebar at its
-  width, the pane taking the rest. `PlayerModel::refresh` says what a poll moved as a `Moved`: `Clock`
+  width, the pane taking the rest — held in a one-cell grid whose track is `minmax(0, 1fr)`, so a pane
+  is never laid out wider than its region whatever least width its content asks, where a flex row
+  honoured a pane root's automatic minimum. `PlayerModel::refresh` says what a poll moved as a `Moved`: `Clock`
   where only the position and the sink's latency changed — the `held_still` reading `Grain::shows` makes —
   and `More` otherwise. The root's observer notifies itself for `More` and hands a `Clock` to
   `Parts::the_clock_moved`, notifying the playback bar and, where `Pane::follows_the_clock` — the
@@ -968,9 +989,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   seek, a track change, the sleep timer's second — and an unpainted rail is every poll. The model's state
   is still refreshed every poll, so whatever else asks a frame draws the moment as it is.
 - **The playback bar is three columns, the transport the middle one.** The now-playing panel and the
-  status cluster are both `flex_1` with a zero basis, taking equal halves of what the centre leaves, so
-  the buttons sit on the window's centre line whatever is beside them. The centre is a column with a
-  basis of `theme::transport_centre()` shrinking no further than 300, holding the step and play buttons
+  status cluster are both `flex_1` with a zero basis and at least `SIDE_AT_LEAST` (180 px), taking equal
+  halves of what the centre leaves, so the buttons sit on the window's centre line whatever is beside
+  them. The centre is a column with a basis of `theme::transport_centre()` shrinking to
+  `CENTRE_AT_LEAST` (260) — it gives way first: holding its 460 at the 720 px window it left each side
+  86 px, the cover took all of the panel, and title, artist and album drew nothing. It holds the step and play buttons
   over the seek rail with the elapsed and total clocks at its ends; the rail fills its row
   (`Handle::fills_its_row`). Both sides carry `overflow_hidden`, a badge or notice wider than its half
   otherwise painting over the controls. **What does not fit is left out whole, never clipped.**
@@ -1012,7 +1035,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   heading into `inspected_room` likewise. The album used to be `flex_1` under `ends_in_an_ellipsis`, and
   gpui 0.2.2 paints a clamped line's underline to the whole unwrapped run — a one-line clamp recording
   no wrap boundary to end it at — so hovering an album longer than its slot underlined the rest of the
-  panel. The inspector's stage cards are `flex_1` already and take the clamp. A notice the engine raised
+  panel. The inspector's stage cards are `flex_1` already and take the clamp, and their row wraps: a
+  pane that cannot hold three at `stage_width` puts the last under the first two rather than off its
+  edge. A notice the engine raised
   is in neither half: it is a toast over the content. Every bar control names itself through
   `views/hint.rs`, a silhouette not saying what it does: a step names its key, a toggle its state and
   what the key does next, so the accent is not the only report. A rail is drawn filled in `TEXT`,
@@ -1927,7 +1952,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   or `CONVERTS` — so no description pushes them off the end, and the verdicts down the list read as one
   column. Under the name are two `kit::details` lines, parts divided by a faint `·`: how the sink is
   reached, in words — the port, the profile the card is switched to and whose volume it is — as faint
-  `kit::detail`s, and what it takes, in figures — depths and rates through `format::depth` and
+  `kit::detail`s, each ending in an ellipsis where it outruns its line (the default entry's *Whatever
+  PipeWire routes to, which is …* was sliced by the card's edge), and what it takes, in figures — depths and rates through `format::depth` and
   `format::kilohertz`, comma-listed — as `kit::figure`s. What it replaced drew all five as identical grey
   mono badges in one wrapping cloud, words in the figures' face, listed with a slash that read as
   shorthand. A port with nothing plugged in is a badge and a `muted` name rather than a parenthesis, and

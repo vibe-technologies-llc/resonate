@@ -69,6 +69,10 @@ const VOLUME_ICON_GROUP: &str = "volume-icon";
 
 const TITLE_GAP: f32 = 4.0;
 
+const SIDE_AT_LEAST: f32 = 180.0;
+
+const CENTRE_AT_LEAST: f32 = 260.0;
+
 const BADGE_PADDING: f32 = 12.0;
 
 const MODE_DOT: f32 = 7.0;
@@ -272,7 +276,7 @@ impl RootView {
                             .flex_col()
                             .flex_basis(px(theme::transport_centre()))
                             .flex_shrink()
-                            .min_w(px(300.0))
+                            .min_w(px(CENTRE_AT_LEAST))
                             .items_center()
                             .gap_1p5()
                             .child(self.controls(playing, cx))
@@ -327,7 +331,7 @@ impl RootView {
             .relative()
             .flex_1()
             .flex_basis(px(0.0))
-            .min_w(px(0.0))
+            .min_w(px(SIDE_AT_LEAST))
             .overflow_hidden()
             .items_center()
             .justify_end()
@@ -424,7 +428,7 @@ impl RootView {
             .flex()
             .flex_1()
             .flex_basis(px(0.0))
-            .min_w(px(0.0))
+            .min_w(px(SIDE_AT_LEAST))
             .overflow_hidden()
             .items_center()
             .gap_3p5()
@@ -487,6 +491,55 @@ impl RootView {
             })
     }
 
+    pub(crate) fn playing_heading(
+        &self,
+        eyebrow: &'static str,
+        of_the_title: &'static str,
+        of_the_artist: &'static str,
+        playing: &Playing,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let room = self.heading_room.get();
+        let title = kit::cut_to_fit(
+            playing.title.clone(),
+            room,
+            theme::ui(FontWeight::SEMIBOLD),
+            px(theme::text_xl()),
+            cx,
+        );
+        let artist = kit::cut_to_fit(
+            playing.artist.clone(),
+            room,
+            theme::ui(FontWeight::NORMAL),
+            px(theme::text_sm()),
+            cx,
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .relative()
+            .flex_1()
+            .min_w(px(theme::heading_name()))
+            .gap_1()
+            .child(kit::measures_its_width(self.heading_room.clone()))
+            .child(kit::eyebrow(eyebrow))
+            .child(kit::linked_title(self.opens(
+                of_the_title,
+                title,
+                OPEN_ALBUM_HINT,
+                playing.cover.album.map(Selection::Album),
+                cx,
+            )))
+            .child(kit::linked_subtitle(self.opens(
+                of_the_artist,
+                artist,
+                OPEN_ARTIST_HINT,
+                playing.artist_id.map(Selection::Artist),
+                cx,
+            )))
+    }
+
     pub(crate) fn by_line(
         &self,
         of_the_artist: &'static str,
@@ -495,17 +548,19 @@ impl RootView {
         room: Pixels,
         cx: &mut Context<Self>,
     ) -> Div {
+        let size = px(theme::text_sm());
+        let font = theme::ui(FontWeight::NORMAL);
         let line = div()
             .flex()
             .items_center()
             .min_w(px(0.0))
-            .text_size(px(theme::text_sm()))
+            .text_size(size)
             .text_color(rgb(theme::muted()))
             .child(
                 copied_on_a_right_click(
                     self.opens(
                         of_the_artist,
-                        playing.artist.clone(),
+                        kit::cut_to_fit(playing.artist.clone(), room, font.clone(), size, cx),
                         OPEN_ARTIST_HINT,
                         playing.artist_id.map(Selection::Artist),
                         cx,
@@ -518,8 +573,6 @@ impl RootView {
         let Some(album) = playing.album.clone() else {
             return line;
         };
-        let size = px(theme::text_sm());
-        let font = theme::ui(FontWeight::NORMAL);
         let taken = kit::width_of(&playing.artist, &font, size, cx)
             + kit::width_of(BY_LINE_SEPARATOR, &font, size, cx)
             + px(BY_LINE_SEPARATOR_PADDING * 2.0);

@@ -12,12 +12,11 @@ use resonate_engine::{PlayerState, StreamDigest};
 use resonate_lyrics::{Credits, Detail, Sweep, Voice, Wanted};
 
 use crate::{
-    Selection, clipboard,
+    clipboard,
     icons::Icon,
     lyrics::{Asked, Heard, Look, Measures, Reading, rising},
     theme,
     views::{
-        browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
         kit::{self, Tone},
         menu::{self, Menu},
@@ -213,29 +212,7 @@ impl RootView {
 
         kit::heading().child(
             kit::heading_row()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_1()
-                        .child(kit::eyebrow("LYRICS"))
-                        .child(kit::linked_title(self.opens(
-                            "lyrics-title",
-                            playing.title.clone(),
-                            OPEN_ALBUM_HINT,
-                            playing.cover.album.map(Selection::Album),
-                            cx,
-                        )))
-                        .child(kit::linked_subtitle(self.opens(
-                            "lyrics-artist",
-                            playing.artist.clone(),
-                            OPEN_ARTIST_HINT,
-                            playing.artist_id.map(Selection::Artist),
-                            cx,
-                        ))),
-                )
+                .child(self.playing_heading("LYRICS", "lyrics-title", "lyrics-artist", playing, cx))
                 .child(
                     kit::actions()
                         .when(synced && !following, |actions| {

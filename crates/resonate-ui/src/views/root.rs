@@ -51,7 +51,7 @@ use crate::{
         focus::Controls,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis},
-        listing::Pictured,
+        listing::{self, Pictured},
         menu::{self, Menu},
         missing::MissingShows,
         part::{Parts, Region},
@@ -555,6 +555,8 @@ pub struct RootView {
     pub(crate) playing_room: Rc<Cell<Pixels>>,
     pub(crate) status_room: Rc<Cell<Pixels>>,
     pub(crate) inspected_room: Rc<Cell<Pixels>>,
+    pub(crate) heading_room: Rc<Cell<Pixels>>,
+    pub(crate) columns_fit: listing::Fitting,
     listening: Listening,
     resuming: Keeping,
     following: Following,
@@ -970,6 +972,8 @@ impl RootView {
             playing_room: Rc::new(Cell::new(px(0.0))),
             status_room: Rc::new(Cell::new(px(0.0))),
             inspected_room: Rc::new(Cell::new(px(0.0))),
+            heading_room: Rc::new(Cell::new(px(0.0))),
+            columns_fit: listing::Fitting::default(),
             magnified: None,
             pointer_inside: true,
             volume_settled: Task::ready(()),
@@ -3912,8 +3916,8 @@ pub(crate) fn row(selected: bool) -> Div {
         .flex()
         .w_full()
         .items_center()
-        .gap_3()
-        .px_6()
+        .gap(px(listing::COLUMN_GAP))
+        .px(px(listing::ROW_INSET))
         .h(px(theme::row_height()))
         .text_size(px(theme::text_sm()))
         .when(selected, |row| row.bg(theme::tinted(theme::accent(), 0x14)))

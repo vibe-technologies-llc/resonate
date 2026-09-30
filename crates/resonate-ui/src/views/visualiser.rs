@@ -10,12 +10,11 @@ use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
 use smallvec::SmallVec;
 
 use crate::{
-    PlayerModel, Selection, format,
+    PlayerModel, format,
     icons::Icon,
     spectrum::{CEILING_DB, Column, FLOOR_DB, MARKED_EVERY_DB, Spectrum, height_of, rising_edge},
     theme,
     views::{
-        browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         hint::{self, Names},
         kit, plot,
         root::RootView,
@@ -430,29 +429,13 @@ impl RootView {
 
         kit::heading().child(
             kit::heading_row()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_1()
-                        .child(kit::eyebrow("VISUALISER"))
-                        .child(kit::linked_title(self.opens(
-                            "visualiser-title",
-                            playing.title.clone(),
-                            OPEN_ALBUM_HINT,
-                            playing.cover.album.map(Selection::Album),
-                            cx,
-                        )))
-                        .child(kit::linked_subtitle(self.opens(
-                            "visualiser-artist",
-                            playing.artist.clone(),
-                            OPEN_ARTIST_HINT,
-                            playing.artist_id.map(Selection::Artist),
-                            cx,
-                        ))),
-                )
+                .child(self.playing_heading(
+                    "VISUALISER",
+                    "visualiser-title",
+                    "visualiser-artist",
+                    playing,
+                    cx,
+                ))
                 .child(
                     kit::actions()
                         .child(kit::figure(readback))

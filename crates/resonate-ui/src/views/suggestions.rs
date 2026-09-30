@@ -300,6 +300,7 @@ impl RootView {
                 true,
                 TRACK_CONTROLS,
                 sorting::unsorted(),
+                &self.columns_fit,
                 cx,
             ))
             .child(
@@ -539,7 +540,7 @@ fn suggestions_heading(offered: usize) -> Div {
                 .flex()
                 .flex_col()
                 .flex_1()
-                .min_w(px(0.0))
+                .min_w(px(theme::heading_name()))
                 .gap_1()
                 .child(kit::eyebrow("COLLECTION"))
                 .child(kit::title("Suggestions"))

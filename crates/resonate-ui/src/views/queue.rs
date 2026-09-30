@@ -503,6 +503,7 @@ impl RootView {
                 true,
                 ROW_CONTROLS,
                 sorting::queue_sorted(self),
+                &self.columns_fit,
                 cx,
             ))
             .child(
@@ -594,6 +595,7 @@ impl RootView {
                                     let artist = drawn.artist.clone();
                                     let menued = Arc::clone(&holding);
                                     let queued_as = item.id.get();
+                                    let fitted = this.columns_fit.shown();
                                     let listed = row(current)
                                         .id(("queued", queued_as))
                                         .debug_selector(move || format!("queued-{queued_as}"))
@@ -630,12 +632,16 @@ impl RootView {
                                             .flex_shrink()
                                             .ends_in_an_ellipsis(),
                                         ))
-                                        .child(listing::format_cell(drawn.shape))
-                                        .child(listing::heard(
-                                            drawn.plays,
-                                            drawn.played,
-                                            this.drawn_at(),
-                                        ))
+                                        .when(fitted.format, |row| {
+                                            row.child(listing::format_cell(drawn.shape))
+                                        })
+                                        .when(fitted.heard, |row| {
+                                            row.child(listing::heard(
+                                                drawn.plays,
+                                                drawn.played,
+                                                this.drawn_at(),
+                                            ))
+                                        })
                                         .child(listing::length_cell(drawn.length))
                                         .child(
                                             row_controls()

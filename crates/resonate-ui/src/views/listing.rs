@@ -1,11 +1,13 @@
 use std::{
+    cell::Cell,
     hash::{DefaultHasher, Hash, Hasher},
+    rc::Rc,
     time::SystemTime,
 };
 
 use gpui::{
-    AnyElement, Context, Div, ElementId, FontWeight, HighlightStyle, SharedString, StyledText, div,
-    prelude::*, px, rgb,
+    AnyElement, Context, Div, ElementId, FontWeight, HighlightStyle, Pixels, SharedString,
+    StyledText, div, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, MediaLocation, StreamSpec, TrackId};
 use resonate_engine::MediaInfo;
@@ -177,6 +179,85 @@ pub(crate) fn reads(clauses: &[String]) -> Div {
     row
 }
 
+pub(crate) const COLUMN_GAP: f32 = 12.0;
+
+pub(crate) const ROW_INSET: f32 = 24.0;
+
+const NAMES_AT_LEAST: f32 = 220.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub(crate) format: bool,
+    pub(crate) heard: bool,
+}
+
+impl Shown {
+    const EVERY_COLUMN: Self = Self {
+        format: true,
+        heard: true,
+    };
+
+    const WITHOUT_HEARD: Self = Self {
+        format: true,
+        heard: false,
+    };
+
+    const NAMES_ALONE: Self = Self {
+        format: false,
+        heard: false,
+    };
+
+    fn within(room: Pixels, with_cover: bool, controls: usize) -> Self {
+        if room <= px(0.0) {
+            return Self::EVERY_COLUMN;
+        }
+
+        [Self::EVERY_COLUMN, Self::WITHOUT_HEARD]
+            .into_iter()
+            .find(|shown| shown.width(with_cover, controls) <= f32::from(room))
+            .unwrap_or(Self::NAMES_ALONE)
+    }
+
+    fn width(self, with_cover: bool, controls: usize) -> f32 {
+        let cells: Vec<f32> = [
+            Some(theme::row_number()),
+            with_cover.then(theme::row_cover),
+            Some(NAMES_AT_LEAST),
+            Some(COLUMN_GAP),
+            self.format.then(theme::row_format),
+            self.heard.then(theme::row_plays),
+            Some(theme::row_length()),
+            Some(browser::controls_width(controls)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let gaps = cells.len().saturating_sub(1) as f32;
+
+        cells.iter().sum::<f32>() + COLUMN_GAP * gaps + ROW_INSET * 2.0
+    }
+}
+
+pub(crate) struct Fitting {
+    room: Rc<Cell<Pixels>>,
+    shown: Cell<Shown>,
+}
+
+impl Default for Fitting {
+    fn default() -> Self {
+        Self {
+            room: Rc::new(Cell::new(px(0.0))),
+            shown: Cell::new(Shown::EVERY_COLUMN),
+        }
+    }
+}
+
+impl Fitting {
+    pub(crate) fn shown(&self) -> Shown {
+        self.shown.get()
+    }
+}
+
 pub(crate) fn heard(plays: u32, played: Option<SystemTime>, now: SystemTime) -> Div {
     heard_cell(how_often_and_how_lately(plays, played, now))
 }
@@ -339,8 +420,12 @@ pub(crate) fn columns(
     with_cover: bool,
     trailing_controls: usize,
     sorted: Sorted,
+    fitting: &Fitting,
     cx: &mut Context<RootView>,
 ) -> Div {
+    let shown = Shown::within(fitting.room.get(), with_cover, trailing_controls);
+    fitting.shown.set(shown);
+
     let number = heads(
         Sortable::Number,
         numbered,
@@ -366,14 +451,18 @@ pub(crate) fn columns(
     );
 
     kit::column_header()
+        .relative()
+        .child(kit::measures_its_width(Rc::clone(&fitting.room)))
         .child(number)
         .when(with_cover, |header| {
             header.child(div().w(px(theme::row_cover())).flex_none())
         })
         .child(title)
         .child(artist)
-        .child(div().w(px(theme::row_format())).flex_none().child("FORMAT"))
-        .child(heard)
+        .when(shown.format, |header| {
+            header.child(div().w(px(theme::row_format())).flex_none().child("FORMAT"))
+        })
+        .when(shown.heard, |header| header.child(heard))
         .child(length)
         .child(
             div()
@@ -444,5 +533,38 @@ const fn sorts_by(column: Sortable) -> &'static str {
         Sortable::Artist => "Sort by artist",
         Sortable::Heard => "Sort by how often it is heard",
         Sortable::Length => "Sort by length",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fitted_in(room: f32) -> Shown {
+        Shown::within(px(room), true, browser::TRACK_CONTROLS)
+    }
+
+    #[test]
+    fn a_narrowing_listing_gives_up_what_was_heard_then_the_format_before_the_names() {
+        let every = Shown::EVERY_COLUMN.width(true, browser::TRACK_CONTROLS);
+        let without_heard = Shown::WITHOUT_HEARD.width(true, browser::TRACK_CONTROLS);
+
+        assert_eq!(fitted_in(every), Shown::EVERY_COLUMN);
+        assert_eq!(fitted_in(every - 1.0), Shown::WITHOUT_HEARD);
+        assert_eq!(fitted_in(without_heard), Shown::WITHOUT_HEARD);
+        assert_eq!(fitted_in(without_heard - 1.0), Shown::NAMES_ALONE);
+        assert_eq!(fitted_in(1.0), Shown::NAMES_ALONE);
+    }
+
+    #[test]
+    fn a_listing_not_yet_measured_draws_every_column() {
+        assert_eq!(fitted_in(0.0), Shown::EVERY_COLUMN);
+    }
+
+    #[test]
+    fn the_narrowest_window_draws_the_names_alone() {
+        let pane = theme::WINDOW_MIN_WIDTH - theme::sidebar_width();
+
+        assert_eq!(fitted_in(pane), Shown::NAMES_ALONE);
     }
 }

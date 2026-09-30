@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, ScrollHandle, SharedString,
-    Stateful, Svg, canvas, div, point, prelude::*, px, relative, rgb,
+    Stateful, Svg, canvas, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -11,7 +11,7 @@ use crate::{
     format,
     icons::{self, Icon},
     theme,
-    views::{hint::Names, pointed::LitUnderThePointer},
+    views::{hint::Names, listing, pointed::LitUnderThePointer},
 };
 
 const BUTTON_GROUP: &str = "button";
@@ -677,9 +677,11 @@ pub(crate) fn choice_name(text: impl Into<SharedString>, lit: bool) -> Div {
 
 pub(crate) fn detail(text: impl Into<SharedString>) -> Div {
     div()
+        .min_w(px(0.0))
         .text_size(px(theme::text_xs()))
         .text_color(rgb(theme::faint()))
-        .whitespace_nowrap()
+        .truncate()
+        .ends_in_an_ellipsis()
         .child(text.into())
 }
 
@@ -879,7 +881,7 @@ pub(crate) fn wraps_within(room: Pixels) -> Div {
 }
 
 pub(crate) fn heading_row() -> Div {
-    div().flex().items_end().gap_4()
+    div().flex().flex_wrap().items_end().gap_4()
 }
 
 pub(crate) fn actions() -> Div {
@@ -890,7 +892,7 @@ pub(crate) fn actions() -> Div {
         .items_center()
         .justify_end()
         .gap_1p5()
-        .max_w(relative(0.64))
+        .max_w_full()
 }
 
 pub(crate) fn column_header() -> Div {
@@ -898,8 +900,8 @@ pub(crate) fn column_header() -> Div {
         .flex()
         .w_full()
         .items_center()
-        .gap_3()
-        .px_6()
+        .gap(px(listing::COLUMN_GAP))
+        .px(px(listing::ROW_INSET))
         .h(px(28.0))
         .border_b_1()
         .border_color(rgb(theme::border()))
