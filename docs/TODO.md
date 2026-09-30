@@ -129,6 +129,9 @@ service or a format — and is not worked until that moves; everything else is o
 - `Song.en.lrc` and `Song.ja.lrc` are never offered, and an unrelated `<stem>.txt` is read as words
 - A lookup still running when its row leaves the queue lands the last track's words over *none*
 - There is no offset of the listener's own for a sheet that runs early or late
+- **Blocked on gpui:** The sung line cannot grow as it lights: gpui on Linux draws a glyph on a whole
+  pixel vertically and cosmic-text hints every size, so a type size in motion shimmers and hops, and
+  the line only brightens
 - **Blocked on the format:** When a line goes out is guessed from how long its text is wherever the
   sheet gives it no end — an LRC never does, only a Lyricsfile — so a held note can be put out under
   the dots early

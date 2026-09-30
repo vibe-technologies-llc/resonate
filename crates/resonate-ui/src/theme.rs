@@ -763,8 +763,7 @@ const TEXT_BASE: f32 = 13.5;
 const TEXT_LG: f32 = 16.0;
 const TEXT_XL: f32 = 21.0;
 const TEXT_TITLE: f32 = 26.0;
-const TEXT_LYRIC: f32 = 26.0;
-const TEXT_LYRIC_LEAD: f32 = 36.0;
+const TEXT_LYRIC: f32 = 36.0;
 
 pub const WINDOW_MIN_WIDTH: f32 = 720.0;
 pub const WINDOW_MIN_HEIGHT: f32 = 520.0;
@@ -904,7 +903,6 @@ measures! {
     text_xl => TEXT_XL,
     text_title => TEXT_TITLE,
     text_lyric => TEXT_LYRIC,
-    text_lyric_lead => TEXT_LYRIC_LEAD,
     header_height => HEADER_HEIGHT,
     sidebar_width => SIDEBAR_WIDTH,
     search_width => SEARCH_WIDTH,

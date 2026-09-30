@@ -11,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
-use gpui::{App, Context, Image, RenderImage, Task};
+use gpui::{App, Context, Image, Pixels, RenderImage, Task, px};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
     TrackId, WantId,
@@ -4854,6 +4854,10 @@ impl Scale {
         } else {
             Self::ONE
         }
+    }
+
+    pub fn snapped(self, length: Pixels) -> Pixels {
+        px((f32::from(length) * self.0).round() / self.0)
     }
 
     fn texels_for(self, cell: f32) -> NonZeroU32 {

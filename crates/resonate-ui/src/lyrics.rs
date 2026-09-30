@@ -11,7 +11,7 @@ use resonate_core::{Frames, TrackId};
 use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
-use crate::theme;
+use crate::{models::Scale, theme};
 
 pub(crate) fn near_the_words(pointer: Point<Pixels>, pane: Bounds<Pixels>, column: Pixels) -> bool {
     if pane.size.height <= px(0.0) || !pane.contains(&pointer) {
@@ -28,17 +28,17 @@ const DRAWN_WITHIN_PANES: f32 = 1.0;
 
 const TURN: Duration = Duration::from_millis(420);
 
-const GLIDE_RESPONSE_SECS: f32 = 0.62;
+const GLIDE: Duration = Duration::from_millis(600);
 
-const SETTLE_SEARCH_LIMIT: f32 = 64.0;
-
-const SETTLE_SEARCH_STEPS: u32 = 48;
+const LAUNCHED_AT_MOST: f32 = 4.0;
 
 const LAG_PER_LINE: Duration = Duration::from_millis(14);
 
 const LAGS_AT_MOST: usize = 6;
 
 const ARRIVES_IN: Duration = Duration::from_millis(560);
+
+const RISE: Duration = Duration::from_millis(600);
 
 const RISES_FROM: Pixels = px(22.0);
 
@@ -52,19 +52,27 @@ const BREATH: Duration = Duration::from_millis(2400);
 
 const DRIFTS_AT_MOST: Duration = Duration::from_millis(250);
 
-const PULLED_IN_A_FRAME: f32 = 0.03;
+const STEERED_OVER: Duration = Duration::from_millis(550);
 
 const HANDS_OFF: Duration = Duration::from_secs(6);
 
 const BAR_LINGERS: Duration = Duration::from_millis(1_500);
-
-const RESETTLE: Pixels = px(56.0);
 
 const SETTLED: Pixels = px(0.5);
 
 const LIT: f32 = 1.0;
 
 const ADRIFT: f32 = 0.45;
+
+const LEADING: f32 = 1.28;
+
+const LABEL_LEADING: f32 = 1.5;
+
+const LINE_PADDING: Pixels = px(8.0);
+
+const LINE_SPACING: Pixels = px(4.0);
+
+const PLAIN_MARGIN: Pixels = px(48.0);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Reading {
@@ -193,36 +201,6 @@ impl Eased {
 }
 
 #[derive(Clone, Copy)]
-struct Sprung {
-    started: Instant,
-}
-
-impl Sprung {
-    fn from(started: Instant) -> Self {
-        Self { started }
-    }
-
-    fn through(self, now: Instant) -> f32 {
-        spring(now.saturating_duration_since(self.started))
-    }
-
-    fn through_after(self, lag: Duration, now: Instant) -> f32 {
-        spring(
-            now.saturating_duration_since(self.started)
-                .saturating_sub(lag),
-        )
-    }
-
-    fn settled_after(self, travel: Pixels, lag: Duration, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= settles_in(travel) + lag
-    }
-
-    fn settled(self, travel: Pixels, now: Instant) -> bool {
-        self.settled_after(travel, Duration::ZERO, now)
-    }
-}
-
-#[derive(Clone, Copy)]
 struct FadingBreath {
     line: usize,
     started: Instant,
@@ -285,13 +263,19 @@ impl Clock {
         self.from
             .saturating_add(now.saturating_duration_since(self.at))
     }
-}
 
-fn pulled_towards(from: Duration, to: Duration) -> Duration {
-    if to >= from {
-        from.saturating_add((to - from).mul_f32(PULLED_IN_A_FRAME))
-    } else {
-        from.saturating_sub((from - to).mul_f32(PULLED_IN_A_FRAME))
+    fn steered_by(self, heard: Duration, now: Instant) -> Duration {
+        let ran = self.runs_to(now);
+        let over =
+            now.saturating_duration_since(self.at).as_secs_f32() / STEERED_OVER.as_secs_f32();
+        let share = 1.0 - (-over).exp();
+        let steered = if heard >= ran {
+            ran.saturating_add((heard - ran).mul_f32(share))
+        } else {
+            ran.saturating_sub((ran - heard).mul_f32(share))
+        };
+
+        steered.max(self.from)
     }
 }
 
@@ -319,36 +303,26 @@ pub struct Breath {
     pub opacity: f32,
 }
 
-fn natural_frequency() -> f32 {
-    TAU / GLIDE_RESPONSE_SECS
+fn share_of(elapsed: Duration, span: Duration) -> f32 {
+    (elapsed.as_secs_f32() / span.as_secs_f32()).clamp(0.0, 1.0)
 }
 
-fn remaining(scaled_seconds: f32) -> f32 {
-    (1.0 + scaled_seconds) * (-scaled_seconds).exp()
+fn landed(through: f32) -> f32 {
+    let left = 1.0 - through;
+
+    3.0f32.mul_add(through, 1.0).mul_add(-left.powi(3), 1.0)
 }
 
-fn spring(elapsed: Duration) -> f32 {
-    1.0 - remaining(natural_frequency() * elapsed.as_secs_f32())
+fn landing_pace(through: f32) -> f32 {
+    12.0 * through * (1.0 - through).powi(2)
 }
 
-fn settles_in(travel: Pixels) -> Duration {
-    let tolerated_share = SETTLED / travel.abs();
-    if tolerated_share >= 1.0 {
-        return Duration::ZERO;
-    }
+fn launched(through: f32) -> f32 {
+    through * (1.0 - through).powi(3)
+}
 
-    let mut near = 0.0_f32;
-    let mut far = SETTLE_SEARCH_LIMIT;
-    for _ in 0..SETTLE_SEARCH_STEPS {
-        let middle = 0.5 * (near + far);
-        if remaining(middle) > tolerated_share {
-            near = middle;
-        } else {
-            far = middle;
-        }
-    }
-
-    Duration::from_secs_f32(far / natural_frequency())
+fn launch_pace(through: f32) -> f32 {
+    (1.0 - through).powi(2) * 4.0f32.mul_add(-through, 1.0)
 }
 
 fn lagged(lines: usize, per_line: Duration, at_most: usize) -> Duration {
@@ -391,6 +365,31 @@ impl<T: Copy + PartialEq> Turn<T> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Measures {
+    pub leading: Pixels,
+    pub label: Pixels,
+    pub padding: Pixels,
+    pub spacing: Pixels,
+    pub breath: Pixels,
+    pub pause: Pixels,
+    pub margin: Pixels,
+}
+
+impl Measures {
+    fn at(scale: Scale) -> Self {
+        Self {
+            leading: scale.snapped(px(theme::text_lyric() * LEADING)),
+            label: scale.snapped(px(theme::text_xs() * LABEL_LEADING)),
+            padding: scale.snapped(LINE_PADDING),
+            spacing: scale.snapped(LINE_SPACING),
+            breath: scale.snapped(theme::width(theme::lyric_breath())),
+            pause: scale.snapped(theme::width(theme::lyric_break())),
+            margin: scale.snapped(PLAIN_MARGIN),
+        }
+    }
+}
+
 struct Sheet {
     text: Arc<[SharedString]>,
     moments: Arc<[Option<Duration>]>,
@@ -411,35 +410,82 @@ impl Default for Sheet {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Glide {
+#[derive(Clone, Copy, Debug)]
+struct Leg {
     was: Pixels,
     lands: Pixels,
-    clock: Sprung,
+    launch: Pixels,
+    started: Instant,
+}
+
+impl Leg {
+    fn after(self, elapsed: Duration) -> Pixels {
+        let through = share_of(elapsed, GLIDE);
+
+        self.was + (self.lands - self.was) * landed(through) + self.launch * launched(through)
+    }
+
+    fn pace_after(self, elapsed: Duration) -> Pixels {
+        let through = share_of(elapsed, GLIDE);
+
+        (self.lands - self.was) * landing_pace(through) + self.launch * launch_pace(through)
+    }
+
+    fn elapsed(self, now: Instant) -> Duration {
+        now.saturating_duration_since(self.started)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Glide {
+    leg: Leg,
+    before: Option<Leg>,
 }
 
 impl Glide {
+    fn from_rest(was: Pixels, lands: Pixels, now: Instant) -> Self {
+        Self {
+            leg: Leg {
+                was,
+                lands,
+                launch: px(0.0),
+                started: now,
+            },
+            before: None,
+        }
+    }
+
     fn at(self, now: Instant) -> Pixels {
-        self.was + (self.lands - self.was) * self.clock.through(now)
+        self.leg.after(self.leg.elapsed(now))
     }
 
-    fn lag_of(self, lines_ahead: usize, now: Instant) -> Pixels {
-        let lag = lagged(lines_ahead, LAG_PER_LINE, LAGS_AT_MOST);
-        let behind = self.clock.through(now) - self.clock.through_after(lag, now);
-
-        (self.lands - self.was) * -behind
+    fn lagging(self, lag: Duration, now: Instant) -> Pixels {
+        let into = self.leg.elapsed(now);
+        match self.before {
+            Some(before) if into < lag => before.after(before.elapsed(now).saturating_sub(lag)),
+            _ => self.leg.after(into.saturating_sub(lag)),
+        }
     }
 
-    fn travel(self) -> Pixels {
-        self.lands - self.was
+    fn redirected(self, lands: Pixels, now: Instant) -> Self {
+        let into = self.leg.elapsed(now);
+        let was = self.leg.after(into);
+        let reach = (lands - was).abs() * LAUNCHED_AT_MOST;
+        let launch = self.leg.pace_after(into).clamp(-reach, reach);
+
+        Self {
+            leg: Leg {
+                was,
+                lands,
+                launch,
+                started: now,
+            },
+            before: Some(self.leg),
+        }
     }
 
     fn settled(self, now: Instant) -> bool {
-        self.clock.settled_after(
-            self.travel(),
-            lagged(LAGS_AT_MOST, LAG_PER_LINE, LAGS_AT_MOST),
-            now,
-        )
+        self.leg.elapsed(now) >= GLIDE + lagged(LAGS_AT_MOST, LAG_PER_LINE, LAGS_AT_MOST)
     }
 }
 
@@ -454,9 +500,11 @@ pub struct LyricsModel {
     opened_out: bool,
     sheet: Sheet,
     read_at: Option<usize>,
-    laid_out: Option<Size<Pixels>>,
+    scale: Scale,
+    laid_out: Option<(Size<Pixels>, Measures)>,
+    steady: bool,
     placed: bool,
-    arrived: Option<Sprung>,
+    arrived: Option<Instant>,
     turn: Turn<Reads>,
     light: Turn<[Option<usize>; 2]>,
     spread: Turn<Falloff>,
@@ -481,7 +529,9 @@ impl LyricsModel {
             opened_out: false,
             sheet: Sheet::default(),
             read_at: None,
+            scale: Scale::ONE,
             laid_out: None,
+            steady: false,
             placed: false,
             arrived: None,
             turn: Turn::still(Reads::Evenly),
@@ -540,17 +590,16 @@ impl LyricsModel {
         let running = self
             .clock
             .filter(|clock| clock.keeps_time_with(heard))
-            .map(|clock| clock.runs_to(now))
-            .filter(|ran| ran.abs_diff(heard.at) <= DRIFTS_AT_MOST);
-        let Some(ran) = running else {
+            .filter(|clock| clock.runs_to(now).abs_diff(heard.at) <= DRIFTS_AT_MOST);
+        let Some(clock) = running else {
             self.clock = heard.playing.then(|| Clock::started(heard, now));
             return heard.at;
         };
-        let kept = pulled_towards(ran, heard.at);
+        let kept = clock.steered_by(heard.at, now);
         self.clock = Some(Clock {
             from: kept,
             at: now,
-            ..Clock::started(heard, now)
+            ..clock
         });
 
         kept
@@ -731,40 +780,42 @@ impl LyricsModel {
             .blended(now, |lit| f32::from(u8::from(lit.contains(&Some(index)))))
     }
 
-    pub fn lag(&self, index: usize, now: Instant) -> Pixels {
+    pub fn inset(&self, index: usize, now: Instant) -> Pixels {
+        let rise = self.rise(index, now);
         let Some(glide) = self.glide else {
-            return px(0.0);
+            return self.scale.snapped(rise);
         };
         let lines_ahead = self.read_at.map_or(0, |read| {
             self.ordinal(index).saturating_sub(self.ordinal(read))
         });
+        let lag = lagged(lines_ahead, LAG_PER_LINE, LAGS_AT_MOST);
 
-        glide.lag_of(lines_ahead, now)
+        self.scale.snapped(glide.lagging(lag, now) + rise) - self.scale.snapped(glide.at(now))
     }
 
-    pub fn rise(&self, index: usize, now: Instant) -> Pixels {
+    fn rise(&self, index: usize, now: Instant) -> Pixels {
         let Some(arrived) = self.arrived else {
             return RISES_FROM;
         };
         let read = self.read_at.map_or(0, |read| self.ordinal(read));
         let away = self.ordinal(index).abs_diff(read);
         let lag = lagged(away, RISE_PER_LINE, RISES_AT_MOST);
+        let risen = now.saturating_duration_since(arrived).saturating_sub(lag);
 
-        RISES_FROM * (1.0 - arrived.through_after(lag, now))
+        RISES_FROM * (1.0 - landed(share_of(risen, RISE)))
     }
 
     pub fn arrival(&self, now: Instant) -> f32 {
         let Some(arrived) = self.arrived else {
             return 0.0;
         };
-        let elapsed = now.saturating_duration_since(arrived.started).as_secs_f32();
 
-        ease_in_out((elapsed / ARRIVES_IN.as_secs_f32()).clamp(0.0, 1.0))
+        ease_in_out(share_of(now.saturating_duration_since(arrived), ARRIVES_IN))
     }
 
     pub fn breath(&self, now: Instant) -> f32 {
         let since = self.arrived.map_or(Duration::ZERO, |arrived| {
-            now.saturating_duration_since(arrived.started)
+            now.saturating_duration_since(arrived)
         });
         let phase = since.as_secs_f32() / BREATH.as_secs_f32();
 
@@ -797,7 +848,7 @@ impl LyricsModel {
 
     pub fn resting_height(&self, index: usize) -> Option<Pixels> {
         let pane = self.scroll.bounds();
-        if self.laid_out != Some(pane.size) || pane.size.height <= px(0.0) {
+        if !self.steady || pane.size.height <= px(0.0) {
             return None;
         }
         let line = self.scroll.bounds_for_item(index)?;
@@ -820,7 +871,15 @@ impl LyricsModel {
     }
 
     pub fn edge(&self) -> Pixels {
-        self.pane_height() / 2.0
+        self.scale.snapped(self.pane_height() / 2.0)
+    }
+
+    pub fn measures(&self) -> Measures {
+        Measures::at(self.scale)
+    }
+
+    pub fn scaled_by(&mut self, scale: Scale) {
+        self.scale = scale;
     }
 
     pub fn opened_by(&self, pointer: Point<Pixels>) -> bool {
@@ -832,20 +891,20 @@ impl LyricsModel {
     }
 
     pub fn place(&mut self, now: Instant) -> bool {
-        let pane = self.scroll.bounds().size;
-        let laid_out_the_same = self.laid_out == Some(pane);
-        self.laid_out = Some(pane);
+        let laid_out = Some((self.scroll.bounds().size, self.measures()));
+        self.steady = self.laid_out == laid_out;
+        self.laid_out = laid_out;
 
         if self.following(now)
             && let Some(lands) = self.landing()
         {
             if self.placed {
                 self.glide_to(lands, now);
-            } else if laid_out_the_same {
+            } else if self.steady {
                 self.scroll.set_offset(point(self.scroll.offset().x, lands));
                 self.glide = None;
                 self.placed = true;
-                self.arrived = Some(Sprung::from(now));
+                self.arrived = Some(now);
             }
         }
 
@@ -856,11 +915,11 @@ impl LyricsModel {
         match self.read_at {
             Some(line) => {
                 let room = if self.sheet.breathes.get(line).copied().unwrap_or(false) {
-                    theme::width(theme::lyric_breath())
+                    self.measures().breath
                 } else {
                     px(0.0)
                 };
-                Some(self.centre_of(line)? - room / 2.0)
+                Some(self.scale.snapped(self.centre_of(line)? - room / 2.0))
             }
             None if self.placed && !self.is_synced() => None,
             None => Some(px(0.0)),
@@ -868,27 +927,10 @@ impl LyricsModel {
     }
 
     pub fn glide_to(&mut self, lands: Pixels, now: Instant) {
-        let Some(glide) = self.glide else {
-            self.glide = Some(Glide {
-                was: self.scroll.offset().y,
-                lands,
-                clock: Sprung::from(now),
-            });
-            return;
-        };
-        let drift = (glide.lands - lands).abs();
-        if drift < SETTLED {
-            return;
-        }
-
-        self.glide = if drift < RESETTLE && !glide.clock.settled(glide.travel(), now) {
-            Some(Glide { lands, ..glide })
-        } else {
-            Some(Glide {
-                was: self.scroll.offset().y,
-                lands,
-                clock: Sprung::from(now),
-            })
+        self.glide = match self.glide {
+            None => Some(Glide::from_rest(self.scroll.offset().y, lands, now)),
+            Some(glide) if (glide.leg.lands - lands).abs() < SETTLED => return,
+            Some(glide) => Some(glide.redirected(lands, now)),
         };
     }
 
@@ -896,8 +938,10 @@ impl LyricsModel {
         let Some(glide) = self.glide else {
             return false;
         };
-        self.scroll
-            .set_offset(point(self.scroll.offset().x, glide.at(now)));
+        self.scroll.set_offset(point(
+            self.scroll.offset().x,
+            self.scale.snapped(glide.at(now)),
+        ));
 
         !glide.settled(now)
     }
@@ -914,11 +958,8 @@ impl LyricsModel {
 
     fn is_arriving(&self, now: Instant) -> bool {
         self.arrived.is_some_and(|arrived| {
-            !arrived.settled_after(
-                RISES_FROM,
-                lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST),
-                now,
-            )
+            now.saturating_duration_since(arrived)
+                < RISE + lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST)
         })
     }
 
@@ -1017,6 +1058,7 @@ impl LyricsModel {
     fn rewind(&mut self) {
         self.read_at = None;
         self.laid_out = None;
+        self.steady = false;
         self.placed = false;
         self.arrived = None;
         self.turn = Turn::still(Reads::Evenly);
@@ -1291,64 +1333,159 @@ mod tests {
         assert!((model.standing(7, settled.max(opened + TURN)) - across).abs() < f32::EPSILON);
     }
 
-    #[test]
-    fn a_spring_runs_from_rest_to_rest_and_never_passes_the_end() {
-        let settles = settles_in(px(300.0));
-        assert!(spring(Duration::ZERO).abs() < f32::EPSILON);
-        assert!((spring(settles * 3) - 1.0).abs() < 1e-4);
+    const FRAME_AT_240_HZ: Duration = Duration::from_micros(4_167);
 
-        let mut furthest: f32 = 0.0;
-        for step in 0..=80 {
-            let through = spring(settles * step / 80);
-            furthest = furthest.max(through);
-        }
-        assert!(furthest > 0.99);
-        assert!(furthest <= 1.0);
-        assert!(spring(Duration::from_millis(150)) > spring(Duration::from_millis(50)));
+    const LAST_STEP_WITHIN: Duration = Duration::from_millis(60);
+
+    fn frames_through(span: Duration) -> impl Iterator<Item = Duration> {
+        let frames = u32::try_from(span.as_nanos() / FRAME_AT_240_HZ.as_nanos() + 2).expect("few");
+
+        (0..=frames).map(|frame| FRAME_AT_240_HZ * frame)
     }
 
     #[test]
-    fn a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps() {
-        for travel in [px(12.0), px(120.0), px(400.0), px(-900.0), px(2_400.0)] {
-            let settles = settles_in(travel);
-            let mut was = px(0.0);
-            for millis in 0..4_000_u64 {
-                let elapsed = Duration::from_millis(millis);
-                let at = travel * spring(elapsed);
-                if elapsed >= settles {
-                    assert!(
-                        (travel - at).abs() <= SETTLED,
-                        "a glide of {travel:?} was {:?} from its landing after it settled",
-                        (travel - at).abs()
-                    );
-                }
+    fn a_glide_runs_from_rest_to_its_landing_and_never_passes_it() {
+        assert!(landed(0.0).abs() < f32::EPSILON);
+        assert!((landed(1.0) - 1.0).abs() < f32::EPSILON);
+        assert!(landing_pace(0.0).abs() < f32::EPSILON);
+        assert!(landing_pace(1.0).abs() < f32::EPSILON);
+        assert!(launched(0.0).abs() < f32::EPSILON);
+        assert!(launched(1.0).abs() < f32::EPSILON);
+        assert!((launch_pace(0.0) - 1.0).abs() < f32::EPSILON);
+
+        let mut was = 0.0;
+        for step in 1..=1_000 {
+            let through = landed(step as f32 / 1_000.0);
+            assert!(through >= was && through <= 1.0);
+            was = through;
+        }
+    }
+
+    #[test]
+    fn a_glide_lands_on_a_whole_pixel_with_its_last_step_close_behind_the_one_before() {
+        let start = Instant::now();
+        for travel in [
+            px(22.0),
+            px(66.0),
+            px(120.0),
+            px(400.0),
+            px(-900.0),
+            px(2_400.0),
+        ] {
+            let glide = Glide::from_rest(px(0.0), travel, start);
+            let mut drawn = px(0.0);
+            let mut stepped = [Duration::ZERO; 2];
+            for elapsed in frames_through(GLIDE) {
+                let now = Scale::ONE.snapped(glide.at(start + elapsed));
                 assert!(
-                    (travel - at).abs() <= (travel - was).abs() || millis == 0,
-                    "a glide of {travel:?} turned back at {millis} ms"
+                    (travel - now).abs() <= (travel - drawn).abs(),
+                    "a glide of {travel:?} turned back at {elapsed:?}"
                 );
-                was = at;
+                if now != drawn {
+                    stepped = [stepped[1], elapsed];
+                }
+                drawn = now;
+            }
+
+            assert_eq!(drawn, travel, "a glide of {travel:?} did not land");
+            assert!(
+                stepped[1] - stepped[0] <= LAST_STEP_WITHIN,
+                "a glide of {travel:?} took its last pixel {:?} after the one before",
+                stepped[1] - stepped[0]
+            );
+            assert!(glide.settled(start + GLIDE + LAG_PER_LINE * 6));
+        }
+    }
+
+    #[test]
+    fn a_new_landing_in_flight_carries_the_glide_on_without_a_jump_or_a_stop() {
+        let start = Instant::now();
+        let first = Glide::from_rest(px(0.0), px(-400.0), start);
+        let turned = start + GLIDE / 3;
+        let then = first.redirected(px(-466.0), turned);
+
+        assert!((then.at(turned) - first.at(turned)).abs() < px(1e-3));
+        for lines in 0..=LAGS_AT_MOST {
+            let lag = lagged(lines, LAG_PER_LINE, LAGS_AT_MOST);
+            assert!(
+                (then.lagging(lag, turned) - first.lagging(lag, turned)).abs() < px(1e-3),
+                "a line {lines} ahead jumped when the glide turned"
+            );
+        }
+
+        let before = first.at(turned) - first.at(turned - FRAME_AT_240_HZ);
+        let after = then.at(turned + FRAME_AT_240_HZ) - then.at(turned);
+        assert!(
+            (after - before).abs() < before.abs() * 0.1,
+            "the glide went from {before:?} to {after:?} a frame as it turned"
+        );
+
+        let near = first.redirected(first.at(turned) - px(3.0), turned);
+        for elapsed in frames_through(GLIDE) {
+            assert!(near.at(turned + elapsed) >= near.leg.lands - px(1e-3));
+        }
+    }
+
+    fn arrived_and_placed(lines: usize, scale: Scale, now: Instant) -> LyricsModel {
+        let mut model = verse(lines);
+        model.scaled_by(scale);
+        model.placed = true;
+        model.arrived = Some(now);
+
+        model
+    }
+
+    #[test]
+    fn every_line_is_drawn_on_whole_pixels_and_never_steps_back_through_a_glide() {
+        let factor = 1.25;
+        let scale = Scale::of(factor);
+        let start = Instant::now() + RISE * 4;
+        let mut model = arrived_and_placed(10, scale, Instant::now());
+
+        model.follow_the_track(at(2), start);
+        model.glide_to(px(-266.4), start);
+
+        let mut drawn = [px(f32::MAX); 11];
+        for elapsed in frames_through(GLIDE + LAG_PER_LINE * 8) {
+            let now = start + elapsed;
+            model.glide(now);
+            let offset = model.scroll.offset().y;
+            for (line, was) in drawn.iter_mut().enumerate() {
+                let at = offset + model.inset(line, now);
+                let pixels = f32::from(at) * factor;
+                assert!(
+                    (pixels - pixels.round()).abs() < 1e-3,
+                    "line {line} was drawn {pixels} pixels down at {elapsed:?}"
+                );
+                assert!(
+                    at <= *was + px(1e-3),
+                    "line {line} stepped back from {was:?} to {at:?} at {elapsed:?}"
+                );
+                *was = at;
             }
         }
-        assert_eq!(settles_in(px(0.2)), Duration::ZERO);
-        assert!(settles_in(px(400.0)) > settles_in(px(40.0)));
+
+        assert!(!model.glide(start + GLIDE + LAG_PER_LINE * 8));
+        let home = scale.snapped(px(-266.4));
+        assert!(drawn.iter().all(|at| (*at - home).abs() < px(1e-3)));
     }
 
     #[test]
     fn a_line_further_ahead_lags_further_behind_the_glide_and_catches_up_once_it_settles() {
-        let now = Instant::now();
-        let mut model = verse(8);
-        model.placed = true;
+        let now = Instant::now() + RISE * 4;
+        let midway = now + Duration::from_millis(120);
+        let settled = now + GLIDE + LAG_PER_LINE * 8;
+        let mut model = arrived_and_placed(8, Scale::ONE, Instant::now());
+
         model.follow_the_track(at(2), now);
         model.glide_to(px(-300.0), now);
+        model.glide(midway);
 
-        let midway = now + Duration::from_millis(120);
-        assert!(model.lag(2, midway).abs() < px(f32::EPSILON));
-        assert!(model.lag(3, midway) > px(0.0));
-        assert!(model.lag(5, midway) > model.lag(3, midway));
-        assert!(model.lag(0, midway).abs() < px(f32::EPSILON));
-
-        let settled = now + settles_in(px(300.0)) + LAG_PER_LINE * 8;
-        assert!(model.lag(5, settled).abs() < SETTLED);
+        assert_eq!(model.inset(2, midway), px(0.0));
+        assert!(model.inset(3, midway) > px(0.0));
+        assert!(model.inset(5, midway) > model.inset(3, midway));
+        assert_eq!(model.inset(0, midway), px(0.0));
+        assert_eq!(model.inset(5, settled), px(0.0));
         assert!(model.glide(midway));
         assert!(!model.glide(settled));
     }
@@ -1363,7 +1500,7 @@ mod tests {
 
         model.follow_the_track(at(3), now);
         model.placed = true;
-        model.arrived = Some(Sprung::from(now));
+        model.arrived = Some(now);
 
         let soon = now + Duration::from_millis(100);
         assert!(model.rise(3, soon) < model.rise(4, soon));
@@ -1372,10 +1509,54 @@ mod tests {
         assert!(model.arrival(soon) > 0.0);
         assert!(model.is_turning(soon));
 
-        let there = now + settles_in(RISES_FROM) + RISE_PER_LINE * 8;
-        assert!(model.rise(7, there).abs() < SETTLED);
+        let there = now + RISE + RISE_PER_LINE * 8;
+        assert_eq!(model.rise(7, there), px(0.0));
         assert!((model.arrival(there) - 1.0).abs() < f32::EPSILON);
         assert!(!model.is_turning(there));
+    }
+
+    #[test]
+    fn a_line_is_held_open_only_once_two_layouts_running_were_measured_alike() {
+        let now = Instant::now();
+        let mut model = verse(4);
+
+        model.place(now);
+        assert!(!model.steady, "a first layout was taken as measured");
+
+        model.place(now);
+        assert!(model.steady);
+
+        model.scaled_by(Scale::of(1.5));
+        model.place(now);
+        assert!(
+            !model.steady,
+            "lines were held open at heights measured at another scale"
+        );
+
+        model.place(now);
+        assert!(model.steady);
+    }
+
+    #[test]
+    fn the_measures_of_a_line_are_whole_device_pixels_at_any_scale() {
+        for factor in [1.0, 1.25, 1.5, 1.75, 2.0, 2.25] {
+            let measures = Measures::at(Scale::of(factor));
+            for length in [
+                measures.leading,
+                measures.label,
+                measures.padding,
+                measures.spacing,
+                measures.breath,
+                measures.pause,
+                measures.margin,
+            ] {
+                let pixels = f32::from(length) * factor;
+                assert!(
+                    (pixels - pixels.round()).abs() < 1e-3,
+                    "{length:?} is {pixels} pixels at {factor}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1452,37 +1633,65 @@ mod tests {
         assert_eq!(model.breathes().as_ref(), [true, true]);
     }
 
-    #[test]
-    fn the_clock_runs_smoothly_through_a_position_that_arrives_a_decoded_block_at_a_time() {
-        let mut model = model();
-        let track = TrackId::new(1).expect("a track id");
-        let heard = |at: Duration, seeks: Seeks, playing: bool| Heard {
-            track,
+    fn heard(at: Duration, seeks: Seeks, playing: bool) -> Heard {
+        Heard {
+            track: TrackId::new(1).expect("a track id"),
             seeks,
             at,
             playing,
-        };
+        }
+    }
+
+    #[test]
+    fn the_clock_runs_smoothly_through_a_position_that_arrives_a_decoded_block_at_a_time() {
         let block = Duration::from_millis(93);
+        let starts = at(10);
+        for frame in [Duration::from_micros(16_667), FRAME_AT_240_HZ] {
+            let mut model = model();
+            let began = Instant::now();
+            let frames = u32::try_from(at(4).as_nanos() / frame.as_nanos()).expect("few");
+
+            let mut was = model.keep_time(heard(starts, Seeks::default(), true), began);
+            assert_eq!(was, starts);
+            for step in 1..=frames {
+                let elapsed = frame * step;
+                let blocks = u32::try_from(elapsed.as_nanos() / block.as_nanos()).expect("few");
+                let sampled = starts + block * blocks;
+                let kept = model.keep_time(heard(sampled, Seeks::default(), true), began + elapsed);
+                let stepped = kept.saturating_sub(was);
+                assert!(kept >= was, "the clock ran backwards at frame {step}");
+                assert!(
+                    stepped.abs_diff(frame) < frame / 4,
+                    "a frame of {frame:?} moved the clock by {stepped:?}"
+                );
+                assert!((starts + elapsed).abs_diff(kept) < block);
+                was = kept;
+            }
+        }
+    }
+
+    #[test]
+    fn a_clock_steered_back_by_a_position_behind_it_slows_rather_than_running_backwards() {
+        let mut model = model();
+        let began = Instant::now();
+        model.keep_time(heard(at(10), Seeks::default(), true), began);
+        let stalled = began + Duration::from_millis(200);
+
+        let kept = model.keep_time(
+            heard(at(10) - Duration::from_millis(40), Seeks::default(), true),
+            stalled,
+        );
+
+        assert!(kept >= at(10), "the clock ran back to {kept:?}");
+        assert!(kept < at(10) + Duration::from_millis(200));
+    }
+
+    #[test]
+    fn a_seek_or_a_pause_is_taken_as_it_stands() {
+        let mut model = model();
         let frame = Duration::from_micros(16_667);
         let began = Instant::now();
-        let starts = at(10);
-
-        let mut was = model.keep_time(heard(starts, Seeks::default(), true), began);
-        assert_eq!(was, starts);
-        for step in 1..=240_u32 {
-            let elapsed = frame * step;
-            let blocks = u32::try_from(elapsed.as_nanos() / block.as_nanos()).expect("few");
-            let sampled = starts + block * blocks;
-            let kept = model.keep_time(heard(sampled, Seeks::default(), true), began + elapsed);
-            let stepped = kept.saturating_sub(was);
-            assert!(kept >= was, "the clock ran backwards at frame {step}");
-            assert!(
-                stepped.abs_diff(frame) < Duration::from_millis(4),
-                "a frame moved the clock by {stepped:?}"
-            );
-            assert!((starts + elapsed).abs_diff(kept) < block);
-            was = kept;
-        }
+        model.keep_time(heard(at(10), Seeks::default(), true), began);
 
         let later = began + frame * 241;
         let sought = model.keep_time(heard(at(90), Seeks::default().stepped(), true), later);
@@ -1651,42 +1860,41 @@ mod tests {
     fn a_track_change_puts_the_pane_back_to_being_placed_rather_than_gliding_from_the_last_one() {
         let mut model = verse(4);
         model.placed = true;
-        model.laid_out = Some(Size {
-            width: px(900.0),
-            height: px(200.0),
-        });
+        model.steady = true;
+        model.laid_out = Some((
+            Size {
+                width: px(900.0),
+                height: px(200.0),
+            },
+            model.measures(),
+        ));
 
         model.rewind();
 
         assert!(!model.is_placed());
+        assert!(!model.steady);
         assert_eq!(model.laid_out, None);
         assert_eq!(model.read_at(), None);
     }
 
     #[test]
-    fn a_target_that_drifts_under_a_line_bends_the_glide_rather_than_starting_it_again() {
+    fn a_landing_moved_by_less_than_half_a_pixel_leaves_the_glide_alone() {
         let now = Instant::now();
         let mut model = verse(4);
         model.placed = true;
 
         model.glide_to(px(400.0), now);
-        let half = now + TURN / 2;
-        assert!(model.glide(half));
+        let half = now + GLIDE / 2;
+        model.glide_to(px(400.2), half);
+        let glide = model.glide.expect("a glide is in flight");
 
-        model.glide_to(px(412.0), half);
-        assert!(!model.glide.expect("a glide is in flight").settled(half));
+        assert!(glide.before.is_none(), "a sub-pixel move turned the glide");
+        assert_eq!(glide.leg.lands, px(400.0));
 
         model.glide_to(px(-900.0), half);
-        assert!(
-            model
-                .glide
-                .expect("a glide is in flight")
-                .clock
-                .through(half)
-                .abs()
-                < f32::EPSILON,
-            "a target a whole screen away should start a fresh glide"
-        );
+        let turned = model.glide.expect("a glide is in flight");
+        assert_eq!(turned.leg.lands, px(-900.0));
+        assert!((turned.at(half) - glide.at(half)).abs() < px(1e-3));
     }
 
     #[test]

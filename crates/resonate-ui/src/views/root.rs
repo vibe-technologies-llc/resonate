@@ -3665,6 +3665,7 @@ impl RootView {
         self.library
             .update(cx, |library, _| library.scaled_by(scale));
         self.player.update(cx, |player, _| player.scaled_by(scale));
+        self.lyrics.update(cx, |lyrics, _| lyrics.scaled_by(scale));
     }
 }
 

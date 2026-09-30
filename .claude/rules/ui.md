@@ -1073,15 +1073,16 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **The pane always draws and scrolls the whole sheet; a reading is only how far the light reaches.**
   `Falloff::Around` looks only forward — the line sung and the two after, everything sung out — which is
   `Reading::InPlay`; `Falloff::Across` steps down gently both ways so `Reading::Whole` stays readable to
-  the edges (its tail at 0.16), the type bold and centred in its column. A growing line's size is stepped
-  at `SIZE_STEPS_PER_PIXEL`, whole pixels giving the 420 ms turn eight steps, which read as a low frame
-  rate. **A row is measured at the size it will reach, not the size drawn at.** The line box is
-  `text_lyric_lead()` times `LEADING` whatever the line's own size, and the text is laid out in
-  `inside * size / text_lyric_lead()` of room — the padded column scaled by how far the line has grown —
-  so the ratio deciding the wrap never moves and a row takes the same rows, at the same height, lit or at
-  rest. Without both, a line on one row at rest took two as it lit: its height changed mid-turn, every
-  line below shifted a row, and `centre_of` read moving bounds, so the sheet slid under itself. The cost
-  is the difference in leading on every line never growing — whitespace, not motion. A line is drawn for
+  the edges (its tail at 0.16), the type bold and centred in its column. **The sung line brightens; it
+  does not grow.** Every line is `text_lyric()` in a box of `Measures::leading`, lit or not, so a row
+  takes the same rows at the same height whatever the turn is doing. A size in motion cannot be drawn
+  smoothly here: gpui on Linux puts a glyph on a whole pixel vertically (`SUBPIXEL_VARIANTS_Y` is 1, the
+  origin floored) and cosmic-text hints every size, Inter carrying TrueType bytecode, so the line that
+  grew from 26 to 36 px was re-hinted at each of its eighty steps — cap height and baseline landing on
+  different pixels step to step, a shimmer through the turn and a one-pixel hop as it ended. Before the
+  size was dropped, a row was measured at the size it would reach and its text laid out in a box scaled
+  by how far it had grown, a line on one row at rest having taken two as it lit and slid the sheet under
+  itself. A line is drawn for
   what is coming, not what has been: keeping the last one up behind the sung one makes a pane read as a
   transcript rather than a track playing, so `Falloff::behind` is `0.0` for `Around` and `ahead` mirrored
   for `Across`. Drawing every line either way makes the motion possible: an `InPlay` reading building a
@@ -1095,7 +1096,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **Two voiced lines have separate reading edges.** A set with a second voice places voice one on the
   leading side and voice two on the trailing side, with a small voice label when the singer changes. Text
   and alignment both identify the voice; the second also takes the accent when lit. Each voice's active
-  line brightens and grows on the existing turn, even where both sing together. A one-voice set keeps its
+  line brightens on the existing turn, even where both sing together. A one-voice set keeps its
   centred column and former width.
 - **The falloff counts written lines, not rows.** `drawn` records each line's ordinal among the
   non-blank ones when the look lands, so a blank line between verses costs its neighbours no standing and
@@ -1111,34 +1112,48 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   was what it was, and past the last line it left the whole sheet all but unreadable however opened out.
   `read_at` keeps the sheet where it is, which is also what takes a set's last line away once it has had
   its word rather than leaving it lit through the outro. `standing` blends over `Reads`, `lead` over the
-  lines in play, and size and colour both read off `lead` — `mixed` lerps `muted` to `text` — so a line
-  grows and brightens over one 420 ms (`TURN`) rather than snapping at a threshold. The third turn is
+  lines in play, and colour reads off `lead` — `mixed` lerps `muted` to `text` — so a line brightens
+  over one 420 ms (`TURN`) rather than snapping at a threshold. The third turn is
   `spread`, over the `Falloff` itself: the pointer opening the pane out and a reading chip both go
   through `Turn::onto`, so lines a wider reading brings up fade in over the same span, and `standing` is
   the falloff turn blended over the reads turn. The `Glide` differs in kind: it carries the scroll
-  offset to `centre_of` the read line on `spring`, a closed-form critically damped spring of
-  `GLIDE_RESPONSE_SECS` that never passes its landing, a move decelerating into it reading as the sheet
-  arriving where an ease-in-out reads as it being pushed. An underdamped spring was tried and dropped:
-  its overshoot of a percent or so on a glide of hundreds of pixels came back as one- and two-pixel
-  steps in the last moments, which read as a flutter rather than a bounce. The curve is never cut short:
-  `settles_in` is how long it takes the remaining share to fall inside `SETTLED` (half a pixel) of the
-  landing, found by bisection, so a long glide runs longer than a short one, and the offset, the lines'
-  lag and the rise read the raw curve the whole way
-  (`a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps`).
+  offset to the read line's `landing` over `GLIDE` (600 ms) on `landed`, `1 − (1 − s)³(1 + 3s)` — at
+  rest at both ends, fastest a third of the way, never passing its landing, a move decelerating into it
+  reading as the sheet arriving where an ease-in-out reads as it being pushed. It ends on a cubic, not
+  an exponential: on whole pixels the last one comes about 35 ms after the one before. The critically
+  damped spring it replaced crept its last pixel or two in 130–150 ms apart, long after the sheet looked
+  still, which read as the sheet jumping a pixel at the last moment; an underdamped one before that came
+  back from its overshoot the same way, as a flutter
+  (`a_glide_lands_on_a_whole_pixel_with_its_last_step_close_behind_the_one_before`).
+- **Everything in the sheet moves on whole device pixels, because gpui draws text on them.** A glyph's
+  vertical origin is floored to a device pixel while a quad is drawn where it is, so text given a
+  fractional place stepped a pixel at a time while its hover wash and the dots slid. `Scale::snapped`
+  rounds to the window's device pixels (`RootView::follow_the_scale` hands the lyrics its scale):
+  `landing` is snapped before a glide leaves — an odd pane height put a centred line on a half pixel,
+  which the glide crossed only in its very last frame — `glide` sets the offset snapped, and `inset`
+  rounds each line's place *once*, as `snapped(where the line is) − snapped(where the sheet is)`. The
+  offset and a line's lag rounded apart, the offset by the glyph floor and the lag by taffy, made their
+  sum tick a pixel back and forth though both moved one way: 322 such reversals over a minute of a test
+  sheet, which read as the lines vibrating
+  (`every_line_is_drawn_on_whole_pixels_and_never_steps_back_through_a_glide`). `Measures` holds every
+  vertical length of a row — the words' leading, a voice label's, the padding, the spacing, a breath's
+  room, a pause — snapped the same way, and the head is `edge()` snapped, so every row starts and ends
+  on a whole device pixel. taffy rounds a size by where it sits (`round(top + height) − round(top)`), so
+  a 62.08 px row came out 62 or 63 as rows above it changed, the read line moving a pixel with no line
+  change (`the_measures_of_a_line_are_whole_device_pixels_at_any_scale`).
 - **A line further down sets off later, so a change ripples rather than shifts.** Every row is two
   boxes: the outer is what `bounds_for_item` measures, and the inner is `relative()` with a `top` inset
-  of `LyricsModel::lag` plus `LyricsModel::rise`, so nothing the motion does moves the bounds the
-  landing is computed from. `Glide::lag_of` is the whole ripple: a line `n` written lines past the read
-  line reads the same spring `LAG_PER_LINE × n` later, capped at `LAGS_AT_MOST`, its inset being the
-  distance between where the sheet is and where that lagging clock says it should be — so the lines
-  below the sung one are still catching up as it lands, as Apple Music's sheet does and one offset for
-  the lot cannot. Lines above the read line lag nothing, what was sung being out of the way first.
-  `Glide::settled` therefore waits the last lag out (`settled_after`), so frames keep coming until the
+  of `LyricsModel::inset`, so nothing the motion does moves the bounds the landing is computed from.
+  `Glide::lagging` is the whole ripple: a line `n` written lines past the read line is where the sheet
+  was `LAG_PER_LINE × n` ago, capped at `LAGS_AT_MOST`, its inset the distance from there to where the
+  sheet is — so the lines below the sung one are still catching up as it lands, as Apple Music's sheet
+  does and one offset for the lot cannot. Lines above the read line lag nothing, what was sung being out
+  of the way first. `Glide::settled` therefore waits the last lag out, so frames keep coming until the
   furthest line is home.
 - **A set arrives rather than appears.** `place` starts `arrived` the moment the pane is placed, and two
   readings come off it: `arrival`, the body's opacity, an ease over `ARRIVES_IN`, and `rise`, each line's
-  inset, `RISES_FROM` down and springing to nothing `RISE_PER_LINE` later for each written line from the
-  read line either way, capped at `RISES_AT_MOST`. Until placed, `rise` answers the full `RISES_FROM` and
+  inset, `RISES_FROM` down and falling to nothing on `landed` over `RISE`, `RISE_PER_LINE` later for
+  each written line from the read line either way, capped at `RISES_AT_MOST`. Until placed, `rise` answers the full `RISES_FROM` and
   `arrival` nothing, so the first frame lays out low and invisible and the set comes up out of the read
   line. `breath` reads the same clock: a sine over `BREATH`, what the gap's dots swell on.
 - **A look only just started is kept quiet.** `follow` stamps `asked_at` where the track moved on, and
@@ -1150,12 +1165,16 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   then the ended row, then `line_at`, so an instrumental scrolls the upcoming line to the middle and
   lets it rise there under the dots while all else is out — and past the last line, with nothing to wait
   for, it falls back and holds.
-- **`centre_of` reads the laid-out bounds, and the glide bends rather than restarting.**
+- **`centre_of` reads the laid-out bounds, and a new landing carries the glide on.**
   `ScrollHandle::bounds_for_item` is what gpui laid out with no scroll offset, so the landing *is* the
-  offset, and adding the current one would make the target chase the glide and never settle. The target
-  still drifts a little each frame while the lit line grows under it, so `glide_to` moves `lands` in place
-  while a glide is in flight and a drift is under `RESETTLE`, starting afresh only for a jump. Restarting
-  on every drift froze the scroll near its start and then let it snap.
+  offset, and adding the current one would make the target chase the glide and never settle. A landing
+  within `SETTLED` (half a pixel) of the held one is no move; any other `redirected`s the glide: a new
+  `Leg` from where the sheet is, carrying the pace it had as `launch` on `launched`, `s(1 − s)³`, which
+  starts at that pace and dies away on the same cubic tail, held to `LAUNCHED_AT_MOST` times the travel
+  so the leg never passes its landing. The leg before stays as `Glide::before`, so a lagging line reads
+  the path the sheet took. Lines sung faster than a glide then scroll as one motion: a glide started
+  afresh from rest stalled at every line, and each lagging line jumped its whole lag as it restarted
+  (`a_new_landing_in_flight_carries_the_glide_on_without_a_jump_or_a_stop`).
 - **An unsynced sheet is placed at its top once and then left to the reader.** With no line read,
   `landing` answers the top for a synced set, waiting on its first line, and for any set not yet
   placed; a placed unsynced set answers nothing, so `place` leaves the offset where the wheel took it.
@@ -1164,7 +1183,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **A line far from the pane is not laid out, only held open at its height.**
   `LyricsModel::resting_height` answers the height `bounds_for_item` last gave a line wherever that line,
   moved by the scroll offset the bounds leave out, lies more than `DRAWN_WITHIN_PANES` — a pane's height
-  — above or below the pane, and only while the pane is the size the line was laid out at; `lyric` draws
+  — above or below the pane, and only while `LyricsModel::steady`: the pane's size and the `Measures`
+  the same two frames running. A frame reads the layout before it, and a line held open in that layout
+  was read off the one before that, so a change must lay every line out once more before any is held
+  again; gating on the frame's own size alone let the sheet's first layout — taken with the pane zero
+  wide, a letter a row, lines a thousand pixels tall — hold those heights for the sheet's life
+  (`a_line_is_held_open_only_once_two_layouts_running_were_measured_alike`). `lyric` draws
   such a line as an empty box of that height and width, so the sheet's layout, the child indices
   `centre_of` reads and every other line's place stay as they were while a hundred unseen lines cost a
   box each rather than a text layout each frame. A line coming within a pane of view is drawn whole before
@@ -1180,7 +1204,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   are measured off `ScrollHandle::bounds`, a frame behind, so the first frame lays out with no padding
   at offset zero and the second with the padding but centred off the first's child bounds — two frames
   of a sheet sliding into position being what "it glitches and then corrects itself" was. `place`
-  therefore reveals nothing until the size the layout was measured from is the size it has, snaps the
+  therefore reveals nothing until `steady` — the size and `Measures` the layout was taken at being the
+  ones it has — snaps the
   offset rather than gliding, and reports itself moving throughout so frames keep coming while paused;
   until then the body is drawn at `opacity(0)`, laid out unseen. `follow_the_track` snaps its turns over
   the same span, so a set arrives at its standing rather than fading in from `Reads::Evenly`. `rewind`
@@ -1207,8 +1232,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   decoded less what ring and device still hold, so it climbs a decoded block at a time — ~90 ms for FLAC
   — and drains in quanta between: a sawtooth, and everything keyed off it — the word sweep, the filling
   dots, the moment a line lights — moved in those steps. `LyricsModel::keep_time` runs a `Clock` on the
-  wall from the last sample and pulls it `PULLED_IN_A_FRAME` of the way towards each new one, so the
-  published position steers without its steps showing; a seek (`Seeks` moved), a new track, a pause or a
+  wall from the last sample and steers it towards each new one by `1 − e^(−t / STEERED_OVER)` of the
+  way, `t` the time since the last — a share of time, not of a frame, so a 240 Hz display steers no
+  harder than a 60 Hz one — and never back past where it last stood, so the published position steers
+  without its steps showing; a seek (`Seeks` moved), a new track, a pause or a
   drift past `DRIFTS_AT_MOST` takes the published position as it stands. While a synced set plays the
   pane asks every frame, drawn on the display's clock rather than the 16 ms poll's, which beats against
   it.
@@ -1217,10 +1244,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   track's start before the first line and from when the last line went out after it (`lyrics.md` has
   when a line goes out and why a blank line is a pause). The pane draws it as three dots standing where
   that line will be, filling in turn and swelling on `LyricsModel::breath` by `DOT_SWELL` over
-  `LYRIC_DOT`, the line itself rising towards lit as the count runs out. The dots sit in a row of the
-  *fully swollen* height with the padding outside it, so the row holds still while they breathe: sized
-  to the dots, the gap grew and shrank and shifted every line below by a pixel or two, the one thing
-  left whose height moved while drawn. **The dots never change the layout: their room is the sheet's,
+  `LYRIC_DOT`, the line itself rising towards lit as the count runs out. The dots are painted by
+  `breather`, a canvas of the *fully swollen* size, each a quad around a centre that never moves, so
+  the row holds still while they breathe and a dot swells by fractions of a pixel: sized to the dots,
+  the gap grew and shrank and shifted every line below, and as laid-out boxes taffy rounded each dot's
+  size and place to whole pixels, so a swelling dot stepped and wobbled off its centre. **The dots never change the layout: their room is the sheet's,
   not the wait's.** `Lyrics::breathes_before` answers from the timing alone which lines a wait would
   ever count down to — the first written line, and any whose previous written line goes out
   `A_BREATH_AT_LEAST` ahead of it — and every such line is drawn with `lyric_breath` of room above its
