@@ -52,8 +52,14 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   every channel, so one curve is the whole story. `magnitude_db`, `response` and `peak_db` weigh
   each channel apart and the rest, and answer the loudest at each point: a left and a right boost
   at one centre are 6 dB where summing them onto one curve made 12, and since the preamp is one for
-  all, *Fit the preamp* must hold the loudest channel under full scale.
-  `a_band_shaping_one_channel_is_heard_on_that_channel_alone` is the claim.
+  all, *Fit the preamp* must hold the loudest channel under full scale. **The pane draws each
+  channel apart.** `Profile::responses` answers a `Traced` per curve worth drawing — one
+  `TracedOn::EveryChannel` where no band is apart, else a `TracedOn::Channel` for each channel some
+  band reaches alone and a `TracedOn::EveryOtherChannel` beside them — and `EqualiserModel::drawn`
+  keeps them per revision and rate. The shared curve keeps the accent and its wash, each channel is a
+  line in `theme::beside_the_accent`, a key of swatches names them when more than one is drawn
+  (`channels_told_apart`, the `L R C SUB RL RR SL SR` order spoken), and the plot is as wide as the
+  widest of them. `a_band_shaping_one_channel_is_heard_on_that_channel_alone` is the claim.
 - **`Band::new` normalises.** A kind reading no gain is never built carrying one, so a notch cannot
   hold a value nothing reads and two notches cannot compare unequal over it — which would republish
   `OutputSettings` for a difference that does not exist.

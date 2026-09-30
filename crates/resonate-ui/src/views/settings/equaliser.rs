@@ -7,7 +7,7 @@ use gpui::{
 };
 use resonate_core::{
     MediaLocation, SampleRate,
-    eq::{Band, BandKind, Preamp},
+    eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{Command, NodeName, Sources, read_impulse};
 use resonate_eq::{Binding, Device, ProfileName};
@@ -48,6 +48,7 @@ const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
 const HANDLE_RADIUS: f32 = 5.0;
 const CHOSEN_HANDLE_RADIUS: f32 = 6.5;
 const HANDLE_BORDER: f32 = 2.0;
+const CHANNEL_SWATCH: f32 = 12.0;
 
 const NOT_BIT_PERFECT: &str = "On, the samples reaching the device are not the file's own: the \
                                playback bar reads converted rather than bit-perfect, and a DSD \
@@ -301,6 +302,9 @@ impl RootView {
                     cx.stop_propagation();
                 }
             }))
+            .when(drawn.len() > 1, |curve| {
+                curve.child(channels_told_apart(&drawn))
+            })
             .child(traced(
                 drawn,
                 widest,
@@ -746,9 +750,10 @@ impl RootView {
     }
 }
 
-fn widest_drawn(curve: &[f64]) -> f32 {
+fn widest_drawn(traced: &[Traced]) -> f32 {
     let floor = DRAWN_BETWEEN_MILLIBELS as f32 / 1_000.0;
-    let peak = curve.iter().fold(0.0_f64, |highest, decibels| {
+    let every = traced.iter().flat_map(|traced| traced.decibels.iter());
+    let peak = every.fold(0.0_f64, |highest, decibels| {
         if decibels.is_finite() {
             highest.max(decibels.abs())
         } else {
@@ -812,8 +817,57 @@ struct Handles {
     lift: Preamp,
 }
 
+fn channels_told_apart(traced: &[Traced]) -> Div {
+    div()
+        .absolute()
+        .top_1()
+        .left_2()
+        .flex()
+        .flex_wrap()
+        .gap_2()
+        .children(traced.iter().enumerate().map(|(nth, traced)| {
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div()
+                        .w(px(CHANNEL_SWATCH))
+                        .h(px(CURVE_LINE * 2.0))
+                        .rounded_sm()
+                        .bg(rgb(ink_of(traced.on, nth))),
+                )
+                .child(axis_label(spoken_channel(traced.on).to_owned()))
+        }))
+}
+
+fn ink_of(on: TracedOn, nth: usize) -> u32 {
+    match on {
+        TracedOn::EveryChannel | TracedOn::EveryOtherChannel => theme::accent(),
+        TracedOn::Channel(_) => theme::beside_the_accent(nth),
+    }
+}
+
+const fn spoken_channel(on: TracedOn) -> &'static str {
+    match on {
+        TracedOn::EveryChannel => "Every channel",
+        TracedOn::EveryOtherChannel => "Every other channel",
+        TracedOn::Channel(channel) => match channel {
+            0 => "Left",
+            1 => "Right",
+            2 => "Centre",
+            3 => "Subwoofer",
+            4 => "Rear left",
+            5 => "Rear right",
+            6 => "Side left",
+            7 => "Side right",
+            _ => "A channel",
+        },
+    }
+}
+
 fn traced(
-    curve: std::sync::Arc<[f64]>,
+    curve: std::sync::Arc<[Traced]>,
     widest: f32,
     handles: Handles,
     plotted: Rc<Slot<Plotted>>,
@@ -846,22 +900,35 @@ fn traced(
                 rgb(theme::outline()),
             );
 
-            let plotted: Vec<gpui::Point<Pixels>> = curve
-                .iter()
-                .enumerate()
-                .map(|(at, decibels)| point(across(at), level(*decibels)))
-                .collect();
-            plot::wash(
-                window,
-                &plotted,
-                level(0.0),
-                linear_gradient(
-                    180.0,
-                    linear_color_stop(theme::tinted(theme::accent(), 0x40), 0.0),
-                    linear_color_stop(theme::tinted(theme::accent(), 0x10), 1.0),
-                ),
-            );
-            plot::stroke(window, &plotted, CURVE_LINE, rgb(theme::accent()));
+            let plotted_of = |traced: &Traced| -> Vec<gpui::Point<Pixels>> {
+                traced
+                    .decibels
+                    .iter()
+                    .enumerate()
+                    .map(|(at, decibels)| point(across(at), level(*decibels)))
+                    .collect()
+            };
+
+            for traced in curve.iter().filter(|traced| !traced.on.is_one_channel()) {
+                let plotted = plotted_of(traced);
+                plot::wash(
+                    window,
+                    &plotted,
+                    level(0.0),
+                    linear_gradient(
+                        180.0,
+                        linear_color_stop(theme::tinted(theme::accent(), 0x40), 0.0),
+                        linear_color_stop(theme::tinted(theme::accent(), 0x10), 1.0),
+                    ),
+                );
+                plot::stroke(window, &plotted, CURVE_LINE, rgb(theme::accent()));
+            }
+            for (nth, traced) in curve.iter().enumerate() {
+                if traced.on.is_one_channel() {
+                    let plotted = plotted_of(traced);
+                    plot::stroke(window, &plotted, CURVE_LINE, rgb(ink_of(traced.on, nth)));
+                }
+            }
 
             for (row, band) in handles.bands.iter().enumerate() {
                 window.paint_quad(handle(plot, *band, handles.chosen == Some(row)));
@@ -1443,3 +1510,30 @@ impl RootView {
 const CORRECTING: &str = "The room is corrected from now on";
 const NO_TAPS: &str = "That file holds no response to convolve with";
 const UNREAD: &str = "That file could not be read as a response";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn traced(on: TracedOn, decibels: &[f64]) -> Traced {
+        Traced {
+            on,
+            decibels: decibels.to_vec(),
+        }
+    }
+
+    #[test]
+    fn a_channel_cut_deeper_than_the_rest_widens_the_plot_and_each_channel_has_an_ink_of_its_own() {
+        let apart = [
+            traced(TracedOn::Channel(0), &[0.0, 3.0]),
+            traced(TracedOn::Channel(1), &[0.0, -18.0]),
+            traced(TracedOn::EveryOtherChannel, &[0.0, 1.0]),
+        ];
+
+        assert_eq!(widest_drawn(&apart), 20.0);
+        assert_ne!(ink_of(apart[0].on, 0), ink_of(apart[1].on, 1));
+        assert_ne!(ink_of(apart[0].on, 0), theme::accent());
+        assert_eq!(ink_of(apart[2].on, 2), theme::accent());
+        assert_eq!(spoken_channel(apart[1].on), "Right");
+    }
+}

@@ -62,11 +62,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on a registered key:** AcoustID has never been reached with a real key; its fixture is
   written from the documentation
 
-## The window
-- The equaliser curve draws one line for every channel, so a band shaping the left alone is drawn
-  as the loudest channel's rather than beside the right's (`Profile::response_on` and
-  `channels_apart` answer each channel's)
-
 ## Keyboard and accessibility
 - Only Settings and the search field take focus: the transport, the sidebar, the heading buttons,
   the seek and volume rails and every row control are reachable by the mouse alone

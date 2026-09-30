@@ -3,7 +3,7 @@ use std::{cell::Cell as Kept, collections::BTreeMap, path::PathBuf, sync::Arc, t
 use gpui::{Context, Task};
 use resonate_core::{
     SampleRate,
-    eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q},
+    eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q, Traced, TracedOn},
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
@@ -168,7 +168,7 @@ pub struct Editing {
 struct Drawn {
     rate: SampleRate,
     revision: u64,
-    curve: Arc<[f64]>,
+    traced: Arc<[Traced]>,
 }
 
 #[derive(Clone, Copy)]
@@ -394,24 +394,28 @@ impl EqualiserModel {
         self.drawn = None;
     }
 
-    pub fn drawn(&mut self, rate: SampleRate) -> Arc<[f64]> {
+    pub fn drawn(&mut self, rate: SampleRate) -> Arc<[Traced]> {
         if let Some(drawn) = self.drawn.as_ref()
             && drawn.rate == rate
             && drawn.revision == self.revision
         {
-            return Arc::clone(&drawn.curve);
+            return Arc::clone(&drawn.traced);
         }
 
-        let curve: Arc<[f64]> = match self.shown() {
-            Some(profile) => profile.response(rate, CURVE_COLUMNS).into(),
-            None => vec![0.0; CURVE_COLUMNS].into(),
+        let traced: Arc<[Traced]> = match self.shown() {
+            Some(profile) => profile.responses(rate, CURVE_COLUMNS).into(),
+            None => [Traced {
+                on: TracedOn::EveryChannel,
+                decibels: vec![0.0; CURVE_COLUMNS],
+            }]
+            .into(),
         };
         self.drawn = Some(Drawn {
             rate,
             revision: self.revision,
-            curve: Arc::clone(&curve),
+            traced: Arc::clone(&traced),
         });
-        curve
+        traced
     }
 
     pub fn peak_db(&self, rate: SampleRate) -> f64 {

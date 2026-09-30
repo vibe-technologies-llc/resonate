@@ -638,6 +638,19 @@ pub(crate) fn hue(accent: Accent) -> u32 {
     WORN.read().flavour.accents.pick(accent)
 }
 
+pub(crate) fn beside_the_accent(nth: usize) -> u32 {
+    let worn = WORN.read();
+    let others: Vec<u32> = Accent::ALL
+        .into_iter()
+        .map(|other| worn.flavour.accents.pick(other))
+        .filter(|other| *other != worn.accent)
+        .collect();
+    others
+        .get(nth % others.len().max(1))
+        .copied()
+        .unwrap_or(worn.accent)
+}
+
 pub(crate) fn ink_over(colour: u32) -> u32 {
     let worn = WORN.read();
 

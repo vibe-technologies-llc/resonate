@@ -733,6 +733,28 @@ impl Profile {
             .collect()
     }
 
+    pub fn responses(&self, rate: SampleRate, points: usize) -> Vec<Traced> {
+        let apart = self.channels_apart();
+        if apart.is_empty() {
+            return vec![Traced {
+                on: TracedOn::EveryChannel,
+                decibels: self.response_on(rate, points, EVERY_CHANNEL_NOT_NAMED),
+            }];
+        }
+
+        apart
+            .into_iter()
+            .map(|channel| Traced {
+                on: TracedOn::Channel(channel),
+                decibels: self.response_on(rate, points, channel),
+            })
+            .chain([Traced {
+                on: TracedOn::EveryOtherChannel,
+                decibels: self.response_on(rate, points, EVERY_CHANNEL_NOT_NAMED),
+            }])
+            .collect()
+    }
+
     pub fn magnitude_db(&self, hertz: f64, rate: SampleRate) -> f64 {
         self.preamp.decibels() + loudest_db(&self.heard_apart(rate), hertz, rate)
     }
@@ -761,6 +783,25 @@ impl Profile {
 }
 
 const EVERY_CHANNEL_NOT_NAMED: usize = ChannelSet::NAMED_AT_MOST;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TracedOn {
+    EveryChannel,
+    Channel(usize),
+    EveryOtherChannel,
+}
+
+impl TracedOn {
+    pub const fn is_one_channel(self) -> bool {
+        matches!(self, Self::Channel(_))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Traced {
+    pub on: TracedOn,
+    pub decibels: Vec<f64>,
+}
 
 fn loudest_db(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> f64 {
     heard
@@ -1227,6 +1268,28 @@ mod tests {
             .expect("one band")
             .response(rate, RESPONSE_POINTS);
         assert_eq!(drawn, every_alone);
+
+        let traced = apart.responses(rate, RESPONSE_POINTS);
+        let on: Vec<TracedOn> = traced.iter().map(|traced| traced.on).collect();
+        assert_eq!(
+            on,
+            [
+                TracedOn::Channel(0),
+                TracedOn::Channel(1),
+                TracedOn::EveryOtherChannel
+            ]
+        );
+        assert_eq!(
+            traced[0].decibels,
+            apart.response_on(rate, RESPONSE_POINTS, 0)
+        );
+        assert_eq!(traced[2].decibels, every_alone);
+        let alone = Profile::new(Preamp::NONE, vec![every])
+            .expect("one band")
+            .responses(rate, RESPONSE_POINTS);
+        assert_eq!(alone.len(), 1);
+        assert_eq!(alone[0].on, TracedOn::EveryChannel);
+        assert_eq!(alone[0].decibels, every_alone);
         assert!(
             Profile::new(Preamp::NONE, vec![every])
                 .expect("one band")
