@@ -96,12 +96,20 @@ fn title_face() -> Div {
 }
 
 pub(crate) fn subtitle(text: impl IntoElement) -> Div {
+    subtitle_face().truncate().ends_in_an_ellipsis().child(text)
+}
+
+pub(crate) fn linked_subtitle(link: Stateful<Div>) -> Div {
+    subtitle_face()
+        .flex()
+        .min_w(px(0.0))
+        .child(link.keeps_its_width())
+}
+
+fn subtitle_face() -> Div {
     div()
         .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::muted()))
-        .truncate()
-        .ends_in_an_ellipsis()
-        .child(text)
 }
 
 pub(crate) trait KeepsItsWidth: Styled + Sized {

@@ -481,7 +481,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `kit::linked_title`, never `kit::title` over an `opens`.** The lyrics, inspector, visualiser and
   analysis headings name the playing track through `opens`, and under `kit::title`'s block box the link
   was laid out at no width, the heading drawing its ellipsis alone; `linked_title` is the same face as a
-  flex row holding the link `keeps_its_width`, the by-line's artist's shape.
+  flex row holding the link `keeps_its_width`, the by-line's artist's shape. The artist under it is
+  `kit::linked_subtitle` for the same reason and a second: `kit::subtitle` over an `opens` stretched the
+  link across the whole column, so a press well right of the name still opened the artist.
 - **A track row is the same eight cells wherever drawn.** `listing::columns` is the header the tracks
   pane, the queue and an opened playlist put over their rows, and `number_cell`, `title_cell`,
   `artist_cell`, `format_cell`, `heard` and `length_cell` the cells under it, so no two disagree about a

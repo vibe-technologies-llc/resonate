@@ -183,7 +183,7 @@ impl RootView {
                             playing.cover.album.map(Selection::Album),
                             cx,
                         )))
-                        .child(kit::subtitle(self.opens(
+                        .child(kit::linked_subtitle(self.opens(
                             "analysis-artist",
                             playing.artist.clone(),
                             OPEN_ARTIST_HINT,
