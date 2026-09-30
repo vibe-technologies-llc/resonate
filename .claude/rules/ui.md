@@ -1697,7 +1697,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   show. The subtitle speaks for the tab in front — *8 tracks missing from 2 albums*, *46 releases by 8
   artists not held*. `Loaded` reads `missing_tracks` and `unheld_releases` under `MISSING_AT_MOST` (5
   000), and `missing_counted` on every load, so the tracks and releases the subtitle and tabs count are
-  the catalog's, the albums and artists beside them being the headings the list drew. Empty, it is
+  the catalog's, the albums and artists beside them being the headings the list drew. **A list cut short
+  of its count says so**: where the tab lists fewer rows than the catalog counts, `listed_short` writes
+  *5000 of 7214 tracks listed; type to narrow to the rest* under the subtitle, a count of every missing
+  track above 5 000 rows having read as a list that ended. **A row is dismissed with its ✕.** A track
+  row carries `Icon::Close` beside its want mark under `Beside::ARun` alone — an album page's missing
+  row and a search's do not — sending `LibraryModel::dismiss_missing`, and a release row carries one
+  sending `dismiss_release`, both through `edit` as a want is; the heading's *Bring back N dismissed*,
+  drawn while `Library::dismissed` counts any, is `bring_back_dismissed`, told as a toast. `library.md`
+  has what a dismissal is. Empty, it is
   `kit::empty` under `Icon::Missing` saying nothing is missing, and where the build `can_enrich` a
   second sentence says where the answer would come from.
 - **A search lists what the library is short of after what it holds, greyed as an album's missing rows

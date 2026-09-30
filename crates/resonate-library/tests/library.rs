@@ -10681,6 +10681,129 @@ fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
 }
 
 #[test]
+fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_brought_back()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    library.land_release(album.id, &orbits(rows.clone(), Vec::new()))?;
+    library.rematch(album.id)?;
+    let row_titled = |title: &str| -> Result<ReleaseTrackId> {
+        Ok(library
+            .release_tracks(album.id)?
+            .into_iter()
+            .find(|row| row.title == title)
+            .expect("the release holds the row")
+            .id)
+    };
+    let titles = |library: &Library| -> Result<Vec<String>> {
+        Ok(library
+            .missing_tracks(None, None)?
+            .into_iter()
+            .map(|row| row.title)
+            .collect())
+    };
+
+    library.want(row_titled("San Tropez")?)?;
+    assert!(library.dismiss_missing(row_titled("San Tropez")?)?);
+    assert!(!library.dismiss_missing(row_titled("San Tropez")?)?);
+    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+    assert!(library.wants()?.is_empty());
+    assert_eq!(
+        library.missing_counted(None)?,
+        Missing {
+            tracks: 1,
+            releases: 0,
+        }
+    );
+    assert_eq!(
+        library.dismissed()?,
+        Missing {
+            tracks: 1,
+            releases: 0,
+        }
+    );
+    assert!(library.unheld_matching("tropez", None)?.is_empty());
+
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    library.rematch(album.id)?;
+    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+
+    library.dismiss_missing(row_titled("Seamus")?)?;
+    assert!(titles(&library)?.is_empty());
+    library.want(row_titled("Seamus")?)?;
+    assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
+
+    assert_eq!(
+        library.bring_back_dismissed()?,
+        Missing {
+            tracks: 1,
+            releases: 0,
+        }
+    );
+    assert_eq!(
+        titles(&library)?,
+        vec!["San Tropez".to_owned(), "Seamus".to_owned()]
+    );
+    assert_eq!(library.dismissed()?, Missing::default());
+    assert!(matches!(
+        library.dismiss_missing(ReleaseTrackId::MAX),
+        Err(Error::UnknownReleaseTrack(_))
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let mut release = orbits(orbits_rows(), Vec::new());
+    release.credit = vec![Credit {
+        name: "The Orbiters".to_owned(),
+        joined_by: String::new(),
+        mbid: Some(mbid(ORBITERS)),
+    }];
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![release],
+        artists: vec![orbiters()],
+        artist_releases: vec![(mbid(ORBITERS), orbiters_groups())],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    let artist = artist_named(&library, "The Orbiters")?;
+
+    assert!(library.dismiss_release(artist.id, &mbid(HOURS_GROUP))?);
+    assert!(!library.dismiss_release(artist.id, &mbid(HOURS_GROUP))?);
+    assert!(!library.dismiss_release(artist.id, &mbid(RELEASE))?);
+    assert_eq!(
+        library.unheld_releases(None, None)?,
+        vec![
+            unheld(&artist, SCORE_GROUP, "The Orbit", "Album", Some("2003-11")),
+            unheld(&artist, SINGLE_GROUP, "San Tropez", "Single", None),
+        ]
+    );
+    assert_eq!(
+        library
+            .artist_detail(artist.id)?
+            .map(|detail| detail.releases_unheld),
+        Some(2)
+    );
+    assert_eq!(
+        library.dismissed()?,
+        Missing {
+            tracks: 0,
+            releases: 1,
+        }
+    );
+
+    library.bring_back_dismissed()?;
+    assert_eq!(library.unheld_releases(None, None)?.len(), 3);
+    Ok(())
+}
+
+#[test]
 fn an_artist_named_in_a_release_group_credit_is_spared_a_search_the_same_way() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut group = orbits_group(vec![group_release(HOURS, "1996-05-06", None)], Vec::new());

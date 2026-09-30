@@ -59,10 +59,11 @@ use resonate_engine::{
 };
 use resonate_library::{
     Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
-    HistoryKept, Kept, Layout, Library, Listen, LookupOp, MissingTrack, Move, OrganiseOptions,
-    OrganiseSummary, PassHandle, PassKind, Playing, Playlist, PlaylistName, PlaylistOrder,
-    PollOptions, Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions,
-    Search, SortOrder, StudyFilter, UnheldRelease, Vault, VaultFiles, Want, folded_letters,
+    HistoryKept, Kept, Layout, Library, Listen, LookupOp, Missing, MissingTrack, Move,
+    OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing, Playlist, PlaylistName,
+    PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery,
+    ScanOptions, Search, SortOrder, StudyFilter, UnheldRelease, Vault, VaultFiles, Want,
+    folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -221,8 +222,12 @@ fn run() -> Result<()> {
         Some(Sub::Missing {
             artist,
             read_the_rest,
+            bring_back,
         }) => {
             let library = open_library(&cli, &config)?;
+            if *bring_back {
+                println!("{}", brought_back(library.bring_back_dismissed()?));
+            }
             if *read_the_rest && let Some(named) = artist.as_deref() {
                 read_the_rest_of(&library, &config, named)?;
             }
@@ -765,6 +770,21 @@ fn read_the_rest_of(library: &Library, config: &Config, named: &str) -> Result<(
     Ok(())
 }
 
+fn dismissed_beside(dismissed: Missing) -> String {
+    match dismissed.tracks + dismissed.releases {
+        0 => String::new(),
+        many => format!(" · {many} dismissed, --bring-back lists them again"),
+    }
+}
+
+fn brought_back(brought: Missing) -> String {
+    format!(
+        "brought back {} and {}",
+        counted(brought.tracks, "dismissed track", "dismissed tracks"),
+        counted(brought.releases, "dismissed release", "dismissed releases")
+    )
+}
+
 fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
     let mut tracks = library.missing_tracks(None, None)?;
     let mut releases = library.unheld_releases(None, None)?;
@@ -795,11 +815,16 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
     }
 
     let discs_of = discs_per_album(&tracks);
+    let dismissed = match artist {
+        None => library.dismissed()?,
+        Some(_) => Missing::default(),
+    };
     println!(
-        "{} missing across {} · {} not held",
+        "{} missing across {} · {} not held{}",
         counted(tracks_missing, "track", "tracks"),
         counted(discs_of.len() as u64, "album", "albums"),
-        counted(releases_unheld, "release", "releases")
+        counted(releases_unheld, "release", "releases"),
+        dismissed_beside(dismissed)
     );
 
     println!();
@@ -1566,7 +1591,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         Some(library),
         whole.then_some(found.id),
         None,
-        &TransportArgs::default(),
+        &wanted.transport,
     )
 }
 
@@ -2909,6 +2934,13 @@ mod tests {
         }
     }
 
+    fn playlist_transport_of(arguments: &[&str]) -> TransportArgs {
+        match parsed(arguments).command {
+            Some(Sub::Playlist(wanted)) => wanted.transport,
+            other => panic!("{arguments:?} is not playlist: {other:?}"),
+        }
+    }
+
     fn scan_of(arguments: &[&str]) -> ScanOptions {
         match parsed(arguments).command {
             Some(Sub::Scan(wanted)) => scan_options(&wanted, NonZeroUsize::MIN),
@@ -2983,6 +3015,48 @@ mod tests {
         assert!(!refused("100"));
         assert_eq!(at_percent(40).ok(), Volume::new(0.4).ok());
         assert_eq!(at_percent(100).ok(), Some(Volume::MAX));
+    }
+
+    #[test]
+    fn a_playlist_played_takes_the_transport_and_one_edited_refuses_it() {
+        let set = playlist_transport_of(&[
+            "resonate",
+            "playlist",
+            "Evening",
+            "--matching",
+            "floyd",
+            "--shuffle",
+            "--repeat",
+            "queue",
+            "--volume",
+            "25",
+        ]);
+        let refused = |arguments: &[&str]| Cli::try_parse_from(arguments.iter().copied()).is_err();
+
+        assert!(set.shuffle);
+        assert_eq!(set.repeat, Some(RepeatArg::Queue));
+        assert_eq!(set.volume, Some(25));
+        assert!(refused(&[
+            "resonate",
+            "playlist",
+            "Evening",
+            "--tidy",
+            "--shuffle"
+        ]));
+        assert!(refused(&[
+            "resonate", "playlist", "Evening", "--pin", "--volume", "10"
+        ]));
+        assert!(refused(&[
+            "resonate",
+            "playlist",
+            "Evening",
+            "--matching",
+            "x",
+            "--drop",
+            "--repeat",
+            "track"
+        ]));
+        assert!(!refused(&["resonate", "playlist", "Evening", "--shuffle"]));
     }
 
     #[test]

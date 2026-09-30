@@ -48,7 +48,11 @@ carries `rename-desktop-file: resonate.desktop` and `rename-icon: resonate`: the
 is rewritten to the renamed one. `StartupWMClass=resonate` is left alone, so the window's `APP_ID`
 still matches it under Flatpak, and the file in `packaging/` keeps the name the window's tests read
 it by. `crates/resonate/tests/packaging.rs` holds the manifest to this
-(`the_flatpak_exports_the_desktop_entry_and_icon_under_its_id`).
+(`the_flatpak_exports_the_desktop_entry_and_icon_under_its_id`). The bus's `DesktopEntry` and a
+notification's `desktop-entry` hint follow the rename: inside the sandbox `FLATPAK_ID` holds the app
+id the exported entry is named after, so `mpris.rs` answers it where it is set and `resonate`
+elsewhere, and a shell matching the player to its launcher finds the one installed
+(`under_flatpak_the_bus_names_the_entry_the_sandbox_exports`).
 
 **`packaging/.SRCINFO` is `makepkg --printsrcinfo`'s output for the PKGBUILD beside it**, committed
 because the AUR reads it rather than the PKGBUILD; a change to the PKGBUILD regenerates it in the

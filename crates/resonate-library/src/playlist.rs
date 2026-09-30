@@ -19,7 +19,7 @@ use crate::{
     Clause, Cut, Direction, Error, Exported, Imported, Kept, NamedPlaylist, OrderedColumn,
     Playlist, PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search,
     Sources, StoreOp, Track, TrackQuery,
-    db::{self, BESIDE_A_TRACK, Inner, RawTrack, TRACK_COLUMNS},
+    db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
     store,
     undo::{self, Change, Edit, Reach},
@@ -545,12 +545,13 @@ pub fn entries(
 
     let mut filters = vec![HELD_BY_THE_PLAYLIST.to_owned()];
     let mut binds = vec![Value::Integer(id.get() as i64)];
-    if let Some(text) = matching {
-        let Some(narrowed) = db::cuts_matching(text, ROW) else {
-            return Ok(Vec::new());
-        };
-        filters.push(narrowed.sql);
-        binds.extend(narrowed.binds);
+    match matching.map(|text| db::cuts_matching(text, ROW)) {
+        None | Some(Narrowed::Unasked) => {}
+        Some(Narrowed::To(narrowed)) => {
+            filters.push(narrowed.sql);
+            binds.extend(narrowed.binds);
+        }
+        Some(Narrowed::Nothing) => return Ok(Vec::new()),
     }
 
     let sql = format!(
@@ -928,7 +929,7 @@ fn asked_of(
 }
 
 fn matched_in(transaction: &Transaction<'_>, id: PlaylistId, text: &str) -> Result<AHashSet<i64>> {
-    let Some(narrowed) = db::cuts_matching(text, ROW) else {
+    let Narrowed::To(narrowed) = db::cuts_matching(text, ROW) else {
         return Ok(AHashSet::new());
     };
     let sql = format!(

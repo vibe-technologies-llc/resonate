@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    env,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crossbeam_channel::{Receiver, Sender};
@@ -14,6 +17,7 @@ use crate::{names_a_sheet, playlists::Collection, sheet_items};
 
 const IDENTITY: &str = "Resonate";
 const DESKTOP_ENTRY: &str = "resonate";
+const SANDBOXED_AS: &str = "FLATPAK_ID";
 const OPENS_IN_FRONT: bool = true;
 const MIME_TYPES: [&str; 20] = [
     "audio/flac",
@@ -37,6 +41,14 @@ const MIME_TYPES: [&str; 20] = [
     "audio/x-wavpack",
     "audio/x-ape",
 ];
+
+fn entry_named(sandboxed_as: Option<&str>) -> String {
+    sandboxed_as
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(DESKTOP_ENTRY)
+        .to_owned()
+}
 
 struct Attention {
     changes: Receiver<bool>,
@@ -73,7 +85,7 @@ impl Host for Desktop {
     }
 
     fn desktop_entry(&self) -> Option<String> {
-        Some(DESKTOP_ENTRY.to_owned())
+        Some(entry_named(env::var(SANDBOXED_AS).ok().as_deref()))
     }
 
     fn can_quit(&self) -> bool {
@@ -278,6 +290,16 @@ mod tests {
                 "{kind} is provided by the metainfo and not offered on the bus"
             );
         }
+    }
+
+    #[test]
+    fn under_flatpak_the_bus_names_the_entry_the_sandbox_exports() {
+        assert_eq!(entry_named(None), DESKTOP_ENTRY);
+        assert_eq!(entry_named(Some("")), DESKTOP_ENTRY);
+        assert_eq!(
+            entry_named(Some("org.resonate.Resonate")),
+            "org.resonate.Resonate"
+        );
     }
 
     #[test]

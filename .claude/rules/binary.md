@@ -23,8 +23,11 @@ run, and both at once is `Error::BitPerfectBothWays`, checked in `run` rather th
 `overrides_with` no longer see the one given before it
 (`bit_perfect_is_asked_for_or_refused_for_one_run_and_never_both`).
 
-**`resonate play` sets the transport for its run.** `--shuffle`, `--repeat off|track|queue` and
-`--volume <PERCENT>` are `cli::TransportArgs`, flattened into `play`. The volume is a whole
+**`resonate play` and `resonate playlist <name>` set the transport for their run.** `--shuffle`,
+`--repeat off|track|queue` and `--volume <PERCENT>` are `cli::TransportArgs`, flattened into both;
+under `playlist` they are a `transport` group conflicting with every flag that edits instead of
+playing, so `--tidy --shuffle` is refused rather than shuffling nothing
+(`a_playlist_played_takes_the_transport_and_one_edited_refuses_it`). The volume is a whole
 percent from 0 to 100 — the position the readout draws and `+`/`-` step, not a gain — and
 replaces the `volume` key in the engine's starting config; shuffle and repeat are sent before the
 `Load`, so the queue loads already shuffled from a row picked anywhere in it, as the window's

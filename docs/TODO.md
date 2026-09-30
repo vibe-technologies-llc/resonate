@@ -48,14 +48,10 @@ service or a format — and is not worked until that moves; everything else is o
   paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
 
 ## Library
-- The Missing pane stops at 5 000 rows without saying so, beside a count of every missing track,
-  and a missing row or unheld release cannot be dismissed
 - **Blocked on the format:** A cue row exported to PLS is its whole file, the format having no word
   for a region
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned whose mount point's parent still holds another drive
-- A list playlist narrowed by a text asking nothing — *!!!* — shows no rows, where a saved query
-  holds them all: `playlist_entries` narrows by it anyway
 
 ## Search
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
@@ -88,13 +84,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A selection is a contiguous run reached by Shift, and Tracks and Albums act on its first row
   alone; nothing adds a row with Control
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
-
-## Command line
-- `playlist <name>` plays without `play`'s `--shuffle`, `--repeat` and `--volume`
-
-## Packaging and CI
-- Under Flatpak the bus's `DesktopEntry` still says `resonate`, where the exported entry is
-  `org.resonate.Resonate`
 
 ## Testing
 - The `probe` fuzz target never seeks, opens a span, decodes DSD to samples, hints an extension or

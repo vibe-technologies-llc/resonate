@@ -252,6 +252,13 @@ pub(crate) fn want_in(
         params![row, store::to_nanos(now)],
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    tx.execute(
+        "DELETE FROM dismissed_missing
+          WHERE (album_id, disc, folded) IN
+                (SELECT album_id, disc, folded FROM release_tracks WHERE id = ?1)",
+        params![row],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
     let id: i64 = tx
         .query_row(
             "SELECT id FROM wants WHERE release_track_id = ?1",

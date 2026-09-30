@@ -1,9 +1,10 @@
 use std::{ops::Range, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Context, Div, FontWeight, SharedString, div, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb,
+    uniform_list,
 };
-use resonate_library::{MissingTrack, UnheldRelease};
+use resonate_library::{Missing, MissingTrack, UnheldRelease};
 
 use crate::{
     MissingRow, Portrayed, Selection, format,
@@ -13,7 +14,7 @@ use crate::{
         browser::{
             OPEN_ALBUM_HINT, OPEN_ARTIST_HINT, Unheld, controls_place, portrait_frame, year_of,
         },
-        kit::{self, EndsInAnEllipsis as _, KeepsItsWidth},
+        kit::{self, EndsInAnEllipsis as _, KeepsItsWidth, Tone},
         listing::{self, Pictured},
         reorder::{self, Listed, Shift},
         root::{RootView, empty, row},
@@ -29,6 +30,10 @@ const LOOK_IT_UP: &str =
     "Look up the library from Settings › Online to learn what its releases are short of.";
 
 const HALF_BETWEEN_CARDS: f32 = 6.0;
+
+const DISMISS_RELEASE_HINT: &str = "Take this release off the Missing list";
+
+const BRING_BACK_HINT: &str = "List every track and release dismissed from here again";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Place {
@@ -69,6 +74,7 @@ impl RootView {
     pub(crate) fn missing_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let library = self.library.read(cx);
         let counted = library.missing();
+        let dismissed = library.dismissed();
         let track_rows = library.missing_track_rows();
         let release_rows = library.unheld_release_rows();
         let tracks = library.missing_tracks();
@@ -98,25 +104,41 @@ impl RootView {
                 ),
             ),
         };
+        let cut_short = match shows {
+            MissingShows::Tracks => listed_short(tracks.len(), counted.tracks, "tracks"),
+            MissingShows::Releases => listed_short(releases.len(), counted.releases, "releases"),
+        };
         let rows = match shows {
             MissingShows::Tracks => track_rows,
             MissingShows::Releases => release_rows,
         };
         let nothing = rows.is_empty();
+        let bring_back = self.bring_back(dismissed, cx);
 
         let heading = kit::heading()
             .child(
-                kit::heading_row().child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_1()
-                        .child(kit::eyebrow("COLLECTION"))
-                        .child(kit::title("Missing"))
-                        .when(!nothing, |column| column.child(kit::subtitle(summary))),
-                ),
+                kit::heading_row()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .gap_1()
+                            .child(kit::eyebrow("COLLECTION"))
+                            .child(kit::title("Missing"))
+                            .when(!nothing, |column| column.child(kit::subtitle(summary)))
+                            .when_some(cut_short, |column, said| {
+                                column.child(
+                                    kit::subtitle(said)
+                                        .text_size(px(theme::text_xs()))
+                                        .text_color(rgb(theme::faint())),
+                                )
+                            }),
+                    )
+                    .when_some(bring_back, |heading, offered| {
+                        heading.child(kit::actions().child(offered))
+                    }),
             )
             .when(both, |heading| {
                 heading.child(self.missing_tabs(
@@ -180,9 +202,9 @@ impl RootView {
                                                 this.artist_heading(first, release, &releases, cx)
                                             })
                                         }
-                                        Some(MissingRow::Release(release)) => {
-                                            releases.get(release).map(release_row)
-                                        }
+                                        Some(MissingRow::Release(release)) => releases
+                                            .get(release)
+                                            .map(|held| this.release_row(release, held, cx)),
                                         None => None,
                                     };
                                     if let Some(listed) = listed {
@@ -246,6 +268,65 @@ impl RootView {
         if let Some(opened) = opened {
             self.opened(opened, cx);
         }
+    }
+
+    fn bring_back(&self, dismissed: Missing, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let many = dismissed.tracks + dismissed.releases;
+        (many > 0).then(|| {
+            kit::button(
+                "bring-back-dismissed",
+                Some(Icon::Undo),
+                format!("Bring back {many} dismissed"),
+                BRING_BACK_HINT,
+                Tone::Ghost,
+            )
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.bring_back_dismissed(cx));
+            }))
+        })
+    }
+
+    fn release_row(&self, index: usize, release: &UnheldRelease, cx: &mut Context<Self>) -> Div {
+        let year = release
+            .first_released
+            .as_deref()
+            .map(year_of)
+            .unwrap_or_default()
+            .to_owned();
+        let artist = release.artist;
+        let mbid = release.mbid.clone();
+
+        row(false)
+            .child(listing::number_cell(SharedString::new_static("")))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .text_color(rgb(theme::muted()))
+                    .child(release.title.clone()),
+            )
+            .when_some(release.kind.clone(), |row, kind| {
+                row.child(kit::badge(kind, theme::muted()))
+            })
+            .child(listing::length_cell(SharedString::from(year)).text_color(rgb(theme::faint())))
+            .child(
+                controls_place().child(
+                    kit::icon_button(
+                        ("dismiss-release", index),
+                        Icon::Close,
+                        DISMISS_RELEASE_HINT,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let release = mbid.clone();
+                        this.library.update(cx, |library, cx| {
+                            library.dismiss_release(artist, release, cx);
+                        });
+                    })),
+                ),
+            )
     }
 
     fn missing_tabs(
@@ -433,36 +514,24 @@ fn disc_heading(disc: u32) -> Div {
         .child(kit::eyebrow(format!("DISC {disc}")))
 }
 
-fn release_row(release: &UnheldRelease) -> Div {
-    let year = release
-        .first_released
-        .as_deref()
-        .map(year_of)
-        .unwrap_or_default()
-        .to_owned();
-
-    row(false)
-        .child(listing::number_cell(SharedString::new_static("")))
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .truncate()
-                .ends_in_an_ellipsis()
-                .text_color(rgb(theme::muted()))
-                .child(release.title.clone()),
-        )
-        .when_some(release.kind.clone(), |row, kind| {
-            row.child(kit::badge(kind, theme::muted()))
-        })
-        .child(listing::length_cell(SharedString::from(year)).text_color(rgb(theme::faint())))
-        .child(controls_place())
+fn listed_short(listed: usize, counted: u64, many: &str) -> Option<String> {
+    ((listed as u64) < counted)
+        .then(|| format!("{listed} of {counted} {many} listed; type to narrow to the rest"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MissingShows, Place};
+    use super::{MissingShows, Place, listed_short};
     use crate::MissingRow;
+
+    #[test]
+    fn a_list_cut_short_of_its_count_says_so_and_a_whole_one_says_nothing() {
+        assert_eq!(listed_short(12, 12, "tracks"), None);
+        assert_eq!(
+            listed_short(5_000, 7_214, "tracks").as_deref(),
+            Some("5000 of 7214 tracks listed; type to narrow to the rest")
+        );
+    }
 
     #[test]
     fn a_run_is_one_card_opened_by_its_heading_and_closed_by_its_last_row() {

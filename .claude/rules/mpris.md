@@ -143,6 +143,11 @@ portal handle. `crates/resonate-mpris/tests/name.rs` is its own test binary rath
 `bus.rs`, because an instance name is keyed by the pid and a second process has its own pool of
 `INSTANCES` (16) — sixteen services in one process is what `cargo test` runs.
 
+**`DesktopEntry` names the entry installed, which the Flatpak renames.** The binary's `Host`
+answers `FLATPAK_ID` where the sandbox sets it and `resonate` elsewhere, so the bus property and a
+notification's `desktop-entry` hint both find `org.resonate.Resonate.desktop` under Flatpak
+(`packaging.md`).
+
 ## The desktop's calls
 
 - **Two calls on their own connection and thread; the poll only leaves errands.** `notify.rs`

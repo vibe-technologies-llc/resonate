@@ -135,6 +135,17 @@ const MIGRATIONS: &[&str] = &[
      BEGIN
          DELETE FROM vault_refused WHERE track_id = new.id;
      END;",
+    "CREATE TABLE dismissed_missing (
+         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+         disc     INTEGER NOT NULL,
+         folded   TEXT NOT NULL,
+         PRIMARY KEY (album_id, disc, folded)
+     ) STRICT, WITHOUT ROWID;
+     CREATE TABLE dismissed_releases (
+         artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+         mbid      TEXT NOT NULL,
+         PRIMARY KEY (artist_id, mbid)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

@@ -313,7 +313,8 @@ cargo run -- wants                    # wanted release tracks and where a delive
 cargo run -- missing                  # release tracks with no file and releases of held artists
                                       #   with none held, as a count line and two tables;
                                       #   --artist <NAME> one artist's, --read-the-rest first reads
-                                      #   the next thousand releases of a discography cut short
+                                      #   the next thousand releases of a discography cut short,
+                                      #   --bring-back lists what the window dismissed again
 cargo run -- poll                     # asks every provider for each want not tried lately and
                                       #   lands deliveries in the vault as rows; --again asks all
 cargo run -- forget <roots>           # drops roots and their tracks; a path or URI `wants` lists
@@ -339,7 +340,8 @@ cargo run -- organise                 # the moves filing every track under `orga
                                       #   back the last applied run, printed until --apply
 cargo run -- playlists                # playlists with lengths and play counts; --order, --reverse,
                                       #   --named lists those whose name holds every word
-cargo run -- playlist <name>          # plays one; --add <files> appends, --into <other> copies
+cargo run -- playlist <name>          # plays one, taking play's --shuffle, --repeat and
+                                      #   --volume; --add <files> appends, --into <other> copies
                                       #   rows (creating it), --export <file> writes M3U, PLS or
                                       #   XSPF by extension, --order <order> sorts by album,
                                       #   artist, title, length or file and --reverse turns it,

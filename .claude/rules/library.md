@@ -1321,6 +1321,22 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `REFRESH_AFTER` (`a_discography_refused_as_its_artist_landed_is_asked_for_again_within_the_hour`).
   `an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_what_it_does_not_hold` and
   `the_rows_an_album_is_short_of_are_listed_with_their_wants` are the readers' claims.
+- **What the catalog is short of can be dismissed, and a dismissal outlives the release it was made
+  against.** `Library::dismiss_missing` and `dismiss_release` take a missing row or an unheld release
+  off every reader of what is missing — `missing_tracks`, `unheld_releases`, `missing_counted`,
+  `unheld_matching` and `ArtistDetail::releases_unheld` — through the `held_or_wanted!` and
+  `unheld_by_any_album!` predicates they already share. A dismissal is its own table, because what it
+  names is rewritten under it: `land_release` deletes and reinserts an album's `release_tracks` on
+  every refresh and `land_artist_releases` an artist's `artist_releases`, so a flag on either row died
+  with the next lookup. `dismissed_missing` holds the album, the disc and the row's `folded` — title,
+  artist and release title, stable across a refresh of the same release and not across another track —
+  and `dismissed_releases` the artist and the release group's MBID, both cascading with their album or
+  artist (a `MIGRATIONS` step). **A want and a dismissal undo each other**: dismissing a row withdraws
+  its want, and `want_in` clears a dismissal of the row it wants, so a row is never both asked for and
+  hidden. `Library::dismissed` counts what is dismissed and still missing, and `bring_back_dismissed`
+  empties both tables, answering what it brought back.
+  `a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_brought_back` and
+  `a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count` are the claims.
 - **What the catalog is short of is narrowed by the words typed, each half answering with what it
   has.** All three readers take an `Option<&str>`, so the pane's list, counts and sidebar figure narrow
   together. A missing track belongs to a *held* album, so it is narrowed through
@@ -1919,12 +1935,15 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   index, so `!!!`, `+/-`, `-!!!` and `artist:?` are dropped at the parse and an `or` closes over the gap
   (`moon !!! or sun` reads `moon or sun`). `db::matching` passes over a `Search` holding no clause, so a
   box of punctuation, a blank saved query and no text at all are one answer: the catalog. Each once
-  became an FTS `MATCH` of nothing and answered no rows. A drop is the one reader kept refusing:
-  `cuts_matching` answers `None` where the matching `narrows` nothing, so a text asking nothing removes
-  no row — nothing empties a list in one gesture.
-  `a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything` and
-  `a_saved_query_with_no_search_fills_itself_with_the_whole_catalog` in `tests/search.rs` are the
-  claims.
+  became an FTS `MATCH` of nothing and answered no rows. `cuts_matching` answers a `Narrowed` of
+  three: `Unasked` where the matching `narrows` nothing, `To` a narrowing, and `Nothing` where no
+  row can match. A list narrowed by a text asking nothing therefore holds every row, as a saved query
+  does; a drop is the one reader kept refusing, taking only `To`, so a text asking nothing removes no
+  row — nothing empties a list in one gesture.
+  `a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything`,
+  `a_saved_query_with_no_search_fills_itself_with_the_whole_catalog` and
+  `a_list_narrowed_by_a_text_asking_nothing_holds_every_row_and_drops_none` in `tests/search.rs` are
+  the claims.
 - **A number is read as meant, to the precision it was typed in.** A `Term::Length` carries a `Grain`
   — the finest `ClockUnit` a component names and how many decimals its count was written to — and is
   weighed as the track's length cut down to that grain: `length:3:30` and `length:3m30s` hold

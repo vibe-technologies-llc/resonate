@@ -7,10 +7,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use resonate_core::TrackId;
+use resonate_core::{MediaLocation, TrackId};
 use resonate_library::{
-    AlbumOrder, AlbumQuery, Direction, Library, Reason, Result, SavedQuery, ScanOptions, SortOrder,
-    TrackQuery,
+    AlbumOrder, AlbumQuery, Cut, Direction, Library, Reason, Result, SavedQuery, ScanOptions,
+    SortOrder, TrackQuery,
 };
 
 const UTF8: u8 = 3;
@@ -218,6 +218,32 @@ fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<
             "a query saved as {text:?} held the wrong rows"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn a_list_narrowed_by_a_text_asking_nothing_holds_every_row_and_drops_none() -> Result<()> {
+    let tree = Tree::new();
+    tree.write(
+        "a.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
+    );
+    tree.write("b.wav", &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada"));
+
+    let library = scanned(&tree)?;
+
+    let list = library.create_playlist("Evening")?;
+    let cuts: Vec<Cut> = ["a.wav", "b.wav"]
+        .into_iter()
+        .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
+        .collect();
+    library.add_to_playlist(list, &cuts)?;
+
+    assert_eq!(library.playlist_entries(list, Some("!!!"))?.len(), 2);
+    assert_eq!(library.playlist_entries(list, Some("echoes !!!"))?.len(), 1);
+    assert_eq!(library.playlist_entries(list, Some("nowhere"))?.len(), 0);
+    assert_eq!(library.remove_matching(list, "!!!")?, 0);
+    assert_eq!(library.playlist_entries(list, None)?.len(), 2);
     Ok(())
 }
 

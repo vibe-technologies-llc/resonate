@@ -171,7 +171,9 @@ macro_rules! unheld_by_any_album {
         "NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)
          AND NOT EXISTS (SELECT 1 FROM tracks t
                           WHERE r.song IS NOT NULL AND t.artist_id = r.artist_id
-                            AND words_of(t.title) = r.song)"
+                            AND words_of(t.title) = r.song)
+         AND NOT EXISTS (SELECT 1 FROM dismissed_releases d
+                          WHERE d.artist_id = r.artist_id AND d.mbid = r.mbid)"
     };
 }
 
@@ -322,7 +324,10 @@ const MISSING_TRACKS: &str = concat!(
 macro_rules! held_or_wanted {
     () => {
         "(EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = rt.album_id)
-          OR EXISTS (SELECT 1 FROM wants wn WHERE wn.release_track_id = rt.id))"
+          OR EXISTS (SELECT 1 FROM wants wn WHERE wn.release_track_id = rt.id))
+         AND NOT EXISTS (SELECT 1 FROM dismissed_missing d
+                          WHERE d.album_id = rt.album_id AND d.disc = rt.disc
+                            AND d.folded = rt.folded)"
     };
 }
 
@@ -368,6 +373,23 @@ const UNHELD_COUNTED: &str = concat!(
     "SELECT count(*) FROM artist_releases r JOIN artists ar ON ar.id = r.artist_id WHERE ",
     unheld_by_any_album!()
 );
+
+const DISMISS_A_MISSING_ROW: &str = "INSERT INTO dismissed_missing (album_id, disc, folded)
+     SELECT album_id, disc, folded FROM release_tracks WHERE id = ?1
+     ON CONFLICT DO NOTHING";
+
+const DISMISS_AN_UNHELD_RELEASE: &str = "INSERT INTO dismissed_releases (artist_id, mbid)
+     SELECT artist_id, mbid FROM artist_releases WHERE artist_id = ?1 AND mbid = ?2
+     ON CONFLICT DO NOTHING";
+
+const DISMISSED_MISSING_ROWS: &str = "SELECT count(*) FROM release_tracks rt
+       JOIN dismissed_missing d
+         ON d.album_id = rt.album_id AND d.disc = rt.disc AND d.folded = rt.folded
+      WHERE rt.track_id IS NULL";
+
+const DISMISSED_UNHELD_RELEASES: &str = "SELECT count(*) FROM artist_releases r
+       JOIN dismissed_releases d ON d.artist_id = r.artist_id AND d.mbid = r.mbid
+      WHERE NOT EXISTS (SELECT 1 FROM albums a WHERE a.release_group = r.mbid)";
 
 const UNHELD_HOLDS_THE_WORD: &str =
     " AND (r.folded LIKE ? ESCAPE '\\' OR ar.key LIKE ? ESCAPE '\\')";
@@ -3044,6 +3066,64 @@ impl Library {
         })
     }
 
+    pub fn dismiss_missing(&self, release_track: ReleaseTrackId) -> Result<bool> {
+        let row = release_track.get() as i64;
+
+        self.inner.write(|transaction| {
+            let dismissed = transaction
+                .execute(DISMISS_A_MISSING_ROW, params![row])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            let known = transaction
+                .query_row(
+                    "SELECT 1 FROM release_tracks WHERE id = ?1",
+                    params![row],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            if known.is_none() {
+                return Err(Error::UnknownReleaseTrack(release_track));
+            }
+            transaction
+                .execute(
+                    "DELETE FROM wants WHERE release_track_id = ?1",
+                    params![row],
+                )
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            Ok(dismissed > 0)
+        })
+    }
+
+    pub fn dismiss_release(&self, artist: ArtistId, release: &Mbid) -> Result<bool> {
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    DISMISS_AN_UNHELD_RELEASE,
+                    params![artist.get() as i64, release.as_str()],
+                )
+                .map(|dismissed| dismissed > 0)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+    }
+
+    pub fn dismissed(&self) -> Result<Missing> {
+        Ok(Missing {
+            tracks: u64::from(self.counted(DISMISSED_MISSING_ROWS, Vec::new())?),
+            releases: u64::from(self.counted(DISMISSED_UNHELD_RELEASES, Vec::new())?),
+        })
+    }
+
+    pub fn bring_back_dismissed(&self) -> Result<Missing> {
+        let before = self.dismissed()?;
+
+        self.inner.write(|transaction| {
+            transaction
+                .execute_batch("DELETE FROM dismissed_missing; DELETE FROM dismissed_releases;")
+                .map_err(|source| Error::store(StoreOp::Delete, source))
+        })?;
+        Ok(before)
+    }
+
     pub fn wants(&self) -> Result<Vec<Want>> {
         self.inner.read(|connection| {
             let held = rows(connection, WANTS, Vec::new(), |row| {
@@ -3841,10 +3921,21 @@ fn matching(texts: &[Option<&str>]) -> Option<Matching> {
     Some(matching)
 }
 
-pub(crate) fn cuts_matching(text: &str, row: &str) -> Option<Narrowing> {
-    let matching = matching(&[Some(text)]).filter(Matching::narrows)?;
+pub(crate) enum Narrowed {
+    Unasked,
+    To(Narrowing),
+    Nothing,
+}
 
-    Some(Narrowing {
+pub(crate) fn cuts_matching(text: &str, row: &str) -> Narrowed {
+    let Some(matching) = matching(&[Some(text)]) else {
+        return Narrowed::Nothing;
+    };
+    if !matching.narrows() {
+        return Narrowed::Unasked;
+    }
+
+    Narrowed::To(Narrowing {
         sql: format!(
             "({row}.path, {row}.span_start) IN \
              (SELECT tracks.path, tracks.span_start FROM tracks{}{})",

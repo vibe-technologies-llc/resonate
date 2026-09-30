@@ -86,6 +86,9 @@ const WANT_HINT: &str = "Mark this track wanted, so a provider can be asked for 
 
 const UNWANT_HINT: &str = "Stop wanting this track";
 
+const DISMISS_MISSING_HINT: &str =
+    "Take this track off the Missing list, and stop wanting it if it was wanted";
+
 const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to the catalog and the \
                                providers are asked for it. Right-click to choose the release";
 
@@ -1035,6 +1038,10 @@ impl RootView {
             length,
             beside,
         } = unheld;
+        let dismissed = match (&beside, &asks) {
+            (Beside::ARun, Asks::Row(release_track)) => Some(*release_track),
+            _ => None,
+        };
         let mark = self.want_mark(asks, cx);
         let (title, lit_title, lit_artist) = match &beside {
             Beside::AnAlbum | Beside::ARun => (title, Lit::new(), Lit::new()),
@@ -1101,7 +1108,27 @@ impl RootView {
                 |row, format| row.child(format).child(listing::unheard()),
             )
             .child(listing::length_cell(length).text_color(rgb(theme::faint())))
-            .child(controls_place().child(mark))
+            .child(
+                controls_place()
+                    .gap_1()
+                    .when_some(dismissed, |controls, release_track| {
+                        controls.child(
+                            kit::icon_button(
+                                ("dismiss-missing", release_track.get()),
+                                Icon::Close,
+                                DISMISS_MISSING_HINT,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    this.library.update(cx, |library, cx| {
+                                        library.dismiss_missing(release_track, cx);
+                                    });
+                                },
+                            )),
+                        )
+                    })
+                    .child(mark),
+            )
     }
 
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {

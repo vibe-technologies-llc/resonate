@@ -171,6 +171,7 @@ struct Shelves {
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
     missing: Missing,
+    dismissed: Missing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -279,6 +280,8 @@ enum Change {
     Playlist,
     Want,
     Unwant,
+    Dismiss,
+    BringBack,
     Favour { favourite: bool },
     Hide { hidden: bool },
     ForgetDelivered,
@@ -302,6 +305,8 @@ impl Change {
             Self::Playlist => "change the playlist",
             Self::Want => "want that track",
             Self::Unwant => "stop wanting that track",
+            Self::Dismiss => "dismiss that",
+            Self::BringBack => "bring back what was dismissed",
             Self::Favour { favourite: true } => "mark it a favourite",
             Self::Favour { favourite: false } => "take it out of the favourites",
             Self::Hide { hidden: true } => "hide that track",
@@ -598,6 +603,7 @@ pub struct LibraryModel {
     missing_tracks: Arc<[MissingTrack]>,
     unheld_releases: Arc<[UnheldRelease]>,
     missing: Missing,
+    dismissed: Missing,
     missing_track_rows: Arc<[MissingRow]>,
     unheld_release_rows: Arc<[MissingRow]>,
     roots: Vec<PathBuf>,
@@ -744,6 +750,7 @@ impl LibraryModel {
             missing_tracks: Arc::default(),
             unheld_releases: Arc::default(),
             missing: Missing::default(),
+            dismissed: Missing::default(),
             missing_track_rows: Arc::default(),
             unheld_release_rows: Arc::default(),
             roots: Vec::new(),
@@ -1267,6 +1274,10 @@ impl LibraryModel {
         self.missing
     }
 
+    pub const fn dismissed(&self) -> Missing {
+        self.dismissed
+    }
+
     pub fn want(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
         self.edited_then(
             Wanted::ThePlaylists,
@@ -1285,6 +1296,34 @@ impl LibraryModel {
         self.edit(
             Change::Unwant,
             move |library| library.unwant(want).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn dismiss_missing(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
+        self.edit(
+            Change::Dismiss,
+            move |library| library.dismiss_missing(release_track).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn dismiss_release(&mut self, artist: ArtistId, release: Mbid, cx: &mut Context<Self>) {
+        self.edit(
+            Change::Dismiss,
+            move |library| library.dismiss_release(artist, &release).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn bring_back_dismissed(&mut self, cx: &mut Context<Self>) {
+        self.edit(
+            Change::BringBack,
+            move |library| {
+                library
+                    .bring_back_dismissed()
+                    .map(|brought| Some(brought_back(brought)))
+            },
             cx,
         );
     }
@@ -2900,6 +2939,7 @@ impl LibraryModel {
                     .into();
         }
         self.missing = shelves.missing;
+        self.dismissed = shelves.dismissed;
         renewed(&mut self.playlists, shelves.playlists);
         renewed(&mut self.lists, shelves.lists);
         self.pictured = shelves.pictured;
@@ -4501,7 +4541,24 @@ fn shelves(
         missing_tracks: library.missing_tracks(narrowing, Some(MISSING_AT_MOST))?,
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,
         missing: library.missing_counted(narrowing)?,
+        dismissed: library.dismissed()?,
     })
+}
+
+fn brought_back(brought: Missing) -> String {
+    let parts: Vec<String> = [
+        (brought.tracks, "missing track", "missing tracks"),
+        (brought.releases, "unheld release", "unheld releases"),
+    ]
+    .into_iter()
+    .filter(|(count, _, _)| *count > 0)
+    .map(|(count, one, many)| format::counted(count as usize, one, many))
+    .collect();
+
+    match parts.as_slice() {
+        [] => "Nothing was dismissed".to_owned(),
+        parts => format!("{} brought back", parts.join(" and ")),
+    }
 }
 
 fn pictures_of<'a>(
@@ -4983,6 +5040,8 @@ mod tests {
         let not_playlists = [
             Change::Want,
             Change::Unwant,
+            Change::Dismiss,
+            Change::BringBack,
             Change::Favour { favourite: true },
             Change::Favour { favourite: false },
             Change::Hide { hidden: true },

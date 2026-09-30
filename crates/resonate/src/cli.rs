@@ -235,6 +235,15 @@ pub enum PlaylistOrderArg {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("ordered").args(["order", "query"]).multiple(true)))]
+#[command(group(
+    ArgGroup::new("transport")
+        .args(["shuffle", "repeat", "volume"])
+        .multiple(true)
+        .conflicts_with_all([
+            "add", "export", "tidy", "fold", "drop", "into", "order", "by_hand", "query",
+            "rename", "discard", "pin", "unpin"
+        ])
+))]
 pub struct PlaylistArgs {
     #[arg(value_name = "NAME")]
     pub name: String,
@@ -413,6 +422,9 @@ pub struct PlaylistArgs {
                 the listing is read in"
     )]
     pub unpin: bool,
+
+    #[command(flatten)]
+    pub transport: TransportArgs,
 }
 
 #[derive(Debug, Args)]
@@ -710,6 +722,13 @@ pub enum Sub {
                     credited on"
         )]
         read_the_rest: bool,
+
+        #[arg(
+            long,
+            help = "First list again every track and release dismissed from the window's Missing \
+                    pane"
+        )]
+        bring_back: bool,
     },
 
     #[command(about = "Ask every registered provider for each wanted track not tried lately")]
