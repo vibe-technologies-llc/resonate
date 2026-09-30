@@ -137,10 +137,12 @@ impl Falloff {
         }
     }
 
-    fn spent(self, away: Option<usize>) -> f32 {
-        match self {
-            Self::Around => 0.0,
-            Self::Across => self.ahead(away.map_or(usize::MAX, |away| away.max(1))),
+    fn spent(self, read: Option<usize>, line: usize) -> f32 {
+        match (self, read) {
+            (Self::Around, Some(read)) if line >= read => self.ahead(line - read + 1),
+            (Self::Around, _) => 0.0,
+            (Self::Across, Some(read)) => self.ahead(read.abs_diff(line).max(1)),
+            (Self::Across, None) => self.ahead(usize::MAX),
         }
     }
 }
@@ -746,6 +748,7 @@ impl LyricsModel {
                 .flatten()
                 .max()
                 .or(ended)
+                .or_else(|| waiting.is_none().then_some(read_at).flatten())
                 .map_or(Reads::Spent(read_at), Reads::At)
         };
 
@@ -766,9 +769,7 @@ impl LyricsModel {
             self.turn.blended(now, |reads| match reads {
                 Reads::At(sung) => falloff.between(self.ordinal(sung), line),
                 Reads::Evenly => ADRIFT,
-                Reads::Spent(read) => {
-                    falloff.spent(read.map(|read| self.ordinal(read).abs_diff(line)))
-                }
+                Reads::Spent(read) => falloff.spent(read.map(|read| self.ordinal(read)), line),
             })
         });
 
@@ -1814,6 +1815,55 @@ mod tests {
         wider.follow_the_track(at(30), now);
         assert_eq!(wider.read_at(), Some(1));
         assert!(wider.standing(0, now + TURN).abs() < f32::EPSILON);
+    }
+
+    fn sung(lines: Vec<LyricLine>) -> LyricsModel {
+        let source = resonate_core::SourceId::new("held").expect("a lowercase name");
+        let mut model = model();
+        model.look = Look::Found(Arc::new(
+            Lyrics::synced(source, lines).expect("every line is timed"),
+        ));
+        model.hold();
+
+        model
+    }
+
+    #[test]
+    fn a_gap_shorter_than_a_breath_holds_the_line_just_sung_rather_than_putting_the_sheet_out() {
+        let now = Instant::now();
+        let settled = now + TURN;
+        let mut model = sung(vec![
+            LyricLine::sung(at(4), "a line the sheet ends").ending(at(6)),
+            LyricLine::sung(Duration::from_millis(6_400), "the next comes soon"),
+            LyricLine::sung(at(9), "and one after"),
+        ]);
+
+        model.follow_the_track(Duration::from_millis(6_200), now);
+
+        assert_eq!(model.in_play(Duration::from_millis(6_200)), [None, None]);
+        assert!((model.standing(0, settled) - LIT).abs() < f32::EPSILON);
+        assert!(model.lead(0, settled).abs() < f32::EPSILON);
+        assert!((model.standing(1, settled) - Falloff::Around.ahead(1)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_pause_leaves_the_line_it_waits_on_and_the_one_after_readable_under_the_dots() {
+        let now = Instant::now();
+        let settled = now + TURN;
+        let mut model = sung(vec![
+            LyricLine::sung(at(0), "one"),
+            LyricLine::sung(at(60), "two"),
+            LyricLine::sung(at(62), "three"),
+            LyricLine::sung(at(64), "four"),
+        ]);
+
+        model.follow_the_track(at(30), now);
+
+        assert_eq!(model.read_at(), Some(1));
+        assert!(model.standing(0, settled).abs() < f32::EPSILON);
+        assert!((model.standing(1, settled) - Falloff::Around.ahead(1)).abs() < f32::EPSILON);
+        assert!((model.standing(2, settled) - Falloff::Around.ahead(2)).abs() < f32::EPSILON);
+        assert!(model.standing(3, settled).abs() < f32::EPSILON);
     }
 
     #[test]

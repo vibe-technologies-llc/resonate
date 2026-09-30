@@ -1105,11 +1105,19 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **Three `Turn`s on one `TURN`, and a `Glide` on a spring.** Where the pane *reads* and what it
   *lights* are not the same line, so each has its own clock. `Reads` is what the light turns on: `At` a
   line while one is in play, `Spent` where none is — carrying the line `read_at` names — and `Evenly`
-  for an unsynced set never lighting one. Ten seconds into an instrumental `line_in_play` gives out and
-  the set goes to `Falloff::spent` — nothing at all in an `InPlay` reading, and across every line the
-  same step down either way from the read line a line in play gets, that line standing where its
-  neighbours do rather than lit, a deliberately asked reading staying readable. A flat 0.16 over the lot
-  was what it was, and past the last line it left the whole sheet all but unreadable however opened out.
+  for an unsynced set never lighting one. **Nothing lit is not an empty pane.** Where nothing is in play
+  but no wait has begun — a gap under a breath, a line whose sheet ended it just short of the next — the
+  turn stays `At` the line just read: it keeps its standing and only its colour falls to `muted` as its
+  light goes. Reading such a gap as `Spent` put every line out for as long as it lasted, the text
+  vanishing for a second between two singers. `Spent` is a wait's: the set goes to `Falloff::spent`,
+  which in an `InPlay` reading stands the line waited on and the one after it as though the line before
+  were being sung — `ahead(1)` and `ahead(2)` under the dots, nothing behind — and across every line
+  the same step down either way from the read line a line in play gets, that line standing where its
+  neighbours do rather than lit, a deliberately asked reading staying readable. Putting everything out
+  left a pause as dots alone, the line rising out of nothing; a flat 0.16 over the lot before that left
+  the whole sheet all but unreadable past the last line however opened out
+  (`a_gap_shorter_than_a_breath_holds_the_line_just_sung_rather_than_putting_the_sheet_out`,
+  `a_pause_leaves_the_line_it_waits_on_and_the_one_after_readable_under_the_dots`).
   `read_at` keeps the sheet where it is, which is also what takes a set's last line away once it has had
   its word rather than leaving it lit through the outro. `standing` blends over `Reads`, `lead` over the
   lines in play, and colour reads off `lead` — `mixed` lerps `muted` to `text` — so a line brightens
@@ -1163,7 +1171,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   frames, so a look taking longer is announced when the grace runs out.
 - **A gap is read at the line it waits for, not the one just sung.** `read_at` prefers `Waiting::next`,
   then the ended row, then `line_at`, so an instrumental scrolls the upcoming line to the middle and
-  lets it rise there under the dots while all else is out — and past the last line, with nothing to wait
+  lets it rise there under the dots while all that was sung is out — and past the last line, with nothing to wait
   for, it falls back and holds.
 - **`centre_of` reads the laid-out bounds, and a new landing carries the glide on.**
   `ScrollHandle::bounds_for_item` is what gpui laid out with no scroll offset, so the landing *is* the

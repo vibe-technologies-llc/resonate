@@ -44,7 +44,8 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   own end, else the next word, else the line's end — one with none of the three counted sung once it
   starts. `Lyrics::within` shifts a line's end and words onto a cue row's clock with the line.
 - **The pane sweeps a word-timed line word by word.** Only a line `voices_in_play` names is swept:
-  unsung words at `UNSUNG_SHARE` of the lit colour, sung ones at all of it, and the word being sung
+  unsung words at `UNSUNG_SHARE` of the way from the background to the lit colour, sung ones at all
+  of it, and the word being sung
   *wiped* letter by letter — `wiped` lays how far through the word the transport is over its
   letters (trailing space left out, so the wipe ends on the last drawn), lights every letter behind
   the edge and mixes the one under it by the share passed, a multi-byte letter being one letter. It
@@ -57,7 +58,12 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   `SUNG_PER_LETTER` a letter, held between `SUNG_AT_LEAST` and `LIT_AT_MOST`, and a line goes out
   there only where the next line of its voice is at least `A_BREATH_AT_LEAST` further on —
   otherwise it stays lit until that line (held to ten seconds), so a verse never flickers between
-  lines. **A line whose sheet gave it an end goes out exactly there** — its own `until` or its last
+  lines. **Across two voices the same holds for whichever line comes next**: where a line's own voice
+  is quiet for a breath or more but the *other* voice's next line starts less than a breath after the
+  guess (`answered`), the line stays lit until that one starts. Weighed only against its own voice, a
+  line of one singer went out a second or two before the other came in, nothing was in play, and the
+  gap was too short to be a wait, so the pane stood empty with no dots
+  (`a_line_waits_for_the_other_voice_rather_than_leaving_less_than_a_breath_unlit`). **A line whose sheet gave it an end goes out exactly there** — its own `until` or its last
   word's; the guess is for a line with neither. A timed blank line, how an `.lrc` marks the break
   between verses, ends the line before it and is never in play itself, so the pause counts down to
   the next written line. Before this a line held up to ten seconds whatever it said and a blank one
@@ -69,7 +75,9 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   layout, not as the wait begins.
 - **`waiting_at` is what a flat set can say about a gap.** Only where nothing is in play: which line
   the wait is for and how far through it the transport is, counting from the track's start before
-  the first line and from the moment the last went out after it. It lives here, not in the window,
+  the first line and from the moment the last went out after it — the later of the last line of each
+  voice (`went_out_before`), not the last by index, which in two voices can be the one that went out
+  first (`a_wait_counts_from_whichever_voice_went_out_last`). It lives here, not in the window,
   as the one arithmetic that must agree with `LIT_AT_MOST` — a constant duplicated in `resonate-ui`
   would be a second thing to keep in step. How far through a *line* the transport is has no reader
   for a set without word timing: it could only be the whole span pretending to be a karaoke sweep.

@@ -355,24 +355,20 @@ impl Lyrics {
                 .iter()
                 .position(|line| !line.is_blank())?;
         let arrives = self.lines[next].at?;
-        let Some(sung) = self.lines[..passed]
-            .iter()
-            .rposition(|line| !line.is_blank())
-        else {
+        let Some(went_out) = self.went_out_before(passed) else {
             return Some(Waiting {
                 next,
                 through: share(position, arrives),
             });
         };
-        let (_, until) = self.span_of(sung)?;
-        let wait = arrives.saturating_sub(until);
+        let wait = arrives.saturating_sub(went_out);
         if wait < A_BREATH_AT_LEAST {
             return None;
         }
 
         Some(Waiting {
             next,
-            through: share(position.saturating_sub(until), wait),
+            through: share(position.saturating_sub(went_out), wait),
         })
     }
 
@@ -388,15 +384,24 @@ impl Lyrics {
         else {
             return false;
         };
-        let Some(sung) = self.lines[..line]
-            .iter()
-            .rposition(|earlier| !earlier.is_blank())
-        else {
+        let Some(went_out) = self.went_out_before(line) else {
             return true;
         };
 
-        self.span_of(sung)
-            .is_some_and(|(_, until)| arrives.saturating_sub(until) >= A_BREATH_AT_LEAST)
+        arrives.saturating_sub(went_out) >= A_BREATH_AT_LEAST
+    }
+
+    fn went_out_before(&self, line: usize) -> Option<Duration> {
+        [Voice::One, Voice::Two]
+            .into_iter()
+            .filter_map(|voice| {
+                self.lines[..line]
+                    .iter()
+                    .rposition(|earlier| earlier.voice == voice && !earlier.is_blank())
+            })
+            .filter_map(|sung| self.span_of(sung))
+            .map(|(_, until)| until)
+            .max()
     }
 
     pub fn has_ended(&self, position: Duration) -> bool {
@@ -420,17 +425,23 @@ impl Lyrics {
         if let Some(until) = this.declared_until() {
             return Some((at, until.max(at)));
         }
-        let held = self.lines[line + 1..]
+        let later = &self.lines[line + 1..];
+        let held = later
             .iter()
             .find(|next| next.voice == this.voice)
             .and_then(|next| next.at)
             .unwrap_or(Duration::MAX);
         let sung = at.saturating_add(sung_for(&this.text));
-        let until = if held.saturating_sub(sung) >= A_BREATH_AT_LEAST {
-            sung
-        } else {
-            held.min(at.saturating_add(LIT_AT_MOST))
-        };
+        let answered = later
+            .iter()
+            .filter(|next| !next.is_blank())
+            .filter_map(|next| next.at)
+            .find(|next| *next >= sung)
+            .unwrap_or(Duration::MAX);
+        let until = [held, answered]
+            .into_iter()
+            .find(|next| next.saturating_sub(sung) < A_BREATH_AT_LEAST)
+            .map_or(sung, |next| next.min(at.saturating_add(LIT_AT_MOST)));
 
         Some((at, until))
     }
@@ -551,6 +562,58 @@ mod tests {
         assert_eq!(lyrics.voices_in_play(at(8)), [Some(2), Some(3)]);
         assert_eq!(lyrics.line_in_play(at(8)), Some(3));
         assert_eq!(lyrics.voices_in_play(at(20)), [None, None]);
+    }
+
+    #[test]
+    fn a_line_waits_for_the_other_voice_rather_than_leaving_less_than_a_breath_unlit() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(4), "first singer opens the song"),
+                LyricLine::sung(millis(9_500), "the second answers").voiced(Voice::Two),
+                LyricLine::sung(at(17), "first singer again"),
+                LyricLine::sung(at(30), "second singer again").voiced(Voice::Two),
+            ],
+        )
+        .expect("every line is timed");
+
+        assert_eq!(lyrics.voices_in_play(millis(9_000)), [Some(0), None]);
+        assert_eq!(lyrics.voices_in_play(millis(9_500)), [None, Some(1)]);
+        assert_eq!(lyrics.waiting_at(millis(9_000)), None);
+        assert_eq!(
+            lyrics.voices_in_play(at(15)),
+            [None, None],
+            "a line was held across more than a breath"
+        );
+        assert_eq!(
+            lyrics.waiting_at(at(15)).map(|waiting| waiting.next),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn a_wait_counts_from_whichever_voice_went_out_last() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(10), "a first singer holds a long long line"),
+                LyricLine::sung(at(11), "short").voiced(Voice::Two),
+                LyricLine::sung(at(40), "and then the next"),
+            ],
+        )
+        .expect("every line is timed");
+        let went_out = at(10) + sung_for("a first singer holds a long long line");
+        let waiting = lyrics
+            .waiting_at(went_out)
+            .expect("a pause after both voices went out");
+
+        assert_eq!(waiting.next, 2);
+        assert!(
+            waiting.through.abs() < f32::EPSILON,
+            "the dots began {} of the way through",
+            waiting.through
+        );
+        assert!(lyrics.breathes_before(2));
     }
 
     #[test]

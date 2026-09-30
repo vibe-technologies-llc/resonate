@@ -79,7 +79,7 @@ const A_VOICE_OF_TWO_SPANS: f32 = 0.84;
 
 const DOWNWARDS: f32 = 180.0;
 
-const UNSUNG_SHARE: f32 = 0.45;
+const UNSUNG_SHARE: f32 = 0.38;
 
 struct Attributed {
     timed: &'static str,
@@ -350,6 +350,7 @@ impl RootView {
                     }
                 })
                 .collect();
+
             let ending = synced.then(|| {
                 let end = model.end_of_the_sheet();
                 Ending {
@@ -527,7 +528,8 @@ impl RootView {
                         let sung = mixed(theme::muted(), lit, line.lead);
                         match line.sweep {
                             Some(sweep) => {
-                                let unsung = mixed(theme::muted(), lit, line.lead * UNSUNG_SHARE);
+                                let waiting = mixed(theme::background(), lit, UNSUNG_SHARE);
+                                let unsung = mixed(theme::muted(), waiting, line.lead);
                                 words
                                     .text_color(rgb(unsung))
                                     .child(swept(line.text, &sweep, unsung, sung))
