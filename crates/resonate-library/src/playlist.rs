@@ -715,7 +715,7 @@ pub fn copy(
 }
 
 pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
-    let reach = Reach::From(rows.first());
+    let reach = Reach::Emptied(rows);
     let changed = undo::edited(inner, id, Edit::Removed, reach, |transaction| {
         only_a_list(transaction, id)?;
         let held = length(transaction, id)?;
@@ -746,7 +746,7 @@ pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
 }
 
 pub fn move_rows(inner: &Inner, id: PlaylistId, rows: Span, to: usize) -> Result<bool> {
-    let reach = Reach::From(rows.first().min(to));
+    let reach = Reach::Shuffled(Span::between(rows.first().min(to), rows.last().max(to)));
     let changed = undo::edited(inner, id, Edit::Moved, reach, |transaction| {
         only_a_list(transaction, id)?;
         refuse_a_kept_order(transaction, id)?;
@@ -1414,7 +1414,12 @@ fn stem_of(path: &Path) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn closed_up(transaction: &Transaction<'_>, id: PlaylistId, from: i64, by: i64) -> Result<()> {
+pub(crate) fn closed_up(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    from: i64,
+    by: i64,
+) -> Result<()> {
     parked(transaction, id, from, i64::MAX)?;
     transaction
         .execute(
@@ -1543,6 +1548,28 @@ pub(crate) fn rows_from(connection: &Connection, id: PlaylistId, first: i64) -> 
 
     statement
         .query_map(params![id.get() as i64, first], |row| Row::read_at(row, 0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn rows_within(
+    connection: &Connection,
+    id: PlaylistId,
+    first: i64,
+    holds: i64,
+) -> Result<Vec<Row>> {
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT {ROW_COLUMNS} FROM playlist_entries e
+             WHERE e.playlist_id = ?1 AND e.position >= ?2 AND e.position < ?3
+             ORDER BY e.position"
+        ))
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map(params![id.get() as i64, first, first + holds], |row| {
+            Row::read_at(row, 0)
+        })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))
 }

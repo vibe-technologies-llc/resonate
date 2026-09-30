@@ -175,6 +175,46 @@ fn an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached() -> Res
 }
 
 #[test]
+fn an_edit_near_the_top_of_a_long_playlist_holds_only_the_rows_it_crossed() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let rows: Vec<Cut> = (0..PAST_WHAT_THE_UNDO_STACK_HOLDS)
+        .map(|row| whole(format!("/music/{row}.wav")))
+        .collect();
+    let id = library.start_playlist("Long", &rows)?;
+    let before = library.playlist_cuts(id)?;
+
+    library.remove_from_playlist(id, Span::between(2, 4))?;
+    let removed = library.playlist_cuts(id)?;
+    library.move_in_playlist(id, Span::between(1, 2), 6)?;
+    let moved = library.playlist_cuts(id)?;
+    library.move_in_playlist(id, Span::between(9, 10), 0)?;
+    let raised = library.playlist_cuts(id)?;
+    library.remove_from_playlist(id, Span::between(0, 0))?;
+    let dropped = library.playlist_cuts(id)?;
+
+    assert_eq!(
+        library.undoable().map(|step| step.behind),
+        Some(4),
+        "a step holding the rest of the playlist pushed the ones under it off the stack"
+    );
+    assert_eq!(removed.len(), before.len() - 3);
+    assert_eq!(&removed[..2], &before[..2]);
+    assert_eq!(&removed[2..], &before[5..]);
+    assert_ne!(moved, removed);
+    assert_ne!(raised, moved);
+
+    for standing in [&raised, &moved, &removed, &before] {
+        library.undo()?;
+        assert_eq!(library.playlist_cuts(id)?, *standing);
+    }
+    for standing in [&removed, &moved, &raised, &dropped] {
+        library.redo()?;
+        assert_eq!(library.playlist_cuts(id)?, *standing);
+    }
+    Ok(())
+}
+
+#[test]
 fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not() -> Result<()> {
     let tree = Tree::new();
     let on_the_drive = tree.write("drive/album/one.wav", &wav(4_410));

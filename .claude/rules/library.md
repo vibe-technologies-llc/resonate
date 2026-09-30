@@ -2266,8 +2266,8 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   the playlist's end, and `remove_from_playlist` takes rows from the first named to the list's end and
   refuses a span starting past it. A span of any length costs one row's two writes — the whole reason
   `Span` reaches the SQL rather than the pane sending an edit per row. The restore point `undo::edited`
-  takes before each reads only the rows from where the edit can reach (`Undo` below), so an append to a
-  list in hand reads none and removing or moving a span reads from its first row on. Only the local
+  takes before each reads only the rows the edit can reach (`Undo` below), so an append to a list in
+  hand reads none, removing a span reads that span and moving one the rows it crosses. Only the local
   source can be in one — `add_to_playlist` refuses a `MediaLocation` naming another.
 - **A name is one name however written, and the column says so.** `playlists.folded` holds
   `playlist::folded` — Rust's `to_lowercase`, folding every alphabet rather than SQLite's `NOCASE`
@@ -2474,19 +2474,25 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
 - **A step holds only the rows its edit could have moved.** The mutator names a `Reach` and
   `Reach::settled` turns it into the step's `Reached` inside the transaction: `Unmoved` for a rename and
   a revision, which read no path under the playlist and count none against the stack's 50 000; `From`
-  the first row an edit can touch — a removed span's first row, the nearer end of a move, and for an
-  append (`Reach::Appended`) the list's length, so one row added to a list of 100 000 holds none; and
-  `Whole` for a discard, a sort, a keep, the passes dropping rows and an append to a kept list, whose
-  re-sort may move any row. An `Unmoved` step is put back by `written_over`, an `UPDATE` of the playlist
-  row and a rewrite of its query where it has one; a `From` step by `written_over` and then
-  `rewritten_from`, deleting every row from its first on and writing the held tail back from wherever
-  the list now ends, so the positions stay dense; only a `Whole` step takes the `DELETE` that cascades
-  the entries away — which is why that path is the one reading `played` and `plays` back off the row it
-  is about to delete. Both halves of `undo::walk` read the shape from the step's own `Reached`, so the
-  inverse holds the same tail the step did, and a created playlist's step is `Whole`, its inverse being
-  the playlist whole. What a tail still costs is a span removed or moved near the top of a long list,
-  whose tail is nearly the whole of it.
-  `an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached` is the claim.
+  the list's length for an append (`Reach::Appended`), so one row added to a list of 100 000 holds
+  none; `Window` the run of rows an edit replaced — `Reach::Emptied` for a removed span, which leaves
+  nothing where it stood, and `Reach::Shuffled` for a move, the span and the row it lands on bounding
+  the rows it permutes, as many after as before — clipped to the list by `clipped` in signed
+  arithmetic, a span may run to `usize::MAX`; and `Whole` for a discard, a sort, a keep, the passes
+  dropping rows and an append to a kept list, whose re-sort may move any row. An `Unmoved` step is put
+  back by `written_over`, an `UPDATE` of the playlist row and a rewrite of its query where it has one;
+  a `From` step by `written_over` and then `rewritten_from`, deleting every row from its first on and
+  writing the held tail back from wherever the list now ends; a `Window` step by `written_over` and
+  then `rewritten_within`, deleting the `leaves` rows standing in the window, moving the rows after it
+  by the difference through `closed_up`'s park-and-unpark, and writing the held `holds` rows back into
+  the gap, so the positions stay dense; only a `Whole` step takes the `DELETE` that cascades the
+  entries away — which is why that path is the one reading `played` and `plays` back off the row it
+  is about to delete. `undo::walk` reads the standing it overwrites through `Reached::turned` — a
+  window's two lengths traded, what the step leaves being what its inverse holds — so the inverse
+  holds the same stretch the step did, and a created playlist's step is `Whole`, its inverse being the
+  playlist whole. A move from the top of a long list to its end still crosses the whole of it.
+  `an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached` and
+  `an_edit_near_the_top_of_a_long_playlist_holds_only_the_rows_it_crossed` are the claims.
 - **A step is walked either way, and walking it writes the step back the other way.** `undo::walk` is
   `Library::undo` and `Library::redo` alike: it pops a step off one stack, reads the standing it is
   about to overwrite, applies the step and pushes what it read onto the other — so `Inner::walked` holds

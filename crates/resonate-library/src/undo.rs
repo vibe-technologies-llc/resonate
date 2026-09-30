@@ -1,5 +1,5 @@
 use parking_lot::Mutex;
-use resonate_core::PlaylistId;
+use resonate_core::{PlaylistId, Span};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{Error, Kept, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, playlist, store};
@@ -31,7 +31,8 @@ pub(crate) enum Reach {
     Unmoved,
     Whole,
     Appended,
-    From(usize),
+    Emptied(Span),
+    Shuffled(Span),
 }
 
 impl Reach {
@@ -39,7 +40,22 @@ impl Reach {
         Ok(match self {
             Self::Unmoved => Reached::Unmoved,
             Self::Whole => Reached::Whole,
-            Self::From(first) => Reached::From(first as i64),
+            Self::Emptied(span) => {
+                let (first, holds) = clipped(span, playlist::tail(transaction, id)?);
+                Reached::Window {
+                    first,
+                    holds,
+                    leaves: 0,
+                }
+            }
+            Self::Shuffled(span) => {
+                let (first, holds) = clipped(span, playlist::tail(transaction, id)?);
+                Reached::Window {
+                    first,
+                    holds,
+                    leaves: holds,
+                }
+            }
             Self::Appended => match playlist::kept_in(transaction, id)? {
                 Some(_) => Reached::Whole,
                 None => Reached::From(playlist::tail(transaction, id)?),
@@ -48,11 +64,35 @@ impl Reach {
     }
 }
 
+fn clipped(span: Span, tail: i64) -> (i64, i64) {
+    let first = i64::try_from(span.first()).unwrap_or(i64::MAX).min(tail);
+    let last = i64::try_from(span.last()).unwrap_or(i64::MAX).min(tail - 1);
+    (first, (last - first + 1).max(0))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Reached {
     Unmoved,
     Whole,
     From(i64),
+    Window { first: i64, holds: i64, leaves: i64 },
+}
+
+impl Reached {
+    const fn turned(self) -> Self {
+        match self {
+            Self::Window {
+                first,
+                holds,
+                leaves,
+            } => Self::Window {
+                first,
+                holds: leaves,
+                leaves: holds,
+            },
+            reached => reached,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -215,9 +255,10 @@ fn walk(
         (step, behind)
     };
     let id = step.playlist;
+    let back = step.reached.turned();
 
     let put_back = inner.write(|transaction| {
-        let standing = standing_in(transaction, id, step.named(), step.reached)?;
+        let standing = standing_in(transaction, id, step.named(), back)?;
         match &step.standing {
             Standing::Was(held) => restored(transaction, id, held, step.reached)?,
             Standing::Fresh(_) => discarded(transaction, id)?,
@@ -226,7 +267,7 @@ fn walk(
         Ok(Step {
             edit: step.edit,
             playlist: id,
-            reached: step.reached,
+            reached: back,
             standing,
         })
     });
@@ -293,7 +334,36 @@ fn restored(
             written_over(transaction, id, held)?;
             rewritten_from(transaction, id, first, rows)
         }
+        Reached::Window { first, leaves, .. } => {
+            written_over(transaction, id, held)?;
+            rewritten_within(transaction, id, first, leaves, rows)
+        }
     }
+}
+
+fn rewritten_within(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    first: i64,
+    leaves: i64,
+    rows: &[playlist::Row],
+) -> Result<()> {
+    transaction
+        .execute(
+            "DELETE FROM playlist_entries
+             WHERE playlist_id = ?1 AND position >= ?2 AND position < ?3",
+            params![id.get() as i64, first, first + leaves],
+        )
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
+    let holds = rows.len() as i64;
+    if holds != leaves {
+        playlist::closed_up(transaction, id, first + leaves, leaves - holds)?;
+    }
+    for (position, row) in (first..).zip(rows) {
+        playlist::insert(transaction, id, position, row)?;
+    }
+    Ok(())
 }
 
 fn rewritten_from(
@@ -461,6 +531,9 @@ fn held_in(
             Reached::Unmoved => None,
             Reached::Whole => Some(playlist::rows(transaction, id)?),
             Reached::From(first) => Some(playlist::rows_from(transaction, id, first)?),
+            Reached::Window { first, holds, .. } => {
+                Some(playlist::rows_within(transaction, id, first, holds)?)
+            }
         },
     }))
 }
