@@ -26,13 +26,25 @@ pub const AUDIO_EXTENSIONS: &[&str] = &[
     "oga", "ogg", "opus", "rf64", "w64", "wav", "wave", "wv",
 ];
 
+pub const PICTURE_EXTENSIONS: &[&str] = &[
+    "avif", "bmp", "gif", "jpeg", "jpg", "jxl", "png", "tif", "tiff", "webp",
+];
+
 pub fn names_audio(path: &Path) -> bool {
+    extended_by_one_of(path, AUDIO_EXTENSIONS)
+}
+
+pub fn names_a_picture(path: &Path) -> bool {
+    extended_by_one_of(path, PICTURE_EXTENSIONS)
+}
+
+fn extended_by_one_of(path: &Path, extensions: &[&str]) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            AUDIO_EXTENSIONS
+            extensions
                 .iter()
-                .any(|audio| audio.eq_ignore_ascii_case(extension))
+                .any(|held| held.eq_ignore_ascii_case(extension))
         })
 }
 

@@ -1158,6 +1158,7 @@ fn organise(
     let summary = until_told(library.organise(OrganiseOptions {
         layout,
         roots: filed_from(roots),
+        only: Vec::new(),
         apply: how.apply,
         walk_back: how.walk_back,
     })?)?;
@@ -2391,6 +2392,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             by_sound,
             convolution: config.convolution.clone(),
             music_folder: config.music_folder.clone(),
+            file_dropped: config.files_what_is_dropped(),
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             scrollbars: config.scrollbars(),

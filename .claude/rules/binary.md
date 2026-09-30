@@ -182,9 +182,9 @@ or a `window-size` from another build no longer fails every command — `sleep o
 included — while a file that is not TOML still does
 (`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
 collects the refusals, so each reader's refusal is still asserted. Nine of
-the seventy-one have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+the seventy-two have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
 `noise-shaping`, `bit-perfect` (as `--bit-perfect` and `--no-bit-perfect`) and `volume` (as
-`play --volume`, a percent); the other sixty-two are set only by the settings pane and the file:
+`play --volume`, a percent); the other sixty-three are set only by the settings pane and the file:
 
 - the output's `true-peak`, `restore-lossy`, `replay-gain`, `replay-gain-pre-amp`,
   `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -197,7 +197,8 @@ the seventy-one have a flag — `sink`, `library`, `vault`, `quality`, `filter-p
   `identify-by-sound`, `contact`, `acoustid-key`, `equaliser`, `equaliser-for`,
   `equaliser-profile`, `convolution`, `resume`, `history-kept`, `skip-repeats-queue`,
   `previous-restarts`, `organise-as`, `notify`, `audd-token`, `listenbrainz-token`, `listen-from`,
-  `listen-for`, `music-folder` (the Library category's *Primary music folder* group),
+  `listen-for`, `music-folder` and `file-dropped` (the Library category's *Primary music folder*
+  group),
   `inbox` (the Library category's *The inbox* group, which polls from the window too),
   and `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, used from
   the next start);
@@ -214,12 +215,14 @@ What some of them mean:
   `resonate listen --microphone` and `--seconds` outrank them for one run; the Online
   category's *Listening* group and the Listen sheet's chips write them.
 - `music-folder` is the one folder new songs are copied into — what is dragged onto the window
-  (`ui.md`, `library.md`'s *Taking files in*) — an ordinary folder of files as they came and never
-  the vault. It rides on `Stored` onto `ResonateApp::music_folder`, written by
+  (`ui.md`, `library.md`'s *Taking files in*) — an ordinary folder of files and never the vault. It rides on `Stored` onto `ResonateApp::music_folder`, written by
   Library's *Primary music folder* and live at once; blank or absent it is `None`. Choosing one
   stores its canonical path, refuses a path that is not a folder or lies inside the vault
   (`unusable_as_the_music_folder`), and adds it to the roots through `add_roots` unless a root
   already reaches it, so what lands there is scanned like any other folder.
+- `file-dropped` (default true): what is dropped on the window is filed by `organise-as` once the
+  scan has it, rather than left under the names and folders it came with. It rides on `Stored` onto
+  `ResonateApp::file_dropped`, and the *Primary music folder* group's switch writes it.
 - `history-kept` is `forever` (default) or a whole number of days; every command opening the
   catalog first forgets listens and skipped time older than that, and the Library category's
   *Listening history* chips write it and age the catalog, a shorter span on a second press.

@@ -14246,6 +14246,91 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
 }
 
 #[test]
+fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_folder() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+    tree.write("loose/cover.jpg", b"picture");
+    tree.write("loose/notes.txt", b"words");
+    tree.write("split/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("split/cover.jpg", b"picture");
+    tree.write("split/kept.wav", &meddle("Fearless", "3"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let root = filed_under(&tree);
+    let filed = root.join("Pink Floyd/Meddle");
+    let summary = library
+        .organise(OrganiseOptions {
+            apply: true,
+            only: vec![root.join("loose/echoes.wav"), root.join("loose/days.wav")],
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+
+    assert_eq!(summary.stats.moved, 2);
+    assert_eq!(
+        fs::read(filed.join("cover.jpg")).expect("the picture followed"),
+        b"picture"
+    );
+    assert!(!root.join("loose/cover.jpg").exists());
+    assert!(root.join("loose/notes.txt").is_file());
+
+    let back = library
+        .organise(OrganiseOptions {
+            apply: true,
+            walk_back: true,
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+    assert_eq!(back.stats.moved, 2);
+    assert!(root.join("loose/cover.jpg").is_file());
+    assert!(!filed.exists());
+
+    let split = library
+        .organise(OrganiseOptions {
+            apply: true,
+            only: vec![root.join("split/echoes.wav")],
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+    assert_eq!(split.stats.moved, 1);
+    assert!(root.join("split/cover.jpg").is_file());
+    Ok(())
+}
+
+#[test]
+fn a_run_given_files_files_those_alone_and_leaves_the_rest_where_they_stand() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("loose/echoes.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
+    tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let root = filed_under(&tree);
+    let echoes = root.join("loose/echoes.wav");
+    let days = root.join("loose/days.wav");
+    let summary = library
+        .organise(OrganiseOptions {
+            apply: true,
+            only: vec![echoes.clone()],
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+
+    assert_eq!(summary.plan.files_moving(), 1);
+    assert_eq!(summary.stats.moved, 1);
+    assert_eq!(summary.stats.unchanged, 0);
+    assert!(root.join("Pink Floyd/Meddle/02 Echoes.wav").is_file());
+    assert!(root.join("Pink Floyd/Meddle/02 Echoes.cue").is_file());
+    assert!(!echoes.exists());
+    assert!(days.is_file(), "a file the run was not given was moved");
+    assert!(library.track_at(&days, None)?.is_some());
+    Ok(())
+}
+
+#[test]
 fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -> Result<()> {
     let tree = Tree::new();
     let echoes = meddle("Echoes", "2");

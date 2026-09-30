@@ -20,6 +20,8 @@ pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
+
+pub(crate) const FILE_DROPPED: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::Shown;
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
 pub(crate) const REMEMBER_TAB: bool = true;
@@ -57,6 +59,7 @@ pub(crate) struct Standing {
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
     pub(crate) music_folder_given: bool,
+    pub(crate) file_dropped: bool,
     pub(crate) subsonic_given: bool,
     pub(crate) convolving: bool,
 }
@@ -93,6 +96,7 @@ impl Standing {
             template_given: false,
             inbox_given: false,
             music_folder_given: false,
+            file_dropped: FILE_DROPPED,
             subsonic_given: false,
             convolving: false,
         }
@@ -154,7 +158,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Organising => standing.template_given,
         Group::Inbox => standing.inbox_given,
-        Group::MusicFolder => standing.music_folder_given,
+        Group::MusicFolder => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
         Group::RoomCorrection => standing.convolving,
         Group::Subsonic => standing.subsonic_given,
         Group::Colour => {

@@ -398,7 +398,7 @@ impl Group {
             }
             Self::MusicFolder => {
                 "primary main default home directory destination import add copy drop drag \
-                 songs files library outside vault"
+                 songs files library outside vault file organise layout covers lyrics"
             }
             Self::Folders => "roots directories add scan music path",
             Self::Scanning => "rescan stop enrich tags index",
@@ -511,7 +511,7 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
-            Self::MusicFolder => &[SettingKey::MusicFolder],
+            Self::MusicFolder => &[SettingKey::MusicFolder, SettingKey::FileDropped],
             Self::RoomCorrection => &[SettingKey::Convolution],
             Self::Subsonic => &[
                 SettingKey::Subsonic,
@@ -806,10 +806,12 @@ pub(crate) const REPLAY_GAIN_HINT: &str = "Plays every track at the loudness its
                                            gain chosen for it instead.";
 
 pub(crate) const MUSIC_FOLDER_HINT: &str = "The one folder new songs are kept in: what is dragged \
-                                            onto the window is copied here, as it came. It is an \
-                                            ordinary folder outside the vault, scanned like any \
-                                            other. Choosing it adds it to the music folders below \
-                                            if they do not already reach it.";
+                                            onto the window is copied here with its covers and \
+                                            lyrics, then filed by the layout under Organising \
+                                            unless that is turned off. It is an ordinary folder \
+                                            outside the vault, scanned like any other. Choosing \
+                                            it adds it to the music folders below if they do not \
+                                            already reach it.";
 
 pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks. Adding one scans it straight \
                                        away; dropping one forgets every track that came from it, \

@@ -52,12 +52,8 @@ service or a format — and is not worked until that moves; everything else is o
   for a region
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned whose mount point's parent still holds another drive
-
-- A dropped file is copied under its own name and a dropped folder keeps its shape; nothing files it
-  by `organise-as`, so a loose file lands directly in the primary music folder until *Organise* is
-  applied
-- A dropped folder's cover pictures and lyric files are left behind: only audio and cue sheets are
-  copied, and a cue sheet whose audio lands under a new name (`name (2).ext`) names the wrong file
+- A lyric in a dropped album's `lyrics/` folder keeps its name when the track it is named after
+  lands as `name (2).ext`, so it is matched to nothing
 
 ## Search
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes

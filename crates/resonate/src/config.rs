@@ -153,6 +153,7 @@ pub struct Config {
     pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
     pub music_folder: Option<PathBuf>,
+    pub file_dropped: Option<bool>,
     pub convolution: Option<PathBuf>,
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
@@ -282,6 +283,11 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn scrolls_the_volume(&self) -> bool {
         self.scroll_volume.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn files_what_is_dropped(&self) -> bool {
+        self.file_dropped.unwrap_or(true)
     }
 
     #[cfg(feature = "ui")]
@@ -513,6 +519,7 @@ impl Config {
             ConfigKey::MusicFolder => {
                 config.music_folder = given(at.string(value)?).map(PathBuf::from);
             }
+            ConfigKey::FileDropped => config.file_dropped = Some(at.boolean(value)?),
             ConfigKey::Convolution => {
                 config.convolution = given(at.string(value)?).map(PathBuf::from);
             }
@@ -1146,6 +1153,16 @@ mod tests {
         assert_eq!(config.music_folder, None);
 
         assert_eq!(Config::default().music_folder, None);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn what_is_dropped_is_filed_unless_the_file_says_not() {
+        let kept = read("file-dropped = false").expect("a well formed document");
+
+        assert!(Config::default().files_what_is_dropped());
+        assert!(!kept.files_what_is_dropped());
+        assert!(read("file-dropped = \"no\"").is_err());
     }
 
     #[test]

@@ -8,8 +8,10 @@ use gpui::{
     BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla, point, prelude::*,
     px, relative, rgb, rgba,
 };
+use resonate_core::names_audio;
 use resonate_library::{
-    Dropped, Looks, TakeInOptions, TakeInProgress, TakeInSummary, TakenPassing, take_in, weigh,
+    Dropped, Layout, Looks, TakeInOptions, TakeInProgress, TakeInSummary, TakenPassing, take_in,
+    weigh,
 };
 
 use crate::{
@@ -44,14 +46,17 @@ const FOLDER_GONE_SAYS: &str = "If it is on a drive, mount it, then drop again."
 
 const NOTHING_TITLE: &str = "Nothing here the library reads";
 
-const NOTHING_SAYS: &str = "Audio files, cue sheets and folders holding them are copied; \
-                            anything else is left where it is.";
+const NOTHING_SAYS: &str = "Audio files, cue sheets and folders holding them are copied, \
+                            with the covers and lyrics beside them; anything else is left where \
+                            it is.";
 
 const BUSY_TITLE: &str = "Still copying";
 
 const BUSY_SAYS: &str = "Drop again once the songs being copied have landed.";
 
 const READY_SAYS: &str = "Copied as they are into";
+
+const READY_TO_FILE_SAYS: &str = "Copied and filed by your layout into";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Incoming {
@@ -153,6 +158,15 @@ pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
     Notice::Trouble(format!("Nothing was copied — a file {}", why.as_str()))
 }
 
+fn songs_landed(summary: &TakeInSummary) -> Vec<PathBuf> {
+    summary
+        .landed
+        .iter()
+        .filter(|landed| names_audio(&landed.to))
+        .map(|landed| landed.to.clone())
+        .collect()
+}
+
 fn name_of(path: &Path) -> SharedString {
     SharedString::from(path.file_name().map_or_else(
         || path.display().to_string(),
@@ -164,7 +178,12 @@ fn what_becomes_of(looks: Looks) -> (Icon, &'static str, bool) {
     match looks {
         Looks::Audio => (Icon::Check, "copied", true),
         Looks::Sheet => (Icon::Check, "cue sheet, copied", true),
-        Looks::Folder => (Icon::Folder, "folder, the audio in it is copied", true),
+        Looks::Companion => (Icon::Check, "beside a song, copied with it", true),
+        Looks::Folder => (
+            Icon::Folder,
+            "folder, its audio, covers and lyrics are copied",
+            true,
+        ),
         Looks::Other => (Icon::Close, "not audio, left out", false),
         Looks::Gone => (Icon::Close, "not there", false),
     }
@@ -288,6 +307,15 @@ impl RootView {
             return;
         }
 
+        let global = cx.global::<ResonateApp>();
+        if global.file_dropped {
+            let layout = Layout::read(&global.organise_as).unwrap_or_default();
+            let songs = songs_landed(summary);
+            self.library.update(cx, |library, cx| {
+                library.file_once_scanned(layout, songs, cx)
+            });
+        }
+
         let roots = self.library.read(cx).roots().to_vec();
         let reached = roots
             .into_iter()
@@ -308,6 +336,11 @@ impl RootView {
         let incoming = self.incoming.clone()?;
         let verdict = self.verdict_on(&incoming.weighed, cx);
         let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let ready_says = if cx.global::<ResonateApp>().file_dropped {
+            READY_TO_FILE_SAYS
+        } else {
+            READY_SAYS
+        };
         let ink = if verdict.is_trouble() {
             theme::failure()
         } else {
@@ -321,9 +354,9 @@ impl RootView {
                     format::counted(taken, "item", "items")
                 )),
                 match skipped {
-                    0 => SharedString::new_static(READY_SAYS),
+                    0 => SharedString::new_static(ready_says),
                     _ => SharedString::from(format!(
-                        "{READY_SAYS} · {} left out",
+                        "{ready_says} · {} left out",
                         format::counted(skipped, "item", "items")
                     )),
                 },

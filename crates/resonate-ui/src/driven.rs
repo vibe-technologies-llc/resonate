@@ -244,6 +244,7 @@ impl Driven {
                 by_sound: Arc::new(AtomicBool::new(false)),
                 convolution: None,
                 music_folder: None,
+                file_dropped: true,
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
                 caret: crate::CaretBlink::as_built(),
@@ -700,6 +701,46 @@ mod tests {
         );
         assert!(song.is_file(), "the original was taken away");
         assert!(driven.read(|root, _| root.taking_in.is_none()));
+    }
+
+    #[gpui::test]
+    fn songs_dropped_with_filing_on_are_filed_by_the_layout_once_scanned(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let music = folder.path().join("music");
+        fs::create_dir_all(&music).expect("a writable temporary folder");
+        let music = music.canonicalize().expect("a folder that is there");
+        let from = Folder::new();
+        let song = from.tagged(
+            "dropped.wav",
+            1,
+            &[
+                (b"INAM", "Echoes"),
+                (b"IART", "Pink Floyd"),
+                (b"IPRD", "Meddle"),
+            ],
+        );
+        let cover = from.path().join("cover.jpg");
+        fs::write(&cover, b"picture").expect("a writable temporary file");
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_music_folder(&mut driven, Some(music.clone()));
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global.organise_as = "{artist}/{album}/{title}".to_owned();
+            });
+        });
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.dropped(vec![song, cover], cx);
+        });
+
+        let filed = music.join("Pink Floyd/Meddle");
+        driven.until(|_, _| filed.join("Echoes.wav").is_file());
+        driven.until(|root, cx| !root.library.read(cx).is_busy());
+        assert!(!music.join("dropped.wav").exists());
+        assert_eq!(
+            fs::read(filed.join("cover.jpg")).expect("the cover followed its song"),
+            b"picture"
+        );
     }
 
     #[gpui::test]

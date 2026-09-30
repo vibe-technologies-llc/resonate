@@ -1830,6 +1830,20 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   *Put the last run back* behind a second press wherever `Library::walks_back` says a run is kept
   (`an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again`). A file
   moved or gone since is refused at `standing` like any other.
+- **A run given files files those alone.** `OrganiseOptions::only` empty is every row; naming paths
+  reads just those rows through `tracks_to_file_at`, `ROWS_A_PAGE` paths at a time, in place of the
+  paging walk — so a drop's filing costs its own rows, not the catalog's. Every file is still *known*
+  to the planner, collisions and chains being facts about the whole library, and a sheet naming a
+  file not given still reads it as a member
+  (`a_run_given_files_files_those_alone_and_leaves_the_rest_where_they_stand`).
+- **A folder's pictures follow its tracks where every track leaves for one folder.**
+  `Planner::pictures_follow_their_folders` runs once the chains are ordered: for each source folder
+  every one of whose scanned tracks is going, and all of them into one folder (`FolderLanding`), each
+  picture standing in it (`names_a_picture`) is a sidecar of the last move out, landing under its own
+  name unless something stands or is claimed there. A folder whose tracks scatter, or keep one behind,
+  keeps its pictures, the sleeve belonging to what stays as much as what goes. They are noted with the
+  run, so a walk back brings them home
+  (`a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_folder`).
 - **A run files the roots it is given, and one the catalog does not hold is refused.**
   `OrganiseOptions::roots` empty is every root — what the settings pane and a bare `resonate organise`
   ask; naming one puts a `roots.path IN (…)` on `TRACKS_TO_FILE`, so unwanted rows never leave SQLite.
@@ -1898,11 +1912,18 @@ starts a `resonate-take-in` thread behind a `TakeInHandle` (`PassKind::TakeIn`) 
 cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a scan follow it.
 `Error::DestinationNotADirectory` is the one refusal before the thread starts.
 
-- **What is taken is what the scan reads.** A dropped file is taken where `names_audio` or it is a
-  `.cue`; a dropped folder is walked, skipping names starting with `.` and links, to
-  `DEEPEST_FOLDER` levels, and its audio and cue sheets are taken. Anything else is `NotAudio`, an
-  empty folder `NothingInside`. The same file named twice, by its canonical path, is one.
-  `weigh` is the cheap, read-only look the window draws while a drag is over it (`Looks`).
+- **What is taken is what the scan reads, and what an album keeps beside it.** A dropped file is
+  taken where `names_audio` or it is a `.cue`; a dropped folder is walked, skipping names starting
+  with `.` and links, to `DEEPEST_FOLDER` levels, and its audio and cue sheets are taken. Beside
+  them come the *companions*: anywhere in a dropped folder, a picture (`resonate_core::names_a_picture`,
+  so `cover.jpg` and a `Scans/` folder alike) and a lyric sheet (`LYRIC_ENDINGS`: `.lrc` and a
+  Lyricsfile), and in any folder holding audio a file named after one of its tracks — the stem, a
+  `.` and more (`is_named_after`, organise's sidecar rule), so `01.txt` and `Album.flac.log` come and
+  `notes.txt` does not. A folder whose walk finds companions and nothing else is `NothingInside`,
+  and a loose file is a companion (`Looks::Companion`) only where the same drop takes audio from its
+  folder — a picture or lyric sheet dropped beside a song, never alone. Anything else is `NotAudio`.
+  The same file named twice, by its canonical path, is one. `weigh` is the cheap, read-only look
+  the window draws while a drag is over it (`Looks`), and `gather` reads the drop through it.
 - **Names are kept, and nothing is overwritten.** A file lands at `<into>/<its name>` and a folder at
   `<into>/<folder>/<relative path>`, merging into a folder already there. A file inside `into` is
   `AlreadyThere`; one whose destination holds the same bytes is `AlreadyHeld` — neither counts as a
@@ -1914,6 +1935,23 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `rename` where the filesystem has no links; the staged file is always removed. A copy that does not
   read back is `Unverified` and is not kept (`nothing_is_left_staged_…`).
   `a_byte_for_byte_copy_already_there_is_held_and_a_different_one_is_kept_beside_it` is the claim.
+- **What travels with a track follows the name the track landed under.** The audio lands first, and
+  `Renames` notes each whose name moved — copied as `name (2).ext`, or found already held byte for
+  byte under such a name (`Stood::Held` carries where) — by the folder it came from. A sheet or
+  companion from that folder is then aimed after it: one named after the track takes the new stem
+  (`following_its_audio`, the longest stem winning), and a sheet whose `FILE` line names a renamed
+  track is rewritten through `resonate_codec::renamed_cue` — the rule organise follows a sheet by,
+  encoding and bytes kept — and landed as `Content::Rewritten` bytes rather than a copy, read back
+  and weighed against a standing file the same way. The source is never touched.
+  `what_travels_with_audio_that_landed_under_a_new_name_follows_that_name` and
+  `a_sheet_naming_audio_already_held_under_a_new_name_is_written_naming_that_name` are the claims.
+- **The window files what landed once the scan has it.** With `file-dropped` on (`binary.md`),
+  `RootView::took_in` hands the landed audio and the `organise-as` layout to
+  `LibraryModel::file_once_scanned`, and `take_up_what_waited` — run as every pass ends — starts an
+  applied `organise` with `OrganiseOptions::only` naming those files once no root waits to be
+  scanned. It is an ordinary run: it takes the `Walk` guard, carries sidecars and sheets, prunes the
+  emptied folders, toasts what it filed and is the run *Put the last run back* walks back. A file the
+  layout cannot name — no title, or nothing between it and the root — stays where it landed.
 
 ## The search grammar
 

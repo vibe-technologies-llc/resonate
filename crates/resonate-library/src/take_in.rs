@@ -1,6 +1,6 @@
 use std::{
     ffi::OsString,
-    fs::{self, File, Metadata},
+    fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
     process,
@@ -11,8 +11,9 @@ use std::{
     thread,
 };
 
-use ahash::AHashSet;
-use resonate_core::names_audio;
+use ahash::{AHashMap, AHashSet};
+use resonate_codec::renamed_cue;
+use resonate_core::{names_a_picture, names_audio};
 
 use crate::{
     Error, Result,
@@ -20,6 +21,10 @@ use crate::{
 };
 
 const SHEET_EXTENSION: &str = "cue";
+
+const LYRIC_ENDINGS: [&str; 3] = [".lrc", ".lyricsfile.yaml", ".lyricsfile.yml"];
+
+const LARGEST_SHEET_REWRITTEN: u64 = 1 << 20;
 
 const DEEPEST_FOLDER: usize = 32;
 
@@ -33,6 +38,7 @@ const STAGED_SUFFIX: &str = "resonate-part";
 pub enum Looks {
     Audio,
     Sheet,
+    Companion,
     Folder,
     Other,
     Gone,
@@ -40,7 +46,10 @@ pub enum Looks {
 
 impl Looks {
     pub const fn is_taken(self) -> bool {
-        matches!(self, Self::Audio | Self::Sheet | Self::Folder)
+        matches!(
+            self,
+            Self::Audio | Self::Sheet | Self::Companion | Self::Folder
+        )
     }
 }
 
@@ -56,21 +65,63 @@ fn is_a_sheet(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(SHEET_EXTENSION))
 }
 
-fn is_taken(path: &Path) -> bool {
-    names_audio(path) || is_a_sheet(path)
+fn is_a_lyric_sheet(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            let name = name.to_ascii_lowercase();
+            LYRIC_ENDINGS.iter().any(|ending| name.ends_with(ending))
+        })
+}
+
+fn is_named_after(path: &Path, audio: &Path) -> bool {
+    let (Some(name), Some(stem)) = (path.file_name(), audio.file_stem()) else {
+        return false;
+    };
+    let (name, stem) = (name.as_encoded_bytes(), stem.as_encoded_bytes());
+    name.len() > stem.len() && name.starts_with(stem) && name[stem.len()] == b'.'
+}
+
+fn accompanies(path: &Path, audio: &[&Path]) -> bool {
+    let beside: Vec<&Path> = audio
+        .iter()
+        .copied()
+        .filter(|audio| audio.parent() == path.parent())
+        .collect();
+
+    !beside.is_empty()
+        && (names_a_picture(path)
+            || is_a_lyric_sheet(path)
+            || beside.iter().any(|audio| is_named_after(path, audio)))
+}
+
+fn looks_of(path: &Path) -> Looks {
+    match fs::metadata(path) {
+        Err(_) => Looks::Gone,
+        Ok(metadata) if metadata.is_dir() => Looks::Folder,
+        Ok(_) if names_audio(path) => Looks::Audio,
+        Ok(_) if is_a_sheet(path) => Looks::Sheet,
+        Ok(_) => Looks::Other,
+    }
 }
 
 pub fn weigh(paths: &[PathBuf]) -> Vec<Dropped> {
+    let looks: Vec<Looks> = paths.iter().map(|path| looks_of(path)).collect();
+    let audio: Vec<&Path> = paths
+        .iter()
+        .zip(&looks)
+        .filter(|(_, looks)| **looks == Looks::Audio)
+        .map(|(path, _)| path.as_path())
+        .collect();
+
     paths
         .iter()
-        .map(|path| Dropped {
+        .zip(looks)
+        .map(|(path, looks)| Dropped {
             path: path.clone(),
-            looks: match fs::metadata(path) {
-                Err(_) => Looks::Gone,
-                Ok(metadata) if metadata.is_dir() => Looks::Folder,
-                Ok(_) if names_audio(path) => Looks::Audio,
-                Ok(_) if is_a_sheet(path) => Looks::Sheet,
-                Ok(_) => Looks::Other,
+            looks: match looks {
+                Looks::Other if accompanies(path, &audio) => Looks::Companion,
+                looks => looks,
             },
         })
         .collect()
@@ -205,10 +256,96 @@ pub fn take_in(options: TakeInOptions) -> Result<TakeInHandle> {
     Ok(PassHandle::of(PassKind::TakeIn, owned, thread))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Role {
+    Audio,
+    Sheet,
+    Companion,
+}
+
 struct Item {
     from: PathBuf,
     relative: PathBuf,
     bytes: u64,
+    role: Role,
+}
+
+struct Renamed {
+    from: OsString,
+    to: OsString,
+}
+
+#[derive(Default)]
+struct Renames(AHashMap<PathBuf, Vec<Renamed>>);
+
+impl Renames {
+    fn note(&mut self, from: &Path, to: &Path) {
+        let (Some(folder), Some(was), Some(is)) = (from.parent(), from.file_name(), to.file_name())
+        else {
+            return;
+        };
+        if was != is {
+            self.0
+                .entry(folder.to_path_buf())
+                .or_default()
+                .push(Renamed {
+                    from: was.to_os_string(),
+                    to: is.to_os_string(),
+                });
+        }
+    }
+
+    fn beside(&self, item: &Item) -> &[Renamed] {
+        item.from
+            .parent()
+            .and_then(|folder| self.0.get(folder))
+            .map_or(&[], Vec::as_slice)
+    }
+}
+
+enum Content {
+    Whole(PathBuf),
+    Rewritten(Vec<u8>),
+}
+
+impl Content {
+    fn is_at(&self, candidate: &Path) -> bool {
+        let Ok(standing) = fs::metadata(candidate) else {
+            return false;
+        };
+        match self {
+            Self::Whole(source) => {
+                fs::metadata(source).is_ok_and(|held| held.len() == standing.len())
+                    && verified(source, candidate).is_ok()
+            }
+            Self::Rewritten(bytes) => {
+                bytes.len() as u64 == standing.len()
+                    && fs::read(candidate).is_ok_and(|read| read == *bytes)
+            }
+        }
+    }
+
+    fn staged_at(&self, staged: &Path) -> std::result::Result<u64, Passing> {
+        match self {
+            Self::Whole(source) => {
+                let bytes = fs::copy(source, staged).map_err(|error| refused_copy(&error))?;
+                verified(source, staged).map_err(|_| Passing::Unverified)?;
+                Ok(bytes)
+            }
+            Self::Rewritten(bytes) => {
+                fs::write(staged, bytes).map_err(|error| unwritable(&error))?;
+                if !self.is_at(staged) {
+                    return Err(Passing::Unverified);
+                }
+                Ok(bytes.len() as u64)
+            }
+        }
+    }
+}
+
+enum Stood {
+    Landed(Landed),
+    Held(PathBuf),
 }
 
 fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
@@ -218,7 +355,8 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
         .canonicalize()
         .unwrap_or_else(|_| options.into.clone());
 
-    let items = gather(&options.paths, &mut summary.passed);
+    let mut items = gather(&options.paths, &mut summary.passed);
+    items.sort_by_key(|item| item.role != Role::Audio);
     progress.found.store(items.len() as u64, Ordering::Relaxed);
     progress
         .bytes_found
@@ -227,16 +365,32 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
         .passed
         .store(summary.passed.len() as u64, Ordering::Relaxed);
 
+    let mut renames = Renames::default();
     for item in items {
         if progress.is_cancelled() {
             summary.cancelled = true;
             break;
         }
-        match land(&item, &into) {
-            Ok(landed) => {
+
+        let (relative, content) = aimed(&item, renames.beside(&item));
+        match land(&item, &relative, &content, &into) {
+            Ok(Stood::Landed(landed)) => {
+                if item.role == Role::Audio {
+                    renames.note(&item.from, &landed.to);
+                }
                 progress.copied.fetch_add(1, Ordering::Relaxed);
                 progress.bytes.fetch_add(landed.bytes, Ordering::Relaxed);
                 summary.landed.push(landed);
+            }
+            Ok(Stood::Held(at)) => {
+                if item.role == Role::Audio {
+                    renames.note(&item.from, &at);
+                }
+                progress.held.fetch_add(1, Ordering::Relaxed);
+                summary.passed.push(Passed {
+                    from: item.from,
+                    why: Passing::AlreadyHeld,
+                });
             }
             Err(why) => {
                 match why.is_a_refusal() {
@@ -255,74 +409,146 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
     summary
 }
 
+fn aimed(item: &Item, renamed: &[Renamed]) -> (PathBuf, Content) {
+    let whole = Content::Whole(item.from.clone());
+    if item.role == Role::Audio || renamed.is_empty() {
+        return (item.relative.clone(), whole);
+    }
+
+    let relative = following_its_audio(&item.relative, renamed);
+    let content = match item.role {
+        Role::Sheet if item.bytes <= LARGEST_SHEET_REWRITTEN => {
+            sheet_naming(&item.from, renamed).map_or(whole, Content::Rewritten)
+        }
+        _ => whole,
+    };
+    (relative, content)
+}
+
+fn following_its_audio(relative: &Path, renamed: &[Renamed]) -> PathBuf {
+    let Some(name) = relative.file_name().and_then(|name| name.to_str()) else {
+        return relative.to_path_buf();
+    };
+
+    let followed = renamed
+        .iter()
+        .filter_map(|renamed| {
+            let was = Path::new(&renamed.from).file_stem()?.to_str()?;
+            let is = Path::new(&renamed.to).file_stem()?.to_str()?;
+            let rest = name.strip_prefix(was)?;
+            rest.starts_with('.').then_some((was.len(), is, rest))
+        })
+        .max_by_key(|(stem, ..)| *stem);
+
+    followed.map_or_else(
+        || relative.to_path_buf(),
+        |(_, is, rest)| relative.with_file_name(format!("{is}{rest}")),
+    )
+}
+
+fn sheet_naming(sheet: &Path, renamed: &[Renamed]) -> Option<Vec<u8>> {
+    let held = fs::read(sheet).ok()?;
+    let mut rewritten = None;
+    for renamed in renamed {
+        let (Some(from), Some(to)) = (renamed.from.to_str(), renamed.to.to_str()) else {
+            continue;
+        };
+        let current = rewritten.as_ref().unwrap_or(&held);
+        if let Some(named) = renamed_cue(current, from, to) {
+            rewritten = Some(named);
+        }
+    }
+    rewritten
+}
+
 fn gather(paths: &[PathBuf], passed: &mut Vec<Passed>) -> Vec<Item> {
     let mut items = Vec::new();
     let mut seen = AHashSet::new();
 
-    for path in paths {
-        let Ok(metadata) = fs::metadata(path) else {
-            passed.push(Passed {
-                from: path.clone(),
-                why: Passing::SourceGone,
-            });
-            continue;
+    for Dropped { path, looks } in weigh(paths) {
+        let why = match looks {
+            Looks::Gone => Some(Passing::SourceGone),
+            Looks::Other => Some(Passing::NotAudio),
+            _ => None,
         };
+        if let Some(why) = why {
+            passed.push(Passed { from: path, why });
+            continue;
+        }
 
-        let name = path.file_name().map(PathBuf::from);
-        let Some(name) = name else {
+        let Some(name) = path.file_name().map(PathBuf::from) else {
             passed.push(Passed {
-                from: path.clone(),
+                from: path,
                 why: Passing::Unreadable,
             });
             continue;
         };
 
-        if metadata.is_dir() {
-            let before = items.len();
-            walk(path, &name, 0, &mut items, &mut seen);
-            if items.len() == before {
-                passed.push(Passed {
-                    from: path.clone(),
-                    why: Passing::NothingInside,
-                });
+        let role = match looks {
+            Looks::Audio => Role::Audio,
+            Looks::Sheet => Role::Sheet,
+            Looks::Companion => Role::Companion,
+            _ => {
+                if !walked_whole(&path, &name, &mut items, &mut seen) {
+                    passed.push(Passed {
+                        from: path,
+                        why: Passing::NothingInside,
+                    });
+                }
+                continue;
             }
-        } else if is_taken(path) {
-            keep(path, name, &metadata, &mut items, &mut seen);
-        } else {
-            passed.push(Passed {
-                from: path.clone(),
-                why: Passing::NotAudio,
-            });
+        };
+        match fs::metadata(&path) {
+            Ok(metadata) => keep(
+                Item {
+                    from: path,
+                    relative: name,
+                    bytes: metadata.len(),
+                    role,
+                },
+                &mut items,
+                &mut seen,
+            ),
+            Err(_) => passed.push(Passed {
+                from: path,
+                why: Passing::SourceGone,
+            }),
         }
     }
 
     items
 }
 
-fn keep(
-    from: &Path,
-    relative: PathBuf,
-    metadata: &Metadata,
-    items: &mut Vec<Item>,
-    seen: &mut AHashSet<PathBuf>,
-) {
-    let identity = from.canonicalize().unwrap_or_else(|_| from.to_path_buf());
+fn keep(item: Item, items: &mut Vec<Item>, seen: &mut AHashSet<PathBuf>) {
+    let identity = item
+        .from
+        .canonicalize()
+        .unwrap_or_else(|_| item.from.clone());
     if seen.insert(identity) {
-        items.push(Item {
-            from: from.to_path_buf(),
-            relative,
-            bytes: metadata.len(),
-        });
+        items.push(item);
     }
 }
 
-fn walk(
+fn walked_whole(
     folder: &Path,
-    relative: &Path,
-    depth: usize,
+    name: &Path,
     items: &mut Vec<Item>,
     seen: &mut AHashSet<PathBuf>,
-) {
+) -> bool {
+    let mut found = Vec::new();
+    walk(folder, name, 0, &mut found);
+    if !found.iter().any(|item| item.role != Role::Companion) {
+        return false;
+    }
+
+    let before = items.len();
+    for item in found {
+        keep(item, items, seen);
+    }
+    items.len() > before
+}
+
+fn walk(folder: &Path, relative: &Path, depth: usize, found: &mut Vec<Item>) {
     if depth >= DEEPEST_FOLDER {
         return;
     }
@@ -333,6 +559,7 @@ fn walk(
     let mut entries: Vec<_> = entries.flatten().collect();
     entries.sort_by_key(fs::DirEntry::file_name);
 
+    let mut files = Vec::new();
     for entry in entries {
         let name = entry.file_name();
         if name.to_string_lossy().starts_with('.') {
@@ -341,44 +568,80 @@ fn walk(
         let Ok(kind) = entry.file_type() else {
             continue;
         };
-        let path = entry.path();
         let below = relative.join(&name);
 
         if kind.is_dir() {
-            walk(&path, &below, depth + 1, items, seen);
+            walk(&entry.path(), &below, depth + 1, found);
         } else if kind.is_file()
-            && is_taken(&path)
             && let Ok(metadata) = entry.metadata()
         {
-            keep(&path, below, &metadata, items, seen);
+            files.push((entry.path(), below, metadata.len()));
         }
+    }
+
+    let audio: Vec<PathBuf> = files
+        .iter()
+        .filter(|(path, ..)| names_audio(path))
+        .map(|(path, ..)| path.clone())
+        .collect();
+    for (path, relative, bytes) in files {
+        let role = if names_audio(&path) {
+            Role::Audio
+        } else if is_a_sheet(&path) {
+            Role::Sheet
+        } else if names_a_picture(&path)
+            || is_a_lyric_sheet(&path)
+            || audio.iter().any(|audio| is_named_after(&path, audio))
+        {
+            Role::Companion
+        } else {
+            continue;
+        };
+        found.push(Item {
+            from: path,
+            relative,
+            bytes,
+            role,
+        });
     }
 }
 
-fn land(item: &Item, into: &Path) -> std::result::Result<Landed, Passing> {
+fn land(
+    item: &Item,
+    relative: &Path,
+    content: &Content,
+    into: &Path,
+) -> std::result::Result<Stood, Passing> {
     let source = item.from.canonicalize().map_err(|_| Passing::SourceGone)?;
     if source.starts_with(into) {
         return Err(Passing::AlreadyThere);
     }
+    let content = match content {
+        Content::Whole(_) => &Content::Whole(source),
+        rewritten @ Content::Rewritten(_) => rewritten,
+    };
 
-    let whole = into.join(&item.relative);
+    let whole = into.join(relative);
     let folder = whole.parent().unwrap_or(into);
     fs::create_dir_all(folder).map_err(|error| unwritable(&error))?;
 
     let staged = staged_beside(&whole);
-    fs::copy(&source, &staged).map_err(|error| refused_copy(&error))?;
-
-    let outcome = verified(&source, &staged)
-        .and_then(|()| File::open(&staged).and_then(|file| file.sync_all()))
-        .map_err(|_| Passing::Unverified)
-        .and_then(|()| place(&staged, &source, &whole));
+    let outcome = content.staged_at(&staged).and_then(|bytes| {
+        File::open(&staged)
+            .and_then(|file| file.sync_all())
+            .map_err(|_| Passing::Unverified)?;
+        place(&staged, content, &whole).map(|stood| (stood, bytes))
+    });
     let _ = fs::remove_file(&staged);
 
-    outcome.map(|(to, renamed)| Landed {
-        from: item.from.clone(),
-        to,
-        bytes: item.bytes,
-        renamed,
+    outcome.map(|(stood, bytes)| match stood {
+        Placed::Named { to, renamed } => Stood::Landed(Landed {
+            from: item.from.clone(),
+            to,
+            bytes,
+            renamed,
+        }),
+        Placed::Held(at) => Stood::Held(at),
     })
 }
 
@@ -420,29 +683,37 @@ fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
     }))
 }
 
-fn place(
-    staged: &Path,
-    source: &Path,
-    whole: &Path,
-) -> std::result::Result<(PathBuf, bool), Passing> {
+enum Placed {
+    Named { to: PathBuf, renamed: bool },
+    Held(PathBuf),
+}
+
+fn place(staged: &Path, content: &Content, whole: &Path) -> std::result::Result<Placed, Passing> {
     for (count, candidate) in candidates(whole).enumerate() {
-        if let Ok(standing) = fs::metadata(&candidate) {
-            let same = standing.len() == fs::metadata(source).map_or(u64::MAX, |held| held.len())
-                && verified(source, &candidate).is_ok();
-            if same {
-                return Err(Passing::AlreadyHeld);
+        let renamed = count > 0;
+        if fs::symlink_metadata(&candidate).is_ok() {
+            if content.is_at(&candidate) {
+                return Ok(Placed::Held(candidate));
             }
             continue;
         }
         match fs::hard_link(staged, &candidate) {
-            Ok(()) => return Ok((candidate, count > 0)),
+            Ok(()) => {
+                return Ok(Placed::Named {
+                    to: candidate,
+                    renamed,
+                });
+            }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(_) => {
                 if candidate.exists() {
                     continue;
                 }
                 fs::rename(staged, &candidate).map_err(|error| unwritable(&error))?;
-                return Ok((candidate, count > 0));
+                return Ok(Placed::Named {
+                    to: candidate,
+                    renamed,
+                });
             }
         }
     }
@@ -651,13 +922,135 @@ mod tests {
     }
 
     #[test]
+    fn a_folders_covers_lyrics_and_named_sidecars_come_with_its_audio() {
+        let scratch = Scratch::new("companions");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        written(&from, "Album/CD1/01.flac", b"one");
+        written(&from, "Album/CD1/01.lrc", b"[00:01.00]words");
+        written(&from, "Album/CD1/01.txt", b"words");
+        written(&from, "Album/cover.jpg", b"picture");
+        written(&from, "Album/Scans/back.PNG", b"picture");
+        written(&from, "Album/Album.log", b"a rip log naming no audio");
+        written(&from, "Album/notes.txt", b"words");
+        written(&from, "Pictures/front.jpg", b"picture");
+
+        let summary = taken_in(vec![from.join("Album"), from.join("Pictures")], &into);
+
+        assert_eq!(summary.stats.copied, 5);
+        for landed in [
+            "Album/CD1/01.flac",
+            "Album/CD1/01.lrc",
+            "Album/CD1/01.txt",
+            "Album/cover.jpg",
+            "Album/Scans/back.PNG",
+        ] {
+            assert!(into.join(landed).is_file(), "{landed} was left behind");
+        }
+        assert!(!into.join("Album/Album.log").exists());
+        assert!(!into.join("Album/notes.txt").exists());
+        assert!(!into.join("Pictures").exists());
+        assert_eq!(summary.passed[0].why, Passing::NothingInside);
+    }
+
+    #[test]
+    fn what_travels_with_audio_that_landed_under_a_new_name_follows_that_name() {
+        let scratch = Scratch::new("follow");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        written(&from, "Album/Album.flac", b"this rip");
+        written(
+            &from,
+            "Album/Album.cue",
+            b"FILE \"Album.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n",
+        );
+        written(&from, "Album/Album.lrc", b"[00:01.00]words");
+        written(&from, "Album/cover.jpg", b"picture");
+        written(&into, "Album/Album.flac", b"another rip");
+        written(&into, "Album/cover.jpg", b"picture");
+
+        let summary = taken_in(vec![from.join("Album")], &into);
+
+        assert_eq!(summary.stats.copied, 3);
+        assert_eq!(summary.stats.held, 1);
+        assert_eq!(
+            fs::read(into.join("Album/Album (2).flac")).expect("copied beside"),
+            b"this rip"
+        );
+        assert_eq!(
+            fs::read(into.join("Album/Album (2).cue")).expect("the sheet followed"),
+            b"FILE \"Album (2).flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n"
+        );
+        assert!(into.join("Album/Album (2).lrc").is_file());
+        assert!(!into.join("Album/Album.cue").exists());
+        assert!(!into.join("Album/cover (2).jpg").exists());
+        assert_eq!(
+            fs::read(from.join("Album/Album.cue")).expect("untouched"),
+            b"FILE \"Album.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n"
+        );
+    }
+
+    #[test]
+    fn a_sheet_naming_audio_already_held_under_a_new_name_is_written_naming_that_name() {
+        let scratch = Scratch::new("held-follow");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        written(&from, "Album/CDImage.wav", b"this rip");
+        written(&from, "Album/Rip.cue", b"FILE \"CDImage.wav\" WAVE\n");
+        written(&into, "Album/CDImage.wav", b"another rip");
+        written(&into, "Album/CDImage (2).wav", b"this rip");
+
+        let summary = taken_in(vec![from.join("Album")], &into);
+
+        assert_eq!(summary.stats.held, 1);
+        assert_eq!(
+            fs::read(into.join("Album/Rip.cue")).expect("the sheet landed"),
+            b"FILE \"CDImage (2).wav\" WAVE\n"
+        );
+    }
+
+    #[test]
+    fn a_loose_cover_or_lyric_dropped_beside_its_song_is_taken_and_alone_is_not() {
+        let scratch = Scratch::new("loose");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        let song = written(&from, "song.flac", b"audio");
+        let words = written(&from, "song.lrc", b"[00:01.00]words");
+        let cover = written(&from, "cover.jpg", b"picture");
+        let elsewhere = written(&scratch.folder("else"), "cover.jpg", b"picture");
+
+        let looks: Vec<_> = weigh(&[
+            song.clone(),
+            words.clone(),
+            cover.clone(),
+            elsewhere.clone(),
+        ])
+        .into_iter()
+        .map(|dropped| dropped.looks)
+        .collect();
+        let alone = weigh(std::slice::from_ref(&cover));
+        let summary = taken_in(vec![song, words, cover, elsewhere], &into);
+
+        assert_eq!(
+            looks,
+            [
+                Looks::Audio,
+                Looks::Companion,
+                Looks::Companion,
+                Looks::Other
+            ]
+        );
+        assert_eq!(alone[0].looks, Looks::Other);
+        assert_eq!(summary.stats.copied, 3);
+        assert!(into.join("song.lrc").is_file());
+        assert!(into.join("cover.jpg").is_file());
+        assert_eq!(summary.passed[0].why, Passing::NotAudio);
+    }
+
+    #[test]
     fn a_drag_is_weighed_by_what_each_path_looks_like() {
         let scratch = Scratch::new("weigh");
         let from = scratch.folder("from");
         let looks: Vec<_> = weigh(&[
             written(&from, "a.FLAC", b"x"),
             written(&from, "b.cue", b"x"),
-            written(&from, "c.jpg", b"x"),
+            written(&from, "c.txt", b"x"),
             scratch.folder("from/dir"),
             from.join("gone.mp3"),
         ])

@@ -1844,14 +1844,17 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   root's `on_drag_move::<ExternalPaths>` sets `RootView::incoming` (the paths and
   `resonate_library::weigh`'s read of each) and starts `watching_the_drag`, a 100 ms timer clearing it
   once `App::has_active_drag` is false. While `incoming` is set `drop_overlay` draws over the window
-  — a scrim, a dashed card listing up to six names with *copied*, *not audio, left out* or *not
-  there* beside each, and the destination — and is the `on_drop` target, occluding what is under it.
+  — a scrim, a dashed card listing up to six names with *copied*, *beside a song, copied with it*,
+  *not audio, left out* or *not there* beside each, and the destination, *copied and filed by your
+  layout* where `file-dropped` is on — and is the `on_drop` target, occluding what is under it.
   `verdict` is the one decision the overlay and the drop share: `Ready`, `NoFolder`, `FolderGone`,
   `NothingToTake` or `Busy`, the last four drawn in the failure colour and, dropped, a toast; a drop
   with no `music-folder` also opens Settings on Library. A ready drop starts `take_in` into
   `ResonateApp::music_folder`, `copying_pill` draws its progress — files and bytes, with a *Stop* —
   until it lands, `told_of` toasts what it did, and where anything was copied the root reaching the
-  folder (or the folder, added as one) is scanned through `add_roots`. gpui gives a test no way to
+  folder (or the folder, added as one) is scanned through `add_roots` — with `file-dropped` on, the
+  landed songs handed to `file_once_scanned` first, filed once that scan lands (`library.md`'s *Taking
+  files in*). gpui gives a test no way to
   build an `ExternalPaths`, so `driven.rs` calls `dragged_over` and `dropped` on the `RootView`
   rather than simulating the platform's drag.
 - **Discord is two Desktop groups, and they write a global before a file.** *Discord* is the switch and

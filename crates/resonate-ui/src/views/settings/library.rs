@@ -31,9 +31,11 @@ const NO_MUSIC_FOLDER: &str = "No primary music folder is chosen. Choose the fol
                                be kept in.";
 
 const MUSIC_FOLDER_NOTE: &str = "Drag songs or folders onto the window and they are copied here \
-                                 as they came, each checked against its original. The folder is \
-                                 scanned like the ones below, so what lands in it joins the \
-                                 library.";
+                                 with their covers and lyrics, each checked against its original. \
+                                 The folder is scanned like the ones below, so what lands in it \
+                                 joins the library.";
+
+const FILE_DROPPED_ID: &str = "file-dropped";
 
 const MUSIC_FOLDER_GONE: &str = "This folder is not there now. If it is on a drive, mount it \
                                  before adding songs.";
@@ -1360,6 +1362,7 @@ const INBOX_NOTE: &str = "A file directly inside it named by the recording's Mus
 impl RootView {
     pub(super) fn music_folder_group(&mut self, cx: &mut Context<Self>) -> Div {
         let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let filed = cx.global::<ResonateApp>().file_dropped;
         let gone = folder.as_deref().is_some_and(|folder| !folder.is_dir());
 
         kit::section_body()
@@ -1394,7 +1397,26 @@ impl RootView {
                     }),
             )
             .when(gone, |body| body.child(note(MUSIC_FOLDER_GONE)))
+            .child(self.in_the_ring(
+                FILE_DROPPED_ID,
+                switch_row(
+                    "File dropped songs by the layout",
+                    "Off, they keep the names and folders they came with",
+                    filed,
+                    FILE_DROPPED_ID,
+                ),
+                move |this, _, cx| {
+                    this.file_what_is_dropped(!filed, cx);
+                    this.store(&Setting::FileDropped(!filed), cx);
+                },
+                cx,
+            ))
             .child(note(MUSIC_FOLDER_NOTE))
+    }
+
+    pub(crate) fn file_what_is_dropped(&self, filed: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.file_dropped = filed);
+        cx.notify();
     }
 
     fn choose_the_music_folder(&self, cx: &mut Context<Self>) {

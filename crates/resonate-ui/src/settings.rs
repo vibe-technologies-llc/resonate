@@ -197,6 +197,7 @@ pub enum SettingKey {
     LastSettingsCategory,
     Inbox,
     MusicFolder,
+    FileDropped,
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
@@ -210,7 +211,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 69] = [
+    pub const ALL: [Self; 70] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -270,6 +271,7 @@ impl SettingKey {
         Self::LastSettingsCategory,
         Self::Inbox,
         Self::MusicFolder,
+        Self::FileDropped,
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
@@ -347,6 +349,7 @@ pub enum Setting {
     LastSettingsCategory(SettingsCategory),
     Inbox(PathBuf),
     MusicFolder(PathBuf),
+    FileDropped(bool),
     Subsonic(String),
     SubsonicUser(String),
     SubsonicPassword(String),
@@ -421,6 +424,7 @@ impl Setting {
             Self::LastSettingsCategory(_) => SettingKey::LastSettingsCategory,
             Self::Inbox(_) => SettingKey::Inbox,
             Self::MusicFolder(_) => SettingKey::MusicFolder,
+            Self::FileDropped(_) => SettingKey::FileDropped,
             Self::Subsonic(_) => SettingKey::Subsonic,
             Self::SubsonicUser(_) => SettingKey::SubsonicUser,
             Self::SubsonicPassword(_) => SettingKey::SubsonicPassword,
@@ -576,6 +580,7 @@ pub struct Stored {
     pub by_sound: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
     pub music_folder: Option<PathBuf>,
+    pub file_dropped: bool,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub scrollbars: ScrollbarMode,

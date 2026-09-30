@@ -17,7 +17,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{DEEPEST_FOLDER_A_SHEET_NAMES, the_folder_a_cue_names};
-use resonate_core::{AlbumId, MediaLocation, TrackId};
+use resonate_core::{AlbumId, MediaLocation, TrackId, names_a_picture};
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
 
 use crate::{
@@ -557,6 +557,7 @@ impl Plan {
 pub struct OrganiseOptions {
     pub layout: Layout,
     pub roots: Vec<PathBuf>,
+    pub only: Vec<PathBuf>,
     pub apply: bool,
     pub walk_back: bool,
 }
@@ -675,18 +676,28 @@ fn run(
     let mut planner = Planner::new(&options.layout, progress);
     library.each_file_to_file(&options.roots, |filing| planner.knows(&filing, &discs))?;
 
-    let mut paging = Paging::by(ROWS_A_PAGE);
-    while !progress.is_cancelled() {
-        let Some(page) = paging.next(
-            |after, at_most| library.tracks_to_file_after(&options.roots, after, at_most, &discs),
-            |row| row.path.as_path(),
-        )?
-        else {
-            break;
-        };
-        planner.plan(&page, |files| {
-            library.tracks_to_file_at(&options.roots, files, &discs)
-        })?;
+    let rows_of = |files: &[PathBuf]| library.tracks_to_file_at(&options.roots, files, &discs);
+    if options.only.is_empty() {
+        let mut paging = Paging::by(ROWS_A_PAGE);
+        while !progress.is_cancelled() {
+            let Some(page) = paging.next(
+                |after, at_most| {
+                    library.tracks_to_file_after(&options.roots, after, at_most, &discs)
+                },
+                |row| row.path.as_path(),
+            )?
+            else {
+                break;
+            };
+            planner.plan(&page, rows_of)?;
+        }
+    } else {
+        for files in options.only.chunks(ROWS_A_PAGE) {
+            if progress.is_cancelled() {
+                break;
+            }
+            planner.plan(&rows_of(files)?, rows_of)?;
+        }
     }
 
     let roots: AHashSet<PathBuf> = planner.namings.keys().cloned().collect();
@@ -761,6 +772,20 @@ impl Beside {
         Self {
             files,
             nothing_but_files,
+        }
+    }
+}
+
+enum FolderLanding {
+    Into(PathBuf, usize),
+    Scattered,
+}
+
+impl FolderLanding {
+    fn meets(&mut self, landing: &Path, at: usize) {
+        match self {
+            Self::Into(into, last) if into.as_path() == landing => *last = at,
+            _ => *self = Self::Scattered,
         }
     }
 }
@@ -1415,6 +1440,7 @@ impl<'a> Planner<'a> {
 
     fn settle(mut self) -> Plan {
         self.order_the_chains();
+        self.pictures_follow_their_folders();
 
         let mut folders: Vec<PathBuf> = self
             .emptying
@@ -1491,6 +1517,66 @@ impl<'a> Planner<'a> {
                 .collect();
             for member in members {
                 self.stands(member, Refusal::Collided { with: with.clone() });
+            }
+        }
+    }
+
+    fn pictures_follow_their_folders(&mut self) {
+        let mut landings: AHashMap<PathBuf, FolderLanding> = AHashMap::new();
+        for (at, planned) in self.plan.moves.iter().enumerate() {
+            for (from, to) in planned.files() {
+                let (Some(folder), Some(landing)) = (from.parent(), to.parent()) else {
+                    continue;
+                };
+                landings
+                    .entry(folder.to_path_buf())
+                    .and_modify(|held| held.meets(landing, at))
+                    .or_insert_with(|| FolderLanding::Into(landing.to_path_buf(), at));
+            }
+        }
+
+        let mut landings: Vec<(PathBuf, PathBuf, usize)> = landings
+            .into_iter()
+            .filter_map(|(folder, landing)| match landing {
+                FolderLanding::Into(into, at) if into != folder => Some((folder, into, at)),
+                _ => None,
+            })
+            .collect();
+        landings.sort();
+
+        for (folder, into, at) in landings {
+            let files = listing(&mut self.beside, &folder).files.clone();
+            let every_track_goes = files
+                .iter()
+                .filter(|file| self.sources.contains(file.as_path()))
+                .all(|file| self.going.contains(file));
+            if !every_track_goes {
+                continue;
+            }
+
+            for picture in files {
+                if !names_a_picture(&picture) || self.going.contains(&picture) {
+                    continue;
+                }
+                let Some(name) = picture.file_name() else {
+                    continue;
+                };
+                let destination = into.join(name);
+                if self.in_the_way(&picture, &destination).is_some() {
+                    tracing::debug!(
+                        picture = %picture.display(),
+                        destination = %destination.display(),
+                        "a folder's picture was left where it stands"
+                    );
+                    continue;
+                }
+
+                self.claimed.insert(destination.clone(), picture.clone());
+                self.going.insert(picture.clone());
+                self.plan.moves[at].sidecars.push(Sidecar {
+                    from: picture,
+                    to: destination,
+                });
             }
         }
     }

@@ -547,7 +547,10 @@ impl RootView {
             Group::Inbox => self
                 .library
                 .update(cx, |library, cx| library.set_inbox(None, cx)),
-            Group::MusicFolder => self.clear_the_music_folder(cx),
+            Group::MusicFolder => {
+                self.clear_the_music_folder(cx);
+                self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
+            }
             Group::Subsonic => self.forget_the_account(cx),
             Group::RoomCorrection => self.correct_the_room(None, cx),
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
@@ -595,6 +598,7 @@ impl RootView {
         let template_given = self.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
+        let file_dropped = cx.global::<ResonateApp>().file_dropped;
         let convolving = cx.global::<ResonateApp>().convolution.is_some();
         let subsonic_given = self
             .subsonic
@@ -631,6 +635,7 @@ impl RootView {
             template_given,
             inbox_given,
             music_folder_given,
+            file_dropped,
             subsonic_given,
             convolving,
         }

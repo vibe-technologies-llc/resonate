@@ -474,6 +474,11 @@ enum Reading {
     Everything,
 }
 
+struct ToFile {
+    layout: Layout,
+    files: Vec<PathBuf>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RootWaiting {
     ToAdd(PathBuf),
@@ -676,6 +681,7 @@ pub struct LibraryModel {
     _shared: Task<()>,
     pressings: Option<(AlbumId, Pressings)>,
     roots_waiting: Vec<RootWaiting>,
+    to_file: Option<ToFile>,
     _pressings: Task<()>,
     _kept: Task<()>,
     _aged: Task<()>,
@@ -823,6 +829,7 @@ impl LibraryModel {
             _shared: Task::ready(()),
             pressings: None,
             roots_waiting: Vec::new(),
+            to_file: None,
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
             _aged: Task::ready(()),
@@ -3123,8 +3130,42 @@ impl LibraryModel {
         &self.roots_waiting
     }
 
+    pub fn file_once_scanned(
+        &mut self,
+        layout: Layout,
+        files: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        if files.is_empty() {
+            return;
+        }
+        match &mut self.to_file {
+            Some(waiting) => {
+                waiting.layout = layout;
+                waiting.files.extend(files);
+            }
+            None => self.to_file = Some(ToFile { layout, files }),
+        }
+        cx.notify();
+    }
+
     fn take_up_what_waited(&mut self, cx: &mut Context<Self>) {
-        if self.work.is_busy() || self.roots_waiting.is_empty() {
+        if self.work.is_busy() {
+            return;
+        }
+        if self.roots_waiting.is_empty() {
+            if let Some(ToFile { layout, files }) = self.to_file.take() {
+                self.file(
+                    OrganiseOptions {
+                        layout,
+                        only: files,
+                        apply: true,
+                        ..OrganiseOptions::default()
+                    },
+                    Pass::Apply,
+                    cx,
+                );
+            }
             return;
         }
         let forgotten = self
