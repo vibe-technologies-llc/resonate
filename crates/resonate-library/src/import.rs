@@ -343,6 +343,7 @@ fn keep_one(
         location: &location,
         span: row.span,
         renewing: row.renewing,
+        foretold: row.foretold,
     };
 
     match vault.keep(&taking) {
@@ -474,6 +475,7 @@ mod tests {
     use std::{env, fs, io::Cursor, path::Path, process};
 
     use resonate_codec::{CoverArt, ImageFormat};
+    use resonate_vault::VaultKey;
     use rusqlite::params;
 
     use super::*;
@@ -576,6 +578,75 @@ mod tests {
             format: ImageFormat::Png,
             bytes: written.into_inner(),
         }
+    }
+
+    fn hummed(step: u32) -> Vec<u8> {
+        let mut wave = noise(1);
+        let data = wave.len() - FRAMES as usize * 4;
+        for (at, frame) in wave[data..].as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let level = ((at as u32 * step) % 512) as u16;
+            frame[..2].copy_from_slice(&level.to_le_bytes());
+            frame[2..].copy_from_slice(&level.to_le_bytes());
+        }
+        wave
+    }
+
+    fn foretold_for(library: &Library, path: &Path) -> Option<VaultKey> {
+        library
+            .tracks_to_vault(&[])
+            .expect("the rows to vault")
+            .into_iter()
+            .find(|row| row.path == path)
+            .expect("a row still to vault")
+            .foretold
+    }
+
+    fn keys_held(library: &Library) -> Vec<VaultKey> {
+        library
+            .vault_objects()
+            .expect("the objects noted")
+            .into_iter()
+            .map(|object| object.key)
+            .collect()
+    }
+
+    #[test]
+    fn a_row_whose_sound_one_object_alone_has_is_foretold_that_objects_key() {
+        let scratch = Scratch::new("foretold");
+        let library = opened(&scratch);
+        let music = scratch.music().canonicalize().expect("a scratch folder");
+        fs::create_dir_all(music.join("a")).expect("a folder");
+        fs::write(music.join("a/hum.wav"), hummed(3)).expect("a written source");
+        scanned(&library, &music);
+        let first = imported(&library);
+        let landed = keys_held(&library);
+
+        for folder in ["b", "c"] {
+            fs::create_dir_all(music.join(folder)).expect("a folder");
+        }
+        fs::write(music.join("b/hum.wav"), hummed(3)).expect("a written source");
+        fs::write(music.join("c/other.wav"), hummed(5)).expect("a written source");
+        scanned(&library, &music);
+        let copy = foretold_for(&library, &music.join("b/hum.wav"));
+        let other = foretold_for(&library, &music.join("c/other.wav"));
+        let second = imported(&library);
+
+        fs::create_dir_all(music.join("d")).expect("a folder");
+        fs::write(music.join("d/third.wav"), hummed(7)).expect("a written source");
+        scanned(&library, &music);
+        let shared = foretold_for(&library, &music.join("d/third.wav"));
+
+        assert_eq!(first.stats.vaulted, 1);
+        assert_eq!(landed.len(), 1);
+        assert_eq!(copy, Some(landed[0]));
+        assert_eq!(other, Some(landed[0]));
+        assert_eq!(second.stats.deduped, 1);
+        assert_eq!(second.stats.vaulted, 2);
+        assert_eq!(keys_held(&library).len(), 2);
+        assert_eq!(
+            shared, None,
+            "a sound two objects share foretold one of them"
+        );
     }
 
     #[test]

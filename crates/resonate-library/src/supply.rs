@@ -143,6 +143,7 @@ fn landed(
             location: &MediaLocation::local(path),
             span: None,
             renewing: false,
+            foretold: None,
         }),
         Delivery::Stream {
             extension, reader, ..

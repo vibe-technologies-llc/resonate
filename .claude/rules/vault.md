@@ -81,8 +81,16 @@ comparison may overrule it.
   weighing — so a second copy of a rip costs a decode, not a flacenc pass at its highest effort.
   The declaration is only a candidate: a source whose samples hash to anything else is
   `Foretold::Misdeclared`, opened again and encoded as any other
-  (`a_flac_declaring_the_digest_of_an_object_standing_is_deduped_without_an_encode`). A WAVE,
-  AIFF, WavPack or ALAC source declares no digest and still pays its encode before `Deduped`.
+  (`a_flac_declaring_the_digest_of_an_object_standing_is_deduped_without_an_encode`). **A source
+  declaring nothing is foretold by the catalog.** `Taking::foretold` is a key the caller has reason
+  to think the samples hash to, weighed the same way where the source itself declares none — a
+  candidate, never trusted (`a_wave_whose_key_the_catalog_foretells_is_deduped_without_an_encode`).
+  The library's `TRACKS_TO_VAULT` hands one over for a whole-file row where exactly one noted object
+  has its sound — the same frame count, rate and channels, read off `vault_objects_by_sound`, a
+  `MIGRATIONS` step — so a second copy of a WAVE, AIFF, WavPack or ALAC rip costs a decode, and a
+  source merely as long as one object costs one decode more than it did
+  (`a_row_whose_sound_one_object_alone_has_is_foretold_that_objects_key`). A sound two objects share
+  foretells nothing, a decode being spent on one candidate at most.
 - **`Form::Wave`** — PCM FLAC cannot hold: `SampleFormat::F32`, > 24 bits or > 96 kHz. A canonical
   `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, stripped by construction, zstd'd at `ARCHIVED_AT`;
   refused over `LARGEST_PCM`, the RIFF ceiling — before anything is staged where the source declares

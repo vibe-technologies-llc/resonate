@@ -84,6 +84,7 @@ pub struct Taking<'a> {
     pub location: &'a MediaLocation,
     pub span: Option<FrameSpan>,
     pub renewing: bool,
+    pub foretold: Option<VaultKey>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -298,6 +299,7 @@ impl Vault {
                         location: &MediaLocation::local(staging.to_path_buf()),
                         span: None,
                         renewing: false,
+                        foretold: None,
                     })
                 } else {
                     Ok(Keeping::Refused(Refusal::TooLarge))
@@ -546,22 +548,23 @@ impl Vault {
         bits: u8,
     ) -> Result<Foretold> {
         let (format, stored) = flac_depth(bits);
-        let foretellable = !weighing.renewing
-            && taking.span.is_none()
-            && bits == stored
-            && Container::from_id(info.container) == Container::Flac;
-        if !foretellable {
+        if weighing.renewing || taking.span.is_some() {
             return Ok(Foretold::Unforetold);
         }
 
-        let mut media = taking
-            .sources
-            .open(taking.location)
-            .map_err(|source| Error::codec(VaultOp::Read, source))?;
-        let Some(declared) = bare::declared_digest(&mut media.stream) else {
+        let declares = bits == stored && Container::from_id(info.container) == Container::Flac;
+        let declared = if declares {
+            let mut media = taking
+                .sources
+                .open(taking.location)
+                .map_err(|source| Error::codec(VaultOp::Read, source))?;
+            bare::declared_digest(&mut media.stream)
+        } else {
+            None
+        };
+        let Some(declared) = declared.or(taking.foretold) else {
             return Ok(Foretold::Unforetold);
         };
-        drop(media);
         let target = self.object_path(declared, FLAC_EXTENSION);
         let Some(standing) = self.standing(&target)? else {
             return Ok(Foretold::Unforetold);
@@ -1418,6 +1421,7 @@ mod tests {
                 location: &MediaLocation::local(path),
                 span: None,
                 renewing: false,
+                foretold: None,
             })
             .expect("a keeping")
         {
@@ -1468,6 +1472,48 @@ mod tests {
         );
         assert!(weighed.deduped);
         assert_eq!(after_the_lie, after_the_copy + 1);
+    }
+
+    #[test]
+    fn a_wave_whose_key_the_catalog_foretells_is_deduped_without_an_encode() {
+        let root = std::env::temp_dir().join(format!("resonate-vault-told-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let vault = Vault::make(root.join("vault")).expect("a vault");
+        let first = root.join("first.wav");
+        let again = root.join("again.wav");
+        let other = root.join("other.wav");
+        fs::write(&first, toned(40_000, 0x1234_5678)).expect("a written source");
+        fs::write(&again, toned(40_000, 0x1234_5678)).expect("a written source");
+        fs::write(&other, toned(40_000, 0x0bad_f00d)).expect("a written source");
+        let landed = kept_from(&vault, &first);
+        let foretold = |path: &Path| match vault
+            .keep(&Taking {
+                sources: &Sources::local(),
+                location: &MediaLocation::local(path),
+                span: None,
+                renewing: false,
+                foretold: Some(landed.key),
+            })
+            .expect("a keeping")
+        {
+            Keeping::Kept(kept) => kept,
+            Keeping::Refused(refusal) => panic!("refused as {refusal:?}"),
+        };
+
+        let before = encodes_begun();
+        let deduped = foretold(&again);
+        let after_the_copy = encodes_begun();
+        let weighed = foretold(&other);
+        let after_the_other = encodes_begun();
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(deduped.deduped);
+        assert_eq!(deduped.key, landed.key);
+        assert_eq!(deduped.frames, landed.frames);
+        assert_eq!(after_the_copy, before, "a foretold duplicate was encoded");
+        assert!(!weighed.deduped);
+        assert_ne!(weighed.key, landed.key, "a foretold key was taken on trust");
+        assert_eq!(after_the_other, after_the_copy + 1);
     }
 
     #[test]

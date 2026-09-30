@@ -251,7 +251,11 @@ const FILED_IN_ORDER: &str = " ORDER BY tracks.path, tracks.span_start";
 const TRACKS_TO_VAULT: &str = "SELECT tracks.id, tracks.path, tracks.span_start,
             tracks.span_frames, tracks.file_size, tracks.codec, tracks.sample_rate,
             tracks.channels, tracks.sample_format, tracks.album_id,
-            tracks.vault_key IS NOT NULL
+            tracks.vault_key IS NOT NULL,
+            (SELECT min(o.key) FROM vault_objects o
+              WHERE tracks.span_frames IS NULL AND o.frames = tracks.duration
+                AND o.sample_rate = tracks.sample_rate AND o.channels = tracks.channels
+             HAVING count(*) = 1)
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN vault_objects ON vault_objects.key = tracks.vault_key
@@ -5045,6 +5049,7 @@ pub(crate) struct TrackToVault {
     pub spec: StreamSpec,
     pub album_id: Option<AlbumId>,
     pub renewing: bool,
+    pub foretold: Option<VaultKey>,
 }
 
 impl TrackToVault {
@@ -5065,6 +5070,7 @@ struct RawToVault {
     sample_format: i64,
     album_id: Option<i64>,
     renewing: bool,
+    foretold: Option<String>,
 }
 
 impl RawToVault {
@@ -5081,6 +5087,7 @@ impl RawToVault {
             sample_format: row.get(8)?,
             album_id: row.get(9)?,
             renewing: row.get(10)?,
+            foretold: row.get(11)?,
         })
     }
 
@@ -5102,6 +5109,10 @@ impl RawToVault {
                 .map(|held| AlbumId::new(held as u64))
                 .transpose()?,
             renewing: self.renewing,
+            foretold: self
+                .foretold
+                .as_deref()
+                .and_then(|key| VaultKey::read(key).ok()),
         })
     }
 }

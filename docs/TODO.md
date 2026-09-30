@@ -40,8 +40,6 @@ service or a format — and is not worked until that moves; everything else is o
   copies the whole file, and one with a second name twice
 
 ## Performance and scale
-- A duplicate of a WAVE, AIFF, WavPack or ALAC source still pays its whole encode before `Deduped`
-  is known, none declaring the digest a FLAC's STREAMINFO carries
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
   paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
 

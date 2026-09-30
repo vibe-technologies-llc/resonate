@@ -151,6 +151,7 @@ const MIGRATIONS: &[&str] = &[
          recording TEXT NOT NULL,
          PRIMARY KEY (service, recording)
      ) STRICT, WITHOUT ROWID;",
+    "CREATE INDEX vault_objects_by_sound ON vault_objects(frames, sample_rate, channels);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

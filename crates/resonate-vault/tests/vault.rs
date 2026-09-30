@@ -174,6 +174,7 @@ fn kept(vault: &Vault, sources: &Sources, location: &MediaLocation) -> Kept {
             location,
             span: None,
             renewing: false,
+            foretold: None,
         })
         .expect("a vault that kept it")
     {
@@ -431,6 +432,7 @@ fn a_renewal_replaces_the_object_standing_under_its_key_only_where_it_comes_out_
             location: &location,
             span: None,
             renewing: true,
+            foretold: None,
         })
         .expect("a vault that weighed it again")
     {
