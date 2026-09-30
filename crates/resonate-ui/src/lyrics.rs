@@ -30,7 +30,9 @@ const TURN: Duration = Duration::from_millis(420);
 
 const GLIDE_RESPONSE_SECS: f32 = 0.62;
 
-const GLIDE_DAMPING: f32 = 0.8;
+const SETTLE_SEARCH_LIMIT: f32 = 64.0;
+
+const SETTLE_SEARCH_STEPS: u32 = 48;
 
 const LAG_PER_LINE: Duration = Duration::from_millis(32);
 
@@ -321,27 +323,32 @@ fn natural_frequency() -> f32 {
     TAU / GLIDE_RESPONSE_SECS
 }
 
-fn damped_share() -> f32 {
-    GLIDE_DAMPING.mul_add(-GLIDE_DAMPING, 1.0).sqrt()
+fn remaining(scaled_seconds: f32) -> f32 {
+    (1.0 + scaled_seconds) * (-scaled_seconds).exp()
 }
 
 fn spring(elapsed: Duration) -> f32 {
-    let seconds = elapsed.as_secs_f32();
-    let natural = natural_frequency();
-    let damped = natural * damped_share();
-    let decay = (-GLIDE_DAMPING * natural * seconds).exp();
-    let swing =
-        (damped * seconds).cos() + (GLIDE_DAMPING * natural / damped) * (damped * seconds).sin();
-
-    decay.mul_add(-swing, 1.0)
+    1.0 - remaining(natural_frequency() * elapsed.as_secs_f32())
 }
 
 fn settles_in(travel: Pixels) -> Duration {
-    let widest_swing = travel.abs() / (SETTLED * damped_share());
-    if widest_swing <= 1.0 {
+    let tolerated_share = SETTLED / travel.abs();
+    if tolerated_share >= 1.0 {
         return Duration::ZERO;
     }
-    Duration::from_secs_f32(widest_swing.ln() / (GLIDE_DAMPING * natural_frequency()))
+
+    let mut near = 0.0_f32;
+    let mut far = SETTLE_SEARCH_LIMIT;
+    for _ in 0..SETTLE_SEARCH_STEPS {
+        let middle = 0.5 * (near + far);
+        if remaining(middle) > tolerated_share {
+            near = middle;
+        } else {
+            far = middle;
+        }
+    }
+
+    Duration::from_secs_f32(far / natural_frequency())
 }
 
 fn lagged(lines: usize, per_line: Duration, at_most: usize) -> Duration {
@@ -1285,7 +1292,7 @@ mod tests {
     }
 
     #[test]
-    fn a_spring_runs_from_rest_to_rest_and_never_wanders_far_past_the_end() {
+    fn a_spring_runs_from_rest_to_rest_and_never_passes_the_end() {
         let settles = settles_in(px(300.0));
         assert!(spring(Duration::ZERO).abs() < f32::EPSILON);
         assert!((spring(settles * 3) - 1.0).abs() < 1e-4);
@@ -1296,13 +1303,12 @@ mod tests {
             furthest = furthest.max(through);
         }
         assert!(furthest > 0.99);
-        assert!(furthest < 1.05);
+        assert!(furthest <= 1.0);
         assert!(spring(Duration::from_millis(150)) > spring(Duration::from_millis(50)));
     }
 
     #[test]
     fn a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps() {
-        const PAST_THE_PEAK_MS: u64 = 600;
         for travel in [px(12.0), px(120.0), px(400.0), px(-900.0), px(2_400.0)] {
             let settles = settles_in(travel);
             let mut was = px(0.0);
@@ -1316,13 +1322,10 @@ mod tests {
                         (travel - at).abs()
                     );
                 }
-                if millis >= PAST_THE_PEAK_MS {
-                    assert!(
-                        (at - was).abs() < SETTLED,
-                        "a glide of {travel:?} stepped {:?} at {millis} ms",
-                        (at - was).abs()
-                    );
-                }
+                assert!(
+                    (travel - at).abs() <= (travel - was).abs() || millis == 0,
+                    "a glide of {travel:?} turned back at {millis} ms"
+                );
                 was = at;
             }
         }

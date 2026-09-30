@@ -1114,14 +1114,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `spread`, over the `Falloff` itself: the pointer opening the pane out and a reading chip both go
   through `Turn::onto`, so lines a wider reading brings up fade in over the same span, and `standing` is
   the falloff turn blended over the reads turn. The `Glide` differs in kind: it carries the scroll
-  offset to `centre_of` the read line on `spring`, a closed-form damped spring of `GLIDE_RESPONSE_SECS`
-  and `GLIDE_DAMPING` (0.8, about a one-and-a-half-percent overshoot), a move decelerating into its
-  landing reading as the sheet arriving where an ease-in-out reads as it being pushed. The curve is
-  never cut short: `settles_in` is how long its decay envelope takes to bring a travel of that many
-  pixels inside `SETTLED` (half a pixel) of the landing, so a long glide runs longer than a short one,
-  and the offset, the lines' lag and the rise read the raw curve the whole way. A fixed 820 ms returning
-  exactly 1.0 cut the bounce off while still some 0.13 % long — on a glide of a few hundred pixels a
-  pixel's step drawn alone after the bounce had come back
+  offset to `centre_of` the read line on `spring`, a closed-form critically damped spring of
+  `GLIDE_RESPONSE_SECS` that never passes its landing, a move decelerating into it reading as the sheet
+  arriving where an ease-in-out reads as it being pushed. An underdamped spring was tried and dropped:
+  its overshoot of a percent or so on a glide of hundreds of pixels came back as one- and two-pixel
+  steps in the last moments, which read as a flutter rather than a bounce. The curve is never cut short:
+  `settles_in` is how long it takes the remaining share to fall inside `SETTLED` (half a pixel) of the
+  landing, found by bisection, so a long glide runs longer than a short one, and the offset, the lines'
+  lag and the rise read the raw curve the whole way
   (`a_glide_runs_until_it_is_inside_half_a_pixel_of_its_landing_and_never_steps`).
 - **A line further down sets off later, so a change ripples rather than shifts.** Every row is two
   boxes: the outer is what `bounds_for_item` measures, and the inner is `relative()` with a `top` inset
