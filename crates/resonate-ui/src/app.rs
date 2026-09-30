@@ -977,7 +977,6 @@ mod tests {
             is_hardware: true,
             port: None,
             profile: None,
-            profiles: Vec::new(),
             formats: Vec::new(),
             allowed_rates: Vec::new(),
             current_rate: None,

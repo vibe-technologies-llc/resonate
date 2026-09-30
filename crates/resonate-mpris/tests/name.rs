@@ -7,8 +7,8 @@ use std::{
 use crossbeam_channel::{Receiver, unbounded};
 use resonate_core::Gain;
 use resonate_engine::{
-    AudioSource, Backend, EngineConfig, Player, ProfileIndex, SinkChange, SinkError, SinkId,
-    SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, EngineConfig, Player, SinkChange, SinkError, SinkId, SinkInfo,
+    SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_mpris::{Host, Mpris};
 use zbus::{
@@ -57,10 +57,6 @@ impl Backend for NoSinks {
     }
 
     fn set_device_mute(&self, _sink: SinkId, _muted: bool) -> SinkResult<()> {
-        Err(SinkError::NoSink)
-    }
-
-    fn set_card_profile(&self, _sink: SinkId, _profile: ProfileIndex) -> SinkResult<()> {
         Err(SinkError::NoSink)
     }
 

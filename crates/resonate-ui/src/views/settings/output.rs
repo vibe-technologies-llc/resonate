@@ -3,8 +3,7 @@ use std::time::Duration;
 use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
 use resonate_core::{SampleFormat, StreamSpec};
 use resonate_engine::{
-    BluetoothWake, CardProfile, Command, HardwareVolume, NodeName, Plugged, ProfileIndex, SinkId,
-    SinkInfo,
+    BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
 };
 
 use crate::{
@@ -56,12 +55,6 @@ const ON_THE_HARDWARE: &str = "Volume on the hardware";
 const IN_SOFTWARE: &str = "Volume in software";
 
 const OR: &str = ", ";
-
-const PROFILE_NOTE: &str = "A card's profile is what the desktop plays through it, so switching \
-                            one moves every application's sound with it. Pro Audio hands each \
-                            channel over as it is, with no mixer of the card's own in the way.";
-
-const UNPLUGGED_PROFILE: &str = "Nothing is plugged into what this profile plays through";
 
 fn known_as(sink: &SinkInfo) -> String {
     format!("The graph knows it as {}", sink.name)
@@ -432,78 +425,13 @@ impl RootView {
         let away = wanted
             .as_ref()
             .is_some_and(|name| !sinks.iter().any(|sink| &sink.name == name));
-        let profiled = sinks
-            .iter()
-            .find(|sink| Some(sink.id) == open)
-            .or_else(|| {
-                sinks.iter().find(|sink| match wanted.as_ref() {
-                    Some(name) => &sink.name == name,
-                    None => sink.is_default,
-                })
-            })
-            .filter(|sink| sink.profiles.len() > 1)
-            .map(|sink| self.profiles(sink, cx));
-
         kit::section_body()
             .child(listed)
-            .children(profiled)
             .when(sinks.is_empty(), |body| body.child(note(NO_SINKS)))
             .when(away, |body| body.child(note(AWAY)))
             .when(!sinks.is_empty() && !away, |body| {
                 body.child(note(DEVICE_NOTE))
             })
-    }
-
-    fn profiles(&self, sink: &SinkInfo, cx: &mut Context<Self>) -> Div {
-        let current = sink.profile.as_ref().map(|profile| profile.index);
-        let chips = sink.profiles.iter().enumerate().fold(
-            div().flex().flex_wrap().gap_2(),
-            |chips, (index, profile)| {
-                chips.child(self.profile_chip(sink.id, index, profile, current, cx))
-            },
-        );
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(kit::field(
-                format!("Profile of {}", sink.description),
-                chips,
-            ))
-            .child(note(PROFILE_NOTE))
-    }
-
-    fn profile_chip(
-        &self,
-        sink: SinkId,
-        index: usize,
-        profile: &CardProfile,
-        current: Option<ProfileIndex>,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let chosen = current == Some(profile.index);
-        let switched_to = profile.index;
-        self.in_the_ring_at(
-            format!("card-profile-{index}"),
-            kit::chip(("card-profile", index), profile.description.clone(), chosen)
-                .when(profile.plugged == Plugged::No, |chip| {
-                    chip.names(UNPLUGGED_PROFILE)
-                }),
-            move |this, _, cx| {
-                if chosen {
-                    return;
-                }
-                this.send(
-                    Command::SwitchProfile {
-                        sink,
-                        profile: switched_to,
-                    },
-                    cx,
-                );
-            },
-            cx,
-        )
     }
 
     fn default_device(

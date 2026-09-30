@@ -39,13 +39,13 @@ use resonate_core::{Gain, SampleRate, StreamSpec};
 
 use crate::{
     AudioSink, AudioSource, CaptureRequest, CaptureStream, Capturing, CardProfile, Error,
-    LatencyRequest, MediaRole, Microphone, NodeName, PodParam, ProfileIndex, PwOp, Result,
-    SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent,
-    StreamRequest, StreamState,
+    LatencyRequest, MediaRole, Microphone, NodeName, PodParam, PwOp, Result, SinkChange,
+    SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamCommand, StreamEvent, StreamRequest,
+    StreamState,
     format::{
         AdvertisedFormat, AdvertisedRoute, RouteChange, RouteSetting, WireWord, negotiated,
         packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
-        parse_rate, parse_route, profile_switch, route_change, spa_format, spa_position,
+        parse_rate, parse_route, route_change, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
 };
@@ -96,7 +96,6 @@ enum Request {
     StopCapture,
     SetActive(bool),
     Turn { sink: SinkId, setting: RouteSetting },
-    Switch { sink: SinkId, profile: ProfileIndex },
     Drain,
     Close,
     Lost,
@@ -198,7 +197,6 @@ struct Discovered {
     driven: BTreeSet<u32>,
     ports: BTreeMap<u32, DevicePorts>,
     profiles: BTreeMap<u32, CardProfile>,
-    offered_profiles: BTreeMap<u32, BTreeMap<ProfileIndex, CardProfile>>,
     allowed_rates: Vec<SampleRate>,
     clock_rate: Option<SampleRate>,
     forced_rate: Option<SampleRate>,
@@ -285,7 +283,6 @@ impl Discovered {
                     is_hardware: self.is_hardware(record),
                     port: self.port_of(record),
                     profile: self.profile_of(record),
-                    profiles: self.profiles_offered_to(record),
                     formats,
                     allowed_rates: allowed,
                     current_rate: self.forced_rate.or(self.clock_rate),
@@ -320,31 +317,6 @@ impl Discovered {
 
     fn profile_of(&self, record: &SinkRecord) -> Option<CardProfile> {
         self.profiles.get(&record.device?).cloned()
-    }
-
-    fn profiles_offered_to(&self, record: &SinkRecord) -> Vec<CardProfile> {
-        let Some(offered) = record
-            .device
-            .and_then(|above| self.offered_profiles.get(&above))
-        else {
-            return Vec::new();
-        };
-        let mut playing: Vec<CardProfile> = offered
-            .values()
-            .filter(|profile| profile.plays())
-            .cloned()
-            .collect();
-        playing.sort_by(|one, other| {
-            other
-                .priority
-                .cmp(&one.priority)
-                .then(one.index.cmp(&other.index))
-        });
-        playing
-    }
-
-    fn device_under(&self, sink: SinkId) -> Option<u32> {
-        self.sinks.get(&sink.get())?.device
     }
 
     fn route_turning(&self, sink: SinkId, setting: RouteSetting) -> Option<(u32, RouteChange)> {
@@ -534,13 +506,6 @@ impl PipeWire {
         self.survey
             .commands
             .send(Request::Turn { sink, setting })
-            .map_err(|_| Error::LoopStopped)
-    }
-
-    pub fn set_card_profile(&self, sink: SinkId, profile: ProfileIndex) -> Result<()> {
-        self.survey
-            .commands
-            .send(Request::Switch { sink, profile })
             .map_err(|_| Error::LoopStopped)
     }
 
@@ -754,20 +719,6 @@ fn run(
                 match devices.get(&device) {
                     Some((proxy, _)) => turn_the_route(proxy, &turned),
                     None => tracing::warn!(%sink, device, "the device under this sink has left the graph"),
-                }
-            }
-            Request::Switch { sink, profile } => {
-                let Some(device) = reaching.shared.lock().device_under(sink) else {
-                    tracing::warn!(%sink, "this sink hangs off no card whose profile could be switched");
-                    return;
-                };
-                let held = graph.borrow();
-                let Some(devices) = held.as_ref().map(|held| held.devices.borrow()) else {
-                    return;
-                };
-                match devices.get(&device) {
-                    Some((proxy, _)) => switch_the_profile(proxy, profile),
-                    None => tracing::warn!(%sink, device, "the card under this sink has left the graph"),
                 }
             }
             Request::Drain => {
@@ -1148,17 +1099,6 @@ fn watch_the_registry(
                                     }
                                     return;
                                 }
-                                if param_type == ParamType::EnumProfile {
-                                    if let Some(profile) = parse_profile(&value) {
-                                        shared
-                                            .lock()
-                                            .offered_profiles
-                                            .entry(id)
-                                            .or_default()
-                                            .insert(profile.index, profile);
-                                    }
-                                    return;
-                                }
                                 let Some(held) = Held::of(param_type) else {
                                     return;
                                 };
@@ -1181,12 +1121,10 @@ fn watch_the_registry(
                         ParamType::Route,
                         ParamType::EnumRoute,
                         ParamType::Profile,
-                        ParamType::EnumProfile,
                     ]);
                     device.enum_params(0, Some(ParamType::Route), 0, u32::MAX);
                     device.enum_params(0, Some(ParamType::EnumRoute), 0, u32::MAX);
                     device.enum_params(0, Some(ParamType::Profile), 0, u32::MAX);
-                    device.enum_params(0, Some(ParamType::EnumProfile), 0, u32::MAX);
                     devices.borrow_mut().insert(global.id, (device, listener));
                 }
                 ObjectType::Metadata => {
@@ -1229,7 +1167,6 @@ fn watch_the_registry(
                 state.driven.remove(&id);
                 state.microphones.remove(&id);
                 state.profiles.remove(&id);
-                state.offered_profiles.remove(&id);
                 state.ports.remove(&id);
                 devices.borrow_mut().remove(&id);
                 if state.sinks.remove(&id).is_some() {
@@ -1256,22 +1193,6 @@ fn turn_the_route(device: &Device, turned: &RouteChange) {
         return;
     };
     device.set_param(ParamType::Route, 0, pod);
-}
-
-fn switch_the_profile(device: &Device, profile: ProfileIndex) {
-    let serialized =
-        PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &profile_switch(profile));
-    let bytes = match serialized {
-        Ok((cursor, _)) => cursor.into_inner(),
-        Err(error) => {
-            tracing::warn!(%error, "the profile switch could not be written as a POD");
-            return;
-        }
-    };
-    let Some(pod) = Pod::from_bytes(&bytes) else {
-        return;
-    };
-    device.set_param(ParamType::Profile, 0, pod);
 }
 
 fn format_pod(spec: StreamSpec, word: WireWord, id: u32) -> Result<Vec<u8>> {

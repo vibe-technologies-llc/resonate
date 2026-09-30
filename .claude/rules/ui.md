@@ -1926,12 +1926,6 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the default entry says which device PipeWire routes to now where the graph names one. The node name is
   still what the settings file holds, so it is what the row `names` itself; `SinkInfo::is_hardware` is
   drawn nowhere, reading `device.api` off the node, which an ordinary ALSA sink lacks.
-- **The card's profiles are chips under the device list, for the device in use.** Where the sink
-  playing — else the one chosen, else the default — hangs off a card offering more than one profile that
-  plays, `profiles` draws a `kit::field` naming the device over a wrapping row of `kit::chip`s, one per
-  `SinkInfo::profiles` entry, the current one lit, a profile whose ports are unplugged saying so on hover.
-  A press sends `Command::SwitchProfile` and nothing is stored: the card saves its own profile, which
-  every other application reads too, and the note under the chips says so.
 - **A section holds a subject rather than a control.** The theme shelf and accent swatches are one
   *Colour* section with a `kit::field` label over each half, six one-control sections reading as a list
   of switches rather than a page. A group's hint is written once, in the table, and the header's info

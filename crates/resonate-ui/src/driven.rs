@@ -18,8 +18,8 @@ use gpui::{
 };
 use resonate_core::{Appearance, Frames, Gain, MediaLocation, Resumable, Resumption, TrackId};
 use resonate_engine::{
-    AudioSource, Backend, Command, EngineConfig, Player, ProfileIndex, SinkChange, SinkError,
-    SinkId, SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, Command, EngineConfig, Player, SinkChange, SinkError, SinkId, SinkInfo,
+    SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, ScanOptions};
@@ -146,10 +146,6 @@ impl Backend for Unplugged {
     }
 
     fn set_device_mute(&self, _: SinkId, _: bool) -> SinkResult<()> {
-        Ok(())
-    }
-
-    fn set_card_profile(&self, _: SinkId, _: ProfileIndex) -> SinkResult<()> {
         Ok(())
     }
 

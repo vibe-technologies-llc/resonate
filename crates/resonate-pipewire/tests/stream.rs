@@ -277,38 +277,3 @@ fn the_latency_a_stream_reports_is_counted_in_its_own_frames_not_the_graphs() {
          which is the graph's own tick count rather than either stream's frames"
     );
 }
-
-#[test]
-fn a_card_offers_the_profile_it_plays_through_among_those_it_could_switch_to() {
-    let Some((pipewire, sink)) = daemon() else {
-        return;
-    };
-    let Some(current) = sink.profile.as_ref() else {
-        eprintln!("skipped: the default sink hangs off no card with a profile");
-        return;
-    };
-    let sinks = pipewire
-        .survey()
-        .enumerate_sinks(DISCOVERY)
-        .expect("the daemon enumerates its sinks");
-    let offered = sinks
-        .iter()
-        .find(|listed| listed.id == sink.id)
-        .map(|listed| listed.profiles.clone())
-        .unwrap_or_default();
-
-    assert!(
-        offered.iter().all(|profile| profile.plays()),
-        "a profile that opens no sink was offered to switch to: {offered:?}"
-    );
-    assert!(
-        offered.iter().any(|profile| profile.index == current.index),
-        "the profile the card plays through, {current:?}, was not among those offered: {offered:?}"
-    );
-    assert!(
-        offered
-            .windows(2)
-            .all(|pair| pair[0].priority >= pair[1].priority),
-        "the profiles were not offered most preferred first"
-    );
-}

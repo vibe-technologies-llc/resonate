@@ -147,17 +147,7 @@ pub struct SinkPort {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CardProfile {
     pub index: ProfileIndex,
-    pub name: String,
     pub description: String,
-    pub priority: u32,
-    pub plugged: Plugged,
-    pub sinks: u32,
-}
-
-impl CardProfile {
-    pub const fn plays(&self) -> bool {
-        self.sinks > 0
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -169,7 +159,6 @@ pub struct SinkInfo {
     pub is_hardware: bool,
     pub port: Option<SinkPort>,
     pub profile: Option<CardProfile>,
-    pub profiles: Vec<CardProfile>,
     pub formats: Vec<SinkFormats>,
     pub allowed_rates: Vec<SampleRate>,
     pub current_rate: Option<SampleRate>,
@@ -381,7 +370,6 @@ mod tests {
             is_hardware: true,
             port: None,
             profile: None,
-            profiles: Vec::new(),
             formats,
             allowed_rates: allowed.to_vec(),
             current_rate: allowed.first().copied(),

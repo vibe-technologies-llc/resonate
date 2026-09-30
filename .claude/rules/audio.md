@@ -1956,20 +1956,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   subscribes to `Profile` beside its two route params, and `parse_profile` reads the current one into
   `Discovered::profiles` — keyed by device id, looked up through `SinkRecord::device` as `port_of`
   looks up the port — so `SinkInfo::profile` is drawn as *Analog Stereo Output* rather than being
-  something only `pw-dump` answers. **What the card could switch to is read beside it.** The `Device`
-  subscribes to `EnumProfile` too, and `parse_profile` reads each into a `CardProfile` — its
-  `ProfileIndex`, name, description, priority, whether what it plays through is plugged in, and how many
-  sinks its `classes` open — kept per device under `Discovered::offered_profiles`. `SinkInfo::profiles`
-  is the card's sink-opening profiles, most preferred first, so *Off* and an input-only profile are never
-  offered from a device list they would take the device out of. `Command::SwitchProfile` names the sink
-  and index, `Backend::set_card_profile` is the seam, and `PipeWire` sets `Profile` on the `Device` with
-  `save`, as a desktop's sound settings do; the card then tears its nodes down and makes new ones, which
-  the engine follows like any device leaving and arriving. A current profile that moved announces
-  `SinkChange::Switched` for the card's sinks. The settings pane draws the profiles of the device in use,
-  or the one chosen, as chips under the device list.
-  `a_card_offers_the_profile_it_plays_through_among_those_it_could_switch_to` holds a real daemon's card
-  to it. `route.hw-volume` needed no new subscription: it is a string pair inside
-  `SPA_PARAM_ROUTE_info`, a `Value::Struct` of a count followed by alternating keys and values, which
+  something only `pw-dump` answers. `CardProfile` is its `ProfileIndex` and description alone: no
+  switching is offered, so the card's other profiles are not enumerated. A current profile that moved
+  announces `SinkChange::Switched` for the card's sinks. `route.hw-volume` needed no new subscription:
+  it is a string pair inside `SPA_PARAM_ROUTE_info`, a `Value::Struct` of a count followed by alternating keys and values, which
   `parse_route` was handed and threw away. `HardwareVolume` is the reading — `Yes`, `No`, or `Unsaid`
   where the route says nothing, a different answer from `No` never drawn as one, a silent driver not
   claiming the volume is software's. `resonate sinks` gives the profile a column (*PROFILE*) and appends

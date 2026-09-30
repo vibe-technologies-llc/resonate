@@ -5,7 +5,7 @@ use resonate_core::{Frames, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
 };
-use resonate_pipewire::{NodeName, ProfileIndex, SinkId};
+use resonate_pipewire::NodeName;
 
 use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
 
@@ -101,10 +101,6 @@ pub enum Command {
     SetDsdLikePcm(bool),
     SetDeviceVolume(bool),
     SetDeviceMute(bool),
-    SwitchProfile {
-        sink: SinkId,
-        profile: ProfileIndex,
-    },
     SetForceGraphRate(bool),
     SetBluetoothWake(BluetoothWake),
     SetBuffer(Duration),
@@ -149,7 +145,6 @@ pub enum CommandKind {
     SetDsdLikePcm,
     SetDeviceVolume,
     SetDeviceMute,
-    SwitchProfile,
     SetForceGraphRate,
     SetBluetoothWake,
     SetBuffer,
@@ -194,7 +189,6 @@ impl CommandKind {
             Self::SetDsdLikePcm => "the level DSD is decimated at",
             Self::SetDeviceVolume => "whose volume the slider turns",
             Self::SetDeviceMute => "the device's mute",
-            Self::SwitchProfile => "the device's profile",
             Self::SetForceGraphRate => "the graph rate",
             Self::SetBluetoothWake => "keeping Bluetooth awake",
             Self::SetBuffer => "the buffer",
@@ -248,7 +242,6 @@ impl Command {
             Self::SetDsdLikePcm(_) => CommandKind::SetDsdLikePcm,
             Self::SetDeviceVolume(_) => CommandKind::SetDeviceVolume,
             Self::SetDeviceMute(_) => CommandKind::SetDeviceMute,
-            Self::SwitchProfile { .. } => CommandKind::SwitchProfile,
             Self::SetForceGraphRate(_) => CommandKind::SetForceGraphRate,
             Self::SetBluetoothWake(_) => CommandKind::SetBluetoothWake,
             Self::SetBuffer(_) => CommandKind::SetBuffer,

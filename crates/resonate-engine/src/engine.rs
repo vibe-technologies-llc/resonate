@@ -1192,9 +1192,6 @@ impl Engine {
                 self.config.dsd_like_pcm = raised;
                 self.retune()
             }
-            Command::SwitchProfile { sink, profile } => {
-                Ok(self.backend.set_card_profile(sink, profile)?)
-            }
             Command::SetDeviceMute(muted) => self.mute_the_device(muted),
             Command::SetDeviceVolume(handed) => {
                 self.config.device_volume = handed;
