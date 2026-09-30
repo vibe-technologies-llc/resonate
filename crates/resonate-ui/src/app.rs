@@ -19,7 +19,7 @@ use resonate_engine::{
     PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped, TrackState,
 };
 use resonate_eq::Corrected;
-use resonate_library::{Fingerprinters, HistoryKept, Library, Reference};
+use resonate_library::{Fingerprinters, HistoryKept, Library, Reference, Scrobblers};
 use resonate_lyrics::Lyricists;
 
 use crate::{
@@ -124,6 +124,7 @@ pub struct Lookups {
     pub lyricists: Arc<Lyricists>,
     pub fingerprinters: Arc<Fingerprinters>,
     pub reference: Option<Arc<dyn Reference>>,
+    pub scrobblers: Option<Arc<dyn Scrobblers>>,
     pub corrections: Arc<Corrected>,
     pub online: Online,
     pub bindings: Bindings,
@@ -141,6 +142,7 @@ pub struct ResonateApp {
     pub online: Online,
     pub bindings: Bindings,
     pub reference: Option<Arc<dyn Reference>>,
+    pub scrobblers: Option<Arc<dyn Scrobblers>>,
     pub attention: Sender<bool>,
     pub places: Places,
     pub resume: bool,
@@ -844,6 +846,7 @@ pub fn run(
             bindings: lookups.bindings.clone(),
             online: lookups.online.clone(),
             reference: lookups.reference.clone(),
+            scrobblers: lookups.scrobblers.clone(),
             attention: bus.attention.clone(),
             places: stored.places.clone(),
             resume: stored.resume,

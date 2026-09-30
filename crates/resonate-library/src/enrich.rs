@@ -733,26 +733,16 @@ impl<'a> Looking<'a> {
 }
 
 trait Landed {
-    fn nothing() -> Self;
-
     fn landed(&self) -> bool;
 }
 
 impl Landed for Identified {
-    fn nothing() -> Self {
-        Self::Nothing
-    }
-
     fn landed(&self) -> bool {
         !matches!(self, Self::Nothing)
     }
 }
 
 impl<T> Landed for Option<T> {
-    fn nothing() -> Self {
-        None
-    }
-
     fn landed(&self) -> bool {
         self.is_some()
     }
@@ -1476,9 +1466,14 @@ impl Pass<'_> {
             }
         }
         match self.find_release(album)? {
-            Identified::Found(mbid) => return self.land_release(album, &mbid, since),
-            Identified::Group(group) => return self.land_group(album, &group, since),
-            Identified::Nothing => {}
+            Heard::Answered(Identified::Found(mbid)) => {
+                return self.land_release(album, &mbid, since);
+            }
+            Heard::Answered(Identified::Group(group)) => {
+                return self.land_group(album, &group, since);
+            }
+            Heard::Answered(Identified::Nothing) => {}
+            Heard::Refused => return self.nothing_landed(album, since),
         }
         if let Some(group) = &album.group {
             match self.heard(self.reference.release_group(group))? {
@@ -1492,12 +1487,12 @@ impl Pass<'_> {
             }
         }
         match self.find_group(album)? {
-            Some(group) => self.land_group(album, &group, since),
-            None => self.nothing_landed(album, since),
+            Heard::Answered(Some(group)) => self.land_group(album, &group, since),
+            Heard::Answered(None) | Heard::Refused => self.nothing_landed(album, since),
         }
     }
 
-    fn find_release(&self, album: &AlbumToAsk) -> Result<Identified> {
+    fn find_release(&self, album: &AlbumToAsk) -> Result<Heard<Identified>> {
         self.found_either_way(
             Looking::for_an_album(album),
             |wording| {
@@ -1514,7 +1509,7 @@ impl Pass<'_> {
         )
     }
 
-    fn find_group(&self, album: &AlbumToAsk) -> Result<Option<Mbid>> {
+    fn find_group(&self, album: &AlbumToAsk) -> Result<Heard<Option<Mbid>>> {
         self.found_either_way(
             Looking::for_an_album(album),
             |wording| {
@@ -1535,20 +1530,20 @@ impl Pass<'_> {
         looking: Looking<'_>,
         ask: impl Fn(Wording) -> Result<Vec<T>>,
         weigh: impl Fn(Vec<T>) -> Result<W>,
-    ) -> Result<W> {
+    ) -> Result<Heard<W>> {
         let found = match self.heard(ask(Wording::Phrase))? {
             Heard::Answered(found) => found,
-            Heard::Refused => return Ok(W::nothing()),
+            Heard::Refused => return Ok(Heard::Refused),
         };
         let phrased = weigh(found)?;
         if phrased.landed() {
-            return Ok(phrased);
+            return Ok(Heard::Answered(phrased));
         }
 
         looking.note_the_phrase_landed_nothing();
         match self.heard(ask(Wording::Words))? {
-            Heard::Answered(found) => weigh(found),
-            Heard::Refused => Ok(W::nothing()),
+            Heard::Answered(found) => weigh(found).map(Heard::Answered),
+            Heard::Refused => Ok(Heard::Refused),
         }
     }
 
@@ -1787,7 +1782,10 @@ impl Pass<'_> {
             |found| self.take_match(found, track),
         )?;
 
-        Ok(found.map(|recording| (recording, Certainty::Nearly)))
+        Ok(match found {
+            Heard::Answered(found) => found.map(|recording| (recording, Certainty::Nearly)),
+            Heard::Refused => None,
+        })
     }
 
     fn by_fingerprint(&self, track: &TrackToAsk) -> Result<Option<(Recording, Certainty)>> {

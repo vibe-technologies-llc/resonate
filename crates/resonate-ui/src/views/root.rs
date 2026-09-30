@@ -19,7 +19,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, Track,
+    SortOrder, TokenHeld, Track,
 };
 
 use crate::{
@@ -572,7 +572,21 @@ pub struct RootView {
     pub(crate) remember_settings_category: bool,
     pub(crate) last_window_size: Option<WindowSize>,
     window_size_settled: Task<()>,
+    token_checked: Task<()>,
     parts: Parts,
+}
+
+fn token_notice(held: resonate_library::Result<TokenHeld>) -> Notice {
+    match held {
+        Ok(TokenHeld::By(user)) => Notice::Done(format!("The token is {user}'s on ListenBrainz")),
+        Ok(TokenHeld::Unknown) => Notice::Trouble(
+            "ListenBrainz does not know that token, so nothing will be sent under it".to_owned(),
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "ListenBrainz could not be asked about the token");
+            Notice::Trouble("ListenBrainz could not be asked whether it knows the token".to_owned())
+        }
+    }
 }
 
 pub(crate) fn framed_cover(art: Option<Picture>, side: f32) -> Div {
@@ -966,6 +980,7 @@ impl RootView {
             remember_settings_category,
             last_window_size,
             window_size_settled: Task::ready(()),
+            token_checked: Task::ready(()),
             parts: Parts::of(&cx.entity(), cx),
         };
         cx.observe_window_bounds(window, |this, window, cx| {
@@ -1510,10 +1525,31 @@ impl RootView {
         } else {
             "What is heard from now on is sent to ListenBrainz"
         };
-        self.store(&Setting::ListenbrainzToken(given), cx);
+        self.store(&Setting::ListenbrainzToken(given.clone()), cx);
         self.report(Notice::Done(said.to_owned()), cx);
+        self.check_the_listenbrainz_token(given, cx);
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    fn check_the_listenbrainz_token(&mut self, token: String, cx: &mut Context<Self>) {
+        let app = cx.global::<ResonateApp>();
+        let Some(scrobblers) = app.scrobblers.clone().filter(|_| app.online.enabled) else {
+            return;
+        };
+        if token.is_empty() {
+            self.token_checked = Task::ready(());
+            return;
+        }
+
+        self.token_checked = cx.spawn(async move |this, cx| {
+            let held = cx
+                .background_executor()
+                .spawn(async move { scrobblers.under(token).token_held() })
+                .await;
+            let outcome = this.update(cx, |this, cx| this.report(token_notice(held), cx));
+            let _ = outcome;
+        });
     }
 
     pub(crate) fn leave_listenbrainz_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {

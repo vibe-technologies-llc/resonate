@@ -141,6 +141,30 @@ pub fn listenbrainz(config: &Config, token: String) -> Arc<dyn Scrobbler> {
     Arc::new(ListenBrainz::new(client(config), token))
 }
 
+#[cfg(all(feature = "online", feature = "ui"))]
+struct ByToken {
+    config: Config,
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::Scrobblers for ByToken {
+    fn under(&self, token: String) -> Arc<dyn Scrobbler> {
+        listenbrainz(&self.config, token)
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn scrobblers(config: &Config) -> Option<Arc<dyn resonate_library::Scrobblers>> {
+    Some(Arc::new(ByToken {
+        config: config.clone(),
+    }))
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn scrobblers(_config: &Config) -> Option<Arc<dyn resonate_library::Scrobblers>> {
+    None
+}
+
 #[cfg(not(feature = "online"))]
 pub fn fingerprinters(
     _config: &Config,

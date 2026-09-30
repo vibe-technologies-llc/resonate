@@ -4051,6 +4051,8 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
         LookupOp::Submit => "a submission of what was heard",
+        LookupOp::Love => "a favourite told to a listening service",
+        LookupOp::Token => "a check of a listening service's token",
         LookupOp::StreamLink => "a look for where a track streams",
     }
 }

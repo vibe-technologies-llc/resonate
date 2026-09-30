@@ -716,6 +716,8 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Correction => "a measured correction",
         LookupOp::Recognise => "a recognition",
         LookupOp::Submit => "a submission of what was heard",
+        LookupOp::Love => "a favourite told to a listening service",
+        LookupOp::Token => "a check of a listening service's token",
         LookupOp::StreamLink => "a look for where a track streams",
     }
 }
@@ -2356,6 +2358,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 &by_sound,
             )),
             reference: online::reference(&config),
+            scrobblers: online::scrobblers(&config),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             online: resonate_ui::Online {

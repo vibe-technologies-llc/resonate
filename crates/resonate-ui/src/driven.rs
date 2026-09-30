@@ -230,6 +230,7 @@ impl Driven {
                 online: Online::default(),
                 bindings: Bindings::default(),
                 reference: None,
+                scrobblers: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),

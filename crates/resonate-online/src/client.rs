@@ -52,6 +52,12 @@ pub(crate) enum Encoded {
     Gzip,
 }
 
+#[derive(Clone, Copy)]
+enum Sending<'a> {
+    Get { authorization: Option<&'a str> },
+    Post(&'a Posted),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Posted {
     pub(crate) content_type: String,
@@ -385,7 +391,34 @@ impl Client {
         url: &str,
         body: &Posted,
     ) -> Result<Option<T>> {
-        let response = self.exchange(host, op, url, Some(body))?;
+        self.answered(host, op, url, Sending::Post(body))
+    }
+
+    pub(crate) fn json_as<T: DeserializeOwned>(
+        &self,
+        host: Host,
+        op: LookupOp,
+        url: &str,
+        authorization: &str,
+    ) -> Result<Option<T>> {
+        self.answered(
+            host,
+            op,
+            url,
+            Sending::Get {
+                authorization: Some(authorization),
+            },
+        )
+    }
+
+    fn answered<T: DeserializeOwned>(
+        &self,
+        host: Host,
+        op: LookupOp,
+        url: &str,
+        sending: Sending<'_>,
+    ) -> Result<Option<T>> {
+        let response = self.exchange(host, op, url, sending)?;
         let Some(bytes) = Self::read(response, host, op, LARGEST_DOCUMENT)? else {
             return Ok(None);
         };
@@ -402,7 +435,14 @@ impl Client {
         url: &str,
         limit: usize,
     ) -> Result<Option<Vec<u8>>> {
-        let response = self.exchange(host, op, url, None)?;
+        let response = self.exchange(
+            host,
+            op,
+            url,
+            Sending::Get {
+                authorization: None,
+            },
+        )?;
         Self::read(response, host, op, limit)
     }
 
@@ -442,7 +482,7 @@ impl Client {
         host: Host,
         op: LookupOp,
         url: &str,
-        body: Option<&Posted>,
+        sending: Sending<'_>,
     ) -> Result<Response<Body>> {
         let owed = self.pacing.retries_owed(host);
         let mut retried = 0;
@@ -450,9 +490,16 @@ impl Client {
         loop {
             self.pace(host);
             let introduced = self.introduction.user_agent_to(host);
-            let sent = match body {
-                None => self.agent.get(url).header(USER_AGENT, &introduced).call(),
-                Some(posted) => {
+            let sent = match sending {
+                Sending::Get { authorization } => {
+                    let request = self.agent.get(url).header(USER_AGENT, &introduced);
+                    match authorization {
+                        Some(authorization) => request.header(AUTHORIZATION, authorization),
+                        None => request,
+                    }
+                    .call()
+                }
+                Sending::Post(posted) => {
                     let request = self
                         .agent
                         .post(url)
@@ -836,7 +883,14 @@ mod tests {
     fn fetched_by(client: &Client, answers: Vec<Answer>) -> (u16, usize) {
         let (url, served) = serving(answers);
         let response = client
-            .exchange(Host::MusicBrainz, LookupOp::FindRecording, &url, None)
+            .exchange(
+                Host::MusicBrainz,
+                LookupOp::FindRecording,
+                &url,
+                Sending::Get {
+                    authorization: None,
+                },
+            )
             .expect("an answer");
         (
             response.status().as_u16(),

@@ -1,4 +1,8 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    collections::BTreeSet,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use resonate_core::ListenId;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -6,6 +10,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Isrc, Mbid, Result, StoreOp, db::Inner, store};
 
 pub const SUBMITTED_AT_ONCE: usize = 100;
+
+pub const LOVES_TOLD_AT_ONCE: usize = 25;
 
 const REFUSED_AS_MALFORMED: u16 = 400;
 
@@ -15,6 +21,16 @@ const MARKED_THROUGH: &str = "INSERT INTO submissions (service, through) VALUES 
      ON CONFLICT (service) DO UPDATE SET through = max(through, excluded.through)";
 
 const THE_LAST_LISTEN: &str = "SELECT coalesce(max(id), 0) FROM listens";
+
+const THE_LOVED_RECORDINGS: &str = "SELECT DISTINCT mbid FROM tracks
+      WHERE favourite IS NOT NULL AND mbid IS NOT NULL";
+
+const THE_LOVES_TOLD: &str = "SELECT recording FROM loves_told WHERE service = ?1";
+
+const A_LOVE_TOLD: &str = "INSERT INTO loves_told (service, recording) VALUES (?1, ?2)
+     ON CONFLICT DO NOTHING";
+
+const A_LOVE_TAKEN_BACK: &str = "DELETE FROM loves_told WHERE service = ?1 AND recording = ?2";
 
 macro_rules! billed_columns {
     () => {
@@ -79,12 +95,39 @@ pub struct Scrobble {
     pub billed: Billed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Love {
+    Loved,
+    TakenBack,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TokenHeld {
+    By(String),
+    Unknown,
+}
+
 pub trait Scrobbler: Send + Sync {
     fn service(&self) -> ListeningService;
 
     fn submit(&self, listens: &[Scrobble]) -> Result<()>;
 
     fn playing_now(&self, playing: &Billed) -> Result<()>;
+
+    fn love(&self, recording: &Mbid, love: Love) -> Result<()>;
+
+    fn token_held(&self) -> Result<TokenHeld>;
+}
+
+pub trait Scrobblers: Send + Sync {
+    fn under(&self, token: String) -> Arc<dyn Scrobbler>;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LovesTold {
+    pub loved: usize,
+    pub taken_back: usize,
+    pub refused: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -153,6 +196,75 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
             return Ok(submitted);
         }
     }
+}
+
+pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<LovesTold> {
+    let service = scrobbler.service();
+    let (loved, told) = inner.read(|connection| {
+        Ok((
+            recordings(connection, THE_LOVED_RECORDINGS, &[])?,
+            recordings(connection, THE_LOVES_TOLD, &[service.name()])?,
+        ))
+    })?;
+    let owed = loved
+        .difference(&told)
+        .map(|recording| (recording, Love::Loved))
+        .chain(
+            told.difference(&loved)
+                .map(|recording| (recording, Love::TakenBack)),
+        )
+        .take(LOVES_TOLD_AT_ONCE);
+
+    let mut said = LovesTold::default();
+    for (recording, love) in owed {
+        match scrobbler.love(recording, love) {
+            Ok(()) => match love {
+                Love::Loved => said.loved += 1,
+                Love::TakenBack => said.taken_back += 1,
+            },
+            Err(error) if refused_as_malformed(&error) => {
+                tracing::warn!(
+                    %recording,
+                    ?love,
+                    "a love was refused as malformed and is not told again"
+                );
+                said.refused += 1;
+            }
+            Err(error) => return Err(error),
+        }
+        note_told(inner, service, recording, love)?;
+    }
+    Ok(said)
+}
+
+fn recordings(connection: &Connection, sql: &str, binds: &[&str]) -> Result<BTreeSet<Mbid>> {
+    let mut statement = connection
+        .prepare(sql)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let held = statement
+        .query_map(rusqlite::params_from_iter(binds), |row| {
+            row.get::<_, String>(0)
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(held
+        .iter()
+        .filter_map(|text| store::mbid_in(Some(text)))
+        .collect())
+}
+
+fn note_told(inner: &Inner, service: ListeningService, recording: &Mbid, love: Love) -> Result<()> {
+    let sql = match love {
+        Love::Loved => A_LOVE_TOLD,
+        Love::TakenBack => A_LOVE_TAKEN_BACK,
+    };
+    inner.write(|transaction| {
+        transaction
+            .execute(sql, params![service.name(), recording.as_str()])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Update, source))
+    })
 }
 
 fn submitted_whole(scrobbler: &dyn Scrobbler, named: &[Scrobble]) -> Result<()> {

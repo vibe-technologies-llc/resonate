@@ -97,20 +97,10 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                     continue;
                 }
                 due = Instant::now() + SUBMITTED_EVERY;
-                match library.submit_listens(&*scrobbler) {
-                    Ok(submitted) => {
-                        failed = 0;
-                        if submitted.submitted + submitted.refused > 0 {
-                            tracing::debug!(
-                                submitted = submitted.submitted,
-                                refused = submitted.refused,
-                                unnamed = submitted.unnamed,
-                                "ListenBrainz was told what was heard"
-                            );
-                        }
-                    }
+                match told(&library, &*scrobbler) {
+                    Ok(()) => failed = 0,
                     Err(LibraryError::Refused {
-                        op: LookupOp::Submit,
+                        op: LookupOp::Submit | LookupOp::Love,
                         status,
                     }) if TOKEN_REFUSED.contains(&status) => {
                         tracing::warn!(
@@ -132,6 +122,30 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
     }
 
     Submitting { stop }
+}
+
+#[cfg(feature = "online")]
+fn told(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
+    let submitted = library.submit_listens(scrobbler)?;
+    if submitted.submitted + submitted.refused > 0 {
+        tracing::debug!(
+            submitted = submitted.submitted,
+            refused = submitted.refused,
+            unnamed = submitted.unnamed,
+            "ListenBrainz was told what was heard"
+        );
+    }
+
+    let loves = library.tell_loves(scrobbler)?;
+    if loves.loved + loves.taken_back + loves.refused > 0 {
+        tracing::debug!(
+            loved = loves.loved,
+            taken_back = loves.taken_back,
+            refused = loves.refused,
+            "ListenBrainz was told what is a favourite"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(feature = "online")]

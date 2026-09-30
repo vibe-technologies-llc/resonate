@@ -1097,7 +1097,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   left there, since the strict rule had weighed it, but the queries differ — the fielded phrase matches
   a title exactly and the dismax words loosely — so a pressing the phrase ranked under the wrong one, or
   missed over a subtitle the tagger dropped, is reachable only by asking again. A refusal is still not
-  asked again, being the service's bad day. The cost is one more search per album the phrase could not
+  asked again, being the service's bad day, and it is no answer: `found_either_way` hands back a
+  `Heard`, so a refused release search ends the album's ladder and stamps the refusal where it once
+  read as nothing found and went on to ask the release group, its phrase and its words of a service
+  that had just said no
+  (`a_refused_release_search_stamps_the_refusal_rather_than_asking_down_the_ladder`). A track's
+  refused search still goes on to its fingerprint, AcoustID being another host. The cost is one more search per album the phrase could not
   settle, bounded by the doubling retry.
   `a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_strict_rule`,
   `a_phrase_that_answers_a_near_miss_is_asked_again_in_words_and_lands_there` and

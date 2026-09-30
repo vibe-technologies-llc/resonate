@@ -8,7 +8,7 @@ use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
     Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble,
-    Scrobbler, Service, StreamAsked, Wording,
+    Scrobbler, Service, StreamAsked, TokenHeld, Wording,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -350,5 +350,18 @@ fn listenbrainz_refuses_a_token_it_never_issued_and_says_so_by_its_status() {
             })
         ),
         "{refused:?}"
+    );
+}
+
+#[test]
+fn listenbrainz_says_a_token_it_never_issued_is_held_by_nobody() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let listenbrainz = ListenBrainz::new(client, "not-a-token-anyone-was-given".to_owned());
+
+    assert_eq!(
+        listenbrainz.token_held().expect("the service answered"),
+        TokenHeld::Unknown
     );
 }

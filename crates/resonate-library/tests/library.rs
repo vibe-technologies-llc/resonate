@@ -29,14 +29,14 @@ use resonate_library::{
     Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags,
     Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept,
     ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
-    ListeningService, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack,
-    OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat, PlaylistOrder,
-    PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
+    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
+    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
+    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
     RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder,
     SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SortOrder,
     Sought, Sources, StreamAsked, Suggestion, TagField, TagSet, TagSink, TagSource, TextEncoding,
-    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -4824,6 +4824,7 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_against_no_row() -> Resu
 #[derive(Default)]
 struct Told {
     batches: Mutex<Vec<Vec<Scrobble>>>,
+    loves: Mutex<Vec<(Mbid, Love)>>,
     malformed: Option<&'static str>,
     unreachable: std::sync::atomic::AtomicBool,
 }
@@ -4872,6 +4873,65 @@ impl Scrobbler for Told {
     fn playing_now(&self, _playing: &Billed) -> Result<()> {
         Ok(())
     }
+
+    fn love(&self, recording: &Mbid, love: Love) -> Result<()> {
+        self.loves.lock().push((recording.clone(), love));
+        Ok(())
+    }
+
+    fn token_held(&self) -> Result<TokenHeld> {
+        Ok(TokenHeld::Unknown)
+    }
+}
+
+#[test]
+fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmarked() -> Result<()>
+{
+    let tree = Tree::new();
+    tree.write(
+        "named.wav",
+        &Wav::new()
+            .text(TITLE, "Named")
+            .text(ARTIST, "Ada")
+            .identified(MUSICBRAINZ, RECORDING)
+            .build(),
+    );
+    tree.write(
+        "bare.wav",
+        &Wav::new().text(TITLE, "Bare").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let tracks = library.tracks(&TrackQuery::default())?;
+    for track in &tracks {
+        library.favour(Favoured::Track(track.id), true)?;
+    }
+    let named = tracks
+        .iter()
+        .find(|track| track.title == "Named")
+        .expect("the named track was scanned");
+    let told = Told::default();
+
+    assert_eq!(
+        library.tell_loves(&told)?,
+        LovesTold {
+            loved: 1,
+            taken_back: 0,
+            refused: 0,
+        }
+    );
+    assert_eq!(*told.loves.lock(), vec![(mbid(RECORDING), Love::Loved)]);
+    assert_eq!(library.tell_loves(&told)?, LovesTold::default());
+
+    library.favour(Favoured::Track(named.id), false)?;
+    assert_eq!(library.tell_loves(&told)?.taken_back, 1);
+    assert_eq!(
+        told.loves.lock().last(),
+        Some(&(mbid(RECORDING), Love::TakenBack))
+    );
+    assert_eq!(library.tell_loves(&told)?, LovesTold::default());
+    Ok(())
 }
 
 fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {
@@ -10997,6 +11057,34 @@ fn a_refusal_counts_and_stamps_asked_and_the_pass_carries_on() -> Result<()> {
     let release = library.release_of(album.id)?.expect("the album is known");
     assert!(release.asked.is_some());
     assert_eq!(release.answered, None);
+    Ok(())
+}
+
+#[test]
+fn a_refused_release_search_stamps_the_refusal_rather_than_asking_down_the_ladder() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(
+        Fake::new(Canned {
+            found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+            releases: vec![orbits(orbits_rows(), Vec::new())],
+            ..Canned::default()
+        })
+        .faulting(LookupOp::FindRelease, 0, Fault::Refused),
+    );
+    let summary = enrich(&library, &fake, false)?;
+
+    assert_eq!(summary.stats.refused, 1);
+    assert_eq!(fake.called(LookupOp::FindRelease), 1);
+    assert_eq!(fake.called(LookupOp::FindReleaseGroup), 0);
+    assert_eq!(fake.called(LookupOp::ReleaseGroup), 0);
+    assert_eq!(fake.called(LookupOp::Release), 0);
+
+    let refused_at_once = Waits {
+        retry_after: A_DAY,
+        refused_again_after: Duration::ZERO,
+        refresh_after: A_DAY,
+    };
+    assert_eq!(library.albums_to_ask(refused_at_once, false)?.len(), 1);
     Ok(())
 }
 

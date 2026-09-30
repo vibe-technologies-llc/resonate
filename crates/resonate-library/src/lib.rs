@@ -112,7 +112,10 @@ pub use crate::{
         Written,
     },
     scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary},
-    scrobble::{Billed, ListeningService, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Submitted},
+    scrobble::{
+        Billed, LOVES_TOLD_AT_ONCE, ListeningService, Love, LovesTold, SUBMITTED_AT_ONCE, Scrobble,
+        Scrobbler, Scrobblers, Submitted, TokenHeld,
+    },
     search::{
         Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,
         Term, Word,

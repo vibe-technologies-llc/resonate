@@ -32,14 +32,15 @@ use crate::{
     EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless,
     Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle,
     ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics,
-    LifeSpan, Link, Listen, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move,
-    NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording, RecordingRelease,
-    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
-    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
-    Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
-    VaultObject, Verdict, Waits, Want, Window, Word, elsewhere, enrich, enriched,
+    LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack,
+    MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording,
+    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
+    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
+    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
+    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
+    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere,
+    enrich, enriched,
     hinted::Hinted,
     history, import, likeness,
     model::CoverWanted,
@@ -1256,6 +1257,10 @@ impl Library {
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
         scrobble::submit(&self.inner, scrobbler)
+    }
+
+    pub fn tell_loves(&self, scrobbler: &dyn Scrobbler) -> Result<LovesTold> {
+        scrobble::tell_loves(&self.inner, scrobbler)
     }
 
     pub fn billed_as(

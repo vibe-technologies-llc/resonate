@@ -3,7 +3,9 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-use resonate_library::{Billed, ListeningService, LookupOp, Scrobble, Scrobbler};
+use resonate_library::{
+    Billed, ListeningService, LookupOp, Love, Mbid, Scrobble, Scrobbler, TokenHeld,
+};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -13,6 +15,10 @@ use crate::{
 };
 
 const SUBMIT_LISTENS: &str = "/1/submit-listens";
+const RECORDING_FEEDBACK: &str = "/1/feedback/recording-feedback";
+const VALIDATE_TOKEN: &str = "/1/validate-token";
+const LOVED: i8 = 1;
+const NEITHER: i8 = 0;
 const JSON: &str = "application/json";
 const TOKEN_SCHEME: &str = "Token";
 const ONE_LISTEN: &str = "single";
@@ -24,6 +30,12 @@ const ACCEPTED: &str = "ok";
 #[derive(Deserialize)]
 struct Answer {
     status: String,
+}
+
+#[derive(Deserialize)]
+struct Validated {
+    valid: bool,
+    user_name: Option<String>,
 }
 
 pub struct ListenBrainz {
@@ -49,29 +61,81 @@ impl Scrobbler for ListenBrainz {
     fn playing_now(&self, playing: &Billed) -> resonate_library::Result<()> {
         self.posted(&now_playing(playing))
     }
+
+    fn love(&self, recording: &Mbid, love: Love) -> resonate_library::Result<()> {
+        self.posted_to(
+            RECORDING_FEEDBACK,
+            LookupOp::Love,
+            &feedback(recording, love),
+        )
+    }
+
+    fn token_held(&self) -> resonate_library::Result<TokenHeld> {
+        let url = format!("{}{VALIDATE_TOKEN}", Host::ListenBrainz.base());
+        let answered = self.client.json_as::<Validated>(
+            Host::ListenBrainz,
+            LookupOp::Token,
+            &url,
+            &self.authorization(),
+        );
+
+        match answered {
+            Ok(Some(validated)) => Ok(held_by(validated)),
+            Ok(None) => Ok(TokenHeld::Unknown),
+            Err(crate::Error::Refused { status, .. }) if TOKEN_UNKNOWN.contains(&status) => {
+                Ok(TokenHeld::Unknown)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+const TOKEN_UNKNOWN: [u16; 3] = [400, 401, 403];
+
+fn held_by(validated: Validated) -> TokenHeld {
+    match validated.user_name {
+        Some(user) if validated.valid && !user.trim().is_empty() => TokenHeld::By(user),
+        _ => TokenHeld::Unknown,
+    }
+}
+
+fn feedback(recording: &Mbid, love: Love) -> Value {
+    json!({
+        "recording_mbid": recording.as_str(),
+        "score": match love {
+            Love::Loved => LOVED,
+            Love::TakenBack => NEITHER,
+        },
+    })
 }
 
 impl ListenBrainz {
     fn posted(&self, body: &Value) -> resonate_library::Result<()> {
-        let url = format!("{}{SUBMIT_LISTENS}", Host::ListenBrainz.base());
+        self.posted_to(SUBMIT_LISTENS, LookupOp::Submit, body)
+    }
+
+    fn posted_to(&self, path: &str, op: LookupOp, body: &Value) -> resonate_library::Result<()> {
+        let url = format!("{}{path}", Host::ListenBrainz.base());
         let answer: Option<Answer> = self.client.posted(
             Host::ListenBrainz,
-            LookupOp::Submit,
+            op,
             &url,
             &Posted {
                 content_type: JSON.to_owned(),
                 encoded: Encoded::Plain,
                 bytes: body.to_string().into_bytes(),
-                authorization: Some(format!("{TOKEN_SCHEME} {}", self.token.trim())),
+                authorization: Some(self.authorization()),
             },
         )?;
 
         match answer {
             Some(answer) if answer.status == ACCEPTED => Ok(()),
-            Some(_) | None => Err(resonate_library::Error::Unreadable {
-                op: LookupOp::Submit,
-            }),
+            Some(_) | None => Err(resonate_library::Error::Unreadable { op }),
         }
+    }
+
+    fn authorization(&self) -> String {
+        format!("{TOKEN_SCHEME} {}", self.token.trim())
     }
 }
 
@@ -191,6 +255,41 @@ mod tests {
                     },
                 }],
             })
+        );
+    }
+
+    #[test]
+    fn a_favourite_is_told_as_a_love_and_taken_back_as_no_feedback_at_all() {
+        let recording =
+            Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("a well-formed mbid");
+
+        assert_eq!(
+            feedback(&recording, Love::Loved),
+            json!({ "recording_mbid": "b1a9c0de-1111-4222-8333-444455556666", "score": 1 })
+        );
+        assert_eq!(
+            feedback(&recording, Love::TakenBack),
+            json!({ "recording_mbid": "b1a9c0de-1111-4222-8333-444455556666", "score": 0 })
+        );
+    }
+
+    #[test]
+    fn a_token_is_held_by_the_user_the_service_names_and_by_nobody_it_calls_invalid() {
+        let read = |text: &str| {
+            held_by(serde_json::from_str::<Validated>(text).expect("a validation answer"))
+        };
+
+        assert_eq!(
+            read(r#"{"code":200,"message":"Token valid.","valid":true,"user_name":"ada"}"#),
+            TokenHeld::By("ada".to_owned())
+        );
+        assert_eq!(
+            read(r#"{"code":200,"message":"Token invalid.","valid":false}"#),
+            TokenHeld::Unknown
+        );
+        assert_eq!(
+            read(r#"{"valid":true,"user_name":" "}"#),
+            TokenHeld::Unknown
         );
     }
 

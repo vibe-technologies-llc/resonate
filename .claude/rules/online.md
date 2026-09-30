@@ -392,6 +392,22 @@ test asks both routes.
   carries beside its id and moment — and `ListenBrainz` posts it as a `playing_now` listen with no
   `listened_at`, which the service shows and never counts
   (`what_is_playing_now_is_told_with_no_moment_and_as_one_listen`).
+- **A favourite is a love, and a token is asked who holds it.** `Scrobbler::love` posts
+  `/1/feedback/recording-feedback` with the recording's MBID and a `score` of 1, or 0 for
+  `Love::TakenBack` — no feedback, not a hate (`a_favourite_is_told_as_a_love_and_taken_back_as_no_feedback_at_all`);
+  a track with no recording MBID has nothing the endpoint takes and is never told.
+  `Library::tell_loves` weighs the recordings of favourite tracks against `loves_told` — what the
+  service was last told, per `ListeningService` — and tells the difference either way, at most
+  `LOVES_TOLD_AT_ONCE` (25) a call so the submitter's two-second look is not held a minute behind a
+  first run; a love refused as malformed is noted as told and not sent again
+  (`a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmarked`). Unlike a
+  listen, a favourite is a state, so every favourite held when a token is first given is told.
+  `Scrobbler::token_held` asks `GET /1/validate-token` under the same `Authorization` —
+  `Client::json_as`, the one GET carrying one, `Sending` being what `exchange` is handed — and answers
+  `TokenHeld::By` the user the service names or `Unknown` where it says `valid: false` or refuses the
+  token outright (`a_token_is_held_by_the_user_the_service_names_and_by_nobody_it_calls_invalid`,
+  and `listenbrainz_says_a_token_it_never_issued_is_held_by_nobody` live). `LookupOp::Love` and
+  `LookupOp::Token` name the two.
 - **The binary's half is a thread following the file.** `submitting.rs` starts `resonate-submit` for
   the window and every playing command: five seconds after start and every `SUBMITTED_EVERY` (30 s)
   after, it asks `Library::submit_listens`, doubling the wait after each failure up to an hour.
@@ -404,7 +420,8 @@ test asks both routes.
   `ListenBrainz` client is built once per token and kept across the looks, so its connections and its
   pacing outlive the two seconds between them; a token that moves builds the next. A 401 or
   403 holds that token back until the file names another. A build without the feature starts
-  nothing and warns once where a token is set.
+  nothing and warns once where a token is set. Each submission is followed by `tell_loves` under
+  the same scrobbler, and a 401 or 403 to either holds the token back.
 
 ## LRCLIB
 

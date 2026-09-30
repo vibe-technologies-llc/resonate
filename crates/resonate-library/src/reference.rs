@@ -391,6 +391,8 @@ pub enum LookupOp {
     Correction,
     Recognise,
     Submit,
+    Love,
+    Token,
     StreamLink,
 }
 

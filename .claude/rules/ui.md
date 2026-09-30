@@ -2264,7 +2264,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `listen-for`, and its *Recognition* group carries the AudD token beside the AcoustID key, each a `Field`
   read at the next start. Its *ListenBrainz* group is the `listenbrainz-token` field, not read at the next
   start: the binary's submitter follows the settings file, so a token given or cleared there is what the
-  next submission, within half a minute, carries.
+  next submission, within half a minute, carries. **A token given is asked about at once.** Where
+  Online is on and the build handed `Lookups::scrobblers` — the `Scrobblers` seam turning a token
+  into a `Scrobbler`, `None` without the `online` feature — `check_the_listenbrainz_token` asks
+  `token_held` on the background executor and says in a toast whose token it is, or that the service
+  does not know it, so a token pasted short is found out then rather than by listens never arriving.
 - **Play next and Add to queue are row actions, and Shuffle is the tracks heading's second play
   action.** Each track row, the playlists index row and each row of an opened playlist carry the queue
   pair, and on a playlist row they take the whole reach the row is in. The tracks heading carries

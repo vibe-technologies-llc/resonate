@@ -146,6 +146,11 @@ const MIGRATIONS: &[&str] = &[
          mbid      TEXT NOT NULL,
          PRIMARY KEY (artist_id, mbid)
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE loves_told (
+         service   TEXT NOT NULL,
+         recording TEXT NOT NULL,
+         PRIMARY KEY (service, recording)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

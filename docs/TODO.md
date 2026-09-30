@@ -64,11 +64,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on a registered key:** AcoustID has never been reached with a real key; its fixture is
   written from the documentation
 
-## Online services
-- A refused search is folded into nothing, so `album` goes on to the release group, the phrase and
-  the words before stamping the refusal
-- A favourite is never told to ListenBrainz as feedback, and a token is not checked when it is typed
-
 ## The window
 - The equaliser curve draws one line for every channel, so a band shaping the left alone is drawn
   as the loudest channel's rather than beside the right's (`Profile::response_on` and
