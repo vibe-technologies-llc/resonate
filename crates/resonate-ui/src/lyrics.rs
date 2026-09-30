@@ -34,7 +34,7 @@ const SETTLE_SEARCH_LIMIT: f32 = 64.0;
 
 const SETTLE_SEARCH_STEPS: u32 = 48;
 
-const LAG_PER_LINE: Duration = Duration::from_millis(32);
+const LAG_PER_LINE: Duration = Duration::from_millis(14);
 
 const LAGS_AT_MOST: usize = 6;
 
