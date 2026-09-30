@@ -1,0 +1,694 @@
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
+
+use gpui::{
+    BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla, point, prelude::*,
+    px, relative, rgb, rgba,
+};
+use resonate_library::{
+    Dropped, Looks, TakeInOptions, TakeInProgress, TakeInSummary, TakenPassing, take_in, weigh,
+};
+
+use crate::{
+    Notice, ResonateApp, format,
+    icons::{self, Icon},
+    theme, toast,
+    views::{
+        kit::{self, EndsInAnEllipsis as _},
+        root::RootView,
+        settings::Category,
+    },
+};
+
+const DRAG_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
+
+const COPY_LOOKED_AT_EVERY: Duration = Duration::from_millis(150);
+
+const NAMES_SHOWN: usize = 6;
+
+const CARD_WIDTH: f32 = 480.0;
+
+const ABOVE_A_TOAST: f32 = 56.0;
+
+const NO_FOLDER_TITLE: &str = "Choose a music folder first";
+
+const NO_FOLDER_SAYS: &str = "Songs dropped here are copied into your primary music folder. Set \
+                              one in Settings under Library.";
+
+const FOLDER_GONE_TITLE: &str = "The music folder isn't there";
+
+const FOLDER_GONE_SAYS: &str = "If it is on a drive, mount it, then drop again.";
+
+const NOTHING_TITLE: &str = "Nothing here the library reads";
+
+const NOTHING_SAYS: &str = "Audio files, cue sheets and folders holding them are copied; \
+                            anything else is left where it is.";
+
+const BUSY_TITLE: &str = "Still copying";
+
+const BUSY_SAYS: &str = "Drop again once the songs being copied have landed.";
+
+const READY_SAYS: &str = "Copied as they are into";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Incoming {
+    paths: Vec<PathBuf>,
+    weighed: Vec<Dropped>,
+}
+
+impl Incoming {
+    fn of(paths: &[PathBuf]) -> Self {
+        Self {
+            paths: paths.to_vec(),
+            weighed: weigh(paths),
+        }
+    }
+}
+
+pub(crate) struct TakingIn {
+    progress: Arc<TakeInProgress>,
+    into: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    Ready { taken: usize, skipped: usize },
+    NoFolder,
+    FolderGone,
+    NothingToTake,
+    Busy,
+}
+
+impl Verdict {
+    pub(crate) const fn drops(self) -> bool {
+        matches!(self, Self::Ready { .. })
+    }
+
+    const fn is_trouble(self) -> bool {
+        !matches!(self, Self::Ready { .. })
+    }
+}
+
+pub(crate) fn verdict(
+    weighed: &[Dropped],
+    folder: Option<&Path>,
+    folder_is_there: bool,
+    busy: bool,
+) -> Verdict {
+    let taken = weighed
+        .iter()
+        .filter(|dropped| dropped.looks.is_taken())
+        .count();
+
+    if busy {
+        Verdict::Busy
+    } else if folder.is_none() {
+        Verdict::NoFolder
+    } else if !folder_is_there {
+        Verdict::FolderGone
+    } else if taken == 0 {
+        Verdict::NothingToTake
+    } else {
+        Verdict::Ready {
+            taken,
+            skipped: weighed.len() - taken,
+        }
+    }
+}
+
+pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
+    let stats = summary.stats;
+    let folder = into.file_name().map_or_else(
+        || into.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let files = |count: u64| format::counted(count as usize, "file", "files");
+    let already = match stats.held {
+        0 => String::new(),
+        held => format!(" · {held} already there"),
+    };
+
+    if summary.cancelled {
+        return Notice::Noted(format!("Stopped after copying {}", files(stats.copied)));
+    }
+    if stats.copied > 0 {
+        return Notice::Done(format!(
+            "Copied {} ({}) into {folder}{already}",
+            files(stats.copied),
+            format::bytes(stats.bytes)
+        ));
+    }
+    if stats.held > 0 && stats.passed == 0 {
+        return Notice::Noted(format!("Already in {folder}, so nothing was copied"));
+    }
+
+    let why = summary
+        .passed
+        .iter()
+        .find(|passed| passed.why.is_a_refusal())
+        .map_or(TakenPassing::NotAudio, |passed| passed.why);
+    Notice::Trouble(format!("Nothing was copied — a file {}", why.as_str()))
+}
+
+fn name_of(path: &Path) -> SharedString {
+    SharedString::from(path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    ))
+}
+
+fn what_becomes_of(looks: Looks) -> (Icon, &'static str, bool) {
+    match looks {
+        Looks::Audio => (Icon::Check, "copied", true),
+        Looks::Sheet => (Icon::Check, "cue sheet, copied", true),
+        Looks::Folder => (Icon::Folder, "folder, the audio in it is copied", true),
+        Looks::Other => (Icon::Close, "not audio, left out", false),
+        Looks::Gone => (Icon::Close, "not there", false),
+    }
+}
+
+impl RootView {
+    pub(crate) fn dragged_over(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
+        if self
+            .incoming
+            .as_ref()
+            .is_some_and(|incoming| incoming.paths == paths)
+        {
+            return;
+        }
+
+        let first = self.incoming.is_none();
+        self.incoming = Some(Incoming::of(paths));
+        if first {
+            self.watch_the_drag(cx);
+        }
+        cx.notify();
+    }
+
+    fn watch_the_drag(&mut self, cx: &mut Context<Self>) {
+        self.watching_the_drag = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(DRAG_LOOKED_AT_EVERY).await;
+                let left = this.update(cx, |this, cx| {
+                    if cx.has_active_drag() {
+                        return false;
+                    }
+                    this.incoming = None;
+                    cx.notify();
+                    true
+                });
+                if left.unwrap_or(true) {
+                    return;
+                }
+            }
+        });
+    }
+
+    fn verdict_on(&self, weighed: &[Dropped], cx: &Context<Self>) -> Verdict {
+        let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let there = folder.as_deref().is_some_and(Path::is_dir);
+
+        verdict(weighed, folder.as_deref(), there, self.taking_in.is_some())
+    }
+
+    pub(crate) fn dropped(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.incoming = None;
+        cx.notify();
+
+        let weighed = weigh(&paths);
+        match self.verdict_on(&weighed, cx) {
+            Verdict::NoFolder => {
+                self.report(Notice::Trouble(NO_FOLDER_TITLE.to_owned()), cx);
+                self.set_pane(crate::Pane::Settings, cx);
+                self.show_settings(Category::Library, cx);
+            }
+            Verdict::FolderGone => {
+                self.report(Notice::Trouble(FOLDER_GONE_TITLE.to_owned()), cx);
+            }
+            Verdict::NothingToTake => {
+                self.report(Notice::Trouble(NOTHING_TITLE.to_owned()), cx);
+            }
+            Verdict::Busy => self.report(Notice::Noted(BUSY_TITLE.to_owned()), cx),
+            Verdict::Ready { .. } => self.copy_into_the_music_folder(paths, cx),
+        }
+    }
+
+    fn copy_into_the_music_folder(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let Some(into) = cx.global::<ResonateApp>().music_folder.clone() else {
+            return;
+        };
+
+        let handle = match take_in(TakeInOptions {
+            paths,
+            into: into.clone(),
+        }) {
+            Ok(handle) => handle,
+            Err(error) => {
+                tracing::error!(%error, "dropped songs could not be copied");
+                self.report(toast::could_not("copy the songs", &error), cx);
+                return;
+            }
+        };
+
+        self.taking_in = Some(TakingIn {
+            progress: Arc::clone(handle.progress()),
+            into: into.clone(),
+        });
+        cx.notify();
+
+        self._taking_in = cx.spawn(async move |this, cx| {
+            while !handle.is_finished() {
+                cx.background_executor().timer(COPY_LOOKED_AT_EVERY).await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
+                }
+            }
+
+            let finished = this.update(cx, |this, cx| {
+                this.taking_in = None;
+                match handle.join() {
+                    Ok(summary) => this.took_in(&summary, &into, cx),
+                    Err(error) => {
+                        tracing::error!(%error, "the copy of dropped songs failed");
+                        this.report(toast::could_not("finish copying the songs", &error), cx);
+                    }
+                }
+                cx.notify();
+            });
+            let _ = finished;
+        });
+    }
+
+    fn took_in(&mut self, summary: &TakeInSummary, into: &Path, cx: &mut Context<Self>) {
+        self.report(told_of(summary, into), cx);
+        if summary.stats.copied == 0 {
+            return;
+        }
+
+        let roots = self.library.read(cx).roots().to_vec();
+        let reached = roots
+            .into_iter()
+            .find(|root| into.starts_with(root))
+            .unwrap_or_else(|| into.to_path_buf());
+        self.library
+            .update(cx, |library, cx| library.add_roots(vec![reached], cx));
+    }
+
+    pub(crate) fn stop_copying(&mut self, cx: &mut Context<Self>) {
+        if let Some(taking) = &self.taking_in {
+            taking.progress.cancel();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn drop_overlay(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let incoming = self.incoming.clone()?;
+        let verdict = self.verdict_on(&incoming.weighed, cx);
+        let folder = cx.global::<ResonateApp>().music_folder.clone();
+        let ink = if verdict.is_trouble() {
+            theme::failure()
+        } else {
+            theme::accent()
+        };
+
+        let (title, says) = match verdict {
+            Verdict::Ready { taken, skipped } => (
+                SharedString::from(format!(
+                    "Drop to add {}",
+                    format::counted(taken, "item", "items")
+                )),
+                match skipped {
+                    0 => SharedString::new_static(READY_SAYS),
+                    _ => SharedString::from(format!(
+                        "{READY_SAYS} · {} left out",
+                        format::counted(skipped, "item", "items")
+                    )),
+                },
+            ),
+            Verdict::NoFolder => (
+                SharedString::new_static(NO_FOLDER_TITLE),
+                SharedString::new_static(NO_FOLDER_SAYS),
+            ),
+            Verdict::FolderGone => (
+                SharedString::new_static(FOLDER_GONE_TITLE),
+                SharedString::new_static(FOLDER_GONE_SAYS),
+            ),
+            Verdict::NothingToTake => (
+                SharedString::new_static(NOTHING_TITLE),
+                SharedString::new_static(NOTHING_SAYS),
+            ),
+            Verdict::Busy => (
+                SharedString::new_static(BUSY_TITLE),
+                SharedString::new_static(BUSY_SAYS),
+            ),
+        };
+
+        let hidden = incoming.weighed.len().saturating_sub(NAMES_SHOWN);
+        let names = incoming
+            .weighed
+            .iter()
+            .take(NAMES_SHOWN)
+            .fold(div().flex().flex_col().gap_1(), |list, dropped| {
+                list.child(dropped_row(dropped))
+            });
+
+        let card = div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .w(px(CARD_WIDTH))
+            .p_6()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_2()
+            .border_dashed()
+            .border_color(rgb(ink))
+            .shadow(vec![BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.5),
+                offset: point(px(0.0), px(16.0)),
+                blur_radius: px(48.0),
+                spread_radius: px(0.0),
+            }])
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(icons::icon(
+                        if verdict.is_trouble() {
+                            Icon::Alert
+                        } else {
+                            Icon::Import
+                        },
+                        28.0,
+                        ink,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .min_w(px(0.0))
+                            .child(kit::title(title))
+                            .child(
+                                div()
+                                    .text_size(px(theme::text_sm()))
+                                    .text_color(rgb(theme::muted()))
+                                    .child(says),
+                            ),
+                    ),
+            )
+            .when(verdict.drops(), |card| {
+                card.when_some(folder, |card, folder| card.child(destination(&folder, ink)))
+            })
+            .child(names)
+            .when(hidden > 0, |card| {
+                card.child(kit::figure(format!("and {hidden} more")))
+            });
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rgba(theme::scrim()))
+                .occlude()
+                .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                    this.dropped(paths.paths().to_vec(), cx);
+                }))
+                .child(card),
+        )
+    }
+
+    pub(crate) fn copying_pill(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let taking = self.taking_in.as_ref()?;
+        let stats = taking.progress.snapshot();
+        let stopping = taking.progress.is_cancelled();
+        let reached = (stats.seen_to() + 1).min(stats.found.max(1));
+        let share = match stats.bytes_found {
+            0 => 0.0,
+            found => (stats.bytes as f32 / found as f32).clamp(0.0, 1.0),
+        };
+        let says = if stopping {
+            SharedString::new_static("Stopping…")
+        } else {
+            SharedString::from(format!(
+                "Copying {reached} of {} · {} of {}",
+                stats.found,
+                format::bytes(stats.bytes),
+                format::bytes(stats.bytes_found)
+            ))
+        };
+        let into = name_of(&taking.into);
+
+        Some(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom(px(theme::transport_height()
+                    + theme::type_ahead_lift()
+                    + ABOVE_A_TOAST))
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(CARD_WIDTH))
+                        .px_4()
+                        .py_3()
+                        .rounded_xl()
+                        .bg(rgb(theme::raised()))
+                        .border_1()
+                        .border_color(rgb(theme::outline()))
+                        .shadow(vec![BoxShadow {
+                            color: hsla(0.0, 0.0, 0.0, 0.45),
+                            offset: point(px(0.0), px(4.0)),
+                            blur_radius: px(16.0),
+                            spread_radius: px(0.0),
+                        }])
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(icons::icon(Icon::Import, 16.0, theme::accent()))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w(px(0.0))
+                                        .truncate()
+                                        .ends_in_an_ellipsis()
+                                        .text_size(px(theme::text_sm()))
+                                        .child(says),
+                                )
+                                .child(kit::eyebrow(into))
+                                .child(self.stop_button(stopping, cx)),
+                        )
+                        .child(bar(share)),
+                ),
+        )
+    }
+
+    fn stop_button(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        let button = kit::icon_button("stop-copying", Icon::Stop, "Stop copying");
+        if stopping {
+            return button;
+        }
+        button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))
+    }
+}
+
+fn destination(folder: &Path, ink: u32) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::border()))
+        .child(icons::icon(Icon::Folder, theme::root_icon(), ink))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .text_size(px(theme::text_sm()))
+                .child(SharedString::from(folder.display().to_string())),
+        )
+}
+
+fn dropped_row(dropped: &Dropped) -> Div {
+    let (icon, says, taken) = what_becomes_of(dropped.looks);
+    let ink = if taken {
+        theme::done()
+    } else {
+        theme::failure()
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(icons::icon(icon, 14.0, ink))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .text_size(px(theme::text_sm()))
+                .child(name_of(&dropped.path)),
+        )
+        .child(kit::figure(says))
+}
+
+fn bar(share: f32) -> Div {
+    div()
+        .h(px(4.0))
+        .w_full()
+        .rounded_full()
+        .bg(rgb(theme::border()))
+        .child(
+            div()
+                .h_full()
+                .w(relative(share))
+                .rounded_full()
+                .bg(rgb(theme::accent())),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_library::{TakeInStats, TakenPassed};
+
+    use super::*;
+
+    fn dropped(looks: Looks) -> Dropped {
+        Dropped {
+            path: PathBuf::from("/from/item"),
+            looks,
+        }
+    }
+
+    #[test]
+    fn a_drag_is_ready_only_with_a_folder_that_is_there_something_to_take_and_nothing_running() {
+        let mixed = [
+            dropped(Looks::Audio),
+            dropped(Looks::Other),
+            dropped(Looks::Folder),
+        ];
+        let folder = Path::new("/music");
+
+        assert_eq!(
+            verdict(&mixed, Some(folder), true, false),
+            Verdict::Ready {
+                taken: 2,
+                skipped: 1
+            }
+        );
+        assert_eq!(verdict(&mixed, None, false, false), Verdict::NoFolder);
+        assert_eq!(
+            verdict(&mixed, Some(folder), false, false),
+            Verdict::FolderGone
+        );
+        assert_eq!(verdict(&mixed, Some(folder), true, true), Verdict::Busy);
+        assert_eq!(
+            verdict(
+                &[dropped(Looks::Other), dropped(Looks::Gone)],
+                Some(folder),
+                true,
+                false
+            ),
+            Verdict::NothingToTake
+        );
+    }
+
+    #[test]
+    fn only_a_ready_drag_is_dropped() {
+        assert!(
+            Verdict::Ready {
+                taken: 1,
+                skipped: 0
+            }
+            .drops()
+        );
+        for refused in [
+            Verdict::NoFolder,
+            Verdict::FolderGone,
+            Verdict::NothingToTake,
+            Verdict::Busy,
+        ] {
+            assert!(!refused.drops());
+            assert!(refused.is_trouble());
+        }
+    }
+
+    #[test]
+    fn what_a_copy_did_is_told_in_the_tone_it_deserves() {
+        let into = Path::new("/music/library");
+        let copied = TakeInSummary {
+            stats: TakeInStats {
+                found: 4,
+                copied: 3,
+                held: 1,
+                bytes: 3 * 1024 * 1024,
+                ..TakeInStats::default()
+            },
+            ..TakeInSummary::default()
+        };
+        let held = TakeInSummary {
+            stats: TakeInStats {
+                found: 1,
+                held: 1,
+                ..TakeInStats::default()
+            },
+            ..TakeInSummary::default()
+        };
+        let refused = TakeInSummary {
+            stats: TakeInStats {
+                found: 1,
+                passed: 1,
+                ..TakeInStats::default()
+            },
+            passed: vec![TakenPassed {
+                from: PathBuf::from("/from/a.flac"),
+                why: TakenPassing::Unwritable,
+            }],
+            ..TakeInSummary::default()
+        };
+        let stopped = TakeInSummary {
+            cancelled: true,
+            ..copied.clone()
+        };
+
+        assert_eq!(
+            told_of(&copied, into),
+            Notice::Done("Copied 3 files (3.0 MiB) into library · 1 already there".to_owned())
+        );
+        assert_eq!(
+            told_of(&held, into),
+            Notice::Noted("Already in library, so nothing was copied".to_owned())
+        );
+        assert_eq!(
+            told_of(&refused, into),
+            Notice::Trouble(
+                "Nothing was copied — a file could not be written to the folder".to_owned()
+            )
+        );
+        assert_eq!(
+            told_of(&stopped, into),
+            Notice::Noted("Stopped after copying 3 files".to_owned())
+        );
+    }
+}

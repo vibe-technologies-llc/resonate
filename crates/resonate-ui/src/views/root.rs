@@ -8,10 +8,11 @@ use std::{
 
 use ahash::{AHashMap, AHashSet, AHasher};
 use gpui::{
-    AnyElement, App, BoxShadow, Canvas, Context, Div, ElementId, Entity, FocusHandle, Focusable,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, ObjectFit, Pixels,
-    Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
-    UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
+    AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId, Entity,
+    ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseExitEvent, MouseMoveEvent, ObjectFit, Pixels, Point, Render, ScrollHandle, ScrollStrategy,
+    SharedString, Stateful, Task, UniformListScrollHandle, Window, canvas, div, hsla, img, point,
+    prelude::*, px, rgb, rgba,
 };
 use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume};
 use resonate_engine::{
@@ -45,6 +46,7 @@ use crate::{
     views::{
         browser::{ArtistShows, ArtistsDrawn, OpenedRecord},
         chrome,
+        dropping::{Incoming, TakingIn},
         field::{Field, Submitted},
         focus::Controls,
         hint::{self, Names},
@@ -458,6 +460,10 @@ pub struct RootView {
     pub(crate) analysis: Entity<AnalysisModel>,
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) listening_open: bool,
+    pub(crate) incoming: Option<Incoming>,
+    pub(crate) taking_in: Option<TakingIn>,
+    pub(crate) watching_the_drag: Task<()>,
+    pub(crate) _taking_in: Task<()>,
     pub(crate) settings_written: SettingsWriter,
     pub(crate) pane: Pane,
     pub(crate) settings_category: Category,
@@ -866,6 +872,10 @@ impl RootView {
             analysis,
             listen,
             listening_open: false,
+            incoming: None,
+            taking_in: None,
+            watching_the_drag: Task::ready(()),
+            _taking_in: Task::ready(()),
             settings_written: SettingsWriter::over(settings),
             pane,
             settings_category,
@@ -3786,6 +3796,12 @@ impl Render for RootView {
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.typed(event, window, cx);
             }))
+            .on_drag_move::<ExternalPaths>(cx.listener(
+                |this, event: &DragMoveEvent<ExternalPaths>, _, cx| {
+                    let paths = event.drag(cx).paths().to_vec();
+                    this.dragged_over(&paths, cx);
+                },
+            ))
             .child(self.parts.header())
             .child(
                 div()
@@ -3811,7 +3827,9 @@ impl Render for RootView {
             .when_some(self.magnified.clone(), |app, magnified| {
                 app.child(self.magnifier(&magnified, window, cx))
             })
-            .when(self.listening_open, |app| app.child(self.listen_sheet(cx)));
+            .when(self.listening_open, |app| app.child(self.listen_sheet(cx)))
+            .when_some(self.copying_pill(cx), ParentElement::child)
+            .when_some(self.drop_overlay(cx), ParentElement::child);
 
         chrome::frame(window, app)
     }

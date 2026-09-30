@@ -444,6 +444,8 @@ impl Driven {
 
 #[cfg(test)]
 mod tests {
+    use gpui::BorrowAppContext as _;
+
     use super::*;
     use crate::{
         Pane,
@@ -666,6 +668,80 @@ mod tests {
                 .collect();
             now == [before[0], before[2], before[1]]
         });
+    }
+
+    fn with_music_folder(driven: &mut Driven, folder: Option<PathBuf>) {
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| global.music_folder = folder);
+        });
+    }
+
+    #[gpui::test]
+    fn songs_dropped_on_the_window_are_copied_into_the_music_folder_and_join_the_library(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let music = folder.path().join("music");
+        fs::create_dir_all(&music).expect("a writable temporary folder");
+        let music = music.canonicalize().expect("a folder that is there");
+        let from = Folder::new();
+        let song = from.tagged("dropped.wav", 1, &[(b"INAM", "Dropped Song")]);
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_music_folder(&mut driven, Some(music.clone()));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.dropped(vec![song.clone()], cx);
+        });
+
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+        assert!(
+            music.join("dropped.wav").is_file(),
+            "the song was not copied"
+        );
+        assert!(song.is_file(), "the original was taken away");
+        assert!(driven.read(|root, _| root.taking_in.is_none()));
+    }
+
+    #[gpui::test]
+    fn a_drop_with_no_music_folder_chosen_copies_nothing_and_opens_the_setting(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let from = Folder::new();
+        let song = from.tone("dropped.wav", 1);
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.dropped(vec![song], cx);
+        });
+        driven.settle();
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
+        assert_eq!(
+            driven.read(|root, _| root.settings_category),
+            SettingsCategory::Library
+        );
+        assert!(driven.read(|root, _| root.taking_in.is_none()));
+    }
+
+    #[gpui::test]
+    fn a_drag_over_the_window_is_weighed_and_drawn_until_it_leaves(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let from = Folder::new();
+        let song = from.tone("held.wav", 1);
+        let note = from.path().join("notes.txt");
+        fs::write(&note, b"words").expect("a writable temporary file");
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        with_music_folder(&mut driven, Some(folder.path().to_path_buf()));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.dragged_over(&[song, note], cx);
+        });
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.incoming.is_some()));
+
+        driven.until(|root, _| root.incoming.is_none());
     }
 
     #[gpui::test]

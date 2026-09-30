@@ -3,7 +3,7 @@ use std::{sync::Arc, thread::JoinHandle};
 use crate::{
     EnrichProgress, EnrichSummary, Error, ImportProgress, ImportSummary, OrganiseProgress,
     OrganiseSummary, PollProgress, PollSummary, Result, RetagProgress, RetagSummary, ScanProgress,
-    ScanSummary,
+    ScanSummary, TakeInProgress, TakeInSummary,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -14,6 +14,7 @@ pub enum PassKind {
     Organise,
     Retag,
     Import,
+    TakeIn,
 }
 
 pub trait Cancelling: Send + Sync {
@@ -67,3 +68,4 @@ pub type PollHandle = PassHandle<PollProgress, PollSummary>;
 pub type OrganiseHandle = PassHandle<OrganiseProgress, OrganiseSummary>;
 pub type RetagHandle = PassHandle<RetagProgress, RetagSummary>;
 pub type ImportHandle = PassHandle<ImportProgress, ImportSummary>;
+pub type TakeInHandle = PassHandle<TakeInProgress, TakeInSummary>;

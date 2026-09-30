@@ -141,6 +141,9 @@ pub enum Error {
     #[error("{path} is not a library root", path = path.display())]
     NotARoot { path: PathBuf },
 
+    #[error("{path} is not a folder to copy into", path = path.display())]
+    DestinationNotADirectory { path: PathBuf },
+
     #[error(
         "library root {path} is inside {inside}, which is a root already",
         path = path.display(),

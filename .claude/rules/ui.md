@@ -1836,6 +1836,22 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `ScrollHandle` of its own, and `show_settings` puts it back to the top whenever the category changes:
   gpui keys a scroll offset by element id, and one `"settings"` id across every category left the next
   page opened as far down as the last was read.
+- **Files dragged from outside are weighed while over the window and copied when dropped.**
+  `views/dropping.rs` is the whole of it. gpui turns a file drag into an `ExternalPaths` drag, but
+  only the element dropped on hears of it ending — nothing tells a view the drag *left* — so the
+  root's `on_drag_move::<ExternalPaths>` sets `RootView::incoming` (the paths and
+  `resonate_library::weigh`'s read of each) and starts `watching_the_drag`, a 100 ms timer clearing it
+  once `App::has_active_drag` is false. While `incoming` is set `drop_overlay` draws over the window
+  — a scrim, a dashed card listing up to six names with *copied*, *not audio, left out* or *not
+  there* beside each, and the destination — and is the `on_drop` target, occluding what is under it.
+  `verdict` is the one decision the overlay and the drop share: `Ready`, `NoFolder`, `FolderGone`,
+  `NothingToTake` or `Busy`, the last four drawn in the failure colour and, dropped, a toast; a drop
+  with no `music-folder` also opens Settings on Library. A ready drop starts `take_in` into
+  `ResonateApp::music_folder`, `copying_pill` draws its progress — files and bytes, with a *Stop* —
+  until it lands, `told_of` toasts what it did, and where anything was copied the root reaching the
+  folder (or the folder, added as one) is scanned through `add_roots`. gpui gives a test no way to
+  build an `ExternalPaths`, so `driven.rs` calls `dragged_over` and `dropped` on the `RootView`
+  rather than simulating the platform's drag.
 - **Discord is two Desktop groups, and they write a global before a file.** *Discord* is the switch and
   the application id; *What Discord shows* is how much text, which picture, the icon, the bar and
   whether a pause keeps it. Each control changes `ResonateApp::presence`, stores its `Setting` and hands

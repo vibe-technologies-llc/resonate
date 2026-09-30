@@ -805,11 +805,11 @@ pub(crate) const REPLAY_GAIN_HINT: &str = "Plays every track at the loudness its
                                            and a track neither tagged nor studied is played at the \
                                            gain chosen for it instead.";
 
-pub(crate) const MUSIC_FOLDER_HINT: &str = "The one folder new songs are kept in. It is an ordinary \
-                                            folder of the files as they came, outside the vault, \
-                                            and is scanned like any other. Choosing it adds it to \
-                                            the music folders below if they do not already \
-                                            reach it.";
+pub(crate) const MUSIC_FOLDER_HINT: &str = "The one folder new songs are kept in: what is dragged \
+                                            onto the window is copied here, as it came. It is an \
+                                            ordinary folder outside the vault, scanned like any \
+                                            other. Choosing it adds it to the music folders below \
+                                            if they do not already reach it.";
 
 pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks. Adding one scans it straight \
                                        away; dropping one forgets every track that came from it, \

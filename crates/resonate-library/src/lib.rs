@@ -38,6 +38,7 @@ mod studies;
 mod suggest;
 mod sung;
 mod supply;
+mod take_in;
 mod undo;
 mod vaulted;
 mod volumes;
@@ -93,7 +94,7 @@ pub use crate::{
     },
     pass::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
-        RetagHandle, ScanHandle,
+        RetagHandle, ScanHandle, TakeInHandle,
     },
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
@@ -128,6 +129,10 @@ pub use crate::{
     suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
     sung::{BETTERED_AFTER, MISSED_AGAIN_AFTER},
     supply::{ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary},
+    take_in::{
+        Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,
+        TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,
+    },
     undo::{Edit, Undoable},
     watch::RootsWatch,
 };

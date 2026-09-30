@@ -1,6 +1,7 @@
 mod analysis;
 mod browser;
 mod chrome;
+mod dropping;
 mod favourites;
 pub(crate) mod field;
 mod focus;

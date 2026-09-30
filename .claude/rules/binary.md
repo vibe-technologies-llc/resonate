@@ -213,8 +213,9 @@ What some of them mean:
   aborted on a large value (`a_length_to_listen_for_is_held_to_what_the_setting_takes`).
   `resonate listen --microphone` and `--seconds` outrank them for one run; the Online
   category's *Listening* group and the Listen sheet's chips write them.
-- `music-folder` is the one folder new songs are copied into, an ordinary folder of files as they
-  came and never the vault. It rides on `Stored` onto `ResonateApp::music_folder`, written by
+- `music-folder` is the one folder new songs are copied into — what is dragged onto the window
+  (`ui.md`, `library.md`'s *Taking files in*) — an ordinary folder of files as they came and never
+  the vault. It rides on `Stored` onto `ResonateApp::music_folder`, written by
   Library's *Primary music folder* and live at once; blank or absent it is `None`. Choosing one
   stores its canonical path, refuses a path that is not a folder or lies inside the vault
   (`unusable_as_the_music_folder`), and adds it to the roots through `add_roots` unless a root

@@ -221,6 +221,7 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
         Library::Refused { .. } => "the service turned the request down",
         Library::Io { .. } | Library::Move { .. } => "a file couldn't be read or written",
         Library::NoVault => "there's no vault yet",
+        Library::DestinationNotADirectory { .. } => "the music folder isn't there",
         Library::DuplicatePlaylist { .. } => "a playlist already has that name",
         Library::UnnamedPlaylist => "it needs a name",
         Library::RootNotADirectory { .. } => "that isn't a folder",

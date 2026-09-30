@@ -53,6 +53,12 @@ service or a format — and is not worked until that moves; everything else is o
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned whose mount point's parent still holds another drive
 
+- A dropped file is copied under its own name and a dropped folder keeps its shape; nothing files it
+  by `organise-as`, so a loose file lands directly in the primary music folder until *Organise* is
+  applied
+- A dropped folder's cover pictures and lyric files are left behind: only audio and cue sheets are
+  copied, and a cue sheet whose audio lands under a new name (`name (2).ext`) names the wrong file
+
 ## Search
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text
@@ -84,6 +90,9 @@ service or a format — and is not worked until that moves; everything else is o
   spooled path are unfuzzed
 - *Take this name* is checked by eye alone: driving it wants a recognition the catalog holds, which
   no fake fingerprinter hands the analysis pane yet
+- The drop overlay has never been dragged onto on a real compositor from this tree: gpui's test
+  support cannot build an `ExternalPaths`, so `driven.rs` calls `dragged_over` and `dropped` directly
+  and the platform's own drag events are unproved here
 - **Blocked on hardware:** A microphone recording has not been proved against real sound reaching a
   microphone
 

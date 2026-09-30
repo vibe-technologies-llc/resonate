@@ -1890,6 +1890,31 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   than renamed over. `the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first`
   is the claim.
 
+## Taking files in
+
+`take_in.rs` is the copy behind dropping songs on the window: `take_in(TakeInOptions { paths, into })`
+starts a `resonate-take-in` thread behind a `TakeInHandle` (`PassKind::TakeIn`) and answers a
+`TakeInSummary` — `landed`, `passed` with a typed `Passing` each, the counts and whether it was
+cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a scan follow it.
+`Error::DestinationNotADirectory` is the one refusal before the thread starts.
+
+- **What is taken is what the scan reads.** A dropped file is taken where `names_audio` or it is a
+  `.cue`; a dropped folder is walked, skipping names starting with `.` and links, to
+  `DEEPEST_FOLDER` levels, and its audio and cue sheets are taken. Anything else is `NotAudio`, an
+  empty folder `NothingInside`. The same file named twice, by its canonical path, is one.
+  `weigh` is the cheap, read-only look the window draws while a drag is over it (`Looks`).
+- **Names are kept, and nothing is overwritten.** A file lands at `<into>/<its name>` and a folder at
+  `<into>/<folder>/<relative path>`, merging into a folder already there. A file inside `into` is
+  `AlreadyThere`; one whose destination holds the same bytes is `AlreadyHeld` — neither counts as a
+  refusal (`Passing::is_a_refusal`); a different file under the name lands as `name (2).ext` and on.
+- **A copy is whole, read back and then named.** The bytes go to a hidden
+  `.<name>.<pid>.resonate-part` beside the destination, are compared with the original in
+  `COMPARED_AT_ONCE` pieces, synced, and taken to their name by `hard_link` — which refuses an
+  existing name atomically, so a file made in the meantime is never overwritten — falling back to
+  `rename` where the filesystem has no links; the staged file is always removed. A copy that does not
+  read back is `Unverified` and is not kept (`nothing_is_left_staged_…`).
+  `a_byte_for_byte_copy_already_there_is_held_and_a_different_one_is_kept_beside_it` is the claim.
+
 ## The search grammar
 
 - **A search is words and terms, and what a term means is typed.** `Search::read` is the whole

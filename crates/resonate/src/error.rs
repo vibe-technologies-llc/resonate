@@ -471,6 +471,7 @@ const fn pass_named(pass: PassKind) -> &'static str {
         PassKind::Organise => "organising",
         PassKind::Retag => "tagging",
         PassKind::Import => "import into the vault",
+        PassKind::TakeIn => "copy into the music folder",
     }
 }
 

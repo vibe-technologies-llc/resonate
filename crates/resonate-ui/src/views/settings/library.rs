@@ -30,9 +30,10 @@ const FOLDER_GROUP: &str = "folder";
 const NO_MUSIC_FOLDER: &str = "No primary music folder is chosen. Choose the folder new songs should \
                                be kept in.";
 
-const MUSIC_FOLDER_NOTE: &str = "Songs added to the library are copied here and left as they came. \
-                                 The folder is scanned like the ones below, so what lands in it \
-                                 joins the library.";
+const MUSIC_FOLDER_NOTE: &str = "Drag songs or folders onto the window and they are copied here \
+                                 as they came, each checked against its original. The folder is \
+                                 scanned like the ones below, so what lands in it joins the \
+                                 library.";
 
 const MUSIC_FOLDER_GONE: &str = "This folder is not there now. If it is on a drive, mount it \
                                  before adding songs.";
