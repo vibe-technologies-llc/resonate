@@ -28,10 +28,6 @@ service or a format — and is not worked until that moves; everything else is o
   every want after it untried
 - An equaliser band moved in the last 600 ms before the window closes is never written to its
   profile, because the settle is debounced and nothing flushes it on quit
-- A genuine lossless file at 22.05, 24 or 32 kHz reads as Fake with a lossy guess, because its
-  anti-alias roll-off sits under the fixed 19.5 kHz lossy ceiling at every rate
-- A 32-bit float file whose samples sit on the 24-bit grid reads as Padded and Fake, though float
-  carries no more than 24 significant bits
 - An organise walk back renames a sidecar over a file that has since appeared where it goes, and a
   sidecar since deleted refuses the whole track on every undo
 - A queue open in the player keeps the old paths after an organise moves its files, and the next

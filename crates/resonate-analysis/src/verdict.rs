@@ -4,7 +4,7 @@ use resonate_codec::Codec;
 
 use crate::{Levels, Spectrum};
 
-pub const JUDGED_UNDER: u32 = 3;
+pub const JUDGED_UNDER: u32 = 4;
 
 use crate::spectrum::BAND_HZ;
 const WALL_DB: f32 = 30.0;
@@ -26,6 +26,9 @@ const HIGHEST_PLAIN_RATE: u32 = 48_000;
 const UPSAMPLE_SLACK_HZ: u32 = 300;
 const UPSAMPLED_FROM: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
 const DC_OFFSET_FROM: f32 = 0.01;
+const LOWEST_FULL_BAND_RATE: u32 = 44_100;
+const ANTI_ALIAS_EDGE: f32 = 0.9;
+const BITS_A_FLOAT_CARRIES: u8 = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Verdict {
@@ -292,8 +295,10 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let extent_hz = extent_of(spectrum, &bands);
     let mut findings = Vec::new();
 
+    let anti_aliased = anti_aliased_from(weighed.rate);
     let lossy_wall = cutoff
         .filter(|cutoff| cutoff.hz <= LOSSY_CEILING_HZ)
+        .filter(|cutoff| anti_aliased.is_none_or(|edge| cutoff.hz < edge))
         .map(|cutoff| LossyGuess::of(cutoff.hz));
     match cutoff {
         Some(cutoff) => findings.push(Finding::Wall {
@@ -339,7 +344,19 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     }
 }
 
+fn anti_aliased_from(rate: u32) -> Option<u32> {
+    (rate < LOWEST_FULL_BAND_RATE).then(|| (rate as f32 / 2.0 * ANTI_ALIAS_EDGE) as u32)
+}
+
 fn spectral_verdict(rate: u32, cutoff: Option<Cutoff>, extent_hz: Option<u32>) -> Verdict {
+    if let Some(edge) = anti_aliased_from(rate) {
+        return match (cutoff, extent_hz) {
+            (Some(cutoff), _) if cutoff.hz >= edge => Verdict::Genuine,
+            (Some(_), _) => Verdict::Suspect,
+            (None, Some(extent)) if extent >= edge => Verdict::Genuine,
+            (None, _) => Verdict::NotJudged,
+        };
+    }
     let genuine_from = sources_of(rate)
         .map(|from| from / 2 + UPSAMPLE_SLACK_HZ)
         .max()
@@ -440,7 +457,7 @@ fn upsampled_from(wall_hz: u32, rate: u32) -> Option<u32> {
 fn padding(weighed: Weighed<'_>) -> Option<Finding> {
     let effective = weighed.levels.bits_in_use?;
     let declared = if weighed.float {
-        weighed.declared_bits.unwrap_or(32).max(32)
+        BITS_A_FLOAT_CARRIES
     } else {
         weighed.declared_bits?
     };
@@ -507,6 +524,47 @@ mod tests {
             spectrum,
             levels,
         })
+    }
+
+    #[test]
+    fn a_lossless_file_at_a_low_rate_is_judged_against_its_own_anti_alias_edge() {
+        for rate in [22_050, 24_000, 32_000] {
+            let nyquist = rate as f32 / 2.0;
+            let rolled_off = spectrum_of(rate, music_up_to(nyquist * 0.94));
+            let judgement = judged_as(Codec::Flac, rate, &rolled_off, &QUIET);
+            assert_eq!(judgement.verdict, Verdict::Genuine, "{rate}");
+            assert_eq!(judgement.lossy_guess(), None, "{rate}");
+
+            let cut_low = spectrum_of(rate, music_up_to(nyquist * 0.6));
+            assert_ne!(
+                judged_as(Codec::Flac, rate, &cut_low, &QUIET).verdict,
+                Verdict::Genuine,
+                "{rate}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_float_file_on_the_twenty_four_bit_grid_is_not_padded_and_one_on_sixteen_is() {
+        let spectrum = spectrum_of(44_100, music_up_to(21_500.0));
+        let weighed = |bits| {
+            judged(Weighed {
+                codec: Codec::Flac,
+                rate: 44_100,
+                declared_bits: Some(32),
+                float: true,
+                spectrum: &spectrum,
+                levels: &Levels {
+                    bits_in_use: Some(bits),
+                    ..QUIET
+                },
+            })
+        };
+
+        assert_eq!(weighed(24).padded(), None);
+        assert_ne!(weighed(24).verdict, Verdict::Fake);
+        assert_eq!(weighed(16).padded(), Some((16, 24)));
+        assert_eq!(weighed(16).verdict, Verdict::Fake);
     }
 
     #[test]

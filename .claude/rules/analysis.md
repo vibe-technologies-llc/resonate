@@ -61,7 +61,10 @@ object; the library reaches `study` for the enrichment's studies.
   pixels through a `Ramp` the caller passes, so the theme stays in the window.
 - **The bits in use are the trailing zeros of every sample ORed together.** A 16-bit master in a
   24-bit container leaves the low eight bits zero; a float file on the 16-bit grid is the same in
-  another shape. Weighed beside the declared depth, never in place of it.
+  another shape. Weighed beside the declared depth, never in place of it — a float file's depth being
+  `BITS_A_FLOAT_CARRIES` (24), the significant bits a 32-bit float holds, so one on the 24-bit grid is
+  not padded and one on the 16-bit grid is
+  (`a_float_file_on_the_twenty_four_bit_grid_is_not_padded_and_one_on_sixteen_is`).
 - **Loudness is BS.1770, the DR reading the TT meter's.** The K-weighting's two biquads are derived
   for the stream's own rate
   (`the_k_weighting_at_48_khz_is_the_one_the_recommendation_tabulates` holds the derivation to the
@@ -173,7 +176,12 @@ it.
   low anti-alias filter cannot be told apart; above, an anti-alias filter. A stream above 48 kHz is
   weighed against the rates it could have been upsampled from — only those at most half its own,
   so a 96 kHz file is never called an 88.2 kHz one upsampled — and a wall no higher than one of
-  their Nyquists plus `UPSAMPLE_SLACK_HZ` is `Upsampled`, which is `Fake`.
+  their Nyquists plus `UPSAMPLE_SLACK_HZ` is `Upsampled`, which is `Fake`. A stream under 44.1 kHz
+  cannot reach either ceiling, its own anti-alias filter standing below them, so it is weighed
+  against `anti_aliased_from` — `ANTI_ALIAS_EDGE` (0.9) of its Nyquist: a wall at or above it is the
+  converter's and `Genuine`, one below it `Suspect` and never a lossy guess, since a 22.05, 24 or
+  32 kHz rip rolled off at 10, 11 or 15 kHz read as a 96 kbps transcode before
+  (`a_lossless_file_at_a_low_rate_is_judged_against_its_own_anti_alias_edge`).
 - **No wall is not a pass.** A spectrum reaching past `SUSPECT_CEILING_HZ` — or, hi-res, past where
   the highest rate it could have been upsampled from would end — within `CONTENT_WITHIN_DB` of its
   1–4 kHz level is `Genuine`; one fading below that with no wall is `NotJudged`, since an old
