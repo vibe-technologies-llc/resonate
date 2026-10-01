@@ -1893,9 +1893,16 @@ impl Library {
         &self,
         followed: &[Followed],
         unwritten: &[PathBuf],
+        noted_again: Option<&[retag::KeptRetag]>,
     ) -> Result<()> {
+        self.inner.write(|transaction| {
+            retag::files_retagged(transaction, followed, unwritten, noted_again)
+        })
+    }
+
+    pub(crate) fn retag_walked_back(&self, written: &[PathBuf], finished: bool) -> Result<()> {
         self.inner
-            .write(|transaction| retag::files_retagged(transaction, followed, unwritten))
+            .write(|transaction| retag::walked_back(transaction, written, finished))
     }
 
     pub(crate) fn last_retag(&self) -> Result<Vec<retag::KeptRetag>> {

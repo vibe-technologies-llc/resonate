@@ -220,9 +220,18 @@ fn run(
 
     let mut noted = Noted::default();
     if options.undo {
-        let mut retagging = undone(library, tags, progress)?;
+        let kept = library.last_retag()?;
+        let mut retagging = undone(library, &kept, tags, progress)?;
+        noted.walking_back = Some(
+            kept.into_iter()
+                .map(|kept| (kept.path.clone(), kept))
+                .collect(),
+        );
+        noted.begun = true;
         if options.apply {
-            apply(library, tags, &mut retagging, progress, &mut noted)?;
+            let written = apply(library, tags, &mut retagging, progress, &mut noted)?;
+            let finished = retagging.passed_over.is_empty() && !progress.is_cancelled();
+            library.retag_walked_back(&written, finished)?;
         }
         return Ok(RetagSummary {
             stats: progress.snapshot(),
@@ -555,6 +564,24 @@ impl Undoing {
 pub(crate) struct Noted {
     begun: bool,
     pictures: KeptPictures,
+    walking_back: Option<AHashMap<PathBuf, KeptRetag>>,
+}
+
+impl Noted {
+    fn keeps_a_note_of(&self, why: Unwritten) -> bool {
+        self.walking_back.is_none() && why == Unwritten::Unconfirmed
+    }
+
+    fn noted_before(&self, unwritten: &[PathBuf]) -> Option<Vec<KeptRetag>> {
+        let kept = self.walking_back.as_ref()?;
+
+        Some(
+            unwritten
+                .iter()
+                .filter_map(|path| kept.get(path).cloned())
+                .collect(),
+        )
+    }
 }
 
 const PICTURES_WEIGHED_AGAINST: usize = 8;
@@ -590,11 +617,11 @@ fn apply(
     retagging: &mut Retagging,
     progress: &RetagProgress,
     noted: &mut Noted,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let planned = mem::take(&mut retagging.writes);
     if planned.is_empty() || progress.is_cancelled() {
         retagging.writes = planned;
-        return Ok(());
+        return Ok(Vec::new());
     }
     let undoing: Vec<Undoing> = planned.iter().map(Undoing::of).collect();
     let begins = !noted.begun;
@@ -602,6 +629,7 @@ fn apply(
     noted.begun = true;
 
     let mut followed = Vec::with_capacity(planned.len());
+    let mut landed = Vec::with_capacity(planned.len());
     let mut unwritten = Vec::new();
     for write in planned {
         if progress.is_cancelled() {
@@ -624,16 +652,21 @@ fn apply(
                     RetagProgress::step(&progress.ratings);
                 }
                 followed.push(follow);
+                landed.push(write.path.clone());
                 retagging.writes.push(write);
             }
             Err(why) => {
-                unwritten.push(write.path.clone());
+                if !noted.keeps_a_note_of(why) {
+                    unwritten.push(write.path.clone());
+                }
                 retagging.pass_over(&write.path, why, progress);
             }
         }
     }
 
-    library.files_retagged(&followed, &unwritten)
+    let noted_again = noted.noted_before(&unwritten);
+    library.files_retagged(&followed, &unwritten, noted_again.as_deref())?;
+    Ok(landed)
 }
 
 fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed, Unwritten> {
@@ -743,6 +776,7 @@ pub(crate) fn files_retagged(
     tx: &Transaction<'_>,
     followed: &[Followed],
     unwritten: &[PathBuf],
+    noted_again: Option<&[KeptRetag]>,
 ) -> Result<()> {
     let mut statement = tx
         .prepare(
@@ -769,10 +803,53 @@ pub(crate) fn files_retagged(
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
 
-    forget_what_was_not_written(tx, unwritten)
+    forget_the_notes_of(tx, unwritten)?;
+    match noted_again {
+        Some(noted_again) => note_again(tx, noted_again),
+        None => Ok(()),
+    }
 }
 
-fn forget_what_was_not_written(tx: &Transaction<'_>, unwritten: &[PathBuf]) -> Result<()> {
+pub(crate) fn walked_back(tx: &Transaction<'_>, written: &[PathBuf], finished: bool) -> Result<()> {
+    if !finished {
+        forget_the_notes_of(tx, written)?;
+    }
+    sweep_pictures_nothing_names(tx)
+}
+
+fn note_again(tx: &Transaction<'_>, kept: &[KeptRetag]) -> Result<()> {
+    for held in kept {
+        let path = store::path_text(&held.path)?;
+        tx.prepare_cached(
+            "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture_id)
+             VALUES (?1, ?2, ?3, ?4)",
+        )
+        .and_then(|mut statement| {
+            statement.execute(params![path, held.pictured, held.rated, held.picture])
+        })
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        for (field, was) in &held.fields {
+            tx.prepare_cached(
+                "INSERT OR REPLACE INTO retagged_fields (path, field, was) VALUES (?1, ?2, ?3)",
+            )
+            .and_then(|mut statement| statement.execute(params![path, field.as_str(), was]))
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+    }
+    Ok(())
+}
+
+fn sweep_pictures_nothing_names(tx: &Transaction<'_>) -> Result<()> {
+    tx.execute(
+        "DELETE FROM retagged_pictures
+          WHERE id NOT IN (SELECT picture_id FROM retagged WHERE picture_id IS NOT NULL)",
+        [],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    Ok(())
+}
+
+fn forget_the_notes_of(tx: &Transaction<'_>, unwritten: &[PathBuf]) -> Result<()> {
     let mut noted = tx
         .prepare_cached("DELETE FROM retagged WHERE path = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -884,10 +961,15 @@ impl PicturesPutBack {
     }
 }
 
-fn undone(library: &Library, tags: &dyn TagSink, progress: &RetagProgress) -> Result<Retagging> {
+fn undone(
+    library: &Library,
+    noted: &[KeptRetag],
+    tags: &dyn TagSink,
+    progress: &RetagProgress,
+) -> Result<Retagging> {
     let mut retagging = Retagging::default();
     let mut pictures = PicturesPutBack::default();
-    for kept in library.last_retag()? {
+    for kept in noted {
         if progress.is_cancelled() {
             break;
         }

@@ -651,19 +651,15 @@ fn run(
     }
 
     if options.walk_back {
+        let noted = library.last_organised()?;
         let mut plan = Plan {
-            moves: library
-                .last_organised()?
-                .iter()
-                .rev()
-                .map(Move::reversed)
-                .collect(),
+            moves: noted.iter().rev().map(Move::reversed).collect(),
             ..Plan::default()
         };
         if options.apply {
             let roots: AHashSet<PathBuf> = library.roots()?.into_iter().collect();
             apply(library, &mut plan, &roots, progress);
-            library.note_organised(&plan.moves)?;
+            library.note_organised(&still_to_walk_back(noted, &plan.moves))?;
         }
         return Ok(OrganiseSummary {
             stats: progress.snapshot(),
@@ -714,6 +710,18 @@ fn run(
         plan,
         cancelled: progress.is_cancelled(),
     })
+}
+
+fn still_to_walk_back(noted: Vec<Move>, walked_back: &[Move]) -> Vec<Move> {
+    if walked_back.len() == noted.len() {
+        return walked_back.to_vec();
+    }
+    let put_back: Vec<Move> = walked_back.iter().map(Move::reversed).collect();
+
+    noted
+        .into_iter()
+        .filter(|planned| !put_back.contains(planned))
+        .collect()
 }
 
 #[derive(Clone, Debug)]

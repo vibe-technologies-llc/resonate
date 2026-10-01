@@ -35,8 +35,9 @@ use resonate_library::{
     RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder,
     SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SortOrder,
-    Sought, Sources, StreamAsked, Suggestion, TagField, TagSet, TagSink, TagSource, TextEncoding,
-    TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Sought, Sources, StreamAsked, Suggestion, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -14246,6 +14247,45 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
 }
 
 #[test]
+fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let days = root.join("loose/days.wav");
+    let echoes = root.join("loose/echoes.wav");
+
+    let forward = applied(&library)?;
+    assert_eq!(forward.plan.files_moving(), 2);
+    fs::create_dir_all(root.join("loose")).expect("the emptied folder again");
+    fs::write(&days, b"in the way").expect("a file where one stood");
+
+    let walked = || -> Result<OrganiseSummary> {
+        library
+            .organise(OrganiseOptions {
+                apply: true,
+                walk_back: true,
+                ..OrganiseOptions::default()
+            })?
+            .join()
+    };
+    let cut_short = walked()?;
+    assert_eq!(cut_short.stats.moved, 1);
+    assert!(echoes.is_file());
+    assert!(library.walks_back()?);
+
+    fs::remove_file(&days).expect("the file in the way goes");
+    let rest = walked()?;
+    assert_eq!(rest.stats.moved, 1, "the file left behind was forgotten");
+    assert!(days.is_file());
+    assert!(echoes.is_file(), "a file already put back was moved again");
+    assert!(!root.join("Pink Floyd").exists());
+    Ok(())
+}
+
+#[test]
 fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_folder() -> Result<()> {
     let tree = Tree::new();
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
@@ -15248,6 +15288,139 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
             .expect("a rating that reads back"),
         Rated::Favourite { plays: Some(0) }
     );
+    Ok(())
+}
+
+#[test]
+fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
+    let tree = Tree::new();
+    let written = |name: &str| {
+        tree.write(
+            name,
+            &Aiff::new()
+                .text(TITLE, "Echos")
+                .text(ARTIST, "The Orbiters")
+                .build(),
+        )
+    };
+    let open = written("open/1.aiff");
+    let shut = written("shut/2.aiff");
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &open, "Echoes", "The Orbiters", "Orbits");
+    answer_track(&database, &shut, "Echoes", "The Orbiters", "Orbits");
+    retagged(&library, true)?;
+    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
+
+    let folder = shut.parent().expect("a folder").to_path_buf();
+    let mode = |bits: u32| {
+        fs::set_permissions(&folder, os::unix::fs::PermissionsExt::from_mode(bits))
+            .expect("the folder's mode changes");
+    };
+    mode(0o555);
+    let cut_short = walked_back(&library, true)?;
+    mode(0o755);
+    assert_eq!(cut_short.stats.written, 1);
+    assert_eq!(cut_short.retagging.passed_over.len(), 1);
+    assert_eq!(tags_of(&open).title.as_deref(), Some("Echos"));
+    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
+    assert!(library.retag_walks_back()?);
+
+    let rest = walked_back(&library, true)?;
+    assert_eq!(rest.stats.written, 1, "the file left behind was forgotten");
+    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echos"));
+    assert_eq!(
+        tags_of(&open).title.as_deref(),
+        Some("Echos"),
+        "a file already put back had the run written into it again"
+    );
+    Ok(())
+}
+
+struct Misheard(FileTags);
+
+impl TagSource for Misheard {
+    fn read(
+        &self,
+        location: &MediaLocation,
+        picturing: Picturing,
+    ) -> resonate_codec::Result<resonate_library::Tagged> {
+        self.0.read(location, picturing)
+    }
+}
+
+impl TagSink for Misheard {
+    fn writes(&self, location: &MediaLocation) -> bool {
+        self.0.writes(location)
+    }
+
+    fn write(
+        &self,
+        location: &MediaLocation,
+        writing: resonate_codec::Writing<'_>,
+    ) -> resonate_codec::Result<()> {
+        let misheard: Vec<TagEdit> = writing
+            .edits
+            .iter()
+            .map(|edit| TagEdit {
+                field: edit.field,
+                value: format!("{} misheard", edit.value),
+            })
+            .collect();
+        self.0.write(
+            location,
+            resonate_codec::Writing {
+                edits: &misheard,
+                ..writing
+            },
+        )
+    }
+
+    fn rated(&self, location: &MediaLocation) -> resonate_codec::Result<Rated> {
+        self.0.rated(location)
+    }
+}
+
+#[test]
+fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
+    let misheard = library
+        .retag(
+            Arc::new(Misheard(FileTags::default())),
+            RetagOptions {
+                roots: Vec::new(),
+                apply: true,
+                undo: false,
+            },
+        )?
+        .join()?;
+    assert_eq!(misheard.stats.written, 0);
+    assert_eq!(misheard.retagging.passed_over.len(), 1);
+    assert_eq!(
+        misheard.retagging.passed_over[0].why,
+        Unwritten::Unconfirmed
+    );
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes misheard"));
+    assert!(
+        library.retag_walks_back()?,
+        "a write that landed was dropped from what can be put back"
+    );
+
+    walked_back(&library, true)?;
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
     Ok(())
 }
 

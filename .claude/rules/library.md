@@ -1649,13 +1649,21 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   (`a_tag_run_the_catalog_cannot_note_writes_no_file`), and a follow that cannot be written leaves the
   record whole and sizes and mtimes the next scan reads as changed. The price is that a run whose every
   write fails still clears the previous run's record
-  (`a_write_that_fails_is_not_noted_as_one_to_put_back`). `RetagOptions::undo` plans from that record instead of the catalog:
+  (`a_write_that_fails_is_not_noted_as_one_to_put_back`). **A write that landed but reads back
+  otherwise keeps its note**: the file changed, so `Noted::keeps_a_note_of` holds `Unconfirmed` out of
+  what is forgotten, and the catalog does not follow it, the next scan reading its new size
+  (`a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back`). `RetagOptions::undo` plans from that record instead of the catalog:
   each field read before is written back, one the run added is removed (`Writing::taken`, removing the
   key), an added cover is taken out (`Writing::unpictured`, through the same `uncovered`) and the rating put
   back, all handed to the same `apply`, which reads every file back, has the catalog follow
   `tagged_title` and `tagged_artist` as they now stand and notes what it replaced in turn, so putting
   the walk back writes the run again — only a cover is not rewritten, the walk back having nothing to
-  put back but its absence. `resonate tag --undo` previews it and `--undo --apply` writes it, and the
+  put back but its absence. **A walk back cut short leaves the rest to the next one**: it clears
+  nothing ahead, `Noted::walking_back` holds the record it read, a write that fails or reads back
+  otherwise has its old note put back (`note_again`), and unless every noted file was put back
+  (`retag::walked_back`) the files that were lose their notes, so the next walk back finishes the job
+  rather than writing the run into what was already restored; the pictures no note names are swept
+  either way (`a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one`). `resonate tag --undo` previews it and `--undo --apply` writes it, and the
   *Tagging* group offers *Put the last run back* behind a second press wherever
   `Library::retag_walks_back` says a run is noted. A file gone since is passed over as unreadable, and
   one that moved is not found by its old path.
@@ -1826,7 +1834,9 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   each `Move::reversed`, so a chain and a parked cycle undo in the order that makes room, handed to the
   same `apply` — batches, the catalog following, a sheet's `FILE` line renamed back, the folders the run
   made pruned. What the walk back landed is noted in turn, so walking it back again files the tracks
-  again. `resonate organise --undo` previews it and `--undo --apply` makes it, and *Organising* offers
+  again — where it landed every unit. One cut short, by a cancel or a refusal, keeps the units it did
+  not put back and drops those it did (`still_to_walk_back`), so the next walk back finishes the job
+  (`a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one`). `resonate organise --undo` previews it and `--undo --apply` makes it, and *Organising* offers
   *Put the last run back* behind a second press wherever `Library::walks_back` says a run is kept
   (`an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again`). A file
   moved or gone since is refused at `standing` like any other.

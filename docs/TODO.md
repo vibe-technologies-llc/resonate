@@ -6,12 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- An organise or tag undo that fails or is cancelled part way forgets every file it had not yet put
-  back, because the walk back rewrites the notes from what it landed, so those files can never be
-  walked back
-- A tag write that lands in the file but does not read back as written is dropped from the tag
-  undo with the refusals, so the file keeps its new tags, the catalog does not follow, and nothing
-  can put it back
 - A layout naming `{ext}` loses the extension when a long name is cut to 255 bytes, so the next scan
   no longer sees an audio file and prunes its row with its plays and playlist rows
 - A cue sheet that names a file but cuts no audio track claims the file from the whole-file pass, so
