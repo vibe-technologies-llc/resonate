@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A layout naming `{ext}` loses the extension when a long name is cut to 255 bytes, so the next scan
-  no longer sees an audio file and prunes its row with its plays and playlist rows
 - A cue sheet that names a file but cuts no audio track claims the file from the whole-file pass, so
   the next prune deletes its row, its plays and its favourite
 - A directory entry whose type cannot be read, or a listing an error cuts short, is skipped without

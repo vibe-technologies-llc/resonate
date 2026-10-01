@@ -1713,7 +1713,11 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   trailing whitespace and dots — so *...And Justice for All* keeps its dots while `..` resolves to
   nothing — and cuts what is left to `COMPONENT_BYTES` (255) on a character boundary. The extension is
   appended only where the layout does not name `{ext}`, and the last segment's budget is 255 less that
-  extension, so a name cut to the limit still ends in `.flac`. A middle segment resolving to nothing is
+  extension, so a name cut to the limit still ends in `.flac`. A last segment that itself ends in
+  `.{ext}` is budgeted the same way — `Segment::write_ahead_of_the_extension` writes what comes before
+  the dot, which is cut, and the extension goes back on after — so naming `{ext}` cannot lose it to the
+  cut and leave a file the next scan prunes with its plays
+  (`a_long_name_cut_to_fit_keeps_the_extension_the_layout_names`). A middle segment resolving to nothing is
   skipped and the path closes up; the *last* answers `None`, read by the planner as
   `Refusal::Unidentified`, a file with no name to give being left where it stands. **What a volume
   takes is read per root**: `Naming::of` finds the root's mount in `/proc/self/mounts` — the deepest

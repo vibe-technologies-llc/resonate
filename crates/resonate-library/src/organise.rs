@@ -116,8 +116,27 @@ impl Segment {
     }
 
     fn write(&self, named: &Named<'_>) -> String {
+        Self::written(&self.pieces, named)
+    }
+
+    fn write_ahead_of_the_extension(&self, named: &Named<'_>) -> Option<String> {
+        let [
+            ahead @ ..,
+            Piece::Literal(dotted),
+            Piece::Named(Field::Extension),
+        ] = self.pieces.as_slice()
+        else {
+            return None;
+        };
+        let before_the_dot = dotted.strip_suffix(EXTENSION_SEPARATOR)?;
+        let mut written = Self::written(ahead, named);
+        written.push_str(before_the_dot);
+        Some(written)
+    }
+
+    fn written(pieces: &[Piece], named: &Named<'_>) -> String {
         let mut written = String::new();
-        for piece in &self.pieces {
+        for piece in pieces {
             match piece {
                 Piece::Literal(text) => written.push_str(text),
                 Piece::Named(field) => write_field(*field, named, &mut written),
@@ -176,7 +195,14 @@ impl Layout {
 
     pub(crate) fn render(&self, named: &Named<'_>, naming: Naming) -> Option<PathBuf> {
         let last = self.segments.len().checked_sub(1)?;
-        let appended = self.appended_extension(named);
+        let extension = named.extension.filter(|extension| !extension.is_empty());
+        let ahead_of_the_extension =
+            extension.and_then(|_| self.segments[last].write_ahead_of_the_extension(named));
+        let appended = if ahead_of_the_extension.is_some() {
+            extension
+        } else {
+            self.appended_extension(named)
+        };
         let tail = appended.map_or(0, |extension| {
             extension.len() + EXTENSION_SEPARATOR.len_utf8()
         });
@@ -189,7 +215,11 @@ impl Layout {
                 COMPONENT_BYTES
             };
 
-            let mut component = as_one_component(&segment.write(named), budget, naming);
+            let text = match &ahead_of_the_extension {
+                Some(ahead) if index == last => ahead.clone(),
+                _ => segment.write(named),
+            };
+            let mut component = as_one_component(&text, budget, naming);
             if component.is_empty() {
                 if index == last {
                     return None;
@@ -2888,6 +2918,25 @@ mod tests {
         let mut unlabelled = named;
         unlabelled.extension = None;
         assert_eq!(rendered(&read("{title}"), &unlabelled), "Comfortably Numb");
+    }
+
+    #[test]
+    fn a_long_name_cut_to_fit_keeps_the_extension_the_layout_names() {
+        let chanted = "音".repeat(300);
+        let mut named = comfortably_numb();
+        named.title = &chanted;
+
+        let file = rendered(&read("{title}.{ext}"), &named);
+        assert!(file.ends_with(".flac"), "{file} lost its extension");
+        assert!(file.len() <= COMPONENT_BYTES);
+        assert_eq!(
+            rendered(&read("{title}.{ext}"), &comfortably_numb()),
+            "Comfortably Numb.flac"
+        );
+        assert_eq!(
+            rendered(&read("{track}.{title}.{ext}"), &comfortably_numb()),
+            "06.Comfortably Numb.flac"
+        );
     }
 
     #[test]
