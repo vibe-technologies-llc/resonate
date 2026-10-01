@@ -36,8 +36,6 @@ service or a format — and is not worked until that moves; everything else is o
   depth later than where it was heard
 - Seeking or restarting within the last ten seconds of a track under an end-of-track or end-of-queue
   sleep timer leaves the rest of it silent, because the sleep fade is never lifted
-- A write the settings pane or `resonate eq` makes drops the inline comment on the line it rewrites
-  and the comment above a rebound `[equaliser-for]` entry
 
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's

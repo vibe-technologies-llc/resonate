@@ -700,7 +700,7 @@ pub struct Editing<'d> {
 
 impl Editing<'_> {
     pub fn store(&mut self, key: ConfigKey, value: impl Into<toml_edit::Value>) {
-        self.document[key.as_str()] = toml_edit::value(value);
+        replaced_in_place(&mut self.document[key.as_str()], value.into());
         self.changed = true;
     }
 
@@ -725,7 +725,12 @@ impl Editing<'_> {
             expected: ValueKind::Table,
         })?;
 
-        table.insert(entry, toml_edit::value(value));
+        match table.get_mut(entry) {
+            Some(held) => replaced_in_place(held, value.into()),
+            None => {
+                table.insert(entry, toml_edit::value(value));
+            }
+        }
         self.changed = true;
         Ok(())
     }
@@ -745,6 +750,14 @@ impl Editing<'_> {
             self.document.remove(key.as_str());
         }
         self.changed = true;
+    }
+}
+
+fn replaced_in_place(held: &mut Item, value: toml_edit::Value) {
+    let decor = held.as_value().map(|was| was.decor().clone());
+    *held = toml_edit::value(value);
+    if let (Some(decor), Some(now)) = (decor, held.as_value_mut()) {
+        *now.decor_mut() = decor;
     }
 }
 
@@ -1947,6 +1960,34 @@ mod tests {
             Some(&kept("Sennheiser HD 650"))
         );
         assert_eq!(bindings.fallback(), Some(&kept("Harman over-ear")));
+    }
+
+    #[test]
+    fn a_value_written_again_keeps_the_comments_around_it() {
+        let sink = "alsa_output.usb";
+        let scratch = Scratch::new().seed(&format!(
+            "quality = \"fast\" # the laptop's fan\n\n[equaliser-for]\n# my DAC\n\"{sink}\" = \"Flat\" # for now\n"
+        ));
+
+        store(&scratch.path, ConfigKey::Quality, "high").expect("a writable file");
+        store_in_table(
+            &scratch.path,
+            ConfigKey::EqualiserFor,
+            sink,
+            "Sennheiser HD 650",
+        )
+        .expect("a writable file");
+
+        let text = scratch.text();
+        assert!(
+            text.contains("quality = \"high\" # the laptop's fan"),
+            "{text}"
+        );
+        assert!(text.contains("# my DAC\n"), "{text}");
+        assert!(
+            text.contains(&format!("\"{sink}\" = \"Sennheiser HD 650\" # for now")),
+            "{text}"
+        );
     }
 
     fn kept(name: &str) -> Binding {

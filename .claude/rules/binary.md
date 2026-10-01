@@ -287,7 +287,10 @@ What some of them mean:
 
 **The settings pane writes through `resonate_ui::Settings`**, which the binary fills with
 `settings::File`. It edits the document with `toml_edit` rather than reserialising a parsed
-`Config`, so a hand-written file keeps its comments and key order. `settings::File::apply` takes a
+`Config`, so a hand-written file keeps its comments and key order. A value written again is replaced
+in place with its old decor carried over (`replaced_in_place`), so the comment after it on its line and
+one above an `[equaliser-for]` entry stay, where replacing the item whole dropped them
+(`a_value_written_again_keeps_the_comments_around_it`). `settings::File::apply` takes a
 whole batch of `SettingChange`s through one `config::edit`, whose `Editing` stores and clears keys and
 table entries on the one document and writes only if something moved; a setting the file cannot say
 — a folder not in UTF-8 — is refused as `SettingNotStored` while the rest of its batch lands
