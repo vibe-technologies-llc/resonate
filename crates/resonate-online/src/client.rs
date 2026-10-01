@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     io::{Read as _, Write as _},
-    sync::{Arc, LazyLock},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -316,6 +319,7 @@ pub struct Client {
     introduction: Introduction,
     pacing: Pacing,
     clock: Arc<dyn Clock>,
+    reaching: AtomicBool,
 }
 
 impl Client {
@@ -360,11 +364,20 @@ impl Client {
             introduction,
             pacing,
             clock,
+            reaching: AtomicBool::new(true),
         }
     }
 
     pub fn user_agent(&self) -> String {
         self.introduction.user_agent()
+    }
+
+    pub fn reach(&self, on: bool) {
+        self.reaching.store(on, Ordering::Relaxed);
+    }
+
+    pub fn is_reaching(&self) -> bool {
+        self.reaching.load(Ordering::Relaxed)
     }
 
     pub(crate) fn json<T: DeserializeOwned>(
@@ -488,6 +501,9 @@ impl Client {
         let mut retried = 0;
         let mut by_default = RETRY_AFTER_BY_DEFAULT;
         loop {
+            if !self.is_reaching() {
+                return Err(Error::Offline { host, op });
+            }
             self.pace(host);
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
@@ -869,6 +885,53 @@ mod tests {
             served
         });
         (url, served)
+    }
+
+    #[test]
+    fn a_client_switched_off_asks_nothing_until_switched_on_again() {
+        let clock = Faked::new();
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        listener
+            .set_nonblocking(true)
+            .expect("a listener that does not wait");
+        let url = format!(
+            "http://{}/",
+            listener.local_addr().expect("a bound address")
+        );
+
+        client.reach(false);
+        let refused = client.exchange(
+            Host::Lrclib,
+            LookupOp::Lyrics,
+            &url,
+            Sending::Get {
+                authorization: None,
+            },
+        );
+
+        assert!(matches!(
+            refused,
+            Err(Error::Offline {
+                host: Host::Lrclib,
+                ..
+            })
+        ));
+        assert!(
+            listener.accept().is_err(),
+            "a switched-off client connected"
+        );
+        assert!(
+            clock.slept().is_empty(),
+            "a switched-off request took a turn"
+        );
+
+        client.reach(true);
+        assert_eq!(fetched_by(&client, vec![FINE]).0, 200);
     }
 
     fn fetched(clock: &Arc<Faked>, answers: Vec<Answer>) -> (u16, usize) {

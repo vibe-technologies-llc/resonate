@@ -99,6 +99,16 @@ pub fn introduce(contact: Option<&str>) {
 #[cfg(all(not(feature = "online"), feature = "ui"))]
 pub fn introduce(_contact: Option<&str>) {}
 
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn reach(on: bool) {
+    if let Some(client) = CLIENT.get() {
+        client.reach(on);
+    }
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn reach(_on: bool) {}
+
 #[cfg(feature = "online")]
 pub fn reference(config: &Config) -> Option<Arc<dyn Reference>> {
     config

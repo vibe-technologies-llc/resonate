@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- Switching *Reach the network* off in the window leaves the lyric lookup and the Analysis pane's
-  recognition asking LRCLIB, AcoustID and Shazam until the next start, against `online = false
-  stops every request`
 - A track whose file could not be read when its study ran — an unmounted drive, a share that was
   down — is marked as one that will not decode and is never studied again until its size or time
   changes, so a whole drive's rows go without verdict, loudness or print

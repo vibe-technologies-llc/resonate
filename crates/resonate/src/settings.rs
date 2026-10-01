@@ -87,6 +87,7 @@ impl Settings for File {
                     online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
                 }
                 SettingChange::Forget(SettingKey::Contact) => online::introduce(None),
+                SettingChange::Store(Setting::Online(on)) => online::reach(*on),
                 _ => {}
             }
         }

@@ -407,6 +407,10 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.enabled = on);
         self.library
             .update(cx, |library, cx| library.set_online(on, cx));
+        self.analysis.update(cx, |analysis, cx| {
+            analysis.reach(on);
+            cx.notify();
+        });
         self.store(&Setting::Online(on), cx);
     }
 

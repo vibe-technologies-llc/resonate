@@ -672,7 +672,9 @@ impl RootView {
         });
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
         let visualiser = cx.new(|cx| Visualiser::new(player.clone(), cx));
-        let analysis = cx.new(|_| AnalysisModel::new(engine, catalog, Arc::clone(&fingerprinters)));
+        let reaching = cx.global::<ResonateApp>().online.enabled;
+        let analysis =
+            cx.new(|_| AnalysisModel::new(engine, catalog, Arc::clone(&fingerprinters), reaching));
         cx.observe(&analysis, |_, _, cx| cx.notify()).detach();
         let listens = cx.global::<ResonateApp>().listens.clone();
         let listen = cx.new(|_| ListenModel::new(listens));

@@ -52,7 +52,14 @@ listener, every counted play, and only under a token.
   every client sharing it from their next request. The binary builds every client over one
   `online::INTRODUCTION` (made from the key on first use), and the settings file's `store` and
   `forget` of `Setting::Contact` call `online::introduce`, so a contact typed into the Online card
-  needs no restart (`a_contact_given_after_the_client_was_built_is_what_the_next_request_says`). A
+  needs no restart (`a_contact_given_after_the_client_was_built_is_what_the_next_request_says`).
+  **Whether a client reaches the network is read per request too.** `Client::reach` sets a switch
+  `exchange` reads before it takes a turn, and a client switched off answers `Error::Offline` having
+  sent nothing (`a_client_switched_off_asks_nothing_until_switched_on_again`); every seam's error
+  reads it as unreachable with `NetworkDown`. The settings file's `store` of `Setting::Online` calls
+  `online::reach` on the process's one client, so *Reach the network* switched off in the window stops
+  LRCLIB, AcoustID, Shazam and every other service at once rather than at the next start, and `Lrclib`
+  answers what the catalog kept, or nothing, without a refusal while it is off. A
   contact written into the file by hand or by another process is heard likewise:
   `Introduction::following` carries a `Reintroduction` it asks before each request, and the
   binary's is `Followed`, which weighs the modification time of the file `Config::read_from` names

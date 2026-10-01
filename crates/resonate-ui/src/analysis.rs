@@ -78,6 +78,7 @@ pub(crate) struct AnalysisModel {
     player: Arc<Player>,
     library: Arc<Library>,
     fingerprinters: Arc<Fingerprinters>,
+    reaching: bool,
     following: Option<Row>,
     studying: Studying,
     hearing: Hearing,
@@ -97,11 +98,13 @@ impl AnalysisModel {
         player: Arc<Player>,
         library: Arc<Library>,
         fingerprinters: Arc<Fingerprinters>,
+        reaching: bool,
     ) -> Self {
         Self {
             player,
             library,
             fingerprinters,
+            reaching,
             following: None,
             studying: Studying::Idle,
             hearing: Hearing::Unasked,
@@ -126,7 +129,11 @@ impl AnalysisModel {
     }
 
     pub(crate) fn recognises(&self) -> bool {
-        self.fingerprinters.has_a_source()
+        self.reaching && self.fingerprinters.has_a_source()
+    }
+
+    pub(crate) fn reach(&mut self, on: bool) {
+        self.reaching = on;
     }
 
     pub(crate) fn follow(&mut self, row: Row, cx: &mut Context<Self>) {
@@ -234,7 +241,7 @@ impl AnalysisModel {
     }
 
     fn hear(&mut self, row: Row, drawn: Arc<Drawn>, cx: &mut Context<Self>) {
-        if !matches!(self.hearing, Hearing::Unasked) {
+        if !self.reaching || !matches!(self.hearing, Hearing::Unasked) {
             return;
         }
         self.hearing = Hearing::Asking;

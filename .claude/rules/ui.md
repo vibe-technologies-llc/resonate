@@ -1572,7 +1572,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   allows it, and the lookup's task polls at `SCAN_POLL` and reloads every `POLLS_PER_RELOAD` polls as
   the scan's does, so rows and covers arrive under the panes as the reference answers. Turning Online
   off under a run does not take the reference away; it stops `enrich` starting, and `has_reference` is
-  what the card reads to say a run started offline has nothing to reach until the next start.
+  what the card reads to say a run started offline has nothing to reach until the next start. The
+  switch is heard by the shared client at once (`online.md`), and `AnalysisModel::reach` stops the
+  Analysis pane asking for a recognition while it is off, `recognises` answering false.
 - **A file changed under a root while the window runs is followed on its own, and one taken away is
   forgotten at once rather than scanned for.** `resonate_library::RootsWatch` is a recursive inotify
   watch over the roots, through `notify`, sorting what it hears two ways. A path *gone* — an audio file

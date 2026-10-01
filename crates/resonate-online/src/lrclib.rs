@@ -300,11 +300,14 @@ impl LyricProvider for Lrclib {
 
         let kept = self.remembered(wanted);
         if let Some(kept) = &kept
-            && !kept.is_due(std::time::SystemTime::now())
+            && (!kept.is_due(std::time::SystemTime::now()) || !self.client.is_reaching())
         {
             return kept.sung.as_ref().map_or(Ok(None), set_of);
         }
 
+        if !self.client.is_reaching() {
+            return Ok(None);
+        }
         match told(&self.client, &asked) {
             Ok(told) => {
                 self.keep(wanted, told.as_ref());

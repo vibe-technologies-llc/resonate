@@ -63,6 +63,9 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("{host:?} was not asked for {op:?}, the network being switched off")]
+    Offline { host: Host, op: LookupOp },
+
     #[error("{host:?} refused {op:?} with status {status}")]
     Refused {
         host: Host,
@@ -119,6 +122,10 @@ impl Error {
                 provider,
                 cause: source,
             },
+            Self::Offline { .. } => resonate_eq::Error::Unreachable {
+                provider,
+                cause: switched_off(),
+            },
             Self::Refused { .. } | Self::Unreadable { .. } | Self::TooLarge { .. } => {
                 resonate_eq::Error::Unreadable { provider, op }
             }
@@ -131,6 +138,10 @@ impl Error {
                 provider,
                 cause: source,
             },
+            Self::Offline { .. } => resonate_lyrics::Error::Unreachable {
+                provider,
+                cause: switched_off(),
+            },
             Self::Refused { .. } | Self::Unreadable { .. } | Self::TooLarge { .. } => {
                 resonate_lyrics::Error::Unreadable { provider, op }
             }
@@ -141,7 +152,9 @@ impl Error {
 impl Error {
     pub fn into_listen_error(self, service: SourceId) -> resonate_listen::Error {
         match self {
-            Self::Unreachable { .. } => resonate_listen::Error::Unreachable { service },
+            Self::Unreachable { .. } | Self::Offline { .. } => {
+                resonate_listen::Error::Unreachable { service }
+            }
             Self::Refused { status, .. } => resonate_listen::Error::Refused { service, status },
             Self::Unreadable { .. } => resonate_listen::Error::Unreadable { service },
             Self::TooLarge { .. } => resonate_listen::Error::TooLarge { service },
@@ -153,10 +166,18 @@ impl From<Error> for resonate_library::Error {
     fn from(error: Error) -> Self {
         match error {
             Error::Unreachable { op, source, .. } => Self::Unreachable { op, source },
+            Error::Offline { op, .. } => Self::Unreachable {
+                op,
+                source: switched_off(),
+            },
             Error::Refused { op, status, .. } => Self::Refused { op, status },
             Error::Unreadable { op, .. } | Error::TooLarge { op, .. } => Self::Unreadable { op },
         }
     }
+}
+
+fn switched_off() -> io::Error {
+    io::Error::from(io::ErrorKind::NetworkDown)
 }
 
 pub type Result<T> = result::Result<T, Error>;
