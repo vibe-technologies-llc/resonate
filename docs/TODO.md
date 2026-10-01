@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- *Not this record* clears the release rows but keeps the recording id and ISRC the wrong match
-  stamped, so the next lookup takes them as tagged and renames the tracks to the same recording as
-  an exact identification
 - A fingerprint match at the strict score files the track under the matched recording's artist even
   where the file named another, so the row reads one artist and is listed under a second
 - A seekable track with no declared length, such as a bare ADTS `.aac`, refuses every seek, so a

@@ -1017,7 +1017,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `tagged_title` and `tagged_artist` — loses the release's title and a release-track id naming a removed
   row, is put back to never asked so the next lookup identifies it afresh, and is re-indexed under its
   name, so a track renamed by a wrong pressing is not left billed and found as that pressing had it
-  (`forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again`). Label,
+  (`forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_tracks_again`). A recording
+  id or ISRC one of the release's rows holds goes too, since pairing stamped it from the row and the
+  next lookup would take it as tagged and rename the track to the refused recording as an exact
+  identification; such a row is marked `probe_again`, so the next scan reads back whatever the file
+  itself carries (`forgetting_a_match_takes_away_the_recording_ids_and_codes_it_stamped`). Label,
   catalogue number and barcode stay, the tags perhaps having given them. `take_release` and `take_group`
   are where every route lands, tagged id and search alike, and both ask `Library::refuses` first and pass
   a refused id over as `nothing_landed`, so the next lookup settles on another pressing or nothing. Only

@@ -9676,6 +9676,36 @@ fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_trac
 }
 
 #[test]
+fn forgetting_a_match_takes_away_the_recording_ids_and_codes_it_stamped() -> Result<()> {
+    let (tree, library, database) = scanned_orbits_on_disk()?;
+    let mut rows = orbits_rows();
+    rows[0].recording = Some(mbid(RECORDING));
+    rows[0].isrc = Some("GBN9Y1100089".to_owned());
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(rows, Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+    let file = tree.path().join("1.wav");
+    assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
+    assert_eq!(
+        stored(&database, &file).isrc.as_deref(),
+        Some("GBN9Y1100089")
+    );
+
+    assert!(library.forget_the_match(only_album(&library)?.id)?);
+
+    assert_eq!(
+        recorded(&database, &file),
+        None,
+        "the refused match's recording id was kept to be taken as tagged"
+    );
+    assert_eq!(stored(&database, &file).isrc, None);
+    Ok(())
+}
+
+#[test]
 fn a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took() -> Result<()> {
     const THE_JAPANESE_PRESSING: &str = "2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a";
 

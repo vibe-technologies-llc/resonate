@@ -320,12 +320,23 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
     tx.execute(
         "UPDATE tracks SET
+             probe_again        = probe_again
+                                  OR coalesce(mbid IN (SELECT recording_mbid FROM release_tracks
+                                                        WHERE album_id = ?1), 0)
+                                  OR coalesce(isrc IN (SELECT isrc FROM release_tracks
+                                                        WHERE album_id = ?1), 0),
              title              = coalesce(tagged_title, title),
              artist             = coalesce(tagged_artist, artist),
              release_title      = NULL,
              release_track_mbid = CASE WHEN release_track_mbid IN
                                       (SELECT track_mbid FROM release_tracks WHERE album_id = ?1)
                                   THEN NULL ELSE release_track_mbid END,
+             mbid               = CASE WHEN mbid IN
+                                      (SELECT recording_mbid FROM release_tracks WHERE album_id = ?1)
+                                  THEN NULL ELSE mbid END,
+             isrc               = CASE WHEN isrc IN
+                                      (SELECT isrc FROM release_tracks WHERE album_id = ?1)
+                                  THEN NULL ELSE isrc END,
              asks               = 0,
              refusals           = 0,
              asked              = NULL,
