@@ -106,7 +106,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   ID3v2.3 splits a date three ways, and symphonia hands its `TDAT` and `TIME` over as a recording date
   and time that would outrank `TYER`: `Id3DatePart` reads them by their frame's own key instead, a
   `TDAT` of `DDMM` joining the year as `YYYY-MM-DD` and the clock never being a date
-  (`an_id3v2_3_day_and_month_joins_the_year_and_the_clock_is_no_date`). A
+  (`an_id3v2_3_day_and_month_joins_the_year_and_the_clock_is_no_date`). A `COMM` frame whose
+  description begins `iTun` — `iTunNORM`, `iTunSMPB`, `iTunes_CDDB_1` — is iTunes keeping its own notes
+  in the comment frame, and `is_an_itunes_note` passes it over, so the listener's own comment is not
+  replaced by hexadecimal whichever frame came last
+  (`an_itunes_note_kept_in_a_comment_frame_is_not_the_tracks_comment`). A
   tagger writing an empty frame rather than none otherwise files a track under a nameless artist and
   a titleless album, and `stem.rs` never runs for a title that is *there*; read as none, the file is
   named from its stem and grouped as its non-blank tags say.

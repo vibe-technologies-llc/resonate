@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- An iTunes `COMM` frame (`iTunNORM`, `iTunSMPB`, `iTunes_CDDB_1`) is read as the track's comment
-  whenever it follows the listener's own, since the frame's description is never weighed
 - Folding a name for its artist key and search words drops every combining mark, so kana voicing
   marks and Indic vowel signs vanish: ガラス and カラス, バンド and ハンド become one artist
 - A release pairs its rows with the album's tracks by disc and position before by title, so a

@@ -20,6 +20,8 @@ const CUE_SHEET: &str = "CUESHEET";
 const UNIQUE_FILE_IDENTIFIER: &str = "UFID";
 const MUSICIAN_CREDITS: &str = "TMCL";
 const IDENTIFIER_OWNER: &str = "OWNER";
+const COMMENT_DESCRIPTION: &str = "SHORT_DESCRIPTION";
+const ITUNES_DESCRIPTIONS_BEGIN: &str = "itun";
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
 const R128_ALBUM_GAIN: &str = "R128_ALBUM_GAIN";
@@ -478,6 +480,9 @@ impl Builder {
                 Some(Id3DatePart::Clock) => continue,
                 None => {}
             }
+            if is_an_itunes_note(tag) {
+                continue;
+            }
             for std in id3_list(tag) {
                 self.absorb_one(&std);
             }
@@ -768,6 +773,21 @@ fn loudness_gain(tag: &Tag) -> Option<StandardTag> {
     } else {
         StandardTag::ReplayGainTrackGain(written)
     })
+}
+
+fn is_an_itunes_note(tag: &Tag) -> bool {
+    tag.raw
+        .sub_fields
+        .iter()
+        .flat_map(|fields| fields.iter())
+        .filter(|field| field.field.eq_ignore_ascii_case(COMMENT_DESCRIPTION))
+        .any(|field| match &field.value {
+            RawValue::String(described) => described
+                .trim()
+                .get(..ITUNES_DESCRIPTIONS_BEGIN.len())
+                .is_some_and(|begins| begins.eq_ignore_ascii_case(ITUNES_DESCRIPTIONS_BEGIN)),
+            _ => false,
+        })
 }
 
 fn owned_by_musicbrainz(tag: &Tag) -> bool {
@@ -1082,6 +1102,38 @@ mod tests {
             )]),
         ]);
         assert_eq!(set_of(&retagged).date.as_deref(), Some("2011"));
+    }
+
+    fn described(description: &str, value: &str) -> Tag {
+        Tag::new_std(
+            RawTag::new_with_sub_fields(
+                "COMM",
+                value,
+                vec![RawTagSubField::new(COMMENT_DESCRIPTION, description)].into_boxed_slice(),
+            ),
+            StandardTag::Comment(text(value)),
+        )
+    }
+
+    #[test]
+    fn an_itunes_note_kept_in_a_comment_frame_is_not_the_tracks_comment() {
+        let noted = logged(vec![revision(vec![
+            mapped(
+                "COMM",
+                "ripped from vinyl",
+                StandardTag::Comment(text("ripped from vinyl")),
+            ),
+            described("iTunNORM", " 00000A2B 00000B3C"),
+            described("iTunSMPB", " 00000000 00000210"),
+            described("iTunes_CDDB_1", "9F0B2C0C+180000"),
+        ])]);
+        assert_eq!(set_of(&noted).comment.as_deref(), Some("ripped from vinyl"));
+
+        let alone = logged(vec![revision(vec![described("iTunNORM", " 00000A2B")])]);
+        assert_eq!(set_of(&alone).comment, None);
+
+        let named = logged(vec![revision(vec![described("Liner", "pressed in 1971")])]);
+        assert_eq!(set_of(&named).comment.as_deref(), Some("pressed in 1971"));
     }
 
     #[test]
