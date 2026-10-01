@@ -35,7 +35,7 @@ pub fn print(library: &Library, save: Option<&str>) -> Result<()> {
 
 fn list(suggested: &[Suggestion]) {
     if suggested.is_empty() {
-        println!("the catalog holds too little to suggest anything yet");
+        said!("the catalog holds too little to suggest anything yet");
         return;
     }
 
@@ -49,7 +49,7 @@ fn list(suggested: &[Suggestion]) {
         ]);
     }
 
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 }
 
 fn fills_from(suggestion: &Suggestion) -> String {
@@ -79,6 +79,6 @@ fn keep(library: &Library, suggested: &[Suggestion], name: &str) -> Result<()> {
     };
     let held = library.playlist(id)?.map_or(0, |playlist| playlist.entries);
 
-    println!("{said} from {}, and holds {held} now", fills_from(found));
+    said!("{said} from {}, and holds {held} now", fills_from(found));
     Ok(())
 }

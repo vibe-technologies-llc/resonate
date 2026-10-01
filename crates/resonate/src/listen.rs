@@ -25,7 +25,7 @@ pub fn run(
     if microphones {
         for found in listener.microphones()? {
             let marked = if found.is_default { "*" } else { " " };
-            println!("{marked} {}  {}", found.name, found.description);
+            said!("{marked} {}  {}", found.name, found.description);
         }
         return Ok(());
     }
@@ -58,7 +58,7 @@ pub fn run(
             .iter()
             .map(ToString::to_string)
             .collect();
-        println!("nothing {} knows was heard", asked.join(", "));
+        said!("nothing {} knows was heard", asked.join(", "));
         return Ok(());
     };
     let told = |value: Option<String>| value.unwrap_or_else(|| "—".to_owned());

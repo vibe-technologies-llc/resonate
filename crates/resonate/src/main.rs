@@ -1,3 +1,8 @@
+#![deny(clippy::print_stdout)]
+
+#[macro_use]
+mod said;
+
 mod analyse;
 mod cli;
 mod config;
@@ -226,7 +231,7 @@ fn run() -> Result<()> {
         }) => {
             let library = open_library(&cli, &config)?;
             if *bring_back {
-                println!("{}", brought_back(library.bring_back_dismissed()?));
+                said!("{}", brought_back(library.bring_back_dismissed()?));
             }
             if *read_the_rest && let Some(named) = artist.as_deref() {
                 read_the_rest_of(&library, &config, named)?;
@@ -524,7 +529,7 @@ fn list_sinks() -> Result<()> {
         }
     }
 
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     pipewire.shutdown()?;
     Ok(())
 }
@@ -576,7 +581,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
 
     let summary = until_told(handle)?;
     let stats = summary.stats;
-    println!(
+    said!(
         "discovered {} | added {} | updated {} | moved {} | removed {} | failed {}{}",
         stats.discovered,
         stats.added,
@@ -587,7 +592,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
         broken_down(stats.failed)
     );
     if summary.cancelled {
-        println!("cancelled");
+        said!("cancelled");
     }
     finished(PassKind::Scan, summary.cancelled)?;
 
@@ -610,7 +615,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
                 },
             )?,
         )?)?;
-        print!("{}", enriched(&summary));
+        said_on!("{}", enriched(&summary));
         finished(PassKind::Enrich, summary.cancelled)?;
     }
     Ok(())
@@ -638,7 +643,7 @@ fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<
         )),
         options,
     )?)?;
-    print!("{}", enriched(&summary));
+    said_on!("{}", enriched(&summary));
     finished(PassKind::Enrich, summary.cancelled)
 }
 
@@ -655,7 +660,7 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
         refresh = left.refresh,
         "carrying on a lookup the last run left unfinished"
     );
-    println!("carrying on the lookup a run left unfinished");
+    said!("carrying on the lookup a run left unfinished");
 
     Ok(EnrichOptions {
         refresh: left.refresh,
@@ -725,7 +730,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
 fn wants(library: &Library) -> Result<()> {
     let wanted = library.wants()?;
     if wanted.is_empty() {
-        println!("nothing is wanted");
+        said!("nothing is wanted");
         return Ok(());
     }
 
@@ -744,7 +749,7 @@ fn wants(library: &Library) -> Result<()> {
         ]);
     }
 
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -765,7 +770,7 @@ fn read_the_rest_of(library: &Library, config: &Config, named: &str) -> Result<(
         return Ok(());
     };
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
-    println!(
+    said!(
         "read {} more of {named}'s discography",
         counted(read as u64, "release", "releases")
     );
@@ -810,8 +815,8 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
 
     if tracks.is_empty() && releases.is_empty() {
         match artist {
-            None => println!("nothing is missing"),
-            Some(named) => println!("nothing of {named} is missing"),
+            None => said!("nothing is missing"),
+            Some(named) => said!("nothing of {named} is missing"),
         }
         return Ok(());
     }
@@ -821,7 +826,7 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         None => library.dismissed()?,
         Some(_) => Missing::default(),
     };
-    println!(
+    said!(
         "{} missing across {} · {} not held{}",
         counted(tracks_missing, "track", "tracks"),
         counted(discs_of.len() as u64, "album", "albums"),
@@ -829,27 +834,27 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         dismissed_beside(dismissed)
     );
 
-    println!();
-    println!("TRACKS MISSING");
+    said!();
+    said!("TRACKS MISSING");
     if tracks.is_empty() {
-        println!("every release track the catalog knows of is held");
+        said!("every release track the catalog knows of is held");
     } else {
-        print!("{}", missing_tracks_table(&tracks, &discs_of).render());
+        said_on!("{}", missing_tracks_table(&tracks, &discs_of).render());
     }
 
-    println!();
-    println!("RELEASES NOT HELD");
+    said!();
+    said!("RELEASES NOT HELD");
     if releases.is_empty() {
-        println!("every release of a held artist is held");
+        said!("every release of a held artist is held");
     } else {
-        print!("{}", unheld_releases_table(&releases).render());
+        said_on!("{}", unheld_releases_table(&releases).render());
     }
     if let Some(named) = artist
         && let Some(id) = library.artist_named(named)?
         && let Some(detail) = library.artist_detail(id)?
         && detail.releases_unread > 0
     {
-        println!(
+        said!(
             "MusicBrainz credits {named} on {} more that were not read",
             counted(
                 u64::from(detail.releases_unread),
@@ -928,7 +933,7 @@ fn unheld_releases_table(releases: &[UnheldRelease]) -> Table {
 
 fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
     if !providers.has_a_source() {
-        println!("no provider is registered");
+        said!("no provider is registered");
     }
     let options = if again {
         PollOptions::ASKING_EVERY_WANT
@@ -937,7 +942,7 @@ fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
     };
     let summary = until_told(library.poll(Arc::new(providers), options)?)?;
     let stats = summary.stats;
-    println!(
+    said!(
         "asked {} | offered {} | kept {} | unkept {} | nothing {} | refused {} | late {}",
         stats.asked,
         stats.offered,
@@ -948,14 +953,14 @@ fn poll(library: &Library, providers: Providers, again: bool) -> Result<()> {
         stats.late
     );
     if summary.cancelled {
-        println!("cancelled");
+        said!("cancelled");
     }
     finished(PassKind::Poll, summary.cancelled)
 }
 
 fn roots(library: &Library) -> Result<()> {
     for root in library.roots()? {
-        println!("{}", root.display());
+        said!("{}", root.display());
     }
     Ok(())
 }
@@ -971,15 +976,15 @@ enum Forgotten {
 fn forget(library: &Library, named: &[PathBuf]) -> Result<()> {
     for argument in named {
         match forgotten(library, argument)? {
-            Forgotten::Root => println!("forgot {}", argument.display()),
+            Forgotten::Root => said!("forgot {}", argument.display()),
             Forgotten::Delivered(delivered) => {
-                println!("forgot the delivered {}", delivered.display());
+                said!("forgot the delivered {}", delivered.display());
             }
-            Forgotten::Gone(1) => println!("forgot 1 track gone from {}", argument.display()),
+            Forgotten::Gone(1) => said!("forgot 1 track gone from {}", argument.display()),
             Forgotten::Gone(tracks) => {
-                println!("forgot {tracks} tracks gone from {}", argument.display());
+                said!("forgot {tracks} tracks gone from {}", argument.display());
             }
-            Forgotten::Nothing => println!(
+            Forgotten::Nothing => said!(
                 "{} was neither a library root, a delivered track nor a folder holding a track \
                  that is gone",
                 argument.display()
@@ -1015,7 +1020,7 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
         },
     )?)?;
 
-    print!("{}", tagged(&summary, &library.roots()?, apply));
+    said_on!("{}", tagged(&summary, &library.roots()?, apply));
     finished(PassKind::Retag, summary.cancelled)
 }
 
@@ -1164,10 +1169,10 @@ fn organise(
     })?)?;
 
     if how.walk_back && summary.plan.moves.is_empty() {
-        println!("no applied run is kept to put back");
+        said!("no applied run is kept to put back");
         return Ok(());
     }
-    print!("{}", organised(&summary, &library.roots()?, how.apply));
+    said_on!("{}", organised(&summary, &library.roots()?, how.apply));
     finished(PassKind::Organise, summary.cancelled)
 }
 
@@ -1291,32 +1296,33 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     let plan = plan_output(decoded, &sink, &config, replay_gain);
     pipewire.shutdown()?;
 
-    println!("source: {}", info.spec);
+    said!("source: {}", info.spec);
     if let Packing::DopMarked(rate) = info.packing {
-        println!("dsd:    {rate} ({} Hz, 1-bit)", rate.hz());
+        said!("dsd:    {rate} ({} Hz, 1-bit)", rate.hz());
     }
-    println!("sink:   {} ({})", sink.description, sink.name);
-    println!("output: {} [{:?}]", plan.stream, plan.mode);
+    said!("sink:   {} ({})", sink.description, sink.name);
+    said!("output: {} [{:?}]", plan.stream, plan.mode);
     if let Some(words) = sink.words_for(plan.stream.format)
         && words != Words::Whole
     {
-        println!(
+        said!(
             "words:  offered as {}; the device names {}",
             Words::offered_for(plan.stream.format).spelled(plan.stream.format),
             words.spelled(plan.stream.format)
         );
     }
     if let Some((from, to)) = plan.remix {
-        println!("remix:    {from} -> {to}");
+        said!("remix:    {from} -> {to}");
     }
     if let Some((from, to)) = plan.resample {
-        println!(
+        said!(
             "resample: {from} -> {to} [{:?}, {:?} phase]",
-            config.quality, config.filter_phase
+            config.quality,
+            config.filter_phase
         );
     }
     if let Some(profile) = plan.equalisation.as_ref() {
-        println!(
+        said!(
             "eq:      {} bands, peak {:+.2} dB, preamp {}{}",
             profile.applied(plan.stream.rate),
             profile.peak_db(plan.stream.rate),
@@ -1324,10 +1330,10 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
             above_nyquist(profile.passed_over(plan.stream.rate)),
         );
     } else if config.equaliser.enabled {
-        println!("eq:      on, but nothing this device is bound to shapes the sound");
+        said!("eq:      on, but nothing this device is bound to shapes the sound");
     }
     if let Some(impulse) = plan.convolution.as_ref() {
-        println!(
+        said!(
             "room:     {} taps a channel over {} channels, measured at {}",
             impulse.frames(),
             impulse.channels(),
@@ -1344,20 +1350,20 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
                 )
             },
         );
-        println!(
+        said!(
             "restore: {} a {:?} source, its wall {wall}",
             restoring.restoration.as_str(),
             restoring.tuning
         );
     }
     if plan.true_peak {
-        println!("guard:   true peaks held under -0.1 dBTP");
+        said!("guard:   true peaks held under -0.1 dBTP");
     }
     if let Some(depth) = plan.dither_to {
-        println!("dither:  to {depth} [{:?}]", plan.shaping);
+        said!("dither:  to {depth} [{:?}]", plan.shaping);
     }
     if let Packing::DopMarked(_) = info.packing {
-        println!("dop:     {}", dop_reading(&plan, &sink, &config, info.spec));
+        said!("dop:     {}", dop_reading(&plan, &sink, &config, info.spec));
     }
     Ok(())
 }
@@ -1419,7 +1425,7 @@ fn list_playlists(
         ]);
     }
 
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -1514,22 +1520,22 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
     if let Some(into) = wanted.rename.as_deref() {
         library.rename_playlist(found.id, into)?;
-        println!("{} is called {into} now", found.name);
+        said!("{} is called {into} now", found.name);
         return Ok(());
     }
     if wanted.discard {
         library.remove_playlist(found.id)?;
-        println!("{}", discarded(&found));
+        said!("{}", discarded(&found));
         return Ok(());
     }
     if wanted.pin || wanted.unpin {
         library.pin_playlist(found.id, wanted.pin)?;
-        println!("{}", pinning(&found.name, wanted.pin));
+        said!("{}", pinning(&found.name, wanted.pin));
         return Ok(());
     }
     if let Some(target) = wanted.export.as_deref() {
         let written = library.export_playlist(found.id, target)?;
-        println!(
+        said!(
             "wrote {} rows of {} to {} as {}",
             written.rows,
             found.name,
@@ -1548,40 +1554,40 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         };
         if wanted.keep {
             let moved = library.keep_playlist_in_order(found.id, Some(kept))?;
-            println!("{}", now_kept(moved, &found.name, kept));
+            said!("{}", now_kept(moved, &found.name, kept));
             return Ok(());
         }
         let moved = library.sort_playlist(found.id, kept.order, kept.reading)?;
 
-        println!("{}", reordered(moved, &found.name));
+        said!("{}", reordered(moved, &found.name));
         return Ok(());
     }
     if wanted.by_hand {
         library.keep_playlist_in_order(found.id, None)?;
-        println!(
+        said!(
             "{} is back in hand, and a row added to it lands at the end",
             found.name
         );
         return Ok(());
     }
     if wanted.tidy {
-        println!("{}", tidied(library.prune_playlist(found.id)?, &found.name));
+        said!("{}", tidied(library.prune_playlist(found.id)?, &found.name));
         return Ok(());
     }
     if wanted.fold {
-        println!("{}", folded(library.fold_doubles(found.id)?, &found.name));
+        said!("{}", folded(library.fold_doubles(found.id)?, &found.name));
         return Ok(());
     }
     if let Some(text) = wanted.matching.as_deref().filter(|_| wanted.drop) {
         let dropped = library.remove_matching(found.id, text)?;
-        println!("{}", taken_out(dropped, &found.name, text));
+        said!("{}", taken_out(dropped, &found.name, text));
         return Ok(());
     }
 
     let matching = wanted.matching.as_deref();
     let entries = library.playlist_entries(found.id, matching)?;
     if entries.is_empty() {
-        println!("{} holds nothing to play", found.name);
+        said!("{} holds nothing to play", found.name);
         return Ok(());
     }
 
@@ -1613,7 +1619,7 @@ fn copy_into(
         .playlist(into)?
         .map_or(copied as u32, |playlist| playlist.entries);
 
-    println!(
+    said!(
         "copied {copied} of {} into {target}, which now holds {held}",
         found.name
     );
@@ -1645,12 +1651,12 @@ fn save_query(library: &Library, name: &str, text: &str, wanted: &PlaylistArgs) 
     };
     let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
-    println!(
+    said!(
         "{said}{}, and holds {held} now",
         matching(query.text.as_deref())
     );
     if let Some(reads) = understood(query.text.as_deref()) {
-        println!("it reads that as {reads}");
+        said!("it reads that as {reads}");
     }
     Ok(())
 }
@@ -1699,7 +1705,7 @@ fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
         .playlist(id)?
         .map_or(added as u32, |playlist| playlist.entries);
 
-    println!("added {added} to {name}, which now holds {held}");
+    said!("added {added} to {name}, which now holds {held}");
     Ok(())
 }
 
@@ -1714,7 +1720,7 @@ fn import(library: &Library, files: &[PathBuf], name: Option<&str>) -> Result<()
             .playlist(read.id)?
             .map_or(read.added as u32, |playlist| playlist.entries);
 
-        println!(
+        said!(
             "{}: read {} as {}, added {}, which now holds {held}{}{}{}{}",
             read.name,
             read.format.name(),
@@ -1874,7 +1880,7 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
         },
     )?;
 
-    println!("queued {queued} onto {}", running.name());
+    said!("queued {queued} onto {}", running.name());
     Ok(())
 }
 
@@ -1919,7 +1925,7 @@ fn players() -> Result<()> {
         .collect();
 
     if standing.is_empty() {
-        println!("no player of this build is answering on the session bus");
+        said!("no player of this build is answering on the session bus");
         return Ok(());
     }
 
@@ -1936,7 +1942,7 @@ fn players() -> Result<()> {
         ]);
     }
 
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -1995,7 +2001,7 @@ fn play_queue(
         input::HELP
     };
     let mut readout = Readout::over(keyed.is_some() && io::stdout().is_terminal());
-    println!("{help}");
+    said!("{help}");
     let events = player.events().clone();
     let mut keys = if keyed.is_some() {
         input::keys()
@@ -2144,9 +2150,9 @@ fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Op
 
 fn announce(event: Event) -> bool {
     match event {
-        Event::TrackStarted(track) => println!("started  track {track}"),
-        Event::TrackFinished(track) => println!("finished track {track}"),
-        Event::OutputChanged(status) => println!(
+        Event::TrackStarted(track) => said!("started  track {track}"),
+        Event::TrackFinished(track) => said!("finished track {track}"),
+        Event::OutputChanged(status) => said!(
             "output   {} [{mode:?}] on sink {sink}",
             status.negotiated,
             mode = status.mode,
@@ -2204,7 +2210,7 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
         }),
         Action::Sleep(wanted) => Command::SleepUntil(wanted.until()),
         Action::Help => {
-            println!("{help}");
+            said!("{help}");
             return Ok(());
         }
         Action::Quit => return Ok(()),
@@ -2454,7 +2460,7 @@ fn handed_to(window: &Running, arguments: &[OsString]) -> Result<()> {
         )?;
     }
     window.raise()?;
-    println!("handed to the window already open as {}", window.name());
+    said!("handed to the window already open as {}", window.name());
     Ok(())
 }
 

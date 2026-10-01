@@ -57,7 +57,7 @@ pub fn run(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     }
     if wanted.on || wanted.off {
         config::store(&settings, ConfigKey::Equaliser, wanted.on)?;
-        println!("equaliser: {}", switched(wanted.on));
+        said!("equaliser: {}", switched(wanted.on));
         return Ok(());
     }
 
@@ -116,7 +116,7 @@ fn bound_as(settings: &Path, sink: Option<&NodeName>, binding: &Binding) -> Resu
     }
     config::store(settings, ConfigKey::Equaliser, true)?;
 
-    println!("bound {} to {}", spoken_binding(binding), spoken_of(sink));
+    said!("bound {} to {}", spoken_binding(binding), spoken_of(sink));
     Ok(())
 }
 
@@ -129,7 +129,7 @@ fn unbound_from(settings: &Path, sink: Option<&NodeName>) -> Result<()> {
 
 fn unbind(settings: &Path, sink: Option<&NodeName>) -> Result<()> {
     unbound_from(settings, sink)?;
-    println!("unbound {}", spoken_of(sink));
+    said!("unbound {}", spoken_of(sink));
     Ok(())
 }
 
@@ -143,7 +143,7 @@ fn import(
     if wanted.own {
         let kept = Store::read_in(from)?;
         store.keep_own(sink.map(NodeName::as_str), &kept.profile)?;
-        println!(
+        said!(
             "shaped {} from {}, {} bands",
             spoken_own(sink),
             from.display(),
@@ -157,13 +157,13 @@ fn import(
     let (name, kept) = store.import(from, called.as_ref())?;
 
     if kept.converted {
-        println!(
+        said!(
             "kept a graphic curve as {name}, {} bands at {DRAWN_AT} and fitted again at the rate \
              a stream plays at",
             kept.profile.bands().len()
         );
     } else {
-        println!("kept {name}, {} bands", kept.profile.bands().len());
+        said!("kept {name}, {} bands", kept.profile.bands().len());
     }
     passed_over(&kept);
 
@@ -175,7 +175,7 @@ fn import(
 
 fn passed_over(kept: &Kept) {
     if kept.passed_over > 0 {
-        println!("{} lines were passed over", kept.passed_over);
+        said!("{} lines were passed over", kept.passed_over);
     }
 }
 
@@ -204,7 +204,7 @@ fn export(
     let profile = profile.ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
 
     store.export(&profile, to)?;
-    println!("wrote {spoken} to {}", to.display());
+    said!("wrote {spoken} to {}", to.display());
     Ok(())
 }
 
@@ -226,7 +226,7 @@ fn forget(store: &Store, settings: &Path, config: &Config, name: &str) -> Result
         }
     }
 
-    println!("forgot {name}");
+    said!("forgot {name}");
     Ok(())
 }
 
@@ -245,7 +245,7 @@ fn forget_own(
         unbound_from(settings, sink)?;
     }
 
-    println!("forgot {}", spoken_own(sink));
+    said!("forgot {}", spoken_own(sink));
     Ok(())
 }
 
@@ -271,7 +271,7 @@ fn list(store: &Store, config: &Config) -> Result<()> {
     let names = store.names()?;
     let owners = store.owners()?;
     if names.is_empty() && owners.is_empty() {
-        println!("no profiles are kept in {}", store.folder().display());
+        said!("no profiles are kept in {}", store.folder().display());
         return Ok(());
     }
 
@@ -280,7 +280,7 @@ fn list(store: &Store, config: &Config) -> Result<()> {
     }
     if !owners.is_empty() {
         if !names.is_empty() {
-            println!();
+            said!();
         }
         own_curves(store, config, &owners)?;
     }
@@ -301,7 +301,7 @@ fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) -> Resu
             if bound { "yes" } else { "—" }.to_owned(),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -329,12 +329,12 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) -> Result<()>
             },
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
 fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> {
-    println!("equaliser: {}", switched(config.equaliser_on()));
+    said!("equaliser: {}", switched(config.equaliser_on()));
 
     match config
         .equaliser_for
@@ -352,9 +352,9 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
             for (device, binding) in bindings.by_sink() {
                 table.push(vec![device.as_str().to_owned(), spoken_binding(binding)]);
             }
-            print!("{}", table.render());
+            said_on!("{}", table.render());
         }
-        None => println!("nothing is bound to any device"),
+        None => said!("nothing is bound to any device"),
     }
 
     let Some((owner, binding)) = bound_to(config, sink) else {
@@ -365,21 +365,21 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         _ => spoken_binding(binding),
     };
     let Some(profile) = curve_of(store, owner, binding)? else {
-        println!("\n{spoken} is bound but no profile of that name is kept");
+        said!("\n{spoken} is bound but no profile of that name is kept");
         return Ok(());
     };
 
-    println!("\nfor {}: {spoken}", spoken_of(sink));
-    println!("preamp: {}", profile.preamp());
+    said!("\nfor {}: {spoken}", spoken_of(sink));
+    said!("preamp: {}", profile.preamp());
     if let Some(target) = profile.target() {
-        println!(
+        said!(
             "fitted to a graphic curve of {} points: the bands below are its fit at {DRAWN_AT}, \
              and a stream at another rate is fitted again at its own",
             target.points().len()
         );
     }
     if profile.bands().is_empty() {
-        println!("it holds no bands");
+        said!("it holds no bands");
         return Ok(());
     }
 
@@ -398,8 +398,8 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
             },
         ]);
     }
-    print!("{}", table.render());
-    println!("peak: {:+.2} dB", profile.peak_db(DRAWN_AT));
+    said_on!("{}", table.render());
+    said!("peak: {:+.2} dB", profile.peak_db(DRAWN_AT));
     Ok(())
 }
 
@@ -413,7 +413,7 @@ fn find(config: &Config, text: &str) -> Result<()> {
     let (_, catalogue) = asked(config)?;
     let hits = search(&catalogue, text);
     if hits.is_empty() {
-        println!("nothing measured answers to that");
+        said!("nothing measured answers to that");
         return Ok(());
     }
 
@@ -426,7 +426,7 @@ fn find(config: &Config, text: &str) -> Result<()> {
             device.id.as_str().to_owned(),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -438,19 +438,20 @@ fn suggested(cli: &Cli, config: &Config) -> Result<()> {
     )?;
     pipewire.shutdown()?;
 
-    println!("sink:   {} ({})", sink.description, sink.name);
+    said!("sink:   {} ({})", sink.description, sink.name);
 
     let (_, catalogue) = asked(config)?;
     match suggest(&catalogue, &sink.description).and_then(|found| catalogue.device(found)) {
         Some(device) => {
-            println!("looks like: {}", device.shown());
-            println!(
+            said!("looks like: {}", device.shown());
+            said!(
                 "fetch it:   resonate eq --fetch \"{}\" --for {}",
-                device.id, sink.name
+                device.id,
+                sink.name
             );
         }
         None => {
-            println!("nothing measured answers to that name clearly enough to be worth guessing at")
+            said!("nothing measured answers to that name clearly enough to be worth guessing at")
         }
     }
     Ok(())
@@ -472,7 +473,7 @@ fn fetch(
 
     if wanted.own {
         store.keep_own(sink.map(NodeName::as_str), &profile)?;
-        println!(
+        said!(
             "shaped {} from {id}, {} bands",
             spoken_own(sink),
             profile.bands().len()
@@ -485,7 +486,7 @@ fn fetch(
         None => ProfileName::after(id.as_str().rsplit('/').next().unwrap_or(device)),
     };
     store.keep(&name, &profile)?;
-    println!("kept {name}, {} bands", profile.bands().len());
+    said!("kept {name}, {} bands", profile.bands().len());
 
     if wanted.r#for.is_some() {
         return bind(store, settings, sink, name.as_str());

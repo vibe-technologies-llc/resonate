@@ -68,7 +68,7 @@ pub fn set(spoken: &str, player: Option<&str>) -> Result<()> {
     let running = reached(player)?;
     running.set_sleep(wanted.until())?;
 
-    println!("{}: {}", running.name(), reads_as(&running)?);
+    said!("{}: {}", running.name(), reads_as(&running)?);
     Ok(())
 }
 

@@ -25,7 +25,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         .iter()
         .filter(|track| track.studied.recognised.is_some())
         .count();
-    println!(
+    said!(
         "studied {} | genuine {} | suspect {} | fake {} | lossy {} | not judged {} | recognised \
          {recognised} | misnamed {misnamed}",
         every.len(),
@@ -42,7 +42,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         library.studies(filter)?
     };
     if shown.is_empty() {
-        println!("nothing studied matches");
+        said!("nothing studied matches");
         return Ok(());
     }
 
@@ -52,7 +52,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
     for track in &shown {
         table.push(row(track));
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
     Ok(())
 }
 
@@ -70,7 +70,7 @@ pub fn take(library: &Library, location: &MediaLocation, span: Option<FrameSpan>
             location: location.clone(),
         })?;
 
-    println!(
+    said!(
         "{} — {} | recording {} | heard at {}",
         table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
         table::on_one_line(&taken.title),

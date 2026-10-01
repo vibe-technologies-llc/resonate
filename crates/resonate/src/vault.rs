@@ -26,12 +26,13 @@ pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()
 
 fn release(library: &Library, args: &VaultArgs) -> Result<()> {
     let released = library.release_from_vault(&filed_from(&args.roots))?;
-    println!(
+    said!(
         "released {} | kept {} the vault holds the only copy of",
-        released.released, released.stranded
+        released.released,
+        released.stranded
     );
     if released.released > 0 {
-        println!("resonate vault --prune takes away what nothing names any more");
+        said!("resonate vault --prune takes away what nothing names any more");
     }
     Ok(())
 }
@@ -40,10 +41,10 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     let held = library.holdings()?;
     let objects = library.vault_objects()?;
 
-    println!("root {}", vault.root().display());
+    said!("root {}", vault.root().display());
 
     if objects.is_empty() {
-        println!("the vault holds nothing yet; resonate vault --import says what it would take");
+        said!("the vault holds nothing yet; resonate vault --import says what it would take");
         return Ok(());
     }
 
@@ -64,14 +65,14 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
             bytes_text(was.saturating_sub(bytes)),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 
     let bytes: u64 = objects.iter().map(|held| held.bytes).sum();
     let was: u64 = objects.iter().map(|held| held.was_bytes).sum();
     let unvalidated = objects.iter().filter(|held| !held.validated).count();
     let loose = library.vault_objects_nothing_names()?.len();
 
-    println!(
+    said!(
         "objects {} | held {} | sources {} | saved {} | covers {} | pictures {}",
         held.objects,
         bytes_text(bytes),
@@ -81,7 +82,7 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
         bytes_text(held.cover_bytes)
     );
     if unvalidated > 0 || loose > 0 {
-        println!("unvalidated {unvalidated} | named by nothing {loose}");
+        said!("unvalidated {unvalidated} | named by nothing {loose}");
     }
     Ok(())
 }
@@ -97,7 +98,7 @@ fn import(library: &Library, args: &VaultArgs) -> Result<()> {
         },
     )?)?;
 
-    print!("{}", imported(&summary, args.apply));
+    said_on!("{}", imported(&summary, args.apply));
     finished(PassKind::Import, summary.cancelled)
 }
 
@@ -192,7 +193,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
 fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     let objects = library.vault_objects()?;
     if objects.is_empty() {
-        println!("the vault holds nothing to weigh");
+        said!("the vault holds nothing to weigh");
         return Ok(());
     }
 
@@ -209,9 +210,9 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     }
 
     for path in &moved {
-        println!("did not read back as what went in: {}", path.display());
+        said!("did not read back as what went in: {}", path.display());
     }
-    println!(
+    said!(
         "weighed {} | held {held} | moved {}",
         objects.len(),
         moved.len()
@@ -221,9 +222,12 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
 
 fn prune(library: &Library) -> Result<()> {
     let pruned = library.prune_the_vault()?;
-    println!(
+    said!(
         "objects {} | covers {} | staged {} | left {}",
-        pruned.objects, pruned.covers, pruned.staged, pruned.left
+        pruned.objects,
+        pruned.covers,
+        pruned.staged,
+        pruned.left
     );
     Ok(())
 }

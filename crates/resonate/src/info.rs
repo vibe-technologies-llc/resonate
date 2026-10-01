@@ -64,14 +64,14 @@ pub fn print(path: &Path, sources: &Sources, config: &EngineConfig, graph: bool)
 }
 
 pub(crate) fn heading(title: &str) {
-    println!("\n{title}");
-    println!("{}", "─".repeat(title.len()));
+    said!("\n{title}");
+    said!("{}", "─".repeat(title.len()));
 }
 
 pub(crate) fn pairs(rows: Vec<(&str, String)>) {
     let width = rows.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
     for (name, value) in rows {
-        println!("  {name:<width$}  {value}");
+        said!("  {name:<width$}  {value}");
     }
 }
 
@@ -137,7 +137,7 @@ fn cut_table(cut: &CueFile, rate: Option<(SampleRate, Option<Frames>)>) {
             length,
         ]);
     }
-    println!("{}", table.render());
+    said!("{}", table.render());
 }
 
 fn started(start: CueStart, rate: Option<(SampleRate, Option<Frames>)>) -> String {
@@ -235,7 +235,7 @@ fn boxes(layout: &resonate_codec::BoxLayout) {
             bytes_text(entry.bytes),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 }
 
 fn bitrate(profile: &StreamProfile) {
@@ -283,7 +283,7 @@ fn bitrate(profile: &StreamProfile) {
         kbps(p95),
         kbps(p99),
     ]);
-    print!("\n{}", table.render());
+    said_on!("\n{}", table.render());
 }
 
 fn plot(profile: &StreamProfile) {
@@ -307,11 +307,11 @@ fn plot(profile: &StreamProfile) {
                 BLOCKS[(filled.clamp(0.0, 1.0) * 8.0).round() as usize]
             })
             .collect();
-        println!("  {:>9} │{line}", format!("{:.0}k", label / 1_000.0));
+        said!("  {:>9} │{line}", format!("{:.0}k", label / 1_000.0));
     }
 
-    println!("  {:>9} └{}", "", "─".repeat(series.len()));
-    println!(
+    said!("  {:>9} └{}", "", "─".repeat(series.len()));
+    said!(
         "  {:>9}  0s{:>width$}",
         "",
         format!("{:.0}s", profile.duration_seconds()),
@@ -321,7 +321,7 @@ fn plot(profile: &StreamProfile) {
 
 fn tags(tags: &[RawTag]) {
     if tags.is_empty() {
-        println!("  none");
+        said!("  none");
         return;
     }
 
@@ -333,7 +333,7 @@ fn tags(tags: &[RawTag]) {
             on_one_line(&tag.value),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 }
 
 fn on_one_line(value: &TagValue) -> String {

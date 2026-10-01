@@ -103,6 +103,14 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   will not is quiet a second after the signal. The `Player` reaches the thread as an `Arc` from both
   call sites, and `Player::send` only pushes onto a channel, so it is safe from a signal handler's
   thread and answers `EngineStopped` where the engine has gone.
+- **What the binary prints goes through `said!` and `said_on!`, never `println!`.** `said.rs` writes
+  to the standard output and, on a broken pipe — a table piped into `head` or a pager quit early —
+  notes that nobody is reading and writes nothing more, where `println!` panicked and a release build
+  aborted. It does not exit: a `tag --apply` or an `organise --apply` printing as it goes finishes
+  the files in hand and exits as it would have
+  (`a_reader_gone_is_noted_once_and_nothing_more_is_written`); `main.rs` denies
+  `clippy::print_stdout`, so a `println!` fails the lint. `eprintln!` is left alone; a closed standard
+  error has nothing to say to.
 - **`resonate play` with nothing to play says so and exits 1** — `NoFileNamed` for no argument,
   `NothingPlayableNamed` where every argument was passed over (a sheet with no row, a cut that
   would not read) — rather than opening a transport with no rows and waiting for keys.

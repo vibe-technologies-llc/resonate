@@ -13,7 +13,7 @@ const NOTHING_WAS_HEARD: &str = "nothing was played";
 pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
     let window = Window::from(window);
     let counts = library.statistics(window)?;
-    println!("{}", summarised(counts, window));
+    said!("{}", summarised(counts, window));
 
     if counts.plays == 0 {
         return Ok(());
@@ -32,10 +32,10 @@ pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
 }
 
 fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
-    println!();
-    println!("{heading}");
+    said!();
+    said!("{heading}");
     if rows.is_empty() {
-        println!("{NOTHING_WAS_HEARD}");
+        said!("{NOTHING_WAS_HEARD}");
         return;
     }
 
@@ -47,7 +47,7 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
             heard_for(row.listened),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 }
 
 fn summarised(counts: Statistics, window: Window) -> String {

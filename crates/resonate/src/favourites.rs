@@ -37,14 +37,14 @@ pub fn print(library: &Library, wanted: &FavouritesArgs) -> Result<()> {
 
 fn draw(drawn: &mut bool, heading: &'static str, table: Option<Table>) {
     if *drawn {
-        println!();
+        said!();
     }
     *drawn = true;
-    println!("{heading}");
+    said!("{heading}");
 
     match table {
-        Some(table) => print!("{}", table.render()),
-        None => println!("nothing here is a favourite yet"),
+        Some(table) => said_on!("{}", table.render()),
+        None => said!("nothing here is a favourite yet"),
     }
 }
 

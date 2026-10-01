@@ -148,9 +148,9 @@ fn stream(analysis: &Analysis, span: Option<FrameSpan>) {
 
 fn verdict(analysis: &Analysis) {
     let judgement = &analysis.study.judgement;
-    println!("  {}", judgement.verdict.told());
+    said!("  {}", judgement.verdict.told());
     for finding in &judgement.findings {
-        println!("  · {}", finding.told());
+        said!("  · {}", finding.told());
     }
 }
 
@@ -242,9 +242,9 @@ fn bars(series: &[f32], floor: f32, top: f32, label: impl Fn(f32) -> String) {
                 BLOCKS[(filled.clamp(0.0, 1.0) * 8.0).round() as usize]
             })
             .collect();
-        println!("  {:>9} │{line}", label(at));
+        said!("  {:>9} │{line}", label(at));
     }
-    println!("  {:>9} └{}", "", "─".repeat(series.len()));
+    said!("  {:>9} └{}", "", "─".repeat(series.len()));
 }
 
 fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
@@ -271,8 +271,8 @@ fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
             }
         })
         .collect();
-    println!("  {:>9}  {marked}", "");
-    println!(
+    said!("  {:>9}  {marked}", "");
+    said!(
         "  {:>9}  0 kHz{:>width$}",
         "",
         format!("{:.1} kHz", nyquist / HZ_A_KILOHERTZ),
@@ -300,7 +300,7 @@ fn waveform(envelope: &Envelope) {
         })
         .collect();
     if columns.is_empty() || envelope.frames() == Frames::ZERO {
-        println!("  nothing was heard");
+        said!("  nothing was heard");
         return;
     }
 
@@ -320,29 +320,29 @@ fn waveform(envelope: &Envelope) {
             .iter()
             .map(|(high, _, rms)| cell(*high, *rms, at))
             .collect();
-        println!(
+        said!(
             "  {:>9} │{line}",
             format!("{:+.2}", (row + 1) as f32 / side)
         );
     }
-    println!("  {:>9} ┼{}", "0", "─".repeat(columns.len()));
+    said!("  {:>9} ┼{}", "0", "─".repeat(columns.len()));
     for row in 0..WAVEFORM_ROWS_A_SIDE {
         let at = (row as f32 + 0.5) / side;
         let line: String = columns
             .iter()
             .map(|(_, low, rms)| cell(*low, *rms, at))
             .collect();
-        println!(
+        said!(
             "  {:>9} │{line}",
             format!("{:+.2}", -((row + 1) as f32) / side)
         );
     }
-    println!("  {:>9}  {WAVEFORM_RMS} rms  {WAVEFORM_PEAK} peak", "");
+    said!("  {:>9}  {WAVEFORM_RMS} rms  {WAVEFORM_PEAK} peak", "");
 }
 
 fn printed(analysis: &Analysis) {
     let Some(print) = analysis.study.print.as_ref() else {
-        println!("  the stream could not be fingerprinted");
+        said!("  the stream could not be fingerprinted");
         return;
     };
     let encoded = print.encoded();
@@ -361,14 +361,14 @@ fn printed(analysis: &Analysis) {
 
 fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerprinters) {
     if !fingerprinters.has_a_source() {
-        println!(
+        said!(
             "  nothing to ask: set `acoustid-key` in config.toml, and leave `online` on, to \
              recognise what a file is"
         );
         return;
     }
     let Some(print) = analysis.study.print.clone() else {
-        println!("  there is no print to ask with");
+        said!("  there is no print to ask with");
         return;
     };
 
@@ -381,11 +381,11 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
         print,
     });
     if recognition.refused && recognition.matches.is_empty() {
-        println!("  the recognition service refused or could not be reached");
+        said!("  the recognition service refused or could not be reached");
         return;
     }
     if recognition.matches.is_empty() {
-        println!("  nothing the service holds sounds like this");
+        said!("  nothing the service holds sounds like this");
         return;
     }
 
@@ -399,7 +399,7 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
             heard.recording.to_string(),
         ]);
     }
-    print!("{}", table.render());
+    said_on!("{}", table.render());
 }
 
 #[cfg(test)]

@@ -1,7 +1,4 @@
-use std::{
-    io::{self, Write as _},
-    time::Duration,
-};
+use std::time::Duration;
 
 use resonate_engine::{Asleep, PlaybackState, PlayerState, RepeatMode, TrackState, Until};
 
@@ -31,8 +28,8 @@ impl Readout {
 
     pub fn clear(&mut self) {
         if self.drawn {
-            print!("{CLEAR_THE_LINE}");
-            let _ = io::stdout().flush();
+            said_on!("{CLEAR_THE_LINE}");
+            crate::said::flushed();
             self.drawn = false;
         }
     }
@@ -41,8 +38,8 @@ impl Readout {
         if !self.live {
             return;
         }
-        print!("{CLEAR_THE_LINE}{}", line_of(state, &self.typing));
-        let _ = io::stdout().flush();
+        said_on!("{CLEAR_THE_LINE}{}", line_of(state, &self.typing));
+        crate::said::flushed();
         self.drawn = true;
     }
 }

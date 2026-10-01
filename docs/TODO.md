@@ -26,8 +26,6 @@ service or a format — and is not worked until that moves; everything else is o
   album, and leaves its study and lyric threads working through the rest of the queue
 - Dismissing or withdrawing a want while a poll runs ends the poll with an unknown want, leaving
   every want after it untried
-- A table piped into `head` or a pager that quits early panics on the broken pipe and aborts the
-  release build
 - Names from tags, sheets and services reach the terminal with their control characters through
   `listen`, `info`, `organise`, `tag`, `vault --import`, `import` and `suggest`, outside the tables
   that make them safe

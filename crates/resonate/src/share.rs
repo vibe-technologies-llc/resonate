@@ -23,7 +23,7 @@ pub fn print(
         return Err(Error::NothingToShare);
     };
 
-    println!("{link}");
+    said!("{link}");
     Ok(())
 }
 
