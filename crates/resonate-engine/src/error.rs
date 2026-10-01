@@ -155,7 +155,6 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::SeekBackwardUnsupported { .. }
         | Read::SeekInvalidTrack { .. } => Cause::CannotSeek,
         Read::TrackPropertyMissing { .. }
-        | Read::UnknownDuration { .. }
         | Read::ResetRequired { .. }
         | Read::Symphonia { .. }
         | Read::DsdChunkMissing { .. }

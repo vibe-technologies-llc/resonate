@@ -121,7 +121,6 @@ impl Failure {
             | Codec::NoSuchSource { .. }
             | Codec::OpenTookTooLong { .. }
             | Codec::LocatorNotUsable { .. }
-            | Codec::UnknownDuration { .. }
             | Codec::SeekOutOfRange { .. }
             | Codec::NotSeekable { .. }
             | Codec::SeekBackwardUnsupported { .. }

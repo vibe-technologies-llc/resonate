@@ -722,13 +722,9 @@ impl Decoder {
                 location: self.location.clone(),
             });
         }
-        let Some(duration) = self.info.duration else {
-            return Err(Error::UnknownDuration {
-                location: self.location.clone(),
-                track: self.track(),
-            });
-        };
-        if to > duration {
+        if let Some(duration) = self.info.duration
+            && to > duration
+        {
             return Err(Error::SeekOutOfRange {
                 requested: to,
                 duration,
@@ -762,13 +758,6 @@ impl Decoder {
         self.position = landed.at;
         self.skip(landed.short_of_the_music.get())?;
         Ok(())
-    }
-
-    fn track(&self) -> StreamTrackId {
-        match &self.reading {
-            Held::Coded(coded) => coded.track,
-            Held::Dsd(_) => StreamTrackId(0),
-        }
     }
 
     fn output_spec(&self) -> StreamSpec {

@@ -1211,6 +1211,75 @@ fn a_bare_adts_stream_decodes_as_the_media_type_the_desktop_advertises_promises(
     );
 }
 
+struct Unmeasured(Cursor<Vec<u8>>);
+
+impl Read for Unmeasured {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl Seek for Unmeasured {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.0.seek(to)
+    }
+}
+
+impl resonate_codec::MediaStream for Unmeasured {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        None
+    }
+}
+
+struct ServedUnmeasured {
+    source: resonate_core::SourceId,
+    bytes: Vec<u8>,
+}
+
+impl resonate_codec::MediaProvider for ServedUnmeasured {
+    fn source(&self) -> &resonate_core::SourceId {
+        &self.source
+    }
+
+    fn open(&self, _: &MediaLocation) -> resonate_codec::Result<resonate_codec::Media> {
+        Ok(resonate_codec::Media {
+            stream: Box::new(Unmeasured(Cursor::new(self.bytes.clone()))),
+            hint: None,
+        })
+    }
+}
+
+#[test]
+fn a_stream_that_seeks_but_declares_no_length_seeks_all_the_same() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "rip.aac", &["-c:a", "aac", "-b:a", "128k"]) else {
+        return;
+    };
+    let served = resonate_core::SourceId::new("served").expect("a nameable source");
+    let sources = Sources::local().and(std::sync::Arc::new(ServedUnmeasured {
+        source: served.clone(),
+        bytes: fs::read(&path).expect("the stream reads"),
+    }));
+    let (mut decoder, info) = Decoder::open(&sources, &MediaLocation::new(served, "rip.aac"))
+        .expect("an adts stream opens");
+    assert!(info.is_seekable);
+    assert_eq!(
+        info.duration, None,
+        "the stream declared a length after all"
+    );
+
+    let wanted = Frames(u64::from(CD.rate) / 2);
+    let landed = decoder
+        .seek(wanted)
+        .expect("a seek inside the stream lands");
+
+    assert_eq!(landed, wanted);
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tagging {
     Everything,

@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A seekable track with no declared length, such as a bare ADTS `.aac`, refuses every seek, so a
-  device switch, a quality, dither or DoP change, following the default sink or *Previous* past its
-  opening stops or skips it
 - A rebind or start that fails after the old stream is closed — a chain that cannot be built, a seek
   the file refuses — leaves the transport playing silence with nothing to retry it, and *Next* onto
   such a track goes silent rather than skipping

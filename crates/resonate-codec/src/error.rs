@@ -141,12 +141,6 @@ pub enum Error {
         actual: SymphoniaSampleFormat,
     },
 
-    #[error("{location} track {track} declares no duration and cannot be seeked")]
-    UnknownDuration {
-        location: MediaLocation,
-        track: StreamTrackId,
-    },
-
     #[error("seek to {requested} is past the track duration of {duration}")]
     SeekOutOfRange { requested: Frames, duration: Frames },
 
@@ -245,7 +239,6 @@ impl Error {
             | Self::RateNotRepresentable { location, .. }
             | Self::LayoutNotRepresentable { location, .. }
             | Self::SampleFormatNotRepresentable { location, .. }
-            | Self::UnknownDuration { location, .. }
             | Self::NotSeekable { location }
             | Self::SeekBackwardUnsupported { location }
             | Self::SeekInvalidTrack { location }

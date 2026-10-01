@@ -1323,7 +1323,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   arrow key, `resonate play`'s `f 600` and the window's seek-forward all reach the next row rather
   than a `SeekOutOfRange` toast. An absolute `Command::Seek` past the end is still refused, a
   position asked for by value being a mistake where an offset is a direction
-  (`a_relative_seek_past_the_end_moves_on_to_the_next_row`).
+  (`a_relative_seek_past_the_end_moves_on_to_the_next_row`). A seekable stream declaring no length
+  — an ADTS file served by a source that does not know its size, so symphonia cannot estimate one —
+  seeks like any other: `Decoder::seek` weighs a known length and otherwise lets the reader try, where
+  it once refused every seek and so every rebind — a device switch, a quality, dither or DoP change,
+  *Previous* past the opening — stopped or skipped the track
+  (`a_stream_that_seeks_but_declares_no_length_seeks_all_the_same`).
 - **The published position never steps back within a stretch of listening.** It is the decoder's less
   what ring, chain and sink still hold, and the sink's latency is known only once a stream reports it,
   so every rebind and seek used to publish a position a latency behind the last — which `Listening`
