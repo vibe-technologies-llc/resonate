@@ -7,7 +7,9 @@ service or a format — and is not worked until that moves; everything else is o
 
 ## Defects
 - A pipe or process substitution that stops producing holds the engine thread inside a read with no
-  deadline, so Pause, Stop and quitting go unanswered until bytes arrive
+  deadline, so Pause, Stop and quitting go unanswered until bytes arrive; a bounded read cannot fix
+  it, symphonia taking a short read for the end and an error for damage, so the decode has to move
+  off the engine thread
 - An organise run from the command line while the window plays is not told to the window's player,
   so its queue keeps the old paths and its next resumption overwrites the rewritten one
 
