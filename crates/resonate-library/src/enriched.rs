@@ -1003,12 +1003,13 @@ pub(crate) fn land_recording(
         }
     }
 
-    let (title, artist) = tx
+    let (title, artist, filed_under) = tx
         .query_row(
             "UPDATE tracks SET
                  title  = coalesce(CASE WHEN ?1 OR tagged_title  IS NULL THEN ?2 END, title),
                  artist = coalesce(CASE WHEN ?1 OR tagged_artist IS NULL THEN ?3 END, artist),
-                 artist_id = coalesce(?4, artist_id),
+                 artist_id = CASE WHEN ?1 OR tagged_artist IS NULL
+                                  THEN coalesce(?4, artist_id) ELSE artist_id END,
                  track_number = coalesce(track_number, ?5),
                  disc_number  = coalesce(disc_number,  ?6),
                  mbid = coalesce(mbid, ?7),
@@ -1016,7 +1017,7 @@ pub(crate) fn land_recording(
                  release_title = ?9,
                  asks = 0, refusals = 0, asked = ?10, answered = ?10
               WHERE id = ?11
-             RETURNING title, artist",
+             RETURNING title, artist, artist_id",
             params![
                 certainty == Certainty::Exactly,
                 recording.title,
@@ -1030,7 +1031,13 @@ pub(crate) fn land_recording(
                 store::to_nanos(now),
                 id,
             ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            },
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
 
@@ -1040,7 +1047,7 @@ pub(crate) fn land_recording(
         &title,
         artist.as_deref().unwrap_or_default(),
         held.album.as_deref().unwrap_or_default(),
-        &store::indexed_genre_of(tx, held.genre.as_deref(), artist_id.or(held.artist_id))?,
+        &store::indexed_genre_of(tx, held.genre.as_deref(), filed_under)?,
     )?;
 
     Ok(title != held.title || artist != held.artist)

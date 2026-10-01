@@ -9676,6 +9676,39 @@ fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_trac
 }
 
 #[test]
+fn a_near_match_credited_to_another_artist_leaves_the_track_filed_under_its_own() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let track = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .next()
+        .expect("a scanned track");
+    let own = track.artist_id;
+
+    library.land_recording(
+        track.id,
+        &Recording {
+            id: mbid(RECORDING),
+            title: track.title.clone(),
+            credit: credited(Some("Someone Else"), None),
+            length: None,
+            isrcs: Vec::new(),
+            releases: Vec::new(),
+        },
+        Certainty::Nearly,
+        None,
+    )?;
+
+    let landed = library.track(track.id)?.expect("the track is held");
+    assert_eq!(landed.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(
+        landed.artist_id, own,
+        "the row reads one artist and is listed under another"
+    );
+    Ok(())
+}
+
+#[test]
 fn forgetting_a_match_takes_away_the_recording_ids_and_codes_it_stamped() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let mut rows = orbits_rows();

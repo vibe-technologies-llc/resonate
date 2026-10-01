@@ -1239,7 +1239,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   *did* carry is corrected only under `Exactly`. So a lookup tidies *one of these days* into *One of
   These Days* on an identifier a tagger wrote, and never renames a track on a score
   (`an_exact_identification_corrects_a_title_the_file_carried`,
-  `a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_alone`). Everything else
+  `a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_alone`). The
+  `artist_id` the track is listed under follows the same `CASE` as the name it is billed under, so a
+  fingerprint at the strict score on a file naming another artist neither renames nor refiles it
+  (`a_near_match_credited_to_another_artist_leaves_the_track_filed_under_its_own`). Everything else
   it writes fills and never replaces — `track_number` and `disc_number` from the recording's seat on the
   release, `mbid` and `isrc`, all `coalesce`d — except `release_title`, the release the route chose, and
   `artist_id`, repointed through `store::artist_named_in` so the row is billed to the artist the catalog

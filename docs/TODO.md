@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A fingerprint match at the strict score files the track under the matched recording's artist even
-  where the file named another, so the row reads one artist and is listed under a second
 - A seekable track with no declared length, such as a bare ADTS `.aac`, refuses every seek, so a
   device switch, a quality, dither or DoP change, following the default sink or *Previous* past its
   opening stops or skips it
