@@ -10,7 +10,7 @@ use std::{
 };
 
 use resonate_codec::Sources;
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, WantId};
 use resonate_providers::{Asking, Away, Delivered, Delivery, Identity, Providers};
 use resonate_vault::{Keeping, Taking};
 
@@ -342,7 +342,7 @@ fn run(
                 let noted = landed(library, want, delivered, options, progress, &mut away)?;
                 let cancelled = progress.is_cancelled();
                 if noted.is_some() || !cancelled {
-                    library.note_tried(want.id, noted.as_ref())?;
+                    tried(library, want.id, noted.as_ref())?;
                 }
                 if cancelled {
                     break;
@@ -350,7 +350,7 @@ fn run(
             }
             None if answer.heard_from_every_provider() => {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);
-                library.note_tried(want.id, None)?;
+                tried(library, want.id, None)?;
             }
             None => tracing::debug!(
                 want = %want.id,
@@ -366,6 +366,16 @@ fn run(
         stats: progress.snapshot(),
         cancelled: progress.is_cancelled(),
     })
+}
+
+fn tried(library: &Library, want: WantId, offered: Option<&MediaLocation>) -> Result<()> {
+    match library.note_tried(want, offered) {
+        Err(Error::UnknownWant(_)) => {
+            tracing::debug!(%want, "a want was dismissed or withdrawn while it was asked about");
+            Ok(())
+        }
+        noted => noted,
+    }
 }
 
 impl Library {

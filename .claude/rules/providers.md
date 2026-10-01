@@ -63,6 +63,11 @@ A provider does none of this, so none of it is written twice:
   later. The cost is a failing provider asked once a poll for as long as it fails
   (`a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll`,
   `a_want_one_provider_answered_and_another_refused_stays_due`).
+- **A want dismissed or withdrawn while it is asked about is passed over.** The poll reads the wants
+  once as it starts; stamping one the window or another process took away meanwhile answers
+  `Error::UnknownWant`, which `supply::tried` logs and passes over, so the poll goes on to the wants
+  after it rather than ending
+  (`a_want_withdrawn_while_a_poll_asks_about_it_is_passed_over_and_the_poll_goes_on`).
 - **A provider that is not there is asked once a poll, not once a want.** The poll holds one `Away`
   for its run and hands it to every `Providers::first`; a provider whose error
   `is_the_provider_away`, or that ran late, is noted there and passed over for every want after,

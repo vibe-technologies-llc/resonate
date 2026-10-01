@@ -24,8 +24,6 @@ service or a format — and is not worked until that moves; everything else is o
   `r` and pauses on a space, so typing *Rush* stops the music
 - An album gathered into another or removed while a lookup runs ends the whole pass with an unknown
   album, and leaves its study and lyric threads working through the rest of the queue
-- Dismissing or withdrawing a want while a poll runs ends the poll with an unknown want, leaving
-  every want after it untried
 - An equaliser band moved in the last 600 ms before the window closes is never written to its
   profile, because the settle is debounced and nothing flushes it on quit
 - A queue open in the player keeps the old paths after an organise moves its files, and the next

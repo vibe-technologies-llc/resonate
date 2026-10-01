@@ -19801,6 +19801,53 @@ fn what_is_playing_is_billed_with_the_code_and_the_release_group_the_catalog_hol
     Ok(())
 }
 
+struct Withdrawing {
+    source: SourceId,
+    library: Library,
+    asked: Mutex<usize>,
+}
+
+impl Provider for Withdrawing {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+        *self.asked.lock() += 1;
+        let asked_about = self
+            .library
+            .wants()
+            .expect("the wants read")
+            .into_iter()
+            .find(|want| want.identity().title == identity.title);
+        if let Some(want) = asked_about {
+            self.library.unwant(want.id).expect("the want is withdrawn");
+        }
+        Ok(Obtained::Nothing)
+    }
+}
+
+#[test]
+fn a_want_withdrawn_while_a_poll_asks_about_it_is_passed_over_and_the_poll_goes_on() -> Result<()> {
+    let (_tree, library, database) = scanned_orbits_on_disk()?;
+    wanted_every_missing_row(&library)?;
+    let wanted = library.wants()?.len();
+    assert!(wanted > 1);
+    let withdrawing = Arc::new(Withdrawing {
+        source: SourceId::new("shop").expect("a nameable source"),
+        library: Library::open(&database)?,
+        asked: Mutex::new(0),
+    });
+    let providers = Arc::new(Providers::none().and(Arc::clone(&withdrawing) as Arc<dyn Provider>));
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(summary.stats.asked, wanted as u64);
+    assert_eq!(*withdrawing.asked.lock(), wanted);
+    assert!(library.wants()?.is_empty());
+    Ok(())
+}
+
 struct Unanswering {
     source: SourceId,
     failure: fn(SourceId) -> resonate_providers::Error,
