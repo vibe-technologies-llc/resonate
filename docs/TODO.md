@@ -5,7 +5,120 @@ that no listener is waiting on, and is worked only once the categories above it 
 marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
 service or a format — and is not worked until that moves; everything else is open to be done.
 
+## Defects
+- An organise or tag undo that fails or is cancelled part way forgets every file it had not yet put
+  back, because the walk back rewrites the notes from what it landed, so those files can never be
+  walked back
+- A tag write that lands in the file but does not read back as written is dropped from the tag
+  undo with the refusals, so the file keeps its new tags, the catalog does not follow, and nothing
+  can put it back
+- A layout naming `{ext}` loses the extension when a long name is cut to 255 bytes, so the next scan
+  no longer sees an audio file and prunes its row with its plays and playlist rows
+- A cue sheet that names a file but cuts no audio track claims the file from the whole-file pass, so
+  the next prune deletes its row, its plays and its favourite
+- A directory entry whose type cannot be read, or a listing an error cuts short, is skipped without
+  keeping its rows the way an unreadable file is, so the prune deletes them with their plays
+- A wrong Subsonic password is a refusal rather than an absence, so every poll logs in once per
+  want, and a server that bans after repeated failures locks the listener out
+- Switching *Reach the network* off in the window leaves the lyric lookup and the Analysis pane's
+  recognition asking LRCLIB, AcoustID and Shazam until the next start, against `online = false
+  stops every request`
+- A track whose file could not be read when its study ran — an unmounted drive, a share that was
+  down — is marked as one that will not decode and is never studied again until its size or time
+  changes, so a whole drive's rows go without verdict, loudness or print
+- Applying a tag run throws away the study of every file it wrote, because the study follows the
+  file's size and time, so each is decoded and fingerprinted again and has no loudness until then
+- An ID3v2.3 file carrying `TDAT` or `TIME` beside `TYER` gets the day and month (`0503`) or the
+  clock as its date, because the unparsed frames outrank the year and nothing joins the three
+- An iTunes `COMM` frame (`iTunNORM`, `iTunSMPB`, `iTunes_CDDB_1`) is read as the track's comment
+  whenever it follows the listener's own, since the frame's description is never weighed
+- Folding a name for its artist key and search words drops every combining mark, so kana voicing
+  marks and Indic vowel signs vanish: ガラス and カラス, バンド and ハンド become one artist
+- A release pairs its rows with the album's tracks by disc and position before by title, so a
+  pressing in another order stamps each track with its neighbour's recording id and ISRC, which the
+  tag writer then writes and the scrobbler sends
+- *Not this record* clears the release rows but keeps the recording id and ISRC the wrong match
+  stamped, so the next lookup takes them as tagged and renames the tracks to the same recording as
+  an exact identification
+- A fingerprint match at the strict score files the track under the matched recording's artist even
+  where the file named another, so the row reads one artist and is listed under a second
+- A seekable track with no declared length, such as a bare ADTS `.aac`, refuses every seek, so a
+  device switch, a quality, dither or DoP change, following the default sink or *Previous* past its
+  opening stops or skips it
+- A rebind or start that fails after the old stream is closed — a chain that cannot be built, a seek
+  the file refuses — leaves the transport playing silence with nothing to retry it, and *Next* onto
+  such a track goes silent rather than skipping
+- A track change or *Play* landing while the sound server reconnects bills the failure to the row,
+  so every queued row fails in turn and the queue ends, where a device going away is waited out
+- A pipe or process substitution that stops producing holds the engine thread inside a read with no
+  deadline, so Pause, Stop and quitting go unanswered until bytes arrive
+- A 5.0 or 6.1 source on a 5.1 or 7.1 sink is remapped by channel index rather than position, so
+  the 5.0 surrounds play from the LFE and rear left
+- A cover or portrait drawn before it existed stays a placeholder for the run, even after a lookup
+  fetches it or a rescan finds it, because a miss is cached like a picture
+- The queue and the playback bar keep a track as it was first read — title, artist, album link,
+  favourite, *not in the library* — after a rescan or a lookup changes it
+- Typing at the window to search or jump fires Stop, Shuffle and Repeat on every bare `s`, `h` and
+  `r` and pauses on a space, so typing *Rush* stops the music
+- An album gathered into another or removed while a lookup runs ends the whole pass with an unknown
+  album, and leaves its study and lyric threads working through the rest of the queue
+- Dismissing or withdrawing a want while a poll runs ends the poll with an unknown want, leaving
+  every want after it untried
+- A table piped into `head` or a pager that quits early panics on the broken pipe and aborts the
+  release build
+- Names from tags, sheets and services reach the terminal with their control characters through
+  `listen`, `info`, `organise`, `tag`, `vault --import`, `import` and `suggest`, outside the tables
+  that make them safe
+- `play`, `queue`, `playlist --add`, `analyse --track` and `info` find a cue sheet's audio by the
+  exact name written, so `FILE "ALBUM.WAV"` beside `album.flac` or `CD1\01.wav` fails where the
+  scan finds it
+- An equaliser band moved in the last 600 ms before the window closes is never written to its
+  profile, because the settle is debounced and nothing flushes it on quit
+- A genuine lossless file at 22.05, 24 or 32 kHz reads as Fake with a lossy guess, because its
+  anti-alias roll-off sits under the fixed 19.5 kHz lossy ceiling at every rate
+- A 32-bit float file whose samples sit on the 24-bit grid reads as Padded and Fake, though float
+  carries no more than 24 significant bits
+- An organise walk back renames a sidecar over a file that has since appeared where it goes, and a
+  sidecar since deleted refuses the whole track on every undo
+- A queue open in the player keeps the old paths after an organise moves its files, and the next
+  resumption written overwrites the rewritten one with them, so each moved row fails when reached
+- Discord shows a blank picture for a release the Cover Art Archive has no front cover for, since
+  the release is asked without weighing whether it has one
+- Changing the device or a setting while a row waits for a device resumes it up to the buffer's
+  depth later than where it was heard
+- Seeking or restarting within the last ten seconds of a track under an end-of-track or end-of-queue
+  sleep timer leaves the rest of it silent, because the sleep fade is never lifted
+- A write the settings pane or `resonate eq` makes drops the inline comment on the line it rewrites
+  and the comment above a rebound `[equaliser-for]` entry
+
 ## Playback and output
+- Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
+  depth later, half a second by default, because gain and filters run ahead of a ring kept full
+- An equaliser preamp change — *Fit*, a typed value, another profile — steps the level within one
+  sample, and the step rings through the cascade as a click
+- A source too long to hold in memory is spooled under the temporary folder, which is tmpfs on
+  Arch, Fedora and Flatpak, so up to 8 GiB lands in RAM and what was read is never let go
+- A local row is opened on the engine thread with no deadline, and the PipeWire open and sink
+  enumeration wait there for seconds, so a stalled mount freezes the transport and the window's
+  close
+- Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
+  client holds at a second rate is converted by the graph while the chip still says bit-perfect
+- A boost on a track with no declared peak is clipped sample by sample in the gain stage ahead of
+  the true-peak guard, so the guard never sees those overs while the track is being measured
+- The stream's exclusive flag, the latency requests other than *Auto* and the underrun hook are
+  never set or reached outside tests
+- A launch made while another is still starting opens a second window, because the bus name is
+  claimed only after the engine starts
+- `bluetooth-lead-ms` and `bluetooth-awake-s` take any integer, so a typo plays hours of silence
+  before the first track after the link slept
+- Closing the terminal sends `play` and the headless passes a hang-up nothing catches, so the last
+  listen is lost and a tag, organise or import is cut without the drain an interrupt gets
+- After a load or *Next* that found no device, the first play/pause press pauses nothing and only
+  the second plays
+- Removing the playing last row under *repeat queue* stops the queue rather than wrapping as a skip
+  would
+- A track repeating under *repeat track*, or the only row under *repeat queue*, restarts with no
+  `Seeked` on the bus, so a client extrapolating the position runs past the length
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
   anything under 100 % leaves bit-perfect there
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
@@ -23,6 +136,26 @@ service or a format — and is not worked until that moves; everything else is o
   card here offers 48 kHz alone — nor DoP against a DAC that decodes it
 
 ## Formats
+- A packet that fails to decode is played as silence with nothing counted, so the vault keeps, and
+  `--verify` passes, a damaged source with holes, and a decoder failing every packet plays the
+  whole track silent
+- DSD128 and DSD256 are decimated through the same 512 taps as DSD64, so DSD256 falls 0.2 dB by
+  10 kHz and 0.9 dB by 20 kHz, and DSD128 0.06 dB by 20 kHz
+- An iTunes-encoded MP3's gapless data in its `iTunSMPB` comment is never read, so it plays with the
+  encoder's delay and padding
+- A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
+  unseekable and the bar fills early
+- A 64-bit float WAVE, RF64 or CAF is refused though the reader opens it; decoding it to 32-bit
+  float loses nothing a recording holds
+- The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read,
+  and a gain written with a decimal comma is dropped
+- A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
+  container rather than played as it arrives or named as needing a seek
+- An RF64 or Wave64 whose data size runs past the file reports the declared length
+- A CAF packet table is walked as far as its declared count rather than its chunk, reading audio as
+  packet sizes
+- A `CHAPTERnnn` comment with an enormous hour count overflows an unchecked add and panics a debug
+  or fuzz build
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is
@@ -35,34 +168,200 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
+- A tag write killed part way, by a second interrupt or a kill, leaves a hidden full copy beside the
+  track that nothing sweeps and the next scan catalogs as a second track
+- A tag write is refused in a folder the listener cannot create a file in, though writing the file
+  in place would work
+- Writing a tag turns an ID3v2.3 tag into v2.4 without a word, which players reading only v2.3 lose
+- The staged copy is renamed over the file without checking it is unchanged since it was taken, so
+  an edit another program made meanwhile is lost and a read-only file is replaced
+- A zero or out-of-range track, disc, total or BPM in a later tag erases a valid one read earlier
+- A file's own sort names — `ARTISTSORT`, `ALBUMARTISTSORT`, `TITLESORT`, `TSOP`, `soar` — are never
+  read, so an unenriched artist never orders the way its tagger meant
 - On a filesystem that cannot clone a file — ext4 — a tag write that grows past the tag's room, and
   every write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) or an Ogg, still
   copies the whole file, and one with a second name twice
 
-## Performance and scale
-- **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
-  paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
-
 ## Library
-- **Blocked on the format:** A cue row exported to PLS is its whole file, the format having no word
-  for a region
+- Hidden and trash folders are walked like any other, so `.Trash-1000`, Syncthing's `.stversions`
+  and AppleDouble `._` files come back as tracks or failures on every scan
+- Kept lyrics and lyric refusals are keyed by path and never swept, so a file replaced at the same
+  path shows the old song's words and the tables only grow
+- On a case-insensitive volume a name differing from the layout only in case is offered as a move
+  and refused on apply as colliding with itself, every run
+- `resonate forget <root>` and adding or removing a root take no walk guard, so they can land under
+  a scan running in the window or another process and abort it
+- `resonate scan <root>` registers each root before the scan starts, so a refused scan still leaves
+  them registered
+- Two cue sheets in one folder naming the same file cut it twice, and its rows flip between the two
+  on every scan
+- A steady writer under a root defers its rescan indefinitely, and a root the watch could not cover
+  — the inotify limit reached — is never tried again
+- A playlist undo restores rows under the paths they had when the edit was made, so after an
+  organise it puts back dead paths
+- A playlist undo rewrites the playlist from the window's memory without checking it is unchanged,
+  so it destroys rows the command line, MCP or another window added meanwhile
+- A playlist sheet from another machine or drive layout cannot be reconnected by its trailing path
+  components, so every row of a Windows-written sheet imports as missing
+- A playlist exported with more than some 50 000 rows cannot be read back, since import refuses a
+  sheet over 8 MiB and export writes any size
+- `file:/path#fragment` with a single slash keeps the fragment in the file name
+- An organise cancel is heard only between batches of 256 moves, so a run of copies across devices
+  cannot be stopped for minutes
+- An untagged *99 Luftballons.mp3* or *21 Guns.flac* is read as track 99 or 21 titled *Luftballons*
+  or *Guns*
+- Dismissing one missing *Interlude* or *Skit* hides every missing row on that disc with the same
+  title
+- `resonate missing --artist <unknown> --read-the-rest` reads nothing and then says nothing of that
+  artist is missing
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned whose mount point's parent still holds another drive
 - A lyric in a dropped album's `lyrics/` folder keeps its name when the track it is named after
   lands as `name (2).ext`, so it is matched to nothing
+- **Blocked on the format:** A cue row exported to PLS is its whole file, the format having no word
+  for a region
 
 ## Search
+- A suggested artist or genre with no letter or digit in its name — `!!!`, `?` — reads as no
+  condition and is offered as a playlist of the whole library, and `--matching '???'` plays or
+  copies everything
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text
 
 ## Identification
+- With an AcoustID key set, a service refusing or unreachable is still asked about every remaining
+  track of the study pool, one failed request after another
+- *Listen* says nothing reached the recording when the capture itself failed, and that the services
+  could not be reached when one refused the clip
+- A throttled portrait host is recorded as having no portrait for the artist
+- A release too large for the 4 MiB document cap, a box set with per-recording relations, is never
+  enriched and nothing says why
+- A file with no measured length asked by an ISRC naming several recordings is identified as the
+  first one, as exactly as a tagged id
+- An album whose tracks name no album artist is taken by a release search on its title and track
+  count alone
 - An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
   measured the same as its source by every spectral feature `analysis.md` lists, and no FhG encode
   was weighed
 - **Blocked on a registered key:** AcoustID has never been reached with a real key; its fixture is
   written from the documentation
 
+## Performance and scale
+- Every process opening the catalog rebuilds the collaboration credits and sweeps orphans under the
+  write lock, each credit scanning the tracks by an artist index a plain `=` cannot use, so a
+  read-only `resonate stats` also makes the window reload its vocabulary
+- A scan that changed nothing still regroups alternatives, gathers loose files and prunes over the
+  whole catalog, so one watched file added pays for the library
+- Following or filing moved files updates playlist rows and resumption rows by an unindexed path
+  once per file, N moves times M rows inside the scan's write
+- The scan's 34-parameter track upsert, and the per-row reads beside it, are parsed again for every
+  file rather than cached as `library.md` says every per-row write is
+- Scrolling a large library to the end reads the whole prefix of tracks, albums and artists again at
+  every page, quadratic in its length
+- An incremental scan writes every unchanged row only to stamp it seen, and a change under one root
+  stats every file of every other
+- The picture likeness reads every embedded cover whole, in the orphan sweep and for each
+  suggestion candidate
+- Setting an AcoustID key or *Refresh all* reads every unrecognised print into memory before the
+  pool starts, on the order of a gigabyte for a large library
+- Each settled search of three letters or more with Online on reads every recording id in the
+  catalog to drop a dozen results found elsewhere
+- A row's tags and cover are looked up by statting its file under the catalog lock on the caller's
+  thread, so a stalled network mount freezes the window's redraw and the bus
+- One thread reads the tags of every queued row, so a remote source that does not answer holds back
+  the local rows behind it five seconds a row
+- A file landing in the inbox asks every network provider about every unheld want again, though
+  only the inbox can have the new file
+- A delivery the vault refuses is fetched again at every poll with no lengthening wait
+- Every backward seek in an MP3 or ADTS stream walks the frames from the first, and the Xing table
+  of contents is never used
+- Planning a tag run parses every file with lofty twice more than it needs, covers and audio
+  properties included
+- Every lookup pass re-pairs and rewrites each album short of a track though nothing moved, which
+  also takes down an open tag or organise preview
+- The study's true-peak meter interpolates every sample eight times over where the playback guard
+  skips stretches that cannot pass
+- The Analysis pane decodes a vaulted track whose file has gone on every visit, since a kept
+  analysis is keyed on the file's size and time
+- Each queue edit and each catalog revision re-reads every queued track while the queue pane is
+  open, and each type-ahead key folds every row's name on the UI thread
+- MCP's `playlist_tracks` and playlist resource read every row, or the whole catalog for a
+  self-filling playlist, before taking a few hundred, and the resource list recounts every
+  playlist twice a second
+- The Missing pane's counts fold every track title of an artist for each release, on each narrowing
+  key
+- Dragging files from a file manager stats every path on entering and on dropping, and copies the
+  paths on every pointer move
+- Opening a DST DSDIFF reads one header per compressed frame through the whole file on every open
+  and rebind
+- Queueing tens of thousands of rows inserts each id into a sorted list, quadratic in the batch
+- Cover decoding has no pixel limit beyond the image crate's, and a cover with transparency is
+  shrunk without premultiplying its alpha
+- One- and two-letter search prefixes enumerate every matching term, the full-text index declaring
+  no prefix indexes
+- The window polls the player every 16 ms for as long as it is open, paused or not
+- **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
+  paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
+
+## Robustness
+- Closing the window or pressing `ctrl-q` during a tag write, an organise, a vault import or a
+  dropped file's copy neither cancels the pass nor waits for it
+- The Subsonic client sets no read deadline, so a server that stalls mid-answer keeps a thread and
+  a socket per want until exit
+- A file still being copied into the inbox is delivered, a half-written FLAC kept as the want's
+  track, and nothing weighs a delivery's length against the release row's
+- A delivery landing after a scan paired the wanted row to the listener's own file takes the pairing
+  from it
+- A failing ListenBrainz love blocks every later love and backs listen submissions off to an hour
+- A listen counted after the newest listens were removed reuses an id at or below the service's
+  mark and is never submitted
+- A listening count infers a seek from the step size rather than `PlayerState::seeks`, so a short
+  forward seek counts as heard and a seek back after the half way counts the play twice
+- Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
+  and the providers
+- A host that stays busy is no longer waited on, so a `Retry-After` on a 429 is never read
+- A service link of any scheme, or one whose authority hides another host behind a backslash, is
+  opened if its host looks like a known service, and image host checks are string suffix tests
+  a `#` or `?` passes
+- Discord presence goes to whatever socket answers under `/tmp` without checking its owner
+- A daemon connection that dies with a reset rather than a broken pipe, or hangs, is never taken as
+  lost, so the client stays disconnected
+- When WirePlumber restarts, the metadata objects that left keep their proxies and their values
+  stand stale until new ones overwrite them
+- A Subsonic server behind a private CA cannot be reached, and the failure is reported as a refused
+  connection
+- MCP's `start_scan` keeps any folder it is given as a root for good, `/` included, with no cap and
+  no tool to remove one
+- MCP's `want_tracks` and `mark_favourite` commit each id alone, so an unknown id late in the list
+  leaves the earlier ones written without saying how many
+- A blank query given to MCP's `add_to_queue`, `add_to_playlist` or `create_playlist` takes the
+  first rows of the whole library, and a blank `fills_from` saves a playlist of everything
+- During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
+  once, and a session's passes are cancelled and joined one after another
+- A pass thread that panics is reported as stopped, the panic lost
+- `organise --apply`, `tag --apply`, `vault --import --apply`, `scan` and `vault --verify` exit 0
+  when files failed
+- A configured `vault` that is not there, an unmounted drive, is skipped in silence by every command
+  but `vault`
+- A text field takes any length, shaped again on every caret blink and kept whole in its undo
+- A file URI with an encoded NUL becomes a local location holding the byte
+- The Subsonic password and the configured tokens are printed by `Debug`, ready for the first log
+  line that formats them
+- A Discord refusal that never clears is offered again every fifteen seconds for as long as the
+  track plays
+
 ## Keyboard and accessibility
+- Keys, tokens, the contact, the Subsonic account and the organise layout typed in Settings and left
+  without Enter look saved and are not
+- `End`, select-all and the scrollbar act on the 2 000 rows loaded so far, so `End` in a
+  50 000-track library lands on row 2 000
+- `ctrl-shift-left` and `ctrl-shift-right` select a word inside a field rather than stepping the
+  queue, though `ui.md` says the pair always steps it
+- Word motions in a field split a decomposed accent from its letter, and take a whole CJK sentence
+  as one word
+- `resonate play file &` takes the terminal into key-at-a-time mode from the background, which the
+  shell answers by stopping it
+- The `play` readout can outgrow an 80-column terminal, leaving a stale row at each redraw
 - Only Settings and the search field take focus: the transport, the sidebar, the heading buttons,
   the seek and volume rails and every row control are reachable by the mouse alone
 - A menu opens on the right button alone, so a row's *Add to playlist*, *Go to artist*, *Share* and
@@ -71,10 +370,31 @@ service or a format — and is not worked until that moves; everything else is o
   alone; nothing adds a row with Control
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
+## Lyrics
+- The lyric sheet does not grow with the window: its type is a fixed 36 px scaled by the Text size
+  setting alone, in a column capped at 720 px, with line padding, spacing and margins in fixed
+  pixels, so on a large or 4K window it sits small in the middle of the pane; the type, column and
+  spacing should scale up with the pane
+- A timed-lyrics frame is read as words whatever its content type, cut at 4 096 syllables in
+  silence, and the last of several languages wins
+
 ## Testing
+- No transport test covers a failed rebind, a setting changed while a row is parked, a seek during
+  the sleep fade, a track of unknown length, removing the playing row under repeat, or a
+  reconnect at a track boundary
+- Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
+  packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
+  are never run
 - The `probe` fuzz target never seeks, opens a span, decodes DSD to samples, hints an extension or
   reads a stream that cannot seek, so the seeks of `ape.rs`, `matroska.rs` and `dsd/` and the whole
-  spooled path are unfuzzed
+  spooled path are unfuzzed; its seeds also lack Matroska lacing and unknown-size clusters,
+  fragmented MP4, m4b chapters, FLAC `CHAPTER` comments and a variable-packet CAF, and `cue`
+  reaches none of the file resolution
+- The search grammar, `MediaLocation::from_uri`, `text::decoded`, the EqualizerAPO and GraphicEQ
+  readers and the MCP line reader have no fuzz target
+- Scanning a non-UTF-8 file name, two sheets naming one file, a sheet with no audio track and the
+  inotify limit are untested
+- Nothing drives the signal paths or the terminal restore of `play`
 - *Take this name* is checked by eye alone: driving it wants a recognition the catalog holds, which
   no fake fingerprinter hands the analysis pane yet
 - The drop overlay has never been dragged onto on a real compositor from this tree: gpui's test
@@ -83,11 +403,30 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on hardware:** A microphone recording has not been proved against real sound reaching a
   microphone
 
+## Rules and docs
+- `audio.md` says a cue stamp is exact at every supported rate, but 8, 16 and 32 kHz do not divide
+  by 75 and a boundary floors by up to a frame
+- `CLAUDE.md` says `resonate-online` reaches the library, lyrics, codec and core, where it also
+  reaches analysis, eq and listen
+
 ## Later: Sources and providers
+- The Subsonic server field takes any text, so a bare `music.local:4533` fails every poll with no
+  word to the listener
+- *Forget this delivery* remembers nothing, so the next poll fetches the same file again
+- A want is carried onto whatever song sits at its disc and position after the release is chosen
+  again or reordered
+- With `<mbid>.flac` and `<mbid>.mp3` both in the inbox the name sorting first wins, and nothing
+  prefers the lossless one; the inbox also stats every entry for every want
+- Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
 - **Blocked on the services:** The service links an `Identity` carries are read by nothing: no
   provider asks Tidal, Bandcamp or Discogs, whose pages the links name
 
 ## Later: The vault
+- `vault --verify` writes an object it could not open — an unmounted vault, a missing file — as one
+  that did not read back, never checks covers, and offers nothing to mend one failing row
+- `vault --prune` and `--release` act at once where every other pass previews until `--apply`
+- A kept WAVE object reopened by path for a backward seek uses its old frame index against a renewal
+  that replaced it
 - The stand-in's `TagSet` carries some twenty-one fields, so a vaulted row loses its composer,
   lyricist, comment, label and totals on the bus and in the inspector
 - Blanking a Matroska file stops at an element of unknown size and lands what it blanked so far as
@@ -111,10 +450,31 @@ service or a format — and is not worked until that moves; everything else is o
   seek in it still restarts the stream
 
 ## Later: Tagging and organising
+- The names derived beside a long destination — the staging and parked names, a sidecar's longer
+  suffix — are not held to 255 bytes, so the move fails the same way every run
+- A sidecar such as `Song.live.lrc` travels with `Song.flac` rather than `Song.live.flac`, the
+  shorter stem claiming it first
+- A root on a CIFS or SMB share is named as if it took any character, so a title with `?`, `:` or
+  `"` fails on a share that refuses them
 - A cue-cut row is never written, and an album landed as a release group gets no totals
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer: lofty writes none of them
 
 ## Later: Equaliser and DSP extras
+- `resonate eq --import` and `--fetch` replace a kept profile of the same name in silence, one
+  shaped by hand included
+- `resonate eq --list` fails whole when one kept profile is too large to read
+- An EqualizerAPO comment line is counted as unreadable, an unsupported filter or a `Device:` scope
+  is dropped without a word, and a `6dB`/`12dB` slope word on a pass or shelf filter is ignored
+- An equaliser profile is renamed into place without syncing its bytes or its folder, so a crash
+  can leave a bound profile empty and the device flat
+- A GraphicEQ line or measurement of more than 1 024 points loses its top frequencies rather than
+  being thinned
+- Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
+  and two picks landing out of order keep the first
+- `resonate eq --on` and `--suggest` take `--for` and ignore it, where `--off --for` is refused
+- Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the
+  filter tail falls to −600 dB, the dither muting only on exact zeros
+- *Millibels* means hundredths of a dB for the trim and thousandths for a band gain and the preamp
 - A binding for a device not plugged in cannot be seen or taken away alone
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
@@ -122,6 +482,7 @@ service or a format — and is not worked until that moves; everything else is o
   own downmix coefficients are not read
 - Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its 1
   024-frame window, and leaves the first second and a half of an unstudied track unextended
+- A resampler given too few phases answers with the filter-length error rather than its own
 
 ## Later: Lyrics
 - A sidecar's declared title is weighed by substring, so `[ti:It]` agrees with any title holding
@@ -140,12 +501,15 @@ service or a format — and is not worked until that moves; everything else is o
   folded onto the two
 
 ## Later: Listen and recognition
+- A clip with no peaks, a steady tone or sparse material, is still sent to Shazam
 - Listen records one clip and asks once; nothing listens again on a miss or follows a stream from
   song to song
 - **Blocked on Shazam:** Shazam is reached through an undocumented endpoint, so a change on its side
   stops recognition
 
 ## Later: Visualiser
+- A 22.05 kHz stream is labelled 22.0 kHz in the visualiser and analysis readouts
+- A track of four and a half hours or more gets no time marks on the analysis waveform
 - The spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at 20 kHz
   at every rate
 - The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
@@ -153,8 +517,21 @@ service or a format — and is not worked until that moves; everything else is o
   front
 
 ## Later: The window
-- Nothing dropped from a file manager is taken, and a track or album cannot be dragged into the
-  queue or a playlist
+- A track or album cannot be dragged from a listing into the queue or a playlist; only files from a
+  file manager are taken
+- A scoped album or artist whose rows vanish leaves *album 17* heading an empty list
+- Releasing the seek rail after the track changed mid-drag seeks the new track to the dragged
+  fraction
+- The queue's total length leaves out rows the catalog has not scanned, with no hint it is partial
+- The by-line counts a character its face cannot draw — CJK, emoji — as no width, so the album clips
+  with no ellipsis
+- Queue edits from the window name rows by position, so an edit another client makes between the
+  gesture and the click moves or removes the wrong rows
+- The seek bar shows only the total length, with no remaining time and no time under the pointer
+- Favourites cannot be sorted, by the date marked or otherwise
+- *Listen for* offers 8, 12 and 20 seconds while the file takes 4 to 60, and another value selects
+  no chip and is labelled 20
+- A volume set from the slider is written as the widened float, `0.699999988079071`
 - The window's title never names what is playing
 - The statistics count the albums heard and never draw them
 - The `vault` key has no field, so the Vault group is reached only by editing `config.toml`
@@ -170,6 +547,10 @@ service or a format — and is not worked until that moves; everything else is o
   apart, needs the engine to publish both
 
 ## Later: MCP
+- A model has no tool to undo its own edits, so a discarded playlist or removed rows cannot be taken
+  back by the session that made them
+- Tools carry the read-only and destructive hints alone, so every read-only catalog tool reads as
+  reaching an open world
 - An edit a model makes is not on the window's *Undo*, since undo stacks live in the process that
   made the edit
 
