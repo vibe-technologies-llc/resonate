@@ -16,8 +16,6 @@ service or a format — and is not worked until that moves; everything else is o
   so every queued row fails in turn and the queue ends, where a device going away is waited out
 - A pipe or process substitution that stops producing holds the engine thread inside a read with no
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive
-- A cover or portrait drawn before it existed stays a placeholder for the run, even after a lookup
-  fetches it or a rescan finds it, because a miss is cached like a picture
 - The queue and the playback bar keep a track as it was first read — title, artist, album link,
   favourite, *not in the library* — after a rescan or a lookup changes it
 - A queue open in the player keeps the old paths after an organise moves its files, and the next

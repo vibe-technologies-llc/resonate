@@ -704,7 +704,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the background executor: a miss puts the key in the model's `decoding` set and hands the work over, the
   cell draws its placeholder disc until the picture lands, and the landing notifies the model, so a
   screen of unread covers costs the render thread nothing and a picture a file lacks is cached as a miss
-  rather than asked every frame. **A file's picture is cached only once the engine settled it.**
+  rather than asked every frame. A miss holds only until the catalog next changes: `LibraryModel::reload`,
+  which a scan and a lookup both end in, forgets every cached `None` cover and portrait
+  (`Recent::forget_where`), so a picture a lookup fetched or a rescan found is drawn rather than the
+  placeholder kept for the run, while the pictures already drawn stay
+  (`a_cover_found_after_it_was_first_drawn_is_drawn_once_the_catalog_reloads`). **A file's picture is cached only once the engine settled it.**
   `Player::art` answers nothing on the ask queueing the read, so `PlayerModel::art` reads
   `Player::art_read` — `NotYet`, `Answered` or `Nothing`, `TagsRead`'s shape — and a `NotYet` is kept in
   `unsettled` against the `media_revision` it was asked at rather than in `pictures`, asked again once the

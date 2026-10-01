@@ -801,6 +801,67 @@ mod tests {
         });
     }
 
+    fn a_png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 40, 40, 255]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("a picture in memory");
+        bytes
+    }
+
+    #[gpui::test]
+    fn a_cover_found_after_it_was_first_drawn_is_drawn_once_the_catalog_reloads(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the albums read")
+            .first()
+            .expect("the album scanned")
+            .id;
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        let drawn = |driven: &mut Driven| {
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.library
+                    .update(cx, |model, cx| {
+                        model.cover(album, crate::Drawn::InAGrid, cx)
+                    })
+                    .is_some()
+            })
+        };
+
+        assert!(!drawn(&mut driven));
+        driven.settle();
+        assert!(!drawn(&mut driven), "an album with no cover drew one");
+
+        library
+            .land_archive_cover(
+                album,
+                &resonate_library::CoverArt {
+                    format: resonate_library::ImageFormat::Png,
+                    bytes: a_png(),
+                },
+            )
+            .expect("the cover lands");
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| model.reload(cx));
+        });
+        drawn(&mut driven);
+        driven.settle();
+
+        assert!(
+            drawn(&mut driven),
+            "the miss drawn before the cover existed was kept for the run"
+        );
+    }
+
     #[gpui::test]
     fn typing_at_the_window_searches_with_every_letter_and_its_spaces_rather_than_steering(
         cx: &mut TestAppContext,

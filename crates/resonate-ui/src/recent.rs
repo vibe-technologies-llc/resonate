@@ -58,6 +58,17 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
         leaving
     }
 
+    pub(crate) fn forget_where(&mut self, forgotten: impl Fn(&V) -> bool) {
+        let order = &mut self.order;
+        self.held.retain(|_, held| {
+            let keeps = !forgotten(&held.value);
+            if !keeps {
+                order.remove(&held.used);
+            }
+            keeps
+        });
+    }
+
     fn evict_until_one_fits(&mut self, leaving: &mut Leaving<V>) {
         while self.held.len() >= self.limit.get() {
             let Some((_, stale)) = self.order.pop_first() else {
@@ -87,6 +98,23 @@ mod tests {
             cache.insert(*key, key * 10);
         }
         cache
+    }
+
+    #[test]
+    fn what_is_forgotten_is_asked_again_and_the_rest_stays() {
+        let mut cache = filled(4, &[1, 2, 3]);
+
+        cache.forget_where(|value| *value == 20);
+
+        assert_eq!(cache.get(&2), None);
+        assert_eq!(cache.get(&1), Some(&10));
+        cache.insert(4, 40);
+        cache.insert(5, 50);
+        assert_eq!(
+            cache.get(&3),
+            Some(&30),
+            "a forgotten entry still held a place"
+        );
     }
 
     #[test]
