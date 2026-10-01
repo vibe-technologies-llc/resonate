@@ -102,7 +102,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the rule through `parsed`: a blank or unparsable gain or peak leaves what an earlier frame or
   revision gave, so an empty frame after a real one does not play the track at no gain. A date is
   weighed by kind — recording date over recording year over release date and so on — and one of the
-  held kind replaces it, so the newest revision wins a retagged year as it wins a retagged title. A
+  held kind replaces it, so the newest revision wins a retagged year as it wins a retagged title.
+  ID3v2.3 splits a date three ways, and symphonia hands its `TDAT` and `TIME` over as a recording date
+  and time that would outrank `TYER`: `Id3DatePart` reads them by their frame's own key instead, a
+  `TDAT` of `DDMM` joining the year as `YYYY-MM-DD` and the clock never being a date
+  (`an_id3v2_3_day_and_month_joins_the_year_and_the_clock_is_no_date`). A
   tagger writing an empty frame rather than none otherwise files a track under a nameless artist and
   a titleless album, and `stem.rs` never runs for a title that is *there*; read as none, the file is
   named from its stem and grouped as its non-blank tags say.

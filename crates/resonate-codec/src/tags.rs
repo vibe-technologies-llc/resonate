@@ -367,6 +367,52 @@ pub(crate) fn read(
     tags
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DayAndMonth {
+    day: u8,
+    month: u8,
+}
+
+impl DayAndMonth {
+    fn read(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.len() != 4 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let day: u8 = text[..2].parse().ok()?;
+        let month: u8 = text[2..].parse().ok()?;
+        ((1..=31).contains(&day) && (1..=12).contains(&month)).then_some(Self { day, month })
+    }
+
+    fn in_the_year(self, year: &str) -> String {
+        format!("{year}-{:02}-{:02}", self.month, self.day)
+    }
+}
+
+enum Id3DatePart {
+    DayAndMonth(DayAndMonth),
+    Clock,
+}
+
+impl Id3DatePart {
+    const DAY_AND_MONTH: [&str; 2] = ["TDAT", "TDA"];
+    const CLOCK: [&str; 2] = ["TIME", "TIM"];
+
+    fn of(tag: &Tag) -> Option<Self> {
+        let key = tag.raw.key.as_str();
+        if Self::CLOCK.contains(&key) {
+            return Some(Self::Clock);
+        }
+        if !Self::DAY_AND_MONTH.contains(&key) {
+            return None;
+        }
+        let RawValue::String(text) = &tag.raw.value else {
+            return Some(Self::Clock);
+        };
+        Some(DayAndMonth::read(text).map_or(Self::Clock, Self::DayAndMonth))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum DateRank {
     RecordingDate,
@@ -382,6 +428,7 @@ enum DateRank {
 struct Builder {
     tags: TagSet,
     date: Option<(DateRank, String)>,
+    day_and_month: Option<DayAndMonth>,
     synced_lyrics: Option<String>,
     listed_in_this_revision: u16,
 }
@@ -423,6 +470,14 @@ impl Builder {
         self.listed_in_this_revision = 0;
         let naming = Naming::of(tags);
         for tag in tags {
+            match Id3DatePart::of(tag) {
+                Some(Id3DatePart::DayAndMonth(day)) => {
+                    self.day_and_month = Some(day);
+                    continue;
+                }
+                Some(Id3DatePart::Clock) => continue,
+                None => {}
+            }
             for std in id3_list(tag) {
                 self.absorb_one(&std);
             }
@@ -566,7 +621,10 @@ impl Builder {
     }
 
     fn finish(mut self) -> TagSet {
-        self.tags.date = self.date.map(|(_, value)| value);
+        self.tags.date = self.date.map(|(rank, value)| match self.day_and_month {
+            Some(day) if rank == DateRank::RecordingYear => day.in_the_year(&value),
+            _ => value,
+        });
         if let Some(sheet) = self.synced_lyrics {
             self.tags.lyrics = Some(sheet);
         }
@@ -1024,6 +1082,39 @@ mod tests {
             )]),
         ]);
         assert_eq!(set_of(&retagged).date.as_deref(), Some("2011"));
+    }
+
+    #[test]
+    fn an_id3v2_3_day_and_month_joins_the_year_and_the_clock_is_no_date() {
+        let joined = logged(vec![revision(vec![
+            mapped("TYER", "1971", StandardTag::RecordingYear(1971)),
+            mapped("TDAT", "3010", StandardTag::RecordingDate(text("3010"))),
+            mapped("TIME", "1230", StandardTag::RecordingTime(text("1230"))),
+        ])]);
+        assert_eq!(set_of(&joined).date.as_deref(), Some("1971-10-30"));
+
+        let clocked = logged(vec![revision(vec![
+            mapped("TIME", "1230", StandardTag::RecordingTime(text("1230"))),
+            mapped("TYER", "1971", StandardTag::RecordingYear(1971)),
+        ])]);
+        assert_eq!(set_of(&clocked).date.as_deref(), Some("1971"));
+
+        let alone = logged(vec![revision(vec![mapped(
+            "TDAT",
+            "0503",
+            StandardTag::RecordingDate(text("0503")),
+        )])]);
+        assert_eq!(set_of(&alone).date, None);
+
+        let full = logged(vec![revision(vec![
+            mapped(
+                "TDRC",
+                "1971-10-30",
+                StandardTag::RecordingDate(text("1971-10-30")),
+            ),
+            mapped("TDAT", "0101", StandardTag::RecordingDate(text("0101"))),
+        ])]);
+        assert_eq!(set_of(&full).date.as_deref(), Some("1971-10-30"));
     }
 
     fn revision(tags: Vec<Tag>) -> MetadataRevision {
