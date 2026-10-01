@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A cue sheet that names a file but cuts no audio track claims the file from the whole-file pass, so
-  the next prune deletes its row, its plays and its favourite
 - A directory entry whose type cannot be read, or a listing an error cuts short, is skipped without
   keeping its rows the way an unreadable file is, so the prune deletes them with their plays
 - A wrong Subsonic password is a refusal rather than an absence, so every poll logs in once per

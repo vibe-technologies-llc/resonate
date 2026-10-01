@@ -13639,6 +13639,32 @@ FILE "two.wav" WAVE
 "#;
 
 #[test]
+fn a_sheet_that_cuts_no_audio_track_leaves_its_file_to_the_whole_file_pass() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("one.wav", &meddle("One of These Days", "1"));
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let file = filed_under(&tree).join("one.wav");
+    let before = library
+        .track_at(&file, None)?
+        .expect("the file is a track of its own");
+    library.favour(Favoured::Track(before.id), true)?;
+
+    tree.write(
+        "data.cue",
+        b"FILE \"one.wav\" WAVE\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n",
+    );
+    scan(&library, &options(&tree))?;
+
+    let after = library
+        .track_at(&file, None)?
+        .expect("a sheet cutting nothing took the file's row away");
+    assert_eq!(after.id, before.id);
+    assert!(after.favourite.is_some());
+    Ok(())
+}
+
+#[test]
 fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_them() -> Result<()> {
     let tree = Tree::new();
     tree.write("rip/one.wav", &Wav::new().frames(44_100).build());

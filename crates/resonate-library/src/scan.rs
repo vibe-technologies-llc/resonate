@@ -959,7 +959,11 @@ fn directory_of(
         };
         let touched = metadata.modified().unwrap_or(UNIX_EPOCH);
 
-        for cut in &sheet.files {
+        for cut in sheet
+            .files
+            .iter()
+            .filter(|cut| cut.audio_tracks().next().is_some())
+        {
             let within = the_folder_a_cue_names(folder, &cut.named);
             let beside = within == folder;
             let candidates = if beside {
@@ -1050,10 +1054,6 @@ fn sheet_job(
     } = walking;
     let (file, metadata) = held;
     let tracks = cut.audio_tracks().count();
-    if tracks == 0 {
-        return Ok(true);
-    }
-
     progress
         .discovered
         .fetch_add(tracks as u64, Ordering::Relaxed);

@@ -296,7 +296,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   audio and not in `AUDIO_EXTENSIONS`; it is a sidecar, so `directory_of` reads every sheet in a
   directory first, resolves each `FILE` against the sheet's own folder, and only then sends a probe job
   for audio no sheet claimed — which stops one FLAC being stored as an album's worth of rows and as one
-  whole-file row. A `FILE` naming a folder below the sheet (`cue::folder_named`, `audio.md`) is
+  whole-file row. A `FILE` cutting no audio track — a data track alone — claims nothing, so its file
+  stays a whole-file row rather than being claimed and then pruned with its plays and favourite
+  (`a_sheet_that_cuts_no_audio_track_leaves_its_file_to_the_whole_file_pass`). A `FILE` naming a folder below the sheet (`cue::folder_named`, `audio.md`) is
   matched against the audio listed there, and the claim is kept in the walk's `claimed_from_above`,
   which that folder's own pass — always later, the walk being depth first with a folder's children
   pushed before it is read — takes the file out of; a sheet in the lower folder naming a file one
