@@ -1,7 +1,7 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded};
-use resonate_core::{Frames, Resumption, SampleRate, Span, Volume};
+use resonate_core::{Frames, MediaLocation, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
 };
@@ -105,6 +105,7 @@ pub enum Command {
     SetBluetoothWake(BluetoothWake),
     SetBuffer(Duration),
     SleepUntil(Option<Until>),
+    Relocate(Vec<(MediaLocation, MediaLocation)>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -149,6 +150,7 @@ pub enum CommandKind {
     SetBluetoothWake,
     SetBuffer,
     SleepUntil,
+    Relocate,
 }
 
 impl CommandKind {
@@ -193,6 +195,7 @@ impl CommandKind {
             Self::SetBluetoothWake => "keeping Bluetooth awake",
             Self::SetBuffer => "the buffer",
             Self::SleepUntil => "the sleep timer",
+            Self::Relocate => "where the files moved",
         }
     }
 }
@@ -243,6 +246,7 @@ impl Command {
             Self::SetDeviceVolume(_) => CommandKind::SetDeviceVolume,
             Self::SetDeviceMute(_) => CommandKind::SetDeviceMute,
             Self::SetForceGraphRate(_) => CommandKind::SetForceGraphRate,
+            Self::Relocate(_) => CommandKind::Relocate,
             Self::SetBluetoothWake(_) => CommandKind::SetBluetoothWake,
             Self::SetBuffer(_) => CommandKind::SetBuffer,
             Self::SleepUntil(_) => CommandKind::SleepUntil,

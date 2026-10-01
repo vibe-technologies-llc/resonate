@@ -1238,6 +1238,15 @@ impl Engine {
                 self.wake_from_the_sleep_fade();
                 Ok(())
             }
+            Command::Relocate(moved) => {
+                self.queue.relocate(&moved);
+                if let Some(track) = self.track.as_mut()
+                    && let Some((_, to)) = moved.iter().find(|(from, _)| *from == track.location)
+                {
+                    track.location = to.clone();
+                }
+                Ok(())
+            }
         }
     }
 

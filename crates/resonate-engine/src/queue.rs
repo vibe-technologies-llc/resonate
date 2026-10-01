@@ -404,6 +404,20 @@ impl Queue {
         self.items.len()
     }
 
+    pub fn relocate(&mut self, moved: &[(MediaLocation, MediaLocation)]) -> bool {
+        let mut relocated = false;
+        for item in &mut self.items {
+            if let Some((_, to)) = moved.iter().find(|(from, _)| *from == item.location) {
+                item.location = to.clone();
+                relocated = true;
+            }
+        }
+        if relocated {
+            self.revision = self.revision.wrapping_add(1);
+        }
+        relocated
+    }
+
     pub const fn repeat(&self) -> RepeatMode {
         self.repeat
     }

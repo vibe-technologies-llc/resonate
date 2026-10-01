@@ -1795,7 +1795,11 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   (`a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track`); then `settle` fsyncs every folder written and
   `Library::files_moved` rewrites `tracks.path`, `playlist_entries.path`, `lyrics_kept.path` and
   `resume_rows.uri` in one transaction, so a play count, playlist row, kept lyric and kept queue follow
-  the file rather than being rescanned into a new row. It first deletes any `tracks` and `lyrics_kept`
+  the file rather than being rescanned into a new row. The queue open in the player follows too where
+  the window ran the organise: `LibraryModel` keeps an applied run's moves, the root view hands them on
+  as `Command::Relocate`, and `Queue::relocate` rewrites every row naming a moved file (the playing
+  track's location with it), so the next resumption written carries the new paths rather than
+  overwriting the rewritten ones (`a_queued_row_whose_file_was_moved_is_reached_where_it_went`). It first deletes any `tracks` and `lyrics_kept`
   row standing at the destination, both keyed by path, else the `UPDATE` is refused: `standing` weighs
   the *file* there, so a row whose file had gone — not yet tidied by a scan of another root — once
   failed all 256 moves of its batch. `playlist_entries` and `resume_rows` need no such delete, neither

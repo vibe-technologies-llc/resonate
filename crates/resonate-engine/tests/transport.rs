@@ -2465,6 +2465,50 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
 }
 
 #[test]
+fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let filed = tree.root.join("filed.wav");
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    std::fs::rename(&second, &filed).expect("the file moves");
+    player
+        .request(Command::Relocate(vec![(
+            MediaLocation::local(&second),
+            MediaLocation::local(&filed),
+        )]))?
+        .wait_for(PATIENCE)?;
+    assert_eq!(
+        player.queued().rows[1].location,
+        MediaLocation::local(&filed),
+        "the queue kept the path the file left"
+    );
+
+    player.request(Command::Next)?.wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the moved row to play",
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the moved row failed"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

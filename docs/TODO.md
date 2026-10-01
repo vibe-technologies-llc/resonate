@@ -8,8 +8,8 @@ service or a format — and is not worked until that moves; everything else is o
 ## Defects
 - A pipe or process substitution that stops producing holds the engine thread inside a read with no
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive
-- A queue open in the player keeps the old paths after an organise moves its files, and the next
-  resumption written overwrites the rewritten one with them, so each moved row fails when reached
+- An organise run from the command line while the window plays is not told to the window's player,
+  so its queue keeps the old paths and its next resumption overwrites the rewritten one
 
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's

@@ -628,6 +628,7 @@ pub struct LibraryModel {
     instead: Option<String>,
     work: Work,
     organised: Option<(Pass, OrganiseSummary)>,
+    relocated: Vec<(MediaLocation, MediaLocation)>,
     walks_back: bool,
     tags_walk_back: bool,
     previewed: Planned,
@@ -776,6 +777,7 @@ impl LibraryModel {
             instead: None,
             work: Work::Nothing,
             organised: None,
+            relocated: Vec::new(),
             walks_back,
             tags_walk_back,
             previewed: Planned::Not,
@@ -2478,6 +2480,10 @@ impl LibraryModel {
         }
     }
 
+    pub fn take_relocations(&mut self) -> Vec<(MediaLocation, MediaLocation)> {
+        std::mem::take(&mut self.relocated)
+    }
+
     pub fn organised(&self) -> Option<(Pass, &OrganiseSummary)> {
         self.organised
             .as_ref()
@@ -3868,6 +3874,7 @@ impl LibraryModel {
                         this.previewed = Planned::after(pass, summary.cancelled, read_at);
                         if pass.applies() {
                             toast::tell(filed(&summary), cx);
+                            this.relocated.extend(relocations(&summary));
                         }
                         this.organised = Some((pass, summary));
                     }
@@ -3989,6 +3996,16 @@ fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notice> {
         told.push_str(", stopped early");
     }
     Some(Notice::Noted(told))
+}
+
+fn relocations(summary: &OrganiseSummary) -> Vec<(MediaLocation, MediaLocation)> {
+    summary
+        .plan
+        .moves
+        .iter()
+        .flat_map(|planned| planned.files())
+        .map(|(from, to)| (MediaLocation::local(from), MediaLocation::local(to)))
+        .collect()
 }
 
 fn filed(summary: &OrganiseSummary) -> Notice {

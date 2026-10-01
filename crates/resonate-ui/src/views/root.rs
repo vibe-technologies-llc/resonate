@@ -697,6 +697,10 @@ impl RootView {
         .detach();
         cx.observe(&library, |this, library, cx| {
             this.forget_what_has_gone(&library, cx);
+            let relocated = library.update(cx, |model, _| model.take_relocations());
+            if !relocated.is_empty() {
+                this.send(Command::Relocate(relocated), cx);
+            }
             cx.notify();
         })
         .detach();
