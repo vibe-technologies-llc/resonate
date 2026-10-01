@@ -977,6 +977,32 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
 }
 
 #[test]
+fn a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write(
+        "away.wav",
+        &song(21_700.0, 6, &[(TITLE, "Away"), (ARTIST, "Ada")]),
+    );
+    let library = scanned(&tree)?;
+    let mode = |bits: u32| {
+        fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(bits))
+            .expect("the file's mode changes");
+    };
+
+    mode(0o000);
+    let away = enriched(&library, Silent::new(), Fingerprinters::none())?;
+    mode(0o644);
+    assert_eq!(away.stats.studied, 0);
+
+    let back = enriched(&library, Silent::new(), Fingerprinters::none())?;
+    assert_eq!(
+        back.stats.studied, 1,
+        "a file out of reach for one pass was taken as one that will not decode"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_vaulted_row_whose_file_has_gone_is_studied_out_of_its_object() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();

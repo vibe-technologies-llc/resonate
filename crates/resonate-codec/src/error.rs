@@ -265,6 +265,17 @@ impl Error {
         }
     }
 
+    pub fn is_out_of_reach(&self) -> bool {
+        match self {
+            Self::Io { source, .. } => !matches!(
+                source.kind(),
+                io::ErrorKind::UnexpectedEof | io::ErrorKind::InvalidData
+            ),
+            Self::NoSuchSource { .. } | Self::OpenTookTooLong { .. } => true,
+            _ => false,
+        }
+    }
+
     pub(crate) fn from_symphonia(
         source: errors::Error,
         op: CodecOp,

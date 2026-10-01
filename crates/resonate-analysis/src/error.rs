@@ -22,6 +22,13 @@ pub enum Error {
 }
 
 impl Error {
+    pub fn is_out_of_reach(&self) -> bool {
+        match self {
+            Self::Codec { source, .. } => source.is_out_of_reach(),
+            Self::Stopped => false,
+        }
+    }
+
     pub(crate) fn codec(op: AnalysisOp, source: resonate_codec::Error) -> Self {
         Self::Codec {
             op,

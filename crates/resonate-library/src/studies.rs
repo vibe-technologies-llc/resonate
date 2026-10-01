@@ -631,6 +631,10 @@ fn studied_now(
     let study = match resonate_analysis::study(sources, &asked.location, asked.span, progress) {
         Ok(study) => study,
         Err(resonate_analysis::Error::Stopped) => return None,
+        Err(error) if error.is_out_of_reach() => {
+            tracing::debug!(%error, location = %asked.location, "a track's file was out of reach, so it is studied another time");
+            return None;
+        }
         Err(error) => {
             tracing::debug!(%error, location = %asked.location, "a track could not be studied");
             unstudied(library, asked.id);

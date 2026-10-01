@@ -1852,6 +1852,10 @@ impl Pass<'_> {
         ) {
             Ok(study) => study,
             Err(resonate_analysis::Error::Stopped) => return None,
+            Err(error) if error.is_out_of_reach() => {
+                tracing::debug!(%error, track = %track.id, "a track's file was out of reach, so it is fingerprinted another time");
+                return None;
+            }
             Err(error) => {
                 tracing::debug!(%error, track = %track.id, "a track could not be studied to be fingerprinted");
                 studies::unstudied(self.library, track.id);

@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A track whose file could not be read when its study ran — an unmounted drive, a share that was
-  down — is marked as one that will not decode and is never studied again until its size or time
-  changes, so a whole drive's rows go without verdict, loudness or print
 - Applying a tag run throws away the study of every file it wrote, because the study follows the
   file's size and time, so each is decoded and fingerprinted again and has no loudness until then
 - An ID3v2.3 file carrying `TDAT` or `TIME` beside `TYER` gets the day and month (`0503`) or the

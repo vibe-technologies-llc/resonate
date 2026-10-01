@@ -220,7 +220,11 @@ it.
   nothing of it, until `unstudied_forget_a_changed_file` — the same trigger on the same columns —
   sees the file change, `JUDGED_UNDER` moves, or a `refresh` asks every track again; a study that
   lands takes the mark away. A stopped study is not a failure and leaves none
-  (`a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_asked_again`).
+  (`a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_asked_again`), and
+  nor is a file out of reach — `Error::is_out_of_reach`, read off `codec::Error::is_out_of_reach`: an
+  I/O failure other than a short or malformed read, a source that does not answer — so an unmounted
+  drive or a share that was down is studied once it is back rather than written off
+  (`a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back`).
 - **The enrichment studies every track beside the pass.** `Studies` is a pool of
   `available_parallelism / 2` threads (at least one) named `resonate-study-<n>`, drawing off one
   shared counter, started before the pass and joined after the pictures. `to_study` is every track
