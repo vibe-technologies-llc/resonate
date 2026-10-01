@@ -1783,7 +1783,11 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
 - **A file moves before the catalog does, in batches, and a batch that cannot finish is put back.**
   `apply` walks the moves `MOVES_PER_BATCH` (256) at a time. In a batch each move is weighed against the
   disc again (`standing`: a vanished source is `SourceGone`, a destination now taken `Collided`), renamed
-  with its sidecars and recorded in `done`; then `settle` fsyncs every folder written and
+  with its sidecars and recorded in `done`. A sidecar is weighed apart from its track
+  (`with_the_sidecars_that_can_go`): one gone since is dropped and one whose destination is now taken
+  stays where it stands, the track moving without either, where `rename` overwrote the file there and
+  a deleted sidecar refused its track on every undo
+  (`a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track`); then `settle` fsyncs every folder written and
   `Library::files_moved` rewrites `tracks.path`, `playlist_entries.path`, `lyrics_kept.path` and
   `resume_rows.uri` in one transaction, so a play count, playlist row, kept lyric and kept queue follow
   the file rather than being rescanned into a new row. It first deletes any `tracks` and `lyrics_kept`

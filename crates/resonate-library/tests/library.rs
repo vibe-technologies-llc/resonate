@@ -14381,6 +14381,48 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
 }
 
 #[test]
+fn a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write("loose/echoes.lrc", b"[00:01.00]overhead the albatross");
+    tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+    tree.write("loose/days.txt", b"one of these days");
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+
+    applied(&library)?;
+    let filed = root.join("Pink Floyd/Meddle");
+    assert!(filed.join("02 Echoes.lrc").is_file());
+    assert!(filed.join("01 One of These Days.txt").is_file());
+
+    fs::create_dir_all(root.join("loose")).expect("the emptied folder again");
+    fs::write(root.join("loose/echoes.lrc"), b"written since").expect("a file where one stood");
+    fs::remove_file(filed.join("01 One of These Days.txt")).expect("a sidecar deleted");
+
+    let back = library
+        .organise(OrganiseOptions {
+            apply: true,
+            walk_back: true,
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+
+    assert_eq!(back.stats.moved, 2, "{:?}", back.plan.refused);
+    assert!(root.join("loose/echoes.wav").is_file());
+    assert!(
+        root.join("loose/days.wav").is_file(),
+        "a deleted sidecar refused its track"
+    );
+    assert_eq!(
+        fs::read(root.join("loose/echoes.lrc")).expect("the file there since"),
+        b"written since",
+        "a sidecar was renamed over a file that appeared where it went"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
     let tree = Tree::new();
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));

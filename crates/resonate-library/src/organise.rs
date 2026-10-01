@@ -1883,6 +1883,7 @@ fn batch_landing(
             continue;
         }
 
+        let planned = &with_the_sidecars_that_can_go(planned);
         let mark = done.len();
         match renamed_onto(library, planned, &mut done, made) {
             Ok(()) => landed.push(planned.clone()),
@@ -1946,6 +1947,22 @@ fn standing(planned: &Move) -> Option<Refusal> {
             with: to.to_path_buf(),
         })
     })
+}
+
+fn with_the_sidecars_that_can_go(planned: &Move) -> Move {
+    let mut trimmed = planned.clone();
+    trimmed.sidecars.retain(|sidecar| {
+        if fs::symlink_metadata(&sidecar.from).is_err() {
+            tracing::debug!(sidecar = %sidecar.from.display(), "a sidecar has gone, and its track moves without it");
+            return false;
+        }
+        if fs::symlink_metadata(&sidecar.to).is_ok() {
+            tracing::debug!(sidecar = %sidecar.from.display(), with = %sidecar.to.display(), "a sidecar was left where it stands rather than renamed over a file");
+            return false;
+        }
+        true
+    });
+    trimmed
 }
 
 fn refused_now(progress: &OrganiseProgress, planned: &Move, refusal: Refusal) -> Refused {

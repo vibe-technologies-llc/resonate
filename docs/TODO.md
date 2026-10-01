@@ -28,8 +28,6 @@ service or a format — and is not worked until that moves; everything else is o
   every want after it untried
 - An equaliser band moved in the last 600 ms before the window closes is never written to its
   profile, because the settle is debounced and nothing flushes it on quit
-- An organise walk back renames a sidecar over a file that has since appeared where it goes, and a
-  sidecar since deleted refuses the whole track on every undo
 - A queue open in the player keeps the old paths after an organise moves its files, and the next
   resumption written overwrites the rewritten one with them, so each moved row fails when reached
 - Discord shows a blank picture for a release the Cover Art Archive has no front cover for, since
