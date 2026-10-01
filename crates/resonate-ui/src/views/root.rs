@@ -855,8 +855,13 @@ impl RootView {
         })
         .detach();
 
-        let equaliser = cx.new(|_| {
-            EqualiserModel::new(places.equaliser.clone(), Arc::clone(&corrections), bindings)
+        let equaliser = cx.new(|cx| {
+            EqualiserModel::saved_on_leaving(
+                places.equaliser.clone(),
+                Arc::clone(&corrections),
+                bindings,
+                cx,
+            )
         });
         cx.observe(&equaliser, |this, equaliser, cx| {
             let (notice, untold) =

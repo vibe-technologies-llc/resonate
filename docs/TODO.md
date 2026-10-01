@@ -20,8 +20,6 @@ service or a format — and is not worked until that moves; everything else is o
   fetches it or a rescan finds it, because a miss is cached like a picture
 - The queue and the playback bar keep a track as it was first read — title, artist, album link,
   favourite, *not in the library* — after a rescan or a lookup changes it
-- An equaliser band moved in the last 600 ms before the window closes is never written to its
-  profile, because the settle is debounced and nothing flushes it on quit
 - A queue open in the player keeps the old paths after an organise moves its files, and the next
   resumption written overwrites the rewritten one with them, so each moved row fails when reached
 - Discord shows a blank picture for a release the Cover Art Archive has no front cover for, since

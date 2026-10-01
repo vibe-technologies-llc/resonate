@@ -363,6 +363,22 @@ impl EqualiserModel {
         self.shaping = None;
     }
 
+    pub fn saved_on_leaving(
+        folder: PathBuf,
+        corrections: Arc<Corrected>,
+        bindings: Bindings,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.on_app_quit(|model: &mut Self, _| {
+            model.save_now();
+            async {}
+        })
+        .detach();
+        cx.on_release(|model: &mut Self, _| model.save_now())
+            .detach();
+        Self::new(folder, corrections, bindings)
+    }
+
     fn save_now(&mut self) {
         if !self.unsaved {
             return;
@@ -1012,6 +1028,57 @@ mod tests {
             BandGain::from_decibels(3.0).expect("a gain"),
             Q::BUTTERWORTH,
         )
+    }
+
+    #[gpui::test]
+    fn a_curve_changed_just_before_the_window_closes_is_kept(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-leaving-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let name = named("Harman");
+        let dac = NodeName::new("alsa_output.dac");
+        store
+            .keep(
+                &name,
+                &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
+            )
+            .expect("the profile is kept");
+        let model = cx.new(|cx| {
+            EqualiserModel::saved_on_leaving(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings {
+                    enabled: true,
+                    fallback: None,
+                    by_sink: vec![(dac.clone(), Binding::Profile(name.clone()))],
+                },
+                cx,
+            )
+        });
+        let quieter = Preamp::from_decibels(-3.0).expect("a preamp");
+
+        model.update(cx, |model, cx| {
+            model.show(Some(&dac));
+            model.set_preamp(quieter, cx);
+        });
+        drop(model);
+        cx.update(|_| {});
+        cx.run_until_parked();
+
+        let kept = store
+            .read(&name)
+            .expect("the profile reads")
+            .expect("the profile is there");
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(
+            kept.preamp(),
+            quieter,
+            "a change made within the settle of closing was lost"
+        );
     }
 
     #[gpui::test]

@@ -431,7 +431,11 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   shape — one band moved is no change of shape, and a band dragged through 0 dB keeps its stage — and
   swaps coefficients under the running DF1 history. Only the first band pressed onto an empty curve
   reshapes the chain, once, as switching the equaliser on always did. The file write behind an edit
-  is debounced by `PROFILE_SETTLES`, so a drag writes once, after it stops.
+  is debounced by `PROFILE_SETTLES`, so a drag writes once, after it stops — and is never lost to
+  it: `EqualiserModel::saved_on_leaving`, how the window builds the model, has the entity's release
+  and the application's quit write an unsaved curve at once (`save_now`), so a band moved in the
+  last 600 ms before the window closes is kept
+  (`a_curve_changed_just_before_the_window_closes_is_kept`).
 - **What the engine is told is held in memory, not read back from the file.** `equalisation()` used
   to read every bound profile off disk — a read per move during a drag, and behind the debounce the
   file as it stood *before* the edit, so a typed cell reached the engine one edit late.
