@@ -863,6 +863,58 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_queued_row_is_read_again_once_the_catalog_changes_under_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the tracks read")
+            .remove(0);
+        let item = resonate_engine::QueueItem {
+            id: track.id,
+            location: track.location.clone(),
+            span: track.span,
+        };
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        let titled = |driven: &mut Driven| {
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.library
+                    .update(cx, |model, _| model.track_of(&item))
+                    .map(|track| track.title)
+            })
+        };
+        assert_eq!(titled(&mut driven).as_deref(), Some("Echos"));
+
+        library
+            .land_recording(
+                track.id,
+                &resonate_library::Recording {
+                    id: resonate_library::Mbid::new("b1a9c0de-1111-4222-8333-444455556666")
+                        .expect("an id"),
+                    title: "Echoes".to_owned(),
+                    credit: Vec::new(),
+                    length: None,
+                    isrcs: Vec::new(),
+                    releases: Vec::new(),
+                },
+                resonate_library::Certainty::Exactly,
+                None,
+            )
+            .expect("the lookup lands");
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| model.reload(cx));
+        });
+
+        assert_eq!(
+            titled(&mut driven).as_deref(),
+            Some("Echoes"),
+            "the queue kept the row as it was first read"
+        );
+    }
+
+    #[gpui::test]
     fn typing_at_the_window_searches_with_every_letter_and_its_spaces_rather_than_steering(
         cx: &mut TestAppContext,
     ) {

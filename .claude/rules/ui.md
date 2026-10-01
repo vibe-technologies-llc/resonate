@@ -889,7 +889,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   tracks pane, Favourites and an opened suggestion compare against `RootView::playing_now`'s `track`, the
   library row `LibraryModel::track_of` weighs out of the queue row's location and span. They compared the
   queue row's own `TrackId`, the library's id only for a row loaded from the catalog this run: a resumed
-  queue is minted afresh by `Queue::restore`, so after a restart pressing Play lit nothing.
+  queue is minted afresh by `Queue::restore`, so after a restart pressing Play lit nothing. What
+  `track_of` read is held in `named`, and the albums the bar links to in `read_albums`, only until the
+  catalog next changes: `LibraryModel::reload` forgets both, so a title, artist, album link, favourite or
+  *not in the library* a rescan or a lookup changed is read again rather than kept as first read
+  (`a_queued_row_is_read_again_once_the_catalog_changes_under_it`).
 - **The row playing is the row a list is on, never a track id.** A file can be in a queue or playlist
   twice, and an unscanned row has no `TrackId`, so both panes ask which row the transport is on. The queue
   draws `PlayerState::queue_position`, the row of the published play order; a playlist draws

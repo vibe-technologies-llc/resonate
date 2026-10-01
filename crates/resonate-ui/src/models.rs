@@ -2833,13 +2833,15 @@ impl LibraryModel {
     }
 
     pub fn reload(&mut self, cx: &mut Context<Self>) {
-        self.forget_the_missed_pictures();
+        self.forget_what_the_catalog_may_have_changed();
         self.read(Wanted::Everything, cx);
     }
 
-    fn forget_the_missed_pictures(&mut self) {
+    fn forget_what_the_catalog_may_have_changed(&mut self) {
         self.covers.forget_where(Option::is_none);
         self.portraits.forget_where(Option::is_none);
+        self.named.forget_where(|_| true);
+        self.read_albums.forget_where(|_| true);
     }
 
     pub fn reload_playlists(&mut self, cx: &mut Context<Self>) {
