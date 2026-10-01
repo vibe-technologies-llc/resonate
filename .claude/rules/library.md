@@ -954,7 +954,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   pass as `Unreachable` does, `stopped_by` naming its op and the row being asked left unstamped — a
   service refusing everything having said something about the next album after all
   (`a_reference_refusing_lookup_after_lookup_ends_the_pass`). Landing a release or profile stamps
-  both, inside the transaction writing it.
+  both, inside the transaction writing it. An album, track or artist gathered into another or
+  removed while it is asked about answers `UnknownAlbum`, `UnknownTrack` or `UnknownArtist`, which
+  `passed_over_if_gone` logs and passes over, the pass going on to the rest
+  (`an_album_gone_while_a_lookup_asks_about_it_is_passed_over_and_the_pass_goes_on`); any other
+  error that ends the pass cancels its progress and rests the picture, study and lyric workers before
+  it is returned, rather than leaving them working through the rest of the queue.
 - **A row answering nothing is asked half as often each time, and an answer puts the wait back.**
   `asks` counts the stampings a row took without an answer — every `stamp_*_asked` carrying
   `Fruitless::Missed` steps it — and `due_again` waits `RETRY_AFTER` (24 h) doubled that many times,

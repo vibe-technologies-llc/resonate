@@ -319,7 +319,13 @@ fn run(
             );
             Some(op)
         }
-        Err(other) => return Err(other),
+        Err(other) => {
+            progress.cancel();
+            pictures.rest();
+            studies.rest();
+            verses.rest();
+            return Err(other);
+        }
     };
     pictures.rest();
     studies.rest();
@@ -333,6 +339,16 @@ fn run(
         cancelled: progress.is_cancelled(),
         stopped_by,
     })
+}
+
+fn passed_over_if_gone(answered: Result<()>) -> Result<()> {
+    match answered {
+        Err(gone @ (Error::UnknownAlbum(_) | Error::UnknownTrack(_) | Error::UnknownArtist(_))) => {
+            tracing::debug!(%gone, "a row was gathered into another or removed while it was asked about");
+            Ok(())
+        }
+        answered => answered,
+    }
 }
 
 fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
@@ -1325,17 +1341,18 @@ impl Pass<'_> {
                     return Ok(());
                 }
                 self.lift(options, &spent, &mut queue, asked)?;
-                match &queue[asked] {
+                let answered = match &queue[asked] {
                     Ask::Album(album) => {
                         spent.insert(Seek::Album(album.id));
-                        self.album(album)?;
+                        self.album(album)
                     }
-                    Ask::Track(track) => self.track(*track)?,
+                    Ask::Track(track) => self.track(*track),
                     Ask::Artist(artist) => {
                         spent.insert(Seek::Artist(*artist));
-                        self.artist(*artist)?;
+                        self.artist(*artist)
                     }
-                }
+                };
+                passed_over_if_gone(answered)?;
                 asked += 1;
             }
             let born = self.artists_born_in_the_pass(options, &spent)?;

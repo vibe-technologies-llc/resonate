@@ -11525,6 +11525,46 @@ fn cancelling_an_enrichment_stops_it_between_requests() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn an_album_gone_while_a_lookup_asks_about_it_is_passed_over_and_the_pass_goes_on() -> Result<()> {
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    write_hours(&tree, None);
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let (fake, has_started, go) = Fake::new(Canned {
+        releases: vec![orbits(orbits_rows(), Vec::new()), hours()],
+        ..Canned::default()
+    })
+    .gated_on(Some(LookupOp::Release));
+    let fake = Arc::new(fake);
+    let handle = library.enrich(
+        Arc::clone(&fake) as Arc<dyn Reference>,
+        Arc::new(Fingerprinters::none()),
+        EnrichOptions::default(),
+    )?;
+
+    has_started
+        .recv()
+        .expect("the release lookup reaches the reference");
+    let gone = beside(&database)
+        .execute("DELETE FROM albums WHERE title = 'Orbits'", [])
+        .expect("the album is removed under the lookup");
+    assert_eq!(gone, 1);
+    go.send(()).expect("the reference is still waiting");
+
+    let summary = handle.join()?;
+    assert!(!summary.cancelled);
+    assert_eq!(summary.stopped_by, None);
+    assert!(
+        fake.calls().len() > 1,
+        "the pass ended at the album that went"
+    );
+    Ok(())
+}
+
 fn waited_for(settled: impl Fn() -> bool) -> bool {
     const LOOKS: u32 = 500;
     const BETWEEN_LOOKS: Duration = Duration::from_millis(10);
