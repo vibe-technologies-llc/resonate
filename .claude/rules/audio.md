@@ -1021,6 +1021,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   under its own `target.object`); the settings pane chooses the device.
   `a_stream_following_the_default_moves_when_the_desktop_chooses_another` and
   `a_device_chosen_by_name_stays_bound_when_the_desktops_default_moves` are the claims.
+- **A command never leaves the transport playing nothing.** A rebind or start retires the old output
+  before it binds, so one failing for the row's own reason — a chain that cannot be built (`Convert`),
+  a seek the file refuses (`Decode`) — after a setting change or onto the row *Next* reached left no
+  stream, nothing to retry and the transport still playing. `carried_on_past_a_stranded_row` weighs
+  every command's outcome: an error naming a track (`Error::track`) that leaves the engine
+  `is_stranded` — playing, a track, no output, no open in flight, not waiting for a device or the graph
+  — goes through `fail`, reported as the row's failure and skipping on, and the command answers `Ok`,
+  having taken effect. A device's error (`NoSink` to a `Load`) is answered as before.
 - **A graph letting go of the ring is waited for once, and fails the track the second time.**
   `RingProducer::is_abandoned` says the consumer was dropped — the graph thread gone with the
   `AudioSource` it was handed, as a daemon restart does, the client dropping every stream of the lost

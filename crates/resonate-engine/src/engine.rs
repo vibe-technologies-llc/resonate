@@ -995,6 +995,7 @@ impl Engine {
         let Request { command, reply } = request;
         let kind = command.kind();
         let outcome = self.apply(command);
+        let outcome = self.carried_on_past_a_stranded_row(outcome);
 
         if let Err(error) = outcome.as_ref() {
             tracing::warn!(%error, ?kind, "command rejected");
@@ -1011,6 +1012,26 @@ impl Engine {
             }
         };
         self.answers.push(Answer { kind, reply });
+    }
+
+    fn carried_on_past_a_stranded_row(&mut self, outcome: Result<()>) -> Result<()> {
+        match outcome {
+            Err(error) if error.track().is_some() && self.is_stranded() => {
+                tracing::warn!(%error, "the row could not play on after the change and is passed over");
+                self.fail(error);
+                Ok(())
+            }
+            outcome => outcome,
+        }
+    }
+
+    fn is_stranded(&self) -> bool {
+        self.playing
+            && self.track.is_some()
+            && self.output.is_none()
+            && self.opening.is_none()
+            && !self.waiting_for_a_device
+            && self.graph_lost.is_none()
     }
 
     fn announce_a_refusal(&mut self, command: CommandKind, outcome: Result<()>) {
