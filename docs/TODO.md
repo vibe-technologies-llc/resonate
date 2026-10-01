@@ -15,8 +15,6 @@ service or a format — and is not worked until that moves; everything else is o
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive
 - A queue open in the player keeps the old paths after an organise moves its files, and the next
   resumption written overwrites the rewritten one with them, so each moved row fails when reached
-- Changing the device or a setting while a row waits for a device resumes it up to the buffer's
-  depth later than where it was heard
 
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's

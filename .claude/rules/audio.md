@@ -1054,6 +1054,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Load` answering `NoSink` to its caller is unchanged: nothing was playing to wait
   (`a_stream_failing_as_its_device_goes_moves_the_row_to_the_fallback_rather_than_skipping_it`,
   `a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_where_it_was_heard`).
+  With no output, `Engine::position` answers `unbound` where it is set rather than the decoder's
+  place, which runs a buffer ahead of what was heard, so a device switch or a setting changed while
+  the row waits rebinds at the frame held and not up to the buffer's depth later
+  (`a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard`).
 - **A fill is a slice, not a loop to a full ring.** `Engine::fill` decodes and writes for at most
   `FILLED_IN_ONE_GO` (20 ms) and answers `Filled::ForNow` where it stopped with room left; `pump`
   keeps that as `fill_owed`, and `budget` answers no wait while it stands, so the next slice runs

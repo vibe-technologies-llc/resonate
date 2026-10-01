@@ -2766,7 +2766,7 @@ impl Engine {
             .saturating_sub(Frames(track.undecoded() as u64));
 
         let Some(output) = self.output.as_ref() else {
-            return decoded;
+            return self.unbound.unwrap_or(decoded);
         };
         if output.producer.is_discarding() {
             return decoded;

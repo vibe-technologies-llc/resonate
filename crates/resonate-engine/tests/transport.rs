@@ -2350,6 +2350,66 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
 }
 
 #[test]
+fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard() -> Result<()> {
+    let (player, graph, source) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+    let waiting_at = player.state().current.map(|current| current.position);
+    let _ = player
+        .request(Command::SetForceGraphRate(true))?
+        .wait_for(PATIENCE);
+    let _ = player
+        .request(Command::SetBuffer(Duration::from_millis(200)))?
+        .wait_for(PATIENCE);
+    assert_eq!(
+        player.state().current.map(|current| current.position),
+        waiting_at,
+        "a setting moved the waiting row on"
+    );
+
+    announce(
+        &graph,
+        SinkInfo {
+            id: SinkId::new(3),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    wait_for(
+        &player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
+        "the row to play on the device that came",
+    );
+    let heard = graph.lock().played.len();
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= heard + block,
+        "the row to play on",
+    );
+
+    assert!(
+        heard_as_faded_in(&graph.lock().played, &source.stream),
+        "the row played on from further than where it was heard"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
