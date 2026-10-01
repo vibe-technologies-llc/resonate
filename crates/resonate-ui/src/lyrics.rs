@@ -13,15 +13,25 @@ use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
 use crate::{models::Scale, theme};
 
-pub(crate) fn near_the_words(pointer: Point<Pixels>, pane: Bounds<Pixels>, column: Pixels) -> bool {
+pub(crate) fn near_the_words(
+    pointer: Point<Pixels>,
+    pane: Bounds<Pixels>,
+    column: Pixels,
+    slack: Pixels,
+) -> bool {
     if pane.size.height <= px(0.0) || !pane.contains(&pointer) {
         return false;
     }
 
     let middle = pane.left() + pane.size.width / 2.0;
-    let slack = theme::width(theme::lyric_pad());
 
     (pointer.x - middle).abs() <= column / 2.0 + slack
+}
+
+fn column_within(pane: Pixels, measures: Measures) -> Pixels {
+    let room = pane - measures.gutter * 2.0;
+
+    room.clamp(px(0.0), measures.column)
 }
 
 const DRAWN_WITHIN_PANES: f32 = 1.0;
@@ -40,7 +50,7 @@ const ARRIVES_IN: Duration = Duration::from_millis(560);
 
 const RISE: Duration = Duration::from_millis(600);
 
-const RISES_FROM: Pixels = px(22.0);
+const RISES_FROM: f32 = 22.0;
 
 const RISE_PER_LINE: Duration = Duration::from_millis(40);
 
@@ -68,11 +78,22 @@ const LEADING: f32 = 1.28;
 
 const LABEL_LEADING: f32 = 1.5;
 
-const LINE_PADDING: Pixels = px(8.0);
+const LINE_PADDING: f32 = 8.0;
 
-const LINE_SPACING: Pixels = px(4.0);
+const LINE_SPACING: f32 = 4.0;
 
-const PLAIN_MARGIN: Pixels = px(48.0);
+const PLAIN_MARGIN: f32 = 48.0;
+
+const END_GAP: f32 = 12.0;
+
+const END_PADDING: f32 = 16.0;
+
+const PANE_AT_RESTING_SIZE: Size<Pixels> = Size {
+    width: px(784.0),
+    height: px(600.0),
+};
+
+const GROWS_AT_MOST: f32 = 2.5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Reading {
@@ -368,26 +389,76 @@ impl<T: Copy + PartialEq> Turn<T> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Growth(f32);
+
+impl Growth {
+    pub const NONE: Self = Self(1.0);
+
+    pub fn of(pane: Size<Pixels>) -> Self {
+        let across = pane.width / PANE_AT_RESTING_SIZE.width;
+        let down = pane.height / PANE_AT_RESTING_SIZE.height;
+        let grown = across.min(down);
+
+        if grown.is_finite() {
+            Self(grown.clamp(1.0, GROWS_AT_MOST))
+        } else {
+            Self::NONE
+        }
+    }
+
+    fn grown(self, length: f32) -> Pixels {
+        px(length * self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measures {
+    pub words: Pixels,
     pub leading: Pixels,
+    pub label_words: Pixels,
     pub label: Pixels,
     pub padding: Pixels,
     pub spacing: Pixels,
     pub breath: Pixels,
     pub pause: Pixels,
     pub margin: Pixels,
+    pub column: Pixels,
+    pub gutter: Pixels,
+    pub pad: Pixels,
+    pub dot: Pixels,
+    pub dot_gap: Pixels,
+    pub end_rule: Pixels,
+    pub end_gap: Pixels,
+    pub end_padding: Pixels,
+    pub dissolve: Pixels,
+    pub rise: Pixels,
 }
 
 impl Measures {
-    fn at(scale: Scale) -> Self {
+    pub fn at(scale: Scale, growth: Growth) -> Self {
+        let words = scale.snapped(growth.grown(theme::text_lyric()));
+        let label_words = scale.snapped(growth.grown(theme::text_xs()));
+
         Self {
-            leading: scale.snapped(px(theme::text_lyric() * LEADING)),
-            label: scale.snapped(px(theme::text_xs() * LABEL_LEADING)),
-            padding: scale.snapped(LINE_PADDING),
-            spacing: scale.snapped(LINE_SPACING),
-            breath: scale.snapped(theme::width(theme::lyric_breath())),
-            pause: scale.snapped(theme::width(theme::lyric_break())),
-            margin: scale.snapped(PLAIN_MARGIN),
+            words,
+            leading: scale.snapped(words * LEADING),
+            label_words,
+            label: scale.snapped(label_words * LABEL_LEADING),
+            padding: scale.snapped(growth.grown(LINE_PADDING)),
+            spacing: scale.snapped(growth.grown(LINE_SPACING)),
+            breath: scale.snapped(growth.grown(theme::lyric_breath())),
+            pause: scale.snapped(growth.grown(theme::lyric_break())),
+            margin: scale.snapped(growth.grown(PLAIN_MARGIN)),
+            column: growth.grown(theme::lyric_column()),
+            gutter: growth.grown(theme::lyric_gutter()),
+            pad: growth.grown(theme::lyric_pad()),
+            dot: growth.grown(theme::lyric_dot()),
+            dot_gap: growth.grown(theme::lyric_dot_gap()),
+            end_rule: growth.grown(theme::lyric_end_rule()),
+            end_gap: growth.grown(END_GAP),
+            end_padding: scale.snapped(growth.grown(END_PADDING)),
+            dissolve: growth.grown(theme::lyric_edge()),
+            rise: growth.grown(RISES_FROM),
         }
     }
 }
@@ -795,15 +866,16 @@ impl LyricsModel {
     }
 
     fn rise(&self, index: usize, now: Instant) -> Pixels {
+        let rises_from = self.measures().rise;
         let Some(arrived) = self.arrived else {
-            return RISES_FROM;
+            return rises_from;
         };
         let read = self.read_at.map_or(0, |read| self.ordinal(read));
         let away = self.ordinal(index).abs_diff(read);
         let lag = lagged(away, RISE_PER_LINE, RISES_AT_MOST);
         let risen = now.saturating_duration_since(arrived).saturating_sub(lag);
 
-        RISES_FROM * (1.0 - landed(share_of(risen, RISE)))
+        rises_from * (1.0 - landed(share_of(risen, RISE)))
     }
 
     pub fn arrival(&self, now: Instant) -> f32 {
@@ -866,9 +938,7 @@ impl LyricsModel {
     }
 
     pub fn column_width(&self) -> Pixels {
-        let room = self.scroll.bounds().size.width - theme::width(theme::lyric_gutter()) * 2.0;
-
-        room.clamp(px(0.0), theme::width(theme::lyric_column()))
+        column_within(self.scroll.bounds().size.width, self.measures())
     }
 
     pub fn edge(&self) -> Pixels {
@@ -876,7 +946,7 @@ impl LyricsModel {
     }
 
     pub fn measures(&self) -> Measures {
-        Measures::at(self.scale)
+        Measures::at(self.scale, Growth::of(self.scroll.bounds().size))
     }
 
     pub fn scaled_by(&mut self, scale: Scale) {
@@ -884,7 +954,12 @@ impl LyricsModel {
     }
 
     pub fn opened_by(&self, pointer: Point<Pixels>) -> bool {
-        near_the_words(pointer, self.scroll.bounds(), self.column_width())
+        near_the_words(
+            pointer,
+            self.scroll.bounds(),
+            self.column_width(),
+            self.measures().pad,
+        )
     }
 
     pub const fn is_placed(&self) -> bool {
@@ -1496,7 +1571,7 @@ mod tests {
         let now = Instant::now();
         let mut model = verse(8);
 
-        assert_eq!(model.rise(3, now), RISES_FROM);
+        assert_eq!(model.rise(3, now), model.measures().rise);
         assert!(model.arrival(now).abs() < f32::EPSILON);
 
         model.follow_the_track(at(3), now);
@@ -1541,23 +1616,71 @@ mod tests {
     #[test]
     fn the_measures_of_a_line_are_whole_device_pixels_at_any_scale() {
         for factor in [1.0, 1.25, 1.5, 1.75, 2.0, 2.25] {
-            let measures = Measures::at(Scale::of(factor));
-            for length in [
-                measures.leading,
-                measures.label,
-                measures.padding,
-                measures.spacing,
-                measures.breath,
-                measures.pause,
-                measures.margin,
-            ] {
-                let pixels = f32::from(length) * factor;
-                assert!(
-                    (pixels - pixels.round()).abs() < 1e-3,
-                    "{length:?} is {pixels} pixels at {factor}"
-                );
+            for growth in [1.0, 1.3, 1.77, GROWS_AT_MOST] {
+                let measures = Measures::at(Scale::of(factor), Growth(growth));
+                for length in [
+                    measures.words,
+                    measures.leading,
+                    measures.label_words,
+                    measures.label,
+                    measures.padding,
+                    measures.spacing,
+                    measures.breath,
+                    measures.pause,
+                    measures.margin,
+                    measures.end_padding,
+                ] {
+                    let pixels = f32::from(length) * factor;
+                    assert!(
+                        (pixels - pixels.round()).abs() < 1e-3,
+                        "{length:?} is {pixels} pixels at {factor} grown {growth}"
+                    );
+                }
             }
         }
+    }
+
+    fn sized(width: f32, height: f32) -> Size<Pixels> {
+        Size {
+            width: px(width),
+            height: px(height),
+        }
+    }
+
+    #[test]
+    fn the_sheet_grows_with_its_pane_by_the_tighter_of_its_two_sides() {
+        assert_eq!(Growth::of(sized(0.0, 0.0)), Growth::NONE);
+        assert_eq!(Growth::of(sized(600.0, 400.0)), Growth::NONE);
+        assert_eq!(Growth::of(PANE_AT_RESTING_SIZE), Growth::NONE);
+        assert_eq!(Growth::of(sized(784.0 * 3.0, 600.0 * 1.5)), Growth(1.5));
+        assert_eq!(Growth::of(sized(784.0 * 1.5, 600.0 * 3.0)), Growth(1.5));
+        assert_eq!(Growth::of(sized(3840.0, 2160.0)), Growth(GROWS_AT_MOST));
+
+        let resting = Measures::at(Scale::ONE, Growth::NONE);
+        let grown = Measures::at(Scale::ONE, Growth(2.0));
+
+        assert_eq!(resting.words, px(theme::text_lyric()));
+        assert_eq!(grown.words, resting.words * 2.0);
+        assert_eq!(grown.column, resting.column * 2.0);
+        assert_eq!(grown.gutter, resting.gutter * 2.0);
+        assert_eq!(grown.spacing, resting.spacing * 2.0);
+        assert_eq!(grown.dot, resting.dot * 2.0);
+    }
+
+    #[test]
+    fn the_column_widens_with_the_pane_and_never_outruns_its_gutters() {
+        let resting = Measures::at(Scale::ONE, Growth::NONE);
+        let wide = sized(1568.0, 1200.0);
+        let grown = Measures::at(Scale::ONE, Growth::of(wide));
+
+        assert_eq!(column_within(px(900.0), resting), resting.column);
+        assert_eq!(
+            column_within(px(500.0), resting),
+            px(500.0) - resting.gutter * 2.0
+        );
+        assert_eq!(column_within(wide.width, grown), resting.column * 2.0);
+        assert!(column_within(wide.width, grown) + grown.gutter * 2.0 <= wide.width);
+        assert_eq!(column_within(px(10.0), grown), px(0.0));
     }
 
     #[test]
@@ -1997,25 +2120,26 @@ mod tests {
     #[test]
     fn the_sheet_opens_out_anywhere_down_its_column_the_lines_already_sung_included() {
         let column = px(720.0);
+        let slack = px(16.0);
 
         assert!(
-            near_the_words(point(px(800.0), px(400.0)), pane(), column),
+            near_the_words(point(px(800.0), px(400.0)), pane(), column, slack),
             "the pointer on the line being sung did not open the sheet out"
         );
         assert!(
-            near_the_words(point(px(800.0), px(90.0)), pane(), column),
+            near_the_words(point(px(800.0), px(90.0)), pane(), column, slack),
             "the pointer over the lines already sung did not open the sheet out"
         );
         assert!(
-            near_the_words(point(px(800.0), px(740.0)), pane(), column),
+            near_the_words(point(px(800.0), px(740.0)), pane(), column, slack),
             "the pointer over the lines still to come did not open the sheet out"
         );
         assert!(
-            !near_the_words(point(px(340.0), px(400.0)), pane(), column),
+            !near_the_words(point(px(340.0), px(400.0)), pane(), column, slack),
             "the gutter beside the column opened the sheet out"
         );
         assert!(
-            !near_the_words(point(px(100.0), px(400.0)), pane(), column),
+            !near_the_words(point(px(100.0), px(400.0)), pane(), column, slack),
             "a pointer outside the pane altogether opened the sheet out"
         );
     }
@@ -2033,6 +2157,7 @@ mod tests {
         assert!(!near_the_words(
             point(px(0.0), px(0.0)),
             unmeasured,
+            px(0.0),
             px(0.0)
         ));
     }

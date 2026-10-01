@@ -371,10 +371,6 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
 ## Lyrics
-- The lyric sheet does not grow with the window: its type is a fixed 36 px scaled by the Text size
-  setting alone, in a column capped at 720 px, with line padding, spacing and margins in fixed
-  pixels, so on a large or 4K window it sits small in the middle of the pane; the type, column and
-  spacing should scale up with the pane
 - A timed-lyrics frame is read as words whatever its content type, cut at 4 096 syllables in
   silence, and the last of several languages wins
 

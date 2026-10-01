@@ -1099,7 +1099,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `Falloff::Around` looks only forward — the line sung and the two after, everything sung out — which is
   `Reading::InPlay`; `Falloff::Across` steps down gently both ways so `Reading::Whole` stays readable to
   the edges (its tail at 0.16), the type bold and centred in its column. **The sung line brightens; it
-  does not grow.** Every line is `text_lyric()` in a box of `Measures::leading`, lit or not, so a row
+  does not grow.** Every line is `Measures::words` in a box of `Measures::leading`, lit or not, so a row
   takes the same rows at the same height whatever the turn is doing. A size in motion cannot be drawn
   smoothly here: gpui on Linux puts a glyph on a whole pixel vertically (`SUBPIXEL_VARIANTS_Y` is 1, the
   origin floored) and cosmic-text hints every size, Inter carrying TrueType bytecode, so the line that
@@ -1158,6 +1158,19 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   still, which read as the sheet jumping a pixel at the last moment; an underdamped one before that came
   back from its overshoot the same way, as a flutter
   (`a_glide_lands_on_a_whole_pixel_with_its_last_step_close_behind_the_one_before`).
+- **The sheet grows with its pane, and its type is still a size at rest.** `Growth::of` reads the
+  pane's measured size against `PANE_AT_RESTING_SIZE` (784 × 600: the 720 px column and its two gutters,
+  about ten rows down) and takes the tighter of the two ratios, held between 1 and `GROWS_AT_MOST` (2.5),
+  so a wide but short pane does not grow type it then has no rows for, and a pane at or under the
+  resting size draws as it always did. Every length of the sheet is `Measures::at(scale, growth)`: the
+  type and the voice label, the leading, padding, spacing, a breath's room, a pause, the plain margin,
+  the column and its gutters, the line's side padding, the dots, the end mark, the dissolving edges and
+  how far a set rises — the Text size setting's scale times the growth, so the setting still means what
+  it says on a 4K pane. The growth changes only when the pane does, so it is the layout's, not motion's:
+  a turn never changes a size, which is why it sits beside "the sung line does not grow". A resize
+  moves `Measures`, which `place` already weighs, so every line is laid out again before any is held
+  open at an old height (`the_sheet_grows_with_its_pane_by_the_tighter_of_its_two_sides`,
+  `the_column_widens_with_the_pane_and_never_outruns_its_gutters`).
 - **Everything in the sheet moves on whole device pixels, because gpui draws text on them.** A glyph's
   vertical origin is floored to a device pixel while a quad is drawn where it is, so text given a
   fractional place stepped a pixel at a time while its hover wash and the dots slid. `Scale::snapped`
@@ -1169,8 +1182,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   sum tick a pixel back and forth though both moved one way: 322 such reversals over a minute of a test
   sheet, which read as the lines vibrating
   (`every_line_is_drawn_on_whole_pixels_and_never_steps_back_through_a_glide`). `Measures` holds every
-  vertical length of a row — the words' leading, a voice label's, the padding, the spacing, a breath's
-  room, a pause — snapped the same way, and the head is `edge()` snapped, so every row starts and ends
+  vertical length of a row — the type, the words' leading, a voice label's, the padding, the spacing, a
+  breath's room, a pause, the end mark's padding — snapped the same way at every growth, and the head is `edge()` snapped, so every row starts and ends
   on a whole device pixel. taffy rounds a size by where it sits (`round(top + height) − round(top)`), so
   a 62.08 px row came out 62 or 63 as rows above it changed, the read line moving a pixel with no line
   change (`the_measures_of_a_line_are_whole_device_pixels_at_any_scale`).
@@ -1244,7 +1257,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the same span, so a set arrives at its standing rather than fading in from `Reads::Evenly`. `rewind`
   puts it all back, so a track change places the next set afresh rather than gliding from where the last
   sat. Each row takes an *absolute* width, `LyricsModel::column_width` — the pane's measured width less
-  `theme::lyric_gutter()` each side, capped at `theme::lyric_column()` — rather than `w_full` under a
+  `Measures::gutter` each side, capped at `Measures::column` — rather than `w_full` under a
   `max_w`: taffy fixes a flex item's height from a measure taken before a percentage width resolved and
   never measures again, so under `w_full` every wrapped line was laid out one row tall while gpui
   painted it wrapped, the next row drawing over its second. The head of a synced sheet is the
@@ -1276,15 +1289,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   no line is in play: which line the gap waits on and how far through the wait, counting from the
   track's start before the first line and from when the last line went out after it (`lyrics.md` has
   when a line goes out and why a blank line is a pause). The pane draws it as three dots standing where
-  that line will be, filling in turn and swelling on `LyricsModel::breath` by `DOT_SWELL` over
-  `LYRIC_DOT`, the line itself rising towards lit as the count runs out. The dots are painted by
+  that line will be, filling in turn and swelling on `LyricsModel::breath` by `DOT_SWELLS_BY` of
+  `Measures::dot`, the line itself rising towards lit as the count runs out. The dots are painted by
   `breather`, a canvas of the *fully swollen* size, each a quad around a centre that never moves, so
   the row holds still while they breathe and a dot swells by fractions of a pixel: sized to the dots,
   the gap grew and shrank and shifted every line below, and as laid-out boxes taffy rounded each dot's
   size and place to whole pixels, so a swelling dot stepped and wobbled off its centre. **The dots never change the layout: their room is the sheet's,
   not the wait's.** `Lyrics::breathes_before` answers from the timing alone which lines a wait would
   ever count down to — the first written line, and any whose previous written line goes out
-  `A_BREATH_AT_LEAST` ahead of it — and every such line is drawn with `lyric_breath` of room above its
+  `A_BREATH_AT_LEAST` ahead of it — and every such line is drawn with `Measures::breath` of room above its
   text for the sheet's whole life, reading as the space between two verses. The dots are drawn in that
   room and only fade: a `Breathing` fades them in over `TURN` when a wait begins and a `FadingBreath`
   out over `TURN` when it ends on its line. `landing` centres a line's text rather than its row, taking

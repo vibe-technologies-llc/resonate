@@ -72,7 +72,7 @@ const BREATH_DOTS: usize = 3;
 
 const DIM_DOT: f32 = 0.22;
 
-const DOT_SWELL: f32 = 1.6;
+const DOT_SWELLS_BY: f32 = 0.23;
 
 const A_VOICE_OF_TWO_SPANS: f32 = 0.84;
 
@@ -378,12 +378,12 @@ impl RootView {
             .min_h(px(0.0))
             .items_center()
             .gap(measures.spacing)
-            .px(theme::width(theme::lyric_gutter()))
+            .px(measures.gutter)
             .when(synced, |sheet| sheet.pt(edge))
             .when(!synced, |sheet| sheet.py(measures.margin))
             .children(lines)
             .when_some(ending, |sheet, ending| {
-                sheet.child(end_of_the_words(ending))
+                sheet.child(end_of_the_words(ending, measures))
             })
             .when(synced, |sheet| sheet.child(reaches_the_middle(edge)));
 
@@ -397,8 +397,8 @@ impl RootView {
             .opacity(shown)
             .child(column)
             .child(Scrollbars::of(cx).vertical_while("lyrics-scrollbar", scroll, moved_by_hand))
-            .child(dissolving(true))
-            .child(dissolving(false))
+            .child(dissolving(true, measures))
+            .child(dissolving(false, measures))
             .child(self.follows_the_pointer(cx))
             .child(asks_for_a_frame(moving || sweeping))
             .into_any_element()
@@ -449,17 +449,11 @@ impl RootView {
             .flex()
             .flex_col()
             .when(line.breathes, |carried| {
-                carried.child(breath_room(
-                    line.breath,
-                    second,
-                    line.two_voices,
-                    measures.breath,
-                ))
+                carried.child(breath_room(line.breath, second, line.two_voices, measures))
             });
 
         let words = line.text.clone();
-        let pad = theme::lyric_pad();
-        let inside = (f32::from(line.width) - pad * 2.0).max(0.0);
+        let inside = (line.width - measures.pad * 2.0).max(px(0.0));
         let share = if line.two_voices {
             A_VOICE_OF_TWO_SPANS
         } else {
@@ -473,14 +467,14 @@ impl RootView {
             .when(line.two_voices && !second, |line| line.items_start())
             .when(!line.two_voices, |line| line.items_center())
             .gap(measures.padding)
-            .px(theme::width(pad))
+            .px(measures.pad)
             .py(measures.padding)
             .rounded_xl()
             .opacity(line.standing)
             .when(line.show_voice, |line| {
                 line.child(
                     div()
-                        .text_size(px(theme::text_xs()))
+                        .text_size(measures.label_words)
                         .line_height(measures.label)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::muted()))
@@ -489,11 +483,11 @@ impl RootView {
             })
             .child(
                 div()
-                    .w(px(inside * share))
+                    .w(inside * share)
                     .when(second, |words| words.text_right())
                     .when(line.two_voices && !second, |words| words.text_left())
                     .when(!line.two_voices, |words| words.text_center())
-                    .text_size(px(theme::text_lyric()))
+                    .text_size(measures.words)
                     .line_height(measures.leading)
                     .font_weight(FontWeight::BOLD)
                     .map(|words| {
@@ -757,11 +751,11 @@ fn reaches_the_middle(edge: Pixels) -> Div {
     div().flex_none().w_full().h(edge)
 }
 
-fn end_of_the_words(ending: Ending) -> Div {
+fn end_of_the_words(ending: Ending, measures: Measures) -> Div {
     let rule = || {
         div()
             .h(px(1.0))
-            .w(theme::width(theme::lyric_end_rule()))
+            .w(measures.end_rule)
             .bg(rgb(theme::faint()))
     };
 
@@ -778,13 +772,13 @@ fn end_of_the_words(ending: Ending) -> Div {
                 .flex()
                 .items_center()
                 .justify_center()
-                .gap_3()
-                .py_4()
+                .gap(measures.end_gap)
+                .py(measures.end_padding)
                 .opacity(ending.standing)
                 .child(rule())
                 .child(
                     div()
-                        .text_size(px(theme::text_xs()))
+                        .text_size(measures.label_words)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::muted()))
                         .child(END_OF_LYRICS),
@@ -793,9 +787,11 @@ fn end_of_the_words(ending: Ending) -> Div {
         )
 }
 
-fn breather(breath: Breath) -> Div {
-    let widest = theme::lyric_dot() + DOT_SWELL;
-    let apart = widest + theme::lyric_dot_gap();
+fn breather(breath: Breath, measures: Measures) -> Div {
+    let at_rest = f32::from(measures.dot);
+    let swells_by = at_rest * DOT_SWELLS_BY;
+    let widest = at_rest + swells_by;
+    let apart = widest + f32::from(measures.dot_gap);
     #[expect(clippy::cast_precision_loss, reason = "three dots fit an f32 exactly")]
     let dots = BREATH_DOTS as f32;
     let accent = Hsla::from(rgb(theme::accent()));
@@ -808,9 +804,7 @@ fn breather(breath: Breath) -> Div {
                 #[expect(clippy::cast_precision_loss, reason = "three dots fit an f32 exactly")]
                 let dot = dot as f32;
                 let lit = breath.through.mul_add(dots, -dot).clamp(0.0, 1.0);
-                let side =
-                    px((DOT_SWELL * breath.swell)
-                        .mul_add(lit.mul_add(0.5, 0.5), theme::lyric_dot()));
+                let side = px((swells_by * breath.swell).mul_add(lit.mul_add(0.5, 0.5), at_rest));
                 let centre = point(middle.x + px(apart * (dot - (dots - 1.0) / 2.0)), middle.y);
                 let shade = accent.opacity((1.0 - DIM_DOT).mul_add(lit, DIM_DOT));
                 window.paint_quad(
@@ -826,20 +820,22 @@ fn breather(breath: Breath) -> Div {
     div().opacity(breath.opacity).child(swelling)
 }
 
-fn breath_room(breath: Option<Breath>, second: bool, two_voices: bool, height: Pixels) -> Div {
+fn breath_room(breath: Option<Breath>, second: bool, two_voices: bool, measures: Measures) -> Div {
     div()
         .flex()
         .flex_none()
         .items_center()
-        .h(height)
-        .px(theme::width(theme::lyric_pad()))
+        .h(measures.breath)
+        .px(measures.pad)
         .when(second, |room| room.justify_end())
         .when(two_voices && !second, |room| room.justify_start())
         .when(!two_voices, |room| room.justify_center())
-        .when_some(breath, |room, breath| room.child(breather(breath)))
+        .when_some(breath, |room, breath| {
+            room.child(breather(breath, measures))
+        })
 }
 
-fn dissolving(from_the_top: bool) -> Div {
+fn dissolving(from_the_top: bool, measures: Measures) -> Div {
     let ground = theme::background();
     let (near, far) = if from_the_top {
         (theme::tinted(ground, 0xff), theme::tinted(ground, 0x00))
@@ -850,7 +846,7 @@ fn dissolving(from_the_top: bool) -> Div {
         .absolute()
         .left_0()
         .right_0()
-        .h(px(theme::lyric_edge()))
+        .h(measures.dissolve)
         .bg(linear_gradient(
             DOWNWARDS,
             linear_color_stop(near, 0.0),
