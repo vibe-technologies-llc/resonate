@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsStr,
     fs::{self, Metadata},
+    io,
     num::{NonZeroU8, NonZeroU32, NonZeroUsize},
     path::{MAIN_SEPARATOR, Path, PathBuf},
     slice,
@@ -813,10 +814,12 @@ fn walk(
         let mut audio = Vec::new();
         let mut sheets = Vec::new();
 
-        let entries = match fs::read_dir(&directory) {
+        let entries = match fs::read_dir(&directory)
+            .and_then(Iterator::collect::<io::Result<Vec<_>>>)
+        {
             Ok(entries) => entries,
             Err(error) => {
-                tracing::warn!(%error, path = %directory.display(), "keeping what the catalog holds under a directory it could not read");
+                tracing::warn!(%error, path = %directory.display(), "keeping what the catalog holds under a directory it could not list whole");
                 if !kept_unread(walking, &directory) {
                     return Ok(false);
                 }
@@ -824,13 +827,20 @@ fn walk(
             }
         };
 
-        for entry in entries.flatten() {
+        for entry in entries {
             if progress.is_cancelled() {
                 return Ok(false);
             }
             let path = entry.path();
-            let Ok(kind) = entry.file_type() else {
-                continue;
+            let kind = match entry.file_type() {
+                Ok(kind) => kind,
+                Err(error) => {
+                    tracing::debug!(%error, path = %path.display(), "keeping what the catalog holds at an entry whose kind could not be read");
+                    if !kept_unread(walking, &path) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
             };
 
             if kind.is_symlink() && !options.follow_symlinks {

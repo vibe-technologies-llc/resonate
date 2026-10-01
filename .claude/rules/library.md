@@ -421,7 +421,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   whose size or mtime moved and which then would not probe — a torn write, a transient `EIO` — is
   counted failed and its `Candidate::existing` rows stamped as `Outcome::Kept`, which touches the row
   without counting it processed a second time; so is a cue-cut file. A directory `read_dir` refuses —
-  `EACCES`, `EIO`, an automount not answering — and an entry whose `stat` fails, a link into an
+  `EACCES`, `EIO`, an automount not answering — or whose listing an error cuts short (the entries are
+  gathered whole before any is read, so a folder half listed is kept whole rather than half pruned),
+  an entry whose kind cannot be read, and an entry whose `stat` fails, a link into an
   unplugged drive among them, stamp every row `Known::at_or_under` names at or below the path, a range
   over the `BTreeMap` the rows are held in. Before, each was stepped past and the prune deleted the rows,
   and their plays, listens and favourites with them
