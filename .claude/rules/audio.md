@@ -1961,6 +1961,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   nothing (`a_rate_key_cleared_or_zeroed_leaves_the_rate_unforced`,
   `a_default_sink_cleared_is_forgotten_and_announced_once`,
   `every_key_cleared_at_once_clears_only_what_that_metadata_holds`).
+- **Only the core subject's keys are read.** The graph-wide keys live on subject 0 (`CORE_ID`); the
+  `default` metadata also carries per-node keys — WirePlumber's `target.object` on a stream — and
+  PipeWire clears a node's subject with a key of nothing when the node leaves. Reading that clear as
+  every key cleared wiped the default sink whenever any such stream went away, and the engine,
+  following, rebound to the first sink in the list: the playing stream jumped to the wrong device out
+  of nowhere and stayed there until the desktop's default next moved. `Discovered::heard` takes the
+  subject and passes over any other
+  (`a_node_leaving_the_metadata_leaves_the_default_sink_where_it_was`).
 - **The chosen sink is named, not numbered.** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, which `select_sink` matches on every stream open, a PipeWire id being assigned per object
   and a device unplugged and put back carrying a new one. `OutputStatus::sink` stays a `SinkId`,

@@ -225,7 +225,16 @@ enum DefaultSink {
 }
 
 impl Discovered {
-    fn heard(&mut self, held: HeldIn, key: Option<&str>, value: Option<&str>) -> DefaultSink {
+    fn heard(
+        &mut self,
+        held: HeldIn,
+        subject: u32,
+        key: Option<&str>,
+        value: Option<&str>,
+    ) -> DefaultSink {
+        if subject != CORE_ID {
+            return DefaultSink::Stayed;
+        }
         let Some(key) = key else {
             let mut moved = DefaultSink::Stayed;
             for key in held.keys() {
@@ -1141,8 +1150,8 @@ fn watch_the_registry(
                         .property({
                             let shared = Arc::clone(&shared);
                             let announce = announce.clone();
-                            move |_subject, key, _type, value| {
-                                let moved = shared.lock().heard(held, key, value);
+                            move |subject, key, _type, value| {
+                                let moved = shared.lock().heard(held, subject, key, value);
                                 if moved == DefaultSink::Moved {
                                     let _ = announce.try_send(SinkChange::DefaultChanged);
                                 }
@@ -1486,18 +1495,18 @@ mod tests {
     fn a_rate_key_cleared_or_zeroed_leaves_the_rate_unforced() {
         let mut graph = Discovered::default();
 
-        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
-        graph.heard(HeldIn::Settings, Some(CLOCK_RATE), Some("48000"));
+        graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), Some("96000"));
+        graph.heard(HeldIn::Settings, CORE_ID, Some(CLOCK_RATE), Some("48000"));
 
         assert_eq!(graph.forced_rate, Some(SampleRate::HZ_96000));
         assert_eq!(graph.clock_rate, Some(SampleRate::HZ_48000));
 
-        graph.heard(HeldIn::Settings, Some(FORCED_RATE), None);
+        graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), None);
 
         assert_eq!(graph.forced_rate, None);
 
-        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
-        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("0"));
+        graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), Some("96000"));
+        graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), Some("0"));
 
         assert_eq!(graph.forced_rate, None);
         assert_eq!(graph.clock_rate, Some(SampleRate::HZ_48000));
@@ -1510,15 +1519,15 @@ mod tests {
         let mut graph = Discovered::default();
 
         assert_eq!(
-            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED)),
+            graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED)),
             DefaultSink::Moved
         );
         assert_eq!(
-            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED)),
+            graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED)),
             DefaultSink::Stayed
         );
         assert_eq!(
-            graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), None),
+            graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), None),
             DefaultSink::Moved
         );
         assert_eq!(graph.default_sink, None);
@@ -1529,16 +1538,17 @@ mod tests {
         const NAMED: &str = r#"{ "name": "alsa_output.test" }"#;
 
         let mut graph = Discovered::default();
-        graph.heard(HeldIn::Defaults, Some(DEFAULT_SINK), Some(NAMED));
-        graph.heard(HeldIn::Settings, Some(FORCED_RATE), Some("96000"));
+        graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED));
+        graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), Some("96000"));
         graph.heard(
             HeldIn::Settings,
+            CORE_ID,
             Some(ALLOWED_RATES),
             Some("[ 44100 48000 ]"),
         );
 
         assert_eq!(
-            graph.heard(HeldIn::Settings, None, None),
+            graph.heard(HeldIn::Settings, CORE_ID, None, None),
             DefaultSink::Stayed
         );
         assert_eq!(graph.forced_rate, None);
@@ -1546,10 +1556,38 @@ mod tests {
         assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.test"));
 
         assert_eq!(
-            graph.heard(HeldIn::Defaults, None, None),
+            graph.heard(HeldIn::Defaults, CORE_ID, None, None),
             DefaultSink::Moved
         );
         assert_eq!(graph.default_sink, None);
+    }
+
+    #[test]
+    fn a_node_leaving_the_metadata_leaves_the_default_sink_where_it_was() {
+        const NAMED: &str = r#"{ "name": "alsa_output.test" }"#;
+        const A_STREAM: u32 = 87;
+
+        let mut graph = Discovered::default();
+        graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED));
+
+        assert_eq!(
+            graph.heard(
+                HeldIn::Defaults,
+                A_STREAM,
+                Some("target.object"),
+                Some("alsa_output.other")
+            ),
+            DefaultSink::Stayed
+        );
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, A_STREAM, None, None),
+            DefaultSink::Stayed
+        );
+        assert_eq!(
+            graph.heard(HeldIn::Defaults, A_STREAM, Some(DEFAULT_SINK), None),
+            DefaultSink::Stayed
+        );
+        assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.test"));
     }
 
     #[test]
