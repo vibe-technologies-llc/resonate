@@ -1,4 +1,4 @@
-#![deny(clippy::print_stdout)]
+#![deny(clippy::print_stdout, clippy::print_stderr)]
 
 #[macro_use]
 mod said;
@@ -116,10 +116,10 @@ fn main() -> ExitCode {
 }
 
 fn report(error: &(dyn std::error::Error + 'static)) {
-    eprintln!("resonate: {error}");
+    told!("resonate: {error}");
     let mut source = error.source();
     while let Some(cause) = source {
-        eprintln!("  caused by: {cause}");
+        told!("  caused by: {cause}");
         source = cause.source();
     }
 }
@@ -2044,7 +2044,7 @@ fn play_queue(
                     Pressed::Typing(typed) => readout.typing(typed),
                     Pressed::Unknown(line) => {
                         readout.clear();
-                        eprintln!("unknown key {line:?}; ? for help");
+                        told!("unknown key {line:?}; ? for help");
                     }
                 }
                 readout.draw(&player.state());
@@ -2158,17 +2158,17 @@ fn announce(event: Event) -> bool {
             mode = status.mode,
             sink = status.sink
         ),
-        Event::Underrun { missing } => eprintln!("underrun {missing} frames"),
+        Event::Underrun { missing } => told!("underrun {missing} frames"),
         Event::Failed { track, error } => {
-            eprintln!("track {track} failed");
+            told!("track {track} failed");
             report(&error);
         }
         Event::Waiting { track, error } => {
-            eprintln!("track {track} waits for a device");
+            told!("track {track} waits for a device");
             report(&error);
         }
         Event::CommandFailed { command, error } => {
-            eprintln!("{command:?} rejected");
+            told!("{command:?} rejected");
             report(&error);
         }
         Event::QueueFinished => return true,
@@ -2218,7 +2218,7 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
 
     let kind = command.kind();
     if let Err(error) = player.request(command)?.wait_for(COMMAND_TIMEOUT) {
-        eprintln!("{kind:?} rejected");
+        told!("{kind:?} rejected");
         report(&error);
     }
     Ok(())

@@ -28,7 +28,7 @@ impl Readout {
 
     pub fn clear(&mut self) {
         if self.drawn {
-            said_on!("{CLEAR_THE_LINE}");
+            crate::said::raw(CLEAR_THE_LINE);
             crate::said::flushed();
             self.drawn = false;
         }
@@ -38,7 +38,8 @@ impl Readout {
         if !self.live {
             return;
         }
-        said_on!("{CLEAR_THE_LINE}{}", line_of(state, &self.typing));
+        crate::said::raw(CLEAR_THE_LINE);
+        said_on!("{}", line_of(state, &self.typing));
         crate::said::flushed();
         self.drawn = true;
     }

@@ -26,9 +26,6 @@ service or a format — and is not worked until that moves; everything else is o
   album, and leaves its study and lyric threads working through the rest of the queue
 - Dismissing or withdrawing a want while a poll runs ends the poll with an unknown want, leaving
   every want after it untried
-- Names from tags, sheets and services reach the terminal with their control characters through
-  `listen`, `info`, `organise`, `tag`, `vault --import`, `import` and `suggest`, outside the tables
-  that make them safe
 - `play`, `queue`, `playlist --add`, `analyse --track` and `info` find a cue sheet's audio by the
   exact name written, so `FILE "ALBUM.WAV"` beside `album.flac` or `CD1\01.wav` fails where the
   scan finds it

@@ -48,7 +48,7 @@ pub fn run(
         Listening::Microphone(None) => "the default microphone".to_owned(),
         Listening::Microphone(Some(name)) => name.to_string(),
     };
-    eprintln!("listening to {heard_from} for {} s", length.as_secs());
+    told!("listening to {heard_from} for {} s", length.as_secs());
 
     let clip = listener.record(&from, length, &Hearing::new())?;
     let recognition = recognisers.recognise(&clip)?;

@@ -132,7 +132,7 @@ fn stop_the_pass(mut watched: Signals, cancel: &impl Fn()) {
             leave(signal);
         }
         told = true;
-        eprintln!("stopping once the file in hand is finished; a second interrupt leaves at once");
+        told!("stopping once the file in hand is finished; a second interrupt leaves at once");
         cancel();
     }
 }

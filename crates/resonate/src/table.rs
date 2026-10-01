@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthStr as _;
 
-const TURNS_THE_READING: [char; 9] = [
+pub const TURNS_THE_READING: [char; 9] = [
     '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}',
     '\u{2069}',
 ];
