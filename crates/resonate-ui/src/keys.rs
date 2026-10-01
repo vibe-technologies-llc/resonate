@@ -26,11 +26,14 @@ macro_rules! key {
     (queue) => {
         "ctrl-u"
     };
+    (stop) => {
+        "ctrl-s"
+    };
     (shuffle) => {
-        "h"
+        "ctrl-h"
     };
     (repeat) => {
-        "r"
+        "ctrl-r"
     };
     (listen) => {
         "ctrl-l"
@@ -130,7 +133,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 35] = [
+    const NAMED: [&str; 36] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -140,6 +143,7 @@ mod tests {
         key!(seek_further),
         key!(seek_further_back),
         key!(queue),
+        key!(stop),
         key!(shuffle),
         key!(repeat),
         key!(listen),

@@ -29,12 +29,13 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
-        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, Pause, PlayReached, Previous,
-        PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst,
-        ReachLast, ReachNext, ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit,
-        SeekBackward, SeekForward, SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward,
-        ToggleMute, TogglePlayPause, ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp,
-        WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_further, seek_step,
+        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, Pause, PlayPauseUnlessTyping,
+        PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow,
+        ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove, ReachPageBelow,
+        ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
+        SeekFurtherForward, Stop, TabOnward, ToggleMute, TogglePlayPause, ToggleQueue,
+        ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
+        attend, seek_further, seek_step,
     },
     format,
     icons::{self, Icon},
@@ -569,6 +570,7 @@ pub struct RootView {
     pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
+    last_typed: Option<Instant>,
     pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
     scale: Scale,
@@ -985,6 +987,7 @@ impl RootView {
             muted_from: None,
             type_ahead: TypeAhead::default(),
             typing_stops: Task::ready(()),
+            last_typed: None,
             queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
             scale: Scale::ONE,
@@ -2677,10 +2680,7 @@ impl RootView {
                 else {
                     return;
                 };
-                if !self.typed_ahead(typed, cx) {
-                    self.search
-                        .update(cx, |search, cx| search.append(typed, cx));
-                }
+                self.type_where_typing_goes(typed, cx);
             }
         }
         cx.notify();
@@ -2708,6 +2708,30 @@ impl RootView {
         };
         if let Some(names) = self.names_in_the_queue(cx) {
             self.jumped_to(shift, from, &names, cx);
+        }
+    }
+
+    fn type_where_typing_goes(&mut self, typed: &str, cx: &mut Context<Self>) {
+        if !self.typed_ahead(typed, cx) {
+            self.search
+                .update(cx, |search, cx| search.append(typed, cx));
+        }
+        self.last_typed = Some(Instant::now());
+    }
+
+    fn is_typing(&self) -> bool {
+        self.type_ahead.is_live()
+            || self
+                .last_typed
+                .is_some_and(|typed| typed.elapsed() < typing::HELD_FOR)
+    }
+
+    fn play_pause_or_type_a_space(&mut self, cx: &mut Context<Self>) {
+        if self.is_typing() {
+            self.type_where_typing_goes(" ", cx);
+            cx.notify();
+        } else {
+            self.send(Command::TogglePlayPause, cx);
         }
     }
 
@@ -3700,6 +3724,9 @@ impl Render for RootView {
             .text_color(rgb(theme::text()))
             .on_action(cx.listener(|this, _: &TogglePlayPause, _, cx| {
                 this.send(Command::TogglePlayPause, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PlayPauseUnlessTyping, _, cx| {
+                this.play_pause_or_type_a_space(cx);
             }))
             .on_action(cx.listener(|this, _: &Pause, _, cx| this.send(Command::Pause, cx)))
             .on_action(cx.listener(|this, _: &Stop, _, cx| this.send(Command::Stop, cx)))

@@ -217,8 +217,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   those two stand until taken down while this one takes itself down after a second, and somebody
   abandoning a jump has not asked for their search to be cleared.
 - **Typing anywhere still searches, which is why it does not take focus.** `RootView::typed` appends to
-  the field without focusing it, so `space` stays play/pause until a click puts the caret in. `space`,
-  `s`, `h` and `r` are bound under `!Search && !Control`, and so are `left`, `right`, `ctrl-left` and
+  the field without focusing it, so `space` stays play/pause until a click puts the caret in — except
+  while typing is live: `space` is `PlayPauseUnlessTyping`, which `is_typing` turns into a typed space
+  for `HELD_FOR` after the last letter or while a jump is live, so *pink floyd* is a search and not a
+  pause, and the hardware play key keeps `TogglePlayPause`, which never types. Stop, shuffle and repeat
+  are `ctrl-s`, `ctrl-h` and `ctrl-r`: as bare `s`, `h` and `r` they fired on every letter of a
+  search, typing *Rush* stopping the music
+  (`typing_at_the_window_searches_with_every_letter_and_its_spaces_rather_than_steering`). `space` and
+  the three are bound under `!Search && !Control`, and so are `left`, `right`, `ctrl-left` and
   `ctrl-right`, which the transport would otherwise take from the caret, and the reach, move, undo and
   redo keys. So are the four that reach what was once the pointer's alone: `shift-right` and
   `shift-left` seek `SEEK_FURTHER_SECONDS` (30) where the plain arrows seek five, `ctrl-m` is the

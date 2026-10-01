@@ -802,6 +802,27 @@ mod tests {
     }
 
     #[gpui::test]
+    fn typing_at_the_window_searches_with_every_letter_and_its_spaces_rather_than_steering(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+
+        driven
+            .cx
+            .simulate_keystrokes("r->r u->u s->s h->h space o->o f->f");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "rush of"
+        );
+        assert!(
+            !driven.read(|root, cx| root.player.read(cx).state().shuffle),
+            "an h typed into a search shuffled the queue"
+        );
+    }
+
+    #[gpui::test]
     fn the_caret_blinks_as_the_desktop_says_and_holds_still_where_it_says_not_to(
         cx: &mut TestAppContext,
     ) {

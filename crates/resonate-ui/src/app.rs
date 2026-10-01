@@ -69,6 +69,7 @@ actions!(
     resonate,
     [
         TogglePlayPause,
+        PlayPauseUnlessTyping,
         Pause,
         Stop,
         Next,
@@ -680,8 +681,8 @@ fn answering_anywhere() -> Vec<KeyBinding> {
 
 fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(play_pause), TogglePlayPause, typed),
-        KeyBinding::new("s", Stop, typed),
+        KeyBinding::new(key!(play_pause), PlayPauseUnlessTyping, typed),
+        KeyBinding::new(key!(stop), Stop, typed),
         KeyBinding::new("right", SeekForward, typed),
         KeyBinding::new("left", SeekBackward, typed),
         KeyBinding::new(key!(seek_further), SeekFurtherForward, typed),
