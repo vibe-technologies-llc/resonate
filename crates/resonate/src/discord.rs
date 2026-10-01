@@ -7,6 +7,8 @@ use resonate_core::{FrameSpan, MediaLocation};
 use resonate_discord::{Cover, Discord, Releases};
 use resonate_engine::Player;
 use resonate_library::Library;
+#[cfg(feature = "discord")]
+use resonate_library::ReleaseDetail;
 
 use crate::config::Config;
 
@@ -28,19 +30,22 @@ impl Releases for Catalogued {
         });
 
         match released {
-            Ok(release) => {
-                let release = release?;
-                release
-                    .mbid
-                    .map(Cover::Release)
-                    .or_else(|| release.group.map(Cover::Group))
-            }
+            Ok(release) => cover_of(release?),
             Err(error) => {
                 tracing::debug!(%error, "the release a cover is drawn from could not be read");
                 None
             }
         }
     }
+}
+
+#[cfg(feature = "discord")]
+fn cover_of(release: ReleaseDetail) -> Option<Cover> {
+    release
+        .mbid
+        .filter(|_| release.may_have_a_front)
+        .map(Cover::Release)
+        .or_else(|| release.group.map(Cover::Group))
 }
 
 pub(crate) struct Presenter {
@@ -92,5 +97,47 @@ pub(crate) fn start(
 impl resonate_ui::Present for Presenter {
     fn follow(&self, presence: &Presence) {
         Self::follow(self, presence);
+    }
+}
+
+#[cfg(all(test, feature = "discord"))]
+mod tests {
+    use resonate_library::{CoverSource, Mbid};
+
+    use super::*;
+
+    const RELEASE: &str = "0a7d6f2b-8c1e-4e5a-9b3f-2d6c8e1f4a7b";
+    const GROUP: &str = "6b8e4d2c-1f3a-4c5e-8d7b-9a0f2e4c6b8d";
+
+    fn released(may_have_a_front: bool) -> ReleaseDetail {
+        ReleaseDetail {
+            mbid: Some(Mbid::new(RELEASE).expect("an id")),
+            group: Some(Mbid::new(GROUP).expect("an id")),
+            date: None,
+            country: None,
+            label: None,
+            catalog_number: None,
+            barcode: None,
+            kind: None,
+            disambiguation: None,
+            cover_source: CoverSource::Archive,
+            may_have_a_front,
+            asked: None,
+            answered: None,
+            links: Vec::new(),
+            media: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_release_with_no_front_cover_is_drawn_from_its_group_instead() {
+        assert_eq!(
+            cover_of(released(true)),
+            Some(Cover::Release(Mbid::new(RELEASE).expect("an id")))
+        );
+        assert_eq!(
+            cover_of(released(false)),
+            Some(Cover::Group(Mbid::new(GROUP).expect("an id")))
+        );
     }
 }

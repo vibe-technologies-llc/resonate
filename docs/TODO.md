@@ -22,8 +22,6 @@ service or a format — and is not worked until that moves; everything else is o
   favourite, *not in the library* — after a rescan or a lookup changes it
 - A queue open in the player keeps the old paths after an organise moves its files, and the next
   resumption written overwrites the rewritten one with them, so each moved row fails when reached
-- Discord shows a blank picture for a release the Cover Art Archive has no front cover for, since
-  the release is asked without weighing whether it has one
 - Changing the device or a setting while a row waits for a device resumes it up to the buffer's
   depth later than where it was heard
 - Seeking or restarting within the last ten seconds of a track under an end-of-track or end-of-queue

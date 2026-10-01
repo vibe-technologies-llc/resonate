@@ -176,6 +176,7 @@ pub struct ReleaseDetail {
     pub kind: Option<String>,
     pub disambiguation: Option<String>,
     pub cover_source: CoverSource,
+    pub may_have_a_front: bool,
     pub asked: Option<SystemTime>,
     pub answered: Option<SystemTime>,
     pub links: Vec<Link>,

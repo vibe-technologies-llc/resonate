@@ -67,7 +67,10 @@ the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the 
     is the title over the artist; `Album` adds the album as the picture's caption, or after the
     artist where there is no picture.
   - `Pictured::Cover` is `coverartarchive.org/release/<mbid>/front-500` — or the release group's —
-    with the icon small beside it, the icon standing in where no release is known;
+    with the icon small beside it, the icon standing in where no release is known. A catalogued
+    release the archive said holds no front (`ReleaseDetail::may_have_a_front`, the album's
+    `front_cover` the cover fetch weighs too) is drawn from its group instead, where asking the
+    release drew a blank picture (`a_release_with_no_front_cover_is_drawn_from_its_group_instead`);
     `Pictured::Nothing` sends no assets.
   - The progress bar is `start = now − position`, `end = start + length`, left out where
     `discord-progress` is off or the track is paused. A pause clears the activity unless

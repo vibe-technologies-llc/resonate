@@ -3192,6 +3192,7 @@ mod tests {
             kind: None,
             disambiguation: None,
             cover_source: CoverSource::File,
+            may_have_a_front: true,
             asked: None,
             answered: None,
             links: Vec::new(),

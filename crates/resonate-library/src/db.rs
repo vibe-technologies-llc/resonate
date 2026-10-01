@@ -2444,7 +2444,8 @@ impl Library {
             let Some(raw) = connection
                 .query_row(
                     "SELECT mbid, release_group, date, country, label, catalog_number, barcode,
-                            kind, disambiguation, cover_source, asked, answered
+                            kind, disambiguation, cover_source, asked, answered,
+                            front_cover IS NOT 0
                        FROM albums WHERE id = ?1",
                     params![album],
                     RawRelease::read,
@@ -5323,6 +5324,7 @@ struct RawRelease {
     cover_source: i64,
     asked: Option<i64>,
     answered: Option<i64>,
+    may_have_a_front: bool,
 }
 
 impl RawRelease {
@@ -5340,6 +5342,7 @@ impl RawRelease {
             cover_source: row.get(9)?,
             asked: row.get(10)?,
             answered: row.get(11)?,
+            may_have_a_front: row.get(12)?,
         })
     }
 
@@ -5360,6 +5363,7 @@ impl RawRelease {
             kind: self.kind,
             disambiguation: self.disambiguation,
             cover_source: store::cover_source_of(album, self.cover_source)?,
+            may_have_a_front: self.may_have_a_front,
             asked: self.asked.map(store::from_nanos),
             answered: self.answered.map(store::from_nanos),
             links,
