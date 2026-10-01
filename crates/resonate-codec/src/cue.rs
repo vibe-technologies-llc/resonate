@@ -445,6 +445,36 @@ impl Naming {
     }
 }
 
+pub fn the_file_named(beside: &Path, named: &str) -> Option<PathBuf> {
+    let folder = folder_named(beside, named);
+    let listed: Vec<PathBuf> = fs::read_dir(&folder)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| !kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect();
+
+    the_best_named(listed.iter().map(|file| {
+        let naming = file
+            .file_name()
+            .and_then(|held| held.to_str())
+            .and_then(|held| Naming::of(named, held))
+            .filter(|naming| *naming != Naming::ByStem || is_audio(file));
+        (file, naming)
+    }))
+    .cloned()
+}
+
+fn is_audio(file: &Path) -> bool {
+    file.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            resonate_core::AUDIO_EXTENSIONS
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(extension))
+        })
+}
+
 pub fn the_one_named<'a, T>(
     named: &str,
     candidates: impl IntoIterator<Item = (T, &'a str)>,

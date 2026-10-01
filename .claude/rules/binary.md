@@ -78,7 +78,11 @@ times. `resonate play`, `resonate queue` and the window handed a cue row's URI q
 `#frames=` that is no span — `MediaLocation::claims_a_span` with nothing `from_uri_within` can read
 — is `Error::UnreadableSpan` for `resonate analyse` and a warning and no row for the queue, never
 the whole file. A `.cue` handed to `OpenUri` is read as its rows through the same `sheet_items` a
-`.cue` on the command line goes through (`sheet_cuts` beside it).
+`.cue` on the command line goes through (`sheet_cuts` beside it). Each `FILE` line is found as the
+scan finds it — `codec::the_file_a_cue_names`, the folder a name points into, then the exact name, its
+case, then its stem among audio — so `play`, `queue`, `playlist --add`, `analyse --track` and `info`
+reach `album.flac` for a `FILE "ALBUM.WAV"` and `CD1/01.wav` for `CD1\01.wav`
+(`a_sheet_finds_its_audio_as_the_scan_does_whatever_case_or_extension_it_wrote`).
 
 ## What this build advertises
 
@@ -164,8 +168,9 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
 every cell through `table::on_one_line`, which turns a control character — an escape opening an OSC
 sequence, a newline forging a row — and a bidirectional override into a space, so every table
 (`stats`, `favourites`, `missing`, `playlists`, `players`, `studies`, `info`'s) is safe whatever
-the catalog holds; a line printed outside a table from such text, as `studies --take`'s, goes
-through it too (`a_cell_carrying_a_control_or_a_reordering_mark_is_laid_on_one_plain_line`).
+the catalog holds (`a_cell_carrying_a_control_or_a_reordering_mark_is_laid_on_one_plain_line`); every
+line printed outside a table goes through `said!`'s plain text, which does the same but keeps the
+newlines and tabs the line's own format wrote.
 
 `resonate info` folds a raw tag value onto one line and cuts it at 72 characters
 (`WIDEST_TAG_VALUE`), since a lyric tag runs to hundreds of lines and would wreck the table's

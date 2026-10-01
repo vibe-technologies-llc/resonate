@@ -51,7 +51,9 @@ use std::{
 
 use clap::Parser;
 use crossbeam_channel::{bounded, never, select, tick};
-use resonate_codec::{CoverArt, Packing, Popularity, Sources, probe, read_cue_media};
+use resonate_codec::{
+    CoverArt, Packing, Popularity, Sources, probe, read_cue_media, the_file_a_cue_names,
+};
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
@@ -2652,7 +2654,11 @@ fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, FrameSpan)>
 
     let mut cuts = Vec::new();
     for cut in &sheet.files {
-        let Some(file) = path.parent().map(|folder| folder.join(&cut.named)) else {
+        let Some(file) = path
+            .parent()
+            .and_then(|folder| the_file_a_cue_names(folder, &cut.named))
+        else {
+            tracing::warn!(sheet = %path.display(), file = %cut.named, "a cue sheet names a file that is not where it says");
             continue;
         };
         let location = MediaLocation::local(from_here(&file));
@@ -2886,6 +2892,37 @@ mod tests {
         assert_eq!(cuts.len(), 2, "a sheet was stored as one row");
         assert!(cuts.iter().all(|cut| cut.span.is_some()
             && cut.location.as_path() == Some(from_here(&folder.join("whole.wav")).as_path())));
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn a_sheet_finds_its_audio_as_the_scan_does_whatever_case_or_extension_it_wrote() {
+        let folder = env::temp_dir().join(format!("resonate-sheet-names-{}", process::id()));
+        fs::create_dir_all(folder.join("CD1")).expect("a scratch folder");
+        fs::write(folder.join("album.wav"), analyse::tests::silent_wave()).expect("a wave file");
+        fs::write(folder.join("CD1/01.wav"), analyse::tests::silent_wave()).expect("a wave file");
+        let one_track = |named: &str| {
+            format!("FILE \"{named}\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n")
+        };
+
+        for (written, found) in [
+            ("ALBUM.WAV", "album.wav"),
+            ("album.flac", "album.wav"),
+            ("CD1\\01.wav", "CD1/01.wav"),
+        ] {
+            let sheet = folder.join("sheet.cue");
+            fs::write(&sheet, one_track(written)).expect("a sheet");
+
+            let cuts = sheet_cuts(&Sources::local(), &sheet);
+
+            assert_eq!(cuts.len(), 1, "{written} found nothing");
+            assert_eq!(
+                cuts[0].0.as_path(),
+                Some(from_here(&folder.join(found)).as_path()),
+                "{written}"
+            );
+        }
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }

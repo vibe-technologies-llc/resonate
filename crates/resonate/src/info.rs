@@ -3,6 +3,7 @@ use std::path::Path;
 use resonate_codec::{
     BitRate, Codec, Container, CueFile, CueStart, Faststart, Percentiles, RawTag, Sources,
     StreamProfile, StreamReport, TagValue, WINDOW, probe, probe_stream, read_cue_media,
+    the_file_a_cue_names,
 };
 use resonate_core::{AppliedGain, Decibels, Frames, MediaLocation, SampleRate};
 use resonate_engine::{EngineConfig, resolve_replay_gain};
@@ -110,7 +111,9 @@ fn sheet(path: &Path) -> Result<()> {
 
     for cut in &held.files {
         heading(&format!("FILE {}", cut.named));
-        let beside = path.parent().map(|folder| folder.join(&cut.named));
+        let beside = path
+            .parent()
+            .and_then(|folder| the_file_a_cue_names(folder, &cut.named));
         let rate = beside
             .as_deref()
             .and_then(|file| probe(&sources, &MediaLocation::local(file)).ok())

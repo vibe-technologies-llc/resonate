@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, path::Path};
 
-use resonate_codec::{Sources, probe, read_cue_media};
+use resonate_codec::{Sources, probe, read_cue_media, the_file_a_cue_names};
 use resonate_core::{FrameSpan, Frames, MediaLocation};
 use resonate_engine::{Analysis, Envelope, Spectrum, Watch, analyse};
 use resonate_library::{Fingerprinters, HeardAs, Sounded};
@@ -60,7 +60,10 @@ impl Analysed {
             else {
                 continue;
             };
-            let Some(named) = sheet.parent().map(|folder| folder.join(&file.named)) else {
+            let Some(named) = sheet
+                .parent()
+                .and_then(|folder| the_file_a_cue_names(folder, &file.named))
+            else {
                 continue;
             };
             let location = MediaLocation::local(from_here(&named));

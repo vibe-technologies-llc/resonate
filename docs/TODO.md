@@ -26,9 +26,6 @@ service or a format — and is not worked until that moves; everything else is o
   album, and leaves its study and lyric threads working through the rest of the queue
 - Dismissing or withdrawing a want while a poll runs ends the poll with an unknown want, leaving
   every want after it untried
-- `play`, `queue`, `playlist --add`, `analyse --track` and `info` find a cue sheet's audio by the
-  exact name written, so `FILE "ALBUM.WAV"` beside `album.flac` or `CD1\01.wav` fails where the
-  scan finds it
 - An equaliser band moved in the last 600 ms before the window closes is never written to its
   profile, because the settle is debounced and nothing flushes it on quit
 - A genuine lossless file at 22.05, 24 or 32 kHz reads as Fake with a lossy guess, because its
