@@ -214,7 +214,11 @@ it.
   `Agreement`. `track_studies_forget_a_changed_file` deletes the row wherever an update moves size,
   mtime or span, so the next lookup studies the file again; a rescan of an unchanged file keeps it.
   A trigger rather than an upsert clause, because every path rewriting those columns is then
-  covered by existing. **A study that fails is kept as failed.** A track that will not decode wrote
+  covered by existing. A tag run is the one writer known not to touch the audio, so `files_retagged`
+  holds a written file's `track_studies` and `unstudied` rows in temporary tables across its follow
+  (`StudiesKept`) and puts them back after the trigger took them, rather than decoding and
+  fingerprinting every file it wrote again (`a_tag_run_keeps_the_study_of_every_file_it_wrote`).
+  **A study that fails is kept as failed.** A track that will not decode wrote
   no row, so every lookup decoded it again; `unstudied` holds its id under the `JUDGED_UNDER` it
   failed at, `to_study` passes it over and the fingerprint route (`Library::will_not_study`) asks
   nothing of it, until `unstudied_forget_a_changed_file` — the same trigger on the same columns —

@@ -15318,6 +15318,37 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
 }
 
 #[test]
+fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let location = MediaLocation::local(&file);
+    let studied = library
+        .study_of(&location, None)?
+        .expect("the enrichment studied the file");
+
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+    let applied = retagged(&library, true)?;
+    assert_eq!(applied.stats.written, 1);
+
+    assert_eq!(
+        library.study_of(&location, None)?,
+        Some(studied),
+        "writing the tags threw away a study of audio it did not touch"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
     let tree = Tree::new();
     let written = |name: &str| {

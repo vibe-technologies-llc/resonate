@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- Applying a tag run throws away the study of every file it wrote, because the study follows the
-  file's size and time, so each is decoded and fingerprinted again and has no loudness until then
 - An ID3v2.3 file carrying `TDAT` or `TIME` beside `TYER` gets the day and month (`0503`) or the
   clock as its date, because the unparsed frames outrank the year and nothing joins the three
 - An iTunes `COMM` frame (`iTunNORM`, `iTunSMPB`, `iTunes_CDDB_1`) is read as the track's comment

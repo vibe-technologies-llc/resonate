@@ -789,7 +789,9 @@ pub(crate) fn files_retagged(
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
+    let kept = StudiesKept::through(tx)?;
     for follow in followed {
+        kept.hold(follow.track)?;
         statement
             .execute(params![
                 follow.track.get() as i64,
@@ -801,12 +803,65 @@ pub(crate) fn files_retagged(
                 store::to_nanos(follow.modified)
             ])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
+        kept.put_back(follow.track)?;
     }
+    kept.done()?;
 
     forget_the_notes_of(tx, unwritten)?;
     match noted_again {
         Some(noted_again) => note_again(tx, noted_again),
         None => Ok(()),
+    }
+}
+
+struct StudiesKept<'t> {
+    tx: &'t Transaction<'t>,
+}
+
+impl<'t> StudiesKept<'t> {
+    const TABLES: [&'static str; 2] = ["track_studies", "unstudied"];
+
+    fn through(tx: &'t Transaction<'t>) -> Result<Self> {
+        for table in Self::TABLES {
+            tx.execute_batch(&format!(
+                "CREATE TEMP TABLE IF NOT EXISTS kept_{table} AS SELECT * FROM main.{table} WHERE 0"
+            ))
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+        Ok(Self { tx })
+    }
+
+    fn hold(&self, track: TrackId) -> Result<()> {
+        for table in Self::TABLES {
+            self.tx
+                .prepare_cached(&format!(
+                    "INSERT INTO temp.kept_{table} SELECT * FROM main.{table} WHERE track_id = ?1"
+                ))
+                .and_then(|mut statement| statement.execute(params![track.get() as i64]))
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+        Ok(())
+    }
+
+    fn put_back(&self, track: TrackId) -> Result<()> {
+        for table in Self::TABLES {
+            self.tx
+                .prepare_cached(&format!(
+                    "INSERT OR REPLACE INTO main.{table} SELECT * FROM temp.kept_{table} WHERE track_id = ?1"
+                ))
+                .and_then(|mut statement| statement.execute(params![track.get() as i64]))
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+        Ok(())
+    }
+
+    fn done(self) -> Result<()> {
+        for table in Self::TABLES {
+            self.tx
+                .execute_batch(&format!("DROP TABLE temp.kept_{table}"))
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        }
+        Ok(())
     }
 }
 
