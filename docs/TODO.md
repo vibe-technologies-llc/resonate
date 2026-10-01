@@ -20,8 +20,6 @@ service or a format — and is not worked until that moves; everything else is o
   resumption written overwrites the rewritten one with them, so each moved row fails when reached
 - Changing the device or a setting while a row waits for a device resumes it up to the buffer's
   depth later than where it was heard
-- Seeking or restarting within the last ten seconds of a track under an end-of-track or end-of-queue
-  sleep timer leaves the rest of it silent, because the sleep fade is never lifted
 
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's

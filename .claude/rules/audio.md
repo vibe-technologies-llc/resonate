@@ -1289,7 +1289,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `fade_toward_sleep` asks the ring for silence over exactly what is left, so the pause lands on
   quiet. A timer cancelled or pushed back mid-fade brings the level back; a track change mid-fade
   opens whole and is faded again over what remains
-  (`a_sleep_timer_fades_the_music_out_before_it_pauses`). The timer outlives a track change, a seek, a
+  (`a_sleep_timer_fades_the_music_out_before_it_pauses`). A seek or a restart in place lifts the fade
+  too (`lift_the_sleep_fade`), and `sleep_lifted` holds the next fade off for `quiet_within` while the
+  level comes back, so the fade begins again from whole over what the seek left, where it went on from
+  the level it had reached and left the rest of the track silent
+  (`a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun`). The timer outlives a track change, a seek, a
   pause and a new load: it is a timer on the listener, not the transport. A delay is held to
   `LONGEST_SLEEP`, a day, as it is set, so a `SetSleep` of `u64::MAX` seconds or a minute count
   `resonate sleep` saturated reads back as a day rather than an `Instant` overflowing on the engine

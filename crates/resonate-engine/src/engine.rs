@@ -308,6 +308,7 @@ struct Output {
     active: bool,
     quietening_since: Option<Instant>,
     sleep_fading: bool,
+    sleep_lifted: Option<Instant>,
     last_pulled: Option<(u64, Instant)>,
 }
 
@@ -412,6 +413,7 @@ impl Output {
             active: false,
             quietening_since: None,
             sleep_fading: false,
+            sleep_lifted: None,
             last_pulled: None,
         })
     }
@@ -1259,7 +1261,10 @@ impl Engine {
             return;
         };
         output.note_the_pulls();
-        if !playing || output.sleep_fading || !output.is_sounding() {
+        let lifting = output
+            .sleep_lifted
+            .is_some_and(|lifted| lifted.elapsed() < output.quiet_within());
+        if !playing || output.sleep_fading || lifting || !output.is_sounding() {
             return;
         }
         output.sleep_fading = true;
@@ -1275,11 +1280,16 @@ impl Engine {
         {
             return;
         }
+        self.lift_the_sleep_fade();
+    }
+
+    fn lift_the_sleep_fade(&mut self) {
         let playing = self.playing;
         let Some(output) = self.output.as_mut().filter(|output| output.sleep_fading) else {
             return;
         };
         output.sleep_fading = false;
+        output.sleep_lifted = Some(Instant::now());
         if playing {
             output.producer.fade_in(output.fade());
         }
@@ -1379,6 +1389,9 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.producer.fade_in(output.fade());
             output.quietening_since = None;
+            if output.sleep_fading {
+                output.sleep_lifted = Some(Instant::now());
+            }
             output.sleep_fading = false;
             if output.awake_since.take().is_some() {
                 return Ok(());
@@ -1597,6 +1610,7 @@ impl Engine {
         if landed.is_ok() {
             self.seeks = self.seeks.stepped();
             self.heard_at_least = None;
+            self.lift_the_sleep_fade();
         }
         landed
     }

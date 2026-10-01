@@ -5442,6 +5442,49 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
 }
 
 #[test]
+fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Result<()> {
+    let level = 16_000_i32;
+    let (player, graph) = a_steady_level_playing(16_000)?;
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+        .wait_for(PATIENCE)?;
+    let half_way = RATE as usize * 3 * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= half_way,
+        "the fade toward sleep to be half way",
+    );
+    let faded = left_channel(&graph.lock().played)
+        .last()
+        .copied()
+        .unwrap_or_default();
+    assert!(faded < level * 3 / 4, "the fade never began: {faded}");
+
+    player
+        .request(Command::Seek(Frames(0)))?
+        .wait_for(PATIENCE)?;
+    let sought_at = graph.lock().played.len();
+    let a_moment = RATE as usize / 4 * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= sought_at + a_moment,
+        "a moment after the seek to play",
+    );
+
+    let after = left_channel(&graph.lock().played[sought_at..]);
+    let loudest = after.iter().copied().max().unwrap_or_default();
+    assert!(
+        loudest > level * 9 / 10,
+        "the fade went on from where it stood: {loudest}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
