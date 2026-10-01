@@ -2501,11 +2501,7 @@ fn a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count() {
             5,
             ChannelLayout::Discrete(ChannelCount::new(4).expect("four")),
         ),
-        (
-            5,
-            6,
-            ChannelLayout::Discrete(ChannelCount::new(5).expect("five")),
-        ),
+        (5, 6, ChannelLayout::Surround50),
         (6, 7, ChannelLayout::Surround51),
         (
             4,
