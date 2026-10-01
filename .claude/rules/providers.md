@@ -38,7 +38,8 @@ on a title.
 `Provider::obtain` answers `Obtained::Nothing` or `Obtained::Found(Delivery)`, or an `Err` where it
 could not be asked, which `Providers::first` logs, counts as `refused` and carries on past.
 `Error::is_the_provider_away` says which errors are about the provider rather than the want — an
-`Io` (a connection that failed, a folder that is not there) and a `Refused` of 500 or over — and
+`Io` (a connection that failed, a folder that is not there), an `Unwelcome` (the server turned the
+listener away as a whole: a wrong password, an account barred) and a `Refused` of 500 or over — and
 `TurnedAway` or a 404 are the want's alone, a Subsonic code 70 being one song the server lacks.
 
 - **`Delivery::File(PathBuf)`** is audio already on disk. The vault reads it and copies what it
@@ -66,8 +67,10 @@ A provider does none of this, so none of it is written twice:
   for its run and hands it to every `Providers::first`; a provider whose error
   `is_the_provider_away`, or that ran late, is noted there and passed over for every want after,
   counted in `Answer::passed_over` — so an unreachable Subsonic host costs its connect timeout once
-  a poll, and the wants it was not asked about stay due
-  (`a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want`).
+  a poll, and a wrong password one login, not a login a want that a server banning repeated
+  failures would lock the listener out over; the wants it was not asked about stay due
+  (`a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want`,
+  `a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want`).
 - **How long a provider is waited on.** `Providers::first` takes an `Asking` — `within` (the poll's
   `answers_within`, `ANSWERS_WITHIN` by default) and a `cancelled` the poll reads off its progress —
   and asks each provider on a thread of its own, looking at both every `LOOKED_AT_EVERY`. One that
@@ -192,7 +195,9 @@ category's *A Subsonic server* group writes the keys for the next start.
   `RETRIES_AT_MOST` is the `Refused` it was — a 503 the seam then reads as the provider away.
 - **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`,
   the MD5 of password and salt (the API's token scheme), beside `v` and `c=resonate`; the
-  User-Agent is `resonate/<version>` alone. `status: failed` is `Error::TurnedAway` with the
-  server's code (40 for a wrong password), an HTTP refusal `Error::Refused`, an answer that is not
+  User-Agent is `resonate/<version>` alone. `status: failed` is `Error::Unwelcome` with the
+  server's code where the code is about the account rather than the song (`ACCOUNT_REFUSALS`: 20 and
+  30 for a protocol too old or new, 40 to 44 for credentials, 50 unauthorised, 60 a trial over) and
+  `Error::TurnedAway` with it otherwise (70, a song the server lacks), an HTTP refusal `Error::Refused`, an answer that is not
   the document `Error::Unreadable`, a failed connection `Error::Io`, each naming
   `ProviderOp::Search` or `Download`.

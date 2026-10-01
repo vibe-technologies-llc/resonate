@@ -35,6 +35,7 @@ const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const OK: &str = "ok";
 const REST: &str = "rest";
+const ACCOUNT_REFUSALS: [u16; 9] = [20, 30, 40, 41, 42, 43, 44, 50, 60];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Server {
@@ -335,10 +336,12 @@ impl Subsonic {
             self.unreadable(op)
         })?;
         if answer.response.status != OK {
-            return Err(Error::TurnedAway {
-                provider: self.source.clone(),
-                op,
-                code: answer.response.error.map_or(0, |refusal| refusal.code),
+            let code = answer.response.error.map_or(0, |refusal| refusal.code);
+            let provider = self.source.clone();
+            return Err(if ACCOUNT_REFUSALS.contains(&code) {
+                Error::Unwelcome { provider, op, code }
+            } else {
+                Error::TurnedAway { provider, op, code }
             });
         }
         Ok(answer.response.found.unwrap_or_default().song)
@@ -474,7 +477,7 @@ mod tests {
     fn a_server_that_turns_the_listener_away_says_why_by_its_code() {
         assert!(matches!(
             subsonic().read(TURNED_AWAY.as_bytes(), ProviderOp::Search),
-            Err(Error::TurnedAway { code: 40, .. })
+            Err(Error::Unwelcome { code: 40, .. })
         ));
     }
 

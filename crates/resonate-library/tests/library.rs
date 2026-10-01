@@ -19613,7 +19613,7 @@ fn unreachable_server(provider: SourceId) -> resonate_providers::Error {
 }
 
 fn wrong_password(provider: SourceId) -> resonate_providers::Error {
-    resonate_providers::Error::TurnedAway {
+    resonate_providers::Error::Unwelcome {
         provider,
         op: resonate_providers::ProviderOp::Search,
         code: 40,
@@ -19700,6 +19700,26 @@ fn a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_wan
     assert_eq!(summary.stats.asked, wanted as u64);
     assert_eq!(server.asked(), 1);
     assert_eq!(quiet.asked().len(), wanted);
+    assert!(library.wants()?.iter().all(|want| want.tried.is_none()));
+    Ok(())
+}
+
+#[test]
+fn a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_every_missing_row(&library)?;
+    let wanted = library.wants()?.len();
+    assert!(wanted > 1);
+    let server = Unanswering::new("server", wrong_password);
+    let providers = Arc::new(Providers::none().and(Arc::clone(&server) as Arc<dyn Provider>));
+
+    library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(
+        server.asked(),
+        1,
+        "a refused login was tried for every want"
+    );
     assert!(library.wants()?.iter().all(|want| want.tried.is_none()));
     Ok(())
 }

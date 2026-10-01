@@ -6,8 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A wrong Subsonic password is a refusal rather than an absence, so every poll logs in once per
-  want, and a server that bans after repeated failures locks the listener out
 - Switching *Reach the network* off in the window leaves the lyric lookup and the Analysis pane's
   recognition asking LRCLIB, AcoustID and Shazam until the next start, against `online = false
   stops every request`

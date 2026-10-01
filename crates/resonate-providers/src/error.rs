@@ -37,6 +37,15 @@ pub enum Error {
         code: u16,
     },
 
+    #[error(
+        "{op:?} found the listener unwelcome at the {provider} provider's server, its error {code}"
+    )]
+    Unwelcome {
+        provider: SourceId,
+        op: ProviderOp,
+        code: u16,
+    },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -46,7 +55,7 @@ const SERVER_TROUBLE: u16 = 500;
 impl Error {
     pub fn is_the_provider_away(&self) -> bool {
         match self {
-            Self::Io { .. } => true,
+            Self::Io { .. } | Self::Unwelcome { .. } => true,
             Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
             Self::Unreadable { .. } | Self::TurnedAway { .. } | Self::NotAnExtension => false,
         }
@@ -79,15 +88,21 @@ mod tests {
             status: 404,
         };
         let turned_away = Error::TurnedAway {
-            provider,
+            provider: provider.clone(),
             op: ProviderOp::Search,
             code: 70,
+        };
+        let unwelcome = Error::Unwelcome {
+            provider,
+            op: ProviderOp::Search,
+            code: 40,
         };
 
         assert!(unreachable.is_the_provider_away());
         assert!(down.is_the_provider_away());
         assert!(!not_found.is_the_provider_away());
         assert!(!turned_away.is_the_provider_away());
+        assert!(unwelcome.is_the_provider_away());
     }
 
     #[test]
