@@ -18492,6 +18492,53 @@ fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> R
     Ok(())
 }
 
+#[test]
+fn a_kana_voicing_mark_keeps_two_names_apart_and_an_old_index_is_folded_again() -> Result<()> {
+    let tree = Tree::new();
+    tree.write(
+        "glass.wav",
+        &Wav::new()
+            .text(TITLE, "ガラス")
+            .text(ARTIST, "バンド")
+            .build(),
+    );
+    tree.write(
+        "crow.wav",
+        &Wav::new()
+            .text(TITLE, "カラス")
+            .text(ARTIST, "ハンド")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    {
+        let library = Library::open(&database)?;
+        scan(&library, &options(&tree))?;
+        assert_eq!(library.artists(&ArtistQuery::default())?.len(), 2);
+        assert_eq!(matching(&library, "ガラス")?, ["ガラス"]);
+    }
+
+    let older = beside(&database);
+    older
+        .busy_timeout(Duration::from_secs(10))
+        .expect("the catalog waits for a writer");
+    older
+        .execute_batch(
+            "UPDATE tracks_fts SET title = 'カラス'
+              WHERE rowid = (SELECT id FROM tracks WHERE title = 'ガラス');
+             CREATE TABLE index_refold_wanted (since INTEGER) STRICT;",
+        )
+        .expect("the index is laid back as the older fold left it");
+
+    let reopened = Library::open(&database)?;
+    assert_eq!(
+        matching(&reopened, "ガラス")?,
+        ["ガラス"],
+        "the index kept the fold that dropped the voicing mark"
+    );
+    assert_eq!(matching(&reopened, "カラス")?, ["カラス"]);
+    Ok(())
+}
+
 fn matching(library: &Library, text: &str) -> Result<Vec<String>> {
     Ok(library
         .tracks(&TrackQuery {

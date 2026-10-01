@@ -987,6 +987,7 @@ impl Library {
         let mut writer = connect(&source, schema::Role::Writing)?;
         schema::lay_out(&writer)?;
         store::reconcile_artists(&mut writer)?;
+        store::refold_the_index(&mut writer)?;
         store::settle_the_credits(&mut writer)?;
 
         let named = Arc::new(AtomicU64::new(0));

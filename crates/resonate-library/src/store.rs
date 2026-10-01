@@ -199,8 +199,9 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
             take_over_artist(&tx, held.id, keeps.id)?;
             merged += 1;
         }
+        let rekeyed = keeps.key != key;
         rekey_artist(&tx, keeps.id, &key, &spelling)?;
-        if !gone.is_empty() {
+        if !gone.is_empty() || rekeyed {
             reindex_the_tracks_of(&tx, keeps.id)?;
         }
     }
@@ -209,6 +210,80 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
     tracing::info!(merged, "artists were keyed by the fold of their names");
 
     Ok(merged)
+}
+
+pub fn refold_the_index(connection: &mut Connection) -> Result<usize> {
+    let wanted: bool = connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'index_refold_wanted')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if !wanted {
+        return Ok(0);
+    }
+
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    let stale: Vec<(Indexable, Option<i64>)> = {
+        let mut statement = tx
+            .prepare(
+                "SELECT t.id, t.title, t.artist, a.title, t.genre, t.artist_id,
+                        f.title, f.artist, f.album
+                   FROM tracks t
+                   JOIN tracks_fts f ON f.rowid = t.id
+                   LEFT JOIN albums a ON a.id = t.album_id",
+            )
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map([], |row| {
+                let track = Indexable {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    artist: row.get(2)?,
+                    album: row.get(3)?,
+                    genre: row.get(4)?,
+                };
+                let indexed: [Option<String>; 3] = [row.get(6)?, row.get(7)?, row.get(8)?];
+                Ok((track, row.get::<_, Option<i64>>(5)?, indexed))
+            })
+            .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+            .map_err(|source| Error::store(StoreOp::Query, source))?
+            .into_iter()
+            .filter(|(track, _, indexed)| {
+                let now = [
+                    Some(track.title.as_str()),
+                    track.artist.as_deref(),
+                    track.album.as_deref(),
+                ];
+                now.iter().zip(indexed).any(|(source, held)| {
+                    folded_letters(source.unwrap_or_default())
+                        != held.as_deref().unwrap_or_default()
+                })
+            })
+            .map(|(track, artist, _)| (track, artist))
+            .collect()
+    };
+    let refolded = stale.len();
+    for (track, artist) in stale {
+        index_row(
+            &tx,
+            track.id,
+            &track.title,
+            track.artist.as_deref().unwrap_or_default(),
+            track.album.as_deref().unwrap_or_default(),
+            &indexed_genre_of(&tx, track.genre.as_deref(), artist)?,
+        )?;
+    }
+    tx.execute_batch("DROP TABLE index_refold_wanted")
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.commit()
+        .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+    tracing::info!(refolded, "the search index was folded again");
+
+    Ok(refolded)
 }
 
 fn artists_folding_together(connection: &Connection) -> Result<Vec<(String, Vec<Held>)>> {

@@ -516,7 +516,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   against the second — where one column weighed against both could pair the second only by accident.
 - **An artist is keyed by the fold of its name, so one spelling is one artist however it is
   spelled.** `resonate_core::folded_letters` (re-exported by `store` and the crate) lowercases,
-  decomposes and drops combining marks, and spells out the letters Unicode does not decompose — `ł`,
+  decomposes, drops a combining mark where it sits on a Latin, Greek or Cyrillic letter (`takes_accents`
+  over `ACCENTED_SCRIPTS`, the scripts where a mark is an accent), keeps every other — a kana voicing
+  mark, an Indic vowel sign, which change the word — and composes what it kept again, so ガラス and
+  カラス, バンド and ハンド stay two artists and two searches
+  (`a_kana_voicing_mark_keeps_two_names_apart_and_an_old_index_is_folded_again`); and it spells out the letters Unicode does not decompose — `ł`,
   `ø`, `đ`, `ð`, `þ`, `ß`, `æ`, `œ`, the dotless `ı`, `ħ`, `ŋ`, `ŧ`, `ĸ` and the rest — so *Marcin
   Przybyłowicz* and *Marcin Przybylowicz* are both `artists.key` `marcin przybylowicz`, where
   `name.to_lowercase()` made them two artists with two listings, two portraits and half a discography
@@ -541,7 +545,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   sentinel key to avoid colliding with an unreached row: every key is a fold or a `to_lowercase` of the
   same name, and folding is idempotent, so two rows whose keys could collide always fold into one
   group. An invariant the catalog keeps rather than a migration it ran — hence no schema step, and
-  running it twice is a no-op.
+  running it twice is a no-op. A row it rekeys has its tracks indexed again, the fold having moved
+  under them. **A change to the fold is a schema step that asks for the index to be folded again**:
+  the step creates `index_refold_wanted`, and `store::refold_the_index`, run in `Library::build` after
+  the reconcile, writes again every `tracks_fts` row whose title, artist or album no longer reads as its
+  fold, then drops the table. A release's `folded` haystack, a kept release's and a dismissal folded
+  before the change are written again when the album is next landed.
 - **An album is whatever a grouping key names, and several may name one.** `album_keys` is the table —
   a key its primary key, an album holding any number — making a grouping a *name* for an album rather
   than a property of it. `store::album` reads it rather than upserting on a column, so a scan computing
