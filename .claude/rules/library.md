@@ -1152,11 +1152,16 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   another seat, where the seat alone would carry the want to whatever sits there now. `want_again` lands
   the exact ones first and the insert is `ON CONFLICT DO NOTHING`, so two wants landing on one row leave
   it to the better-carried, and a want whose track the release no longer holds is dropped as always.
-  `rematch_release_tracks` then pairs release rows with catalog rows in four passes, each taking only
+  `rematch_release_tracks` then pairs release rows with catalog rows in five passes, each taking only
   rows the earlier left and catalog rows not yet taken: the recording mbid against `tracks.mbid`, the
-  track mbid against `tracks.release_track_mbid`, disc and position against `disc_number` and
-  `track_number` — a missing disc read as 1 only on a one-medium release, so a two-disc set never pairs
-  a disc-less row with the wrong disc — and last the `folded_title`. It writes `release_tracks.track_id`
+  track mbid against `tracks.release_track_mbid`, the `folded_title` at its place, the `folded_title`
+  anywhere, and last the place alone — disc and position against `disc_number` and `track_number`, a
+  missing disc read as 1 only on a one-medium release, so a two-disc set never pairs a disc-less row
+  with the wrong disc. The title outranks the place because a pressing in another order otherwise
+  stamped each file with its neighbour's recording id and ISRC, which the tag writer then wrote and the
+  scrobbler sent; the place still pairs what no title answers, and the title at its place first keeps
+  two songs of one title — two *Interlude*s — each at its own seat
+  (`a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title`). It writes `release_tracks.track_id`
   where the pairing *moved* and answers how many moved, so `EnrichStats::matched` says what a pass
   changed, not what was already true; and for every row it paired, moved or not, it fills
   `tracks.mbid`, `release_track_mbid` and `isrc` by `coalesce` from the release row, so a file tagged

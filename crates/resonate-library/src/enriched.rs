@@ -640,14 +640,16 @@ pub(crate) fn rematch_release_tracks(tx: &Transaction<'_>, album: AlbumId) -> Re
 
     let mut matched: Vec<Option<i64>> = vec![None; rows.len()];
     let mut taken = vec![false; tracks.len()];
-    let passes: [Pairing<'_>; 4] = [
+    let at_its_place = |row: &ReleaseRow, track: &CatalogRow| {
+        track.number == Some(row.position)
+            && track.disc.or((discs == ONE_DISC).then_some(ONE_DISC)) == Some(row.disc)
+    };
+    let passes: [Pairing<'_>; 5] = [
         &|row, track| row.recording.is_some() && row.recording == track.recording,
         &|row, track| row.track.is_some() && row.track == track.release_track,
-        &|row, track| {
-            track.number == Some(row.position)
-                && track.disc.or((discs == ONE_DISC).then_some(ONE_DISC)) == Some(row.disc)
-        },
+        &|row, track| row.folded == track.folded && at_its_place(row, track),
         &|row, track| row.folded == track.folded,
+        &at_its_place,
     ];
     for pairs in passes {
         pair(&rows, &tracks, &mut matched, &mut taken, pairs);

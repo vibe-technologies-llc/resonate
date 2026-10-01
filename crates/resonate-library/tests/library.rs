@@ -8110,7 +8110,7 @@ fn a_file_cover_found_on_a_rescan_replaces_one_the_archive_gave() -> Result<()> 
 }
 
 #[test]
-fn release_rows_are_matched_by_recording_id_then_position_then_folded_title_and_the_rest_are_missing()
+fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_rest_are_missing()
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
@@ -8158,6 +8158,51 @@ fn release_rows_are_matched_by_recording_id_then_position_then_folded_title_and_
     );
     assert_eq!(only_album(&library)?.missing, 1);
     Ok(())
+}
+
+#[test]
+fn a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title() -> Result<()> {
+    let (tree, library, database) = scanned_orbits_on_disk()?;
+    let album = only_album(&library)?;
+    let mut swapped = release_row(1, "A Pillow of Winds", Vec::new());
+    swapped.recording = Some(mbid(RECORDING));
+    library.land_release(
+        album.id,
+        &orbits(
+            vec![
+                swapped,
+                release_row(2, "One of These Days", Vec::new()),
+                release_row(3, "Fearless", Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    library.rematch(album.id)?;
+
+    for row in library.release_tracks(album.id)? {
+        let paired = row
+            .track
+            .map(|id| library.track(id))
+            .transpose()?
+            .flatten()
+            .expect("every row has its song");
+        assert_eq!(
+            entitled(&paired.title),
+            entitled(&row.title),
+            "a row was paired by its place with its neighbour"
+        );
+    }
+    assert_eq!(
+        recorded(&database, &tree.path().join("2.wav")).as_deref(),
+        Some(RECORDING),
+        "the recording id was stamped on the neighbour at its place"
+    );
+    assert_eq!(recorded(&database, &tree.path().join("1.wav")), None);
+    Ok(())
+}
+
+fn entitled(title: &str) -> String {
+    title.trim_end_matches('!').to_owned()
 }
 
 #[test]

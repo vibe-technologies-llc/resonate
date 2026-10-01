@@ -6,9 +6,6 @@ marked **Blocked on …** waits on something outside this tree — hardware, an 
 service or a format — and is not worked until that moves; everything else is open to be done.
 
 ## Defects
-- A release pairs its rows with the album's tracks by disc and position before by title, so a
-  pressing in another order stamps each track with its neighbour's recording id and ISRC, which the
-  tag writer then writes and the scrobbler sends
 - *Not this record* clears the release rows but keeps the recording id and ISRC the wrong match
   stamped, so the next lookup takes them as tagged and renames the tracks to the same recording as
   an exact identification
