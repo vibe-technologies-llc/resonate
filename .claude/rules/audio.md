@@ -1031,7 +1031,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   engine is never held two seconds a pass by an enumeration in line — only where no survey thread
   could start does `wait_for_the_graph_in_line` still ask there. It waits `GRAPH_BACK_WITHIN` (10 s)
   before failing the row with what the last try said (`graph_still_away`), and a
-  pause, a stop or another row ends the wait. A graph letting go again within ten seconds of the last
+  pause or a stop ends the wait. Another row does not: a track change or *Play* landing while the
+  graph is away fails its bind with `Disconnected`, `LoopStopped` or a `Daemon` error, which
+  `parked_for_a_device` reads, while `graph_lost` stands, as the graph's and not the row's — the new
+  row waits in `unbound` on the same deadline rather than being billed, where every queued row failed
+  in turn and the queue ended (`a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row`). A graph letting go again within ten seconds of the last
   time is not waited for: it raises `Error::LoopStopped`, so the transport skips and eventually stops
   rather than opening and losing streams for ever (`graph_last_lost` is that memory). Asking the sinks
   first matters: a bind succeeds against the stale list and fails only when the stream opens, so trying

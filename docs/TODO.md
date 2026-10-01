@@ -9,8 +9,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A rebind or start that fails after the old stream is closed — a chain that cannot be built, a seek
   the file refuses — leaves the transport playing silence with nothing to retry it, and *Next* onto
   such a track goes silent rather than skipping
-- A track change or *Play* landing while the sound server reconnects bills the failure to the row,
-  so every queued row fails in turn and the queue ends, where a device going away is waited out
 - A pipe or process substitution that stops producing holds the engine thread inside a read with no
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive
 - A queue open in the player keeps the old paths after an organise moves its files, and the next

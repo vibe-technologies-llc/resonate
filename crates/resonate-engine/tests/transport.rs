@@ -25,9 +25,10 @@ use resonate_engine::{
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, HardwareVolume,
     Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode, Placement,
     PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q, QueueItem, Reading,
-    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkFormats, SinkId,
-    SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources, StreamCommand,
-    StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words, stamp_of,
+    RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats,
+    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped, Until, Words,
+    stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -159,6 +160,7 @@ struct Graph {
     announce: Option<Sender<SinkChange>>,
     turned: Vec<(SinkId, Gain)>,
     muted: Vec<(SinkId, bool)>,
+    away: bool,
 }
 
 impl Graph {
@@ -228,6 +230,9 @@ impl Surveyor for Surveyed {
     fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
         let mut graph = self.0.lock();
         graph.enumerations += 1;
+        if graph.away {
+            return Err(SinkError::Disconnected);
+        }
         Ok(graph.sinks.clone())
     }
 }
@@ -250,6 +255,9 @@ impl Backend for FakeSink {
 
         {
             let mut graph = self.graph.lock();
+            if graph.away {
+                return Err(SinkError::Disconnected);
+            }
             graph.opens += 1;
             graph.requests.push(request.clone());
             graph.source = (!self.lets_go).then_some(source);
@@ -1548,6 +1556,53 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
             .any(|event| matches!(event, Event::Failed { .. })),
         "a graph that came back was reported as a failed track"
     );
+    Ok(())
+}
+
+#[test]
+fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    {
+        let mut held = graph.lock();
+        held.away = true;
+        held.source = None;
+    }
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering,
+        "the row to wait for the graph",
+    );
+    let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+    thread::sleep(A_SHORT_DOZE);
+    neither_failed_nor_finished(&player);
+    assert!(plays(&player, 2), "{}", transport(&player));
+
+    graph.lock().away = false;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the second row to play once the graph is back",
+    );
+    neither_failed_nor_finished(&player);
     Ok(())
 }
 

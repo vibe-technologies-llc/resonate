@@ -2654,6 +2654,27 @@ impl Engine {
     fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
         use resonate_pipewire::Error as Sink;
 
+        let the_graph_is_away = self.graph_lost.is_some()
+            && matches!(
+                error,
+                Error::Sink(Sink::Disconnected | Sink::LoopStopped | Sink::Daemon { .. })
+            );
+        if the_graph_is_away && self.track.is_some() {
+            tracing::warn!(%error, "the graph is away; the row waits for it to come back");
+            let at = self.unbound.unwrap_or_else(|| self.heard_position());
+            if let Some(output) = self.output.as_mut() {
+                output.close();
+            }
+            self.output = None;
+            self.unbound = Some(at);
+            self.transport = if self.playing {
+                TransportState::Loading
+            } else {
+                TransportState::Paused
+            };
+            return Ok(());
+        }
+
         let had_a_stream = match &error {
             Error::Sink(Sink::NoSink) => false,
             Error::Sink(Sink::SinkGone { .. } | Sink::StreamFailed { .. }) => true,
