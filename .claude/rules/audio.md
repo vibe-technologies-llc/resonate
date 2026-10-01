@@ -25,7 +25,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   the padding is a lie about the master.
 - **A layout is named only where the container places every channel where that layout does.**
   `positioned_layout` weighs symphonia's speaker mask against the named layouts — the side pair and
-  the rear pair each counting as a 5.1's or quad's surrounds — and anything else, a 6.0 or an LCRS,
+  the rear pair each counting as a 5.1's, a 5.0's or quad's surrounds, and 6.1 as the WAVE and FLAC
+  order puts it (front three, LFE, rear centre, sides) — and anything else, a 6.0 or an LCRS,
   is `ChannelLayout::Discrete` rather than whichever layout shares its count, since a downmix reads a
   5.1's fourth channel as the LFE and drops it. One and two channels are mono and stereo wherever
   placed (symphonia puts a mono MP3 on the front left); an unplaced set of more is `Discrete`.
@@ -1690,9 +1691,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   nothing recorded. `resonate-dsp`'s `Remix` is the stage asked for, running first, so resampler and
   dither cost the sink's channels, not the file's. Its matrix is built from `ChannelPosition`: a
   channel the target also has is copied at unity (`UNITY`), one it lacks folds into its nearest
-  neighbours at −3 dB (`MINUS_3_DB`) — a centre into both fronts, a rear into the side then the front —
+  neighbours at −3 dB (`MINUS_3_DB`) — a centre into both fronts, a rear into the side then the front,
+  a rear centre into both rears, else both sides, else both fronts —
   the LFE is dropped, not folded, and a target channel nothing feeds stays silent, so an upmix invents
-  nothing. Each row is scaled so its gains sum to at most one, so no downmix can clip a full-scale
+  nothing; a 5.0 or 6.1 is routed by position like any named layout, where read as a bare count it
+  was copied by index and played its surrounds from the LFE and the rear left
+  (`a_five_channel_source_reaches_a_six_channel_sink_by_position_not_by_index`). Each row is scaled so its gains sum to at most one, so no downmix can clip a full-scale
   source and 5.1 into stereo lands about 7.7 dB down — the clip-prevention choice below: attenuate
   rather than clip.
 - **The chain is carried in f64 from the decoded word to the sink's.** `Processor::process` and

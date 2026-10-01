@@ -650,9 +650,8 @@ fn channel_layout(
 const FRONT_PAIR: Position = Position::FRONT_LEFT.union(Position::FRONT_RIGHT);
 const REAR_PAIR: Position = Position::REAR_LEFT.union(Position::REAR_RIGHT);
 const SIDE_PAIR: Position = Position::SIDE_LEFT.union(Position::SIDE_RIGHT);
-const FRONT_THREE_AND_LFE: Position = FRONT_PAIR
-    .union(Position::FRONT_CENTER)
-    .union(Position::LFE1);
+const FRONT_THREE: Position = FRONT_PAIR.union(Position::FRONT_CENTER);
+const FRONT_THREE_AND_LFE: Position = FRONT_THREE.union(Position::LFE1);
 
 pub(crate) fn positioned_layout(positions: Position, count: ChannelCount) -> ChannelLayout {
     if matches!(count, ChannelCount::MONO | ChannelCount::STEREO) {
@@ -661,6 +660,14 @@ pub(crate) fn positioned_layout(positions: Position, count: ChannelCount) -> Cha
     let named = [
         (FRONT_PAIR.union(REAR_PAIR), ChannelLayout::Quad),
         (FRONT_PAIR.union(SIDE_PAIR), ChannelLayout::Quad),
+        (FRONT_THREE.union(REAR_PAIR), ChannelLayout::Surround50),
+        (FRONT_THREE.union(SIDE_PAIR), ChannelLayout::Surround50),
+        (
+            FRONT_THREE_AND_LFE
+                .union(Position::REAR_CENTER)
+                .union(SIDE_PAIR),
+            ChannelLayout::Surround61,
+        ),
         (
             FRONT_THREE_AND_LFE.union(REAR_PAIR),
             ChannelLayout::Surround51,
@@ -1245,6 +1252,24 @@ mod tests {
             StreamTrackId(0),
         )
         .expect("a positioned or discrete set is representable")
+    }
+
+    #[test]
+    fn a_five_and_a_seven_channel_file_are_named_by_where_their_channels_sit() {
+        assert_eq!(
+            layout_of(Channels::Positioned(FRONT_THREE | REAR_PAIR)),
+            ChannelLayout::Surround50
+        );
+        assert_eq!(
+            layout_of(Channels::Positioned(FRONT_THREE | SIDE_PAIR)),
+            ChannelLayout::Surround50
+        );
+        assert_eq!(
+            layout_of(Channels::Positioned(
+                FRONT_THREE_AND_LFE | Position::REAR_CENTER | SIDE_PAIR
+            )),
+            ChannelLayout::Surround61
+        );
     }
 
     #[test]

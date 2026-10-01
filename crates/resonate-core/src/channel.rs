@@ -43,7 +43,9 @@ pub enum ChannelLayout {
     Mono,
     Stereo,
     Quad,
+    Surround50,
     Surround51,
+    Surround61,
     Surround71,
     Discrete(ChannelCount),
 }
@@ -54,7 +56,9 @@ impl ChannelLayout {
             Self::Mono => ChannelCount::MONO,
             Self::Stereo => ChannelCount::STEREO,
             Self::Quad => count(4),
+            Self::Surround50 => count(5),
             Self::Surround51 => count(6),
+            Self::Surround61 => count(7),
             Self::Surround71 => count(8),
             Self::Discrete(n) => n,
         }
@@ -62,13 +66,24 @@ impl ChannelLayout {
 
     pub const fn positions(self) -> &'static [ChannelPosition] {
         use ChannelPosition::{
-            FrontCenter, FrontLeft, FrontRight, Lfe, RearLeft, RearRight, SideLeft, SideRight,
+            FrontCenter, FrontLeft, FrontRight, Lfe, RearCenter, RearLeft, RearRight, SideLeft,
+            SideRight,
         };
         match self {
             Self::Mono => &[FrontCenter],
             Self::Stereo => &[FrontLeft, FrontRight],
             Self::Quad => &[FrontLeft, FrontRight, RearLeft, RearRight],
+            Self::Surround50 => &[FrontLeft, FrontRight, FrontCenter, RearLeft, RearRight],
             Self::Surround51 => &[FrontLeft, FrontRight, FrontCenter, Lfe, RearLeft, RearRight],
+            Self::Surround61 => &[
+                FrontLeft,
+                FrontRight,
+                FrontCenter,
+                Lfe,
+                RearCenter,
+                SideLeft,
+                SideRight,
+            ],
             Self::Surround71 => &[
                 FrontLeft,
                 FrontRight,
@@ -101,7 +116,9 @@ impl fmt::Display for ChannelLayout {
             Self::Mono => f.write_str("mono"),
             Self::Stereo => f.write_str("stereo"),
             Self::Quad => f.write_str("quad"),
+            Self::Surround50 => f.write_str("5.0"),
             Self::Surround51 => f.write_str("5.1"),
+            Self::Surround61 => f.write_str("6.1"),
             Self::Surround71 => f.write_str("7.1"),
             Self::Discrete(n) => write!(f, "{n}-channel"),
         }
@@ -116,6 +133,7 @@ pub enum ChannelPosition {
     Lfe,
     RearLeft,
     RearRight,
+    RearCenter,
     SideLeft,
     SideRight,
 }
@@ -130,7 +148,9 @@ mod tests {
             ChannelLayout::Mono,
             ChannelLayout::Stereo,
             ChannelLayout::Quad,
+            ChannelLayout::Surround50,
             ChannelLayout::Surround51,
+            ChannelLayout::Surround61,
             ChannelLayout::Surround71,
         ] {
             assert_eq!(

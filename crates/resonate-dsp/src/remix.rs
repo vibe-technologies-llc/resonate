@@ -152,7 +152,8 @@ fn routes(source: ChannelPosition, targets: &[ChannelPosition]) -> Vec<(ChannelP
 
 fn folded_into(source: ChannelPosition, targets: &[ChannelPosition]) -> Vec<ChannelPosition> {
     use ChannelPosition::{
-        FrontCenter, FrontLeft, FrontRight, Lfe, RearLeft, RearRight, SideLeft, SideRight,
+        FrontCenter, FrontLeft, FrontRight, Lfe, RearCenter, RearLeft, RearRight, SideLeft,
+        SideRight,
     };
 
     let nearest = |preferred: &[ChannelPosition]| -> Vec<ChannelPosition> {
@@ -174,6 +175,15 @@ fn folded_into(source: ChannelPosition, targets: &[ChannelPosition]) -> Vec<Chan
         FrontLeft | FrontRight => nearest(&[FrontCenter]),
         FrontCenter => spread(&[FrontLeft, FrontRight]),
         Lfe => Vec::new(),
+        RearCenter => [
+            [RearLeft, RearRight],
+            [SideLeft, SideRight],
+            [FrontLeft, FrontRight],
+        ]
+        .into_iter()
+        .map(|pair| spread(&pair))
+        .find(|reached| !reached.is_empty())
+        .unwrap_or_else(|| nearest(&[FrontCenter])),
         RearLeft => nearest(&[SideLeft, FrontLeft, FrontCenter]),
         RearRight => nearest(&[SideRight, FrontRight, FrontCenter]),
         SideLeft => nearest(&[RearLeft, FrontLeft, FrontCenter]),
@@ -239,12 +249,40 @@ mod tests {
     }
 
     #[test]
+    fn a_five_channel_source_reaches_a_six_channel_sink_by_position_not_by_index() {
+        let out = run(
+            ChannelLayout::Surround50,
+            ChannelLayout::Surround51,
+            &[0.1, 0.2, 0.3, 0.4, 0.5],
+        );
+
+        assert!(close(out[0], 0.1) && close(out[1], 0.2) && close(out[2], 0.3));
+        assert!(close(out[3], 0.0), "a surround channel played from the LFE");
+        assert!(close(out[4], 0.4) && close(out[5], 0.5));
+    }
+
+    #[test]
+    fn a_seven_channel_source_puts_its_rear_centre_between_the_rears_of_an_eight_channel_sink() {
+        let out = run(
+            ChannelLayout::Surround61,
+            ChannelLayout::Surround71,
+            &[0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8],
+        );
+
+        assert!(close(out[3], 0.4), "the LFE moved");
+        assert!(close(out[4], 0.6 * MINUS_3_DB) && close(out[5], 0.6 * MINUS_3_DB));
+        assert!(close(out[6], 0.7) && close(out[7], 0.8));
+    }
+
+    #[test]
     fn a_layout_remixed_into_itself_is_transparent() {
         for layout in [
             ChannelLayout::Mono,
             ChannelLayout::Stereo,
             ChannelLayout::Quad,
+            ChannelLayout::Surround50,
             ChannelLayout::Surround51,
+            ChannelLayout::Surround61,
             ChannelLayout::Surround71,
         ] {
             assert!(

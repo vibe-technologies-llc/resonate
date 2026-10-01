@@ -16,8 +16,6 @@ service or a format — and is not worked until that moves; everything else is o
   so every queued row fails in turn and the queue ends, where a device going away is waited out
 - A pipe or process substitution that stops producing holds the engine thread inside a read with no
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive
-- A 5.0 or 6.1 source on a 5.1 or 7.1 sink is remapped by channel index rather than position, so
-  the 5.0 surrounds play from the LFE and rear left
 - A cover or portrait drawn before it existed stays a placeholder for the run, even after a lookup
   fetches it or a rescan finds it, because a miss is cached like a picture
 - The queue and the playback bar keep a track as it was first read — title, artist, album link,
