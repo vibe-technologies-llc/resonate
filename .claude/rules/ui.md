@@ -1847,8 +1847,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   downloading, `done` downloaded, `failure` unfound, unprovided or unwanted, `muted` landing or queued)
   and its artist, an `Icon::Redo` asking again where `can_be_asked_again`, a ✕ on a finished one, and
   *Clear finished* and a close mark in its heading. A second press on the row, the close mark or
-  escape — after a menu, before a toast — puts it away; it is not modal and holds no key back. Asking again is `want_found` once more, polling under
-  `PollOptions::ASKING_EVERY_WANT` since the want was tried within `POLL_AGAIN_AFTER`. A self-started
+  escape — after a menu, before a toast — puts it away; it is not modal and holds no key back. Asking again is `want_found` once more, which makes the want due at once in the catalog
+  (`library.md`), so the ordinary poll asks for it whatever the list remembers — once relied on the
+  list holding the earlier failure, a song asked for again after *Clear finished* or a restart sat
+  *Queued* for six hours. A self-started
   poll joining while the list holds anything tells no toast. The found row says the same thing
   where it stands: its format column draws the `Fetching` in its colour in place of the release
   title, the want mark is greyed with the state as its hint, and the row is a press only where

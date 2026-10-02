@@ -20498,6 +20498,28 @@ fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_p
 }
 
 #[test]
+fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let want = wanted_san_tropez(&library)?;
+    let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
+    let providers = Arc::new(Providers::none().and(Arc::clone(&quiet) as Arc<dyn Provider>));
+
+    library
+        .poll(Arc::clone(&providers), PollOptions::default())?
+        .join()?;
+    assert!(library.wants()?[0].tried.is_some());
+    assert!(!library.is_a_want_due(PollOptions::default())?);
+
+    assert_eq!(wanted_san_tropez(&library)?, want);
+
+    assert_eq!(library.wants()?[0].tried, None);
+    assert!(library.is_a_want_due(PollOptions::default())?);
+    library.poll(providers, PollOptions::default())?.join()?;
+    assert_eq!(quiet.asked().len(), 2);
+    Ok(())
+}
+
+#[test]
 fn a_want_one_provider_answered_and_another_refused_stays_due() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     wanted_san_tropez(&library)?;

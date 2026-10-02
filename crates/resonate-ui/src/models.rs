@@ -1294,15 +1294,6 @@ impl LibraryModel {
         if self.wanting.contains_key(&found.recording) {
             return;
         }
-        let asked_before = self
-            .downloads
-            .of(&found.recording)
-            .is_some_and(|download| download.fetching_while(None).can_be_asked_again());
-        let options = if asked_before {
-            PollOptions::ASKING_EVERY_WANT
-        } else {
-            PollOptions::default()
-        };
         self.downloads.landing(found.clone(), SystemTime::now());
         cx.notify();
         let library = Arc::clone(&self.library);
@@ -1328,7 +1319,7 @@ impl LibraryModel {
                         };
                         this.downloads.wanted(&found.recording, want, fetched_by);
                         if fetched_by == Fetcher::AProvider {
-                            this.fetch_what_was_wanted(options, cx);
+                            this.fetch_what_was_wanted(PollOptions::default(), cx);
                         }
                     }
                     Err(error) => {

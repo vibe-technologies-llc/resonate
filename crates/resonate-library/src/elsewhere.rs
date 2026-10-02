@@ -297,6 +297,11 @@ pub(crate) fn want_in(
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
     tx.execute(
+        "UPDATE wants SET tried = NULL WHERE release_track_id = ?1 AND offered IS NULL",
+        params![row],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.execute(
         "DELETE FROM dismissed_missing
           WHERE (album_id, disc, folded) IN
                 (SELECT album_id, disc, folded FROM release_tracks WHERE id = ?1)",

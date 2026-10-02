@@ -1369,7 +1369,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and `dismissed_releases` the artist and the release group's MBID, both cascading with their album or
   artist (a `MIGRATIONS` step). **A want and a dismissal undo each other**: dismissing a row withdraws
   its want, and `want_in` clears a dismissal of the row it wants, so a row is never both asked for and
-  hidden. `Library::dismissed` counts what is dismissed and still missing, and `bring_back_dismissed`
+  hidden. **A want asked for again is due at once**: `want_in` puts back to nothing the `tried` of a
+  want already standing and not yet offered, so pressing Want, a found song or a whole album again —
+  every caller is a gesture — sends the next poll for it rather than waiting out `POLL_AGAIN_AFTER`
+  (`a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried`).
+  `Library::dismissed` counts what is dismissed and still missing, and `bring_back_dismissed`
   empties both tables, answering what it brought back.
   `a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_brought_back` and
   `a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count` are the claims.
