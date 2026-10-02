@@ -239,6 +239,9 @@ What some of them mean:
   stores its canonical path, refuses a path that is not a folder or lies inside the vault
   (`unusable_as_the_music_folder`), and adds it to the roots through `add_roots` unless a root
   already reaches it, so what lands there is scanned like any other folder.
+- `hifi-api` is an optional custom server address. Blank or absent, the hosted TIDAL HiFi service
+  is used while `online` is on; a custom address replaces it from the next start. The *A TIDAL
+  account* group's field writes it (`providers.md`).
 - `file-dropped` (default true): what is dropped on the window is filed by `organise-as` once the
   scan has it, rather than left under the names and folders it came with. It rides on `Stored` onto
   `ResonateApp::file_dropped`, and the *Primary music folder* group's switch writes it.

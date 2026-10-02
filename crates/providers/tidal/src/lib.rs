@@ -265,7 +265,12 @@ impl Tidal {
 }
 
 impl Finds for Tidal {
-    fn tracks_named_by(&self, isrc: &Isrc) -> Result<Vec<TrackId>> {
+    fn tracks_named_by(
+        &self,
+        isrc: &Isrc,
+        _title: &str,
+        _artist: Option<&str>,
+    ) -> Result<Vec<TrackId>> {
         let op = ProviderOp::Search;
         let asked = self.asked(
             op,

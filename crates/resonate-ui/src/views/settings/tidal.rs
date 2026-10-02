@@ -70,16 +70,17 @@ fn turned_away(error: &Error) -> &'static str {
     }
 }
 
-const TIDAL_NOTE: &str = "A TIDAL subscription of your own is asked for every track marked \
-                          wanted, by the TIDAL track MusicBrainz links the recording to or by \
-                          its ISRC and never by a title. Only the whole track in lossless FLAC \
-                          is taken — never a preview, a lossy stream or an encrypted one — and \
-                          it is downloaded, repacked as a FLAC file and kept in the vault, or \
-                          the music folder where no vault is open. The client id and secret \
-                          are those of the application the refresh token was issued to. A \
-                          hifi-api server you run on your own subscription is asked the same \
-                          way, with no client or token typed here. Used from the next start, \
-                          and only while Online is on.";
+const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, your own \
+                          subscription is asked for every track marked wanted, by the TIDAL \
+                          track MusicBrainz links the recording to or by its ISRC and never by a \
+                          title. Only the whole track in lossless FLAC is taken — never a \
+                          preview, a lossy stream or an encrypted one — and it is downloaded, \
+                          repacked as a FLAC file and kept in the vault, or the music folder \
+                          where no vault is open. The client id and secret are those of the \
+                          application the refresh token was issued to. The hosted hifi-api \
+                          service is used where no custom server is given; a hifi-api server \
+                          you run can replace it. Both use the same ISRC and whole-track checks. \
+                          Used from the next start, and only while Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
@@ -102,7 +103,7 @@ impl TidalAccount {
             Self::ClientId => "The client id the token was issued to, then press enter",
             Self::ClientSecret => "Its client secret, if it has one, then press enter",
             Self::RefreshToken => "A refresh token for your account, then press enter",
-            Self::HifiApi => "The address of a hifi-api server of yours, then press enter",
+            Self::HifiApi => "Custom hifi-api server address; blank uses the hosted service",
         }
     }
 
@@ -199,8 +200,12 @@ impl RootView {
         });
 
         let said = match (account, given.is_empty()) {
-            (TidalAccount::HifiApi, true) => "No hifi-api server is asked from the next start",
-            (TidalAccount::HifiApi, false) => "The hifi-api server is asked from the next start",
+            (TidalAccount::HifiApi, true) => {
+                "The hosted hifi-api service is asked from the next start"
+            }
+            (TidalAccount::HifiApi, false) => {
+                "The custom hifi-api server is asked from the next start"
+            }
             (_, true) => "TIDAL is not asked from the next start",
             (_, false) => "TIDAL is asked from the next start",
         };

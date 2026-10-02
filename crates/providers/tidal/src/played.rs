@@ -32,7 +32,12 @@ pub(crate) fn named_by(isrc: &Isrc, held: Option<&str>) -> bool {
 }
 
 pub(crate) trait Finds {
-    fn tracks_named_by(&self, isrc: &Isrc) -> Result<Vec<TrackId>>;
+    fn tracks_named_by(
+        &self,
+        isrc: &Isrc,
+        title: &str,
+        artist: Option<&str>,
+    ) -> Result<Vec<TrackId>>;
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>>;
 }
@@ -51,7 +56,7 @@ pub(crate) fn obtained(finds: &impl Finds, identity: &Identity) -> Result<Obtain
         return Ok(Obtained::Nothing);
     };
     for track in finds
-        .tracks_named_by(isrc)?
+        .tracks_named_by(isrc, &identity.title, identity.artist.as_deref())?
         .into_iter()
         .filter(|track| Some(*track) != linked)
     {
@@ -85,19 +90,34 @@ impl Player<'_> {
     }
 
     fn media_in(&self, track: TrackId, playback: &Playback) -> Result<Option<Media>> {
+        self.media_from(
+            track,
+            &playback.asset_presentation,
+            &playback.manifest_mime_type,
+            manifest::read(&playback.manifest_mime_type, &playback.manifest),
+        )
+    }
+
+    fn media_from(
+        &self,
+        track: TrackId,
+        presentation: &str,
+        mime: &str,
+        read: std::result::Result<Manifest, manifest::Unread>,
+    ) -> Result<Option<Media>> {
         let op = ProviderOp::Playback;
-        if !playback.asset_presentation.eq_ignore_ascii_case(FULL) {
-            tracing::debug!(track = track.0, presentation = %playback.asset_presentation, provider = %self.source, "offered less than the whole track");
+        if !presentation.eq_ignore_ascii_case(FULL) {
+            tracing::debug!(track = track.0, %presentation, provider = %self.source, "offered less than the whole track");
             return Ok(None);
         }
-        let media = match manifest::read(&playback.manifest_mime_type, &playback.manifest) {
+        let media = match read {
             Ok(Manifest::Media(media)) => media,
             Ok(Manifest::Withheld(withheld)) => {
                 tracing::debug!(track = track.0, ?withheld, provider = %self.source, "a stream this provider does not take");
                 return Ok(None);
             }
             Err(unread) => {
-                tracing::debug!(track = track.0, ?unread, mime = %playback.manifest_mime_type, provider = %self.source, "a manifest could not be read");
+                tracing::debug!(track = track.0, ?unread, %mime, provider = %self.source, "a manifest could not be read");
                 return Err(self.unreadable(op));
             }
         };
@@ -153,11 +173,34 @@ impl Player<'_> {
         let Some(media) = self.media_in(track, playback)? else {
             return Ok(None);
         };
-        Ok(Some(Delivery::Stream {
+        self.delivery(track, media).map(Some)
+    }
+
+    pub(crate) fn delivered_manifest(
+        &self,
+        track: TrackId,
+        presentation: &str,
+        mime: &str,
+        document: &[u8],
+    ) -> Result<Option<Delivery>> {
+        let Some(media) = self.media_from(
+            track,
+            presentation,
+            mime,
+            manifest::read_document(mime, document),
+        )?
+        else {
+            return Ok(None);
+        };
+        self.delivery(track, media).map(Some)
+    }
+
+    fn delivery(&self, track: TrackId, media: Media) -> Result<Delivery> {
+        Ok(Delivery::Stream {
             key: format!("track/{}", track.0).into_boxed_str(),
             extension: Extension::new(DELIVERED_AS)?,
             reader: self.downloaded(media)?,
-        }))
+        })
     }
 }
 

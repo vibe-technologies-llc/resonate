@@ -67,9 +67,13 @@ pub(crate) fn read(mime: &str, encoded: &str) -> Result<Manifest, Unread> {
     let bytes = STANDARD
         .decode(encoded.trim())
         .map_err(|_| Unread::NotBase64)?;
+    read_document(mime, &bytes)
+}
+
+pub(crate) fn read_document(mime: &str, bytes: &[u8]) -> Result<Manifest, Unread> {
     match mime.trim() {
-        BTS => bts(&bytes),
-        DASH => dash(&bytes),
+        BTS => bts(bytes),
+        DASH => dash(bytes),
         _ => Err(Unread::UnknownType),
     }
 }
@@ -151,11 +155,32 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
         return Ok(Manifest::Withheld(Withheld::Encrypted));
     }
 
-    let representation = first(&document, "Representation").ok_or(Unread::NoMedia)?;
-    if !is_flac(inherited(representation, "codecs").unwrap_or_default()) {
-        return Ok(Manifest::Withheld(Withheld::Lossy));
-    }
-    let template = first(&document, "SegmentTemplate").ok_or(Unread::NoMedia)?;
+    let representations: Vec<_> = document
+        .descendants()
+        .filter(|node| node.tag_name().name() == "Representation")
+        .collect();
+    let Some(representation) = representations
+        .iter()
+        .copied()
+        .filter(|node| is_flac(inherited(*node, "codecs").unwrap_or_default()))
+        .max_by_key(|node| {
+            numbered(node.attribute("bandwidth"))
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        })
+    else {
+        return if representations.is_empty() {
+            Err(Unread::NoMedia)
+        } else {
+            Ok(Manifest::Withheld(Withheld::Lossy))
+        };
+    };
+    let template = representation
+        .descendants()
+        .chain(representation.ancestors())
+        .find(|node| node.tag_name().name() == "SegmentTemplate")
+        .ok_or(Unread::NoMedia)?;
     let initialization = template
         .attribute("initialization")
         .ok_or(Unread::NoMedia)?;
@@ -279,6 +304,45 @@ mod tests {
                 ticks: 3 * 176_128 + 12_345,
                 timescale: 44_100,
             })
+        );
+    }
+
+    #[test]
+    fn a_dash_manifest_fetched_as_xml_is_read_without_base64() {
+        assert_eq!(
+            read_document(DASH, DASHED.as_bytes()),
+            dash(DASHED.as_bytes())
+        );
+    }
+
+    #[test]
+    fn a_dash_manifest_chooses_flac_after_lossy_representations() {
+        let alternatives = DASHED
+            .replace(
+            r#"<Representation id="FLAC,44100,16" codecs="flac" bandwidth="1004547" audioSamplingRate="44100">"#,
+            r#"<Representation id="AACLC" codecs="mp4a.40.2" bandwidth="321750" audioSamplingRate="44100"/><Representation id="FLAC,44100,16" codecs="flac" bandwidth="1004547" audioSamplingRate="44100">"#,
+            )
+            .replace(
+                "</AdaptationSet>",
+                r#"<Representation id="FLAC_HIRES,96000,24" codecs="flac" bandwidth="1730302" audioSamplingRate="96000"><SegmentTemplate timescale="96000" initialization="https://sp-ad-fa.audio.tidal.com/mediatracks/high/0.mp4" media="https://sp-ad-fa.audio.tidal.com/mediatracks/high/$Number$.mp4" startNumber="1"><SegmentTimeline><S d="384000" r="2"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet>"#,
+            );
+        let Ok(Manifest::Media(media)) = read(DASH, &encoded(&alternatives)) else {
+            panic!("the lossless representation was not read as media");
+        };
+
+        assert_eq!(
+            media.urls[0],
+            "https://sp-ad-fa.audio.tidal.com/mediatracks/high/0.mp4"
+        );
+    }
+
+    #[test]
+    fn a_dash_manifest_with_only_lossy_representations_is_withheld() {
+        let lossy = DASHED.replace("codecs=\"flac\"", "codecs=\"mp4a.40.2\"");
+
+        assert_eq!(
+            read(DASH, &encoded(&lossy)),
+            Ok(Manifest::Withheld(Withheld::Lossy))
         );
     }
 

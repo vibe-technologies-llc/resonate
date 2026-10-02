@@ -3278,7 +3278,7 @@ mod tests {
 
         use gpui::TestAppContext;
         use parking_lot::Mutex;
-        use resonate_core::SourceId;
+        use resonate_core::{Isrc, SourceId};
         use resonate_library::{
             ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
             Issued, Library, Link, LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked,
@@ -3289,17 +3289,18 @@ mod tests {
 
         use crate::driven::{Driven, Folder, Reaching};
 
-        const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
-        const MEDDLE: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
+        const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
+        const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
+        const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
 
         fn mbid(id: &str) -> Mbid {
             Mbid::new(id).expect("an mbid")
         }
 
-        fn floyd() -> Vec<Credit> {
+        fn janji() -> Vec<Credit> {
             vec![Credit {
-                name: "Pink Floyd".to_owned(),
-                joined_by: String::new(),
+                name: "Janji".to_owned(),
+                joined_by: " & Johnning".to_owned(),
                 mbid: None,
             }]
         }
@@ -3314,12 +3315,12 @@ mod tests {
             }
 
             fn release(&self, id: &Mbid) -> Result<Option<Release>> {
-                Ok((id.as_str() == MEDDLE).then(|| Release {
-                    id: mbid(MEDDLE),
+                Ok((id.as_str() == HEROES_TONIGHT_RELEASE).then(|| Release {
+                    id: mbid(HEROES_TONIGHT_RELEASE),
                     group: None,
-                    title: "Meddle".to_owned(),
-                    credit: floyd(),
-                    date: Some("1971-10-30".to_owned()),
+                    title: "Heroes Tonight".to_owned(),
+                    credit: janji(),
+                    date: Some("2015-12-22".to_owned()),
                     country: None,
                     label: None,
                     catalog_number: None,
@@ -3333,14 +3334,14 @@ mod tests {
                         format: None,
                         title: None,
                         tracks: vec![ReleaseTrack {
-                            position: 6,
-                            number: "6".to_owned(),
-                            title: "Echoes".to_owned(),
+                            position: 1,
+                            number: "1".to_owned(),
+                            title: "Heroes Tonight".to_owned(),
                             artist: None,
-                            recording: Some(mbid(ECHOES)),
+                            recording: Some(mbid(HEROES_TONIGHT)),
                             track: None,
                             length: None,
-                            isrc: None,
+                            isrc: Some(HEROES_TONIGHT_ISRC.to_owned()),
                             links: Vec::new(),
                         }],
                     }],
@@ -3365,18 +3366,18 @@ mod tests {
 
             fn find_songs(&self, _: &str) -> Result<Vec<RecordingMatch>> {
                 Ok(vec![RecordingMatch {
-                    recording: mbid(ECHOES),
+                    recording: mbid(HEROES_TONIGHT),
                     score: 100,
-                    title: "Echoes".to_owned(),
-                    credit: floyd(),
+                    title: "Heroes Tonight".to_owned(),
+                    credit: janji(),
                     length: None,
-                    isrcs: Vec::new(),
+                    isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
                     releases: vec![RecordingRelease {
-                        id: mbid(MEDDLE),
-                        title: "Meddle".to_owned(),
-                        date: Some("1971-10-30".to_owned()),
+                        id: mbid(HEROES_TONIGHT_RELEASE),
+                        title: "Heroes Tonight".to_owned(),
+                        date: Some("2015-12-22".to_owned()),
                         disc: Some(1),
-                        position: Some(6),
+                        position: Some(1),
                         issued: Issued {
                             kind: Some("Album".to_owned()),
                             secondary: Vec::new(),
@@ -3427,9 +3428,15 @@ mod tests {
             }
         }
 
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        struct Asked {
+            recording: Option<Mbid>,
+            isrc: Option<Isrc>,
+        }
+
         struct Shop {
             source: SourceId,
-            asked: Arc<Mutex<Vec<Option<Mbid>>>>,
+            asked: Arc<Mutex<Vec<Asked>>>,
         }
 
         impl Provider for Shop {
@@ -3438,13 +3445,16 @@ mod tests {
             }
 
             fn obtain(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
-                self.asked.lock().push(identity.recording.clone());
+                self.asked.lock().push(Asked {
+                    recording: identity.recording.clone(),
+                    isrc: identity.isrc.clone(),
+                });
                 Ok(Obtained::Nothing)
             }
         }
 
         #[gpui::test]
-        fn pressing_a_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it(
+        fn pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it(
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
@@ -3466,14 +3476,22 @@ mod tests {
 
             let model = driven.read(|root, _| root.library.clone());
             driven.cx.update(|_, cx| {
-                model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+                model.update(cx, |library, cx| {
+                    library.set_query("Heroes Tonight".to_owned(), cx);
+                });
             });
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());
 
             driven.click("found-0");
             driven.until(|_, _| !asked.lock().is_empty());
 
-            assert_eq!(asked.lock().clone(), vec![Some(mbid(ECHOES))]);
+            assert_eq!(
+                asked.lock().clone(),
+                vec![Asked {
+                    recording: Some(mbid(HEROES_TONIGHT)),
+                    isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
+                }]
+            );
             assert_eq!(library.wants().expect("the wants read").len(), 1);
         }
     }

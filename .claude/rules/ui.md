@@ -96,7 +96,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `SignsIn` seam's two calls on the background executor, the code drawn as a `kit::figure` beside
   *Open the page* (`cx.open_url`) and *Stop*, which sets the flag the waiting call reads. The token
   it is handed is held in the refresh-token field, the global and the settings file at once; a
-  refusal is a toast naming which (`providers.md` has the seam).
+  refusal is a toast naming which (`providers.md` has the seam). The group's hifi-api address is
+  an optional custom-server override: blank selects the hosted service from the next start, and
+  submitting a blank field says so.
 - **A secret is drawn as marks.** `Field::masked` — the Subsonic password, the TIDAL client secret and
   refresh token and the AcoustID, AudD and ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
   offset the caret, selection, marked range and IME bounds hold to the drawn line and a pointer's

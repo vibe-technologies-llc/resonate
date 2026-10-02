@@ -28,8 +28,12 @@ pub fn sourced(config: &Config) -> Registering {
         if let Some(account) = account.clone() {
             providers = providers.and(Arc::new(Tidal::signed_in(account)));
         }
-        if let Some(server) = hifi.as_deref() {
-            providers = providers.and(Arc::new(HifiApi::at(server)));
+        if let Some(hifi) = &hifi {
+            let hifi = match hifi {
+                HifiServer::Hosted => HifiApi::hosted(),
+                HifiServer::Custom(server) => HifiApi::at(server),
+            };
+            providers = providers.and(Arc::new(hifi));
         }
         providers
     })
@@ -65,11 +69,26 @@ fn tidal(config: &Config) -> Option<Account> {
 }
 
 #[cfg(feature = "online")]
-fn hifi_api(config: &Config) -> Option<String> {
+#[derive(Clone)]
+enum HifiServer {
+    Hosted,
+    Custom(String),
+}
+
+#[cfg(feature = "online")]
+fn hifi_api(config: &Config) -> Option<HifiServer> {
     if !config.online_enabled() {
         return None;
     }
-    config.hifi_api.clone()
+    Some(
+        config
+            .hifi_api
+            .as_deref()
+            .filter(|server| !server.trim().is_empty())
+            .map_or(HifiServer::Hosted, |server| {
+                HifiServer::Custom(server.to_owned())
+            }),
+    )
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]
@@ -97,12 +116,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nothing_is_registered_until_an_inbox_is_named() {
-        assert!(!registered(&Config::default()).has_a_source());
+    fn an_inbox_is_registered_even_when_online_services_are_off() {
+        let offline = Config {
+            online: Some(false),
+            ..Config::default()
+        };
+        assert!(!registered(&offline).has_a_source());
 
         let config = Config {
             inbox: Some(PathBuf::from("/music/inbox")),
-            ..Config::default()
+            ..offline
         };
         let providers = registered(&config);
         assert!(providers.has_a_source());
@@ -175,7 +198,7 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
-    fn a_hifi_api_server_is_registered_only_where_named_and_while_online() {
+    fn the_hosted_hifi_api_is_registered_without_an_override_and_while_online() {
         let named = |config: &Config| -> Vec<String> {
             registered(config)
                 .names()
@@ -183,13 +206,24 @@ mod tests {
                 .map(|name| name.as_str().to_owned())
                 .collect()
         };
-        assert!(!named(&Config::default()).contains(&"hifi-api".to_owned()));
+        assert!(named(&Config::default()).contains(&"hifi-api".to_owned()));
+        assert!(matches!(
+            hifi_api(&Config::default()),
+            Some(HifiServer::Hosted)
+        ));
 
         let whole = Config {
             hifi_api: Some("http://hifi.home.arpa:8000".to_owned()),
             ..Config::default()
         };
         assert!(named(&whole).contains(&"hifi-api".to_owned()));
+        assert!(matches!(hifi_api(&whole), Some(HifiServer::Custom(_))));
+
+        let blank = Config {
+            hifi_api: Some("  ".to_owned()),
+            ..Config::default()
+        };
+        assert!(matches!(hifi_api(&blank), Some(HifiServer::Hosted)));
 
         let offline = Config {
             online: Some(false),

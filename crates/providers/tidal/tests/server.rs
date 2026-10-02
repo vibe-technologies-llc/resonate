@@ -1,4 +1,5 @@
 use std::{
+    env,
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     sync::Arc,
@@ -16,6 +17,7 @@ use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal, TidalSignIn
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const ECHOES_ISRC: &str = "GBN9Y1100089";
+const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
 const TRACK: u64 = 55_391_743;
 const BEARER: &str = "Bearer fresh-access";
 
@@ -311,6 +313,14 @@ fn by_isrc() -> Identity {
         isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
         artist: Some("Pink Floyd".to_owned()),
         ..Identity::named("Echoes")
+    }
+}
+
+fn ncs_song() -> Identity {
+    Identity {
+        isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
+        artist: Some("Janji".to_owned()),
+        ..Identity::named("Heroes Tonight")
     }
 }
 
@@ -826,4 +836,28 @@ fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_un
         }
     ));
     assert!(error.is_the_provider_away());
+}
+
+#[test]
+fn the_hosted_hifi_service_downloads_ncs_heroes_tonight_by_isrc() {
+    const GATE: &str = "RESONATE_HIFI_LIVE_TESTS";
+    if env::var_os(GATE).is_none() {
+        eprintln!("skipped: set {GATE} to reach the hosted hifi service");
+        return;
+    }
+
+    let (key, extension, bytes) = streamed(
+        HifiApi::hosted()
+            .obtain(&ncs_song())
+            .expect("the hosted hifi service answers"),
+    )
+    .expect("the NCS track is delivered");
+
+    assert!(
+        key.strip_prefix("track/")
+            .is_some_and(|id| id.parse::<u64>().is_ok())
+    );
+    assert_eq!(extension, "flac");
+    assert!(bytes.starts_with(b"fLaC"));
+    assert!(bytes.len() > 1_000_000);
 }

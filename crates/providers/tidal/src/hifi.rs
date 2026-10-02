@@ -3,10 +3,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
 use serde::Deserialize;
-use ureq::Agent;
+use ureq::{Agent, http::header::AUTHORIZATION};
 
 use crate::{
     MediaHosts,
@@ -15,9 +16,18 @@ use crate::{
 };
 
 const HIFI_API: &str = "hifi-api";
+const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
+const HIFI_TOKEN: &str = "https://hifi.odskyler.com/token";
+const TIDAL_TOKEN: &str = "https://auth.odskyler.workers.dev/token";
+const TIDAL_API: &str = "https://api.tidal.com/v1/";
+const TIDAL_ORIGIN: &str = "https://tidal.odskyler.com";
+const TIDAL_REFERER: &str = "https://tidal.odskyler.com/";
+const MANIFEST_DOMAIN: &str = "manifest.tidal.com";
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const LISTED_AT_MOST: usize = 25;
 const TRACKS_TRIED_AT_MOST: usize = 5;
+const TOKEN_LASTS_WHEN_UNSAID: Duration = Duration::from_secs(300);
+const RENEWED_BEFORE: Duration = Duration::from_secs(30);
 const QUEUED_FOR_AT_MOST: Duration = Duration::from_secs(20);
 const QUEUE_LOOKED_AT_LEAST_EVERY: Duration = Duration::from_secs(1);
 const QUEUE_LOOKED_AT_MOST_EVERY: Duration = Duration::from_secs(5);
@@ -43,6 +53,74 @@ struct Listing {
     id: u64,
     #[serde(default)]
     isrc: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct WebListed {
+    #[serde(default)]
+    items: Vec<Listing>,
+}
+
+#[derive(Deserialize)]
+struct Granted {
+    access_token: String,
+    #[serde(default)]
+    expires_in: Option<u64>,
+}
+
+#[derive(Clone)]
+struct AccessToken {
+    bearer: String,
+    until: Instant,
+}
+
+#[derive(Default)]
+struct Tokens {
+    tidal: Option<AccessToken>,
+    hifi: Option<AccessToken>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TokenService {
+    Tidal,
+    Hifi,
+}
+
+#[derive(Deserialize)]
+struct HostedManifestResponse {
+    #[serde(default)]
+    data: Option<HostedManifestData>,
+}
+
+#[derive(Deserialize)]
+struct HostedManifestData {
+    #[serde(default)]
+    attributes: Option<HostedManifestAttributes>,
+    #[serde(default)]
+    data: Option<HostedManifestNested>,
+}
+
+#[derive(Deserialize)]
+struct HostedManifestNested {
+    #[serde(default)]
+    attributes: Option<HostedManifestAttributes>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostedManifestAttributes {
+    #[serde(default)]
+    uri: Option<String>,
+    #[serde(default)]
+    track_presentation: String,
+}
+
+impl HostedManifestResponse {
+    fn attributes(self) -> Option<HostedManifestAttributes> {
+        let data = self.data?;
+        data.attributes
+            .or_else(|| data.data.and_then(|nested| nested.attributes))
+    }
 }
 
 #[derive(Deserialize)]
@@ -77,24 +155,69 @@ pub struct HifiApi {
     hosts: MediaHosts,
     media: Agent,
     patience: Duration,
+    hosted: bool,
+    tokens: Mutex<Tokens>,
 }
 
 fn source() -> SourceId {
     SourceId::new(HIFI_API).unwrap_or_else(|_| SourceId::local())
 }
 
+fn encoded_query(text: &str) -> String {
+    let mut encoded = String::with_capacity(text.len());
+    let digits = b"0123456789ABCDEF";
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(digits[usize::from(byte >> 4)]));
+            encoded.push(char::from(digits[usize::from(byte & 0x0f)]));
+        }
+    }
+    encoded
+}
+
+fn title_artist_query(title: &str, artist: Option<&str>) -> Option<String> {
+    let title = title.trim();
+    let artist = artist.map(str::trim).filter(|artist| !artist.is_empty());
+    match (title.is_empty(), artist) {
+        (true, None) => None,
+        (true, Some(artist)) => Some(artist.to_owned()),
+        (false, None) => Some(title.to_owned()),
+        (false, Some(artist)) => Some(format!("{title} {artist}")),
+    }
+}
+
+fn manifest_hosts() -> MediaHosts {
+    MediaHosts {
+        scheme: "https".to_owned(),
+        domain: MANIFEST_DOMAIN.to_owned(),
+    }
+}
+
 impl HifiApi {
     pub fn at(server: &str) -> Self {
-        Self::fetching_from(server, MediaHosts::tidal())
+        Self::building(server, MediaHosts::tidal(), false)
+    }
+
+    pub fn hosted() -> Self {
+        Self::building(HOSTED_SERVER, MediaHosts::tidal(), true)
     }
 
     pub fn fetching_from(server: &str, hosts: MediaHosts) -> Self {
+        Self::building(server, hosts, false)
+    }
+
+    fn building(server: &str, hosts: MediaHosts, hosted: bool) -> Self {
         Self {
             asker: Asker::new(source()),
             server: server.trim().trim_end_matches('/').to_owned(),
             hosts,
             media: media_agent(),
             patience: QUEUED_FOR_AT_MOST,
+            hosted,
+            tokens: Mutex::new(Tokens::default()),
         }
     }
 
@@ -117,6 +240,155 @@ impl HifiApi {
                 status,
             }
         }
+    }
+
+    fn token(&self, op: ProviderOp, endpoint: &str, service: TokenService) -> Result<String> {
+        let now = Instant::now();
+        let cached = {
+            let tokens = self.tokens.lock();
+            match service {
+                TokenService::Tidal => tokens.tidal.as_ref(),
+                TokenService::Hifi => tokens.hifi.as_ref(),
+            }
+            .filter(|token| token.until > now)
+            .map(|token| token.bearer.clone())
+        };
+        if let Some(bearer) = cached {
+            return Ok(bearer);
+        }
+
+        let sent = self.asker.sent(op, || {
+            let mut request = self.asker.agent.get(endpoint);
+            if service == TokenService::Tidal {
+                request = request
+                    .header("Origin", TIDAL_ORIGIN)
+                    .header("Referer", TIDAL_REFERER);
+            }
+            request.call()
+        })?;
+        let response = match sent {
+            Sent::Answered(response) => response,
+            Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
+        };
+        let granted: Granted = self
+            .asker
+            .parsed(op, &self.asker.read_whole(op, response)?)?;
+        let lasts = granted
+            .expires_in
+            .map_or(TOKEN_LASTS_WHEN_UNSAID, Duration::from_secs)
+            .saturating_sub(RENEWED_BEFORE);
+        let token = AccessToken {
+            bearer: format!("Bearer {}", granted.access_token),
+            until: Instant::now() + lasts,
+        };
+        let bearer = token.bearer.clone();
+        let mut tokens = self.tokens.lock();
+        match service {
+            TokenService::Tidal => tokens.tidal = Some(token),
+            TokenService::Hifi => tokens.hifi = Some(token),
+        }
+        Ok(bearer)
+    }
+
+    fn hosted_tracks_named_by(
+        &self,
+        isrc: &Isrc,
+        title: &str,
+        artist: Option<&str>,
+    ) -> Result<Vec<TrackId>> {
+        let op = ProviderOp::Search;
+        let Some(query) = title_artist_query(title, artist) else {
+            return Ok(Vec::new());
+        };
+        let bearer = self.token(op, TIDAL_TOKEN, TokenService::Tidal)?;
+        let url = format!(
+            "{TIDAL_API}search/tracks?query={}&limit={LISTED_AT_MOST}&offset=0&countryCode=US",
+            encoded_query(&query)
+        );
+        let sent = self.asker.sent(op, || {
+            self.asker
+                .agent
+                .get(&url)
+                .header(AUTHORIZATION, bearer.as_str())
+                .call()
+        })?;
+        let bytes = match sent {
+            Sent::Answered(response) => self.asker.read_whole(op, response)?,
+            Sent::Refused {
+                status: FORBIDDEN | NOT_FOUND,
+                ..
+            } => return Ok(Vec::new()),
+            Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
+        };
+        let listed: WebListed = self.asker.parsed(op, &bytes)?;
+        Ok(listed
+            .items
+            .into_iter()
+            .filter(|listing| named_by(isrc, listing.isrc.as_deref()))
+            .map(|listing| TrackId(listing.id))
+            .take(TRACKS_TRIED_AT_MOST)
+            .collect())
+    }
+
+    fn hosted_delivery(&self, track: TrackId) -> Result<Option<Delivery>> {
+        let op = ProviderOp::Playback;
+        let bearer = self.token(op, HIFI_TOKEN, TokenService::Hifi)?;
+        let url = format!(
+            "{}/manifests?id={}&quality={ASKED_QUALITY}",
+            self.server, track.0
+        );
+        let sent = self.asker.sent(op, || {
+            self.asker
+                .agent
+                .get(&url)
+                .header(AUTHORIZATION, bearer.as_str())
+                .call()
+        })?;
+        let bytes = match sent {
+            Sent::Answered(response) => self.asker.read_whole(op, response)?,
+            Sent::Refused {
+                status: FORBIDDEN | NOT_FOUND,
+                ..
+            } => return Ok(None),
+            Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
+        };
+        let answer: HostedManifestResponse = self.asker.parsed(op, &bytes)?;
+        let attributes = answer
+            .attributes()
+            .ok_or_else(|| self.asker.unreadable(op))?;
+        let uri = attributes.uri.ok_or_else(|| self.asker.unreadable(op))?;
+        if !manifest_hosts().holds(&uri) {
+            tracing::warn!(track = track.0, provider = %self.asker.source, "a manifest URL was outside TIDAL's manifest hosts");
+            return Err(Error::OffItsHosts {
+                provider: self.asker.source.clone(),
+                op,
+            });
+        }
+        let response = match self.asker.sent(op, || self.media.get(&uri).call())? {
+            Sent::Answered(response) => response,
+            Sent::Refused {
+                status: FORBIDDEN | NOT_FOUND,
+                ..
+            } => return Ok(None),
+            Sent::Refused { status, .. } => return Err(self.refusal(op, status)),
+        };
+        let mime = response
+            .headers()
+            .get("Content-Type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        let manifest = self.asker.read_whole(op, response)?;
+        Player {
+            source: &self.asker.source,
+            hosts: &self.hosts,
+            media: &self.media,
+        }
+        .delivered_manifest(track, &attributes.track_presentation, &mime, &manifest)
     }
 
     fn asked(&self, op: ProviderOp, url: &str) -> Result<Answered> {
@@ -179,7 +451,15 @@ impl HifiApi {
 }
 
 impl Finds for HifiApi {
-    fn tracks_named_by(&self, isrc: &Isrc) -> Result<Vec<TrackId>> {
+    fn tracks_named_by(
+        &self,
+        isrc: &Isrc,
+        title: &str,
+        artist: Option<&str>,
+    ) -> Result<Vec<TrackId>> {
+        if self.hosted {
+            return self.hosted_tracks_named_by(isrc, title, artist);
+        }
         let op = ProviderOp::Search;
         let url = format!(
             "{}/search/?i={}&limit={LISTED_AT_MOST}",
@@ -201,6 +481,9 @@ impl Finds for HifiApi {
     }
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
+        if self.hosted {
+            return self.hosted_delivery(track);
+        }
         let op = ProviderOp::Playback;
         let url = format!(
             "{}/track/?id={}&quality={ASKED_QUALITY}",
@@ -254,5 +537,27 @@ mod tests {
             HifiApi::at(" https://hifi.home.arpa/ ").server,
             "https://hifi.home.arpa"
         );
+    }
+
+    #[test]
+    fn a_hosted_search_uses_the_names_and_encodes_them_as_a_query() {
+        let query = title_artist_query(" Heroes Tonight ", Some(" Janji & Johnning "))
+            .expect("a title and artist");
+
+        assert_eq!(query, "Heroes Tonight Janji & Johnning");
+        assert_eq!(
+            encoded_query(&query),
+            "Heroes%20Tonight%20Janji%20%26%20Johnning"
+        );
+        assert_eq!(title_artist_query("  ", None), None);
+    }
+
+    #[test]
+    fn a_hosted_manifest_url_must_be_on_tidals_manifest_hosts() {
+        let hosts = manifest_hosts();
+
+        assert!(hosts.holds("https://im-fa.manifest.tidal.com/path"));
+        assert!(!hosts.holds("https://manifest.tidal.com.evil.example/path"));
+        assert!(!hosts.holds("http://im-fa.manifest.tidal.com/path"));
     }
 }

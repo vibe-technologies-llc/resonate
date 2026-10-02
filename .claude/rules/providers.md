@@ -275,9 +275,9 @@ as every provider's does.
   `application/vnd.tidal.bts`, base64 JSON naming one URL, and `application/dash+xml`, an MPD whose
   `SegmentTemplate` and `SegmentTimeline` name an initialisation segment and every media segment.
   A BTS `encryptionType` other than `NONE` or an MPD carrying `ContentProtection` is
-  `Withheld::Encrypted`, and a codec other than FLAC `Withheld::Lossy`, both `Nothing`: the provider
-  decrypts nothing and keeps no lossy stream. A timeline past `SEGMENTS_AT_MOST` is unread rather
-  than allocated.
+  `Withheld::Encrypted`; where an MPD lists lossy and FLAC renditions, the reader selects FLAC, and
+  `Withheld::Lossy` means none is present. Both answer `Nothing`: the provider decrypts nothing and
+  keeps no lossy stream. A timeline past `SEGMENTS_AT_MOST` is unread rather than allocated.
 - **Media is fetched from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over
   `https` whose host is `audio.tidal.com` or under it — the proxy's `sp-ad-fa` and `sp-ad-cf` and
   every other CDN node the manifests name — refusing a user-info `@`, a bracketed literal and a host
@@ -331,21 +331,30 @@ as every provider's does.
 
 ## A hifi-api server
 
-`HifiApi`, in the same crate, is the second way to a TIDAL subscription: a
-[hifi-api](https://github.com/binimum/hifi-api) server the listener runs on an account of their own,
-named by the `hifi-api` key (empty by default — no server is built in, the public instances included)
-and written by the *hifi-api server* field of the *A TIDAL account* group. `providers::sourced`
-registers it after `Tidal`, as `hifi-api`, only where the key is given and `online` is on. It holds no
-credential: the server signs in to TIDAL and hands back TIDAL's own playback answer, so what the
-provider does with that answer is `Tidal`'s, through `played.rs` — only `FULL`, only FLAC in the
-clear, media from TIDAL's audio hosts alone (the server's manifest naming another host is
-`OffItsHosts`), the segments resumed and repacked into native FLAC, keyed `track/<id>`.
+`HifiApi`, in the same crate, is the second way to a TIDAL subscription. With `online` on,
+`providers::sourced` registers it after `Tidal` as `hifi-api`, using the hosted
+[`tidal.odskyler.com`](https://tidal.odskyler.com/) service by default. The `hifi-api` setting and
+the *hifi-api server* field of the *A TIDAL account* group are an optional override for a
+[hifi-api](https://github.com/binimum/hifi-api) server the listener runs; clearing the field restores
+the hosted service from the next start. The hosted service holds no listener credential. Its public
+TIDAL token worker is asked for a search token, and the HiFi service for a short-lived playback
+token; each is cached only until shortly before its expiry. Those tokens are sent only to the
+corresponding public service. The TIDAL web API is searched by the wanted title and artist, matching
+the website's search, and results are retained only where their own ISRC is the want's. The HiFi
+service then returns a manifest URL, which must be HTTPS on `manifest.tidal.com` or a subdomain.
+`played.rs` reads that manifest through the same checks as a TIDAL account — only `FULL`, only FLAC
+in the clear, media from TIDAL's audio hosts alone, resumed segments repacked into native FLAC,
+keyed `track/<id>`.
 
 - **Asked by the link and the ISRC, never by a title**, through `played::obtained`: the linked
-  track first, then `GET /search/?i=<isrc>&limit=25`, whose `data.items` are taken only where their
-  own `isrc` is the want's, `TRACKS_TRIED_AT_MOST` of them; each is
-  `GET /track/?id=<id>&quality=HI_RES_LOSSLESS`, the answer under `data`
-  (`a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac`,
+  track first; otherwise the hosted flow asks `api.tidal.com/v1/search/tracks` by the want's title
+  and artist and takes only listings whose own `isrc` is the want's, up to
+  `TRACKS_TRIED_AT_MOST`. It requests
+  `hifi.odskyler.com/manifests?id=<id>&quality=HI_RES_LOSSLESS`, fetches the returned DASH
+  document and passes it to `played.rs`, whose DASH reader selects the FLAC rendition even when
+  TIDAL lists lossy renditions first. A custom server keeps the hifi-api routes,
+  `GET /search/?i=<isrc>&limit=25` and `GET /track/?id=<id>&quality=HI_RES_LOSSLESS`, with
+  `data.items` checked by ISRC (`a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac`,
   `a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for`).
 - **A request the server queues is waited for, and withdrawn past the provider's patience.** A
   server whose accounts are all busy answers `202` with a `requestId`; the provider asks
@@ -360,4 +369,5 @@ clear, media from TIDAL's audio hosts alone (the server's manifest naming anothe
 - **A 401 is the server's account turned away**, `Unwelcome` and away; a 403 or 404 is that track
   unavailable, `Nothing`; anything else is `Refused`, a 429 or 503 retried as the TIDAL client
   retries (`a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome`).
-  It sends no `Authorization` header and the User-Agent `resonate/<version>` alone.
+  The custom server sends no `Authorization` header; the hosted service sends each cached bearer
+  token only to its token issuer or API. Every request identifies itself as `resonate/<version>`.
