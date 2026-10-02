@@ -199,9 +199,9 @@ or a `window-size` from another build no longer fails every command — `sleep o
 included — while a file that is not TOML still does
 (`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
 collects the refusals, so each reader's refusal is still asserted. Nine of
-the seventy-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+the seventy-six have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
 `noise-shaping`, `bit-perfect` (as `--bit-perfect` and `--no-bit-perfect`) and `volume` (as
-`play --volume`, a percent); the other sixty-six are set only by the settings pane and the file:
+`play --volume`, a percent); the other sixty-seven are set only by the settings pane and the file:
 
 - the output's `true-peak`, `restore-lossy`, `replay-gain`, `replay-gain-pre-amp`,
   `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -218,8 +218,8 @@ the seventy-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-
   group),
   `inbox` (the Library category's *The inbox* group, which polls from the window too),
   `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, used from
-  the next start) and `tidal-client-id`, `tidal-client-secret`, `tidal-refresh-token` (its *A TIDAL
-  account* group, likewise);
+  the next start) and `tidal-client-id`, `tidal-client-secret`, `tidal-refresh-token` and
+  `hifi-api` (its *A TIDAL account* group, likewise);
 - the seven shaping a Discord presence — `discord`, `discord-app`, `discord-shows`, `discord-art`,
   `discord-icon`, `discord-progress`, `discord-paused` — written by the Desktop category's two
   Discord groups and live at once.

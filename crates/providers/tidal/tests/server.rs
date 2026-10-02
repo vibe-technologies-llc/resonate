@@ -3,6 +3,7 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -11,12 +12,14 @@ use resonate_core::{Isrc, Link};
 use resonate_providers::{
     Client, Delivery, Error, Identity, Obtained, Provider, ProviderOp, SignsIn,
 };
-use resonate_tidal::{Account, Endpoints, MediaHosts, Tidal, TidalSignIn};
+use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal, TidalSignIn};
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const ECHOES_ISRC: &str = "GBN9Y1100089";
 const TRACK: u64 = 55_391_743;
 const BEARER: &str = "Bearer fresh-access";
+
+const QUEUED: &str = "f1b5c0de";
 
 struct Canned {
     status: u16,
@@ -107,6 +110,16 @@ impl Fake {
                     scheme: "http".to_owned(),
                     domain: "127.0.0.1".to_owned(),
                 },
+            },
+        )
+    }
+
+    fn hifi(&self) -> HifiApi {
+        HifiApi::fetching_from(
+            &format!("{}/", self.url),
+            MediaHosts {
+                scheme: "http".to_owned(),
+                domain: "127.0.0.1".to_owned(),
             },
         )
     }
@@ -644,4 +657,173 @@ fn a_device_sign_in_cancelled_while_waiting_stops_asking() {
 
     assert!(matches!(answer, Ok(None)));
     assert_eq!(fake.paths(), vec!["/auth/device".to_owned()]);
+}
+
+fn wrapped(canned: Canned) -> Canned {
+    let body = String::from_utf8(canned.body).expect("a json body");
+    Canned {
+        body: format!(r#"{{"version":"2.10","data":{body}}}"#).into_bytes(),
+        ..canned
+    }
+}
+
+fn hifi_listed(isrc: &str) -> Canned {
+    Canned::json(&format!(
+        r#"{{"version":"2.10","data":{{"limit":25,"offset":0,"totalNumberOfItems":1,"items":[{{"id":{TRACK},"title":"Echoes","isrc":"{isrc}"}}]}}}}"#
+    ))
+}
+
+fn queued() -> Canned {
+    Canned {
+        status: 202,
+        headers: vec![
+            ("Content-Type", "application/json".to_owned()),
+            ("Retry-After", "1".to_owned()),
+        ],
+        body: format!(
+            r#"{{"status":"pending","requestId":"{QUEUED}","queuePosition":1,"statusUrl":"/playback/requests/{QUEUED}"}}"#
+        )
+        .into_bytes(),
+        cut_after: None,
+    }
+}
+
+fn hifi_server(track: impl Fn(&Asked, &[Asked], &str) -> Canned + Send + Sync + 'static) -> Fake {
+    Fake::serving(move |asked, before, own| {
+        if let Some(nth) = segment(&asked.path) {
+            return Canned::media(&segmented()[nth]);
+        }
+        match asked.path.as_str() {
+            "/search/" => hifi_listed(ECHOES_ISRC),
+            _ => track(asked, before, own),
+        }
+    })
+}
+
+fn whole_track(own: &str) -> Canned {
+    wrapped(playback(
+        "FULL",
+        &dash(&on_itself(own), segmented().len() - 1),
+    ))
+}
+
+#[test]
+fn a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac() {
+    let fake = hifi_server(|asked, _, own| match asked.path.as_str() {
+        "/track/" => whole_track(own),
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let (key, extension, bytes) =
+        streamed(fake.hifi().obtain(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(extension, "flac");
+    assert_native_flac(&bytes);
+
+    let heard = fake.heard();
+    assert_eq!(heard[0].path, "/search/");
+    assert_eq!(heard[0].query, format!("i={ECHOES_ISRC}&limit=25"));
+    assert_eq!(heard[1].path, "/track/");
+    assert_eq!(
+        heard[1].query,
+        format!("id={TRACK}&quality=HI_RES_LOSSLESS")
+    );
+    assert!(heard.iter().all(|asked| asked.authorization.is_none()));
+}
+
+#[test]
+fn a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/search/" => hifi_listed("USUM71703861"),
+        _ => Canned::refused(500, "{}"),
+    });
+
+    assert!(matches!(
+        fake.hifi().obtain(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
+    assert_eq!(fake.paths(), vec!["/search/".to_owned()]);
+}
+
+#[test]
+fn a_hifi_api_request_held_in_its_queue_is_waited_for() {
+    let fake = hifi_server(|asked, before, own| match asked.path.as_str() {
+        "/track/" => queued(),
+        path if path == format!("/playback/requests/{QUEUED}") => {
+            let looked = before
+                .iter()
+                .filter(|earlier| earlier.path == asked.path)
+                .count();
+            if looked == 0 {
+                queued()
+            } else {
+                whole_track(own)
+            }
+        }
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let delivered = streamed(fake.hifi().obtain(&by_isrc()).expect("an answer"));
+
+    assert_native_flac(&delivered.expect("a delivery").2);
+    let looked: Vec<_> = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.path.starts_with("/playback/requests/"))
+        .map(|asked| asked.method)
+        .collect();
+    assert_eq!(looked, vec!["GET".to_owned(), "GET".to_owned()]);
+}
+
+#[test]
+fn a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_counted_away() {
+    let fake = hifi_server(|asked, _, _| match asked.path.as_str() {
+        "/track/" => queued(),
+        _ => Canned::json("{}"),
+    });
+
+    let answer = fake
+        .hifi()
+        .queued_for_at_most(Duration::ZERO)
+        .obtain(&by_isrc());
+
+    let Err(error) = answer else {
+        panic!("a queue never reached is an error");
+    };
+    assert!(matches!(
+        error,
+        Error::StillQueued {
+            op: ProviderOp::Playback,
+            ..
+        }
+    ));
+    assert!(error.is_the_provider_away());
+    assert!(
+        fake.heard().iter().any(|asked| asked.method == "DELETE"
+            && asked.path == format!("/playback/requests/{QUEUED}"))
+    );
+}
+
+#[test]
+fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome() {
+    let missing = hifi_server(|_, _, _| Canned::refused(404, r#"{"detail":"Upstream API error"}"#));
+    assert!(matches!(
+        missing.hifi().obtain(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
+
+    let refused = hifi_server(|_, _, _| Canned::refused(401, r#"{"detail":"Upstream API error"}"#));
+    let Err(error) = refused.hifi().obtain(&by_isrc()) else {
+        panic!("a server turned away is an error");
+    };
+    assert!(matches!(
+        error,
+        Error::Unwelcome {
+            code: 401,
+            op: ProviderOp::Playback,
+            ..
+        }
+    ));
+    assert!(error.is_the_provider_away());
 }

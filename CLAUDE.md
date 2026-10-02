@@ -73,7 +73,8 @@ resonate            bin — CLI, tracing, wiring
   ├── resonate-providers  the provider seam: an identity in, media out  → filled by providers/*
   ├── providers/inbox     resonate-inbox, a folder of the listener's
   ├── providers/subsonic  resonate-subsonic, a Subsonic server of the listener's  [gated behind `online`]
-  ├── providers/tidal     resonate-tidal, the listener's TIDAL subscription, kept as FLAC
+  ├── providers/tidal     resonate-tidal, the listener's TIDAL subscription, signed in to or
+  │                       through a hifi-api server of theirs, kept as FLAC
   │                       [gated behind `online`]
   └── resonate-core       domain vocabulary
 ```

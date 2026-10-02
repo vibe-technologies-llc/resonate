@@ -161,6 +161,7 @@ pub struct Config {
     pub tidal_client_id: Option<String>,
     pub tidal_client_secret: Option<String>,
     pub tidal_refresh_token: Option<String>,
+    pub hifi_api: Option<String>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -538,6 +539,7 @@ impl Config {
             ConfigKey::TidalRefreshToken => {
                 config.tidal_refresh_token = given(at.string(value)?);
             }
+            ConfigKey::HifiApi => config.hifi_api = given(at.string(value)?),
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::HistoryKept => {

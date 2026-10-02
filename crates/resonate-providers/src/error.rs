@@ -51,6 +51,9 @@ pub enum Error {
     #[error("{op:?} was answered by the {provider} provider's server with media off its own hosts")]
     OffItsHosts { provider: SourceId, op: ProviderOp },
 
+    #[error("{op:?} was still queued at the {provider} provider's server when it was given up")]
+    StillQueued { provider: SourceId, op: ProviderOp },
+
     #[error("the sign-in to the {provider} provider lapsed before it was approved")]
     AuthorizationLapsed { provider: SourceId },
 
@@ -66,7 +69,7 @@ const SERVER_TROUBLE: u16 = 500;
 impl Error {
     pub fn is_the_provider_away(&self) -> bool {
         match self {
-            Self::Io { .. } | Self::Unwelcome { .. } => true,
+            Self::Io { .. } | Self::Unwelcome { .. } | Self::StillQueued { .. } => true,
             Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
             Self::Unreadable { .. }
             | Self::TurnedAway { .. }
@@ -109,9 +112,13 @@ mod tests {
             code: 70,
         };
         let unwelcome = Error::Unwelcome {
-            provider,
+            provider: provider.clone(),
             op: ProviderOp::Search,
             code: 40,
+        };
+        let queued = Error::StillQueued {
+            provider,
+            op: ProviderOp::Playback,
         };
 
         assert!(unreachable.is_the_provider_away());
@@ -119,6 +126,7 @@ mod tests {
         assert!(!not_found.is_the_provider_away());
         assert!(!turned_away.is_the_provider_away());
         assert!(unwelcome.is_the_provider_away());
+        assert!(queued.is_the_provider_away());
     }
 
     #[test]

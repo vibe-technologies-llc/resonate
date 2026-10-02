@@ -73,6 +73,7 @@ pub enum ConfigKey {
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
+    HifiApi,
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
@@ -88,7 +89,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 75] = [
+    pub const ALL: [Self; 76] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -152,6 +153,7 @@ impl ConfigKey {
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
+        Self::HifiApi,
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
@@ -231,6 +233,7 @@ impl ConfigKey {
             Self::TidalClientId => "tidal-client-id",
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
+            Self::HifiApi => "hifi-api",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",

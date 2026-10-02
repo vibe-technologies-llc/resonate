@@ -204,6 +204,7 @@ pub enum SettingKey {
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
+    HifiApi,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -214,7 +215,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 73] = [
+    pub const ALL: [Self; 74] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -281,6 +282,7 @@ impl SettingKey {
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
+        Self::HifiApi,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -362,6 +364,7 @@ pub enum Setting {
     TidalClientId(String),
     TidalClientSecret(String),
     TidalRefreshToken(String),
+    HifiApi(String),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -440,6 +443,7 @@ impl Setting {
             Self::TidalClientId(_) => SettingKey::TidalClientId,
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
+            Self::HifiApi(_) => SettingKey::HifiApi,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -467,6 +471,7 @@ pub struct Online {
     pub tidal_client_id: String,
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
+    pub hifi_api: String,
 }
 
 pub type Registering = Arc<dyn Fn(Option<&Path>) -> Providers + Send + Sync>;

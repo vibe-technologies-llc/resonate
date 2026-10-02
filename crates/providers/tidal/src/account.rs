@@ -51,10 +51,7 @@ impl Endpoints {
             device: DEVICE.to_owned(),
             api: API.to_owned(),
             openapi: OPENAPI.to_owned(),
-            media: MediaHosts {
-                scheme: MEDIA_SCHEME.to_owned(),
-                domain: MEDIA_DOMAIN.to_owned(),
-            },
+            media: MediaHosts::tidal(),
         }
     }
 }
@@ -66,6 +63,13 @@ pub struct MediaHosts {
 }
 
 impl MediaHosts {
+    pub fn tidal() -> Self {
+        Self {
+            scheme: MEDIA_SCHEME.to_owned(),
+            domain: MEDIA_DOMAIN.to_owned(),
+        }
+    }
+
     pub fn holds(&self, url: &str) -> bool {
         let Some((scheme, rest)) = url.split_once("://") else {
             return false;

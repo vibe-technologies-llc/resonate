@@ -65,6 +65,7 @@ fn turned_away(error: &Error) -> &'static str {
         Error::Unreadable { .. }
         | Error::TurnedAway { .. }
         | Error::OffItsHosts { .. }
+        | Error::StillQueued { .. }
         | Error::NotAnExtension => "TIDAL answered something this build cannot read",
     }
 }
@@ -73,25 +74,35 @@ const TIDAL_NOTE: &str = "A TIDAL subscription of your own is asked for every tr
                           wanted, by the TIDAL track MusicBrainz links the recording to or by \
                           its ISRC and never by a title. Only the whole track in lossless FLAC \
                           is taken — never a preview, a lossy stream or an encrypted one — and \
-                          it is downloaded, repacked as a FLAC file and kept in the vault. The \
-                          client id and secret are those of the application the refresh token \
-                          was issued to. Used from the next start, and only while Online is on.";
+                          it is downloaded, repacked as a FLAC file and kept in the vault, or \
+                          the music folder where no vault is open. The client id and secret \
+                          are those of the application the refresh token was issued to. A \
+                          hifi-api server you run on your own subscription is asked the same \
+                          way, with no client or token typed here. Used from the next start, \
+                          and only while Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
     ClientId,
     ClientSecret,
     RefreshToken,
+    HifiApi,
 }
 
 impl TidalAccount {
-    pub(crate) const ALL: [Self; 3] = [Self::ClientId, Self::ClientSecret, Self::RefreshToken];
+    pub(crate) const ALL: [Self; 4] = [
+        Self::ClientId,
+        Self::ClientSecret,
+        Self::RefreshToken,
+        Self::HifiApi,
+    ];
 
     const fn placeholder(self) -> &'static str {
         match self {
             Self::ClientId => "The client id the token was issued to, then press enter",
             Self::ClientSecret => "Its client secret, if it has one, then press enter",
             Self::RefreshToken => "A refresh token for your account, then press enter",
+            Self::HifiApi => "The address of a hifi-api server of yours, then press enter",
         }
     }
 
@@ -100,6 +111,7 @@ impl TidalAccount {
             Self::ClientId => "Client id",
             Self::ClientSecret => "Client secret",
             Self::RefreshToken => "Refresh token",
+            Self::HifiApi => "hifi-api server",
         }
     }
 
@@ -108,6 +120,7 @@ impl TidalAccount {
             Self::ClientId => "tidal-client-id",
             Self::ClientSecret => "tidal-client-secret",
             Self::RefreshToken => "tidal-refresh-token",
+            Self::HifiApi => "hifi-api",
         }
     }
 
@@ -116,6 +129,7 @@ impl TidalAccount {
             Self::ClientId => 0,
             Self::ClientSecret => 1,
             Self::RefreshToken => 2,
+            Self::HifiApi => 3,
         }
     }
 
@@ -124,6 +138,7 @@ impl TidalAccount {
             Self::ClientId => online.tidal_client_id.clone(),
             Self::ClientSecret => online.tidal_client_secret.clone(),
             Self::RefreshToken => online.tidal_refresh_token.clone(),
+            Self::HifiApi => online.hifi_api.clone(),
         }
     }
 
@@ -132,6 +147,7 @@ impl TidalAccount {
             Self::ClientId => online.tidal_client_id = given,
             Self::ClientSecret => online.tidal_client_secret = given,
             Self::RefreshToken => online.tidal_refresh_token = given,
+            Self::HifiApi => online.hifi_api = given,
         }
     }
 
@@ -140,6 +156,7 @@ impl TidalAccount {
             Self::ClientId => Setting::TidalClientId(given),
             Self::ClientSecret => Setting::TidalClientSecret(given),
             Self::RefreshToken => Setting::TidalRefreshToken(given),
+            Self::HifiApi => Setting::HifiApi(given),
         }
     }
 
@@ -147,13 +164,13 @@ impl TidalAccount {
         online: &Online,
         window: &mut Window,
         cx: &mut Context<RootView>,
-    ) -> [Entity<Field>; 3] {
+    ) -> [Entity<Field>; 4] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
                 let field = Field::new(account.placeholder(), window, cx);
                 let mut field = match account {
                     Self::ClientSecret | Self::RefreshToken => field.masked(),
-                    Self::ClientId => field,
+                    Self::ClientId | Self::HifiApi => field,
                 };
                 field.hold(account.held(online), cx);
                 field
@@ -181,10 +198,11 @@ impl RootView {
             account.hold(&mut global.online, given.clone())
         });
 
-        let said = if given.is_empty() {
-            "TIDAL is not asked from the next start"
-        } else {
-            "TIDAL is asked from the next start"
+        let said = match (account, given.is_empty()) {
+            (TidalAccount::HifiApi, true) => "No hifi-api server is asked from the next start",
+            (TidalAccount::HifiApi, false) => "The hifi-api server is asked from the next start",
+            (_, true) => "TIDAL is not asked from the next start",
+            (_, false) => "TIDAL is asked from the next start",
         };
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);

@@ -5,7 +5,7 @@ use resonate_providers::Providers;
 #[cfg(feature = "online")]
 use resonate_subsonic::{Server, Subsonic};
 #[cfg(feature = "online")]
-use resonate_tidal::{Account, Tidal};
+use resonate_tidal::{Account, HifiApi, Tidal};
 
 use crate::config::Config;
 
@@ -19,6 +19,7 @@ pub fn registered(config: &Config) -> Providers {
 pub fn sourced(config: &Config) -> Registering {
     let server = subsonic(config);
     let account = tidal(config);
+    let hifi = hifi_api(config);
     Arc::new(move |inbox| {
         let mut providers = with_inbox(inbox);
         if let Some(server) = server.clone() {
@@ -26,6 +27,9 @@ pub fn sourced(config: &Config) -> Registering {
         }
         if let Some(account) = account.clone() {
             providers = providers.and(Arc::new(Tidal::signed_in(account)));
+        }
+        if let Some(server) = hifi.as_deref() {
+            providers = providers.and(Arc::new(HifiApi::at(server)));
         }
         providers
     })
@@ -58,6 +62,14 @@ fn tidal(config: &Config) -> Option<Account> {
         client_secret: config.tidal_client_secret.clone(),
         refresh_token: config.tidal_refresh_token.clone()?,
     })
+}
+
+#[cfg(feature = "online")]
+fn hifi_api(config: &Config) -> Option<String> {
+    if !config.online_enabled() {
+        return None;
+    }
+    config.hifi_api.clone()
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]
@@ -159,5 +171,30 @@ mod tests {
             ..whole
         };
         assert!(!named(&offline).contains(&"tidal".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_hifi_api_server_is_registered_only_where_named_and_while_online() {
+        let named = |config: &Config| -> Vec<String> {
+            registered(config)
+                .names()
+                .iter()
+                .map(|name| name.as_str().to_owned())
+                .collect()
+        };
+        assert!(!named(&Config::default()).contains(&"hifi-api".to_owned()));
+
+        let whole = Config {
+            hifi_api: Some("http://hifi.home.arpa:8000".to_owned()),
+            ..Config::default()
+        };
+        assert!(named(&whole).contains(&"hifi-api".to_owned()));
+
+        let offline = Config {
+            online: Some(false),
+            ..whole
+        };
+        assert!(!named(&offline).contains(&"hifi-api".to_owned()));
     }
 }

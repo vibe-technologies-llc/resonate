@@ -8,7 +8,7 @@ use resonate_providers::{Authorizing, Client, Error, ProviderOp, RefreshToken, R
 use serde::Deserialize;
 use ureq::{Agent, Body, http};
 
-use crate::{Endpoints, api_agent, fetched::as_io, source};
+use crate::{Endpoints, asker::api_agent, fetched::as_io, source};
 
 const SCOPE: &str = "r_usr w_usr w_sub";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";

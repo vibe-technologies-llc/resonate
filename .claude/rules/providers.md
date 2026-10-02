@@ -40,7 +40,8 @@ on a title.
 could not be asked, which `Providers::first` logs, counts as `refused` and carries on past.
 `Error::is_the_provider_away` says which errors are about the provider rather than the want — an
 `Io` (a connection that failed, a folder that is not there), an `Unwelcome` (the server turned the
-listener away as a whole: a wrong password, an account barred) and a `Refused` of 500 or over — and
+listener away as a whole: a wrong password, an account barred), a `StillQueued` (a server holding
+the request in a queue of its own past the provider's patience) and a `Refused` of 500 or over — and
 `TurnedAway` or a 404 are the want's alone, a Subsonic code 70 being one song the server lacks.
 
 - **`Delivery::File(PathBuf)`** is audio already on disk. The vault reads it and copies what it
@@ -321,4 +322,40 @@ as every provider's does.
   a 429 or 503 retried after its `Retry-After` up to `RETRIES_AT_MOST`, the User-Agent
   `resonate/<version>` alone, and `Account`'s `Debug` printing neither the secret nor the token.
   `tests/server.rs` serves a fake TIDAL — token endpoint, OpenAPI, playback and segments cut from
-  `tests/fixtures/tone.mp4` — from a local socket.
+  `tests/fixtures/tone.mp4` — from a local socket. `asker.rs` is the pacing, retrying and reading
+  both TIDAL providers share, and `played.rs` what follows a playback answer — the presentation and
+  manifest weighed, the hosts held, the segments fetched and remuxed — with `played::obtained`, the
+  link-then-ISRC order, written once over the `Finds` trait each implements.
+
+## A hifi-api server
+
+`HifiApi`, in the same crate, is the second way to a TIDAL subscription: a
+[hifi-api](https://github.com/binimum/hifi-api) server the listener runs on an account of their own,
+named by the `hifi-api` key (empty by default — no server is built in, the public instances included)
+and written by the *hifi-api server* field of the *A TIDAL account* group. `providers::sourced`
+registers it after `Tidal`, as `hifi-api`, only where the key is given and `online` is on. It holds no
+credential: the server signs in to TIDAL and hands back TIDAL's own playback answer, so what the
+provider does with that answer is `Tidal`'s, through `played.rs` — only `FULL`, only FLAC in the
+clear, media from TIDAL's audio hosts alone (the server's manifest naming another host is
+`OffItsHosts`), the segments resumed and repacked into native FLAC, keyed `track/<id>`.
+
+- **Asked by the link and the ISRC, never by a title**, through `played::obtained`: the linked
+  track first, then `GET /search/?i=<isrc>&limit=25`, whose `data.items` are taken only where their
+  own `isrc` is the want's, `TRACKS_TRIED_AT_MOST` of them; each is
+  `GET /track/?id=<id>&quality=HI_RES_LOSSLESS`, the answer under `data`
+  (`a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac`,
+  `a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for`).
+- **A request the server queues is waited for, and withdrawn past the provider's patience.** A
+  server whose accounts are all busy answers `202` with a `requestId`; the provider asks
+  `/playback/requests/<id>` again after its `Retry-After`, held between one and five seconds, until
+  the playback answer comes — a `410` (cancelled there) being nothing for that track — for at most
+  `QUEUED_FOR_AT_MOST` (20 s, inside the poll's `ANSWERS_WITHIN`), then sends `DELETE` to free the
+  slot and answers `Error::StillQueued`, which the seam reads as the provider away, so a saturated
+  server costs one wait a poll. The request id is used only where it is letters, digits and dashes,
+  and the path is the provider's own, never the `statusUrl` the server names
+  (`a_hifi_api_request_held_in_its_queue_is_waited_for`,
+  `a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_counted_away`).
+- **A 401 is the server's account turned away**, `Unwelcome` and away; a 403 or 404 is that track
+  unavailable, `Nothing`; anything else is `Refused`, a 429 or 503 retried as the TIDAL client
+  retries (`a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome`).
+  It sends no `Authorization` header and the User-Agent `resonate/<version>` alone.

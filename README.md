@@ -173,10 +173,11 @@ yours. AudD is sent the clip only where `audd-token` is set.
 ListenBrainz is sent what was heard only where `listenbrainz-token` is set, a Subsonic server is
 asked for wanted tracks only where `subsonic`, `subsonic-user` and `subsonic-password` name one of
 yours, and TIDAL only where `tidal-client-id` and `tidal-refresh-token` name a subscription of
-yours — the window's *Sign in to TIDAL* fetches the token with a client id you give — and a wanted
-track found there is downloaded whole, as lossless FLAC, into the vault, or into your music folder
+yours — the window's *Sign in to TIDAL* fetches the token with a client id you give — or where
+`hifi-api` names a [hifi-api](https://github.com/binimum/hifi-api) server you run on your own
+subscription, and a wanted track found there is downloaded whole, as lossless FLAC, into the vault, or into your music folder
 where no vault is open, never a preview, a lossy stream or an encrypted one; `online = false` stops
-all three.
+all of them.
 
 Discord is told nothing unless `discord` is on and names an application of yours. What it is
 told is handed to the Discord client on this machine, and the cover is a public Cover Art
