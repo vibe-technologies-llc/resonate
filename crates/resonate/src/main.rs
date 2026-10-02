@@ -683,7 +683,7 @@ fn enriched(summary: &EnrichSummary) -> String {
     let mut told = format!(
         "albums {} | releases {} | matched {} | covers {} | tracks {} | named {} | artists {} \
          | portraits {} | releases found {} | refused {}\n\
-         studied {} | fakes {} | recognised {} | misnamed {} | lyrics {}\n",
+         studied {} | fakes {} | recognised {} | misnamed {} | lyrics {} | songs {}\n",
         stats.albums,
         stats.releases,
         stats.matched,
@@ -698,7 +698,8 @@ fn enriched(summary: &EnrichSummary) -> String {
         stats.fakes,
         stats.recognised,
         stats.misnamed,
-        stats.lyrics
+        stats.lyrics,
+        stats.songs
     );
     if let Some(op) = summary.stopped_by {
         told.push_str(&format!(
@@ -724,6 +725,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Artist => "an artist",
         LookupOp::FindArtist => "an artist search",
         LookupOp::ReleaseGroupsOfArtist => "the releases of an artist",
+        LookupOp::ReleasesOfGroup => "the pressings of a release",
         LookupOp::Cover => "a cover",
         LookupOp::Portrait => "a portrait",
         LookupOp::Lyrics => "lyrics",

@@ -89,6 +89,10 @@ impl Reference for Online {
         Ok(musicbrainz::release_groups_of(&self.client, artist, from)?)
     }
 
+    fn releases_of_group(&self, group: &Mbid) -> resonate_library::Result<Vec<Release>> {
+        Ok(musicbrainz::releases_of_group(&self.client, group)?)
+    }
+
     fn cover(
         &self,
         release: &Mbid,

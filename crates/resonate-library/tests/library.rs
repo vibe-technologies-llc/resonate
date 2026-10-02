@@ -8779,6 +8779,7 @@ enum Called {
     Artist(Mbid),
     FindArtist(String),
     ReleaseGroupsOf(Mbid),
+    ReleasesOfGroup(Mbid),
     Cover(Mbid, Option<Mbid>),
     GroupCover(Mbid),
     Portrait(String),
@@ -8798,6 +8799,7 @@ impl Called {
             Self::Artist(_) => LookupOp::Artist,
             Self::FindArtist(_) => LookupOp::FindArtist,
             Self::ReleaseGroupsOf(_) => LookupOp::ReleaseGroupsOfArtist,
+            Self::ReleasesOfGroup(_) => LookupOp::ReleasesOfGroup,
             Self::Cover(..) => LookupOp::Cover,
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
@@ -8830,6 +8832,7 @@ struct Canned {
     artist_releases: Vec<(Mbid, Vec<ArtistRelease>)>,
     releases_unread: u32,
     further_releases: Vec<ArtistRelease>,
+    pressings: Vec<(Mbid, Vec<Release>)>,
     covers: Vec<(Mbid, CoverArt)>,
     group_covers: Vec<(Mbid, CoverArt)>,
     portraits: Vec<(String, CoverArt)>,
@@ -9024,6 +9027,17 @@ impl Reference for Fake {
     fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>> {
         self.note(Called::FindArtist(name.to_owned()))?;
         Ok(self.canned.found_artists.clone())
+    }
+
+    fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>> {
+        self.note(Called::ReleasesOfGroup(group.clone()))?;
+        Ok(self
+            .canned
+            .pressings
+            .iter()
+            .find(|(held, _)| held == group)
+            .map(|(_, pressings)| pressings.clone())
+            .unwrap_or_default())
     }
 
     fn release_groups_of(&self, artist: &Mbid, from: u32) -> Result<Discography> {
@@ -10620,6 +10634,9 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
             Called::Release(mbid(RELEASE)),
             Called::Artist(mbid(ORBITERS)),
             Called::ReleaseGroupsOf(mbid(ORBITERS)),
+            Called::ReleasesOfGroup(mbid(HOURS_GROUP)),
+            Called::ReleasesOfGroup(mbid(SCORE_GROUP)),
+            Called::ReleasesOfGroup(mbid(SINGLE_GROUP)),
         ]
     );
     assert_eq!(summary.stats.releases_found, 4);
@@ -10657,6 +10674,189 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
             .map(|detail| detail.releases_unheld),
         Some(3)
     );
+    Ok(())
+}
+
+const DAYBREAK: &str = "d3c9e2f0-3333-4444-8555-666677778888";
+const HOURS_FEARLESS: &str = "e4daf301-4444-4555-8666-777788889999";
+const HOURS_REISSUE: &str = "f5eb0412-5555-4666-8777-88889999aaaa";
+const HOURS_BONUS: &str = "a6fc1523-6666-4777-8888-9999aaaabbbb";
+
+fn hours_pressed(id: &str, date: &str, songs: &[(&str, &str)]) -> Release {
+    Release {
+        id: mbid(id),
+        group: Some(mbid(HOURS_GROUP)),
+        title: "Hours".to_owned(),
+        credit: credited(Some("The Orbiters"), Some(ORBITERS)),
+        date: Some(date.to_owned()),
+        kind: Some("EP".to_owned()),
+        has_front_cover: false,
+        media: vec![Medium {
+            position: 1,
+            format: None,
+            title: None,
+            tracks: songs
+                .iter()
+                .enumerate()
+                .map(|(index, (title, recording))| ReleaseTrack {
+                    recording: Some(mbid(recording)),
+                    ..release_row(index as u32 + 1, title, Vec::new())
+                })
+                .collect(),
+        }],
+        ..orbits(Vec::new(), Vec::new())
+    }
+}
+
+fn hours_pressings() -> Vec<Release> {
+    vec![
+        hours_pressed(
+            HOURS_REISSUE,
+            "2011",
+            &[
+                ("Daybreak", DAYBREAK),
+                ("Fearless", HOURS_FEARLESS),
+                ("Daybreak (demo)", HOURS_BONUS),
+            ],
+        ),
+        hours_pressed(
+            HOURS,
+            "1996-05-06",
+            &[("Daybreak", DAYBREAK), ("Fearless", HOURS_FEARLESS)],
+        ),
+    ]
+}
+
+fn learnt_canned() -> Canned {
+    let mut release = orbits(orbits_rows(), Vec::new());
+    release.credit = credited(Some("The Orbiters"), Some(ORBITERS));
+    Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![
+            release,
+            hours_pressed(
+                HOURS,
+                "1996-05-06",
+                &[("Daybreak", DAYBREAK), ("Fearless", HOURS_FEARLESS)],
+            ),
+        ],
+        artists: vec![orbiters()],
+        artist_releases: vec![(mbid(ORBITERS), orbiters_groups())],
+        pressings: vec![(mbid(HOURS_GROUP), hours_pressings())],
+        ..Canned::default()
+    }
+}
+
+#[test]
+fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(learnt_canned()));
+
+    let summary = enrich(&library, &fake, false)?;
+    let artist = artist_named(&library, "The Orbiters")?;
+    let daybreak = library.songs_kept_for("dayb")?;
+    let by_release = library.songs_kept_for("orbiters hours")?;
+    let not_held = library.songs_not_held_by(artist.id)?;
+    let albums = library.albums_not_held_by(artist.id)?;
+
+    assert_eq!(summary.stats.songs, 2);
+    assert_eq!(daybreak.len(), 1);
+    assert_eq!(daybreak[0].recording, mbid(DAYBREAK));
+    assert_eq!(daybreak[0].title, "Daybreak");
+    assert_eq!(daybreak[0].artist, "The Orbiters");
+    assert_eq!(
+        daybreak[0]
+            .release
+            .as_ref()
+            .map(|release| (release.id.clone(), release.title.as_str())),
+        Some((mbid(HOURS), "Hours"))
+    );
+    assert_eq!(by_release, daybreak);
+    assert!(
+        library.songs_kept_for("fearless")?.is_empty(),
+        "a song held by its title was offered"
+    );
+    assert_eq!(not_held, daybreak);
+    assert_eq!(
+        albums
+            .iter()
+            .map(|album| (album.release.mbid.clone(), album.pressing.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (mbid(HOURS_GROUP), Some(mbid(HOURS))),
+            (mbid(SCORE_GROUP), None),
+            (mbid(SINGLE_GROUP), None),
+        ]
+    );
+
+    let again = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &again, false)?;
+    assert_eq!(again.called(LookupOp::ReleasesOfGroup), 0);
+    Ok(())
+}
+
+#[test]
+fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake =
+        Arc::new(Fake::new(learnt_canned()).faulting(LookupOp::ReleasesOfGroup, 0, Fault::Refused));
+
+    enrich(&library, &fake, false)?;
+    let again = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &again, false)?;
+
+    assert!(library.songs_kept_for("daybreak")?.is_empty());
+    assert_eq!(again.called(LookupOp::ReleasesOfGroup), 0);
+    Ok(())
+}
+
+#[test]
+fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &fake, false)?;
+    let artist = artist_named(&library, "The Orbiters")?;
+
+    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP))?;
+
+    assert_eq!(
+        wanted
+            .iter()
+            .map(|(song, _)| song.recording.clone())
+            .collect::<Vec<_>>(),
+        vec![mbid(DAYBREAK)]
+    );
+    assert_eq!(library.wants()?.len(), 1);
+    assert!(
+        library
+            .albums_not_held_by(artist.id)?
+            .iter()
+            .any(|album| album.release.mbid == mbid(HOURS_GROUP)),
+        "an album wanted whole left the page before a file of it arrived"
+    );
+    assert!(library.songs_kept_for("daybreak")?.is_empty());
+    assert_eq!(
+        library
+            .songs_not_held_by(artist.id)?
+            .iter()
+            .map(|song| song.recording.clone())
+            .collect::<Vec<_>>(),
+        vec![mbid(DAYBREAK)],
+        "a wanted song left the artist's page before it arrived"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(learnt_canned()));
+
+    let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP))?;
+
+    assert_eq!(wanted.len(), 2);
+    assert_eq!(fake.called(LookupOp::ReleasesOfGroup), 1);
     Ok(())
 }
 

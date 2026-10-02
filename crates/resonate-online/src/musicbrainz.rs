@@ -26,6 +26,9 @@ const ARTIST_INCLUDES: &str = "url-rels+tags+aliases";
 const RECORDING_INCLUDES: &str = "artist-credits+releases+isrcs+media+release-groups";
 const ISRC_INCLUDES: &str = "artist-credits+releases+isrcs+media";
 const RELEASE_GROUP_INCLUDES: &str = "artist-credits+releases+media+url-rels";
+const PRESSING_INCLUDES: &str = "recordings+artist-credits+media+release-groups+isrcs";
+const PRESSINGS_READ: u32 = 25;
+const OFFICIAL: &str = "official";
 const LENGTH_MAY_DIFFER_BY_MS: u64 = 10_000;
 
 #[derive(Deserialize)]
@@ -345,6 +348,12 @@ struct BrowseDoc {
 }
 
 #[derive(Deserialize)]
+struct PressingsDoc {
+    #[serde(default)]
+    releases: Vec<ReleaseDoc>,
+}
+
+#[derive(Deserialize)]
 struct AreaDoc {
     #[serde(default)]
     name: Option<String>,
@@ -519,6 +528,27 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid, from: u32) -> Re
         unread,
         read_to,
     })
+}
+
+pub(crate) fn releases_of_group(client: &Client, group: &Mbid) -> Result<Vec<Release>> {
+    let op = LookupOp::ReleasesOfGroup;
+    let path = pressings_path(group);
+    let pressings = client
+        .json::<PressingsDoc>(Host::MusicBrainz, op, &path)?
+        .map(|document| document.releases)
+        .unwrap_or_default();
+
+    Ok(pressings
+        .into_iter()
+        .filter_map(|pressing| pressing.into_release(op).ok())
+        .collect())
+}
+
+fn pressings_path(group: &Mbid) -> String {
+    format!(
+        "/release?release-group={group}&status={OFFICIAL}&inc={PRESSING_INCLUDES}\
+         &limit={PRESSINGS_READ}&fmt=json"
+    )
 }
 
 fn release_groups_path(artist: &Mbid, offset: u32) -> String {
@@ -1201,6 +1231,7 @@ mod tests {
     const RELEASE_GROUP: &str = include_str!("../tests/fixtures/release_group.json");
     const RELEASE_GROUP_SEARCH: &str = include_str!("../tests/fixtures/release_group_search.json");
     const RELEASE_GROUP_BROWSE: &str = include_str!("../tests/fixtures/release_group_browse.json");
+    const RELEASE_BROWSE: &str = include_str!("../tests/fixtures/release_browse.json");
     const ARTIST: &str = include_str!("../tests/fixtures/artist.json");
     const ARTIST_SEARCH: &str = include_str!("../tests/fixtures/artist_search.json");
 
@@ -1865,6 +1896,47 @@ mod tests {
             "/release-group?artist=83d91898-7763-47d7-b03b-b92132375c47&type=album%7Cep%7Csingle\
              &limit=100&offset=200&fmt=json"
         );
+    }
+
+    #[test]
+    fn a_release_groups_pressings_are_browsed_official_with_their_track_lists() {
+        let group = Mbid::new("6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60").expect("an mbid");
+
+        assert_eq!(
+            pressings_path(&group),
+            "/release?release-group=6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60&status=official\
+             &inc=recordings+artist-credits+media+release-groups+isrcs&limit=25&fmt=json"
+        );
+    }
+
+    #[test]
+    fn a_release_browse_answers_each_pressing_whole_with_the_group_it_is_in() {
+        let page: PressingsDoc = serde_json::from_str(RELEASE_BROWSE).expect("the fixture parses");
+
+        let releases: Vec<Release> = page
+            .releases
+            .into_iter()
+            .map(|pressing| pressing.into_release(LookupOp::ReleasesOfGroup))
+            .collect::<Result<_>>()
+            .expect("every pressing maps");
+
+        assert_eq!(releases.len(), 3);
+        let first = &releases[0];
+        assert_eq!(first.title, "The Piper at the Gates of Dawn");
+        assert_eq!(first.date.as_deref(), Some("1967-08-05"));
+        assert_eq!(
+            first.group.as_ref().map(Mbid::as_str),
+            Some("6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60")
+        );
+        assert_eq!(first.kind.as_deref(), Some("Album"));
+        assert_eq!(first.track_count(), 11);
+        let opening = &first.media[0].tracks[0];
+        assert_eq!(opening.title, "Astronomy Domine");
+        assert_eq!(
+            opening.recording.as_ref().map(Mbid::as_str),
+            Some("45e08e33-8432-4b9a-bc3b-1358c2cfd1af")
+        );
+        assert!(opening.length.is_some());
     }
 
     #[test]

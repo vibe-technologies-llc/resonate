@@ -13,9 +13,10 @@ use gpui::{
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
-    Album, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre, GroupRelease,
-    HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack, PlaylistEntry,
-    Recording, RecordingRelease, ReleaseDetail, Service, Track, in_the_order_worth_offering,
+    Album, AlbumNotHeld, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre,
+    GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured, MissingTrack,
+    PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service, Track, UnheldRelease,
+    in_the_order_worth_offering,
 };
 use smallvec::smallvec;
 
@@ -96,6 +97,11 @@ const WANT_FOUND_HINT: &str = "Download this song: its release is added to the c
 
 const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                 providers are asked for it now, the sidebar following how it goes";
+
+const WANT_ALBUM_HINT: &str = "Download this album: it is added to the catalog and the providers \
+                               are asked for every song on it, the sidebar following how it goes";
+
+const NOT_HELD_HEADING: &str = "Not in your library";
 
 const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
 
@@ -695,7 +701,8 @@ impl RootView {
         self.land_where_it_was_left(listed);
         let records = match self.library.read(cx).selection() {
             Selection::Artist(artist) => {
-                let held = self.library.read(cx).artist_albums().len();
+                let library = self.library.read(cx);
+                let held = library.artist_albums().len() + library.albums_not_held().len();
                 (self.artist_shows.within(held) == ArtistShows::Records)
                     .then(|| self.artist_records(artist, cx))
             }
@@ -1081,10 +1088,10 @@ impl RootView {
                             Some(art) => {
                                 framed_cover(Some(art), theme::row_cover()).opacity(UNHELD_COVER)
                             }
-                            None => unheld_cover(),
+                            None => unheld_cover(theme::row_cover()),
                         }
                     }
-                    Sleeve::Unknown => unheld_cover(),
+                    Sleeve::Unknown => unheld_cover(theme::row_cover()),
                 })
             })
             .child(listing::title_cell(title, lit_title, false).text_color(rgb(theme::faint())))
@@ -1191,6 +1198,10 @@ impl RootView {
         let said = match beyond {
             Beyond::Elsewhere(rows) => format!(
                 "Found on MusicBrainz · {} · press one to download it",
+                format::counted(rows, "song", "songs")
+            ),
+            Beyond::NotHeld(rows) => format!(
+                "Not in your library · {} · press one to download it",
                 format::counted(rows, "song", "songs")
             ),
             Beyond::Refining(rows) => format!(
@@ -1688,8 +1699,9 @@ impl RootView {
         let reads_further = library.can_enrich();
         let favourite = library.favoured_artist(id);
         let records = library.artist_albums().len();
+        let any_records = records + library.albums_not_held().len();
         let tracks = library.listed().rows as usize;
-        let shows = self.artist_shows.within(records);
+        let shows = self.artist_shows.within(any_records);
 
         let side = self.hero_side();
         let portrait = match self.library.update(cx, |library, cx| {
@@ -1782,7 +1794,7 @@ impl RootView {
                         )
                     })
                 })
-                .when(records > 0, |row| {
+                .when(any_records > 0, |row| {
                     row.child(div().flex_1())
                         .child(self.artist_tabs(shows, records, tracks, cx))
                 }),
@@ -2149,6 +2161,7 @@ impl RootView {
 
     fn artist_records(&self, artist: ArtistId, cx: &mut Context<Self>) -> Stateful<Div> {
         let albums = self.library.read(cx).artist_albums();
+        let not_held = self.library.read(cx).albums_not_held();
         let mut cells = Vec::new();
         for album in albums.iter() {
             cells.push(
@@ -2160,6 +2173,15 @@ impl RootView {
                     cx,
                 )
                 .into_any_element(),
+            );
+        }
+        if !not_held.is_empty() {
+            cells.push(not_held_heading(not_held.len(), !albums.is_empty()).into_any_element());
+        }
+        for album in not_held.iter() {
+            cells.push(
+                self.album_not_held_cell(album, theme::grid_cover(), cx)
+                    .into_any_element(),
             );
         }
 
@@ -2180,6 +2202,92 @@ impl RootView {
                     .pb_6()
                     .children(cells),
             )
+    }
+
+    fn album_not_held_cell(
+        &self,
+        album: &AlbumNotHeld,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let group = album.release.mbid.clone();
+        let fetching = self.library.read(cx).fetching_album(&group);
+        let can_ask = self.library.read(cx).can_enrich();
+        let art = album.pressing.as_ref().and_then(|pressing| {
+            self.library.update(cx, |library, cx| {
+                library.released_cover(pressing, Drawn::InAGrid, cx)
+            })
+        });
+        let cover = match art {
+            Some(art) => framed_cover(Some(art), side).opacity(UNHELD_COVER),
+            None => unheld_cover(side),
+        };
+        let under = match fetching {
+            Some(fetching) => div()
+                .text_color(rgb(fetching_colour(fetching)))
+                .child(fetching.saying()),
+            None => div()
+                .text_color(rgb(theme::faint()))
+                .child(SharedString::from(described(&album.release))),
+        };
+        let pressable = can_ask && fetching.is_none_or(Fetching::can_be_asked_again);
+
+        let cell = div()
+            .id(listing::keyed_by("album-not-held", &group))
+            .group(CELL_GROUP)
+            .flex()
+            .flex_none()
+            .flex_col()
+            .gap_2p5()
+            .w(px(side))
+            .child(
+                div()
+                    .relative()
+                    .rounded(px(8.0))
+                    .when(pressable, |frame| {
+                        frame.group_hover(CELL_GROUP, |frame| {
+                            frame.shadow(vec![gpui::BoxShadow {
+                                color: gpui::hsla(0.0, 0.0, 0.0, 0.5),
+                                offset: gpui::point(px(0.0), px(8.0)),
+                                blur_radius: px(24.0),
+                                spread_radius: px(0.0),
+                            }])
+                        })
+                    })
+                    .child(cover),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(theme::faint()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(SharedString::from(album.release.title.clone())),
+                    )
+                    .child(
+                        under
+                            .text_size(px(theme::text_xs()))
+                            .truncate()
+                            .ends_in_an_ellipsis(),
+                    ),
+            );
+        if !pressable {
+            return cell;
+        }
+
+        cell.cursor_pointer()
+            .names(WANT_ALBUM_HINT)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let wanted = group.clone();
+                this.library
+                    .update(cx, |library, cx| library.want_album(wanted, cx));
+            }))
     }
 
     pub(crate) fn album_shelf(
@@ -2599,9 +2707,35 @@ pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
     }
 }
 
-fn unheld_cover() -> Div {
-    let side = theme::row_cover();
+fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
+    div()
+        .w_full()
+        .when(under_the_held, |heading| heading.pt_4())
+        .text_size(px(theme::text_xs()))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(rgb(theme::muted()))
+        .child(SharedString::from(format!(
+            "{NOT_HELD_HEADING} · {} · press one to download it",
+            format::counted(albums, "release", "releases")
+        )))
+}
 
+fn described(release: &UnheldRelease) -> String {
+    [
+        release.kind.clone(),
+        release
+            .first_released
+            .as_deref()
+            .and_then(|date| date.get(..4))
+            .map(str::to_owned),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+fn unheld_cover(side: f32) -> Div {
     div()
         .flex()
         .flex_none()
@@ -3496,6 +3630,10 @@ mod tests {
 
             fn release_groups_of(&self, _: &Mbid, _: u32) -> Result<Discography> {
                 Ok(Discography::default())
+            }
+
+            fn releases_of_group(&self, _: &Mbid) -> Result<Vec<Release>> {
+                Ok(Vec::new())
             }
 
             fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> Result<Option<CoverArt>> {

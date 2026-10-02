@@ -384,6 +384,7 @@ pub enum LookupOp {
     Artist,
     FindArtist,
     ReleaseGroupsOfArtist,
+    ReleasesOfGroup,
     Cover,
     Portrait,
     Lyrics,
@@ -422,6 +423,8 @@ pub trait Reference: Send + Sync {
     fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>>;
 
     fn release_groups_of(&self, artist: &Mbid, from: u32) -> Result<Discography>;
+
+    fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>>;
 
     fn cover(&self, release: &Mbid, group: Option<&Mbid>) -> Result<Option<CoverArt>>;
 

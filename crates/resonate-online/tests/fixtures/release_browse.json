@@ -1,0 +1,1945 @@
+{
+ "release-offset": 0,
+ "releases": [
+  {
+   "id": "1f715142-a0ef-48c8-9e72-c402e5bad13f",
+   "status": "Official",
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "release-group": {
+    "artist-credit": [
+     {
+      "artist": {
+       "id": "83d91898-7763-47d7-b03b-b92132375c47",
+       "disambiguation": "",
+       "sort-name": "Pink Floyd",
+       "country": "GB",
+       "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+       "name": "Pink Floyd",
+       "type": "Group"
+      },
+      "joinphrase": "",
+      "name": "Pink Floyd"
+     }
+    ],
+    "id": "6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60",
+    "secondary-types": [],
+    "disambiguation": "",
+    "primary-type": "Album",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "The Piper at the Gates of Dawn",
+    "secondary-type-ids": [],
+    "first-release-date": "1967-07-07"
+   },
+   "release-events": [
+    {
+     "date": "1967-08-05",
+     "area": {
+      "iso-3166-1-codes": [
+       "GB"
+      ],
+      "disambiguation": "",
+      "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+      "sort-name": "United Kingdom",
+      "type-id": null,
+      "type": null,
+      "name": "United Kingdom"
+     }
+    }
+   ],
+   "barcode": "",
+   "cover-art-archive": {
+    "count": 9,
+    "front": true,
+    "artwork": true,
+    "back": true,
+    "darkened": false
+   },
+   "date": "1967-08-05",
+   "disambiguation": "",
+   "packaging-id": "f7101ce3-0384-39ce-9fde-fbbd0044d35f",
+   "artist-credit": [
+    {
+     "name": "The Pink Floyd",
+     "joinphrase": "",
+     "artist": {
+      "name": "Pink Floyd",
+      "type": "Group",
+      "sort-name": "Pink Floyd",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "country": "GB",
+      "disambiguation": "",
+      "id": "83d91898-7763-47d7-b03b-b92132375c47"
+     }
+    }
+   ],
+   "asin": null,
+   "country": "GB",
+   "title": "The Piper at the Gates of Dawn",
+   "text-representation": {
+    "script": "Latn",
+    "language": "eng"
+   },
+   "packaging": "Cardboard/Paper Sleeve",
+   "media": [
+    {
+     "format-id": "3e9080b0-5e6c-34ab-bd15-f526b6306a64",
+     "title": "",
+     "format": "12\" Vinyl",
+     "position": 1,
+     "id": "87e6f7ee-f4ee-3ea6-9e54-a8970438d2c2",
+     "tracks": [
+      {
+       "id": "65e7eafb-05bf-344e-99b1-55045e78be34",
+       "position": 1,
+       "number": "A1",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "The Pink Floyd",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47"
+         }
+        }
+       ],
+       "title": "Astronomy Domine",
+       "recording": {
+        "video": false,
+        "isrcs": [
+         "GBAYE0702546",
+         "GBAYE6700559",
+         "GBAYE9400655",
+         "GBN9Y1100001"
+        ],
+        "first-release-date": "1967-08-05",
+        "title": "Astronomy Domine",
+        "length": 252093,
+        "artist-credit": [
+         {
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "id": "45e08e33-8432-4b9a-bc3b-1358c2cfd1af",
+        "disambiguation": "original stereo mix"
+       },
+       "length": 252093
+      },
+      {
+       "title": "Lucifer Sam",
+       "length": 187666,
+       "recording": {
+        "title": "Lucifer Sam",
+        "length": 187320,
+        "artist-credit": [
+         {
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "sort-name": "Pink Floyd"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "1d1504f2-9f84-4c93-8356-85c014c4537a",
+        "isrcs": [
+         "GBAYE0702547",
+         "GBAYE6700560",
+         "GBAYE9400645",
+         "GBN9Y1100002",
+         "TCJPW2383434"
+        ],
+        "video": false,
+        "first-release-date": "1967-08-05"
+       },
+       "number": "A2",
+       "artist-credit": [
+        {
+         "artist": {
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "type": "Group",
+          "name": "Pink Floyd"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "id": "84930349-98ec-3a46-b12e-576eb0adb98a",
+       "position": 2
+      },
+      {
+       "number": "A3",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "The Pink Floyd",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB"
+         }
+        }
+       ],
+       "position": 3,
+       "id": "056d814d-906e-376c-8d4e-b5bd82d0acf9",
+       "length": 188573,
+       "recording": {
+        "artist-credit": [
+         {
+          "artist": {
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "type": "Group",
+           "name": "Pink Floyd"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "234137c4-9e43-47d3-b7ca-36c5f81f98c5",
+        "title": "Matilda Mother",
+        "length": 188506,
+        "isrcs": [
+         "GBAYE0702548",
+         "GBAYE6700561",
+         "GBAYE9400646",
+         "GBN9Y1100003",
+         "TCJPW2383436"
+        ],
+        "video": false,
+        "first-release-date": "1967-08-05"
+       },
+       "title": "Matilda Mother"
+      },
+      {
+       "title": "Flaming",
+       "recording": {
+        "disambiguation": "original stereo mix",
+        "id": "c1295ed9-4821-4727-9a8c-71433c8a80b7",
+        "artist-credit": [
+         {
+          "artist": {
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "name": "Pink Floyd",
+           "type": "Group"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ],
+        "length": 166040,
+        "title": "Flaming",
+        "first-release-date": "1967-08-05",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702549",
+         "GBAYE6700562",
+         "GBAYE9400647",
+         "GBN9Y1100004"
+        ]
+       },
+       "length": 166200,
+       "position": 4,
+       "id": "cf2a5828-1bb1-3d0e-b682-f11178d23d63",
+       "number": "A4",
+       "artist-credit": [
+        {
+         "name": "The Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": ""
+         }
+        }
+       ]
+      },
+      {
+       "recording": {
+        "title": "Pow R. Toc H.",
+        "length": 266280,
+        "artist-credit": [
+         {
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "2bf00fb2-7ec0-469e-82be-b72b1eaaf467",
+        "isrcs": [
+         "GBAYE0702550",
+         "GBAYE6700563",
+         "GBAYE9400648",
+         "GBN9Y1100005",
+         "TCJPW2382396"
+        ],
+        "video": false,
+        "first-release-date": "1967-08-05"
+       },
+       "length": 266533,
+       "title": "Pow R. Toc H.",
+       "id": "acb4422a-3a72-3db9-a927-5d74ab18873b",
+       "position": 5,
+       "number": "A5",
+       "artist-credit": [
+        {
+         "artist": {
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ]
+      },
+      {
+       "artist-credit": [
+        {
+         "artist": {
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "type": "Group",
+          "name": "Pink Floyd"
+         },
+         "joinphrase": "",
+         "name": "The Pink Floyd"
+        }
+       ],
+       "number": "A6",
+       "id": "4b3896ab-0cf0-36ff-b33d-7512e33b6eca",
+       "position": 6,
+       "length": 185800,
+       "recording": {
+        "first-release-date": "1967-08-05",
+        "isrcs": [
+         "GBAYE0702551",
+         "GBAYE6700564",
+         "GBAYE9400649",
+         "GBN9Y1100006",
+         "TCJPW2382399"
+        ],
+        "video": false,
+        "length": 185946,
+        "title": "Take Up Thy Stethoscope and Walk",
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          }
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "1e59adac-f3d4-4d0c-a892-80a84a4b5ca9"
+       },
+       "title": "Take Up Thy Stethoscope and Walk"
+      },
+      {
+       "id": "a9b09c30-4e68-3af3-8c43-fd86224dab48",
+       "position": 7,
+       "artist-credit": [
+        {
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": ""
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "number": "B1",
+       "recording": {
+        "isrcs": [
+         "GBACF2251202",
+         "GBAYE0702552",
+         "GBAYE6700565",
+         "GBAYE9400650",
+         "GBAYE9600935",
+         "GBN9Y1100007",
+         "TCJPW2383455"
+        ],
+        "video": false,
+        "first-release-date": "1967-08-05",
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "name": "Pink Floyd",
+           "type": "Group"
+          }
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "ba53d361-fec6-478f-8bfb-ad5cd7f19a8b",
+        "title": "Interstellar Overdrive",
+        "length": 581000
+       },
+       "length": 581160,
+       "title": "Interstellar Overdrive"
+      },
+      {
+       "length": 133866,
+       "recording": {
+        "length": 133866,
+        "title": "The Gnome",
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd"
+          }
+         }
+        ],
+        "id": "f2db360d-a43e-4b12-beeb-29457fe9416c",
+        "disambiguation": "original stereo mix",
+        "first-release-date": "1967-08-05",
+        "isrcs": [
+         "GBAYE0702553",
+         "GBAYE6700566",
+         "GBAYE9400651",
+         "GBN9Y1100008",
+         "TCJPW2383446"
+        ],
+        "video": false
+       },
+       "title": "The Gnome",
+       "number": "B2",
+       "artist-credit": [
+        {
+         "artist": {
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "position": 8,
+       "id": "ce156b00-e26d-3e76-aba4-73810f842e85"
+      },
+      {
+       "title": "Chapter 24",
+       "recording": {
+        "title": "Chapter 24",
+        "length": 222386,
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "type": "Group",
+           "name": "Pink Floyd"
+          }
+         }
+        ],
+        "id": "5204eeaa-c84a-4edd-802e-d1e4c32d58ae",
+        "disambiguation": "original stereo mix",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702554",
+         "GBAYE1000259",
+         "GBAYE6700567",
+         "GBAYE9400652",
+         "GBN9Y1100009",
+         "TCJPW2383452"
+        ],
+        "first-release-date": "1967-08-05"
+       },
+       "length": 222440,
+       "id": "d97706dc-0cbe-3983-b3e1-cbeee3e86e43",
+       "position": 9,
+       "artist-credit": [
+        {
+         "name": "The Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "name": "Pink Floyd",
+          "type": "Group"
+         }
+        }
+       ],
+       "number": "B3"
+      },
+      {
+       "number": "B4",
+       "artist-credit": [
+        {
+         "name": "The Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+         }
+        }
+       ],
+       "position": 10,
+       "id": "b95cdc0e-3be3-3d2c-9bac-303b8705dad9",
+       "length": 131426,
+       "recording": {
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "name": "Pink Floyd",
+           "type": "Group"
+          }
+         }
+        ],
+        "id": "3624dac2-48b6-4a0f-9467-3219293ec797",
+        "disambiguation": "original stereo mix",
+        "title": "The Scarecrow",
+        "length": 131000,
+        "video": false,
+        "isrcs": [
+         "GBAYE0702555",
+         "GBAYE6700568",
+         "GBAYE9400653",
+         "GBN9Y1100010",
+         "TCJPW2383438"
+        ],
+        "first-release-date": "1967-08-05"
+       },
+       "title": "The Scarecrow"
+      },
+      {
+       "title": "Bike",
+       "length": 201773,
+       "recording": {
+        "first-release-date": "1967-08-05",
+        "isrcs": [
+         "GBACF2251211",
+         "GBAYE0702556",
+         "GBAYE1000261",
+         "GBAYE6700407",
+         "GBAYE9400654",
+         "GBAYE9600940",
+         "GBN9Y1100011"
+        ],
+        "video": false,
+        "length": 201800,
+        "title": "Bike",
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "sort-name": "Pink Floyd"
+          }
+         }
+        ],
+        "disambiguation": "original stereo mix",
+        "id": "1c42ff6c-6c59-40ef-9564-a935b3551949"
+       },
+       "number": "B5",
+       "artist-credit": [
+        {
+         "name": "The Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         }
+        }
+       ],
+       "id": "6cb1dde8-cd8f-39ef-90b0-8a197673f79c",
+       "position": 11
+      }
+     ],
+     "track-count": 11,
+     "track-offset": 0
+    }
+   ],
+   "quality": "normal"
+  },
+  {
+   "asin": null,
+   "country": "GB",
+   "title": "The Piper at the Gates of Dawn",
+   "text-representation": {
+    "script": "Latn",
+    "language": "eng"
+   },
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "name": "Pink Floyd",
+     "artist": {
+      "name": "Pink Floyd",
+      "type": "Group",
+      "disambiguation": "",
+      "id": "83d91898-7763-47d7-b03b-b92132375c47",
+      "sort-name": "Pink Floyd",
+      "country": "GB",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+     }
+    }
+   ],
+   "packaging-id": null,
+   "disambiguation": "mono – test pressing",
+   "media": [
+    {
+     "tracks": [
+      {
+       "id": "4065f539-d18f-3196-b843-97422fbe1e57",
+       "position": 1,
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "Pink Floyd",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+         }
+        }
+       ],
+       "number": "A1",
+       "recording": {
+        "artist-credit": [
+         {
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "d089a88a-f055-4dac-8d5b-0738a99ffaf5",
+        "length": 255000,
+        "title": "Astronomy Domine",
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702535",
+         "GBAYE9701691"
+        ]
+       },
+       "length": 255000,
+       "title": "Astronomy Domine"
+      },
+      {
+       "length": 189400,
+       "recording": {
+        "title": "Lucifer Sam",
+        "length": 189000,
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          }
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "890c83bb-a03c-4593-8604-6cebf4c34f6e",
+        "isrcs": [
+         "GBAYE0702536",
+         "GBAYE9701991"
+        ],
+        "video": false,
+        "first-release-date": "1967-07-07"
+       },
+       "title": "Lucifer Sam",
+       "artist-credit": [
+        {
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd"
+         },
+         "name": "Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "number": "A2",
+       "id": "7b0716b1-a417-318f-80ba-b87d7ab0f2c4",
+       "position": 2
+      },
+      {
+       "number": "A3",
+       "artist-credit": [
+        {
+         "name": "Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+         }
+        }
+       ],
+       "id": "81bcdd80-e8cb-31f8-a2d0-c65ada9060e8",
+       "position": 3,
+       "title": "Matilda Mother",
+       "length": 185240,
+       "recording": {
+        "artist-credit": [
+         {
+          "artist": {
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "name": "Pink Floyd",
+           "type": "Group"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "56383f82-3bba-45a2-b6bf-bb19e5f3963e",
+        "length": 185000,
+        "title": "Matilda Mother",
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702537",
+         "GBAYE9701992"
+        ]
+       }
+      },
+      {
+       "length": 166480,
+       "recording": {
+        "length": 166000,
+        "title": "Flaming",
+        "id": "fc47e5e6-0cdd-43ed-8dff-986e356d67a2",
+        "disambiguation": "original mono album mix",
+        "artist-credit": [
+         {
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702538",
+         "GBAYE9701993"
+        ]
+       },
+       "title": "Flaming",
+       "number": "A4",
+       "artist-credit": [
+        {
+         "artist": {
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "joinphrase": "",
+         "name": "Pink Floyd"
+        }
+       ],
+       "id": "fc6ca524-2ee1-3c56-b8ba-b919d0ac9760",
+       "position": 4
+      },
+      {
+       "recording": {
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702539",
+         "GBAYE9701994"
+        ],
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "sort-name": "Pink Floyd",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          }
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "cd58d6ff-75c3-4f65-abdc-b52373c2da11",
+        "length": 265000,
+        "title": "Pow R. Toc H."
+       },
+       "length": 264880,
+       "title": "Pow R. Toc H.",
+       "id": "4f4d0ab7-723e-30e2-8110-389aac716299",
+       "position": 5,
+       "artist-credit": [
+        {
+         "name": "Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "type": "Group",
+          "name": "Pink Floyd"
+         }
+        }
+       ],
+       "number": "A5"
+      },
+      {
+       "artist-credit": [
+        {
+         "name": "Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": ""
+         }
+        }
+       ],
+       "number": "A6",
+       "position": 6,
+       "id": "bc3571e2-1824-3798-a2dd-fc4ded7c2c2d",
+       "title": "Take Up Thy Stethoscope and Walk",
+       "length": 187800,
+       "recording": {
+        "length": 187800,
+        "title": "Take Up Thy Stethoscope and Walk",
+        "artist-credit": [
+         {
+          "artist": {
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "type": "Group",
+           "name": "Pink Floyd"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "78d90361-0b8e-404f-8496-b26380f4e050",
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702540",
+         "GBAYE9701995"
+        ]
+       }
+      },
+      {
+       "id": "f4677661-ed69-3187-abdd-3bd94f385e0e",
+       "position": 7,
+       "number": "B1",
+       "artist-credit": [
+        {
+         "name": "Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB"
+         }
+        }
+       ],
+       "title": "Interstellar Overdrive",
+       "recording": {
+        "isrcs": [
+         "GBAYE0702541",
+         "GBAYE9701996"
+        ],
+        "video": false,
+        "first-release-date": "1967-07-07",
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "sort-name": "Pink Floyd"
+          }
+         }
+        ],
+        "id": "b2533982-d397-4bf3-bdae-37a97ccf3277",
+        "disambiguation": "original LP mono mix",
+        "title": "Interstellar Overdrive",
+        "length": 581320
+       },
+       "length": 581320
+      },
+      {
+       "recording": {
+        "isrcs": [
+         "GBAYE0702542",
+         "GBAYE9701997"
+        ],
+        "video": false,
+        "first-release-date": "1967-07-07",
+        "title": "The Gnome",
+        "length": 134000,
+        "disambiguation": "original mono mix",
+        "id": "50871af0-161b-4fb4-9d88-bc0511337c55",
+        "artist-credit": [
+         {
+          "artist": {
+           "sort-name": "Pink Floyd",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "type": "Group",
+           "name": "Pink Floyd"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ]
+       },
+       "length": 134160,
+       "title": "The Gnome",
+       "position": 8,
+       "id": "32e9fdbf-e383-3176-8539-d8d9472ea09a",
+       "number": "B2",
+       "artist-credit": [
+        {
+         "name": "Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47"
+         }
+        }
+       ]
+      },
+      {
+       "id": "34e00194-0a02-3d5b-a427-b74603038924",
+       "position": 9,
+       "number": "B3",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "Pink Floyd",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         }
+        }
+       ],
+       "title": "Chapter 24",
+       "recording": {
+        "first-release-date": "1967-07-07",
+        "isrcs": [
+         "GBAYE0702543",
+         "GBAYE9701998"
+        ],
+        "video": false,
+        "id": "2245c328-9b02-4bd1-b511-6dc619dc916f",
+        "disambiguation": "original mono mix",
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB"
+          }
+         }
+        ],
+        "length": 233000,
+        "title": "Chapter 24"
+       },
+       "length": 233240
+      },
+      {
+       "id": "89a3d942-160d-3e95-80f6-3d96a1e2c9fa",
+       "position": 10,
+       "number": "B4",
+       "artist-credit": [
+        {
+         "artist": {
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "name": "Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "recording": {
+        "first-release-date": "1967-06-16",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702544",
+         "GBAYE6700568",
+         "GBAYE9200460",
+         "GBAYE9701999"
+        ],
+        "disambiguation": "mono single edit",
+        "id": "9c0938c2-c238-4af5-a1da-fb4abd7a4748",
+        "artist-credit": [
+         {
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "length": 130560,
+        "title": "Scarecrow"
+       },
+       "length": 130560,
+       "title": "The Scarecrow"
+      },
+      {
+       "length": 207440,
+       "recording": {
+        "first-release-date": "1967-07-07",
+        "video": false,
+        "isrcs": [
+         "GBAYE0702545",
+         "GBAYE9702000"
+        ],
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "sort-name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "type": "Group",
+           "name": "Pink Floyd"
+          }
+         }
+        ],
+        "disambiguation": "original mono mix",
+        "id": "c169ad48-6fe4-4b89-a468-9071ad24ba2c",
+        "length": 207000,
+        "title": "Bike"
+       },
+       "title": "Bike",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "Pink Floyd",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd"
+         }
+        }
+       ],
+       "number": "B5",
+       "position": 11,
+       "id": "036eb855-340d-3a9f-992f-d3520c42595c"
+      }
+     ],
+     "track-count": 11,
+     "track-offset": 0,
+     "format-id": "3e9080b0-5e6c-34ab-bd15-f526b6306a64",
+     "title": "",
+     "format": "12\" Vinyl",
+     "position": 1,
+     "id": "1a4e17e7-eca9-3fb6-a51d-aa66111e5b88"
+    }
+   ],
+   "quality": "normal",
+   "packaging": null,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "status": "Official",
+   "id": "6c7cdad8-4daf-3248-b6c1-ea896c2e568e",
+   "barcode": "",
+   "release-events": [
+    {
+     "area": {
+      "iso-3166-1-codes": [
+       "GB"
+      ],
+      "disambiguation": "",
+      "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+      "type-id": null,
+      "sort-name": "United Kingdom",
+      "type": null,
+      "name": "United Kingdom"
+     },
+     "date": "1967-07-07"
+    }
+   ],
+   "date": "1967-07-07",
+   "cover-art-archive": {
+    "darkened": false,
+    "back": false,
+    "front": true,
+    "artwork": true,
+    "count": 1
+   },
+   "release-group": {
+    "title": "The Piper at the Gates of Dawn",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type": "Album",
+    "secondary-types": [],
+    "id": "6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60",
+    "disambiguation": "",
+    "artist-credit": [
+     {
+      "name": "Pink Floyd",
+      "joinphrase": "",
+      "artist": {
+       "country": "GB",
+       "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+       "sort-name": "Pink Floyd",
+       "id": "83d91898-7763-47d7-b03b-b92132375c47",
+       "disambiguation": "",
+       "type": "Group",
+       "name": "Pink Floyd"
+      }
+     }
+    ],
+    "first-release-date": "1967-07-07",
+    "secondary-type-ids": []
+   }
+  },
+  {
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "title": "The Piper at the Gates of Dawn",
+   "asin": null,
+   "country": "GB",
+   "packaging-id": "f7101ce3-0384-39ce-9fde-fbbd0044d35f",
+   "artist-credit": [
+    {
+     "name": "The Pink Floyd",
+     "joinphrase": "",
+     "artist": {
+      "name": "Pink Floyd",
+      "type": "Group",
+      "id": "83d91898-7763-47d7-b03b-b92132375c47",
+      "disambiguation": "",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "country": "GB",
+      "sort-name": "Pink Floyd"
+     }
+    }
+   ],
+   "disambiguation": "mono",
+   "quality": "normal",
+   "media": [
+    {
+     "format-id": "3e9080b0-5e6c-34ab-bd15-f526b6306a64",
+     "title": "",
+     "format": "12\" Vinyl",
+     "id": "6c8bd7f6-a3a2-3b86-a6c6-8162853fc957",
+     "position": 1,
+     "tracks": [
+      {
+       "title": "Astronomy Domine",
+       "length": 255000,
+       "recording": {
+        "length": 255000,
+        "title": "Astronomy Domine",
+        "disambiguation": "original mono mix",
+        "id": "d089a88a-f055-4dac-8d5b-0738a99ffaf5",
+        "artist-credit": [
+         {
+          "artist": {
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "name": "Pink Floyd",
+           "type": "Group"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "first-release-date": "1967-07-07",
+        "isrcs": [
+         "GBAYE0702535",
+         "GBAYE9701691"
+        ],
+        "video": false
+       },
+       "number": "A1",
+       "artist-credit": [
+        {
+         "name": "The Pink Floyd",
+         "joinphrase": "",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         }
+        }
+       ],
+       "position": 1,
+       "id": "bfc1af3a-f9e8-33de-817a-40bc79ca43d7"
+      },
+      {
+       "position": 2,
+       "id": "3de2d652-3a75-3f20-884d-3e48f23425bf",
+       "number": "A2",
+       "artist-credit": [
+        {
+         "artist": {
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "title": "Lucifer Sam",
+       "recording": {
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "name": "Pink Floyd",
+           "type": "Group"
+          }
+         }
+        ],
+        "id": "890c83bb-a03c-4593-8604-6cebf4c34f6e",
+        "disambiguation": "original mono mix",
+        "length": 189000,
+        "title": "Lucifer Sam",
+        "first-release-date": "1967-07-07",
+        "isrcs": [
+         "GBAYE0702536",
+         "GBAYE9701991"
+        ],
+        "video": false
+       },
+       "length": 189400
+      },
+      {
+       "number": "A3",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "The Pink Floyd",
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47"
+         }
+        }
+       ],
+       "position": 3,
+       "id": "e26402d3-486d-3109-a171-39aa17cdfed5",
+       "length": 185240,
+       "recording": {
+        "video": false,
+        "isrcs": [
+         "GBAYE0702537",
+         "GBAYE9701992"
+        ],
+        "first-release-date": "1967-07-07",
+        "title": "Matilda Mother",
+        "length": 185000,
+        "id": "56383f82-3bba-45a2-b6bf-bb19e5f3963e",
+        "disambiguation": "original mono mix",
+        "artist-credit": [
+         {
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ]
+       },
+       "title": "Matilda Mother"
+      },
+      {
+       "number": "A4",
+       "artist-credit": [
+        {
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         },
+         "joinphrase": "",
+         "name": "The Pink Floyd"
+        }
+       ],
+       "position": 4,
+       "id": "8e722825-a065-3676-804e-f7b6fc761faf",
+       "length": 166480,
+       "recording": {
+        "first-release-date": "1967-07-07",
+        "isrcs": [
+         "GBAYE0702538",
+         "GBAYE9701993"
+        ],
+        "video": false,
+        "disambiguation": "original mono album mix",
+        "id": "fc47e5e6-0cdd-43ed-8dff-986e356d67a2",
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "sort-name": "Pink Floyd",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+          }
+         }
+        ],
+        "length": 166000,
+        "title": "Flaming"
+       },
+       "title": "Flaming"
+      },
+      {
+       "length": 264880,
+       "recording": {
+        "id": "cd58d6ff-75c3-4f65-abdc-b52373c2da11",
+        "disambiguation": "original mono mix",
+        "artist-credit": [
+         {
+          "joinphrase": "",
+          "name": "Pink Floyd",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB"
+          }
+         }
+        ],
+        "title": "Pow R. Toc H.",
+        "length": 265000,
+        "video": false,
+        "isrcs": [
+         "GBAYE0702539",
+         "GBAYE9701994"
+        ],
+        "first-release-date": "1967-07-07"
+       },
+       "title": "Pow R. Toc H.",
+       "number": "A5",
+       "artist-credit": [
+        {
+         "artist": {
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "sort-name": "Pink Floyd",
+          "type": "Group",
+          "name": "Pink Floyd"
+         },
+         "joinphrase": "",
+         "name": "The Pink Floyd"
+        }
+       ],
+       "id": "5f1b8f37-3466-3dbd-a3e3-ea65ccf42d51",
+       "position": 5
+      },
+      {
+       "recording": {
+        "disambiguation": "original mono mix",
+        "id": "78d90361-0b8e-404f-8496-b26380f4e050",
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB"
+          }
+         }
+        ],
+        "title": "Take Up Thy Stethoscope and Walk",
+        "length": 187800,
+        "video": false,
+        "isrcs": [
+         "GBAYE0702540",
+         "GBAYE9701995"
+        ],
+        "first-release-date": "1967-07-07"
+       },
+       "length": 187800,
+       "title": "Take Up Thy Stethoscope and Walk",
+       "id": "407b8425-1e1b-3fab-9789-78ab3698abe0",
+       "position": 6,
+       "number": "A6",
+       "artist-credit": [
+        {
+         "joinphrase": "",
+         "name": "The Pink Floyd",
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "sort-name": "Pink Floyd",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": ""
+         }
+        }
+       ]
+      },
+      {
+       "artist-credit": [
+        {
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "number": "B1",
+       "id": "d24150c2-8d4b-3ddc-98f6-253b3785f6c7",
+       "position": 7,
+       "title": "Interstellar Overdrive",
+       "length": 581320,
+       "recording": {
+        "artist-credit": [
+         {
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ],
+        "id": "b2533982-d397-4bf3-bdae-37a97ccf3277",
+        "disambiguation": "original LP mono mix",
+        "title": "Interstellar Overdrive",
+        "length": 581320,
+        "isrcs": [
+         "GBAYE0702541",
+         "GBAYE9701996"
+        ],
+        "video": false,
+        "first-release-date": "1967-07-07"
+       }
+      },
+      {
+       "number": "B2",
+       "artist-credit": [
+        {
+         "artist": {
+          "name": "Pink Floyd",
+          "type": "Group",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "id": "1838fa58-3dee-30eb-a603-b18d3d147099",
+       "position": 8,
+       "title": "The Gnome",
+       "length": 134160,
+       "recording": {
+        "video": false,
+        "isrcs": [
+         "GBAYE0702542",
+         "GBAYE9701997"
+        ],
+        "first-release-date": "1967-07-07",
+        "title": "The Gnome",
+        "length": 134000,
+        "disambiguation": "original mono mix",
+        "id": "50871af0-161b-4fb4-9d88-bc0511337c55",
+        "artist-credit": [
+         {
+          "artist": {
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": "",
+           "name": "Pink Floyd",
+           "type": "Group"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ]
+       }
+      },
+      {
+       "id": "87812182-6970-3106-9475-8cfff2f54e76",
+       "position": 9,
+       "number": "B3",
+       "artist-credit": [
+        {
+         "artist": {
+          "sort-name": "Pink Floyd",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "country": "GB",
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "type": "Group",
+          "name": "Pink Floyd"
+         },
+         "name": "The Pink Floyd",
+         "joinphrase": ""
+        }
+       ],
+       "recording": {
+        "video": false,
+        "isrcs": [
+         "GBAYE0702543",
+         "GBAYE9701998"
+        ],
+        "first-release-date": "1967-07-07",
+        "title": "Chapter 24",
+        "length": 233000,
+        "disambiguation": "original mono mix",
+        "id": "2245c328-9b02-4bd1-b511-6dc619dc916f",
+        "artist-credit": [
+         {
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "sort-name": "Pink Floyd",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b"
+          },
+          "name": "Pink Floyd",
+          "joinphrase": ""
+         }
+        ]
+       },
+       "length": 233240,
+       "title": "Chapter 24"
+      },
+      {
+       "title": "The Scarecrow",
+       "recording": {
+        "title": "Scarecrow",
+        "length": 130560,
+        "disambiguation": "mono single edit",
+        "id": "9c0938c2-c238-4af5-a1da-fb4abd7a4748",
+        "artist-credit": [
+         {
+          "artist": {
+           "name": "Pink Floyd",
+           "type": "Group",
+           "disambiguation": "",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "country": "GB",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "sort-name": "Pink Floyd"
+          },
+          "joinphrase": "",
+          "name": "Pink Floyd"
+         }
+        ],
+        "video": false,
+        "isrcs": [
+         "GBAYE0702544",
+         "GBAYE6700568",
+         "GBAYE9200460",
+         "GBAYE9701999"
+        ],
+        "first-release-date": "1967-06-16"
+       },
+       "length": 130560,
+       "id": "7f1ad71e-1dd8-3bc8-8d5d-2654e5fd9473",
+       "position": 10,
+       "number": "B4",
+       "artist-credit": [
+        {
+         "artist": {
+          "type": "Group",
+          "name": "Pink Floyd",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "disambiguation": "",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd"
+         },
+         "joinphrase": "",
+         "name": "The Pink Floyd"
+        }
+       ]
+      },
+      {
+       "artist-credit": [
+        {
+         "artist": {
+          "disambiguation": "",
+          "id": "83d91898-7763-47d7-b03b-b92132375c47",
+          "country": "GB",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "sort-name": "Pink Floyd",
+          "name": "Pink Floyd",
+          "type": "Group"
+         },
+         "joinphrase": "",
+         "name": "The Pink Floyd"
+        }
+       ],
+       "number": "B5",
+       "position": 11,
+       "id": "c95ad486-16f2-3184-af37-0a43c74375de",
+       "title": "Bike",
+       "length": 207440,
+       "recording": {
+        "artist-credit": [
+         {
+          "name": "Pink Floyd",
+          "joinphrase": "",
+          "artist": {
+           "type": "Group",
+           "name": "Pink Floyd",
+           "sort-name": "Pink Floyd",
+           "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+           "country": "GB",
+           "id": "83d91898-7763-47d7-b03b-b92132375c47",
+           "disambiguation": ""
+          }
+         }
+        ],
+        "id": "c169ad48-6fe4-4b89-a468-9071ad24ba2c",
+        "disambiguation": "original mono mix",
+        "length": 207000,
+        "title": "Bike",
+        "first-release-date": "1967-07-07",
+        "isrcs": [
+         "GBAYE0702545",
+         "GBAYE9702000"
+        ],
+        "video": false
+       }
+      }
+     ],
+     "track-count": 11,
+     "track-offset": 0
+    }
+   ],
+   "packaging": "Cardboard/Paper Sleeve",
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "status": "Official",
+   "id": "cf0d899c-bbc6-4a33-ba74-5e335284e836",
+   "date": "1967-08-05",
+   "cover-art-archive": {
+    "darkened": false,
+    "back": true,
+    "front": true,
+    "count": 12,
+    "artwork": true
+   },
+   "barcode": "",
+   "release-events": [
+    {
+     "date": "1967-08-05",
+     "area": {
+      "disambiguation": "",
+      "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+      "iso-3166-1-codes": [
+       "GB"
+      ],
+      "type-id": null,
+      "sort-name": "United Kingdom",
+      "type": null,
+      "name": "United Kingdom"
+     }
+    }
+   ],
+   "release-group": {
+    "artist-credit": [
+     {
+      "artist": {
+       "sort-name": "Pink Floyd",
+       "country": "GB",
+       "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+       "id": "83d91898-7763-47d7-b03b-b92132375c47",
+       "disambiguation": "",
+       "name": "Pink Floyd",
+       "type": "Group"
+      },
+      "name": "Pink Floyd",
+      "joinphrase": ""
+     }
+    ],
+    "id": "6792b6d1-4e65-3c3c-9d20-d08aa1dcfc60",
+    "disambiguation": "",
+    "secondary-types": [],
+    "primary-type": "Album",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "The Piper at the Gates of Dawn",
+    "secondary-type-ids": [],
+    "first-release-date": "1967-07-07"
+   }
+  }
+ ],
+ "release-count": 65
+}

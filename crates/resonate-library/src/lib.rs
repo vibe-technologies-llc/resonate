@@ -32,6 +32,7 @@ mod scrobble;
 mod search;
 mod share;
 mod sheet;
+mod songs;
 mod spelling;
 mod statistics;
 mod stem;
@@ -127,6 +128,7 @@ pub use crate::{
         Term, Word,
     },
     share::Shared,
+    songs::AlbumNotHeld,
     spelling::Spellings,
     statistics::{Day, Listened, MostListened, Statistics, Window},
     store::folded_letters,

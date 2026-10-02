@@ -26,20 +26,21 @@ use rusqlite::{
 };
 
 use crate::{
-    Aged, Album, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail, ArtistOrder,
-    ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked, Billed, Certainty,
-    Clause, Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day, Direction,
-    EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless,
-    Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle,
-    ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics,
-    LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack,
-    MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording,
-    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
-    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
-    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
-    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable,
-    Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
+    Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
+    ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked,
+    Billed, Certainty, Clause, Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day,
+    Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found,
+    Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat,
+    ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex,
+    KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
+    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing,
+    Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned,
+    REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease, Reference,
+    Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder,
+    SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
+    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
+    Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
+    VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -49,7 +50,7 @@ use crate::{
     organise::{self, Filing, TrackToFile},
     playlist, resumed,
     retag::{self, Followed, TrackToTag},
-    scan, schema, scrobble, search, share, spelling, statistics, store,
+    scan, schema, scrobble, search, share, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
     undo::{self, Step},
@@ -381,6 +382,70 @@ const UNHELD_COUNTED: &str = concat!(
     "SELECT count(*) FROM artist_releases r JOIN artists ar ON ar.id = r.artist_id WHERE ",
     unheld_by_any_album!()
 );
+
+const SONGS_DUE: &str = concat!(
+    "SELECT r.mbid FROM artist_releases r
+      WHERE ",
+    unheld_by_any_album!(),
+    "
+        AND NOT EXISTS (SELECT 1 FROM discography_songs_read k
+                         WHERE k.release_group = r.mbid
+                           AND k.read > CASE WHEN k.refusals > 0 THEN ?1 ELSE ?2 END)
+      GROUP BY r.mbid
+      ORDER BY max((SELECT coalesce(sum(t.plays), 0) FROM tracks t
+                     WHERE t.artist_id = r.artist_id)) DESC,
+               min(r.first_released IS NULL), min(r.first_released)
+      LIMIT ?3"
+);
+
+const SONG_HELD_NOWHERE: &str = concat!(
+    "NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = s.recording_mbid)
+     AND NOT EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.recording_mbid = s.recording_mbid)
+     AND EXISTS (SELECT 1 FROM artist_releases r
+                  WHERE r.mbid = s.release_group AND ",
+    unheld_by_any_album!(),
+    "
+                    AND NOT EXISTS (SELECT 1 FROM tracks t
+                                     WHERE t.artist_id = r.artist_id
+                                       AND words_of(t.title) = s.words)"
+);
+
+const SONGS_IN_ORDER: &str = " ORDER BY s.released IS NULL, s.released, s.release_group, s.disc,
+                                         s.position";
+
+const SONGS_SOUGHT_AT_MOST: i64 = 200;
+
+const MISSING_FROM_AN_ARTISTS_ALBUMS: &str =
+    "SELECT rt.recording_mbid, rt.title, coalesce(rt.artist, ar.name), rt.length_ms, a.mbid,
+            a.title, NULL, NULL, rt.disc, rt.position
+       FROM release_tracks rt
+       JOIN albums a ON a.id = rt.album_id
+       JOIN artists ar ON ar.id = a.artist_id
+      WHERE a.artist_id = ?1 AND rt.track_id IS NULL AND rt.recording_mbid IS NOT NULL
+        AND a.mbid IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = rt.recording_mbid)
+        AND NOT EXISTS (SELECT 1 FROM dismissed_missing d
+                         WHERE d.album_id = rt.album_id AND d.disc = rt.disc
+                           AND d.folded = rt.folded)
+        AND NOT EXISTS (SELECT 1 FROM tracks t
+                         WHERE t.artist_id = a.artist_id AND words_of(t.title) = words_of(rt.title))
+      ORDER BY a.id, rt.disc, rt.position";
+
+const ALBUMS_NOT_HELD_BY_AN_ARTIST: &str =
+    "SELECT r.artist_id, ar.name, r.mbid, r.title, r.kind, r.first_released,
+            (SELECT s.release_mbid FROM discography_songs s WHERE s.release_group = r.mbid LIMIT 1)
+       FROM artist_releases r
+       JOIN artists ar ON ar.id = r.artist_id
+      WHERE r.artist_id = ?1
+        AND NOT EXISTS (SELECT 1 FROM albums a
+                         WHERE a.release_group = r.mbid
+                           AND EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id))
+        AND NOT EXISTS (SELECT 1 FROM tracks t
+                         WHERE r.song IS NOT NULL AND t.artist_id = r.artist_id
+                           AND words_of(t.title) = r.song)
+        AND NOT EXISTS (SELECT 1 FROM dismissed_releases d
+                         WHERE d.artist_id = r.artist_id AND d.mbid = r.mbid)
+      ORDER BY r.first_released IS NULL, r.first_released, r.title COLLATE NOCASE";
 
 const DISMISS_A_MISSING_ROW: &str = "INSERT INTO dismissed_missing (album_id, disc, folded)
      SELECT album_id, disc, folded FROM release_tracks WHERE id = ?1
@@ -2870,22 +2935,85 @@ impl Library {
                     recording: found.recording.clone(),
                 })?,
         };
+
+        let wanted =
+            self.want_from_release(reference, &release, std::slice::from_ref(&found.recording))?;
+        wanted
+            .into_iter()
+            .next()
+            .map(|(_, want)| want)
+            .ok_or_else(|| Error::NotOnTheRelease {
+                recording: found.recording.clone(),
+                release,
+            })
+    }
+
+    pub fn want_album(
+        &self,
+        reference: &dyn Reference,
+        group: &Mbid,
+    ) -> Result<Vec<(Found, WantId)>> {
+        let mut songs = self.songs_of_group(group)?;
+        if songs.is_empty() {
+            self.learn_the_songs_of(reference, group)?;
+            songs = self.songs_of_group(group)?;
+        }
+        let Some(release) = songs
+            .first()
+            .and_then(|song| song.release.as_ref())
+            .map(|release| release.id.clone())
+        else {
+            return Err(Error::UnknownRelease {
+                release: group.clone(),
+            });
+        };
+        let recordings: Vec<Mbid> = songs.iter().map(|song| song.recording.clone()).collect();
+
+        let wanted: AHashMap<Mbid, WantId> = self
+            .want_from_release(reference, &release, &recordings)?
+            .into_iter()
+            .collect();
+        Ok(songs
+            .into_iter()
+            .filter_map(|song| {
+                let want = *wanted.get(&song.recording)?;
+                Some((song, want))
+            })
+            .collect())
+    }
+
+    fn want_from_release(
+        &self,
+        reference: &dyn Reference,
+        release: &Mbid,
+        recordings: &[Mbid],
+    ) -> Result<Vec<(Mbid, WantId)>> {
         let landed = reference
-            .release(&release)?
+            .release(release)?
             .ok_or_else(|| Error::UnknownRelease {
                 release: release.clone(),
             })?;
         let now = SystemTime::now();
 
-        let (want, album) = self.inner.write(|transaction| {
+        let (wanted, album) = self.inner.write(|transaction| {
             let album = elsewhere::album_of_release(transaction, &landed, now)?;
-            let row = elsewhere::release_track_of(transaction, album, &found.recording)?
-                .ok_or_else(|| Error::NotOnTheRelease {
-                    recording: found.recording.clone(),
+            let mut wanted = Vec::new();
+            for recording in recordings {
+                let Some(row) = elsewhere::release_track_of(transaction, album, recording)? else {
+                    tracing::debug!(%recording, %release, "a song is not on the release it was wanted from");
+                    continue;
+                };
+                wanted.push((recording.clone(), elsewhere::want_in(transaction, row, now)?));
+            }
+            if wanted.is_empty()
+                && let Some(recording) = recordings.first()
+            {
+                return Err(Error::NotOnTheRelease {
+                    recording: recording.clone(),
                     release: release.clone(),
-                })?;
-            let want = elsewhere::want_in(transaction, row, now)?;
-            Ok((want, album))
+                });
+            }
+            Ok((wanted, album))
         })?;
 
         if (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none() {
@@ -2902,7 +3030,150 @@ impl Library {
             }
         }
 
-        Ok(want)
+        Ok(wanted)
+    }
+
+    pub(crate) fn learn_the_songs_of(
+        &self,
+        reference: &dyn Reference,
+        group: &Mbid,
+    ) -> Result<usize> {
+        let pressings = reference.releases_of_group(group)?;
+        self.land_songs_of(
+            group,
+            songs::pressing_of(pressings).as_ref(),
+            SystemTime::now(),
+        )
+    }
+
+    pub(crate) fn groups_whose_songs_are_due(
+        &self,
+        now: SystemTime,
+        at_most: Option<usize>,
+    ) -> Result<Vec<Mbid>> {
+        let refused_before = now.checked_sub(REFUSED_AGAIN_AFTER).unwrap_or(UNIX_EPOCH);
+        let read_before = now.checked_sub(REFRESH_AFTER).unwrap_or(UNIX_EPOCH);
+        let binds = vec![
+            Value::Integer(store::to_nanos(refused_before)),
+            Value::Integer(store::to_nanos(read_before)),
+            Value::Integer(limit(at_most)),
+        ];
+
+        self.inner.read(|connection| {
+            rows(connection, SONGS_DUE, binds, |row| {
+                row.get::<_, String>(0)
+                    .map(|mbid| Mbid::new(&mbid).map_err(Error::from))
+            })
+        })
+    }
+
+    pub(crate) fn land_songs_of(
+        &self,
+        group: &Mbid,
+        pressing: Option<&Release>,
+        now: SystemTime,
+    ) -> Result<usize> {
+        let read = store::to_nanos(now);
+        self.inner
+            .write(|transaction| songs::land(transaction, group, pressing, read))
+    }
+
+    pub(crate) fn songs_of_refused(&self, group: &Mbid, now: SystemTime) -> Result<()> {
+        let read = store::to_nanos(now);
+        self.inner
+            .write(|transaction| songs::refused(transaction, group, read))
+    }
+
+    pub fn songs_kept_for(&self, text: &str) -> Result<Vec<Found>> {
+        let words = songs::sought_words(text);
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sought = vec!["instr(s.folded, ?) > 0"; words.len()].join(" AND ");
+        let sql = format!(
+            "SELECT {} FROM discography_songs s WHERE {sought} AND {SONG_HELD_NOWHERE})
+               ORDER BY s.kind IS NOT 'Album', s.released IS NULL, s.released, s.disc, s.position
+               LIMIT ?",
+            songs::SONG_COLUMNS
+        );
+        let mut binds: Vec<Value> = words.into_iter().map(Value::Text).collect();
+        binds.push(Value::Integer(SONGS_SOUGHT_AT_MOST));
+
+        let found = self.inner.read(|connection| {
+            rows(connection, &sql, binds, |row| {
+                songs::RawSong::read(row).map(songs::RawSong::into_found)
+            })
+        })?;
+        Ok(songs::once_each(
+            found,
+            Some(elsewhere::FOUND_ELSEWHERE_AT_MOST),
+        ))
+    }
+
+    pub fn songs_not_held_by(&self, artist: ArtistId) -> Result<Vec<Found>> {
+        let id = Value::Integer(artist.get() as i64);
+        let from_unheld = format!(
+            "SELECT {} FROM discography_songs s
+              WHERE {SONG_HELD_NOWHERE} AND r.artist_id = ?1){SONGS_IN_ORDER}",
+            songs::SONG_COLUMNS
+        );
+
+        let found = self.inner.read(|connection| {
+            let mut found = rows(
+                connection,
+                MISSING_FROM_AN_ARTISTS_ALBUMS,
+                vec![id.clone()],
+                |row| songs::RawSong::read(row).map(songs::RawSong::into_found),
+            )?;
+            found.extend(rows(connection, &from_unheld, vec![id], |row| {
+                songs::RawSong::read(row).map(songs::RawSong::into_found)
+            })?);
+            Ok(found)
+        })?;
+        Ok(songs::once_each(found, None))
+    }
+
+    pub fn albums_not_held_by(&self, artist: ArtistId) -> Result<Vec<AlbumNotHeld>> {
+        self.inner.read(|connection| {
+            rows(
+                connection,
+                ALBUMS_NOT_HELD_BY_AN_ARTIST,
+                vec![Value::Integer(artist.get() as i64)],
+                |row| {
+                    let release = RawUnheldRelease::read(row)?;
+                    let pressing: Option<String> = row.get(6)?;
+                    Ok(release.into_unheld().and_then(|release| {
+                        Ok(AlbumNotHeld {
+                            release,
+                            pressing: pressing.as_deref().map(Mbid::new).transpose()?,
+                        })
+                    }))
+                },
+            )
+        })
+    }
+
+    fn songs_of_group(&self, group: &Mbid) -> Result<Vec<Found>> {
+        let sql = format!(
+            "SELECT {} FROM discography_songs s
+              WHERE s.release_group = ?1
+                AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = s.recording_mbid)
+                AND NOT EXISTS (SELECT 1 FROM artist_releases r
+                                  JOIN tracks t ON t.artist_id = r.artist_id
+                                 WHERE r.mbid = s.release_group
+                                   AND words_of(t.title) = s.words)
+              ORDER BY s.disc, s.position",
+            songs::SONG_COLUMNS
+        );
+
+        self.inner.read(|connection| {
+            rows(
+                connection,
+                &sql,
+                vec![Value::Text(group.as_str().to_owned())],
+                |row| songs::RawSong::read(row).map(songs::RawSong::into_found),
+            )
+        })
     }
 
     pub fn unheld_releases(

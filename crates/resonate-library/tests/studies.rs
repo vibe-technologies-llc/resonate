@@ -268,6 +268,10 @@ impl Reference for Silent {
         Ok(Discography::default())
     }
 
+    fn releases_of_group(&self, _group: &Mbid) -> Result<Vec<resonate_library::Release>> {
+        Ok(Vec::new())
+    }
+
     fn cover(&self, _release: &Mbid, _group: Option<&Mbid>) -> Result<Option<CoverArt>> {
         Ok(None)
     }

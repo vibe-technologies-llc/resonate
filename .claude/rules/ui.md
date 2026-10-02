@@ -1759,9 +1759,26 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the next artist opens at its top. `Caption::Beside` captions them — year and track count, and the
   owner only where somebody else, what an album the artist merely plays on must say. *Tracks* is the
   ordinary listing under the ordinary header, the only tab offering the sort icon, a sort having nothing
-  to order under the other. `ArtistShows::within` answers *Tracks* for an artist holding no album, and
-  then no tabs are drawn. *Play*, *Add to queue*, *Play next* and *Add to playlist* read the whole
-  listing either way, acting on the artist, not the tab.
+  to order under the other. `ArtistShows::within` answers *Tracks* for an artist holding no album, held
+  or not, and then no tabs are drawn. *Play*, *Add to queue*, *Play next* and *Add to playlist* read the
+  whole listing either way, acting on the artist, not the tab.
+- **What an artist's discography holds that the library does not is on the artist's page, greyed.**
+  It rides in the load beside the artist's albums — `Library::albums_not_held_by` and
+  `songs_not_held_by` (`library.md`) — whether the Missing tab is shown or not, the page being where the
+  listener looks for an artist's work. *Albums* follows the held cells with `not_held_heading`, *Not in
+  your library · N releases*, a full-width line breaking the grid, then an `album_not_held_cell` per
+  release: the pressing's front through `released_cover` at `UNHELD_COVER`, or `unheld_cover` at the
+  grid's side where none was read, the title in `theme::faint()` and kind and year under it. Pressing
+  one is `LibraryModel::want_album`, which runs `Library::want_album` on the background executor, hands
+  every song wanted to `Downloads` as a found song pressed would be and sends the providers for them;
+  `fetching_album` reads the album's songs back out of `Downloads` — *Downloading…* where any is,
+  otherwise the first still underway, otherwise the first not downloaded — and the caption says it in
+  `fetching_colour` while the cell takes no press. An album landed with nothing on disk yet stays in the
+  grid, so it does not vanish the moment it is pressed. *Tracks* follows the held rows with
+  `Beyond::NotHeld`, *Not in your library · N songs · press one to download it*, and a found row per
+  song — the same `found_row` a search draws, pressing it `want_found` — `restate_the_listing` building
+  the rows through `beyond_the_listing` as a search does. A query on the page narrows them through
+  `still_answering`.
 - **The Missing pane is what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` sits under `Section::Collection` beside the playlists, its sidebar count
   `Missing::tracks`, hidden at zero, so a library the reference never described carries no figure for
@@ -1855,8 +1872,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **A search lists MusicBrainz results after what the library holds.** `LibraryModel::rows` is a
   `ListedRow` for every selection, not only an album: under *All tracks* with a search it is the held
   rows followed by `Beyond::Elsewhere(n)` and the `Found` rows MusicBrainz answered, or
-  `Beyond::Asking` while it has not. Local release tracks the library lacks stay in the Missing pane
-  and are not added to search results. `beyond_the_listing` builds the rows and answers nothing until
+  `Beyond::Asking` while it has not, and on an artist's page the rows its discography lacks under
+  `Beyond::NotHeld`. A search does not list the rows a held album is short of — those stay in the
+  Missing pane and on the artist's page — only the songs of releases not held at all, which
+  `songs_kept_for` answers. `beyond_the_listing` builds the rows and answers nothing until
   the listing is whole, so a paged listing never draws later pages under the section, and an empty
   `rows` still means one row per track, what `played_from` and `listed_rows` read. A found song's
   `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which
@@ -1905,6 +1924,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     past is a debug line and nothing more. Turning Online on asks for what the box holds; turning it
     off drops the ask.
   The answer drawn is kept against the text it answered (`found_for`), so a reload does not ask again.
+  - *What the catalog already knows comes first.* `Library::songs_kept_for` — the songs of every
+    library artist's releases not held, learnt in the lookup pass (`library.md`) — rides in the load
+    with the text it was read for (`kept_for`), so a song by an artist the listener has is listed the
+    moment the listing is, offline too, before MusicBrainz is asked; `kept_before_the_rest` puts them
+    first and drops a MusicBrainz answer naming the same recording or the same folded title and credit
+    (`songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`).
+    `restate_what_was_found` builds `shown`, what `found()` answers and the rows count, from both.
   A search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in
   the load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
   nothing else matched, as a `search_instead`.

@@ -100,6 +100,7 @@ impl Told for EnrichStats {
             "recognised": self.recognised,
             "misnamed": self.misnamed,
             "lyrics": self.lyrics,
+            "songs": self.songs,
         })
     }
 }

@@ -155,6 +155,28 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE index_refold_wanted (since INTEGER) STRICT;",
     "CREATE INDEX tracks_by_recording ON tracks(mbid);
      CREATE INDEX release_tracks_by_recording ON release_tracks(recording_mbid);",
+    "CREATE TABLE discography_songs (
+         release_group  TEXT NOT NULL,
+         recording_mbid TEXT NOT NULL,
+         release_mbid   TEXT NOT NULL,
+         release_title  TEXT NOT NULL,
+         released       TEXT,
+         kind           TEXT,
+         disc           INTEGER NOT NULL,
+         position       INTEGER NOT NULL,
+         title          TEXT NOT NULL,
+         artist         TEXT NOT NULL,
+         length_ms      INTEGER,
+         words          TEXT NOT NULL,
+         folded         TEXT NOT NULL,
+         PRIMARY KEY (release_group, recording_mbid)
+     ) STRICT, WITHOUT ROWID;
+     CREATE INDEX discography_songs_by_recording ON discography_songs(recording_mbid);
+     CREATE TABLE discography_songs_read (
+         release_group TEXT PRIMARY KEY,
+         read          INTEGER NOT NULL,
+         refusals      INTEGER NOT NULL
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

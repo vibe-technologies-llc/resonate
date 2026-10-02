@@ -6,7 +6,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use ahash::AHashSet;
@@ -24,6 +24,7 @@ use crate::{
     model::CoverFrom,
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
     reference::credited_as,
+    songs,
     studies::{self, Agreement, Claims, HEARD_AT_LEAST, HeardAs, Studies, ToStudy},
     sung,
 };
@@ -171,6 +172,7 @@ pub struct EnrichStats {
     pub recognised: u64,
     pub misnamed: u64,
     pub lyrics: u64,
+    pub songs: u64,
 }
 
 #[derive(Debug, Default)]
@@ -190,6 +192,7 @@ pub struct EnrichProgress {
     recognised: AtomicU64,
     misnamed: AtomicU64,
     lyrics: AtomicU64,
+    songs: AtomicU64,
     cancelled: AtomicBool,
 }
 
@@ -211,6 +214,7 @@ impl EnrichProgress {
             recognised: self.recognised.load(Ordering::Relaxed),
             misnamed: self.misnamed.load(Ordering::Relaxed),
             lyrics: self.lyrics.load(Ordering::Relaxed),
+            songs: self.songs.load(Ordering::Relaxed),
         }
     }
 
@@ -1364,7 +1368,33 @@ impl Pass<'_> {
 
         self.library.settle_the_credits()?;
         self.look_again_for_covers()?;
-        self.look_again_for_portraits()
+        self.look_again_for_portraits()?;
+        self.learn_the_songs(options)
+    }
+
+    fn learn_the_songs(&self, options: &EnrichOptions) -> Result<()> {
+        let due = self.library.groups_whose_songs_are_due(
+            SystemTime::now(),
+            options.at_most.map(NonZeroUsize::get),
+        )?;
+
+        for group in due {
+            if self.progress.is_cancelled() {
+                return Ok(());
+            }
+            let now = SystemTime::now();
+            match self.heard(self.reference.releases_of_group(&group))? {
+                Heard::Answered(pressings) => {
+                    let pressing = songs::pressing_of(pressings);
+                    let landed = self.library.land_songs_of(&group, pressing.as_ref(), now)?;
+                    self.progress
+                        .songs
+                        .fetch_add(landed as u64, Ordering::Relaxed);
+                }
+                Heard::Refused => self.library.songs_of_refused(&group, now)?,
+            }
+        }
+        Ok(())
     }
 
     fn artists_born_in_the_pass(

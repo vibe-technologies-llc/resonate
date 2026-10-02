@@ -2175,7 +2175,33 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   which is not sent (`asks_elsewhere` is its `is_some`); `Library::unheld_among` takes the matches and
   asks the catalog about those recordings alone, `WHERE mbid IN (…)` under `tracks_by_recording` and
   `release_tracks_by_recording` — a `MIGRATIONS` step — rather than reading every recording id the
-  catalog names. `still_answering` narrows songs found for one search to those every folded word of
+  catalog names. **The songs of a library artist's releases not held are learnt in the lookup pass.**
+  `Pass::learn_the_songs` runs last in every pass, after the covers and portraits: every release group
+  `groups_whose_songs_are_due` answers — unheld by the `unheld_by_any_album!` predicate, never read or
+  read longer ago than `REFRESH_AFTER`, refused longer ago than `REFUSED_AGAIN_AFTER`, the most played
+  artist's first, `at_most` capping it — is asked `Reference::releases_of_group`, and
+  `songs::pressing_of` takes the pressing whose track count most pressings share (fewer tracks on a
+  tie: the original over a deluxe), the earliest of those, a full date before a bare year. `songs::land`
+  replaces the group's rows in `discography_songs` — group, recording, the pressing's id, title, date and
+  kind, disc, position, title, credit, length, `words_of` the title and a `folded` haystack of every word
+  of title, credit and release title — and stamps `discography_songs_read`, both a `MIGRATIONS` step; an
+  answer with no pressing stamps it read with nothing, a refusal counts in `refusals`, and an
+  unreachable reference ends the pass as every other lookup does. `EnrichStats::songs` counts the rows
+  (`the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking`,
+  `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). Three readers:
+  `songs_kept_for` is a search's — every folded word a word start in `folded`, held nowhere by recording
+  and the group still unheld and no track of its artist the same `words_of`, albums first, one per
+  folded title and credit, up to `FOUND_ELSEWHERE_AT_MOST`; `songs_not_held_by` is an artist page's —
+  the rows the artist's own albums are short of (not dismissed, no held track of that title) and then
+  the songs of the artist's unheld groups, one per title and credit; `albums_not_held_by` answers an
+  `AlbumNotHeld` per release group of the artist's with no album holding a track of it — so one landed
+  and still downloading stays — carrying the pressing its songs were read off. `Library::want_album`
+  wants every song of a group not already held by recording or title, reading the group's pressings
+  first where the pass never reached it, through the one `want_from_release` `want_found` uses too: the
+  release read and landed once, each recording's row wanted, the cover asked once
+  (`an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off`,
+  `an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted`). `still_answering`
+  narrows songs found for one search to those every folded word of
   another begins a word of — title, credit or a release's title — what the window shows while it asks
   (`songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more`). `Library::want_found` is the want: the
   release the `Found` names, or the one its recording first came out on where the search answered none,

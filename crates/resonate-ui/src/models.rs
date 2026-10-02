@@ -18,9 +18,9 @@ use resonate_core::{
 };
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
-    Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
-    CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing, Edit,
-    EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
+    Album, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery,
+    ArtistTotals, CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing,
+    Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
     GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
     ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing,
     MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
@@ -29,7 +29,7 @@ use resonate_library::{
     ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
     RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
     Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Window, Wording, songs_asked, still_answering,
+    UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering,
 };
 use resonate_providers::Providers;
 
@@ -126,6 +126,10 @@ struct Browsed {
     standing: Option<Standing>,
     instead: Option<String>,
     sung: Option<Sung>,
+    kept_songs: Vec<Found>,
+    kept_for: Option<String>,
+    songs_not_held: Vec<Found>,
+    albums_not_held: Vec<AlbumNotHeld>,
     albums_counted: u32,
     artists_counted: u32,
     tracks_measured: Measured,
@@ -186,6 +190,7 @@ pub enum ListedRow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Beyond {
     Elsewhere(usize),
+    NotHeld(usize),
     Refining(usize),
     Asking,
     Unreached,
@@ -596,6 +601,13 @@ pub struct LibraryModel {
     found: Arc<[Found]>,
     found_for: Option<String>,
     narrowed: Arc<[Found]>,
+    kept_songs: Arc<[Found]>,
+    kept_for: Option<String>,
+    songs_not_held: Arc<[Found]>,
+    albums_not_held: Arc<[AlbumNotHeld]>,
+    albums_wanted: AHashMap<Mbid, Task<()>>,
+    album_songs: AHashMap<Mbid, Vec<Mbid>>,
+    shown: Arc<[Found]>,
     asking: Option<String>,
     answers: Recent<String, Arc<[RecordingMatch]>>,
     reaching_out: Option<String>,
@@ -761,6 +773,13 @@ impl LibraryModel {
             found: Arc::default(),
             found_for: None,
             narrowed: Arc::default(),
+            kept_songs: Arc::default(),
+            kept_for: None,
+            songs_not_held: Arc::default(),
+            albums_not_held: Arc::default(),
+            albums_wanted: AHashMap::new(),
+            album_songs: AHashMap::new(),
+            shown: Arc::default(),
             asking: None,
             answers: Recent::new(ANSWERS_HELD),
             reaching_out: None,
@@ -1040,16 +1059,31 @@ impl LibraryModel {
     }
 
     fn restate_the_listing(&mut self) {
+        self.restate_what_was_found();
         let listing = self.listing();
         self.rows = match self.selection {
             Selection::Album(_) => {
                 album_rows(&listing, &self.release_tracks, self.arranging()).into()
             }
-            Selection::Artist(_) => Arc::default(),
+            Selection::Artist(_) => beyond_the_listing(Reaching {
+                held: listing.len(),
+                whole: listing.len() as u64 >= u64::from(self.scoped_measured.rows),
+                found: self.shown.len(),
+                asking: false,
+                unreached: false,
+            })
+            .into_iter()
+            .map(|row| match row {
+                ListedRow::Beyond(Beyond::Elsewhere(songs)) => {
+                    ListedRow::Beyond(Beyond::NotHeld(songs))
+                }
+                row => row,
+            })
+            .collect(),
             Selection::Everything => beyond_the_listing(Reaching {
                 held: listing.len(),
                 whole: listing.len() as u64 >= u64::from(self.tracks_measured.rows),
-                found: self.found_here().len(),
+                found: self.shown.len(),
                 asking: self.is_asking_elsewhere(),
                 unreached: self.is_unreached(),
             })
@@ -1057,12 +1091,36 @@ impl LibraryModel {
         };
     }
 
-    fn found_here(&self) -> &[Found] {
+    fn restate_what_was_found(&mut self) {
+        self.shown = match self.selection {
+            Selection::Everything => {
+                kept_before_the_rest(self.kept_here(), self.found_elsewhere_here()).into()
+            }
+            Selection::Artist(_) if self.query.is_empty() => Arc::clone(&self.songs_not_held),
+            Selection::Artist(_) => still_answering(&self.songs_not_held, &self.query).into(),
+            Selection::Album(_) => Arc::default(),
+        };
+    }
+
+    fn kept_here(&self) -> &[Found] {
+        match self.kept_for.as_deref() {
+            Some(asked) if self.can_enrich() && !self.query.is_empty() && asked == self.query => {
+                &self.kept_songs
+            }
+            Some(_) | None => &[],
+        }
+    }
+
+    fn found_elsewhere_here(&self) -> &[Found] {
         match self.found_for.as_deref() {
             Some(asked) if !self.query.is_empty() && asked == self.query => &self.found,
             Some(_) | None if self.is_asking_elsewhere() => &self.narrowed,
             Some(_) | None => &[],
         }
+    }
+
+    pub fn albums_not_held(&self) -> Arc<[AlbumNotHeld]> {
+        Arc::clone(&self.albums_not_held)
     }
 
     pub fn is_asking_elsewhere(&self) -> bool {
@@ -1076,7 +1134,7 @@ impl LibraryModel {
     }
 
     pub fn found(&self) -> Arc<[Found]> {
-        Arc::from(self.found_here())
+        Arc::clone(&self.shown)
     }
 
     pub const fn sung(&self) -> Option<&Sung> {
@@ -1288,6 +1346,90 @@ impl LibraryModel {
             let _ = landed;
         });
         self.wanting.insert(recording, wanting);
+    }
+
+    pub fn want_album(&mut self, group: Mbid, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone() else {
+            return;
+        };
+        if self.albums_wanted.contains_key(&group) {
+            return;
+        }
+        let library = Arc::clone(&self.library);
+        let asked = group.clone();
+        let held_under = group.clone();
+
+        let wanting = cx.spawn(async move |this, cx| {
+            let wanted = cx
+                .background_executor()
+                .spawn(async move { library.want_album(reference.as_ref(), &asked) })
+                .await;
+
+            let landed = this.update(cx, |this, cx| {
+                if let Some(finished) = this.albums_wanted.remove(&group) {
+                    finished.detach();
+                }
+                match wanted {
+                    Ok(wanted) => {
+                        let fetched_by = if this.sourcing.providers().has_a_source() {
+                            Fetcher::AProvider
+                        } else {
+                            Fetcher::Nobody
+                        };
+                        let now = SystemTime::now();
+                        this.album_songs.insert(
+                            group,
+                            wanted
+                                .iter()
+                                .map(|(song, _)| song.recording.clone())
+                                .collect(),
+                        );
+                        for (song, want) in wanted {
+                            let recording = song.recording.clone();
+                            this.downloads.landing(song, now);
+                            this.downloads.wanted(&recording, want, fetched_by);
+                        }
+                        if fetched_by == Fetcher::AProvider {
+                            this.fetch_what_was_wanted(PollOptions::default(), cx);
+                        }
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "an album not held could not be wanted");
+                        toast::tell(toast::could_not("add the album", &error), cx);
+                    }
+                }
+                this.read(Wanted::Everything, cx);
+            });
+            let _ = landed;
+        });
+        self.albums_wanted.insert(held_under, wanting);
+        cx.notify();
+    }
+
+    pub fn fetching_album(&self, group: &Mbid) -> Option<Fetching> {
+        if self.albums_wanted.contains_key(group) {
+            return Some(Fetching::Landing);
+        }
+        let fetching: Vec<Fetching> = self
+            .album_songs
+            .get(group)?
+            .iter()
+            .filter_map(|recording| self.downloads.of(recording))
+            .map(|download| self.fetching(download))
+            .collect();
+
+        let underway = fetching.iter().copied().filter(|each| each.is_underway());
+        underway
+            .clone()
+            .find(|each| *each == Fetching::Downloading)
+            .or_else(|| underway.clone().next())
+            .or_else(|| {
+                fetching
+                    .iter()
+                    .copied()
+                    .find(|each| *each != Fetching::Downloaded)
+            })
+            .or_else(|| fetching.first().copied())
     }
 
     pub fn downloads(&self) -> &[Download] {
@@ -2989,6 +3131,7 @@ impl LibraryModel {
         self.reach = PAGE;
         self.read_after(SEARCH_SETTLE, Wanted::TheSearch, cx);
         self.ask_elsewhere_after(ASKED_ELSEWHERE_AFTER, cx);
+        self.restate_the_listing();
     }
 
     pub fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
@@ -3004,6 +3147,9 @@ impl LibraryModel {
             Selection::Artist(artist) => self.ask_about(None, Some(artist)),
         }
         self.selection = selection;
+        self.songs_not_held = Arc::default();
+        self.albums_not_held = Arc::default();
+        self.restate_the_listing();
         self.reach = PAGE;
         self.read(Wanted::TheSearch, cx);
     }
@@ -3186,6 +3332,10 @@ impl LibraryModel {
             self.roots = standing.roots;
         }
         self.sung = browsed.sung;
+        renewed(&mut self.kept_songs, browsed.kept_songs);
+        self.kept_for = browsed.kept_for;
+        renewed(&mut self.songs_not_held, browsed.songs_not_held);
+        renewed(&mut self.albums_not_held, browsed.albums_not_held);
         self.albums_counted = browsed.albums_counted;
         self.artists_counted = browsed.artists_counted;
         self.tracks_measured = browsed.tracks_measured;
@@ -4321,6 +4471,12 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
             format::counted(stats.lyrics as usize, "track", "tracks")
         ));
     }
+    if stats.songs > 0 {
+        said.push_str(&format!(
+            " · {} of albums not held learnt",
+            format::counted(stats.songs as usize, "song", "songs")
+        ));
+    }
     if summary.cancelled {
         said.push_str(", stopped early");
     }
@@ -4346,6 +4502,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Artist => "an artist",
         LookupOp::FindArtist => "an artist search",
         LookupOp::ReleaseGroupsOfArtist => "the releases of an artist",
+        LookupOp::ReleasesOfGroup => "the pressings of a release",
         LookupOp::Cover => "a cover",
         LookupOp::Portrait => "a portrait",
         LookupOp::Lyrics => "lyrics",
@@ -4429,6 +4586,22 @@ struct Reaching {
     found: usize,
     asking: bool,
     unreached: bool,
+}
+
+fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found> {
+    let named = |found: &Found| (folded_letters(&found.title), folded_letters(&found.artist));
+    let recordings: AHashSet<&Mbid> = kept.iter().map(|found| &found.recording).collect();
+    let names: AHashSet<(String, String)> = kept.iter().map(named).collect();
+
+    kept.iter()
+        .cloned()
+        .chain(
+            rest.iter()
+                .filter(|found| !recordings.contains(&found.recording))
+                .filter(|found| !names.contains(&named(found)))
+                .cloned(),
+        )
+        .collect()
 }
 
 fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
@@ -5039,6 +5212,19 @@ fn browsed(
             false => None,
         },
         sung,
+        kept_songs: match text.filter(|_| album.is_none() && artist.is_none()) {
+            Some(text) => library.songs_kept_for(text)?,
+            None => Vec::new(),
+        },
+        kept_for: text.map(str::to_owned),
+        songs_not_held: match artist {
+            Some(artist) => library.songs_not_held_by(artist)?,
+            None => Vec::new(),
+        },
+        albums_not_held: match artist {
+            Some(artist) => library.albums_not_held_by(artist)?,
+            None => Vec::new(),
+        },
         paged,
         release_tracks: match album {
             Some(album) => library.release_tracks(album)?,
@@ -5268,12 +5454,13 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
-    use resonate_library::{Direction, Library, SortOrder};
+    use resonate_library::{Direction, Found, Library, Mbid, SortOrder};
 
     use super::{
         Arranging, Beyond, Change, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching,
         Shared, Wanted, arranged, beyond_the_listing, headed_by_disc, held_at, held_in,
-        landed_since, missing_track_rows, on_the_clipboard, renewed, unheld_release_rows,
+        kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
+        unheld_release_rows,
     };
 
     #[test]
@@ -5418,6 +5605,45 @@ mod tests {
         });
 
         assert_eq!(rows, vec![ListedRow::Beyond(Beyond::Asking)]);
+    }
+
+    fn a_song(recording: &str, title: &str, artist: &str) -> Found {
+        Found {
+            recording: Mbid::new(recording).expect("a well-formed mbid"),
+            title: title.to_owned(),
+            artist: artist.to_owned(),
+            length: None,
+            release: None,
+            releases: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them() {
+        let daybreak = a_song(
+            "83d91898-7763-47d7-b03b-b92132375c47",
+            "Daybreak",
+            "The Orbiters",
+        );
+        let kept = [daybreak.clone()];
+        let answered = [
+            a_song(
+                "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
+                "DAYBREAK",
+                "the orbiters",
+            ),
+            daybreak.clone(),
+            a_song(
+                "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                "Daybreak",
+                "Someone Else",
+            ),
+        ];
+
+        let shown = kept_before_the_rest(&kept, &answered);
+
+        assert_eq!(shown, vec![daybreak, answered[2].clone()]);
+        assert_eq!(kept_before_the_rest(&[], &answered), answered.to_vec());
     }
 
     #[test]

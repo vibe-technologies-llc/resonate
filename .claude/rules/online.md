@@ -249,6 +249,14 @@ listener, every counted play, and only under a token.
   the online crate keeps every group it is handed. `release_group_browse.json` is the first page of
   Pink Floyd's 651, and
   `a_release_group_browse_answers_one_page_of_an_artists_groups_with_their_types` reads all hundred.
+- **A release group's songs are read off its official pressings, one request a group.**
+  `musicbrainz::releases_of_group` asks `/release?release-group=<mbid>&status=official` with
+  `PRESSING_INCLUDES` — recordings, artist-credits, media, release-groups and isrcs — and
+  `PRESSINGS_READ` (25), mapping each through the lookup's `ReleaseDoc::into_release`, a pressing that
+  will not map left out rather than failing the rest. The browse caps a page at 500 tracks, so a box set
+  answers fewer pressings, never none. Which pressing speaks for the group is the library's to choose
+  (`songs::pressing_of`). `release_browse.json` is three pressings of *The Piper at the Gates of Dawn*
+  (`a_release_browse_answers_each_pressing_whole_with_the_group_it_is_in`).
 - **An artist's profile, genres and links come from one request.** `musicbrainz::artist` asks
   `/artist/<mbid>` with `ARTIST_INCLUDES` — url-rels, tags and aliases — mapping sort name, type,
   gender, country, area, begin area and life span, and `genres` from the tags with a positive count,
