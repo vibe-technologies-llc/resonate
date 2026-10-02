@@ -1015,9 +1015,17 @@ impl RootView {
 
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
                 let deleting = Deleting::of(track);
+                let in_the_queue = this
+                    .is_in_the_queue(&track.location, track.span, cx)
+                    .then(|| (track.location.clone(), track.span));
 
                 Menu::at(at)
                     .queues(move || Arc::clone(&queued))
+                    .when_some(in_the_queue, |menu, (location, span)| {
+                        menu.does(Icon::Discard, menu::TAKE_OUT, move |this, _, cx| {
+                            this.take_out_of_the_queue(&location, span, cx);
+                        })
+                    })
                     .holds(move || Held::of(Arc::from([held.clone()])))
                     .when_some(others, Menu::offers_the_other_copies)
                     .reaches(Some(track.id), track.album_id, track.artist_id)

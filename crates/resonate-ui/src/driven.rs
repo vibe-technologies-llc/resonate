@@ -613,6 +613,32 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+        let root = driven.root.clone();
+        let (kept, taken) = driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| {
+                let listing = root.library.read(cx).listing();
+                root.play_the_listing_from(&listing, 0, window, cx);
+                (listing[0].id, listing[1].id)
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        driven.right_click(named("track", taken.get()));
+        driven.click("menu-entry-3");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        assert_eq!(driven.queue(), vec![kept]);
+    }
+
+    #[gpui::test]
     fn a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row(
         cx: &mut TestAppContext,
     ) {

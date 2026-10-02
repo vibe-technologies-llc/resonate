@@ -1866,6 +1866,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it` asks for a song a
   shop does not have, waits for its first retry, opens the list and holds no toast up; the three tests in
   `downloads.rs` hold the states.
+- **A song in the queue is taken out from its menu wherever it is listed.** A track row's menu —
+  the tracks pane, a search, an album or artist page, the favourites — offers *Take out of the queue*
+  right under the queue entries while `RootView::is_in_the_queue` finds a queue row of the same
+  location and span; a press is `take_out_of_the_queue`, dropping every such row from the last up
+  through `drop_rows`, so the put-back toast follows as it does in the queue pane, whose rows keep
+  their ✕, menu entry and delete key
+  (`a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed`).
 - **A song is deleted from disk only through a dialogue saying it cannot be undone.** A track row's
   menu offers *Delete from disk…* (`Icon::Delete`), which is `RootView::ask_to_delete` with a
   `Deleting` — the track, its title and artist and whether it is a cut. `deletion_sheet` is a card over

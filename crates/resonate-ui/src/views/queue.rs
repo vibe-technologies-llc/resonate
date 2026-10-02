@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
     uniform_list,
 };
-use resonate_core::{AlbumId, Span, TrackId};
+use resonate_core::{AlbumId, FrameSpan, MediaLocation, Span, TrackId};
 use resonate_engine::{Command, Placement, Player, QueueItem};
 use resonate_library::{Cut, Direction, Favoured, Library, Lit, RowOrder, Track};
 use smallvec::{SmallVec, smallvec};
@@ -949,6 +949,46 @@ impl RootView {
             cx,
         );
         true
+    }
+
+    pub(crate) fn is_in_the_queue(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+        cx: &App,
+    ) -> bool {
+        !self.rows_of_in_the_queue(location, span, cx).is_empty()
+    }
+
+    pub(crate) fn take_out_of_the_queue(
+        &mut self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+        cx: &mut Context<Self>,
+    ) {
+        for row in self
+            .rows_of_in_the_queue(location, span, cx)
+            .into_iter()
+            .rev()
+        {
+            self.drop_rows(Shift::Queue, Span::one(row), cx);
+        }
+    }
+
+    fn rows_of_in_the_queue(
+        &self,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+        cx: &App,
+    ) -> Vec<usize> {
+        self.player
+            .read(cx)
+            .queue()
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| &item.location == location && item.span == span)
+            .map(|(row, _)| row)
+            .collect()
     }
 
     pub(crate) fn take_the_queue_out_again(&mut self, cx: &mut Context<Self>) -> bool {
