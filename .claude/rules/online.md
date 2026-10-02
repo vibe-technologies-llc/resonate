@@ -199,12 +199,15 @@ listener, every counted play, and only under a token.
   every second take of one title by one artist before offering the rest
   (`a_song_is_searched_for_in_the_words_it_was_typed_in_under_dismax`). **Words read as a title by
   an artist are asked as that first**: where the `SongsAsked` carries a `ByArtist`, `songs_by_search`
-  asks `recording:"<title>" AND artist:(<word>~ AND …)`, each artist word of `SPELT_LOOSELY_FROM` (4)
-  letters or more spelt loosely so a misspelt name still reaches the artist, and only an empty answer
-  falls back to the loose words. Measured live, *you f o by stela cole* answered Stela Cole's *You F
-  O* alone where the loose words answered two other Stela Cole songs and two unrelated songs called
-  *Stela*
-  (`a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely`). Nothing asks by lyric text:
+  asks `+artist:(<word>~ AND …) recording:(<title words>) recording:"<title>"` — the artist required,
+  each of its words of `SPELT_LOOSELY_FROM` (4) letters or more spelt loosely, the title only ranking
+  — and only an empty answer falls back to the loose words. The title is not required because
+  MusicBrainz tokenises it as it was entered: a phrase `recording:"you f o"` found Stela Cole's *You
+  F O* and `"you fo"` and `"you f.o."` found nothing, where the artist-required shape finds it under
+  every spelling; which of the artist's songs was meant is the library's to weigh
+  (`elsewhere::weighed_for`, `library.md`)
+  (`a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely`,
+  `a_title_by_an_artist_is_found_however_the_title_is_spelt` live). Nothing asks by lyric text:
   LRCLIB's `q` searches title, artist and album only, and no service indexing the words answers
   without a key. The duration window is `LENGTH_MAY_DIFFER_BY_MS`, ten seconds either way, wider
   than the five `enrich.rs` (`RECORDING_MAY_DIFFER_BY`) accepts: a query as narrow as the rule

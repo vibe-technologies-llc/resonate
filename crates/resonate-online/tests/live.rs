@@ -8,7 +8,7 @@ use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
     Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble,
-    Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording,
+    Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording, songs_asked, weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -69,6 +69,33 @@ fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
         .expect("deezer answered")
         .expect("deezer holds echoes");
     assert!(by_name.url.starts_with("https://www.deezer.com/track/"));
+}
+
+#[test]
+fn a_title_by_an_artist_is_found_however_the_title_is_spelt() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    for typed in [
+        "You F O by stela cole",
+        "you fo by stela cole",
+        "You F.O. by Stela Cole",
+        "Stela Cole - You F O",
+    ] {
+        let asked = songs_asked(typed).expect("words worth asking");
+        let found = weighed_for(
+            &asked,
+            online.find_songs(&asked).expect("musicbrainz answered"),
+        );
+        let first = found
+            .first()
+            .unwrap_or_else(|| panic!("{typed} found nothing"));
+
+        assert_eq!(first.title, "You F O", "{typed}");
+        assert_eq!(first.credited_as(), "Stela Cole", "{typed}");
+    }
 }
 
 #[test]

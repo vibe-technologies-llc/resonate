@@ -72,7 +72,7 @@ pub use crate::{
     deleted::Deleted,
     elsewhere::{
         FOUND_ELSEWHERE_AT_MOST, Found, SongsAsked, Sung, asks_elsewhere,
-        in_the_order_worth_offering, songs_asked, still_answering,
+        in_the_order_worth_offering, songs_asked, still_answering, weighed_for,
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,

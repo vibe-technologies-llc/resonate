@@ -126,6 +126,63 @@ pub fn songs_asked(text: &str) -> Option<SongsAsked> {
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Likeness {
+    Same,
+    Within,
+    Apart,
+}
+
+fn letters_of(text: &str) -> String {
+    store::folded_letters(text)
+        .chars()
+        .filter(|letter| letter.is_alphanumeric())
+        .collect()
+}
+
+fn likeness(typed: &str, named: &str) -> Likeness {
+    if typed.is_empty() || named.is_empty() {
+        return Likeness::Apart;
+    }
+    if typed == named {
+        return Likeness::Same;
+    }
+    if named.contains(typed) || typed.contains(named) {
+        return Likeness::Within;
+    }
+
+    Likeness::Apart
+}
+
+pub fn weighed_for(asked: &SongsAsked, matches: Vec<RecordingMatch>) -> Vec<RecordingMatch> {
+    let Some(by) = &asked.by else {
+        return matches;
+    };
+    let artist = letters_of(&by.artist);
+    let title = letters_of(&by.title);
+    let as_credited = |matched: &RecordingMatch| {
+        std::iter::once(matched.credited_as())
+            .chain(matched.credit.iter().map(|credit| credit.name.clone()))
+            .map(|name| likeness(&artist, &letters_of(&name)))
+            .min()
+            .unwrap_or(Likeness::Apart)
+    };
+    let as_titled = |matched: &RecordingMatch| likeness(&title, &letters_of(&matched.title));
+
+    let nearest_artist = matches.iter().map(as_credited).min();
+    let mut kept: Vec<RecordingMatch> = matches
+        .into_iter()
+        .filter(|matched| Some(as_credited(matched)) == nearest_artist)
+        .collect();
+    let nearest_title = kept.iter().map(as_titled).min();
+    if nearest_title.is_some_and(|nearest| nearest < Likeness::Apart) {
+        kept.retain(|matched| as_titled(matched) < Likeness::Apart);
+        kept.sort_by_key(as_titled);
+    }
+
+    kept
+}
+
 pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
     let words: Vec<String> = words_asked(text)
         .iter()
@@ -564,6 +621,57 @@ mod tests {
             songs_asked("PINK floyd")
         );
         assert_eq!(songs_asked("ab"), None);
+    }
+
+    #[test]
+    fn songs_asked_for_by_an_artist_keep_the_nearest_artist_and_the_titles_that_match() {
+        let you_f_o = matched(
+            "11111111-1111-4111-8111-111111111111",
+            "You F O",
+            "Stela Cole",
+            Vec::new(),
+        );
+        let remixed = matched(
+            "22222222-2222-4222-8222-222222222222",
+            "You F.O. (Remix)",
+            "Stela Cole",
+            Vec::new(),
+        );
+        let another = matched(
+            "33333333-3333-4333-8333-333333333333",
+            "God Loves You",
+            "Stela Cole",
+            Vec::new(),
+        );
+        let near_name = matched(
+            "44444444-4444-4444-8444-444444444444",
+            "You F O",
+            "Stella Cole",
+            Vec::new(),
+        );
+        let answered = vec![another.clone(), remixed.clone(), near_name, you_f_o.clone()];
+
+        for typed in [
+            "you fo by stela cole",
+            "You F.O. by Stela Cole",
+            "stela cole - you f o",
+        ] {
+            let asked = songs_asked(typed).expect("words worth asking");
+            assert_eq!(
+                weighed_for(&asked, answered.clone()),
+                vec![you_f_o.clone(), remixed.clone()],
+                "{typed}"
+            );
+        }
+
+        let unknown_title = songs_asked("purple rain by stela cole").expect("words worth asking");
+        assert_eq!(
+            weighed_for(&unknown_title, answered.clone()),
+            vec![another, remixed, you_f_o.clone()],
+            "a title nothing matches keeps every song by the artist"
+        );
+        let plain = songs_asked("you f o").expect("words worth asking");
+        assert_eq!(weighed_for(&plain, answered.clone()), answered);
     }
 
     fn found(id: &str, title: &str, artist: &str, release: &str) -> Found {

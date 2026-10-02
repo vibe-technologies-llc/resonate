@@ -2912,7 +2912,10 @@ impl Library {
             return Ok(Vec::new());
         };
 
-        self.unheld_among(reference.find_songs(&words)?)
+        self.unheld_among(elsewhere::weighed_for(
+            &words,
+            reference.find_songs(&words)?,
+        ))
     }
 
     pub fn unheld_among(&self, matches: Vec<RecordingMatch>) -> Result<Vec<Found>> {

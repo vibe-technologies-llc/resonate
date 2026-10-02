@@ -2278,7 +2278,13 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   reading leaves out of the songs asked elsewhere are the *by* and the dash: `words_asked` takes the
   title and the artist, so `songs_kept_for`, `still_answering` and `unheld_matching` never look for
   a song called *by*, and `songs_asked` answers a `SongsAsked` carrying the reading beside the words
-  (`online.md`).
+  (`online.md`). **What MusicBrainz answers for it is weighed here**: `weighed_for` keeps the matches
+  whose credit is nearest the typed artist — the same letters, then one name holding the other, the
+  letters folded and everything but letters and digits dropped — and of those the titles matching
+  the typed title the same way, the same letters first; where no title matches, every song of the
+  artist is kept, the title perhaps misremembered. The window weighs an answer before keeping it and
+  `Library::found_elsewhere` before weighing it against the catalog
+  (`songs_asked_for_by_an_artist_keep_the_nearest_artist_and_the_titles_that_match`).
   `a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds` is the claim.
 - **A search that matched nothing is answered in the catalog's own spelling, and only then is the
   catalog read for one.** `spelling.rs` is the whole of it. `Spellings` is four `Vocabulary`s —

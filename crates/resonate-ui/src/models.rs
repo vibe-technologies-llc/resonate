@@ -30,7 +30,7 @@ use resonate_library::{
     RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
     ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
     Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, folded_letters,
-    songs_asked, still_answering,
+    songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -1262,7 +1262,8 @@ impl LibraryModel {
             .is_some_and(|asked| asked == words);
         match answered {
             Ok(matches) => {
-                self.answers.insert(words, matches.into());
+                let weighed = weighed_for(&words, matches);
+                self.answers.insert(words, weighed.into());
             }
             Err(error) if current => {
                 tracing::warn!(%error, "a search could not be asked elsewhere");

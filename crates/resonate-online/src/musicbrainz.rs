@@ -632,19 +632,30 @@ fn songs_search(words: &str) -> String {
 }
 
 fn songs_by_search(by: &ByArtist) -> String {
-    let named: Vec<String> = by
-        .artist
-        .split(|letter: char| !letter.is_alphanumeric())
-        .filter(|word| !word.is_empty())
+    let words_of = |text: &str| -> Vec<String> {
+        text.split(|letter: char| !letter.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let named: Vec<String> = words_of(&by.artist)
+        .into_iter()
         .map(|word| match word.chars().count() {
             letters if letters >= SPELT_LOOSELY_FROM => format!("{word}~"),
-            _ => word.to_owned(),
+            _ => word,
         })
         .collect();
-    let mut query = format!("recording:{}", lucene_quoted(&by.title));
-    if !named.is_empty() {
-        let _ = write!(query, " AND artist:({})", named.join(" AND "));
-    }
+    let titled = words_of(&by.title);
+    let quoted = lucene_quoted(&by.title);
+    let query = match (named.is_empty(), titled.is_empty()) {
+        (true, _) => format!("recording:{quoted}"),
+        (false, true) => format!("+artist:({})", named.join(" AND ")),
+        (false, false) => format!(
+            "+artist:({}) recording:({}) recording:{quoted}",
+            named.join(" AND "),
+            titled.join(" ")
+        ),
+    };
 
     searched("/recording/", &query, SONGS_FOUND_AT_MOST)
 }
@@ -1691,7 +1702,9 @@ mod tests {
         assert!(
             path.contains(&format!(
                 "query={}",
-                crate::query::escape_query(r#"recording:"you f o" AND artist:(stela~ AND cole~)"#)
+                crate::query::escape_query(
+                    r#"+artist:(stela~ AND cole~) recording:(you f o) recording:"you f o""#
+                )
             )),
             "{path}"
         );
