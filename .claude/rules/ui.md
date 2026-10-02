@@ -90,8 +90,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   rather than truncating, and a selection drag is followed from a `Window::on_mouse_event` registered in
   `paint`, the element's own `on_mouse_move` firing only while the pointer is over it — the reason
   `views/slider.rs` carries a drag surface.
-- **A secret is drawn as marks.** `Field::masked` — the Subsonic password and the AcoustID, AudD and
-  ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
+- **A secret is drawn as marks.** `Field::masked` — the Subsonic password, the TIDAL client secret and
+  refresh token and the AcoustID, AudD and ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
   offset the caret, selection, marked range and IME bounds hold to the drawn line and a pointer's
   back, so editing is as a plain field's; a masked field copies and cuts nothing to the clipboard
   (`a_masked_field_draws_a_mark_a_letter_and_maps_every_offset_both_ways`).
@@ -263,7 +263,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `show_everything` before writing the words. A click on the toast is the same `toast::dismiss`. The
   caret keeps escape for itself: a focused field never reaches the match, `editing` returning first, so
   escape in the box does what it always did. `editing` asks `RootView::text_fields`, the one list of
-  every `Field` the root holds, the Subsonic account's included, so a field cannot be left out of it
+  every `Field` the root holds, the Subsonic and TIDAL accounts' included, so a field cannot be left out of it
   as the ListenBrainz token once was, every letter typed into it landing in the search too
   (`what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search`). Each field still
   needs its own arm in `dismiss_search`; the AutoEq search's, `leave_looking`, clears it and its
@@ -2050,7 +2050,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   arithmetic: `Standing` is everything the pane can put back — the `OutputSettings`, the `Appearance`,
   the online, lyrics, listening, resumption, desktop, Discord, convolution and window switches and
   choices, and
-  whether each typed value (contact, keys, tokens, template, inbox, music folder, Subsonic) is given — `differs` weighs
+  whether each typed value (contact, keys, tokens, template, inbox, music folder, Subsonic, TIDAL) is given — `differs` weighs
   it against `Standing::as_built` (`EngineConfig::default()`, `Appearance::DEFAULT` and the rest), and
   `puts_back` answers the commands restoring it. A section whose value differs grows an `Icon::Undo` in
   its header; the footer carries *Reset <category>* for every category with a key to put back, and

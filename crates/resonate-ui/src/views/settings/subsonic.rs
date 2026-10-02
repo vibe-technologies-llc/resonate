@@ -151,6 +151,7 @@ impl RootView {
     pub(crate) fn an_account_field_is_focused(&self, window: &Window, cx: &App) -> bool {
         self.subsonic
             .iter()
+            .chain(&self.tidal)
             .any(|field| field.read(cx).is_focused(window))
     }
 

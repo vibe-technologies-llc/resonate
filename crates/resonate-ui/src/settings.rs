@@ -201,6 +201,9 @@ pub enum SettingKey {
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
+    TidalClientId,
+    TidalClientSecret,
+    TidalRefreshToken,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -211,7 +214,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 70] = [
+    pub const ALL: [Self; 73] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -275,6 +278,9 @@ impl SettingKey {
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
+        Self::TidalClientId,
+        Self::TidalClientSecret,
+        Self::TidalRefreshToken,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -353,6 +359,9 @@ pub enum Setting {
     Subsonic(String),
     SubsonicUser(String),
     SubsonicPassword(String),
+    TidalClientId(String),
+    TidalClientSecret(String),
+    TidalRefreshToken(String),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -428,6 +437,9 @@ impl Setting {
             Self::Subsonic(_) => SettingKey::Subsonic,
             Self::SubsonicUser(_) => SettingKey::SubsonicUser,
             Self::SubsonicPassword(_) => SettingKey::SubsonicPassword,
+            Self::TidalClientId(_) => SettingKey::TidalClientId,
+            Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
+            Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -452,6 +464,9 @@ pub struct Online {
     pub subsonic: String,
     pub subsonic_user: String,
     pub subsonic_password: String,
+    pub tidal_client_id: String,
+    pub tidal_client_secret: String,
+    pub tidal_refresh_token: String,
 }
 
 pub type Registering = Arc<dyn Fn(Option<&Path>) -> Providers + Send + Sync>;

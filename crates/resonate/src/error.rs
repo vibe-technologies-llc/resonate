@@ -70,6 +70,9 @@ pub enum ConfigKey {
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
+    TidalClientId,
+    TidalClientSecret,
+    TidalRefreshToken,
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
@@ -85,7 +88,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 72] = [
+    pub const ALL: [Self; 75] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -146,6 +149,9 @@ impl ConfigKey {
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
+        Self::TidalClientId,
+        Self::TidalClientSecret,
+        Self::TidalRefreshToken,
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
@@ -222,6 +228,9 @@ impl ConfigKey {
             Self::Subsonic => "subsonic",
             Self::SubsonicUser => "subsonic-user",
             Self::SubsonicPassword => "subsonic-password",
+            Self::TidalClientId => "tidal-client-id",
+            Self::TidalClientSecret => "tidal-client-secret",
+            Self::TidalRefreshToken => "tidal-refresh-token",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",

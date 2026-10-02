@@ -170,9 +170,11 @@ AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops ever
 Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
 yours. AudD is sent the clip only where `audd-token` is set.
 
-ListenBrainz is sent what was heard only where `listenbrainz-token` is set, and a Subsonic server is
+ListenBrainz is sent what was heard only where `listenbrainz-token` is set, a Subsonic server is
 asked for wanted tracks only where `subsonic`, `subsonic-user` and `subsonic-password` name one of
-yours; `online = false` stops both.
+yours, and TIDAL only where `tidal-client-id` and `tidal-refresh-token` name a subscription of
+yours — a wanted track found there is downloaded whole, as lossless FLAC, into the vault, never a
+preview, a lossy stream or an encrypted one; `online = false` stops all three.
 
 Discord is told nothing unless `discord` is on and names an application of yours. What it is
 told is handed to the Discord client on this machine, and the cover is a public Cover Art

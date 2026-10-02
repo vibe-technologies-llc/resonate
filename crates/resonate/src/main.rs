@@ -2382,6 +2382,9 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 subsonic: config.subsonic.clone().unwrap_or_default(),
                 subsonic_user: config.subsonic_user.clone().unwrap_or_default(),
                 subsonic_password: config.subsonic_password.clone().unwrap_or_default(),
+                tidal_client_id: config.tidal_client_id.clone().unwrap_or_default(),
+                tidal_client_secret: config.tidal_client_secret.clone().unwrap_or_default(),
+                tidal_refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),

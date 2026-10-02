@@ -90,6 +90,7 @@ pub(crate) enum Group {
     Vault,
     Inbox,
     Subsonic,
+    Tidal,
     Resuming,
     History,
     Repeating,
@@ -119,7 +120,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 53] = [
+    pub(crate) const ALL: [Self; 54] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -147,6 +148,7 @@ impl Group {
         Self::Vault,
         Self::Inbox,
         Self::Subsonic,
+        Self::Tidal,
         Self::Resuming,
         Self::History,
         Self::Repeating,
@@ -204,6 +206,7 @@ impl Group {
             | Self::Vault
             | Self::Inbox
             | Self::Subsonic
+            | Self::Tidal
             | Self::Resuming
             | Self::History
             | Self::Repeating
@@ -262,6 +265,7 @@ impl Group {
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
             Self::Subsonic => "A Subsonic server",
+            Self::Tidal => "A TIDAL account",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
             Self::Repeating => "Repeating a track",
@@ -320,6 +324,7 @@ impl Group {
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
             Self::Subsonic => SUBSONIC_HINT,
+            Self::Tidal => TIDAL_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
             Self::Repeating => REPEATING_HINT,
@@ -422,6 +427,10 @@ impl Group {
                 "navidrome airsonic gonic server provider download wants missing stream fill \
                  obtain account password"
             }
+            Self::Tidal => {
+                "tidal streaming service subscription provider download wants missing fill \
+                 obtain account token client lossless hi-res flac"
+            }
             Self::Resuming => "queue restart restore carry on position where left off",
             Self::History => {
                 "history listens plays statistics forget age prune older keep years months \
@@ -517,6 +526,11 @@ impl Group {
                 SettingKey::Subsonic,
                 SettingKey::SubsonicUser,
                 SettingKey::SubsonicPassword,
+            ],
+            Self::Tidal => &[
+                SettingKey::TidalClientId,
+                SettingKey::TidalClientSecret,
+                SettingKey::TidalRefreshToken,
             ],
             Self::Resuming => &[SettingKey::Resume],
             Self::History => &[SettingKey::HistoryKept],
@@ -845,6 +859,10 @@ pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself.
 pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked wanted are \
                                         also filled from, matched by the recording's \
                                         MusicBrainz id or its ISRC.";
+
+pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own the tracks marked \
+                                     wanted are also filled from, as lossless FLAC, matched by \
+                                     the TIDAL track MusicBrainz names or the ISRC.";
 
 pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
                                     FLAC as REW or DRC writes it — convolved with everything \

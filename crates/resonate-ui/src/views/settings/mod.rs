@@ -10,6 +10,7 @@ mod online;
 mod output;
 mod processing;
 mod subsonic;
+mod tidal;
 
 use std::sync::atomic::Ordering;
 
@@ -26,6 +27,7 @@ pub(crate) use crate::views::settings::{
     equaliser::marked_frequencies,
     find::{Category, Group},
     subsonic::Account,
+    tidal::TidalAccount,
 };
 use crate::{
     AppIcon, ResonateApp, Setting,
@@ -407,6 +409,7 @@ impl RootView {
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
             Group::Subsonic => self.subsonic_group(cx),
+            Group::Tidal => self.tidal_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
             Group::Repeating => self.repeating_group(cx),
@@ -552,6 +555,7 @@ impl RootView {
                 self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
             }
             Group::Subsonic => self.forget_the_account(cx),
+            Group::Tidal => self.forget_the_tidal_account(cx),
             Group::RoomCorrection => self.correct_the_room(None, cx),
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
@@ -604,6 +608,10 @@ impl RootView {
             .subsonic
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
+        let tidal_given = self
+            .tidal
+            .iter()
+            .any(|field| !field.read(cx).text().trim().is_empty());
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),
@@ -637,6 +645,7 @@ impl RootView {
             music_folder_given,
             file_dropped,
             subsonic_given,
+            tidal_given,
             convolving,
         }
     }

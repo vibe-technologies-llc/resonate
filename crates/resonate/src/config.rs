@@ -158,6 +158,9 @@ pub struct Config {
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
     pub subsonic_password: Option<String>,
+    pub tidal_client_id: Option<String>,
+    pub tidal_client_secret: Option<String>,
+    pub tidal_refresh_token: Option<String>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -527,6 +530,13 @@ impl Config {
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
             ConfigKey::SubsonicPassword => {
                 config.subsonic_password = given(at.string(value)?);
+            }
+            ConfigKey::TidalClientId => config.tidal_client_id = given(at.string(value)?),
+            ConfigKey::TidalClientSecret => {
+                config.tidal_client_secret = given(at.string(value)?);
+            }
+            ConfigKey::TidalRefreshToken => {
+                config.tidal_refresh_token = given(at.string(value)?);
             }
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),

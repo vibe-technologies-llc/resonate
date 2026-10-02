@@ -6,7 +6,9 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProviderOp {
     ReadFolder,
+    SignIn,
     Search,
+    Playback,
     Download,
 }
 
@@ -46,6 +48,9 @@ pub enum Error {
         code: u16,
     },
 
+    #[error("{op:?} was answered by the {provider} provider's server with media off its own hosts")]
+    OffItsHosts { provider: SourceId, op: ProviderOp },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -57,7 +62,10 @@ impl Error {
         match self {
             Self::Io { .. } | Self::Unwelcome { .. } => true,
             Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
-            Self::Unreadable { .. } | Self::TurnedAway { .. } | Self::NotAnExtension => false,
+            Self::Unreadable { .. }
+            | Self::TurnedAway { .. }
+            | Self::OffItsHosts { .. }
+            | Self::NotAnExtension => false,
         }
     }
 }

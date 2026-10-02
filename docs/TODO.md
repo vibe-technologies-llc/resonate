@@ -336,8 +336,11 @@ service or a format — and is not worked until that moves; everything else is o
 - With `<mbid>.flac` and `<mbid>.mp3` both in the inbox the name sorting first wins, and nothing
   prefers the lossless one; the inbox also stats every entry for every want
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
-- **Blocked on the services:** The service links an `Identity` carries are read by nothing: no
-  provider asks Tidal, Bandcamp or Discogs, whose pages the links name
+- TIDAL is signed in to only with a client id and refresh token the listener brings from
+  elsewhere; nothing in the window or on the command line runs the device sign-in that would issue
+  one, and a refresh token TIDAL rotates is not written back
+- **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
+  nothing; no provider asks either
 
 ## Later: The vault
 - `vault --verify` writes an object it could not open — an unmounted vault, a missing file — as one

@@ -60,7 +60,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
-        settings::{Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted},
+        settings::{Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, TidalAccount},
         slider::{Grab, Rail},
         transport::Resolved,
         typing::{self, TypeAhead, jumped},
@@ -498,6 +498,7 @@ pub struct RootView {
     pub(crate) audd: Entity<Field>,
     pub(crate) listenbrainz: Entity<Field>,
     pub(crate) subsonic: [Entity<Field>; 3],
+    pub(crate) tidal: [Entity<Field>; 3],
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) organising: Entity<Field>,
@@ -786,6 +787,7 @@ impl RootView {
         .detach();
 
         let subsonic = Account::fields(&online, window, cx);
+        let tidal = TidalAccount::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -924,6 +926,7 @@ impl RootView {
             audd,
             listenbrainz,
             subsonic,
+            tidal,
             discord_app,
             discord_icon,
             organising,
@@ -2890,6 +2893,7 @@ impl RootView {
         ]
         .into_iter()
         .chain(&self.subsonic)
+        .chain(&self.tidal)
     }
 
     fn editing(&self, window: &Window, cx: &App) -> bool {

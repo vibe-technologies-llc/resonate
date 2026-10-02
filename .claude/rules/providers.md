@@ -206,3 +206,77 @@ category's *A Subsonic server* group writes the keys for the next start.
   `Error::TurnedAway` with it otherwise (70, a song the server lacks), an HTTP refusal `Error::Refused`, an answer that is not
   the document `Error::Unreadable`, a failed connection `Error::Io`, each naming
   `ProviderOp::Search` or `Download`.
+
+## A TIDAL account
+
+`resonate-tidal` is the native form of `tidal-proxy`, the Fastify segment proxy TIDAL-DL leans on
+when a browser is refused TIDAL's CDN: what the proxy did — fetch a signed segment from an allowed
+TIDAL audio host, forward `Range`, stream it without holding it whole — is what the provider does
+for itself, a native client meeting no CORS and needing no proxy in between. It is the listener's
+own subscription, named by `tidal-client-id`, `tidal-client-secret` and `tidal-refresh-token`;
+`providers::sourced` registers it after the inbox and the Subsonic server only where the client id
+and the refresh token are given (the secret is sent where given) and `online` is on, behind the
+binary's `online` feature, and the Library category's *A TIDAL account* group writes the keys for
+the next start, the secret and the token drawn as marks. Nothing is downloaded to play: a delivery
+is fetched whole into the vault and lands as a track row, as every provider's does.
+
+- **Asked by the link and the ISRC, never by a title.** The TIDAL track MusicBrainz links the
+  recording to (`Identity::track_on(Service::Tidal)`, read by `TrackId::linked` out of
+  `tidal.com/track/<id>` and `tidal.com/browse/track/<id>`) is asked first and needs no search;
+  failing that, `openapi.tidal.com/v2/tracks?filter[isrc]=` is asked for the ISRC and a listing is
+  taken only where its own `isrc` attribute is the want's, read through `Isrc::new`, at most
+  `TRACKS_TRIED_AT_MOST` of them in turn. A want with neither answers `Nothing` with no request and
+  no sign-in (`a_track_whose_isrc_is_not_the_wanted_one_is_never_taken`,
+  `a_track_musicbrainz_links_to_tidal_is_taken_without_a_search`).
+- **It signs in with the listener's refresh token and nothing else.** `auth.tidal.com`'s token
+  endpoint is sent the `refresh_token` grant, the client id and, where given, the secret; the access
+  token is held until `RENEWED_BEFORE` its `expires_in` runs out and the country is read off the
+  grant's `user.countryCode` or else `/v1/sessions`. No client id or secret is built in: the
+  listener brings the application the token was issued to. A 400 or 401 at the token endpoint is
+  `Error::Unwelcome` under `ProviderOp::SignIn`, which the seam reads as the provider away, so a
+  revoked token costs one sign-in a poll
+  (`a_refresh_token_turned_away_is_the_account_and_not_the_want`). A 401 from the API signs in
+  again once and asks again, and a second is `Unwelcome` with TIDAL's `subStatus`
+  (`a_session_that_lapsed_signs_in_again_once`); a 401 whose `subStatus` is 4005 — the asset not
+  ready for playback — is the want's, `TurnedAway`. A 403 or 404 is the track unavailable to this
+  account or country and answers `Nothing` for that track.
+- **Only the whole track, lossless and in the clear, is taken.** `playbackinfopostpaywall` is asked
+  for `HI_RES_LOSSLESS` as `STREAM` and `FULL`; an `assetPresentation` other than `FULL` — the
+  thirty-second preview a lapsed subscription is given — is `Nothing`, never kept as the track
+  (`a_preview_is_never_delivered_for_the_track`). `manifest.rs` reads both manifests TIDAL answers:
+  `application/vnd.tidal.bts`, base64 JSON naming one URL, and `application/dash+xml`, an MPD whose
+  `SegmentTemplate` and `SegmentTimeline` name an initialisation segment and every media segment.
+  A BTS `encryptionType` other than `NONE` or an MPD carrying `ContentProtection` is
+  `Withheld::Encrypted`, and a codec other than FLAC `Withheld::Lossy`, both `Nothing`: the provider
+  decrypts nothing and keeps no lossy stream. A timeline past `SEGMENTS_AT_MOST` is unread rather
+  than allocated.
+- **Media is fetched from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over
+  `https` whose host is `audio.tidal.com` or under it — the proxy's `sp-ad-fa` and `sp-ad-cf` and
+  every other CDN node the manifests name — refusing a user-info `@`, a bracketed literal and a host
+  merely ending in the name; one URL off them fails the whole manifest as `Error::OffItsHosts`
+  before a byte is fetched (`media_named_off_the_audio_hosts_is_never_fetched`). The media agent
+  follows no redirect, so a host it was not given cannot be reached through one.
+- **A segment that breaks off is asked for again from where it stopped.** `Fetched` reads the URLs
+  in turn, each through `Piece`; a read that fails mid-body is asked again with
+  `Range: bytes=<read>-`, taken where the answer is a 206 whose `Content-Range` starts there, or a
+  200 read past what was already given, `RESUMES_AT_MOST` times running before the error stands
+  (`a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped`). Each request has
+  `MEDIA_READ_WITHIN` to deliver its body, so a stalled CDN connection is broken and resumed rather
+  than held; the first segment is opened inside `obtain`, so a CDN refusing it is the provider's
+  `Refused` under `ProviderOp::Download`, not a failed keep.
+- **What lands is a FLAC file, never an MP4.** A DASH stream is FLAC frames in fragmented MP4, and
+  `remux.rs` repacks it on the way through, decoding nothing: `Remuxed` reads the boxes, takes the
+  FLAC metadata blocks out of the `moov`'s `fLaC` sample entry's `dfLa` box, writes `fLaC` and
+  those blocks — the final one alone marked last — and then copies the payload of every `mdat`
+  after it, skipping `styp`, `sidx` and `moof`. STREAMINFO's total sample count, which a fragmented
+  file leaves at zero, is filled in from the timeline where its timescale is the stream's rate. A
+  `mdat` ahead of the `moov` or a file with no FLAC track is `Unreadable`. Every delivery is keyed
+  `track/<id>` with the extension `flac`, so the vault takes a native FLAC and keeps it as one —
+  re-encoded where that is smaller, kept stripped where not. Checked against ffmpeg's fragmented
+  output at 44.1 kHz/16 bit and 96 kHz/24 bit: `flac -t` passes and the decoded audio's MD5 is the
+  source's (`a_fragmented_flac_track_becomes_a_native_stream_of_the_same_frames`).
+- **It paces itself and identifies itself as the Subsonic client does**: API requests `ASKED_APART`,
+  a 429 or 503 retried after its `Retry-After` up to `RETRIES_AT_MOST`, the User-Agent
+  `resonate/<version>` alone, and `Account`'s `Debug` printing neither the secret nor the token.
+  `tests/server.rs` serves a fake TIDAL — token endpoint, OpenAPI, playback and segments cut from
+  `tests/fixtures/tone.mp4` — from a local socket.

@@ -199,9 +199,9 @@ or a `window-size` from another build no longer fails every command — `sleep o
 included — while a file that is not TOML still does
 (`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
 collects the refusals, so each reader's refusal is still asserted. Nine of
-the seventy-two have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+the seventy-five have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
 `noise-shaping`, `bit-perfect` (as `--bit-perfect` and `--no-bit-perfect`) and `volume` (as
-`play --volume`, a percent); the other sixty-three are set only by the settings pane and the file:
+`play --volume`, a percent); the other sixty-six are set only by the settings pane and the file:
 
 - the output's `true-peak`, `restore-lossy`, `replay-gain`, `replay-gain-pre-amp`,
   `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
@@ -217,8 +217,9 @@ the seventy-two have a flag — `sink`, `library`, `vault`, `quality`, `filter-p
   `listen-for`, `music-folder` and `file-dropped` (the Library category's *Primary music folder*
   group),
   `inbox` (the Library category's *The inbox* group, which polls from the window too),
-  and `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, used from
-  the next start);
+  `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, used from
+  the next start) and `tidal-client-id`, `tidal-client-secret`, `tidal-refresh-token` (its *A TIDAL
+  account* group, likewise);
 - the seven shaping a Discord presence — `discord`, `discord-app`, `discord-shows`, `discord-art`,
   `discord-icon`, `discord-progress`, `discord-paused` — written by the Desktop category's two
   Discord groups and live at once.
@@ -303,7 +304,8 @@ the `config.toml.lock` older builds made, nothing else
 (`what_a_killed_writer_left_is_swept_by_the_next_and_nothing_else`) — stages under a name of this
 process's own,
 creates the staged file `0600` and narrows the standing file's mode to its owner's bits before a
-byte is written — the file holds `subsonic-password`, `audd-token` and `listenbrainz-token`, and one
+byte is written — the file holds `subsonic-password`, `tidal-client-secret`, `tidal-refresh-token`,
+`audd-token` and `listenbrainz-token`, and one
 made under the umask, or kept at a wider mode an older build left, was readable by every local user
 (`the_settings_file_is_its_owners_alone_from_the_first_write_and_after_a_wider_one`) — `sync_all`s
 the staged file and the folder around the rename, and renames it over the target so a crash cannot

@@ -18,7 +18,7 @@ automatically where their `paths:` match:
 | `ui.md` | resonate-ui | chrome, input, drawing, the palettes, panes |
 | `vault.md` | resonate-vault, `Library::import`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, providers/*, `Library::poll` | the seam, the registry, the inbox, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, providers/*, `Library::poll` | the seam, the registry, the inbox, Subsonic, TIDAL, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, the analysis pane, `acoustid.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
@@ -47,7 +47,7 @@ done moves — and then in the same commit.
 
 ## Architecture
 
-Twenty crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
+Twenty-one crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
 and `resonate-pipewire` never depend on each other, and `resonate-engine` joins them.
 
 ```
@@ -73,6 +73,8 @@ resonate            bin — CLI, tracing, wiring
   ├── resonate-providers  the provider seam: an identity in, media out  → filled by providers/*
   ├── providers/inbox     resonate-inbox, a folder of the listener's
   ├── providers/subsonic  resonate-subsonic, a Subsonic server of the listener's  [gated behind `online`]
+  ├── providers/tidal     resonate-tidal, the listener's TIDAL subscription, kept as FLAC
+  │                       [gated behind `online`]
   └── resonate-core       domain vocabulary
 ```
 
@@ -183,6 +185,8 @@ cargo tree -p resonate-dsp                 # must stay free of resonate-eq, reso
                                            #   resonate-pipewire
 cargo tree -p resonate-pipewire            # must stay free of resonate-codec, resonate-dsp
 cargo tree -p resonate-providers           # must stay free of the library, codec, vault, gpui
+cargo tree -p resonate-tidal               # must stay free of the library, codec, vault, engine,
+                                           #   gpui
 cargo tree -p resonate-analysis            # must stay free of gpui, the engine, the library, ureq
 cargo tree -p resonate-discord             # must stay free of gpui, the library, ureq
 cargo tree -p resonate-listen              # must stay free of gpui, the engine, the library, ureq
@@ -193,6 +197,8 @@ cargo test -p resonate-online --test live  # reaches the real services; skips un
                                            #   RESONATE_ONLINE_TESTS is set
 cargo test -p resonate-subsonic            # tests/server.rs serves a fake Subsonic server on
                                            #   loopback; no network needed
+cargo test -p resonate-tidal               # tests/server.rs serves a fake TIDAL on loopback;
+                                           #   no network or account needed
 rust-formatter                             # format; never `cargo fmt`
 rust-formatter --check                     # read-only; exits 1 with a diff
 cd fuzz && cargo +nightly fuzz build       # the parsers' fuzz targets; needs cargo-fuzz

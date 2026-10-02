@@ -1,0 +1,537 @@
+use std::{
+    io::{BufRead, BufReader, Read, Write},
+    net::{TcpListener, TcpStream},
+    sync::Arc,
+    thread,
+};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use parking_lot::Mutex;
+use resonate_core::{Isrc, Link};
+use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp};
+use resonate_tidal::{Account, Endpoints, MediaHosts, Tidal};
+
+const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
+const ECHOES_ISRC: &str = "GBN9Y1100089";
+const TRACK: u64 = 55_391_743;
+const BEARER: &str = "Bearer fresh-access";
+
+struct Canned {
+    status: u16,
+    headers: Vec<(&'static str, String)>,
+    body: Vec<u8>,
+    cut_after: Option<usize>,
+}
+
+impl Canned {
+    fn json(body: &str) -> Self {
+        Self {
+            status: 200,
+            headers: vec![("Content-Type", "application/json".to_owned())],
+            body: body.as_bytes().to_vec(),
+            cut_after: None,
+        }
+    }
+
+    fn refused(status: u16, body: &str) -> Self {
+        Self {
+            status,
+            ..Self::json(body)
+        }
+    }
+
+    fn media(body: &[u8]) -> Self {
+        Self {
+            status: 200,
+            headers: vec![("Content-Type", "audio/mp4".to_owned())],
+            body: body.to_vec(),
+            cut_after: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Asked {
+    method: String,
+    path: String,
+    query: String,
+    authorization: Option<String>,
+    range: Option<String>,
+    body: String,
+}
+
+type Answering = dyn Fn(&Asked, &[Asked], &str) -> Canned + Send + Sync;
+
+struct Fake {
+    url: String,
+    heard: Arc<Mutex<Vec<Asked>>>,
+}
+
+impl Fake {
+    fn serving(
+        answering: impl Fn(&Asked, &[Asked], &str) -> Canned + Send + Sync + 'static,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let noted = Arc::clone(&heard);
+        let answering: Arc<Answering> = Arc::new(answering);
+        let own = url.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else {
+                    return;
+                };
+                answer(stream, &noted, answering.as_ref(), &own);
+            }
+        });
+
+        Self { url, heard }
+    }
+
+    fn tidal(&self) -> Tidal {
+        Tidal::at(
+            Account {
+                client_id: "client".to_owned(),
+                client_secret: Some("hush".to_owned()),
+                refresh_token: "sesame".to_owned(),
+            },
+            Endpoints {
+                auth: format!("{}/auth/token", self.url),
+                api: format!("{}/api/", self.url),
+                openapi: format!("{}/openapi/", self.url),
+                media: MediaHosts {
+                    scheme: "http".to_owned(),
+                    domain: "127.0.0.1".to_owned(),
+                },
+            },
+        )
+    }
+
+    fn heard(&self) -> Vec<Asked> {
+        self.heard.lock().clone()
+    }
+
+    fn paths(&self) -> Vec<String> {
+        self.heard().into_iter().map(|asked| asked.path).collect()
+    }
+}
+
+fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, own: &str) {
+    let mut reader = BufReader::new(stream);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line).is_err() {
+        return;
+    }
+    let mut authorization = None;
+    let mut range = None;
+    let mut length = 0;
+    loop {
+        let mut header = String::new();
+        match reader.read_line(&mut header) {
+            Ok(0) | Err(_) => return,
+            Ok(_) if header == "\r\n" => break,
+            Ok(_) => {}
+        }
+        let Some((name, value)) = header.split_once(':') else {
+            continue;
+        };
+        let value = value.trim().to_owned();
+        match name.to_ascii_lowercase().as_str() {
+            "authorization" => authorization = Some(value),
+            "range" => range = Some(value),
+            "content-length" => length = value.parse().unwrap_or_default(),
+            _ => {}
+        }
+    }
+    let mut body = vec![0_u8; length];
+    if reader.read_exact(&mut body).is_err() {
+        return;
+    }
+    let mut parts = request_line.split(' ');
+    let method = parts.next().unwrap_or_default().to_owned();
+    let target = parts.next().unwrap_or_default();
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let asked = Asked {
+        method,
+        path: path.to_owned(),
+        query: query.to_owned(),
+        authorization,
+        range,
+        body: String::from_utf8_lossy(&body).into_owned(),
+    };
+    let before = heard.lock().clone();
+    let canned = answering(&asked, &before, own);
+    heard.lock().push(asked);
+
+    let mut written = format!(
+        "HTTP/1.1 {} Canned\r\nContent-Length: {}\r\nConnection: close\r\n",
+        canned.status,
+        canned.body.len()
+    );
+    for (name, value) in &canned.headers {
+        written.push_str(&format!("{name}: {value}\r\n"));
+    }
+    written.push_str("\r\n");
+    let mut stream = reader.into_inner();
+    let _ = stream.write_all(written.as_bytes());
+    let sent = canned.cut_after.unwrap_or(canned.body.len());
+    let _ = stream.write_all(&canned.body[..sent]);
+}
+
+fn boxes(file: &[u8]) -> Vec<(&[u8], &[u8])> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at + 8 <= file.len() {
+        let size = u32::from_be_bytes(file[at..at + 4].try_into().expect("four bytes")) as usize;
+        found.push((&file[at + 4..at + 8], &file[at..at + size]));
+        at += size;
+    }
+    found
+}
+
+fn segmented() -> Vec<Vec<u8>> {
+    let mut segments = vec![Vec::new()];
+    let mut opened = false;
+    for (kind, whole) in boxes(TONE) {
+        if matches!(kind, b"styp" | b"sidx" | b"moof") && !opened {
+            segments.push(Vec::new());
+            opened = true;
+        }
+        if kind == b"mdat" {
+            opened = false;
+        }
+        segments
+            .last_mut()
+            .expect("a segment")
+            .extend_from_slice(whole);
+    }
+    segments
+}
+
+fn frames() -> Vec<u8> {
+    boxes(TONE)
+        .into_iter()
+        .filter(|(kind, _)| *kind == b"mdat")
+        .flat_map(|(_, whole)| whole[8..].to_vec())
+        .collect()
+}
+
+fn dash(media: &str, segments: usize) -> String {
+    let mpd = format!(
+        r#"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static"><Period><AdaptationSet mimeType="audio/mp4"><Representation id="FLAC,8000,16" codecs="flac" bandwidth="1"><SegmentTemplate timescale="8000" initialization="{media}/0.mp4" media="{media}/$Number$.mp4" startNumber="1"><SegmentTimeline><S d="2000" r="{}"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>"#,
+        segments - 1
+    );
+    STANDARD.encode(mpd)
+}
+
+fn playback(presentation: &str, manifest: &str) -> Canned {
+    Canned::json(&format!(
+        r#"{{"trackId":{TRACK},"assetPresentation":"{presentation}","audioMode":"STEREO","audioQuality":"LOSSLESS","manifestMimeType":"application/dash+xml","manifest":"{manifest}"}}"#
+    ))
+}
+
+fn granted() -> Canned {
+    Canned::json(
+        r#"{"access_token":"fresh-access","token_type":"Bearer","expires_in":604800,"user":{"countryCode":"GB"}}"#,
+    )
+}
+
+fn listed(isrc: &str) -> Canned {
+    Canned::json(&format!(
+        r#"{{"data":[{{"id":"{TRACK}","type":"tracks","attributes":{{"title":"Echoes","isrc":"{isrc}"}}}}]}}"#
+    ))
+}
+
+fn segment(path: &str) -> Option<usize> {
+    path.strip_prefix("/media/")?
+        .strip_suffix(".mp4")?
+        .parse()
+        .ok()
+}
+
+type Serving = dyn Fn(&Asked, usize, &[Asked]) -> Canned + Send + Sync;
+
+fn whole_segment(_asked: &Asked, nth: usize, _before: &[Asked]) -> Canned {
+    Canned::media(&segmented()[nth])
+}
+
+fn tidal_server(
+    presentation: &'static str,
+    media_at: impl Fn(&str) -> String + Send + Sync + 'static,
+    media: impl Fn(&Asked, usize, &[Asked]) -> Canned + Send + Sync + 'static,
+) -> Fake {
+    let count = segmented().len() - 1;
+    let media: Arc<Serving> = Arc::new(media);
+    Fake::serving(move |asked, before, own| {
+        if let Some(nth) = segment(&asked.path) {
+            return media(asked, nth, before);
+        }
+        match asked.path.as_str() {
+            "/auth/token" => granted(),
+            "/openapi/tracks" => listed(ECHOES_ISRC),
+            "/api/tracks/55391743/playbackinfopostpaywall" => {
+                playback(presentation, &dash(&media_at(own), count))
+            }
+            _ => Canned::refused(404, "{}"),
+        }
+    })
+}
+
+fn on_itself(own: &str) -> String {
+    format!("{own}/media")
+}
+
+fn by_isrc() -> Identity {
+    Identity {
+        isrc: Some(Isrc::new(ECHOES_ISRC).expect("an isrc")),
+        artist: Some("Pink Floyd".to_owned()),
+        ..Identity::named("Echoes")
+    }
+}
+
+fn streamed(obtained: Obtained) -> Option<(String, String, Vec<u8>)> {
+    match obtained {
+        Obtained::Found(Delivery::Stream {
+            key,
+            extension,
+            mut reader,
+        }) => {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).expect("the stream reads");
+            Some((key.into_string(), extension.to_string(), bytes))
+        }
+        Obtained::Found(Delivery::File(_)) | Obtained::Nothing => None,
+    }
+}
+
+fn assert_native_flac(bytes: &[u8]) {
+    let frames = frames();
+
+    assert_eq!(&bytes[..4], b"fLaC");
+    assert!(bytes.ends_with(&frames));
+    assert_eq!(&frames[..2], b"\xff\xf8");
+}
+
+#[test]
+fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+
+    let (key, extension, bytes) =
+        streamed(fake.tidal().obtain(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(extension, "flac");
+    assert_native_flac(&bytes);
+
+    let heard = fake.heard();
+    let signed_in = &heard[0];
+    assert_eq!(signed_in.method, "POST");
+    assert!(signed_in.body.contains("grant_type=refresh_token"));
+    assert!(signed_in.body.contains("refresh_token=sesame"));
+    assert!(signed_in.body.contains("client_secret=hush"));
+    let searched = &heard[1];
+    assert_eq!(searched.path, "/openapi/tracks");
+    assert!(searched.query.contains("countryCode=GB"));
+    assert!(
+        searched
+            .query
+            .contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}"))
+    );
+    assert!(
+        heard[1..3]
+            .iter()
+            .all(|asked| asked.authorization.as_deref() == Some(BEARER))
+    );
+    assert!(heard[3..].iter().all(|asked| asked.authorization.is_none()));
+}
+
+#[test]
+fn a_track_musicbrainz_links_to_tidal_is_taken_without_a_search() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+    let linked = Identity {
+        links: vec![Link::new(
+            "streaming",
+            format!("https://tidal.com/track/{TRACK}"),
+        )],
+        ..Identity::named("Echoes")
+    };
+
+    let delivered = streamed(fake.tidal().obtain(&linked).expect("an answer"));
+
+    assert_native_flac(&delivered.expect("a delivery").2);
+    assert!(!fake.paths().iter().any(|path| path == "/openapi/tracks"));
+}
+
+#[test]
+fn a_track_whose_isrc_is_not_the_wanted_one_is_never_taken() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => granted(),
+        "/openapi/tracks" => listed("USUM71703861"),
+        _ => Canned::refused(500, "{}"),
+    });
+
+    assert!(matches!(
+        fake.tidal().obtain(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
+    assert!(
+        !fake
+            .paths()
+            .iter()
+            .any(|path| path.contains("playbackinfo"))
+    );
+}
+
+#[test]
+fn a_preview_is_never_delivered_for_the_track() {
+    let fake = tidal_server("PREVIEW", on_itself, whole_segment);
+
+    assert!(matches!(
+        fake.tidal().obtain(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
+    assert!(fake.paths().iter().all(|path| segment(path).is_none()));
+}
+
+#[test]
+fn media_named_off_the_audio_hosts_is_never_fetched() {
+    let fake = tidal_server(
+        "FULL",
+        |own| format!("{}/media", own.replace("127.0.0.1", "localhost")),
+        whole_segment,
+    );
+
+    assert!(matches!(
+        fake.tidal().obtain(&by_isrc()),
+        Err(Error::OffItsHosts {
+            op: ProviderOp::Playback,
+            ..
+        })
+    ));
+    assert!(fake.paths().iter().all(|path| segment(path).is_none()));
+}
+
+#[test]
+fn a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped() {
+    let fake = tidal_server("FULL", on_itself, |asked, nth, before| {
+        let whole = &segmented()[nth];
+        let half = whole.len() / 2;
+        let asked_before = before.iter().any(|earlier| earlier.path == asked.path);
+        match (&asked.range, asked_before, nth) {
+            (None, false, 2) => Canned {
+                cut_after: Some(half),
+                ..Canned::media(whole)
+            },
+            (Some(range), true, 2) => {
+                let from: usize = range
+                    .trim_start_matches("bytes=")
+                    .trim_end_matches('-')
+                    .parse()
+                    .expect("a range start");
+                Canned {
+                    status: 206,
+                    headers: vec![(
+                        "Content-Range",
+                        format!("bytes {from}-{}/{}", whole.len() - 1, whole.len()),
+                    )],
+                    ..Canned::media(&whole[from..])
+                }
+            }
+            _ => Canned::media(whole),
+        }
+    });
+
+    let delivered = streamed(fake.tidal().obtain(&by_isrc()).expect("an answer"));
+
+    assert_native_flac(&delivered.expect("a delivery").2);
+    let resumed = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| segment(&asked.path) == Some(2))
+        .collect::<Vec<_>>();
+    assert_eq!(resumed.len(), 2);
+    assert_eq!(
+        resumed[1].range.as_deref(),
+        Some(format!("bytes={}-", segmented()[2].len() / 2).as_str())
+    );
+}
+
+#[test]
+fn a_refresh_token_turned_away_is_the_account_and_not_the_want() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => Canned::refused(
+            400,
+            r#"{"status":400,"error":"invalid_grant","sub_status":11101}"#,
+        ),
+        _ => Canned::refused(500, "{}"),
+    });
+
+    let refused = fake.tidal().obtain(&by_isrc());
+
+    let Err(error) = refused else {
+        panic!("a refused sign-in delivered");
+    };
+    assert!(matches!(
+        error,
+        Error::Unwelcome {
+            op: ProviderOp::SignIn,
+            code: 400,
+            ..
+        }
+    ));
+    assert!(error.is_the_provider_away());
+    assert_eq!(fake.paths(), vec!["/auth/token".to_owned()]);
+}
+
+#[test]
+fn a_session_that_lapsed_signs_in_again_once() {
+    let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
+        "/auth/token" => granted(),
+        "/openapi/tracks"
+            if before
+                .iter()
+                .filter(|earlier| earlier.path == "/auth/token")
+                .count()
+                < 2 =>
+        {
+            Canned::refused(
+                401,
+                r#"{"status":401,"subStatus":11002,"userMessage":"expired"}"#,
+            )
+        }
+        "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        _ => Canned::refused(500, "{}"),
+    });
+
+    assert!(matches!(
+        fake.tidal().obtain(&by_isrc()),
+        Ok(Obtained::Nothing)
+    ));
+    assert_eq!(
+        fake.paths(),
+        vec![
+            "/auth/token".to_owned(),
+            "/openapi/tracks".to_owned(),
+            "/auth/token".to_owned(),
+            "/openapi/tracks".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn a_session_turned_away_after_signing_in_again_is_unwelcome() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => granted(),
+        _ => Canned::refused(401, r#"{"status":401,"subStatus":11003}"#),
+    });
+
+    assert!(matches!(
+        fake.tidal().obtain(&by_isrc()),
+        Err(Error::Unwelcome {
+            op: ProviderOp::Search,
+            code: 11003,
+            ..
+        })
+    ));
+}

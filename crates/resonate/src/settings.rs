@@ -271,6 +271,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
         Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
         Setting::SubsonicPassword(given) => given_or_cleared(ConfigKey::SubsonicPassword, given),
+        Setting::TidalClientId(given) => given_or_cleared(ConfigKey::TidalClientId, given),
+        Setting::TidalClientSecret(given) => given_or_cleared(ConfigKey::TidalClientSecret, given),
+        Setting::TidalRefreshToken(given) => given_or_cleared(ConfigKey::TidalRefreshToken, given),
     };
 
     written(editing, key, value);
@@ -372,6 +375,9 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Subsonic => ConfigKey::Subsonic,
         SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
         SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,
+        SettingKey::TidalClientId => ConfigKey::TidalClientId,
+        SettingKey::TidalClientSecret => ConfigKey::TidalClientSecret,
+        SettingKey::TidalRefreshToken => ConfigKey::TidalRefreshToken,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,
         SettingKey::DiscordShows => ConfigKey::DiscordShows,

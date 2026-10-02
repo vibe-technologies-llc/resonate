@@ -6,7 +6,7 @@ says which, when, and what is not negotiable.
 
 ## Read before you touch anything
 
-1. **`CLAUDE.md`** — the project, the twenty crates and how they may depend on each other, the
+1. **`CLAUDE.md`** — the project, the twenty-one crates and how they may depend on each other, the
    invariants the layering protects and every command; `.claude/rules/binary.md` holds every config
    key. They are the authority on the design; this file does not repeat it.
 2. **`.claude/rules/rust-style.md`** and **`.claude/rules/errors.md`** — they apply to every Rust
