@@ -3795,7 +3795,7 @@ mod tests {
         }
 
         #[gpui::test]
-        fn a_song_link_pasted_into_the_search_is_downloaded_and_searched_for(
+        fn a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was(
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
@@ -3824,8 +3824,8 @@ mod tests {
 
             assert_eq!(
                 driven.read(|root, cx| root.search.read(cx).text().to_owned()),
-                "Heroes Tonight Janji & Johnning",
-                "the box searches for the song rather than holding the link"
+                "",
+                "the link was neither kept in the box nor swapped for the song's name"
             );
             assert_eq!(
                 driven.read(|root, cx| root.library.read(cx).downloads().len()),

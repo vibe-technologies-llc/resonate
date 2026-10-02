@@ -1965,9 +1965,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `Library::follow_link` on the background executor through `LibraryModel::follows_links` — the
   reference while Online is on, else a toast saying to turn it on — and `followed` answers: a song a
   file already holds says so in a toast; a song found is `want_found`, the downloads list in the
-  sidebar following it as a pressed found row would be; either way the box then searches the song's
-  title and artist (`search_instead`), so the song is on screen, held or downloading. A link nothing
-  names is a toast. `a_song_link_pasted_into_the_search_is_downloaded_and_searched_for` and
+  sidebar following it as a pressed found row would be. The box is left as it was — the link never
+  lands in it and nothing is searched for — so a paste starts the download and nothing else. A link
+  nothing names is a toast.
+  `a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was` and
   `pasting_at_the_window_puts_the_words_in_the_search` are the claims; `library.md` has which links are
   read and `online.md` how a service is asked.
 - **The search box narrows the Missing pane, the two halves answering differently, one being in the

@@ -272,44 +272,25 @@ impl RootView {
                 .background_executor()
                 .spawn(async move { library.follow_link(reference.as_ref(), &link) })
                 .await;
-            let _ = this.update_in(cx, |this, window, cx| this.followed(followed, window, cx));
+            let _ = this.update(cx, |this, cx| this.followed(followed, cx));
         });
     }
 
-    fn followed(
-        &mut self,
-        followed: resonate_library::Result<Linked>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let searched = match followed {
-            Ok(Linked::Held { title, artist }) => {
-                toast::tell(
-                    Notice::Done(format!("“{title}” is already in your library")),
-                    cx,
-                );
-                named(&title, artist.as_deref())
-            }
+    fn followed(&mut self, followed: resonate_library::Result<Linked>, cx: &mut Context<Self>) {
+        match followed {
+            Ok(Linked::Held { title, .. }) => toast::tell(
+                Notice::Done(format!("“{title}” is already in your library")),
+                cx,
+            ),
             Ok(Linked::Found(found)) => {
                 toast::dismiss(cx);
-                let searched = named(&found.title, Some(&found.artist));
                 self.library
                     .update(cx, |library, cx| library.want_found(*found, cx));
-                searched
             }
             Ok(Linked::Unnamed) => {
                 toast::tell(Notice::Trouble(NOTHING_AT_THE_LINK.to_owned()), cx);
-                return;
             }
-            Err(error) => {
-                toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx);
-                return;
-            }
-        };
-
-        self.search_instead(searched, window, cx);
-        if self.search_in_front(cx).is_none() {
-            self.choose_pane(Pane::Tracks, cx);
+            Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
         }
     }
 
@@ -746,12 +727,5 @@ impl RootView {
                 ),
         )
         .into_any_element()
-    }
-}
-
-fn named(title: &str, artist: Option<&str>) -> String {
-    match artist.filter(|artist| !artist.trim().is_empty()) {
-        Some(artist) => format!("{title} {artist}"),
-        None => title.to_owned(),
     }
 }
