@@ -60,6 +60,16 @@ fn tidal(config: &Config) -> Option<Account> {
     })
 }
 
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn signs_in() -> Option<Arc<dyn resonate_providers::SignsIn>> {
+    Some(Arc::new(resonate_tidal::TidalSignIn::default()))
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn signs_in() -> Option<Arc<dyn resonate_providers::SignsIn>> {
+    None
+}
+
 fn with_inbox(inbox: Option<&Path>) -> Providers {
     let mut providers = Providers::none();
     if let Some(folder) = inbox {

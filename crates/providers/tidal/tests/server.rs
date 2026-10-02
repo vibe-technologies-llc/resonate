@@ -8,8 +8,10 @@ use std::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Link};
-use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp};
-use resonate_tidal::{Account, Endpoints, MediaHosts, Tidal};
+use resonate_providers::{
+    Client, Delivery, Error, Identity, Obtained, Provider, ProviderOp, SignsIn,
+};
+use resonate_tidal::{Account, Endpoints, MediaHosts, Tidal, TidalSignIn};
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
 const ECHOES_ISRC: &str = "GBN9Y1100089";
@@ -98,6 +100,7 @@ impl Fake {
             },
             Endpoints {
                 auth: format!("{}/auth/token", self.url),
+                device: format!("{}/auth/device", self.url),
                 api: format!("{}/api/", self.url),
                 openapi: format!("{}/openapi/", self.url),
                 media: MediaHosts {
@@ -106,6 +109,14 @@ impl Fake {
                 },
             },
         )
+    }
+
+    fn signing_in(&self) -> TidalSignIn {
+        TidalSignIn::at(Endpoints {
+            auth: format!("{}/auth/token", self.url),
+            device: format!("{}/auth/device", self.url),
+            ..Endpoints::tidal()
+        })
     }
 
     fn heard(&self) -> Vec<Asked> {
@@ -534,4 +545,103 @@ fn a_session_turned_away_after_signing_in_again_is_unwelcome() {
             ..
         })
     ));
+}
+
+fn client() -> Client {
+    Client {
+        id: "client".to_owned(),
+        secret: None,
+    }
+}
+
+fn device_code() -> Canned {
+    Canned::json(
+        r#"{"deviceCode":"device-1","userCode":"ABCDE","verificationUri":"link.tidal.com","verificationUriComplete":"link.tidal.com/ABCDE","expiresIn":300,"interval":1}"#,
+    )
+}
+
+fn never() -> bool {
+    false
+}
+
+#[test]
+fn a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token() {
+    let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        "/auth/token"
+            if before
+                .iter()
+                .filter(|earlier| earlier.path == "/auth/token")
+                .count()
+                < 2 =>
+        {
+            Canned::refused(
+                400,
+                r#"{"status":400,"error":"authorization_pending","sub_status":1002}"#,
+            )
+        }
+        "/auth/token" => Canned::json(
+            r#"{"access_token":"fresh-access","refresh_token":"fresh-refresh","expires_in":604800}"#,
+        ),
+        _ => Canned::refused(404, "{}"),
+    });
+    let signing_in = fake.signing_in();
+
+    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+    let token = signing_in
+        .authorized(&client(), &authorizing, &never)
+        .expect("an answer")
+        .expect("not cancelled");
+
+    assert_eq!(authorizing.user_code, "ABCDE");
+    assert_eq!(authorizing.verify_at, "https://link.tidal.com/ABCDE");
+    assert_eq!(token.into_string(), "fresh-refresh");
+    let heard = fake.heard();
+    assert!(heard[0].body.contains("client_id=client"));
+    assert!(heard[0].body.contains("scope=r_usr"));
+    assert_eq!(heard.len(), 4);
+    assert!(heard[1..].iter().all(|asked| {
+        asked.body.contains("device_code=device-1")
+            && asked
+                .body
+                .contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code")
+    }));
+}
+
+#[test]
+fn a_device_sign_in_turned_down_or_left_to_lapse_says_which() {
+    let denied = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        _ => Canned::refused(400, r#"{"status":400,"error":"access_denied"}"#),
+    });
+    let lapsed = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        _ => Canned::refused(400, r#"{"status":400,"error":"expired_token"}"#),
+    });
+
+    for (fake, lapses) in [(denied, false), (lapsed, true)] {
+        let signing_in = fake.signing_in();
+        let authorizing = signing_in.authorizing(&client()).expect("a device code");
+        let answer = signing_in.authorized(&client(), &authorizing, &never);
+        match answer {
+            Err(Error::AuthorizationLapsed { .. }) => assert!(lapses),
+            Err(Error::AuthorizationDenied { .. }) => assert!(!lapses),
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_device_sign_in_cancelled_while_waiting_stops_asking() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        _ => Canned::refused(400, r#"{"status":400,"error":"authorization_pending"}"#),
+    });
+    let signing_in = fake.signing_in();
+    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+
+    let answer = signing_in.authorized(&client(), &authorizing, &|| true);
+
+    assert!(matches!(answer, Ok(None)));
+    assert_eq!(fake.paths(), vec!["/auth/device".to_owned()]);
 }

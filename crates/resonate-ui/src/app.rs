@@ -21,6 +21,7 @@ use resonate_engine::{
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, HistoryKept, Library, Reference, Scrobblers};
 use resonate_lyrics::Lyricists;
+use resonate_providers::SignsIn;
 
 use crate::{
     AppIcon, Bindings, CaretBlink, Error, Launcher, Notice, Result, RootView, Settings, WindowKind,
@@ -126,6 +127,7 @@ pub struct Lookups {
     pub fingerprinters: Arc<Fingerprinters>,
     pub reference: Option<Arc<dyn Reference>>,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
+    pub signs_in: Option<Arc<dyn SignsIn>>,
     pub corrections: Arc<Corrected>,
     pub online: Online,
     pub bindings: Bindings,
@@ -144,6 +146,7 @@ pub struct ResonateApp {
     pub bindings: Bindings,
     pub reference: Option<Arc<dyn Reference>>,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
+    pub signs_in: Option<Arc<dyn SignsIn>>,
     pub attention: Sender<bool>,
     pub places: Places,
     pub resume: bool,
@@ -850,6 +853,7 @@ pub fn run(
             online: lookups.online.clone(),
             reference: lookups.reference.clone(),
             scrobblers: lookups.scrobblers.clone(),
+            signs_in: lookups.signs_in.clone(),
             attention: bus.attention.clone(),
             places: stored.places.clone(),
             resume: stored.resume,

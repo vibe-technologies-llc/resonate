@@ -2,6 +2,7 @@ mod account;
 mod fetched;
 mod manifest;
 mod remux;
+mod sign_in;
 
 use std::{
     io::Read,
@@ -23,7 +24,10 @@ use ureq::{
     },
 };
 
-pub use crate::account::{Account, Endpoints, MediaHosts};
+pub use crate::{
+    account::{Account, Endpoints, MediaHosts},
+    sign_in::TidalSignIn,
+};
 use crate::{
     fetched::{Fetched, Unfetched, as_io},
     manifest::{Container, Manifest, Media},
@@ -160,6 +164,20 @@ fn retry_after(response: &http::Response<Body>) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
+pub(crate) fn api_agent() -> Agent {
+    Agent::config_builder()
+        .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
+        .timeout_connect(Some(CONNECTED_WITHIN))
+        .timeout_recv_response(Some(ANSWERED_WITHIN))
+        .http_status_as_error(false)
+        .build()
+        .new_agent()
+}
+
+pub(crate) fn source() -> SourceId {
+    SourceId::new(TIDAL).unwrap_or_else(|_| SourceId::local())
+}
+
 fn named_by(isrc: &Isrc, held: Option<&str>) -> bool {
     held.is_some_and(|held| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc))
 }
@@ -170,13 +188,7 @@ impl Tidal {
     }
 
     pub fn at(account: Account, endpoints: Endpoints) -> Self {
-        let agent = Agent::config_builder()
-            .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
-            .timeout_connect(Some(CONNECTED_WITHIN))
-            .timeout_recv_response(Some(ANSWERED_WITHIN))
-            .http_status_as_error(false)
-            .build()
-            .new_agent();
+        let agent = api_agent();
         let media = Agent::config_builder()
             .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
             .timeout_connect(Some(CONNECTED_WITHIN))
@@ -187,7 +199,7 @@ impl Tidal {
             .build()
             .new_agent();
         Self {
-            source: SourceId::new(TIDAL).unwrap_or_else(|_| SourceId::local()),
+            source: source(),
             account,
             endpoints,
             agent,

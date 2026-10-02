@@ -400,7 +400,7 @@ pub(crate) enum Naming {
 }
 
 impl Naming {
-    fn of(root: &Path) -> Self {
+    pub(crate) fn of(root: &Path) -> Self {
         match fs::read_to_string(MOUNT_TABLE) {
             Ok(table) => Self::in_table(&table, root),
             Err(error) => {

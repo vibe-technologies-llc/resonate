@@ -25,19 +25,19 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Direction,
-    Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags,
-    Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept,
-    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
-    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
-    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
-    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated, Recording, RecordingAsked,
-    RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder,
-    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SortOrder,
-    Sought, Sources, StreamAsked, Suggestion, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, DeliveryFolder,
+    Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured,
+    FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium,
+    HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
+    LifeSpan, Link, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid,
+    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
+    PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
+    Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -18679,6 +18679,66 @@ fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> R
     let wants = library.wants()?;
     assert!(wants[0].tried.is_some());
     assert_eq!(wants[0].offered, None);
+    Ok(())
+}
+
+#[test]
+fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_was_wanted_for()
+-> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    let album = only_album(&library)?;
+    wanted_san_tropez(&library)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+
+    let shop = Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/55391743",
+            extension: "wav",
+            bytes: Wav::new().frames(8_820).build(),
+        },
+    ));
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(summary.stats.offered, 1);
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(summary.stats.unkept, 0);
+
+    let wants = library.wants()?;
+    let held = wants[0].held.expect("the filed file is the want's row");
+    let track = library.track(held)?.expect("the filed row");
+    let path = track
+        .location
+        .as_path()
+        .expect("a local file")
+        .to_path_buf();
+    let root = tree.path().canonicalize().expect("the tree");
+    assert!(path.starts_with(&root), "{}", path.display());
+    assert!(path.is_file());
+    assert_eq!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some("wav")
+    );
+    assert!(
+        !track.delivered,
+        "a filed row belongs to its root, not the vault"
+    );
+    assert_eq!(track.title, "San Tropez");
+    assert_eq!(track.album_id, Some(album.id));
+    assert_eq!(
+        wants[0].offered.as_deref(),
+        Some(MediaLocation::local(&path).to_uri().as_str())
+    );
+
+    scan(&library, &options(&tree))?;
+    let again = library.track(held)?.expect("the row a rescan kept");
+    assert_eq!(again.album_id, Some(album.id));
+    assert_eq!(library.wants()?[0].held, Some(held));
     Ok(())
 }
 

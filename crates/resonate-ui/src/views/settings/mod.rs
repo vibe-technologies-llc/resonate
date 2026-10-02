@@ -27,7 +27,7 @@ pub(crate) use crate::views::settings::{
     equaliser::marked_frequencies,
     find::{Category, Group},
     subsonic::Account,
-    tidal::TidalAccount,
+    tidal::{SigningIn, TidalAccount},
 };
 use crate::{
     AppIcon, ResonateApp, Setting,

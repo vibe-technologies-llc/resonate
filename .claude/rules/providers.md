@@ -4,6 +4,7 @@ paths:
   - "crates/providers/**/*.rs"
   - "crates/resonate/src/providers.rs"
   - "crates/resonate-library/src/supply.rs"
+  - "crates/resonate-library/src/filed.rs"
 ---
 
 # Providers
@@ -93,6 +94,29 @@ A provider does none of this, so none of it is written twice:
   provider's is, and ends on the first read that does, its channel gone.
 - **Staging, validating, deduping and keeping**, through `Vault::keep` and `Vault::keep_delivered`,
   so a delivery is held to the import's bit-exact, never-larger promise.
+- **Where no vault is open, a delivery is filed in the music folder instead.** `Library::deliver_into`
+  names a `DeliveryFolder` — the `music-folder` key's path and the `organise-as` layout — which the
+  binary sets as it opens the library and the window sets afresh before every poll from its live
+  globals; with neither a vault nor a folder a stream is `unkept` and a file only offered, as before.
+  `filed.rs` does the rest: the want's album is read (`Library::album_to_file`: its title, its owner,
+  its year and how many discs its release holds), the path is the layout rendered over the want's
+  names under the folder's `Naming`, the bytes are staged as a hidden `.<name>.<pid>-<n>.resonate-delivery`
+  beside it — at most `LARGEST_FILED` — and landed by `hard_link` under the first free name
+  `take_in::candidates` offers (`name (2).ext` and on), so nothing is overwritten. A landing the
+  decoder cannot probe is removed and counted `unkept`. The file is then tagged through `FileTags` with
+  everything the want and album say — title, artist, album, album artist, track and disc, the year,
+  the recording, release-track and release ids and the ISRC — so a later rescan reads the same row.
+  **It joins the album it was wanted for, not one of its own**: before any scan reads it,
+  `Library::claim_album_keys` names the album by the keys the scan will compute for the file — the
+  release key alone where the release is known, else the album artist's key and the folder's
+  sleeve key — so the scan finds the wanted album rather than founding a new one. At the end of the
+  poll every root a filing landed under (the folder itself, registered as a root, where no root
+  reaches it) is scanned incrementally and `Library::pair_what_landed` pairs each unheld want with
+  the rooted row at the path it was offered, so the want is held and the row is an ordinary library
+  track — moved by `organise`, written by `tag`, pruned by a scan — never a vault object. Pairing also
+  runs as a poll starts, so a filing whose scan was refused (another pass held the walk) is paired by
+  the next poll once anything has read it
+  (`a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_was_wanted_for`).
 - **Turning what was kept into a track row.** `Library::note_delivered` writes the `vault_objects`
   row and a `tracks` row in one transaction and pairs the want's release track with it, so a
   delivery is playable, searchable and held the moment it lands. The row is named by the object's
@@ -218,7 +242,8 @@ own subscription, named by `tidal-client-id`, `tidal-client-secret` and `tidal-r
 and the refresh token are given (the secret is sent where given) and `online` is on, behind the
 binary's `online` feature, and the Library category's *A TIDAL account* group writes the keys for
 the next start, the secret and the token drawn as marks. Nothing is downloaded to play: a delivery
-is fetched whole into the vault and lands as a track row, as every provider's does.
+is fetched whole into the vault — or, with none open, the music folder — and lands as a track row,
+as every provider's does.
 
 - **Asked by the link and the ISRC, never by a title.** The TIDAL track MusicBrainz links the
   recording to (`Identity::track_on(Service::Tidal)`, read by `TrackId::linked` out of
@@ -275,6 +300,23 @@ is fetched whole into the vault and lands as a track row, as every provider's do
   re-encoded where that is smaller, kept stripped where not. Checked against ffmpeg's fragmented
   output at 44.1 kHz/16 bit and 96 kHz/24 bit: `flac -t` passes and the decoded audio's MD5 is the
   source's (`a_fragmented_flac_track_becomes_a_native_stream_of_the_same_frames`).
+- **It is signed in to from the window.** `resonate_providers::SignsIn` is the seam — a `Client`
+  (an id and an optional secret), an `Authorizing` (the code the listener types, the page it is typed
+  at, how long it lasts and how often to ask, and the device code, never printed by `Debug`) and a
+  `RefreshToken` — and `TidalSignIn` the one implementation, handed to the window as
+  `Lookups::signs_in` by `providers::signs_in` under `online`. `authorizing` posts the client id and
+  `r_usr w_usr w_sub` to `oauth2/device_authorization`, a page named without a scheme reached over
+  `https`; `authorized` asks the token endpoint with the device-code grant every `interval` (at least
+  `ASKED_EVERY_AT_LEAST`, five seconds more on `slow_down`) until it answers a refresh token,
+  `expired_token` or the code's `expiresIn` runs out (`Error::AuthorizationLapsed`), `access_denied`
+  (`Error::AuthorizationDenied`), or the cancel it is handed reads true (`Ok(None)`), looking at the
+  cancel every `LOOKED_AT_EVERY`. The *A TIDAL account* group's *Sign in to TIDAL*, greyed until a
+  client id is given and while Online is off, runs both on the background executor, draws the code,
+  *Open the page* and *Stop* while it waits, and writes the token it is handed into the refresh-token
+  field and `tidal-refresh-token`, the provider asking from the next start
+  (`a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token`,
+  `a_device_sign_in_turned_down_or_left_to_lapse_says_which`,
+  `a_device_sign_in_cancelled_while_waiting_stops_asking`). No client id is built in.
 - **It paces itself and identifies itself as the Subsonic client does**: API requests `ASKED_APART`,
   a 429 or 503 retried after its `Retry-After` up to `RETRIES_AT_MOST`, the User-Agent
   `resonate/<version>` alone, and `Account`'s `Debug` printing neither the secret nor the token.

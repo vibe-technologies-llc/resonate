@@ -336,9 +336,10 @@ service or a format — and is not worked until that moves; everything else is o
 - With `<mbid>.flac` and `<mbid>.mp3` both in the inbox the name sorting first wins, and nothing
   prefers the lossless one; the inbox also stats every entry for every want
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
-- TIDAL is signed in to only with a client id and refresh token the listener brings from
-  elsewhere; nothing in the window or on the command line runs the device sign-in that would issue
-  one, and a refresh token TIDAL rotates is not written back
+- TIDAL's device sign-in is the window's alone, with no command-line way in, and a refresh token
+  TIDAL rotates when the provider signs in is not written back
+- The TIDAL provider is registered from the next start, so a sign-in in the window is not polled
+  with until the window is opened again
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either
 

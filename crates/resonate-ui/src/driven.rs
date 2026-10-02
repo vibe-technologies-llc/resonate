@@ -227,6 +227,7 @@ impl Driven {
                 bindings: Bindings::default(),
                 reference: None,
                 scrobblers: None,
+                signs_in: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),

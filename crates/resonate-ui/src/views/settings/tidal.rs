@@ -1,17 +1,73 @@
-use gpui::{
-    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Window,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
+
+use gpui::{
+    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
+    Styled as _, Task, Window, div,
+};
+use resonate_providers::{Authorizing, Client, Error, RefreshToken};
 
 use crate::{
     Notice, ResonateApp, Setting,
+    icons::Icon,
     settings::Online,
     views::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::note,
+        settings::{action, note},
     },
 };
+
+const SIGN_IN_NOTE: &str = "Sign in to TIDAL asks TIDAL for a code to approve in a browser \
+                            with the client id above, then keeps the refresh token it hands \
+                            back — nothing is typed into this window but the client.";
+
+const NO_CLIENT: &str = "Give the client id above first";
+
+const OFFLINE: &str = "TIDAL is signed in to only while Online is on";
+
+const SIGNED_IN: &str = "Signed in to TIDAL — it is asked from the next start";
+
+#[derive(Clone, Debug, Default)]
+pub(crate) enum TidalSigning {
+    #[default]
+    Idle,
+    Asking,
+    Waiting(Authorizing),
+}
+
+pub(crate) struct SigningIn {
+    pub(crate) shown: TidalSigning,
+    stopped: Arc<AtomicBool>,
+    task: Task<()>,
+}
+
+impl Default for SigningIn {
+    fn default() -> Self {
+        Self {
+            shown: TidalSigning::Idle,
+            stopped: Arc::new(AtomicBool::new(false)),
+            task: Task::ready(()),
+        }
+    }
+}
+
+fn turned_away(error: &Error) -> &'static str {
+    match error {
+        Error::AuthorizationLapsed { .. } => "The TIDAL code lapsed before it was approved",
+        Error::AuthorizationDenied { .. } => "TIDAL was told not to sign in",
+        Error::Unwelcome { .. } => "TIDAL refused the client id",
+        Error::Io { .. } => "TIDAL could not be reached",
+        Error::Refused { .. } => "TIDAL refused the sign-in",
+        Error::Unreadable { .. }
+        | Error::TurnedAway { .. }
+        | Error::OffItsHosts { .. }
+        | Error::NotAnExtension => "TIDAL answered something this build cannot read",
+    }
+}
 
 const TIDAL_NOTE: &str = "A TIDAL subscription of your own is asked for every track marked \
                           wanted, by the TIDAL track MusicBrainz links the recording to or by \
@@ -148,6 +204,187 @@ impl RootView {
         }
     }
 
+    fn client_for_tidal(&self, cx: &Context<Self>) -> Option<Client> {
+        let online = &cx.global::<ResonateApp>().online;
+        let id = online.tidal_client_id.trim();
+        let secret = online.tidal_client_secret.trim();
+        (!id.is_empty()).then(|| Client {
+            id: id.to_owned(),
+            secret: (!secret.is_empty()).then(|| secret.to_owned()),
+        })
+    }
+
+    fn sign_in_to_tidal(&mut self, cx: &mut Context<Self>) {
+        let app = cx.global::<ResonateApp>();
+        let Some(signs_in) = app.signs_in.clone().filter(|_| app.online.enabled) else {
+            self.report(Notice::Trouble(OFFLINE.to_owned()), cx);
+            return;
+        };
+        let Some(client) = self.client_for_tidal(cx) else {
+            self.report(Notice::Trouble(NO_CLIENT.to_owned()), cx);
+            return;
+        };
+
+        self.signing_in.stopped.store(true, Ordering::Relaxed);
+        let stopped = Arc::new(AtomicBool::new(false));
+        self.signing_in.stopped = Arc::clone(&stopped);
+        self.signing_in.shown = TidalSigning::Asking;
+        cx.notify();
+
+        self.signing_in.task = cx.spawn(async move |this, cx| {
+            let asking = Arc::clone(&signs_in);
+            let asked_for = client.clone();
+            let authorizing = cx
+                .background_executor()
+                .spawn(async move { asking.authorizing(&asked_for) })
+                .await;
+            let authorizing = match authorizing {
+                Ok(authorizing) => authorizing,
+                Err(error) => {
+                    let told = this.update(cx, |this, cx| this.tidal_signed_in(Err(error), cx));
+                    let _ = told;
+                    return;
+                }
+            };
+
+            let shown = authorizing.clone();
+            let waiting = this.update(cx, |this, cx| {
+                this.signing_in.shown = TidalSigning::Waiting(shown);
+                cx.notify();
+            });
+            if waiting.is_err() {
+                return;
+            }
+            let answered = cx
+                .background_executor()
+                .spawn(async move {
+                    let stopping = move || stopped.load(Ordering::Relaxed);
+                    signs_in.authorized(&client, &authorizing, &stopping)
+                })
+                .await;
+            let told = this.update(cx, |this, cx| this.tidal_signed_in(answered, cx));
+            let _ = told;
+        });
+    }
+
+    fn tidal_signed_in(
+        &mut self,
+        answered: resonate_providers::Result<Option<RefreshToken>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.signing_in.shown = TidalSigning::Idle;
+        match answered {
+            Ok(Some(token)) => {
+                let token = token.into_string();
+                let account = TidalAccount::RefreshToken;
+                self.tidal_field(account)
+                    .clone()
+                    .update(cx, |field, cx| field.hold(token.clone(), cx));
+                cx.update_global::<ResonateApp, _>(|global, _| {
+                    account.hold(&mut global.online, token.clone());
+                });
+                self.store(&account.setting(token), cx);
+                self.report(Notice::Done(SIGNED_IN.to_owned()), cx);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "the TIDAL sign-in did not finish");
+                self.report(Notice::Trouble(turned_away(&error).to_owned()), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn stop_signing_in_to_tidal(&mut self, cx: &mut Context<Self>) {
+        self.signing_in.stopped.store(true, Ordering::Relaxed);
+        self.signing_in.shown = TidalSigning::Idle;
+        self.signing_in.task = Task::ready(());
+        cx.notify();
+    }
+
+    fn signing_in_to_tidal(&self, cx: &mut Context<Self>) -> Div {
+        let app = cx.global::<ResonateApp>();
+        let reachable = app.signs_in.is_some() && app.online.enabled;
+        let held_back = !reachable || self.client_for_tidal(cx).is_none();
+
+        match self.signing_in.shown.clone() {
+            TidalSigning::Idle => div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(self.sign_in_button("Sign in to TIDAL", held_back, cx))
+                .child(note(SIGN_IN_NOTE)),
+            TidalSigning::Asking => div().child(self.sign_in_button("Asking TIDAL…", true, cx)),
+            TidalSigning::Waiting(authorizing) => {
+                let opened = authorizing.verify_at.clone();
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(kit::field(
+                        "Code",
+                        kit::figure(authorizing.user_code.clone()),
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_2()
+                            .child(self.open_the_tidal_page(opened, cx))
+                            .child(self.stop_signing_in(cx)),
+                    )
+                    .child(note(format!(
+                        "Open {} and approve the code {}; this waits until TIDAL answers, for \
+                         {} minutes at most.",
+                        authorizing.verify_at,
+                        authorizing.user_code,
+                        authorizing.lasts.as_secs().div_ceil(60),
+                    )))
+            }
+        }
+    }
+
+    fn sign_in_button(
+        &self,
+        label: &'static str,
+        held_back: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        action(
+            "tidal-sign-in",
+            label,
+            Icon::Link,
+            held_back,
+            |this, _, cx| this.sign_in_to_tidal(cx),
+            self,
+            cx,
+        )
+    }
+
+    fn open_the_tidal_page(&self, page: String, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "tidal-open-page",
+            "Open the page",
+            Icon::Globe,
+            false,
+            move |_, _, cx| cx.open_url(&page),
+            self,
+            cx,
+        )
+    }
+
+    fn stop_signing_in(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        action(
+            "tidal-stop-sign-in",
+            "Stop",
+            Icon::Stop,
+            false,
+            |this, _, cx| this.stop_signing_in_to_tidal(cx),
+            self,
+            cx,
+        )
+    }
+
     pub(super) fn tidal_group(&mut self, cx: &mut Context<Self>) -> Div {
         let mut body = kit::section_body();
         for account in TidalAccount::ALL {
@@ -161,6 +398,7 @@ impl RootView {
                 ),
             ));
         }
-        body.child(note(TIDAL_NOTE))
+        body.child(self.signing_in_to_tidal(cx))
+            .child(note(TIDAL_NOTE))
     }
 }

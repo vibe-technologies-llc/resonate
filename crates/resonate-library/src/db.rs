@@ -41,6 +41,7 @@ use crate::{
     Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
     UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere,
     enrich, enriched,
+    filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, likeness,
     model::CoverWanted,
@@ -436,6 +437,7 @@ pub(crate) struct Inner {
     playing: Mutex<Option<Playing>>,
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
+    delivering_into: Mutex<Option<DeliveryFolder>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -966,6 +968,109 @@ impl Library {
         self.inner.vault.as_ref()
     }
 
+    pub fn deliver_into(&self, folder: Option<DeliveryFolder>) {
+        *self.inner.delivering_into.lock() = folder;
+    }
+
+    pub(crate) fn delivering_into(&self) -> Option<DeliveryFolder> {
+        self.inner.delivering_into.lock().clone()
+    }
+
+    pub(crate) fn album_to_file(&self, album: AlbumId) -> Result<AlbumToFile> {
+        self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT albums.title, artists.name, albums.year,
+                            (SELECT count(DISTINCT disc) FROM release_tracks
+                              WHERE release_tracks.album_id = albums.id)
+                       FROM albums LEFT JOIN artists ON artists.id = albums.artist_id
+                      WHERE albums.id = ?1",
+                    params![album.get() as i64],
+                    |row| {
+                        Ok(AlbumToFile {
+                            title: row.get(0)?,
+                            owner: row.get(1)?,
+                            year: row.get(2)?,
+                            discs: row.get::<_, i64>(3).map(|discs| discs.max(1) as u32)?,
+                        })
+                    },
+                )
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+    }
+
+    pub(crate) fn root_reaching(&self, path: &Path) -> Result<Option<PathBuf>> {
+        let roots = self.inner.read(|connection| {
+            rows(connection, "SELECT path FROM roots", Vec::new(), |row| {
+                row.get::<_, String>(0).map(|path| Ok(PathBuf::from(path)))
+            })
+        })?;
+        Ok(roots
+            .into_iter()
+            .filter(|root| path.starts_with(root))
+            .max_by_key(|root| root.components().count()))
+    }
+
+    pub(crate) fn claim_album_keys(&self, album: AlbumId, keys: &[String]) -> Result<()> {
+        self.inner.write(|transaction| {
+            for key in keys {
+                transaction
+                    .execute(
+                        "INSERT INTO album_keys (key, album_id) VALUES (?1, ?2)
+                         ON CONFLICT(key) DO NOTHING",
+                        params![key, album.get() as i64],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            }
+            Ok(())
+        })
+    }
+
+    pub(crate) fn pair_what_landed(&self) -> Result<u64> {
+        let offered = self.inner.read(|connection| {
+            rows(
+                connection,
+                "SELECT release_tracks.id, wants.offered
+                   FROM wants JOIN release_tracks ON release_tracks.id = wants.release_track_id
+                  WHERE release_tracks.track_id IS NULL AND wants.offered IS NOT NULL",
+                Vec::new(),
+                |row| Ok(Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))),
+            )
+        })?;
+        let landed: Vec<(i64, String)> = offered
+            .into_iter()
+            .filter_map(|(release_track, uri)| {
+                let location = MediaLocation::from_uri(&uri)?;
+                let path = location.as_path()?.to_str()?.to_owned();
+                Some((release_track, path))
+            })
+            .collect();
+        if landed.is_empty() {
+            return Ok(0);
+        }
+
+        self.inner.write(|transaction| {
+            let mut paired = 0;
+            for (release_track, path) in &landed {
+                paired += transaction
+                    .execute(
+                        "UPDATE release_tracks
+                            SET track_id = (SELECT id FROM tracks
+                                             WHERE path = ?2 AND span_start = 0
+                                               AND root_id IS NOT NULL)
+                          WHERE id = ?1 AND track_id IS NULL
+                            AND EXISTS (SELECT 1 FROM tracks
+                                         WHERE path = ?2 AND span_start = 0
+                                           AND root_id IS NOT NULL)",
+                        params![release_track, path],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Update, source))?
+                    as u64;
+            }
+            Ok(paired)
+        })
+    }
+
     pub fn sources(&self) -> Sources {
         match self.vault() {
             Some(vault) => Sources::local()
@@ -1012,6 +1117,7 @@ impl Library {
                 playing: Mutex::new(None),
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
+                delivering_into: Mutex::new(None),
             }),
         })
     }

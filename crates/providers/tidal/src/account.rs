@@ -1,6 +1,7 @@
 use std::fmt;
 
 const AUTH: &str = "https://auth.tidal.com/v1/oauth2/token";
+const DEVICE: &str = "https://auth.tidal.com/v1/oauth2/device_authorization";
 const API: &str = "https://api.tidal.com/v1/";
 const OPENAPI: &str = "https://openapi.tidal.com/v2/";
 const MEDIA_SCHEME: &str = "https";
@@ -37,6 +38,7 @@ impl fmt::Debug for Account {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoints {
     pub auth: String,
+    pub device: String,
     pub api: String,
     pub openapi: String,
     pub media: MediaHosts,
@@ -46,6 +48,7 @@ impl Endpoints {
     pub fn tidal() -> Self {
         Self {
             auth: AUTH.to_owned(),
+            device: DEVICE.to_owned(),
             api: API.to_owned(),
             openapi: OPENAPI.to_owned(),
             media: MediaHosts {

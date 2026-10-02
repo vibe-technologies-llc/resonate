@@ -51,6 +51,12 @@ pub enum Error {
     #[error("{op:?} was answered by the {provider} provider's server with media off its own hosts")]
     OffItsHosts { provider: SourceId, op: ProviderOp },
 
+    #[error("the sign-in to the {provider} provider lapsed before it was approved")]
+    AuthorizationLapsed { provider: SourceId },
+
+    #[error("the sign-in to the {provider} provider was turned down")]
+    AuthorizationDenied { provider: SourceId },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -65,6 +71,8 @@ impl Error {
             Self::Unreadable { .. }
             | Self::TurnedAway { .. }
             | Self::OffItsHosts { .. }
+            | Self::AuthorizationLapsed { .. }
+            | Self::AuthorizationDenied { .. }
             | Self::NotAnExtension => false,
         }
     }

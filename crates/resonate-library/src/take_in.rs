@@ -667,7 +667,7 @@ fn staged_beside(whole: &Path) -> PathBuf {
     whole.with_file_name(staged)
 }
 
-fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
+pub(crate) fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
     let stem = whole.file_stem().map(OsString::from).unwrap_or_default();
     let extension = whole.extension().map(OsString::from);
     let original = whole.to_path_buf();

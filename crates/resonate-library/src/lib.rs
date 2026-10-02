@@ -5,6 +5,7 @@ mod elsewhere;
 mod enrich;
 mod enriched;
 mod error;
+mod filed;
 mod fingerprint;
 mod hinted;
 mod history;
@@ -75,6 +76,7 @@ pub use crate::{
         EncodedColumn, Error, FieldName, LayoutFault, MoveOp, OrderedColumn, PlaylistName, Result,
         SchemaFingerprint, StoreOp, TagName,
     },
+    filed::DeliveryFolder,
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
     history::{Aged, HistoryKept},
     import::{

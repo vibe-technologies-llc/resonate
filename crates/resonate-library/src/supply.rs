@@ -1,5 +1,8 @@
 use std::{
+    ffi::OsStr,
+    fs::File,
     io::{self, Read},
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -15,7 +18,8 @@ use resonate_providers::{Asking, Away, Delivered, Delivery, Identity, Providers}
 use resonate_vault::{Keeping, Taking};
 
 use crate::{
-    Error, Library, Result, Want,
+    Error, Library, Result, ScanOptions, Want,
+    filed::{self, Filed, Unfiled},
     pass::{Cancelling, PassHandle, PassKind, PollHandle},
 };
 
@@ -117,24 +121,28 @@ impl Cancelling for PollProgress {
     }
 }
 
+struct Landing<'a> {
+    options: PollOptions,
+    progress: &'a PollProgress,
+    away: &'a mut Away,
+    filed: &'a mut Vec<Filed>,
+}
+
 fn landed(
     library: &Library,
     want: &Want,
     delivered: Delivered,
-    options: PollOptions,
-    progress: &PollProgress,
-    away: &mut Away,
+    landing: &mut Landing<'_>,
 ) -> Result<Option<MediaLocation>> {
+    let Landing {
+        options,
+        progress,
+        ref mut away,
+        ..
+    } = *landing;
     let taken_from = delivered.taken_from();
     let Some(vault) = library.vault().cloned() else {
-        return Ok(match delivered.delivery {
-            Delivery::File(_) => Some(taken_from),
-            Delivery::Stream { .. } => {
-                tracing::warn!(%taken_from, "a streamed delivery has no vault to land in");
-                progress.unkept.fetch_add(1, Ordering::Relaxed);
-                None
-            }
-        });
+        return filed_in_the_music_folder(library, want, delivered, landing);
     };
 
     let keeping = match delivered.delivery {
@@ -302,15 +310,111 @@ pub(crate) fn start(
     Ok(PassHandle::of(PassKind::Poll, owned, thread))
 }
 
+fn filed_in_the_music_folder(
+    library: &Library,
+    want: &Want,
+    delivered: Delivered,
+    landing: &mut Landing<'_>,
+) -> Result<Option<MediaLocation>> {
+    let progress = landing.progress;
+    let taken_from = delivered.taken_from();
+    let Some(into) = library.delivering_into() else {
+        return Ok(match delivered.delivery {
+            Delivery::File(_) => Some(taken_from),
+            Delivery::Stream { .. } => {
+                tracing::warn!(%taken_from, "a streamed delivery has neither a vault nor a music folder to land in");
+                progress.unkept.fetch_add(1, Ordering::Relaxed);
+                None
+            }
+        });
+    };
+
+    let outcome = match delivered.delivery {
+        Delivery::File(path) => {
+            let extension = path
+                .extension()
+                .and_then(OsStr::to_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            match File::open(&path) {
+                Ok(mut file) => filed::filed(library, &into, want, &mut file, &extension),
+                Err(error) => Err(Unfiled::Io(error)),
+            }
+        }
+        Delivery::Stream {
+            extension, reader, ..
+        } => {
+            let mut pumped = Pumped::from(reader, progress, landing.options.answers_within)
+                .map_err(|source| Error::ThreadSpawn { source })?;
+            let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
+            if pumped.stalled {
+                tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
+                progress.late.fetch_add(1, Ordering::Relaxed);
+                landing.away.note(&delivered.provider);
+                return Ok(None);
+            }
+            outcome
+        }
+    };
+
+    match outcome {
+        Ok(landed) => {
+            progress.kept.fetch_add(1, Ordering::Relaxed);
+            let at = MediaLocation::local(&landed.path);
+            landing.filed.push(landed);
+            Ok(Some(at))
+        }
+        _ if progress.is_cancelled() => Ok(None),
+        Err(Unfiled::Catalog(error)) => Err(error),
+        Err(Unfiled::Io(error)) => {
+            tracing::warn!(%taken_from, %error, "a delivered track could not be written into the music folder");
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        }
+        Err(unfiled) => {
+            tracing::warn!(%taken_from, ?unfiled, "a delivered track could not be filed in the music folder");
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        }
+    }
+}
+
+fn scanned_and_paired(library: &Library, filed: &[Filed]) -> Result<()> {
+    if !filed.is_empty() {
+        let options = ScanOptions {
+            roots: filed::roots_of(filed),
+            incremental: true,
+            follow_symlinks: false,
+            extract_cover_art: true,
+            workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+        };
+        match library.scan(options).and_then(PassHandle::join) {
+            Ok(summary) => {
+                tracing::debug!(?summary, "the folders deliveries were filed in were read")
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the folders deliveries were filed in could not be read yet");
+            }
+        }
+    }
+    let paired = library.pair_what_landed()?;
+    if paired > 0 {
+        tracing::info!(paired, "wants were paired with the tracks filed for them");
+    }
+    Ok(())
+}
+
 fn run(
     library: &Library,
     providers: &Providers,
     options: PollOptions,
     progress: &PollProgress,
 ) -> Result<PollSummary> {
+    scanned_and_paired(library, &[])?;
     let now = SystemTime::now();
     let wants = library.wants()?;
     let mut away = Away::default();
+    let mut filed = Vec::new();
 
     for want in wants
         .iter()
@@ -339,7 +443,17 @@ fn run(
         match answer.delivered {
             Some(delivered) => {
                 progress.offered.fetch_add(1, Ordering::Relaxed);
-                let noted = landed(library, want, delivered, options, progress, &mut away)?;
+                let noted = landed(
+                    library,
+                    want,
+                    delivered,
+                    &mut Landing {
+                        options,
+                        progress,
+                        away: &mut away,
+                        filed: &mut filed,
+                    },
+                )?;
                 let cancelled = progress.is_cancelled();
                 if noted.is_some() || !cancelled {
                     tried(library, want.id, noted.as_ref())?;
@@ -361,6 +475,8 @@ fn run(
             ),
         }
     }
+
+    scanned_and_paired(library, &filed)?;
 
     Ok(PollSummary {
         stats: progress.snapshot(),

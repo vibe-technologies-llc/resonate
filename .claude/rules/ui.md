@@ -90,6 +90,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   rather than truncating, and a selection drag is followed from a `Window::on_mouse_event` registered in
   `paint`, the element's own `on_mouse_move` firing only while the pointer is over it — the reason
   `views/slider.rs` carries a drag surface.
+- **TIDAL is signed in to from its group, never by pasting a token from elsewhere.** The *A TIDAL
+  account* group holds a `SigningIn` on `RootView` — `TidalSigning::Idle`, `Asking` or `Waiting`
+  with the `Authorizing` it shows, a stop flag and the task — and `sign_in_to_tidal` runs the
+  `SignsIn` seam's two calls on the background executor, the code drawn as a `kit::figure` beside
+  *Open the page* (`cx.open_url`) and *Stop*, which sets the flag the waiting call reads. The token
+  it is handed is held in the refresh-token field, the global and the settings file at once; a
+  refusal is a toast naming which (`providers.md` has the seam).
 - **A secret is drawn as marks.** `Field::masked` — the Subsonic password, the TIDAL client secret and
   refresh token and the AcoustID, AudD and ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
   offset the caret, selection, marked range and IME bounds hold to the drawn line and a pointer's

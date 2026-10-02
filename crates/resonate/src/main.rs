@@ -65,12 +65,12 @@ use resonate_engine::{
     plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
 use resonate_library::{
-    Aged, Cancelling, Cut, Direction, EnrichOptions, EnrichSummary, Failure, Failures, FileTags,
-    HistoryKept, Kept, Layout, Library, Listen, LookupOp, Missing, MissingTrack, Move,
-    OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing, Playlist, PlaylistName,
-    PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery,
-    ScanOptions, Search, SortOrder, StudyFilter, UnheldRelease, Vault, VaultFiles, Want,
-    folded_letters,
+    Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
+    Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, LookupOp, Missing,
+    MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing, Playlist,
+    PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions, RetagSummary,
+    RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter, UnheldRelease, Vault,
+    VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -394,7 +394,15 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
         None => Library::open(&path)?,
     };
     age_the_history(&library, config.history_kept());
+    library.deliver_into(delivery_folder(config));
     Ok(library)
+}
+
+fn delivery_folder(config: &Config) -> Option<DeliveryFolder> {
+    Some(DeliveryFolder {
+        path: config.music_folder.clone()?,
+        layout: config.organise_as(),
+    })
 }
 
 fn age_the_history(library: &Library, kept: HistoryKept) {
@@ -2368,6 +2376,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             )),
             reference: online::reference(&config),
             scrobblers: online::scrobblers(&config),
+            signs_in: providers::signs_in(),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             online: resonate_ui::Online {

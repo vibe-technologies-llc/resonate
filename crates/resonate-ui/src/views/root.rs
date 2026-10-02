@@ -60,7 +60,9 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
-        settings::{Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, TidalAccount},
+        settings::{
+            Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
+        },
         slider::{Grab, Rail},
         transport::Resolved,
         typing::{self, TypeAhead, jumped},
@@ -584,6 +586,7 @@ pub struct RootView {
     pub(crate) last_window_size: Option<WindowSize>,
     window_size_settled: Task<()>,
     token_checked: Task<()>,
+    pub(crate) signing_in: SigningIn,
     parts: Parts,
 }
 
@@ -1012,6 +1015,7 @@ impl RootView {
             last_window_size,
             window_size_settled: Task::ready(()),
             token_checked: Task::ready(()),
+            signing_in: SigningIn::default(),
             parts: Parts::of(&cx.entity(), cx),
         };
         cx.observe_window_bounds(window, |this, window, cx| {

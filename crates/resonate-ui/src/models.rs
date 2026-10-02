@@ -19,16 +19,17 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
-    CatalogStamp, CoverArt, Cut, Day, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
-    HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Kept, Layout,
-    Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
-    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
-    Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress,
-    RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions,
-    ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder, Sought, Sources, Statistics,
-    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, asks_elsewhere,
+    CatalogStamp, CoverArt, Cut, Day, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions,
+    EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
+    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
+    Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack,
+    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
+    PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
+    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder,
+    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
+    Window, Wording, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
@@ -688,6 +689,14 @@ pub struct LibraryModel {
     _aged: Task<()>,
     _finding: Task<()>,
     _previewing: Task<()>,
+}
+
+fn delivery_folder(cx: &App) -> Option<DeliveryFolder> {
+    let global = cx.try_global::<ResonateApp>()?;
+    Some(DeliveryFolder {
+        path: global.music_folder.clone()?,
+        layout: Layout::read(&global.organise_as).unwrap_or_default(),
+    })
 }
 
 impl LibraryModel {
@@ -3643,6 +3652,7 @@ impl LibraryModel {
         if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
             return true;
         }
+        self.library.deliver_into(delivery_folder(cx));
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
             Err(error) => {
