@@ -1,6 +1,7 @@
 mod alternatives;
 mod credits;
 mod db;
+mod deleted;
 mod elsewhere;
 mod enrich;
 mod enriched;
@@ -65,6 +66,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 
 pub use crate::{
     db::{CatalogStamp, Library, WrittenElsewhere},
+    deleted::Deleted,
     elsewhere::{
         FOUND_ELSEWHERE_AT_MOST, Found, Sung, asks_elsewhere, in_the_order_worth_offering,
     },

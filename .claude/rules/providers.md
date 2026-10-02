@@ -163,10 +163,16 @@ A provider does none of this, so none of it is written twice:
    **The window polls on its own** as well as on *Poll now*: `FIRST_ASKED_AFTER` a start, every
    `ASKED_EVERY` after, and as soon as a want is marked — each only where a provider is
    registered, nothing else runs and `Library::is_a_want_due` says one is due; a want marked while
-   another pass holds the library is owed (`LibraryModel::poll_owed`) and asked about the moment
-   `take_up_what_waited` finds the library free, so an idle window with nothing wanted reads the
-   wants and nothing else. A self-started poll raises no notice when
-   it cannot run and clears none when it does. *Poll now* and `resonate poll --again` poll under
+   another pass holds the library is owed (`LibraryModel::poll_owed`, carrying the `PollOptions` it
+   was owed under, the widest owed winning) and asked about the moment `take_up_what_waited` finds
+   the library free, so an idle window with nothing wanted reads the wants and nothing else. A
+   self-started poll raises no notice when it cannot run and clears none when it does, and tells
+   nothing as it joins while the sidebar's downloads list holds anything, the list being where a
+   fetch the listener asked for is told (`ui.md`). **A poll names the want it is asking about**:
+   `PollProgress::asking` is the `WantId` handed to the providers, held through the delivery's
+   landing and `None` between wants and once the walk is done
+   (`a_poll_names_the_want_it_is_asking_about_while_it_asks`), which is what the window draws as
+   *Downloading…*. *Poll now* and `resonate poll --again` poll under
    `PollOptions::ASKING_EVERY_WANT`, asking every unheld want whenever last tried — somebody who
    just dropped a file in the inbox means *now*; the timer and a bare `resonate poll` keep to
    `POLL_AGAIN_AFTER`, which spares a network service.

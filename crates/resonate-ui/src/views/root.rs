@@ -37,6 +37,7 @@ use crate::{
         ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
         attend, seek_further, seek_step,
     },
+    downloads::{Download, Fetching},
     format,
     icons::{self, Icon},
     listening::ListenModel,
@@ -45,7 +46,7 @@ use crate::{
     theme,
     toast::{self, Toaster},
     views::{
-        browser::{ArtistShows, ArtistsDrawn, OpenedRecord},
+        browser::{self, ArtistShows, ArtistsDrawn, OpenedRecord},
         chrome,
         dropping::{Incoming, TakingIn},
         field::{Field, Submitted},
@@ -127,6 +128,27 @@ const PINNED_INSET: f32 = 22.0;
 
 const ENRICHING_HINT: &str =
     "The reference is being asked about the library; opens the Online settings";
+
+const SHOW_DOWNLOADS_HINT: &str = "Show the songs asked for and how each is getting on";
+
+const HIDE_DOWNLOADS_HINT: &str = "Hide the songs asked for";
+
+const DISMISS_DOWNLOAD_HINT: &str = "Take this song off the list";
+
+const DOWNLOADS_PANEL_GAP: f32 = 8.0;
+
+const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
+
+const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
+
+const KEEP_THE_TRACK_HINT: &str = keyed!("Keep the song", key!(leave));
+
+const DELETE_THE_TRACK_HINT: &str =
+    "Delete the file from disk and take the song out of the library";
+
+const DELETED_FOR_GOOD: &str = "This can't be undone.";
+
+const A_CUT_GOES_WHOLE: &str = "It is cut from a file holding other tracks too, so the whole file goes, and every track cut from it.";
 
 const NAME_PLACEHOLDER: &str = "Name the playlist, then press enter";
 
@@ -463,6 +485,8 @@ pub struct RootView {
     pub(crate) analysis: Entity<AnalysisModel>,
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) listening_open: bool,
+    downloads_open: bool,
+    deleting: Option<Deleting>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
     pub(crate) watching_the_drag: Task<()>,
@@ -892,6 +916,8 @@ impl RootView {
             analysis,
             listen,
             listening_open: false,
+            downloads_open: false,
+            deleting: None,
             incoming: None,
             taking_in: None,
             watching_the_drag: Task::ready(()),
@@ -2381,6 +2407,7 @@ impl RootView {
             && self.adding.is_none()
             && self.magnified.is_none()
             && self.record.is_none()
+            && self.deleting.is_none()
             && !cx.has_active_drag()
     }
 
@@ -2663,6 +2690,7 @@ impl RootView {
         }
 
         match keystroke.key.as_str() {
+            "escape" if self.deleting.is_some() => self.keep_the_track(cx),
             "escape" if self.listening_open => self.close_the_listener(cx),
             "escape" if self.magnified.is_some() => self.shrink_cover(cx),
             "escape" if self.adding.is_some() => self.stop_naming(window, cx),
@@ -2673,6 +2701,7 @@ impl RootView {
             "escape" if self.menu.is_some() => {
                 self.close_the_menu(cx);
             }
+            "escape" if self.downloads_open => self.close_the_downloads(cx),
             "escape" if Self::noticed(cx) => toast::dismiss(cx),
             "escape" => {
                 if !self.stop_typing(cx) {
@@ -2807,6 +2836,7 @@ impl RootView {
             || self.magnified.is_some()
             || self.record.is_some()
             || self.listening_open
+            || self.deleting.is_some()
     }
 
     fn reach_by_hand(&mut self, cx: &mut Context<Self>) {
@@ -3367,6 +3397,7 @@ impl RootView {
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
         let enriching = library.is_enriching();
+        let downloads = !library.downloads().is_empty();
 
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
@@ -3420,6 +3451,7 @@ impl RootView {
                     .flex()
                     .flex_col()
                     .gap_1()
+                    .when(downloads, |column| column.child(self.download_status(cx)))
                     .when(enriching, |column| column.child(self.enrichment_status(cx)))
                     .child(self.pane_row(Pane::Settings, None, cx)),
             )
@@ -3475,6 +3507,360 @@ impl RootView {
                     }))
             })
             .collect()
+    }
+
+    fn download_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let underway = self.library.read(cx).is_downloading();
+        let open = self.downloads_open;
+        let said = if underway {
+            "Downloading…"
+        } else {
+            "Downloads"
+        };
+        let mark = if underway {
+            theme::accent()
+        } else {
+            theme::faint()
+        };
+
+        div()
+            .id("downloads")
+            .debug_selector(|| "downloads".to_owned())
+            .flex()
+            .items_center()
+            .gap_2p5()
+            .px_3()
+            .py_1p5()
+            .rounded_md()
+            .cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
+            .names(if open {
+                HIDE_DOWNLOADS_HINT
+            } else {
+                SHOW_DOWNLOADS_HINT
+            })
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.downloads_open = !this.downloads_open;
+                cx.notify();
+            }))
+            .child(icons::icon(Icon::Download, theme::text_base(), mark))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::muted()))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(said),
+            )
+            .child(icons::icon(
+                if open {
+                    Icon::ChevronDown
+                } else {
+                    Icon::ChevronUp
+                },
+                theme::row_marker_icon(),
+                theme::faint(),
+            ))
+    }
+
+    fn downloads_over_the_app(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let library = self.library.read(cx);
+        if !self.downloads_open || library.downloads().is_empty() {
+            return None;
+        }
+        let rows: Vec<(Download, Fetching)> = library
+            .downloads()
+            .iter()
+            .map(|download| (download.clone(), library.fetching(download)))
+            .collect();
+        let finished = rows.iter().any(|(_, fetching)| !fetching.is_underway());
+
+        let mut list = div()
+            .id("download-list")
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .max_h(px(theme::downloads_height()))
+            .overflow_y_scroll();
+        for (at, (download, fetching)) in rows.into_iter().enumerate() {
+            list = list.child(self.download_row(at, &download, fetching, cx));
+        }
+
+        Some(
+            div()
+                .id("downloads-panel")
+                .absolute()
+                .left(px(theme::sidebar_width() + DOWNLOADS_PANEL_GAP))
+                .bottom(px(theme::transport_height() + DOWNLOADS_PANEL_GAP))
+                .w(px(theme::downloads_width()))
+                .flex()
+                .flex_col()
+                .gap_1()
+                .p_2()
+                .rounded_lg()
+                .bg(rgb(theme::surface()))
+                .border_1()
+                .border_color(rgb(theme::border()))
+                .shadow(vec![BoxShadow {
+                    color: hsla(0.0, 0.0, 0.0, 0.5),
+                    offset: point(px(0.0), px(12.0)),
+                    blur_radius: px(32.0),
+                    spread_radius: px(0.0),
+                }])
+                .occlude()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .pl_2()
+                        .child(kit::eyebrow("Downloads"))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .when(finished, |actions| {
+                                    actions.child(
+                                        kit::button(
+                                            "clear-downloads",
+                                            None,
+                                            "Clear finished",
+                                            CLEAR_DOWNLOADS_HINT,
+                                            kit::Tone::Ghost,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
+                                                this.library.update(cx, |library, cx| {
+                                                    library.clear_finished_downloads(cx);
+                                                });
+                                            }),
+                                        ),
+                                    )
+                                })
+                                .child(
+                                    kit::icon_button(
+                                        "close-downloads",
+                                        Icon::Close,
+                                        HIDE_DOWNLOADS_HINT,
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
+                                            this.close_the_downloads(cx);
+                                        },
+                                    )),
+                                ),
+                        ),
+                )
+                .child(list),
+        )
+    }
+
+    fn close_the_downloads(&mut self, cx: &mut Context<Self>) {
+        self.downloads_open = false;
+        cx.notify();
+    }
+
+    fn download_row(
+        &self,
+        at: usize,
+        download: &Download,
+        fetching: Fetching,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let recording = download.found.recording.clone();
+        let again = download.found.clone();
+        let state = browser::fetching_colour(fetching);
+
+        div()
+            .id(listing::keyed_by("download", &recording))
+            .debug_selector(move || format!("download-{at}"))
+            .flex()
+            .items_center()
+            .gap_1()
+            .pl_3()
+            .pr_1()
+            .py_1()
+            .rounded_md()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(SharedString::from(download.found.title.clone())),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .min_w_0()
+                            .gap_1()
+                            .text_size(px(theme::text_xs()))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_color(rgb(state))
+                                    .child(fetching.saying()),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_color(rgb(theme::faint()))
+                                    .truncate()
+                                    .ends_in_an_ellipsis()
+                                    .child(SharedString::from(format!(
+                                        "· {}",
+                                        download.found.artist
+                                    ))),
+                            ),
+                    ),
+            )
+            .when(fetching.can_be_asked_again(), |row| {
+                row.child(
+                    kit::icon_button(
+                        listing::keyed_by("ask-again", &recording),
+                        Icon::Redo,
+                        ASK_AGAIN_HINT,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let wanted = again.clone();
+                        this.library
+                            .update(cx, |library, cx| library.want_found(wanted, cx));
+                    })),
+                )
+            })
+            .when(!fetching.is_underway(), |row| {
+                let dismissed = recording.clone();
+                row.child(
+                    kit::icon_button(
+                        listing::keyed_by("dismiss-download", &recording),
+                        Icon::Close,
+                        DISMISS_DOWNLOAD_HINT,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.library.update(cx, |library, cx| {
+                            library.dismiss_download(&dismissed, cx);
+                        });
+                    })),
+                )
+            })
+    }
+
+    pub(crate) fn ask_to_delete(&mut self, deleting: Deleting, cx: &mut Context<Self>) {
+        self.close_the_menu(cx);
+        self.deleting = Some(deleting);
+        cx.notify();
+    }
+
+    fn keep_the_track(&mut self, cx: &mut Context<Self>) {
+        self.deleting = None;
+        cx.notify();
+    }
+
+    fn delete_the_track(&mut self, cx: &mut Context<Self>) {
+        let Some(Deleting { track, title, .. }) = self.deleting.take() else {
+            return;
+        };
+        self.library
+            .update(cx, |library, cx| library.delete_track(track, title, cx));
+        cx.notify();
+    }
+
+    fn deletion_sheet(&self, deleting: &Deleting, cx: &mut Context<Self>) -> Div {
+        let card = div()
+            .id("delete-sheet")
+            .flex()
+            .flex_col()
+            .gap_4()
+            .w(px(theme::confirm_width()))
+            .p_5()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .shadow(vec![BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.5),
+                offset: point(px(0.0), px(16.0)),
+                blur_radius: px(48.0),
+                spread_radius: px(0.0),
+            }])
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| this.keep_the_track(cx)))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(icons::icon(Icon::Delete, 18.0, theme::failure()))
+                    .child(
+                        div()
+                            .text_size(px(theme::text_lg()))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(rgb(theme::text()))
+                            .child("Delete this song?"),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::muted()))
+                    .child(SharedString::from(deleting.saying()))
+                    .when(deleting.a_cut, |body| body.child(A_CUT_GOES_WHOLE))
+                    .child(
+                        div()
+                            .text_color(rgb(theme::text()))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child(DELETED_FOR_GOOD),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        kit::button(
+                            "keep-the-track",
+                            None,
+                            "Cancel",
+                            KEEP_THE_TRACK_HINT,
+                            kit::Tone::Outlined,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.keep_the_track(cx))),
+                    )
+                    .child(
+                        kit::button(
+                            "delete-the-track",
+                            Some(Icon::Delete),
+                            "Delete",
+                            DELETE_THE_TRACK_HINT,
+                            kit::Tone::Destructive,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.delete_the_track(cx))),
+                    ),
+            );
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(theme::scrim()))
+            .occlude()
+            .child(card)
     }
 
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -3870,6 +4256,7 @@ impl Render for RootView {
                 ParentElement::child,
             )
             .when_some(self.type_ahead_pill(), ParentElement::child)
+            .when_some(self.downloads_over_the_app(cx), ParentElement::child)
             .when_some(self.menu_over_the_app(cx), ParentElement::child)
             .when_some(self.record_over_the_app(cx), ParentElement::child)
             .when_some(self.adding.clone(), |app, holding| {
@@ -3879,10 +4266,45 @@ impl Render for RootView {
                 app.child(self.magnifier(&magnified, window, cx))
             })
             .when(self.listening_open, |app| app.child(self.listen_sheet(cx)))
+            .when_some(self.deleting.clone(), |app, deleting| {
+                app.child(self.deletion_sheet(&deleting, cx))
+            })
             .when_some(self.copying_pill(cx), ParentElement::child)
             .when_some(self.drop_overlay(cx), ParentElement::child);
 
         chrome::frame(window, app)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Deleting {
+    pub(crate) track: TrackId,
+    pub(crate) title: String,
+    pub(crate) artist: Option<String>,
+    pub(crate) a_cut: bool,
+}
+
+impl Deleting {
+    pub(crate) fn of(track: &Track) -> Self {
+        Self {
+            track: track.id,
+            title: track.title.clone(),
+            artist: track.artist.clone().filter(|artist| !artist.is_empty()),
+            a_cut: track.span.is_some(),
+        }
+    }
+
+    fn saying(&self) -> String {
+        match &self.artist {
+            Some(artist) => format!(
+                "“{}” by {artist} is deleted from disk and taken out of the library, its plays with it.",
+                self.title
+            ),
+            None => format!(
+                "“{}” is deleted from disk and taken out of the library, its plays with it.",
+                self.title
+            ),
+        }
     }
 }
 
@@ -4281,7 +4703,7 @@ mod tests {
                 menu::Menu,
                 playlists::Held,
                 reorder::{Reach, Shift},
-                root::{Magnified, Pane, RootView},
+                root::{Deleting, Magnified, Pane, RootView},
             },
         };
 
@@ -4458,6 +4880,33 @@ mod tests {
             });
             driven.settle();
             nothing_behind_the_sheet_answers(&mut driven, 3);
+        }
+
+        #[gpui::test]
+        fn the_delete_sheet_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            driven.cx.simulate_keystrokes("down down");
+            let track = driven.queue()[0];
+            let root = driven.root.clone();
+
+            driven.cx.update(|window, cx| {
+                root.update(cx, |root, cx| {
+                    root.deleting = Some(Deleting {
+                        track,
+                        title: "one".to_owned(),
+                        artist: None,
+                        a_cut: false,
+                    });
+                    window.focus(&root.focus);
+                    cx.notify();
+                });
+            });
+            driven.settle();
+            nothing_behind_the_sheet_answers(&mut driven, 3);
+
+            driven.cx.simulate_keystrokes("escape");
+            assert!(driven.read(|root, _| root.deleting.is_none()));
         }
 
         #[gpui::test]

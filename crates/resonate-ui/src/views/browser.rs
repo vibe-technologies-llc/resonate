@@ -20,7 +20,9 @@ use resonate_library::{
 use smallvec::smallvec;
 
 use crate::{
-    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection, format,
+    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection,
+    downloads::Fetching,
+    format,
     icons::{self, Icon},
     models::{Notice, Picture},
     theme, toast,
@@ -33,7 +35,7 @@ use crate::{
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
-        root::{Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
+        root::{Deleting, Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
         scrollbar::Scrollbars,
         sorting,
         transport::COVER_HINT,
@@ -89,11 +91,15 @@ const UNWANT_HINT: &str = "Stop wanting this track";
 const DISMISS_MISSING_HINT: &str =
     "Take this track off the Missing list, and stop wanting it if it was wanted";
 
-const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to the catalog and the \
+const WANT_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                providers are asked for it. Right-click to choose the release";
 
-const FETCH_FOUND_HINT: &str = "Fetch this song: it is marked wanted, its release is added to the \
-                                catalog and the providers are asked for it now";
+const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
+                                providers are asked for it now, the sidebar following how it goes";
+
+const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
+
+const DELETE_FROM_DISK: &str = "Delete from disk…";
 
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
@@ -101,8 +107,6 @@ const READ_THE_REST: &str = "Read the rest";
 const READ_THE_REST_HINT: &str =
     "Ask MusicBrainz for the releases past the first thousand this artist is credited on";
 const NOTHING_PLACES_IT: &str = "Nothing has identified this track, so it is on no release yet";
-
-const WANTING_HINT: &str = "Adding its release to the catalog";
 
 const UNHELD_COVER: f32 = 0.45;
 
@@ -995,6 +999,7 @@ impl RootView {
                 });
 
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
+                let deleting = Deleting::of(track);
 
                 Menu::at(at)
                     .queues(move || Arc::clone(&queued))
@@ -1021,6 +1026,9 @@ impl RootView {
                                 library.forget_delivered(&delivered, cx);
                             });
                         })
+                    })
+                    .does(Icon::Delete, DELETE_FROM_DISK, move |this, _, cx| {
+                        this.ask_to_delete(deleting.clone(), cx);
                     })
             },
             cx,
@@ -1092,12 +1100,27 @@ impl RootView {
                 match beside {
                     Beside::AnAlbum => Some(listing::format_cell(None)),
                     Beside::ARun => None,
-                    Beside::ASearch { on, .. } => Some(
+                    Beside::ASearch {
+                        on, fetching: None, ..
+                    } => Some(
                         listing::format_cell(None).child(
                             kit::figure(on)
                                 .text_color(rgb(theme::faint()))
                                 .truncate()
                                 .ends_in_an_ellipsis(),
+                        ),
+                    ),
+                    Beside::ASearch {
+                        fetching: Some(fetching),
+                        ..
+                    } => Some(
+                        listing::format_cell(None).child(
+                            div()
+                                .text_size(px(theme::text_sm()))
+                                .text_color(rgb(fetching_colour(fetching)))
+                                .truncate()
+                                .ends_in_an_ellipsis()
+                                .child(fetching.saying()),
                         ),
                     ),
                 },
@@ -1131,18 +1154,21 @@ impl RootView {
     }
 
     fn found_row(&self, index: usize, found: &Found, cx: &mut Context<Self>) -> Stateful<Div> {
+        let fetching = self.library.read(cx).fetching_found(found);
         let row = self
-            .unheld_row(index, Unheld::found(found), cx)
+            .unheld_row(index, Unheld::found(found, fetching), cx)
             .id(listing::keyed_by("found", &found.recording))
             .debug_selector(move || format!("found-{index}"));
-        if self.library.read(cx).is_wanting(found) {
-            return row;
-        }
+        let hint = match fetching {
+            None => FETCH_FOUND_HINT,
+            Some(fetching) if fetching.can_be_asked_again() => FETCH_FOUND_AGAIN_HINT,
+            Some(_) => return row,
+        };
 
         let fetched = found.clone();
         row.cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
-            .names(FETCH_FOUND_HINT)
+            .names(hint)
             .on_click(cx.listener(move |this, _, _, cx| {
                 let wanted = fetched.clone();
                 this.library
@@ -1167,12 +1193,17 @@ impl RootView {
                     })),
             },
             Asks::Found(found) => {
-                if self.library.read(cx).is_wanting(&found) {
+                let fetching = self
+                    .library
+                    .read(cx)
+                    .fetching_found(&found)
+                    .filter(|fetching| !fetching.can_be_asked_again());
+                if let Some(fetching) = fetching {
                     return kit::mark_when(
                         Press::Greyed,
                         listing::keyed_by("wanting-found", &found.recording),
                         Icon::Wanted,
-                        WANTING_HINT,
+                        fetching.saying(),
                         ROW_GROUP,
                     );
                 }
@@ -2408,7 +2439,11 @@ pub(crate) enum Asks {
 pub(crate) enum Beside {
     AnAlbum,
     ARun,
-    ASearch { pictured: Sleeve, on: SharedString },
+    ASearch {
+        pictured: Sleeve,
+        on: SharedString,
+        fetching: Option<Fetching>,
+    },
 }
 
 pub(crate) enum Sleeve {
@@ -2462,7 +2497,7 @@ impl Unheld {
         }
     }
 
-    fn found(found: &Found) -> Self {
+    fn found(found: &Found, fetching: Option<Fetching>) -> Self {
         Self {
             number: SharedString::new_static(""),
             title: SharedString::from(found.title.clone()),
@@ -2479,6 +2514,7 @@ impl Unheld {
                         .map(|release| release.title.clone())
                         .unwrap_or_default(),
                 ),
+                fetching,
             },
             asks: Asks::Found(Box::new(found.clone())),
         }
@@ -2512,7 +2548,7 @@ fn pressing_note(said: &str) -> Div {
 fn beyond_heading(beyond: Beyond, shared_with_a_lookup: bool) -> Div {
     let said = match beyond {
         Beyond::Elsewhere(rows) => format!(
-            "Found on MusicBrainz · {}",
+            "Found on MusicBrainz · {} · press one to download it",
             format::counted(rows, "song", "songs")
         ),
         Beyond::Asking if shared_with_a_lookup => ASKING_BESIDE_A_LOOKUP.to_owned(),
@@ -2520,6 +2556,15 @@ fn beyond_heading(beyond: Beyond, shared_with_a_lookup: bool) -> Div {
     };
 
     run_heading(SharedString::from(said))
+}
+
+pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
+    match fetching {
+        Fetching::Downloading => theme::accent(),
+        Fetching::Downloaded => theme::done(),
+        Fetching::Unfound | Fetching::NoProvider | Fetching::Unwanted => theme::failure(),
+        Fetching::Landing | Fetching::Queued => theme::muted(),
+    }
 }
 
 fn unheld_cover() -> Div {
@@ -3248,11 +3293,16 @@ mod tests {
             ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
             Issued, Library, Link, LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked,
             RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
-            ReleaseMatch, ReleaseTrack, Result, StreamAsked,
+            ReleaseMatch, ReleaseTrack, Result, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
-        use crate::driven::{Driven, Folder, Reaching};
+        use crate::{
+            downloads::Fetching,
+            driven::{Driven, Folder, Reaching},
+            toast,
+            views::root::Deleting,
+        };
 
         const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
         const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
@@ -3465,7 +3515,20 @@ mod tests {
 
             driven.click("found-0");
             driven.until(|_, _| !asked.lock().is_empty());
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                library
+                    .downloads()
+                    .first()
+                    .is_some_and(|download| library.fetching(download) == Fetching::Unfound)
+            });
+            driven.click("downloads");
+            driven.bounds_of("download-0");
 
+            assert!(
+                driven.read(|_, cx| !toast::is_showing(cx)),
+                "the download was told in a toast rather than the sidebar"
+            );
             let wants = library.wants().expect("the wants read");
             assert_eq!(wants.len(), 1);
             assert_eq!(wants[0].artist.as_deref(), Some("Janji & Johnning"));
@@ -3482,6 +3545,53 @@ mod tests {
                     artist: Some("Janji & Johnning".to_owned()),
                 }]
             );
+        }
+
+        fn asked_to_delete(driven: &mut Driven, track: &Track) {
+            let root = driven.root.clone();
+            let deleting = Deleting::of(track);
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| root.ask_to_delete(deleting, cx));
+            });
+            driven.settle();
+        }
+
+        #[gpui::test]
+        fn deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let doomed = folder.tone("doomed.wav", 1);
+            let kept = folder.tone("kept.wav", 1);
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+            let track = library
+                .tracks(&TrackQuery::default())
+                .expect("the tracks read")
+                .into_iter()
+                .find(|track| {
+                    track
+                        .location
+                        .as_path()
+                        .is_some_and(|path| path.ends_with("doomed.wav"))
+                })
+                .expect("the track was scanned");
+
+            asked_to_delete(&mut driven, &track);
+            driven.click("keep-the-track");
+            let kept_on_cancel = doomed.exists();
+            asked_to_delete(&mut driven, &track);
+            driven.click("delete-the-track");
+            driven.until(|_, _| !doomed.exists());
+            driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
+            assert!(
+                kept_on_cancel,
+                "the file went before the delete was confirmed"
+            );
+            assert!(kept.exists());
+            assert!(library.track(track.id).expect("the track reads").is_none());
         }
     }
 }

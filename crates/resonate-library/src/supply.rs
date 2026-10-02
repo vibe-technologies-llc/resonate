@@ -2,7 +2,7 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{self, Read},
-    num::NonZeroUsize,
+    num::{NonZeroU64, NonZeroUsize},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -90,8 +90,11 @@ pub struct PollProgress {
     nothing: AtomicU64,
     refused: AtomicU64,
     late: AtomicU64,
+    asking: AtomicU64,
     cancelled: AtomicBool,
 }
+
+const ASKING_NOTHING: u64 = 0;
 
 impl PollProgress {
     pub fn snapshot(&self) -> PollStats {
@@ -104,6 +107,15 @@ impl PollProgress {
             refused: self.refused.load(Ordering::Relaxed),
             late: self.late.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn asking(&self) -> Option<WantId> {
+        NonZeroU64::new(self.asking.load(Ordering::Relaxed)).map(WantId::of)
+    }
+
+    fn asks_about(&self, want: Option<WantId>) {
+        self.asking
+            .store(want.map_or(ASKING_NOTHING, WantId::get), Ordering::Relaxed);
     }
 
     pub fn cancel(&self) {
@@ -424,6 +436,7 @@ fn run(
             break;
         }
         progress.asked.fetch_add(1, Ordering::Relaxed);
+        progress.asks_about(Some(want.id));
         let cancelled = || progress.is_cancelled();
         let answer = providers.first(
             &want.identity(),
@@ -475,6 +488,7 @@ fn run(
             ),
         }
     }
+    progress.asks_about(None);
 
     scanned_and_paired(library, &filed)?;
 

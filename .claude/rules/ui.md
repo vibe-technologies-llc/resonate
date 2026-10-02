@@ -406,10 +406,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   card reports which two it settled on (`fonts::drawn_in`). `theme::text_xs()` through `text_title()` and
   `text_lyric()` are the whole type scale, set through `text_size` rather than gpui's rem steps, so the
   root's `text_size(theme::text_base())` is what a bare `div` inherits.
-- **A control is a `kit::button` in one of three tones, and nothing draws its own.** `Tone::Primary` is
+- **A control is a `kit::button` in one of four tones, and nothing draws its own.** `Tone::Primary` is
   the accent fill, the one gesture a heading leads with — *Play*; `Tone::Outlined` the raised secondary —
   *Play next* and *Add to queue*, one pair wearing one tone wherever they stand together, *Save as a
-  playlist*, *Show graph*; `Tone::Ghost` everything else. Each carries an icon slot and a hint.
+  playlist*, *Show graph*; `Tone::Destructive` the raised fill edged and lettered in the failure colour,
+  worn only by a gesture losing something for good — the delete dialogue's *Delete*; `Tone::Ghost`
+  everything else. Each carries an icon slot and a hint.
   `kit::icon_button` is the square version a row's controls and the playlist index's actions use,
   `kit::chip` the pill an order, reading, cap or setting is chosen from, and `kit::badge` the small mono
   tag a codec, a playlist's kind or a device's standing is drawn as. `kit::format_badge` is the codec
@@ -1809,6 +1811,47 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   has what a dismissal is. Empty, it is
   `kit::empty` under `Icon::Missing` saying nothing is missing, and where the build `can_enrich` a
   second sentence says where the answer would come from.
+- **A song asked for is followed in the sidebar, never told in a toast.** `downloads.rs` is the
+  whole of it: `Downloads` holds a `Download` per found song pressed — the `Found`, the `WantId` once
+  landed, when it was queued and a `Fetching` — and `LibraryModel::want_found` writes it rather than
+  telling a toast: `Landing` while the release lands, then `Queued` (or `NoProvider` where
+  `Sourcing::providers` registers none, `Unwanted` where the landing failed). `Download::fetching_while`
+  reads a queued download as `Downloading` while `PollProgress::asking` names its want, and
+  `Downloads::followed` reads each shelves load's `WantStanding`s — a want delivered (`held` or
+  `offered`) is `Downloaded`, one tried since it was queued with nothing offered `Unfound`. A want the
+  load does not hold is left as it stood, a stale load being no evidence it went. The sidebar draws
+  `RootView::download_status` above the enrichment line while the list holds anything — the
+  `Icon::Download` in the accent and *Downloading…* while anything `is_underway`, *Downloads* in
+  `faint` once all is finished — and a press opens `downloads_over_the_app`, a panel floating
+  `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
+  `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
+  room for one song and a half: each song's title, its state in `browser::fetching_colour` (accent
+  downloading, `done` downloaded, `failure` unfound, unprovided or unwanted, `muted` landing or queued)
+  and its artist, an `Icon::Redo` asking again where `can_be_asked_again`, a ✕ on a finished one, and
+  *Clear finished* and a close mark in its heading. A second press on the row, the close mark or
+  escape — after a menu, before a toast — puts it away; it is not modal and holds no key back. Asking again is `want_found` once more, polling under
+  `PollOptions::ASKING_EVERY_WANT` since the want was tried within `POLL_AGAIN_AFTER`. A self-started
+  poll joining while the list holds anything tells no toast. The found row says the same thing
+  where it stands: its format column draws the `Fetching` in its colour in place of the release
+  title, the want mark is greyed with the state as its hint, and the row is a press only where
+  nothing is asked for yet or `can_be_asked_again`, so the song stays in the results showing how it
+  is getting on rather than vanishing as the search is asked again. The section heading says *press
+  one to download it*.
+  `pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it` asks for a song a
+  shop does not have, waits for *Unfound*, opens the list and holds no toast up; the three tests in
+  `downloads.rs` hold the states.
+- **A song is deleted from disk only through a dialogue saying it cannot be undone.** A track row's
+  menu offers *Delete from disk…* (`Icon::Delete`), which is `RootView::ask_to_delete` with a
+  `Deleting` — the track, its title and artist and whether it is a cut. `deletion_sheet` is a card over
+  the scrim as the Listen sheet is (`theme::confirm_width`), naming the song, saying the file goes from
+  disk and the plays with it, adding that a cut takes its whole file and every cut from it, and that it
+  cannot be undone; *Cancel* (`Tone::Outlined`), escape and a press outside keep the song, and only
+  *Delete* (`Tone::Destructive`, the failure colour on the raised fill — the fourth tone, kept for a
+  gesture losing something for good) calls `LibraryModel::delete_track`, which runs
+  `Library::delete_tracks` on the edit chain and toasts *Deleted “…”*, or trouble where the file stayed.
+  No key confirms it, `enter` included. While open it `something_stands_over_the_pane`
+  (`the_delete_sheet_holds_the_keys_back_from_the_queue_behind`), and
+  `deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed` presses *Cancel* then *Delete*.
 - **A search lists MusicBrainz results after what the library holds.** `LibraryModel::rows` is a
   `ListedRow` for every selection, not only an album: under *All tracks* with a search it is the held
   rows followed by `Beyond::Elsewhere(n)` and the `Found` rows MusicBrainz answered, or
@@ -1828,11 +1871,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   delivery. **A found song's whole row is that press**: `found_row` lays the row `unheld_row` draws
   under an id of its recording with the pointer, a hover wash and `FETCH_FOUND_HINT`, so pressing anywhere on it wants
   the song and sends the providers for it, the mark's own press inside it finding the recording
-  already `wanting` and doing nothing twice; while the want lands the row takes no press
-  (`pressing_a_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it`, which opens the
-  window through `Driven::reaching` — a `Reaching` naming the reference and the providers). The
-  toast says the providers will be asked, or that none is set up to fetch it where
-  `Sourcing::providers` registers none. `wanting` holds a task
+  already `wanting` and doing nothing twice; while it is asked for the row takes no press
+  (`pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it`, which opens the
+  window through `Driven::reaching` — a `Reaching` naming the reference and the providers). What
+  becomes of it is the sidebar's downloads list, above. `wanting` holds a task
   per recording, not one for the lot, so wanting a second song before the first landed does not drop the
   first's lookup and leave its mark grey. The ask is `ask_elsewhere_after`, `ASKED_ELSEWHERE_AFTER` (700
   ms) behind the keystroke, only where the build `can_enrich` and `asks_elsewhere` says the words are

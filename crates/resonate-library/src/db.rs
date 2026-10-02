@@ -39,8 +39,9 @@ use crate::{
     RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
     SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
     Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
-    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word, elsewhere,
-    enrich, enriched,
+    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
+    deleted::{self, Deleted, Removal},
+    elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, likeness,
@@ -1675,6 +1676,48 @@ impl Library {
             }
             Ok(forgotten > 0)
         })
+    }
+
+    pub fn delete_tracks(&self, tracks: &[TrackId]) -> Result<Deleted> {
+        let _walk = self.walk_the_tree()?;
+        let files = self
+            .inner
+            .read(|connection| deleted::files_of(connection, tracks))?;
+
+        let mut done = Deleted::default();
+        let mut gone = Vec::with_capacity(files.len());
+        for path in files {
+            match deleted::removed(&path) {
+                Removal::Removed => {
+                    done.files += 1;
+                    gone.push(path);
+                }
+                Removal::AlreadyGone => gone.push(path),
+                Removal::Kept => done.kept += 1,
+            }
+        }
+
+        let forgotten = self
+            .inner
+            .write(|transaction| deleted::forget_files(transaction, &gone))?;
+        done.tracks = forgotten.tracks;
+        if let Some(vault) = self.vault().cloned() {
+            for object in self
+                .vault_objects_nothing_names()?
+                .into_iter()
+                .filter(|object| forgotten.vault_keys.contains(&object.key.to_string()))
+            {
+                match vault.forget(&object.path) {
+                    Ok(_) => {
+                        self.forget_vault_object(&object.key)?;
+                    }
+                    Err(error) => {
+                        tracing::warn!(path = %object.path.display(), %error, "a deleted track's vault object stays for the next prune");
+                    }
+                }
+            }
+        }
+        Ok(done)
     }
 
     pub fn playlists(

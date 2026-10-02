@@ -95,6 +95,8 @@ icons! {
     Folder => "folder",
     Plus => "plus",
     Discard => "discard",
+    Delete => "delete",
+    Download => "download",
     Stop => "stop",
     Import => "import",
     Export => "export",

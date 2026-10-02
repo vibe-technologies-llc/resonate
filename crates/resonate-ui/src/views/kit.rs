@@ -35,6 +35,7 @@ pub(crate) enum Tone {
     Ghost,
     Outlined,
     Primary,
+    Destructive,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,9 +176,10 @@ pub(crate) fn button_when(
         Tone::Ghost => (theme::UNMARKED, theme::muted(), theme::UNMARKED),
         Tone::Outlined => (theme::raised(), theme::text(), theme::outline()),
         Tone::Primary => (theme::accent(), theme::accent_ink(), theme::UNMARKED),
+        Tone::Destructive => (theme::raised(), theme::failure(), theme::failure()),
     };
     let hovered = match tone {
-        Tone::Ghost | Tone::Outlined => theme::hover(),
+        Tone::Ghost | Tone::Outlined | Tone::Destructive => theme::hover(),
         Tone::Primary => theme::accent(),
     };
 
@@ -211,6 +213,7 @@ pub(crate) fn button_when(
                         button.text_color(rgb(match tone {
                             Tone::Ghost | Tone::Outlined => theme::text(),
                             Tone::Primary => theme::accent_ink(),
+                            Tone::Destructive => theme::failure(),
                         }))
                     })
             },
@@ -220,7 +223,7 @@ pub(crate) fn button_when(
         .when_some(icon, |button, icon| {
             let drawn = icons::icon(icon, theme::row_control_icon(), ink);
             button.child(match (tone, press) {
-                (Tone::Primary, _) | (_, Press::Greyed) => drawn,
+                (Tone::Primary | Tone::Destructive, _) | (_, Press::Greyed) => drawn,
                 (Tone::Ghost | Tone::Outlined, Press::Takes) => {
                     icons::lit_on_hover(drawn, BUTTON_GROUP)
                 }
@@ -232,13 +235,13 @@ pub(crate) fn button_when(
 const fn fill_alpha(tone: Tone) -> u8 {
     match tone {
         Tone::Ghost => 0x00,
-        Tone::Outlined | Tone::Primary => 0xff,
+        Tone::Outlined | Tone::Primary | Tone::Destructive => 0xff,
     }
 }
 
 const fn hover_alpha(tone: Tone) -> u8 {
     match tone {
-        Tone::Ghost | Tone::Outlined => 0xff,
+        Tone::Ghost | Tone::Outlined | Tone::Destructive => 0xff,
         Tone::Primary => 0xe6,
     }
 }

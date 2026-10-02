@@ -25,12 +25,12 @@ use resonate_core::{
 };
 use resonate_library::{
     Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, DeliveryFolder,
-    Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured,
-    FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium,
-    HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
-    LifeSpan, Link, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid,
-    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
+    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted,
+    DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error,
+    Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
+    HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout,
+    Library, LifeSpan, Link, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked,
+    Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
     PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated, Recording,
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
     Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
@@ -640,6 +640,43 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
     assert_eq!(library.forget_the_gone(&named)?, 3);
     assert_eq!(titles(&all(&library)?), vec!["kept"]);
     assert_eq!(library.forget_the_gone(&named)?, 0);
+    Ok(())
+}
+
+#[test]
+fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result<()> {
+    let tree = Tree::new();
+    let doomed = tree.write(
+        "album/doomed.wav",
+        &Wav::new().text(TITLE, "doomed").build(),
+    );
+    let kept = tree.write("album/kept.wav", &Wav::new().text(TITLE, "kept").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let track = all(&library)?
+        .into_iter()
+        .find(|track| track.title == "doomed")
+        .map(|track| track.id)
+        .expect("the track was scanned");
+
+    let deleted = library.delete_tracks(&[track])?;
+
+    assert_eq!(
+        deleted,
+        Deleted {
+            tracks: 1,
+            files: 1,
+            kept: 0,
+        }
+    );
+    assert!(!doomed.exists());
+    assert!(kept.exists());
+    assert_eq!(titles(&all(&library)?), vec!["kept"]);
+    assert!(matches!(
+        library.delete_tracks(&[track]),
+        Err(Error::UnknownTrack(unknown)) if unknown == track
+    ));
     Ok(())
 }
 
@@ -18425,6 +18462,106 @@ impl Provider for CancelledAsItAnswers {
         }
         Ok(Obtained::Found(Delivery::File(self.file.clone())))
     }
+}
+
+struct WatchedAsItAnswers {
+    source: SourceId,
+    file: PathBuf,
+    poll: Mutex<Option<Arc<PollProgress>>>,
+    heard: Mutex<Vec<Option<WantId>>>,
+}
+
+impl Provider for WatchedAsItAnswers {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(5) {
+            if let Some(poll) = self.poll.lock().as_ref() {
+                self.heard.lock().push(poll.asking());
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        Ok(Obtained::Found(Delivery::File(self.file.clone())))
+    }
+}
+
+fn polled_into_a_vault(
+    held: &Tree,
+    delivered: PathBuf,
+) -> Result<(Library, WantId, Vec<Option<WantId>>)> {
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(held)?;
+    scan(&library, &options(&orbits))?;
+    let want = wanted_san_tropez(&library)?;
+
+    let provider = Arc::new(WatchedAsItAnswers {
+        source: SourceId::new("inbox").expect("a nameable source"),
+        file: delivered,
+        poll: Mutex::new(None),
+        heard: Mutex::new(Vec::new()),
+    });
+    let handle = library.poll(
+        Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
+        PollOptions::default(),
+    )?;
+    let progress = Arc::clone(handle.progress());
+    *provider.poll.lock() = Some(Arc::clone(&progress));
+    handle.join()?;
+
+    assert_eq!(
+        progress.asking(),
+        None,
+        "a finished poll still names a want"
+    );
+    let heard = provider.heard.lock().clone();
+    Ok((library, want, heard))
+}
+
+#[test]
+fn a_poll_names_the_want_it_is_asking_about_while_it_asks() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+    );
+
+    let (_library, want, heard) = polled_into_a_vault(&held, delivered)?;
+
+    assert_eq!(heard, vec![Some(want)]);
+    Ok(())
+}
+
+#[test]
+fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+    );
+    let (library, _want, _heard) = polled_into_a_vault(&held, delivered)?;
+    let landed: Vec<TrackId> = library
+        .wants()?
+        .into_iter()
+        .filter_map(|want| want.held)
+        .collect();
+    let objects = library.vault_objects()?;
+    assert_eq!(landed.len(), 1);
+    assert_eq!(objects.len(), 1);
+
+    let deleted = library.delete_tracks(&landed)?;
+
+    assert_eq!(deleted.tracks, 1);
+    assert!(library.track(landed[0])?.is_none());
+    assert!(library.wants()?.is_empty(), "the want would fetch it again");
+    assert!(library.vault_objects()?.is_empty());
+    assert!(!objects[0].path.exists());
+    Ok(())
 }
 
 #[test]

@@ -19,22 +19,23 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery, ArtistTotals,
-    CatalogStamp, CoverArt, Cut, Day, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions,
-    EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
-    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
-    Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing, MissingTrack,
-    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
-    PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SortOrder,
-    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
-    Window, Wording, asks_elsewhere,
+    CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing, Edit,
+    EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
+    GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
+    ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing,
+    MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
+    OrganiseSummary, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
+    PollStats, PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail,
+    ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
+    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
+    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Window, Wording, asks_elsewhere,
 };
 use resonate_providers::Providers;
 
 use crate::{
     ResonateApp, clipboard,
+    downloads::{Download, Downloads, Fetcher, Fetching, WantStanding},
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
@@ -83,10 +84,6 @@ pub const PICTURED_AT_MOST: usize = 4;
 pub const PINNED_IN_THE_SIDEBAR: usize = 5;
 
 const TAKEN_BACK: &str = concat!(" · ", keyed!("Put it back", key!(undo)));
-
-const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
-
-const WANTED_WITH_NO_PROVIDER: &str = " — no provider is set up to fetch it";
 
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
@@ -169,6 +166,7 @@ struct Shelves {
     held: Option<Playlist>,
     entries: Vec<PlaylistEntry>,
     wanted: AHashMap<ReleaseTrackId, WantId>,
+    standings: AHashMap<WantId, WantStanding>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
     missing: Missing,
@@ -680,7 +678,8 @@ pub struct LibraryModel {
     _shared: Task<()>,
     pressings: Option<(AlbumId, Pressings)>,
     roots_waiting: Vec<RootWaiting>,
-    poll_owed: bool,
+    poll_owed: Option<PollOptions>,
+    downloads: Downloads,
     to_file: Option<ToFile>,
     _pressings: Task<()>,
     _kept: Task<()>,
@@ -837,7 +836,8 @@ impl LibraryModel {
             _shared: Task::ready(()),
             pressings: None,
             roots_waiting: Vec::new(),
-            poll_owed: false,
+            poll_owed: None,
+            downloads: Downloads::default(),
             to_file: None,
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
@@ -1058,10 +1058,6 @@ impl LibraryModel {
         self.sung.as_ref()
     }
 
-    pub fn is_wanting(&self, found: &Found) -> bool {
-        self.wanting.contains_key(&found.recording)
-    }
-
     fn ask_elsewhere_after(&mut self, settling: Duration, cx: &mut Context<Self>) {
         let text = self.query.clone();
         let reference = match &self.reference {
@@ -1117,6 +1113,16 @@ impl LibraryModel {
         if self.wanting.contains_key(&found.recording) {
             return;
         }
+        let asked_before = self
+            .downloads
+            .of(&found.recording)
+            .is_some_and(|download| download.fetching_while(None).can_be_asked_again());
+        let options = if asked_before {
+            PollOptions::ASKING_EVERY_WANT
+        } else {
+            PollOptions::default()
+        };
+        self.downloads.landing(found.clone(), SystemTime::now());
         cx.notify();
         let library = Arc::clone(&self.library);
         let recording = found.recording.clone();
@@ -1133,26 +1139,20 @@ impl LibraryModel {
                     finished.detach();
                 }
                 match wanted {
-                    Ok(_) => {
-                        let then = if this.sourcing.providers().has_a_source() {
-                            WANTED_ELSEWHERE
+                    Ok(want) => {
+                        let fetched_by = if this.sourcing.providers().has_a_source() {
+                            Fetcher::AProvider
                         } else {
-                            WANTED_WITH_NO_PROVIDER
+                            Fetcher::Nobody
                         };
-                        toast::tell(
-                            Notice::Done(format!(
-                                "Wanted {} by {}{then}",
-                                found.title, found.artist
-                            )),
-                            cx,
-                        );
-                        this.found_for = None;
-                        this.ask_elsewhere_after(Duration::ZERO, cx);
-                        this.fetch_what_was_wanted(cx);
+                        this.downloads.wanted(&found.recording, want, fetched_by);
+                        if fetched_by == Fetcher::AProvider {
+                            this.fetch_what_was_wanted(options, cx);
+                        }
                     }
                     Err(error) => {
                         tracing::error!(%error, "a song found elsewhere could not be wanted");
-                        toast::tell(toast::could_not("want that song", &error), cx);
+                        this.downloads.unwanted(&found.recording);
                     }
                 }
                 this.read(Wanted::Everything, cx);
@@ -1160,6 +1160,41 @@ impl LibraryModel {
             let _ = landed;
         });
         self.wanting.insert(recording, wanting);
+    }
+
+    pub fn downloads(&self) -> &[Download] {
+        self.downloads.all()
+    }
+
+    pub fn fetching(&self, download: &Download) -> Fetching {
+        download.fetching_while(self.asking_for())
+    }
+
+    pub fn fetching_found(&self, found: &Found) -> Option<Fetching> {
+        self.downloads
+            .of(&found.recording)
+            .map(|download| self.fetching(download))
+    }
+
+    pub fn is_downloading(&self) -> bool {
+        self.downloads
+            .all()
+            .iter()
+            .any(|download| self.fetching(download).is_underway())
+    }
+
+    pub fn dismiss_download(&mut self, recording: &Mbid, cx: &mut Context<Self>) {
+        self.downloads.dismiss(recording);
+        cx.notify();
+    }
+
+    pub fn clear_finished_downloads(&mut self, cx: &mut Context<Self>) {
+        self.downloads.clear_finished();
+        cx.notify();
+    }
+
+    fn asking_for(&self) -> Option<WantId> {
+        self.work.polling().and_then(|progress| progress.asking())
     }
 
     pub const fn opened_suggestion(&self) -> Option<&Previewed> {
@@ -1301,7 +1336,7 @@ impl LibraryModel {
             move |library| library.want(release_track).map(|_| None),
             |this, edited, cx| {
                 if edited == Edited::Landed {
-                    this.fetch_what_was_wanted(cx);
+                    this.fetch_what_was_wanted(PollOptions::default(), cx);
                 }
             },
             cx,
@@ -1598,6 +1633,25 @@ impl LibraryModel {
             },
             cx,
         );
+    }
+
+    pub fn delete_track(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._edit, Task::ready(()));
+
+        self._edit = cx.spawn(async move |this, cx| {
+            before.await;
+            let deleted = cx
+                .background_executor()
+                .spawn(async move { library.delete_tracks(&[track]) })
+                .await;
+
+            let told = this.update(cx, |this, cx| {
+                toast::tell(deletion_told(deleted, &title), cx);
+                this.read(Wanted::Everything, cx);
+            });
+            let _ = told;
+        });
     }
 
     pub fn favourite_albums(&self) -> Arc<[Album]> {
@@ -2953,6 +3007,7 @@ impl LibraryModel {
 
     fn take_the_shelves(&mut self, shelves: Shelves) {
         self.wanted = shelves.wanted;
+        self.downloads.followed(&shelves.standings);
         if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
             self.missing_track_rows = missing_track_rows(
                 self.missing_tracks
@@ -3187,8 +3242,8 @@ impl LibraryModel {
                 );
                 return;
             }
-            if mem::take(&mut self.poll_owed) {
-                self.fetch_what_was_wanted(cx);
+            if let Some(options) = self.poll_owed.take() {
+                self.fetch_what_was_wanted(options, cx);
             }
             return;
         }
@@ -3637,13 +3692,29 @@ impl LibraryModel {
         self.poll_as(Prompted::ByHand, cx);
     }
 
-    fn fetch_what_was_wanted(&mut self, cx: &mut Context<Self>) {
-        if !self.poll_as(Prompted::OnItsOwn, cx) {
-            self.poll_owed = true;
+    fn fetch_what_was_wanted(&mut self, options: PollOptions, cx: &mut Context<Self>) {
+        if !self.poll_with(Prompted::OnItsOwn, options, cx) {
+            self.poll_owed = Some(match self.poll_owed {
+                Some(owed) if owed.again_after < options.again_after => owed,
+                Some(_) | None => options,
+            });
         }
     }
 
     fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) -> bool {
+        let options = match prompted {
+            Prompted::ByHand | Prompted::ByTheInbox => PollOptions::ASKING_EVERY_WANT,
+            Prompted::OnItsOwn => PollOptions::default(),
+        };
+        self.poll_with(prompted, options, cx)
+    }
+
+    fn poll_with(
+        &mut self,
+        prompted: Prompted,
+        options: PollOptions,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.work.is_busy() {
             if prompted == Prompted::ByHand {
                 toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
@@ -3652,10 +3723,6 @@ impl LibraryModel {
             return false;
         }
         let providers = Arc::new(self.sourcing.providers());
-        let options = match prompted {
-            Prompted::ByHand | Prompted::ByTheInbox => PollOptions::ASKING_EVERY_WANT,
-            Prompted::OnItsOwn => PollOptions::default(),
-        };
         if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
             return true;
         }
@@ -3686,7 +3753,11 @@ impl LibraryModel {
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
-                        if let Some(notice) = polled(&summary, prompted) {
+                        let told_by_the_downloads =
+                            prompted == Prompted::OnItsOwn && !this.downloads.is_empty();
+                        if let Some(notice) =
+                            polled(&summary, prompted).filter(|_| !told_by_the_downloads)
+                        {
                             toast::tell(notice, cx);
                         }
                     }
@@ -4069,6 +4140,19 @@ fn vaulted(summary: &ImportSummary) -> Notice {
         told.push_str(", stopped early");
     }
     Notice::Done(told)
+}
+
+fn deletion_told(deleted: resonate_library::Result<Deleted>, title: &str) -> Notice {
+    match deleted {
+        Ok(deleted) if deleted.kept > 0 => Notice::Trouble(format!(
+            "Couldn't delete “{title}” — its file couldn't be removed"
+        )),
+        Ok(_) => Notice::Done(format!("Deleted “{title}”")),
+        Err(error) => {
+            tracing::error!(%error, "a track could not be deleted");
+            toast::could_not("delete that track", &error)
+        }
+    }
 }
 
 fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
@@ -4601,10 +4685,14 @@ fn shelves(
         ),
         None => (None, Vec::new()),
     };
-    let wanted = library
-        .wants()?
-        .into_iter()
+    let wants = library.wants()?;
+    let wanted = wants
+        .iter()
         .map(|want| (want.release_track, want.id))
+        .collect();
+    let standings = wants
+        .iter()
+        .map(|want| (want.id, WantStanding::of(want)))
         .collect();
 
     let playlists = library.playlists(asked.order, asked.reading, narrowing)?;
@@ -4618,6 +4706,7 @@ fn shelves(
         held,
         entries,
         wanted,
+        standings,
         missing_tracks: library.missing_tracks(narrowing, Some(MISSING_AT_MOST))?,
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,
         missing: library.missing_counted(narrowing)?,

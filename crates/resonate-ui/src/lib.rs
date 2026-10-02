@@ -4,6 +4,7 @@ mod analysis;
 mod analysis_plot;
 mod app;
 mod clipboard;
+mod downloads;
 mod drawing;
 #[cfg(test)]
 mod driven;

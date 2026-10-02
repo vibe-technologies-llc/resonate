@@ -12,7 +12,7 @@ automatically where their `paths:` match:
 | `realtime.md` | engine, pipewire, dsp | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs` | the bus, the track list, covers, the name, notifications, the idle inhibit, `Running` |
-| `library.md` | library, mpris, the playlist panes | schema, scan, enrichment, tag writing, organise, search, playlists, undo, sheets, statistics, suggestions, share |
+| `library.md` | library, mpris, the playlist panes | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage, the equaliser pane | the vocabulary, the biquads, the per-sink binding, the formats, AutoEq |
 | `ui.md` | resonate-ui | chrome, input, drawing, the palettes, panes |

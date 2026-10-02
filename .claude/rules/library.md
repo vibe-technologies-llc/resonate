@@ -342,8 +342,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   the paths under the walked roots held in memory for the walk.
 - **One pass walks the tree at a time, and a second is refused rather than queued.**
   `Inner::walking` is the flag and `Walk` the guard holding it: every pass walking or rewriting the
-  tree — `Library::scan`, `organise`, `retag`, `import`, `prune_the_vault` and `release_from_vault` —
-  takes one (the first two in `start`, before the thread is spawned), and the thread owns it for its
+  tree — `Library::scan`, `organise`, `retag`, `import`, `prune_the_vault`, `release_from_vault` and
+  `delete_tracks` — takes one (the first two in `start`, before the thread is spawned), and the thread owns it for its
   life, so it is handed back from `Drop` on a panic as `Reader` hands back a pooled connection. Taking
   it never waits — a caller finding the tree walked gets `Error::AlreadyWalking` at once, a pass
   blocking for minutes being no pass a window or command line can start. What it protects is
@@ -1717,6 +1717,22 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   is no longer held whole to decide them.
   `every_row_is_handed_out_once_and_no_file_is_split_across_two_pages` holds the paging to every page
   size from one row up.
+
+## Deleting
+
+- **A deleted track takes its file, every row cut from it, its want and its vault object.**
+  `Library::delete_tracks` (`deleted.rs`) takes the `Walk` guard, reads the distinct paths the named
+  tracks sit at — `Error::UnknownTrack` for an id no row holds — and removes each file from disk; a
+  file already gone counts as removed, and one the filesystem refuses is logged, counted in
+  `Deleted::kept` and its rows left standing. For every path that went, in one transaction, the
+  `wants` naming a release row the path's tracks fill or offering that path are dropped — or the next
+  poll would fetch the song straight back — and every `tracks` row at the path goes, so a cue sheet's
+  cuts go with the file they are cut from, plays, listens and studies with them on the cascades;
+  `store::sweep_orphans` and `alternatives::settle` then run as after a prune. A vault object no row
+  names any more is taken out of the vault and its row forgotten, one that will not go waiting for the
+  next `prune_the_vault`. Nothing is kept to put back. The window asks first (`ui.md`).
+  `deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest` and
+  `deleting_a_delivered_track_takes_its_vault_object_and_its_want` are the claims.
 
 ## Organising
 
