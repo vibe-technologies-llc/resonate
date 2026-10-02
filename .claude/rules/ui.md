@@ -1836,7 +1836,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `Sourcing::providers` registers none, `Unwanted` where the landing failed). `Download::fetching_while`
   reads a queued download as `Downloading` while `PollProgress::asking` names its want, and
   `Downloads::followed` reads each shelves load's `WantStanding`s — a want delivered (`held` or
-  `offered`) is `Downloaded`, one tried since it was queued with nothing offered `Unfound`. A want the
+  `offered`) is `Downloaded`, one tried since it was queued with nothing offered
+  `Retrying { tries, at }` — *Try 2 of 6 found nothing · again at 14:32*, the clock time
+  (`format::time_of_day`, the listener's zone) rather than a countdown so an idle window does not
+  draw a stale one — and one the catalog gave up on `GaveUp`, *Gave up after 6 tries*. A retry is
+  `Downloading` while the poll asks for it, as a queued one is, and counts as underway. A want the
   load does not hold is left as it stood, a stale load being no evidence it went. The sidebar draws
   `RootView::download_status` above the enrichment line while the list holds anything — the
   `Icon::Download` in the accent and *Downloading…* while anything `is_underway`, *Downloads* in
@@ -1844,8 +1848,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
   `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
   room for one song and a half: each song's title, its state in `browser::fetching_colour` (accent
-  downloading, `done` downloaded, `failure` unfound, unprovided or unwanted, `muted` landing or queued)
-  and its artist, an `Icon::Redo` asking again where `can_be_asked_again`, a ✕ on a finished one, and
+  downloading, `done` downloaded, `failure` given up, unprovided or unwanted, `muted` landing, queued
+  or retrying) and its artist, an `Icon::Redo` asking again where `can_be_asked_again` — a retry,
+  which it tries at once, or a song given up, which it starts again from the first try — a ✕ on a
+  finished one, and
   *Clear finished* and a close mark in its heading. A second press on the row, the close mark or
   escape — after a menu, before a toast — puts it away; it is not modal and holds no key back. Asking again is `want_found` once more, which makes the want due at once in the catalog
   (`library.md`), so the ordinary poll asks for it whatever the list remembers — once relied on the
@@ -1858,7 +1864,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   is getting on rather than vanishing as the search is asked again. The section heading says *Press
   a song to download it*.
   `pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it` asks for a song a
-  shop does not have, waits for *Unfound*, opens the list and holds no toast up; the three tests in
+  shop does not have, waits for its first retry, opens the list and holds no toast up; the three tests in
   `downloads.rs` hold the states.
 - **A song is deleted from disk only through a dialogue saying it cannot be undone.** A track row's
   menu offers *Delete from disk…* (`Icon::Delete`), which is `RootView::ask_to_delete` with a

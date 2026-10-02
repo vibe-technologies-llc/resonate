@@ -2681,8 +2681,8 @@ pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
     match fetching {
         Fetching::Downloading => theme::accent(),
         Fetching::Downloaded => theme::done(),
-        Fetching::Unfound | Fetching::NoProvider | Fetching::Unwanted => theme::failure(),
-        Fetching::Landing | Fetching::Queued => theme::muted(),
+        Fetching::GaveUp | Fetching::NoProvider | Fetching::Unwanted => theme::failure(),
+        Fetching::Landing | Fetching::Queued | Fetching::Retrying { .. } => theme::muted(),
     }
 }
 
@@ -3708,10 +3708,12 @@ mod tests {
             driven.until(|_, _| !asked.lock().is_empty());
             driven.until(|root, cx| {
                 let library = root.library.read(cx);
-                library
-                    .downloads()
-                    .first()
-                    .is_some_and(|download| library.fetching(download) == Fetching::Unfound)
+                library.downloads().first().is_some_and(|download| {
+                    matches!(
+                        library.fetching(download),
+                        Fetching::Retrying { tries: 1, .. }
+                    )
+                })
             });
             driven.click("downloads");
             driven.bounds_of("download-0");

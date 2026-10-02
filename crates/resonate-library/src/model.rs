@@ -269,6 +269,7 @@ pub struct Want {
     pub wanted: SystemTime,
     pub tried: Option<SystemTime>,
     pub offered: Option<String>,
+    pub misses: u32,
     pub held: Option<TrackId>,
     pub links: Vec<Link>,
     pub release_links: Vec<Link>,

@@ -98,6 +98,7 @@ struct HeldWant {
     wanted: i64,
     tried: Option<i64>,
     offered: Option<String>,
+    misses: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -543,7 +544,7 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
     let mut statement = tx
         .prepare(
             "SELECT rt.track_mbid, rt.recording_mbid, rt.disc, rt.position,
-                    w.wanted, w.tried, w.offered
+                    w.wanted, w.tried, w.offered, w.misses
                FROM wants w JOIN release_tracks rt ON rt.id = w.release_track_id
               WHERE rt.album_id = ?1",
         )
@@ -559,6 +560,7 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
                 wanted: row.get(4)?,
                 tried: row.get(5)?,
                 offered: row.get(6)?,
+                misses: row.get(7)?,
             })
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -576,14 +578,20 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
 
     let mut insert = tx
         .prepare(
-            "INSERT INTO wants (release_track_id, wanted, tried, offered)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO wants (release_track_id, wanted, tried, offered, misses)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(release_track_id) DO NOTHING",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     for (_, row, want) in landing {
         insert
-            .execute(params![row, want.wanted, want.tried, want.offered])
+            .execute(params![
+                row,
+                want.wanted,
+                want.tried,
+                want.offered,
+                want.misses
+            ])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
 

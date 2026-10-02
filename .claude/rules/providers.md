@@ -56,13 +56,24 @@ the request in a queue of its own past the provider's patience) and a `Refused` 
 
 A provider does none of this, so none of it is written twice:
 
-- **Which wants are due** — `POLL_AGAIN_AFTER` since the last try — and asking providers in
-  registration order, the first delivery winning.
+- **Which wants are due** — `Want::due_at`, below — and asking providers in registration order,
+  the first delivery winning.
+- **A want tried in vain is tried again after longer and longer waits, then given up.**
+  `wants.misses` (a `MIGRATIONS` step) counts the tries in a row that every provider answered with
+  nothing: `note_tried` steps it where nothing was offered and none ever had been, and puts it back
+  to nothing on an offer. `Want::due_at` is when a want is next due — at once where never tried,
+  `RETRY_WAITS` after the last try for the miss it is on (1 min, 5 min, 15 min, 1 h, 6 h), and
+  `POLL_AGAIN_AFTER` (six hours) after an offer the catalog does not hold yet — and `None` once the
+  misses reach `TRIES_BEFORE_GIVING_UP` (six): `Want::gave_up`, never asked again on its own. Asking
+  for it again (`want_in`, `library.md`) puts the count back to nothing, and `ASKING_EVERY_WANT`
+  asks a given-up want too, *Poll now* meaning every want.
+  `a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_for_again` is the
+  claim, and `Library::next_want_due` the soonest any want is due, what the window wakes for.
 - **A want is tried only when every provider answered it.** `Answer::heard_from_every_provider` is
   false where any provider refused, ran late or was passed over, and a want answered so is not
   stamped and not counted `nothing`: it stays due, so a Subsonic server that was down, or a wrong
-  password, is asked again on the next poll after it is put right rather than `POLL_AGAIN_AFTER`
-  later. The cost is a failing provider asked once a poll for as long as it fails
+  password, is asked again on the next poll after it is put right rather than a retry's wait
+  later, and is never given up for it. The cost is a failing provider asked once a poll for as long as it fails
   (`a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll`,
   `a_want_one_provider_answered_and_another_refused_stays_due`).
 - **A want dismissed or withdrawn while it is asked about is passed over.** The poll reads the wants
@@ -160,8 +171,11 @@ A provider does none of this, so none of it is written twice:
    `resonate_ui::Sourcing::register` beside the settings it reads, so a folder chosen in *The
    inbox* group is polled from at once; a provider with a key of its own widens `Sourcing` and that
    function together.
-   **The window polls on its own** as well as on *Poll now*: `FIRST_ASKED_AFTER` a start, every
-   `ASKED_EVERY` after, and as soon as a want is marked — each only where a provider is
+   **The window polls on its own** as well as on *Poll now*: when the soonest want is due —
+   `Shelves::next_try`, read off each shelves load, the wake moved earlier by
+   `LibraryModel::ask_when_due` whenever a load brings it closer — never before `FIRST_ASKED_AFTER`
+   a start, never sooner than `RETRIES_ASKED_AT_LEAST` (30 s) apart and never later than
+   `ASKED_EVERY`; and as soon as a want is marked — each only where a provider is
    registered, nothing else runs and `Library::is_a_want_due` says one is due; a want marked while
    another pass holds the library is owed (`LibraryModel::poll_owed`, carrying the `PollOptions` it
    was owed under, the widest owed winning) and asked about the moment `take_up_what_waited` finds
@@ -175,7 +189,7 @@ A provider does none of this, so none of it is written twice:
    *Downloading…*. *Poll now* and `resonate poll --again` poll under
    `PollOptions::ASKING_EVERY_WANT`, asking every unheld want whenever last tried — somebody who
    just dropped a file in the inbox means *now*; the timer and a bare `resonate poll` keep to
-   `POLL_AGAIN_AFTER`, which spares a network service.
+   `Want::due_at`, which spares a network service.
    **The window watches the inbox folder**, through the same `RootsWatch` as the roots: once a
    write of an audio file or sheet under it has been quiet for `INBOX_QUIET_FOR`, it polls as
    `Prompted::ByTheInbox` — every unheld want, as a press does, but raising and clearing no notice,
@@ -185,8 +199,7 @@ A provider does none of this, so none of it is written twice:
    look weighs the newest file directly in the folder — the later of its modification and change
    times, since a copy keeping its old time still changed status on landing — against
    `Library::last_tried` (the latest try of any unheld want), and a newer file is owed a
-   `ByTheInbox` poll at once rather than waiting out the timer's `POLL_AGAIN_AFTER` for wants tried
-   earlier. `a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about`
+   `ByTheInbox` poll at once rather than waiting out a retry's wait for wants tried earlier. `a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about`
    is the claim on `landed_since`.
 4. An `Error::Io` names the provider and a `ProviderOp`; an error the seam has no variant for is
    added to the seam, with its op, when that provider lands — never as prose.

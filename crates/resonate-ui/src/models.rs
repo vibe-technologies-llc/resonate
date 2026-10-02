@@ -6,7 +6,7 @@ use std::{
     slice,
     sync::Arc,
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -73,6 +73,7 @@ const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(450);
 const POLLS_PER_RELOAD: u32 = 20;
 const FIRST_ASKED_AFTER: Duration = Duration::from_secs(60);
 const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
+const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
 const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
@@ -172,6 +173,7 @@ struct Shelves {
     entries: Vec<PlaylistEntry>,
     wanted: AHashMap<ReleaseTrackId, WantId>,
     standings: AHashMap<WantId, WantStanding>,
+    next_try: Option<SystemTime>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
     missing: Missing,
@@ -685,6 +687,9 @@ pub struct LibraryModel {
     _import: Task<()>,
     _poll: Task<()>,
     _asking: Task<()>,
+    asking_at: Option<Instant>,
+    asks_from: Instant,
+    next_try: Option<SystemTime>,
     _watching: Task<()>,
     _watching_roots: Task<()>,
     _watching_inbox: Task<()>,
@@ -857,6 +862,9 @@ impl LibraryModel {
             _import: Task::ready(()),
             _poll: Task::ready(()),
             _asking: Task::ready(()),
+            asking_at: None,
+            asks_from: Instant::now() + FIRST_ASKED_AFTER,
+            next_try: None,
             _watching: Task::ready(()),
             _watching_roots: Task::ready(()),
             _watching_inbox: Task::ready(()),
@@ -882,7 +890,7 @@ impl LibraryModel {
         };
         model.reload(cx);
         model.carry_on_enriching(cx);
-        model.ask_on_its_own(cx);
+        model.ask_when_due(cx);
         model.watch_for_writes_elsewhere(cx);
         model.watch_the_roots(cx);
         model.watch_the_inbox(cx);
@@ -1041,20 +1049,45 @@ impl LibraryModel {
         });
     }
 
-    fn ask_on_its_own(&mut self, cx: &mut Context<Self>) {
+    fn ask_when_due(&mut self, cx: &mut Context<Self>) {
+        let at = self.next_asked_at();
+        if self
+            .asking_at
+            .is_some_and(|scheduled| scheduled <= at && scheduled > Instant::now())
+        {
+            return;
+        }
+        self.asking_at = Some(at);
+
         self._asking = cx.spawn(async move |this, cx| {
-            let mut wait = FIRST_ASKED_AFTER;
+            let mut at = at;
             loop {
-                cx.background_executor().timer(wait).await;
-                wait = ASKED_EVERY;
-                if this
-                    .update(cx, |this, cx| this.poll_as(Prompted::OnItsOwn, cx))
-                    .is_err()
-                {
+                cx.background_executor()
+                    .timer(at.saturating_duration_since(Instant::now()))
+                    .await;
+                let Ok(next) = this.update(cx, |this, cx| {
+                    this.poll_as(Prompted::OnItsOwn, cx);
+                    let next = this.next_asked_at();
+                    this.asking_at = Some(next);
+                    next
+                }) else {
                     return;
-                }
+                };
+                at = next;
             }
         });
+    }
+
+    fn next_asked_at(&self) -> Instant {
+        let now = Instant::now();
+        let latest = now + ASKED_EVERY;
+        let due = self.next_try.map_or(latest, |at| {
+            now + at.duration_since(SystemTime::now()).unwrap_or_default()
+        });
+
+        due.max(self.asks_from)
+            .max(now + RETRIES_ASKED_AT_LEAST)
+            .min(latest)
     }
 
     fn restate_the_listing(&mut self) {
@@ -3240,9 +3273,13 @@ impl LibraryModel {
     fn landed(&mut self, loaded: resonate_library::Result<Loaded>, cx: &mut Context<Self>) {
         match loaded {
             Ok(loaded) => {
+                let shelved = loaded.shelves.is_some();
                 self.take(loaded);
                 self.take_down_what_moved();
                 self.warm_the_covers(cx);
+                if shelved {
+                    self.ask_when_due(cx);
+                }
             }
             Err(error) => tracing::error!(%error, "the library could not be read"),
         }
@@ -3267,6 +3304,7 @@ impl LibraryModel {
 
     fn take_the_shelves(&mut self, shelves: Shelves) {
         self.wanted = shelves.wanted;
+        self.next_try = shelves.next_try;
         self.downloads.followed(&shelves.standings);
         if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
             self.missing_track_rows = missing_track_rows(
@@ -3968,7 +4006,7 @@ impl LibraryModel {
     fn fetch_what_was_wanted(&mut self, options: PollOptions, cx: &mut Context<Self>) {
         if !self.poll_with(Prompted::OnItsOwn, options, cx) {
             self.poll_owed = Some(match self.poll_owed {
-                Some(owed) if owed.again_after < options.again_after => owed,
+                Some(owed) if owed.every_want => owed,
                 Some(_) | None => options,
             });
         }
@@ -5005,6 +5043,10 @@ fn shelves(
         entries,
         wanted,
         standings,
+        next_try: wants
+            .iter()
+            .filter_map(resonate_library::Want::due_at)
+            .min(),
         missing_tracks: library.missing_tracks(narrowing, Some(MISSING_AT_MOST))?,
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,
         missing: library.missing_counted(narrowing)?,

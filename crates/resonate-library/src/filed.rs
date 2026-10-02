@@ -269,6 +269,7 @@ mod tests {
             wanted: SystemTime::UNIX_EPOCH,
             tried: None,
             offered: None,
+            misses: 0,
             held: None,
             links: Vec::new(),
             release_links: Vec::new(),

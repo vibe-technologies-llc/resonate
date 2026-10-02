@@ -1369,9 +1369,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   and `dismissed_releases` the artist and the release group's MBID, both cascading with their album or
   artist (a `MIGRATIONS` step). **A want and a dismissal undo each other**: dismissing a row withdraws
   its want, and `want_in` clears a dismissal of the row it wants, so a row is never both asked for and
-  hidden. **A want asked for again is due at once**: `want_in` puts back to nothing the `tried` of a
-  want already standing and not yet offered, so pressing Want, a found song or a whole album again —
-  every caller is a gesture — sends the next poll for it rather than waiting out `POLL_AGAIN_AFTER`
+  hidden. **A want asked for again is due at once**: `want_in` puts back to nothing the `tried` and
+  `misses` of a want already standing and not yet offered, so pressing Want, a found song or a whole
+  album again — every caller is a gesture — sends the next poll for it rather than waiting out a
+  retry or staying given up (`providers.md`)
   (`a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried`).
   `Library::dismissed` counts what is dismissed and still missing, and `bring_back_dismissed`
   empties both tables, answering what it brought back.
@@ -1454,7 +1455,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   links and the release's. An unparsable identifier reads as absent through `store::mbid_in` and
   `store::isrc_in`, the readers a tag goes through. `Want::identity` turns a want into the
   `resonate_providers::Identity` a provider is handed, and `supply.rs` is the pass: `Library::poll`
-  walks the wants due under `PollOptions::again_after` — `POLL_AGAIN_AFTER`, six hours — on a
+  walks the wants `Want::due_at` says are due (every unheld one under `PollOptions::every_want`,
+  the retries and the give-up in `providers.md`) on a
   `resonate-poll` thread, asks `Providers::first`, and lands what it answers. A `Delivery::File` goes
   through `Vault::keep` and a `Delivery::Stream` through `Vault::keep_delivered`; either kept writes the
   `vault_objects` row through `note_delivered` with `taken_from` the file's URI or `<provider>:<key>`,

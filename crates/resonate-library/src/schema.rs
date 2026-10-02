@@ -177,6 +177,7 @@ const MIGRATIONS: &[&str] = &[
          read          INTEGER NOT NULL,
          refusals      INTEGER NOT NULL
      ) STRICT, WITHOUT ROWID;",
+    "ALTER TABLE wants ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

@@ -137,7 +137,10 @@ pub use crate::{
     studies::{Agreement, HEARD_AT_LEAST, Heard, HeardAs, Studied, StudiedTrack, StudyFilter},
     suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
     sung::{BETTERED_AFTER, MISSED_AGAIN_AFTER},
-    supply::{ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary},
+    supply::{
+        ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary,
+        RETRY_WAITS, TRIES_BEFORE_GIVING_UP,
+    },
     take_in::{
         Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,
         TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,

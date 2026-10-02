@@ -1,8 +1,11 @@
 use std::time::SystemTime;
 
 use ahash::AHashMap;
+use gpui::SharedString;
 use resonate_core::WantId;
-use resonate_library::{Found, Mbid, Want};
+use resonate_library::{Found, Mbid, TRIES_BEFORE_GIVING_UP, Want};
+
+use crate::format;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fetching {
@@ -10,29 +13,42 @@ pub enum Fetching {
     Queued,
     Downloading,
     Downloaded,
-    Unfound,
+    Retrying { tries: u32, at: SystemTime },
+    GaveUp,
     NoProvider,
     Unwanted,
 }
 
 impl Fetching {
     pub const fn is_underway(self) -> bool {
-        matches!(self, Self::Landing | Self::Queued | Self::Downloading)
+        matches!(
+            self,
+            Self::Landing | Self::Queued | Self::Downloading | Self::Retrying { .. }
+        )
     }
 
     pub const fn can_be_asked_again(self) -> bool {
-        matches!(self, Self::Unfound | Self::NoProvider | Self::Unwanted)
+        matches!(
+            self,
+            Self::Retrying { .. } | Self::GaveUp | Self::NoProvider | Self::Unwanted
+        )
     }
 
-    pub const fn saying(self) -> &'static str {
+    pub fn saying(self) -> SharedString {
         match self {
-            Self::Landing => "Adding to the catalog…",
-            Self::Queued => "Queued",
-            Self::Downloading => "Downloading…",
-            Self::Downloaded => "Downloaded",
-            Self::Unfound => "No provider had it",
-            Self::NoProvider => "No provider is set up",
-            Self::Unwanted => "Couldn't add it",
+            Self::Landing => SharedString::new_static("Adding to the catalog…"),
+            Self::Queued => SharedString::new_static("Queued"),
+            Self::Downloading => SharedString::new_static("Downloading…"),
+            Self::Downloaded => SharedString::new_static("Downloaded"),
+            Self::Retrying { tries, at } => SharedString::from(format!(
+                "Try {tries} of {TRIES_BEFORE_GIVING_UP} found nothing · again at {}",
+                format::time_of_day(at)
+            )),
+            Self::GaveUp => {
+                SharedString::from(format!("Gave up after {TRIES_BEFORE_GIVING_UP} tries"))
+            }
+            Self::NoProvider => SharedString::new_static("No provider is set up"),
+            Self::Unwanted => SharedString::new_static("Couldn't add it"),
         }
     }
 }
@@ -41,6 +57,9 @@ impl Fetching {
 pub(crate) struct WantStanding {
     tried: Option<SystemTime>,
     delivered: bool,
+    misses: u32,
+    due_at: Option<SystemTime>,
+    gave_up: bool,
 }
 
 impl WantStanding {
@@ -48,7 +67,25 @@ impl WantStanding {
         Self {
             tried: want.tried,
             delivered: want.held.is_some() || want.offered.is_some(),
+            misses: want.misses,
+            due_at: want.due_at(),
+            gave_up: want.gave_up(),
         }
+    }
+
+    fn fetching_since(self, queued: SystemTime) -> Option<Fetching> {
+        if self.delivered {
+            return Some(Fetching::Downloaded);
+        }
+        let tried = self.tried.filter(|tried| *tried >= queued)?;
+        if self.gave_up {
+            return Some(Fetching::GaveUp);
+        }
+
+        (self.misses > 0).then(|| Fetching::Retrying {
+            tries: self.misses,
+            at: self.due_at.unwrap_or(tried),
+        })
     }
 }
 
@@ -63,7 +100,11 @@ pub struct Download {
 impl Download {
     pub fn fetching_while(&self, asking: Option<WantId>) -> Fetching {
         match self.fetching {
-            Fetching::Queued if asking.is_some() && asking == self.want => Fetching::Downloading,
+            Fetching::Queued | Fetching::Retrying { .. }
+                if asking.is_some() && asking == self.want =>
+            {
+                Fetching::Downloading
+            }
             held => held,
         }
     }
@@ -118,21 +159,25 @@ impl Downloads {
     pub(crate) fn followed(&mut self, standings: &AHashMap<WantId, WantStanding>) -> bool {
         let mut moved = false;
         for download in &mut self.held {
-            let (Some(want), Fetching::Queued) = (download.want, download.fetching) else {
+            let Some(want) = download.want else {
                 continue;
             };
-            let Some(standing) = standings.get(&want) else {
+            if !matches!(
+                download.fetching,
+                Fetching::Queued | Fetching::Retrying { .. }
+            ) {
+                continue;
+            }
+            let Some(fetching) = standings
+                .get(&want)
+                .and_then(|standing| standing.fetching_since(download.queued))
+            else {
                 continue;
             };
-            let tried_since_queued = standing.tried.is_some_and(|tried| tried >= download.queued);
-            download.fetching = if standing.delivered {
-                Fetching::Downloaded
-            } else if tried_since_queued {
-                Fetching::Unfound
-            } else {
-                continue;
-            };
-            moved = true;
+            if fetching != download.fetching {
+                download.fetching = fetching;
+                moved = true;
+            }
         }
         moved
     }
@@ -218,43 +263,54 @@ mod tests {
         );
     }
 
+    fn standing(tried: SystemTime, misses: u32, delivered: bool) -> WantStanding {
+        WantStanding {
+            tried: Some(tried),
+            delivered,
+            misses,
+            due_at: Some(tried + Duration::from_secs(60)),
+            gave_up: misses >= TRIES_BEFORE_GIVING_UP,
+        }
+    }
+
     #[test]
-    fn a_want_delivered_is_downloaded_and_one_tried_since_without_an_answer_is_unfound() {
+    fn a_want_delivered_is_downloaded_one_tried_in_vain_is_retried_and_the_last_try_gives_up() {
         let now = SystemTime::now();
+        let later = now + Duration::from_secs(1);
         let mut delivered = queued(ECHOES, want(1), now);
         let mut unanswered = queued(SEAMUS, want(2), now);
         let mut tried_before = queued(SEAMUS, want(3), now);
+        let mut given_up = queued(SEAMUS, want(4), now);
 
         let standings = AHashMap::from_iter([
-            (
-                want(1),
-                WantStanding {
-                    tried: Some(now),
-                    delivered: true,
-                },
-            ),
-            (
-                want(2),
-                WantStanding {
-                    tried: Some(now + Duration::from_secs(1)),
-                    delivered: false,
-                },
-            ),
-            (
-                want(3),
-                WantStanding {
-                    tried: Some(now - Duration::from_secs(60)),
-                    delivered: false,
-                },
-            ),
+            (want(1), standing(now, 0, true)),
+            (want(2), standing(later, 1, false)),
+            (want(3), standing(now - Duration::from_secs(60), 2, false)),
+            (want(4), standing(later, TRIES_BEFORE_GIVING_UP, false)),
         ]);
 
         assert!(delivered.followed(&standings));
         assert!(unanswered.followed(&standings));
         assert!(!tried_before.followed(&standings));
+        assert!(given_up.followed(&standings));
+        assert!(!unanswered.followed(&standings));
         assert_eq!(fetching(&delivered, None), vec![Fetching::Downloaded]);
-        assert_eq!(fetching(&unanswered, None), vec![Fetching::Unfound]);
+        assert_eq!(
+            fetching(&unanswered, None),
+            vec![Fetching::Retrying {
+                tries: 1,
+                at: later + Duration::from_secs(60)
+            }]
+        );
+        assert_eq!(
+            fetching(&unanswered, Some(want(2))),
+            vec![Fetching::Downloading],
+            "a retry the poll is asking for is downloading"
+        );
         assert_eq!(fetching(&tried_before, None), vec![Fetching::Queued]);
+        assert_eq!(fetching(&given_up, None), vec![Fetching::GaveUp]);
+        assert!(Fetching::GaveUp.can_be_asked_again());
+        assert!(!Fetching::GaveUp.is_underway());
     }
 
     #[test]

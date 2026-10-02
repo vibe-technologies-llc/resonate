@@ -24,6 +24,14 @@ use crate::{
 };
 
 pub const POLL_AGAIN_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
+pub const RETRY_WAITS: [Duration; 5] = [
+    Duration::from_secs(60),
+    Duration::from_secs(5 * 60),
+    Duration::from_secs(15 * 60),
+    Duration::from_secs(60 * 60),
+    Duration::from_secs(6 * 60 * 60),
+];
+pub const TRIES_BEFORE_GIVING_UP: u32 = RETRY_WAITS.len() as u32 + 1;
 pub const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
 const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
@@ -46,17 +54,36 @@ impl Want {
             release_links: self.release_links.clone(),
         }
     }
+
+    pub const fn gave_up(&self) -> bool {
+        self.held.is_none() && self.misses >= TRIES_BEFORE_GIVING_UP
+    }
+
+    pub fn due_at(&self) -> Option<SystemTime> {
+        if self.held.is_some() {
+            return None;
+        }
+        let Some(tried) = self.tried else {
+            return Some(self.wanted);
+        };
+        let wait = match self.misses {
+            0 => POLL_AGAIN_AFTER,
+            misses => *RETRY_WAITS.get(misses as usize - 1)?,
+        };
+
+        tried.checked_add(wait)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct PollOptions {
-    pub again_after: Duration,
+    pub every_want: bool,
     pub answers_within: Duration,
 }
 
 impl PollOptions {
     pub const ASKING_EVERY_WANT: Self = Self {
-        again_after: Duration::ZERO,
+        every_want: true,
         answers_within: ANSWERS_WITHIN,
     };
 }
@@ -64,7 +91,7 @@ impl PollOptions {
 impl Default for PollOptions {
     fn default() -> Self {
         Self {
-            again_after: POLL_AGAIN_AFTER,
+            every_want: false,
             answers_within: ANSWERS_WITHIN,
         }
     }
@@ -428,10 +455,7 @@ fn run(
     let mut away = Away::default();
     let mut filed = Vec::new();
 
-    for want in wants
-        .iter()
-        .filter(|want| due(want, options.again_after, now))
-    {
+    for want in wants.iter().filter(|want| due(want, options, now)) {
         if progress.is_cancelled() {
             break;
         }
@@ -511,10 +535,11 @@ fn tried(library: &Library, want: WantId, offered: Option<&MediaLocation>) -> Re
 impl Library {
     pub fn is_a_want_due(&self, options: PollOptions) -> Result<bool> {
         let now = SystemTime::now();
-        Ok(self
-            .wants()?
-            .iter()
-            .any(|want| due(want, options.again_after, now)))
+        Ok(self.wants()?.iter().any(|want| due(want, options, now)))
+    }
+
+    pub fn next_want_due(&self) -> Result<Option<SystemTime>> {
+        Ok(self.wants()?.iter().filter_map(Want::due_at).min())
     }
 
     pub fn last_tried(&self) -> Result<Option<SystemTime>> {
@@ -527,14 +552,15 @@ impl Library {
     }
 }
 
-fn due(want: &Want, again_after: Duration, now: SystemTime) -> bool {
+fn due(want: &Want, options: PollOptions, now: SystemTime) -> bool {
     if want.held.is_some() {
         return false;
     }
-    match want.tried.map(|tried| now.duration_since(tried)) {
-        None | Some(Err(_)) => true,
-        Some(Ok(ago)) => ago >= again_after,
+    if options.every_want || want.tried.is_some_and(|tried| tried > now) {
+        return true;
     }
+
+    want.due_at().is_some_and(|at| at <= now)
 }
 
 #[cfg(test)]
@@ -561,37 +587,60 @@ mod tests {
             wanted: SystemTime::UNIX_EPOCH,
             tried,
             offered: None,
+            misses: 0,
             held: None,
             links: Vec::new(),
             release_links: Vec::new(),
         }
     }
 
+    fn at(seconds: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+    }
+
     #[test]
-    fn a_want_is_due_where_it_was_never_tried_or_was_tried_at_least_the_window_ago() {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-        let window = Duration::from_secs(10);
-        assert!(due(&want(None), window, now));
-        assert!(due(
-            &want(Some(SystemTime::UNIX_EPOCH + Duration::from_secs(90))),
-            window,
-            now
-        ));
-        assert!(due(
-            &want(Some(SystemTime::UNIX_EPOCH + Duration::from_secs(50))),
-            window,
-            now
-        ));
+    fn a_want_never_tried_is_due_and_one_offered_is_due_again_after_six_hours() {
+        let tried = at(1_000);
+        let offered = Want {
+            offered: Some("vault:abc".to_owned()),
+            ..want(Some(tried))
+        };
+        let six_hours = POLL_AGAIN_AFTER.as_secs();
+
+        assert!(due(&want(None), PollOptions::default(), at(1)));
         assert!(!due(
-            &want(Some(SystemTime::UNIX_EPOCH + Duration::from_secs(95))),
-            window,
-            now
+            &offered,
+            PollOptions::default(),
+            at(1_000 + six_hours - 1)
         ));
-        assert!(due(
-            &want(Some(SystemTime::UNIX_EPOCH + Duration::from_secs(200))),
-            window,
-            now
+        assert!(due(&offered, PollOptions::default(), at(1_000 + six_hours)));
+        assert!(due(&offered, PollOptions::default(), at(10)));
+    }
+
+    #[test]
+    fn a_want_tried_in_vain_waits_longer_after_each_try_and_is_given_up_after_the_last() {
+        let tried = at(1_000);
+        let missed = |misses: u32| Want {
+            misses,
+            ..want(Some(tried))
+        };
+
+        for (misses, wait) in (1..).zip(RETRY_WAITS) {
+            let after = 1_000 + wait.as_secs();
+            assert!(!missed(misses).gave_up());
+            assert!(!due(&missed(misses), PollOptions::default(), at(after - 1)));
+            assert!(due(&missed(misses), PollOptions::default(), at(after)));
+        }
+        let given_up = missed(TRIES_BEFORE_GIVING_UP);
+
+        assert!(given_up.gave_up());
+        assert_eq!(given_up.due_at(), None);
+        assert!(!due(
+            &given_up,
+            PollOptions::default(),
+            at(u64::from(u32::MAX))
         ));
+        assert!(due(&given_up, PollOptions::ASKING_EVERY_WANT, at(1_001)));
     }
 
     #[test]
@@ -600,6 +649,11 @@ mod tests {
             held: Some(TrackId::new(7).expect("a non-zero id")),
             ..want(None)
         };
-        assert!(!due(&held, Duration::ZERO, SystemTime::UNIX_EPOCH));
+        assert!(!due(
+            &held,
+            PollOptions::ASKING_EVERY_WANT,
+            SystemTime::UNIX_EPOCH
+        ));
+        assert_eq!(held.due_at(), None);
     }
 }

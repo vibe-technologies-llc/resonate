@@ -310,7 +310,7 @@ const WANTS: &str = concat!(
     "SELECT w.id, w.release_track_id, rt.album_id, ",
     album_title!(),
     ", rt.title, coalesce(rt.artist, ar.name),
-            w.wanted, w.tried, w.offered,
+            w.wanted, w.tried, w.offered, w.misses,
             rt.recording_mbid, rt.track_mbid, a.mbid, rt.isrc, rt.length_ms, rt.disc, rt.position,
             rt.track_id
        FROM wants w
@@ -3671,7 +3671,12 @@ impl Library {
         self.inner.write(|transaction| {
             let changed = transaction
                 .execute(
-                    "UPDATE wants SET tried = ?1, offered = coalesce(?2, offered) WHERE id = ?3",
+                    "UPDATE wants
+                        SET tried = ?1,
+                            misses = CASE WHEN ?2 IS NULL AND offered IS NULL
+                                          THEN misses + 1 ELSE 0 END,
+                            offered = coalesce(?2, offered)
+                      WHERE id = ?3",
                     params![
                         store::to_nanos(SystemTime::now()),
                         offered.map(MediaLocation::to_uri),
@@ -6094,6 +6099,7 @@ struct RawWant {
     wanted: i64,
     tried: Option<i64>,
     offered: Option<String>,
+    misses: i64,
     recording: Option<String>,
     track: Option<String>,
     release: Option<String>,
@@ -6116,14 +6122,15 @@ impl RawWant {
             wanted: row.get(6)?,
             tried: row.get(7)?,
             offered: row.get(8)?,
-            recording: row.get(9)?,
-            track: row.get(10)?,
-            release: row.get(11)?,
-            isrc: row.get(12)?,
-            length_ms: row.get(13)?,
-            disc: row.get(14)?,
-            position: row.get(15)?,
-            held: row.get(16)?,
+            misses: row.get(9)?,
+            recording: row.get(10)?,
+            track: row.get(11)?,
+            release: row.get(12)?,
+            isrc: row.get(13)?,
+            length_ms: row.get(14)?,
+            disc: row.get(15)?,
+            position: row.get(16)?,
+            held: row.get(17)?,
         })
     }
 
@@ -6147,6 +6154,7 @@ impl RawWant {
             wanted: store::from_nanos(self.wanted),
             tried: self.tried.map(store::from_nanos),
             offered: self.offered,
+            misses: u32::try_from(self.misses.max(0)).unwrap_or(u32::MAX),
             held: self
                 .held
                 .map(|held| TrackId::new(held as u64))

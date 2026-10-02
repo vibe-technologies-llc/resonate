@@ -32,12 +32,13 @@ use resonate_library::{
     Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold,
     LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
     Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
-    Pruned, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
-    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
-    Search, Service, Sidecar, SongLink, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery,
-    UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
+    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -13340,7 +13341,7 @@ fn a_want_tried_lately_is_not_asked_again_until_the_window_passes() -> Result<()
         .poll(
             providers,
             PollOptions {
-                again_after: Duration::ZERO,
+                every_want: true,
                 ..PollOptions::default()
             },
         )?
@@ -18533,7 +18534,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
         .poll(
             inbox.registered(),
             PollOptions {
-                again_after: Duration::ZERO,
+                every_want: true,
                 ..PollOptions::default()
             },
         )?
@@ -20516,6 +20517,46 @@ fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result
     assert!(library.is_a_want_due(PollOptions::default())?);
     library.poll(providers, PollOptions::default())?.join()?;
     assert_eq!(quiet.asked().len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_for_again()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let want = wanted_san_tropez(&library)?;
+    let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
+    let providers = Arc::new(Providers::none().and(Arc::clone(&quiet) as Arc<dyn Provider>));
+
+    library
+        .poll(Arc::clone(&providers), PollOptions::default())?
+        .join()?;
+    let tried = library.wants()?[0].clone();
+    assert_eq!(tried.misses, 1);
+    assert!(!tried.gave_up());
+    assert_eq!(
+        tried.due_at(),
+        tried.tried.map(|tried| tried + RETRY_WAITS[0]),
+        "the first retry waits the shortest"
+    );
+    assert!(!library.is_a_want_due(PollOptions::default())?);
+
+    for _ in 1..TRIES_BEFORE_GIVING_UP {
+        library
+            .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
+            .join()?;
+    }
+    let given_up = library.wants()?[0].clone();
+    assert_eq!(given_up.misses, TRIES_BEFORE_GIVING_UP);
+    assert!(given_up.gave_up());
+    assert_eq!(given_up.due_at(), None);
+    assert_eq!(library.next_want_due()?, None);
+
+    assert_eq!(wanted_san_tropez(&library)?, want);
+    let asked_again = library.wants()?[0].clone();
+    assert_eq!(asked_again.misses, 0);
+    assert!(!asked_again.gave_up());
+    assert!(library.is_a_want_due(PollOptions::default())?);
     Ok(())
 }
 

@@ -1,6 +1,8 @@
 use std::time::{Duration, SystemTime};
 
-use resonate_core::{AppliedGain, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{
+    AppliedGain, Calendar, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec,
+};
 use resonate_engine::OutputMode;
 use smallvec::SmallVec;
 
@@ -155,6 +157,14 @@ pub fn since(when: SystemTime, now: SystemTime) -> String {
     }
 
     "just now".to_owned()
+}
+
+pub fn time_of_day(at: SystemTime) -> String {
+    let calendar = Calendar::local();
+    let midnight = calendar.midnight_of(calendar.day_of(at));
+    let minutes = at.duration_since(midnight).unwrap_or_default().as_secs() / 60;
+
+    format!("{:02}:{:02}", minutes / 60 % 24, minutes % 60)
 }
 
 pub fn age(when: SystemTime, now: SystemTime) -> String {
