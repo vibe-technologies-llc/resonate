@@ -1823,7 +1823,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the release in the format column — and the want mark is `want_mark` over an `Asks`: a catalog row
   wants its `ReleaseTrackId` as ever; a found song calls `LibraryModel::want_found`, landing its release
   and wanting the row on the background executor, greying the mark meanwhile, then asking the providers
-  and MusicBrainz again, so the song moves up into the catalog's section wanted. `wanting` holds a task
+  and MusicBrainz again, so the song moves up into the catalog's section wanted. **A found song's
+  whole row is that press**: `found_row` lays the row `unheld_row` draws under an id of its
+  recording with the pointer, a hover wash and `FETCH_FOUND_HINT`, so pressing anywhere on it wants
+  the song and sends the providers for it, the mark's own press inside it finding the recording
+  already `wanting` and doing nothing twice; while the want lands the row takes no press
+  (`pressing_a_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it`, which opens the
+  window through `Driven::reaching` — a `Reaching` naming the reference and the providers). The
+  toast says the providers will be asked, or that none is set up to fetch it where
+  `Sourcing::providers` registers none. `wanting` holds a task
   per recording, not one for the lot, so wanting a second song before the first landed does not drop the
   first's lookup and leave its mark grey. The ask is `ask_elsewhere_after`, `ASKED_ELSEWHERE_AFTER` (700
   ms) behind the keystroke, only where the build `can_enrich` and `asks_elsewhere` says the words are

@@ -162,8 +162,10 @@ A provider does none of this, so none of it is written twice:
    function together.
    **The window polls on its own** as well as on *Poll now*: `FIRST_ASKED_AFTER` a start, every
    `ASKED_EVERY` after, and as soon as a want is marked — each only where a provider is
-   registered, nothing else runs and `Library::is_a_want_due` says one is due, so an idle window
-   with nothing wanted reads the wants and nothing else. A self-started poll raises no notice when
+   registered, nothing else runs and `Library::is_a_want_due` says one is due; a want marked while
+   another pass holds the library is owed (`LibraryModel::poll_owed`) and asked about the moment
+   `take_up_what_waited` finds the library free, so an idle window with nothing wanted reads the
+   wants and nothing else. A self-started poll raises no notice when
    it cannot run and clears none when it does. *Poll now* and `resonate poll --again` poll under
    `PollOptions::ASKING_EVERY_WANT`, asking every unheld want whenever last tried — somebody who
    just dropped a file in the inbox means *now*; the timer and a bare `resonate poll` keep to

@@ -92,6 +92,9 @@ const DISMISS_MISSING_HINT: &str =
 const WANT_FOUND_HINT: &str = "Mark this song wanted: its release is added to the catalog and the \
                                providers are asked for it. Right-click to choose the release";
 
+const FETCH_FOUND_HINT: &str = "Fetch this song: it is marked wanted, its release is added to the \
+                                catalog and the providers are asked for it now";
+
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
 const READ_THE_REST: &str = "Read the rest";
@@ -798,8 +801,7 @@ impl RootView {
                                                 continue;
                                             };
                                             drawn.push(
-                                                this.unheld_row(at, Unheld::found(row), cx)
-                                                    .into_any_element(),
+                                                this.found_row(at, row, cx).into_any_element(),
                                             );
                                         }
                                         None => {}
@@ -1139,6 +1141,26 @@ impl RootView {
                     })
                     .child(mark),
             )
+    }
+
+    fn found_row(&self, index: usize, found: &Found, cx: &mut Context<Self>) -> Stateful<Div> {
+        let row = self
+            .unheld_row(index, Unheld::found(found), cx)
+            .id(listing::keyed_by("found", &found.recording))
+            .debug_selector(move || format!("found-{index}"));
+        if self.library.read(cx).is_wanting(found) {
+            return row;
+        }
+
+        let fetched = found.clone();
+        row.cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
+            .names(FETCH_FOUND_HINT)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let wanted = fetched.clone();
+                this.library
+                    .update(cx, |library, cx| library.want_found(wanted, cx));
+            }))
     }
 
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -3249,5 +3271,210 @@ mod tests {
             record.on.iter().map(|heard| heard.name).collect::<Vec<_>>(),
             ["Apple Music", "Bandcamp"]
         );
+    }
+
+    mod driven {
+        use std::{path::Path, sync::Arc};
+
+        use gpui::TestAppContext;
+        use parking_lot::Mutex;
+        use resonate_core::SourceId;
+        use resonate_library::{
+            ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
+            Issued, Library, Link, LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked,
+            RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
+            ReleaseMatch, ReleaseTrack, Result, StreamAsked,
+        };
+        use resonate_providers::{Identity, Obtained, Provider, Providers};
+
+        use crate::driven::{Driven, Folder, Reaching};
+
+        const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+        const MEDDLE: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
+
+        fn mbid(id: &str) -> Mbid {
+            Mbid::new(id).expect("an mbid")
+        }
+
+        fn floyd() -> Vec<Credit> {
+            vec![Credit {
+                name: "Pink Floyd".to_owned(),
+                joined_by: String::new(),
+                mbid: None,
+            }]
+        }
+
+        struct MusicBrainz {
+            source: SourceId,
+        }
+
+        impl Reference for MusicBrainz {
+            fn source(&self) -> &SourceId {
+                &self.source
+            }
+
+            fn release(&self, id: &Mbid) -> Result<Option<Release>> {
+                Ok((id.as_str() == MEDDLE).then(|| Release {
+                    id: mbid(MEDDLE),
+                    group: None,
+                    title: "Meddle".to_owned(),
+                    credit: floyd(),
+                    date: Some("1971-10-30".to_owned()),
+                    country: None,
+                    label: None,
+                    catalog_number: None,
+                    barcode: None,
+                    kind: Some("Album".to_owned()),
+                    disambiguation: None,
+                    has_front_cover: false,
+                    links: Vec::new(),
+                    media: vec![Medium {
+                        position: 1,
+                        format: None,
+                        title: None,
+                        tracks: vec![ReleaseTrack {
+                            position: 6,
+                            number: "6".to_owned(),
+                            title: "Echoes".to_owned(),
+                            artist: None,
+                            recording: Some(mbid(ECHOES)),
+                            track: None,
+                            length: None,
+                            isrc: None,
+                            links: Vec::new(),
+                        }],
+                    }],
+                }))
+            }
+
+            fn find_release(&self, _: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
+                Ok(Vec::new())
+            }
+
+            fn recording(&self, _: &Mbid) -> Result<Option<Recording>> {
+                Ok(None)
+            }
+
+            fn recordings_of_isrc(&self, _: &resonate_library::Isrc) -> Result<Vec<Recording>> {
+                Ok(Vec::new())
+            }
+
+            fn find_recording(&self, _: &RecordingAsked) -> Result<Vec<RecordingMatch>> {
+                Ok(Vec::new())
+            }
+
+            fn find_songs(&self, _: &str) -> Result<Vec<RecordingMatch>> {
+                Ok(vec![RecordingMatch {
+                    recording: mbid(ECHOES),
+                    score: 100,
+                    title: "Echoes".to_owned(),
+                    credit: floyd(),
+                    length: None,
+                    isrcs: Vec::new(),
+                    releases: vec![RecordingRelease {
+                        id: mbid(MEDDLE),
+                        title: "Meddle".to_owned(),
+                        date: Some("1971-10-30".to_owned()),
+                        disc: Some(1),
+                        position: Some(6),
+                        issued: Issued {
+                            kind: Some("Album".to_owned()),
+                            secondary: Vec::new(),
+                            status: Some("Official".to_owned()),
+                        },
+                    }],
+                }])
+            }
+
+            fn release_group(&self, _: &Mbid) -> Result<Option<ReleaseGroup>> {
+                Ok(None)
+            }
+
+            fn find_release_group(&self, _: &GroupAsked) -> Result<Vec<GroupMatch>> {
+                Ok(Vec::new())
+            }
+
+            fn group_cover(&self, _: &Mbid) -> Result<Option<CoverArt>> {
+                Ok(None)
+            }
+
+            fn artist(&self, _: &Mbid) -> Result<Option<ArtistProfile>> {
+                Ok(None)
+            }
+
+            fn find_artist(&self, _: &str) -> Result<Vec<ArtistMatch>> {
+                Ok(Vec::new())
+            }
+
+            fn release_groups_of(&self, _: &Mbid, _: u32) -> Result<Discography> {
+                Ok(Discography::default())
+            }
+
+            fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> Result<Option<CoverArt>> {
+                Ok(None)
+            }
+
+            fn portrait(&self, _: &[Link]) -> Result<Option<CoverArt>> {
+                Ok(None)
+            }
+
+            fn streamed_at(&self, _: &StreamAsked) -> Result<Option<Link>> {
+                Ok(None)
+            }
+
+            fn lyrics(&self, _: &LyricsAsked) -> Result<Option<LyricText>> {
+                Ok(None)
+            }
+        }
+
+        struct Shop {
+            source: SourceId,
+            asked: Arc<Mutex<Vec<Option<Mbid>>>>,
+        }
+
+        impl Provider for Shop {
+            fn source(&self) -> &SourceId {
+                &self.source
+            }
+
+            fn obtain(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
+                self.asked.lock().push(identity.recording.clone());
+                Ok(Obtained::Nothing)
+            }
+        }
+
+        #[gpui::test]
+        fn pressing_a_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz {
+                    source: SourceId::new("musicbrainz").expect("a source name"),
+                }),
+                register: Arc::new(move |_: Option<&Path>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+            });
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+
+            driven.click("found-0");
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert_eq!(asked.lock().clone(), vec![Some(mbid(ECHOES))]);
+            assert_eq!(library.wants().expect("the wants read").len(), 1);
+        }
     }
 }

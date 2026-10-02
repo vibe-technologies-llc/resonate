@@ -22,14 +22,15 @@ use resonate_engine::{
     SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_eq::Corrected;
-use resonate_library::{Fingerprinters, Library, ScanOptions};
+use resonate_library::{Fingerprinters, Library, Reference, ScanOptions};
 use resonate_listen::{Listener, Listening, Recognisers};
 use resonate_lyrics::Lyricists;
 use resonate_providers::Providers;
 
 use crate::{
     AppIcon, Bindings, Ephemeral, Launcher, Listens, Online, Places, Present, ResonateApp,
-    RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app, drawing::Drawer, theme,
+    RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app, drawing::Drawer,
+    settings::Registering, theme,
 };
 
 pub(crate) const WIDE: f32 = 1_400.0;
@@ -38,6 +39,11 @@ const FRAME: Duration = Duration::from_millis(16);
 const PATIENCE: Duration = Duration::from_secs(10);
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
+
+pub(crate) struct Reaching {
+    pub(crate) reference: Arc<dyn Reference>,
+    pub(crate) register: Registering,
+}
 
 pub(crate) struct Folder {
     root: PathBuf,
@@ -211,6 +217,45 @@ impl Driven {
         folder: &Folder,
         corrections: Corrected,
     ) -> Self {
+        Self::built(cx, library, folder, corrections, None)
+    }
+
+    pub(crate) fn reaching(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        reaching: Reaching,
+    ) -> Self {
+        Self::built(
+            cx,
+            library,
+            folder,
+            Corrected::uncorrected(),
+            Some(reaching),
+        )
+    }
+
+    fn built(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        corrections: Corrected,
+        reaching: Option<Reaching>,
+    ) -> Self {
+        let (reference, register) = match reaching {
+            Some(Reaching {
+                reference,
+                register,
+            }) => (Some(reference), register),
+            None => {
+                let register: Registering = Arc::new(|_: Option<&Path>| Providers::none());
+                (None, register)
+            }
+        };
+        let online = Online {
+            enabled: reference.is_some(),
+            ..Online::default()
+        };
         theme::wear(Appearance::default());
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
@@ -223,9 +268,9 @@ impl Driven {
                 fingerprinters: Arc::new(Fingerprinters::none()),
                 corrections: Arc::new(corrections),
                 settings: Arc::new(Ephemeral),
-                online: Online::default(),
+                online,
                 bindings: Bindings::default(),
-                reference: None,
+                reference,
                 scrobblers: None,
                 signs_in: None,
                 attention,
@@ -258,7 +303,7 @@ impl Driven {
                 launcher: unseen,
                 sourcing: Sourcing {
                     inbox: None,
-                    register: Arc::new(|_: Option<&Path>| Providers::none()),
+                    register,
                 },
                 listens: nobody_listening(),
                 first_read: None,

@@ -87,6 +87,8 @@ const TAKEN_BACK: &str = concat!(" · ", keyed!("Put it back", key!(undo)));
 
 const WANTED_ELSEWHERE: &str = " — the providers will be asked for it";
 
+const WANTED_WITH_NO_PROVIDER: &str = " — no provider is set up to fetch it";
+
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
@@ -683,6 +685,7 @@ pub struct LibraryModel {
     _shared: Task<()>,
     pressings: Option<(AlbumId, Pressings)>,
     roots_waiting: Vec<RootWaiting>,
+    poll_owed: bool,
     to_file: Option<ToFile>,
     _pressings: Task<()>,
     _kept: Task<()>,
@@ -840,6 +843,7 @@ impl LibraryModel {
             _shared: Task::ready(()),
             pressings: None,
             roots_waiting: Vec::new(),
+            poll_owed: false,
             to_file: None,
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
@@ -1141,16 +1145,21 @@ impl LibraryModel {
                 }
                 match wanted {
                     Ok(_) => {
+                        let then = if this.sourcing.providers().has_a_source() {
+                            WANTED_ELSEWHERE
+                        } else {
+                            WANTED_WITH_NO_PROVIDER
+                        };
                         toast::tell(
                             Notice::Done(format!(
-                                "Wanted {} by {}{WANTED_ELSEWHERE}",
+                                "Wanted {} by {}{then}",
                                 found.title, found.artist
                             )),
                             cx,
                         );
                         this.found_for = None;
                         this.ask_elsewhere_after(Duration::ZERO, cx);
-                        this.poll_as(Prompted::OnItsOwn, cx);
+                        this.fetch_what_was_wanted(cx);
                     }
                     Err(error) => {
                         tracing::error!(%error, "a song found elsewhere could not be wanted");
@@ -1303,7 +1312,7 @@ impl LibraryModel {
             move |library| library.want(release_track).map(|_| None),
             |this, edited, cx| {
                 if edited == Edited::Landed {
-                    this.poll_as(Prompted::OnItsOwn, cx);
+                    this.fetch_what_was_wanted(cx);
                 }
             },
             cx,
@@ -3188,6 +3197,10 @@ impl LibraryModel {
                     Pass::Apply,
                     cx,
                 );
+                return;
+            }
+            if mem::take(&mut self.poll_owed) {
+                self.fetch_what_was_wanted(cx);
             }
             return;
         }
@@ -3634,6 +3647,12 @@ impl LibraryModel {
 
     pub fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_as(Prompted::ByHand, cx);
+    }
+
+    fn fetch_what_was_wanted(&mut self, cx: &mut Context<Self>) {
+        if !self.poll_as(Prompted::OnItsOwn, cx) {
+            self.poll_owed = true;
+        }
     }
 
     fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) -> bool {
