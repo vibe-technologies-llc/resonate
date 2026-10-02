@@ -254,6 +254,30 @@ pub(crate) fn worth_asking(search: &Search) -> bool {
 }
 
 impl Spellings {
+    pub(crate) fn artist_named(&self, typed: &str) -> Option<String> {
+        let whole = lettered_runs(typed)
+            .into_iter()
+            .map(|(_, folded)| folded)
+            .collect::<Vec<_>>()
+            .join(&BETWEEN_RUNS.to_string());
+        if whole.is_empty() {
+            return None;
+        }
+        let artists = &self.artists;
+        if let Some(held) = artists
+            .named
+            .get(&whole)
+            .or_else(|| artists.spelled.get(&whole))
+        {
+            return Some(held.spelling.clone());
+        }
+
+        artists
+            .nearest_name(&whole)
+            .or_else(|| artists.nearest(&whole))
+            .map(|(spelling, _)| spelling.to_owned())
+    }
+
     pub fn taking(&mut self, column: Column, name: &str) {
         if let Some(vocabulary) = self.of(column) {
             vocabulary.taking(name);

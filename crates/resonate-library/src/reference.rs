@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use resonate_core::SourceId;
 
-use crate::{CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result, Service, SongLink};
+use crate::{
+    CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result, Service, SongLink, SongsAsked,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Credit {
@@ -427,7 +429,7 @@ pub trait Reference: Send + Sync {
 
     fn find_recording(&self, asked: &RecordingAsked) -> Result<Vec<RecordingMatch>>;
 
-    fn find_songs(&self, words: &str) -> Result<Vec<RecordingMatch>>;
+    fn find_songs(&self, asked: &SongsAsked) -> Result<Vec<RecordingMatch>>;
 
     fn release_group(&self, id: &Mbid) -> Result<Option<ReleaseGroup>>;
 

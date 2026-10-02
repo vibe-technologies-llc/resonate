@@ -1,10 +1,10 @@
 use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
-    ArtistMatch, ArtistProfile, ArtistRelease, Credit, Discography, Genre, GroupAsked, GroupMatch,
-    GroupRelease, Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording, RecordingAsked,
-    RecordingMatch, RecordingRelease, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Wording,
+    ArtistMatch, ArtistProfile, ArtistRelease, ByArtist, Credit, Discography, Genre, GroupAsked,
+    GroupMatch, GroupRelease, Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, SongsAsked, Wording,
 };
 use serde::Deserialize;
 
@@ -16,6 +16,7 @@ use crate::{
 
 const FOUND_AT_MOST: u32 = 5;
 const SONGS_FOUND_AT_MOST: u32 = 25;
+const SPELT_LOOSELY_FROM: usize = 4;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
 const BROWSE_PAGE: u32 = 100;
 const GROUPS_AT_MOST: u32 = 1000;
@@ -602,11 +603,21 @@ pub(crate) fn find_recording(
         .collect())
 }
 
-pub(crate) fn find_songs(client: &Client, words: &str) -> Result<Vec<RecordingMatch>> {
+pub(crate) fn find_songs(client: &Client, asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
+    if let Some(by) = &asked.by {
+        let found = songs_found(client, &songs_by_search(by))?;
+        if !found.is_empty() {
+            return Ok(found);
+        }
+    }
+
+    songs_found(client, &songs_search(&asked.words))
+}
+
+fn songs_found(client: &Client, path: &str) -> Result<Vec<RecordingMatch>> {
     let op = LookupOp::FindRecording;
-    let path = songs_search(words);
     let found = client
-        .json::<RecordingSearchDoc>(Host::MusicBrainz, op, &path)?
+        .json::<RecordingSearchDoc>(Host::MusicBrainz, op, path)?
         .map(|document| document.recordings)
         .unwrap_or_default();
 
@@ -618,6 +629,24 @@ pub(crate) fn find_songs(client: &Client, words: &str) -> Result<Vec<RecordingMa
 
 fn songs_search(words: &str) -> String {
     searched_in_words("/recording/", words, None, SONGS_FOUND_AT_MOST)
+}
+
+fn songs_by_search(by: &ByArtist) -> String {
+    let named: Vec<String> = by
+        .artist
+        .split(|letter: char| !letter.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(|word| match word.chars().count() {
+            letters if letters >= SPELT_LOOSELY_FROM => format!("{word}~"),
+            _ => word.to_owned(),
+        })
+        .collect();
+    let mut query = format!("recording:{}", lucene_quoted(&by.title));
+    if !named.is_empty() {
+        let _ = write!(query, " AND artist:({})", named.join(" AND "));
+    }
+
+    searched("/recording/", &query, SONGS_FOUND_AT_MOST)
 }
 
 pub(crate) fn release_group(client: &Client, id: &Mbid) -> Result<Option<ReleaseGroup>> {
@@ -1649,6 +1678,24 @@ mod tests {
             found[1].releases[0].issued.status.as_deref(),
             Some("Bootleg")
         );
+    }
+
+    #[test]
+    fn a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely() {
+        let path = songs_by_search(&ByArtist {
+            title: "you f o".to_owned(),
+            artist: "stela cole".to_owned(),
+        });
+
+        assert!(path.starts_with("/recording/?"), "{path}");
+        assert!(
+            path.contains(&format!(
+                "query={}",
+                crate::query::escape_query(r#"recording:"you f o" AND artist:(stela~ AND cole~)"#)
+            )),
+            "{path}"
+        );
+        assert!(!path.contains("dismax"), "{path}");
     }
 
     #[test]

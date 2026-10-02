@@ -35,10 +35,10 @@ use resonate_library::{
     Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
     Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
     ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
-    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought,
+    Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink,
+    TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits,
+    Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -8995,8 +8995,8 @@ impl Reference for Fake {
         })
     }
 
-    fn find_songs(&self, words: &str) -> Result<Vec<RecordingMatch>> {
-        self.note(Called::FindSongs(words.to_owned()))?;
+    fn find_songs(&self, asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
+        self.note(Called::FindSongs(asked.words.clone()))?;
         Ok(self.canned.found_songs.clone())
     }
 
@@ -19287,6 +19287,58 @@ fn echoes_found() -> RecordingMatch {
             },
         ],
     }
+}
+
+#[test]
+fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() -> Result<()> {
+    let tree = Tree::new();
+    for (file, title, artist) in [
+        ("1.wav", "You F.O.", "Stela Cole"),
+        ("2.wav", "You F.O.", "Somebody Else"),
+        ("3.wav", "Dream a Little Dream", "Stela Cole"),
+    ] {
+        tree.write(
+            file,
+            &Wav::new().text(TITLE, title).text(ARTIST, artist).build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let meant = library
+        .meant("You F O by stela cole")?
+        .expect("the words read as a title by a held artist");
+    let found = library.tracks(&TrackQuery {
+        text: Some(meant.searched.clone()),
+        ..TrackQuery::default()
+    })?;
+
+    assert_eq!(meant.title, "You F O");
+    assert_eq!(meant.artist, "Stela Cole");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].artist.as_deref(), Some("Stela Cole"));
+    assert_eq!(found[0].title, "You F.O.");
+    assert_eq!(
+        library
+            .meant("Stela Cole - You F.O.")?
+            .map(|meant| meant.artist),
+        Some("Stela Cole".to_owned())
+    );
+    assert_eq!(
+        library
+            .meant("you f o by stella cole")?
+            .map(|meant| meant.artist),
+        Some("Stela Cole".to_owned()),
+        "a name a letter off is the artist the catalog holds"
+    );
+    assert_eq!(library.meant("you f o by nobody held")?, None);
+    assert_eq!(
+        library.meant("purple rain by stela cole")?,
+        None,
+        "a reading that would find nothing is not taken"
+    );
+    assert_eq!(library.meant("stela cole")?, None);
+    Ok(())
 }
 
 #[test]

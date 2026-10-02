@@ -16,8 +16,8 @@ use resonate_library::{
     EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
     Library, Link, LinkNames, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording,
     RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Result, ScanOptions, SongLink, SortOrder, Sounded, Sources, StreamAsked,
-    StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
+    ReleaseTrack, Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources,
+    StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -240,7 +240,7 @@ impl Reference for Silent {
         Ok(Vec::new())
     }
 
-    fn find_songs(&self, _words: &str) -> Result<Vec<RecordingMatch>> {
+    fn find_songs(&self, _asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
         Ok(Vec::new())
     }
 

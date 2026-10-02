@@ -22,14 +22,15 @@ use resonate_library::{
     ArtistTotals, CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing,
     Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
     GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
-    ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing,
-    MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
-    OrganiseSummary, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
-    PollStats, PollSummary, Raster, Recording, RecordingMatch, Reference, ReleaseAsked,
-    ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
-    Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering,
+    ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Meant, Measured,
+    Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
+    OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions,
+    PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch, Reference,
+    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
+    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
+    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, folded_letters,
+    songs_asked, still_answering,
 };
 use resonate_providers::Providers;
 
@@ -162,6 +163,7 @@ struct Loaded {
     browsed: Option<Browsed>,
     paged: Option<Paged>,
     shelves: Option<Shelves>,
+    meant: Option<Meant>,
 }
 
 struct Shelves {
@@ -331,6 +333,8 @@ impl Change {
 #[derive(Clone, PartialEq, Eq)]
 struct Asked {
     text: Option<String>,
+    meant: Option<String>,
+    as_typed: bool,
     album: Option<AlbumId>,
     artist: Option<ArtistId>,
     opened: Option<PlaylistId>,
@@ -345,6 +349,8 @@ impl Asked {
     fn at_first() -> Self {
         Self {
             text: None,
+            meant: None,
+            as_typed: false,
             album: None,
             artist: None,
             opened: None,
@@ -610,8 +616,10 @@ pub struct LibraryModel {
     album_songs: AHashMap<Mbid, Vec<Mbid>>,
     shown: Arc<[Found]>,
     asking: Option<String>,
-    answers: Recent<String, Arc<[RecordingMatch]>>,
-    reaching_out: Option<String>,
+    answers: Recent<SongsAsked, Arc<[RecordingMatch]>>,
+    meant: Option<Meant>,
+    as_typed: bool,
+    reaching_out: Option<SongsAsked>,
     owed: Option<String>,
     unreached_for: Option<String>,
     wanting: AHashMap<Mbid, Task<()>>,
@@ -786,6 +794,8 @@ impl LibraryModel {
             shown: Arc::default(),
             asking: None,
             answers: Recent::new(ANSWERS_HELD),
+            meant: None,
+            as_typed: false,
             reaching_out: None,
             owed: None,
             unreached_for: None,
@@ -1239,7 +1249,7 @@ impl LibraryModel {
 
     fn reached(
         &mut self,
-        words: String,
+        words: SongsAsked,
         answered: resonate_library::Result<Vec<RecordingMatch>>,
         cx: &mut Context<Self>,
     ) {
@@ -2322,6 +2332,18 @@ impl LibraryModel {
         (!self.query.is_empty()).then_some(self.query.as_str())
     }
 
+    pub const fn meant(&self) -> Option<&Meant> {
+        self.meant.as_ref()
+    }
+
+    pub fn search_as_typed(&mut self, cx: &mut Context<Self>) {
+        self.as_typed = true;
+        self.meant = None;
+        self.search = Search::read(&self.query);
+        self.read_after(Duration::ZERO, Wanted::TheSearch, cx);
+        cx.notify();
+    }
+
     pub fn instead(&self) -> Option<&str> {
         self.instead.as_deref()
     }
@@ -3145,6 +3167,7 @@ impl LibraryModel {
         if self.query == query {
             return;
         }
+        self.as_typed = false;
         self.search = Search::read(&query);
         self.query = query;
         self.reach = PAGE;
@@ -3220,6 +3243,8 @@ impl LibraryModel {
         };
         Asked {
             text: (!self.query.is_empty()).then(|| self.query.clone()),
+            meant: None,
+            as_typed: self.as_typed,
             album,
             artist,
             opened: self.opened,
@@ -3291,6 +3316,15 @@ impl LibraryModel {
         self.read_albums = Recent::new(ALBUMS_HELD);
         if let Some(shelves) = loaded.shelves {
             self.take_the_shelves(shelves);
+        }
+        if loaded.browsed.is_some() || loaded.paged.is_some() {
+            self.search = Search::read(
+                loaded
+                    .meant
+                    .as_ref()
+                    .map_or(self.query.as_str(), |meant| meant.searched.as_str()),
+            );
+            self.meant = loaded.meant;
         }
         if let Some(browsed) = loaded.browsed {
             self.take_the_listing(browsed);
@@ -4986,7 +5020,12 @@ fn walk(
     }
 }
 
-fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Result<Loaded> {
+fn load(library: &Library, mut asked: Asked, wanted: Wanted) -> resonate_library::Result<Loaded> {
+    let meant = match asked.text.as_deref().filter(|_| !asked.as_typed) {
+        Some(text) if asked.album.is_none() && asked.artist.is_none() => library.meant(text)?,
+        Some(_) | None => None,
+    };
+    asked.meant = meant.as_ref().map(|meant| meant.searched.clone());
     let narrowing = asked.text.as_deref();
 
     let (browsed, paged) = match wanted {
@@ -5006,6 +5045,7 @@ fn load(library: &Library, asked: Asked, wanted: Wanted) -> resonate_library::Re
         browsed,
         paged,
         shelves,
+        meant,
     })
 }
 
@@ -5116,6 +5156,10 @@ fn drawn_portrait(library: &Library, id: ArtistId, side: NonZeroU32) -> Option<P
 }
 
 impl Asked {
+    fn searched(&self) -> Option<String> {
+        self.meant.clone().or_else(|| self.text.clone())
+    }
+
     fn listing(
         &self,
         album: Option<AlbumId>,
@@ -5125,7 +5169,7 @@ impl Asked {
         TrackQuery {
             album,
             artist,
-            text: self.text.clone(),
+            text: self.searched(),
             sort: self.sorting.tracks,
             reading: self.sorting.tracks_read,
             limit,
@@ -5140,7 +5184,7 @@ impl Asked {
     fn albums(&self) -> AlbumQuery {
         AlbumQuery {
             artist: None,
-            text: self.text.clone(),
+            text: self.searched(),
             sort: self.sorting.albums,
             reading: self.sorting.albums_read,
             limit: Some(self.reach),
@@ -5150,7 +5194,7 @@ impl Asked {
 
     fn artists(&self) -> ArtistQuery {
         ArtistQuery {
-            text: self.text.clone(),
+            text: self.searched(),
             sort: self.sorting.artists,
             reading: self.sorting.artists_read,
             limit: Some(self.reach),

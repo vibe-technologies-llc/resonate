@@ -1966,6 +1966,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   A search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in
   the load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
   nothing else matched, as a `search_instead`.
+- **What a search was read as is said under its words, and the words as typed are a press away.**
+  Where `LibraryModel::meant` holds a `Meant` (`library.md`) the search heading draws *Read as
+  “You F O” by Stela Cole* in the accent under the quoted words, the *Reads* chips show the scoped
+  search it ran, the matched runs light by it, *Save this search* saves it, and *Search the words as
+  typed* is `search_as_typed`, which reads them literally until the box changes
+  (`a_title_by_an_artist_is_searched_as_that_title_by_that_artist`).
 - **A link to a song pasted anywhere is the song, downloaded, not words to search.** The search
   field is built `catching(is_a_song_link)`: a paste the predicate takes is emitted as `Caught` rather
   than inserted, and `ctrl-v` away from any field is `PasteAway`, a paste into the search box, so the

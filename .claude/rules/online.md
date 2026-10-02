@@ -197,7 +197,14 @@ listener, every counted play, and only under a token.
   catalog lacks — the words under the same `dismax` shape through `songs_search`, capped at
   `SONGS_FOUND_AT_MOST` (25, not 5), since the library throws away every recording it names and
   every second take of one title by one artist before offering the rest
-  (`a_song_is_searched_for_in_the_words_it_was_typed_in_under_dismax`). Nothing asks by lyric text:
+  (`a_song_is_searched_for_in_the_words_it_was_typed_in_under_dismax`). **Words read as a title by
+  an artist are asked as that first**: where the `SongsAsked` carries a `ByArtist`, `songs_by_search`
+  asks `recording:"<title>" AND artist:(<word>~ AND …)`, each artist word of `SPELT_LOOSELY_FROM` (4)
+  letters or more spelt loosely so a misspelt name still reaches the artist, and only an empty answer
+  falls back to the loose words. Measured live, *you f o by stela cole* answered Stela Cole's *You F
+  O* alone where the loose words answered two other Stela Cole songs and two unrelated songs called
+  *Stela*
+  (`a_title_by_an_artist_is_searched_for_by_the_title_and_the_artists_words_spelt_loosely`). Nothing asks by lyric text:
   LRCLIB's `q` searches title, artist and album only, and no service indexing the words answers
   without a key. The duration window is `LENGTH_MAY_DIFFER_BY_MS`, ten seconds either way, wider
   than the five `enrich.rs` (`RECORDING_MAY_DIFFER_BY`) accepts: a query as narrow as the rule

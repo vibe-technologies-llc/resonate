@@ -5,7 +5,7 @@ use resonate_core::SourceId;
 use resonate_library::{
     ArtistMatch, ArtistProfile, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames,
     LyricText, LyricsAsked, Mbid, Recording, RecordingAsked, RecordingMatch, Reference, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, SongLink, StreamAsked,
+    ReleaseAsked, ReleaseGroup, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
 };
 
 use crate::{
@@ -65,8 +65,8 @@ impl Reference for Online {
         Ok(musicbrainz::find_recording(&self.client, asked)?)
     }
 
-    fn find_songs(&self, words: &str) -> resonate_library::Result<Vec<RecordingMatch>> {
-        Ok(musicbrainz::find_songs(&self.client, words)?)
+    fn find_songs(&self, asked: &SongsAsked) -> resonate_library::Result<Vec<RecordingMatch>> {
+        Ok(musicbrainz::find_songs(&self.client, asked)?)
     }
 
     fn release_group(&self, id: &Mbid) -> resonate_library::Result<Option<ReleaseGroup>> {

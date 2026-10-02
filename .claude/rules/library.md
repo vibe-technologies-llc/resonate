@@ -2264,6 +2264,22 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `NOT coalesce(…, 0)`, so a row unable to answer — no album for `year:`, no duration for `length:` —
   satisfies the denial rather than dropping out. `Matching::grouped` carries the lot into the album and
   artist listings, so one text narrows every browse pane.
+- **Words naming a title by an artist are read as that, against the artists the catalog holds.**
+  `meant.rs` is the reading. `ByArtist::read` takes words with nothing of the grammar in them — no
+  field, quote or denial — split at their last standalone *by* (*You F O by stela cole*; the last,
+  so *Stand by Me by Ben E. King* keeps its title) or at a dash between spaces, artist first (*Stela
+  Cole - You F O*), each side holding a word. `Library::meant` weighs the artist half through
+  `Spellings::artist_named` — the name the artists vocabulary holds whole, or the nearest within
+  `furthest_from`'s budget, so *stella cole* is *Stela Cole* — and answers a `Meant`, the search
+  `ByArtist::searched_as` writes (each title word scoped `title:`, the artist `artist:=` whole), only
+  where that search holds a track; otherwise the words are searched as typed. The window reads every
+  page through it (`Asked::meant` beside `Asked::text`, the text still keying what keys on what was
+  typed), lights and reads what it meant, and offers the words as typed (`ui.md`). The words the
+  reading leaves out of the songs asked elsewhere are the *by* and the dash: `words_asked` takes the
+  title and the artist, so `songs_kept_for`, `still_answering` and `unheld_matching` never look for
+  a song called *by*, and `songs_asked` answers a `SongsAsked` carrying the reading beside the words
+  (`online.md`).
+  `a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds` is the claim.
 - **A search that matched nothing is answered in the catalog's own spelling, and only then is the
   catalog read for one.** `spelling.rs` is the whole of it. `Spellings` is four `Vocabulary`s —
   titles, artists, albums and genres, the searchable `tracks_fts` columns bar lyrics — each mapping a

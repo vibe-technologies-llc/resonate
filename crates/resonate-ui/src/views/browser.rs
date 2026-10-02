@@ -3444,8 +3444,8 @@ mod tests {
             ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
             Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
             Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
-            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, StreamAsked,
-            Track, TrackQuery,
+            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked,
+            StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3564,8 +3564,8 @@ mod tests {
                 Ok(Vec::new())
             }
 
-            fn find_songs(&self, words: &str) -> Result<Vec<RecordingMatch>> {
-                self.searched.lock().push(words.to_owned());
+            fn find_songs(&self, asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
+                self.searched.lock().push(asked.words.clone());
                 if self.refusing.load(Ordering::Relaxed) {
                     return Err(resonate_library::Error::Refused {
                         op: LookupOp::FindRecording,
@@ -3737,6 +3737,56 @@ mod tests {
                     isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
                     artist: Some("Janji & Johnning".to_owned()),
                 }]
+            );
+        }
+
+        #[gpui::test]
+        fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            folder.tagged(
+                "1.wav",
+                1,
+                &[(b"IART", "Stela Cole"), (b"INAM", "You F.O.")],
+            );
+            folder.tagged(
+                "2.wav",
+                1,
+                &[(b"IART", "Somebody Else"), (b"INAM", "You F.O.")],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: Option<&Path>| Providers::none()),
+            };
+            let mut driven = Driven::reaching(cx, library, &folder, reaching);
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|_, cx| {
+                search.update(cx, |search, cx| {
+                    search.set_text("You F O by stela cole".to_owned(), cx);
+                });
+            });
+            driven.until(|root, cx| root.library.read(cx).meant().is_some());
+
+            let artists = |driven: &mut Driven| {
+                driven.read(|root, cx| {
+                    root.library
+                        .read(cx)
+                        .listing()
+                        .iter()
+                        .map(|track| track.artist.clone().unwrap_or_default())
+                        .collect::<Vec<_>>()
+                })
+            };
+            assert_eq!(artists(&mut driven), ["Stela Cole"]);
+
+            driven.click("search-as-typed");
+            driven.until(|root, cx| root.library.read(cx).meant().is_none());
+
+            assert!(
+                artists(&mut driven).is_empty(),
+                "the words as typed hold the word by and a misspelt name"
             );
         }
 

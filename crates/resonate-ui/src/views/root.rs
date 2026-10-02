@@ -1500,7 +1500,12 @@ impl RootView {
                 library.create_playlist(given, Vec::new(), cx);
             }),
             (Some(Naming::Query(saved)), None) => {
-                let text = self.library.read(cx).query().trim().to_owned();
+                let library = self.library.read(cx);
+                let text = library
+                    .meant()
+                    .map_or(library.query(), |meant| meant.searched.as_str())
+                    .trim()
+                    .to_owned();
                 let query = SavedQuery {
                     text: (!text.is_empty()).then_some(text),
                     sort: self.query_sort,

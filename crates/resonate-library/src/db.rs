@@ -47,6 +47,7 @@ use crate::{
     hinted::Hinted,
     history, import, likeness,
     linked::{self, HeldBy, Linked, SongLink},
+    meant::{ByArtist, Meant},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
     playlist, resumed,
@@ -1640,6 +1641,28 @@ impl Library {
         }
 
         Ok(self.inner.vocabulary()?.did_you_mean(text))
+    }
+
+    pub fn meant(&self, text: &str) -> Result<Option<Meant>> {
+        let Some(by) = ByArtist::read(text) else {
+            return Ok(None);
+        };
+        let Some(artist) = self.inner.vocabulary()?.artist_named(&by.artist) else {
+            return Ok(None);
+        };
+        let Some(searched) = by.searched_as(&artist) else {
+            return Ok(None);
+        };
+        let measured = self.measured(&TrackQuery {
+            text: Some(searched.clone()),
+            ..TrackQuery::default()
+        })?;
+
+        Ok((measured.rows > 0).then_some(Meant {
+            searched,
+            title: by.title,
+            artist,
+        }))
     }
 
     pub fn names_completing(&self, typed: &str) -> Result<Vec<String>> {

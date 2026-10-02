@@ -15,6 +15,7 @@ mod likeness;
 mod linked;
 mod loose;
 mod m3u;
+mod meant;
 mod model;
 mod moves;
 mod numerals;
@@ -70,8 +71,8 @@ pub use crate::{
     db::{CatalogStamp, Library, WrittenElsewhere},
     deleted::Deleted,
     elsewhere::{
-        FOUND_ELSEWHERE_AT_MOST, Found, Sung, asks_elsewhere, in_the_order_worth_offering,
-        songs_asked, still_answering,
+        FOUND_ELSEWHERE_AT_MOST, Found, SongsAsked, Sung, asks_elsewhere,
+        in_the_order_worth_offering, songs_asked, still_answering,
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,
@@ -89,6 +90,7 @@ pub use crate::{
         Vaulted, Wanted,
     },
     linked::{LinkNames, Linked, SongLink, is_a_song_link},
+    meant::{ByArtist, Meant},
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
         Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported, KeptCorrection, KeptIndex,

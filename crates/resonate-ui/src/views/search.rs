@@ -44,6 +44,9 @@ const ASKING_BESIDE_A_LOOKUP: &str = "Asking MusicBrainz, which answers one requ
 
 const UNREACHED: &str = "MusicBrainz could not be reached";
 
+const AS_TYPED_HINT: &str =
+    "The words were read as a title by an artist; search for them just as they were typed";
+
 const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
 
 const PRESS_TO_DOWNLOAD: &str = "Press a song to download it";
@@ -312,10 +315,26 @@ impl RootView {
         let reads = library.search().reads();
         let naming = self.naming.filter(|naming| naming.is_a_search());
 
+        let meant = library
+            .meant()
+            .map(|meant| format!("Read as “{}” by {}", meant.title, meant.artist));
         let summary = match matched.beyond() {
             Some(beyond) => format!("{} · {beyond}", matched.in_the_library()),
             None => matched.in_the_library(),
         };
+        let as_typed = meant.is_some().then(|| {
+            kit::button(
+                "search-as-typed",
+                None,
+                "Search the words as typed",
+                AS_TYPED_HINT,
+                Tone::Ghost,
+            )
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.search_as_typed(cx));
+            }))
+        });
         let sung = self.sung_offer(Tone::Ghost, cx);
         let saves = naming.is_none().then(|| {
             kit::button(
@@ -343,6 +362,7 @@ impl RootView {
         let tabs = self.search_tabs(shows, matched, cx);
 
         let actions = kit::actions()
+            .children(as_typed)
             .children(sung)
             .children(saves)
             .children(orders)
@@ -366,6 +386,14 @@ impl RootView {
                                         .truncate()
                                         .child(SharedString::from(format!("“{query}”"))),
                                 ))
+                                .when_some(meant, |column, meant| {
+                                    column.child(
+                                        div()
+                                            .text_size(px(theme::text_sm()))
+                                            .text_color(rgb(theme::accent()))
+                                            .child(meant),
+                                    )
+                                })
                                 .child(kit::subtitle(summary)),
                         )
                         .child(actions),

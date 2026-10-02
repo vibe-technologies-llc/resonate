@@ -5,8 +5,8 @@ use resonate_core::{AlbumId, ReleaseTrackId, WantId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
-    Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release, Result, Search,
-    StoreOp, enriched, store,
+    ByArtist, Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release, Result,
+    Search, StoreOp, enriched, store,
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
@@ -70,7 +70,20 @@ fn worth(release: &RecordingRelease) -> (Standing, Meant, bool, String) {
     )
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SongsAsked {
+    pub words: String,
+    pub by: Option<ByArtist>,
+}
+
 pub(crate) fn words_asked(text: &str) -> Vec<String> {
+    match ByArtist::read(text) {
+        Some(by) => words_typed(&by.words()),
+        None => words_typed(text),
+    }
+}
+
+fn words_typed(text: &str) -> Vec<String> {
     Search::read(text)
         .clauses
         .iter()
@@ -89,21 +102,27 @@ pub fn asks_elsewhere(text: &str) -> bool {
     songs_asked(text).is_some()
 }
 
-pub fn songs_asked(text: &str) -> Option<String> {
+pub fn songs_asked(text: &str) -> Option<SongsAsked> {
     let words = words_asked(text);
     let letters = words
         .iter()
         .flat_map(|word| word.chars())
         .filter(|letter| letter.is_alphanumeric())
         .count();
-
-    (letters >= FEWEST_LETTERS_ASKED_ELSEWHERE).then(|| {
+    let lowered = |words: &str| {
         words
-            .iter()
-            .flat_map(|word| word.split_whitespace())
+            .split_whitespace()
             .map(str::to_lowercase)
             .collect::<Vec<_>>()
             .join(" ")
+    };
+
+    (letters >= FEWEST_LETTERS_ASKED_ELSEWHERE).then(|| SongsAsked {
+        words: lowered(&words.join(" ")),
+        by: ByArtist::read(text).map(|by| ByArtist {
+            title: lowered(&by.title),
+            artist: lowered(&by.artist),
+        }),
     })
 }
 
@@ -525,7 +544,21 @@ mod tests {
 
     #[test]
     fn a_search_is_asked_in_one_spelling_however_it_was_typed() {
-        assert_eq!(songs_asked("Pink  Floyd"), Some("pink floyd".to_owned()));
+        assert_eq!(
+            songs_asked("Pink  Floyd").map(|asked| asked.words),
+            Some("pink floyd".to_owned())
+        );
+        assert_eq!(
+            songs_asked("You F O by  Stela Cole"),
+            Some(SongsAsked {
+                words: "you f o stela cole".to_owned(),
+                by: Some(ByArtist {
+                    title: "you f o".to_owned(),
+                    artist: "stela cole".to_owned(),
+                }),
+            }),
+            "the word naming the artist is not asked for"
+        );
         assert_eq!(
             songs_asked("pink floyd year:1971"),
             songs_asked("PINK floyd")
