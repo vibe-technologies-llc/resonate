@@ -153,6 +153,8 @@ const MIGRATIONS: &[&str] = &[
      ) STRICT, WITHOUT ROWID;",
     "CREATE INDEX vault_objects_by_sound ON vault_objects(frames, sample_rate, channels);",
     "CREATE TABLE index_refold_wanted (since INTEGER) STRICT;",
+    "CREATE INDEX tracks_by_recording ON tracks(mbid);
+     CREATE INDEX release_tracks_by_recording ON release_tracks(recording_mbid);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

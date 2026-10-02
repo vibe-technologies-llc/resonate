@@ -40,6 +40,19 @@ impl Found {
     pub fn in_the_order_worth_offering(&self) -> Vec<&RecordingRelease> {
         in_the_order_worth_offering(&self.releases)
     }
+
+    fn answers(&self, words: &[String]) -> bool {
+        let named: Vec<String> = [self.title.as_str(), self.artist.as_str()]
+            .into_iter()
+            .chain(self.releases.iter().map(|release| release.title.as_str()))
+            .flat_map(str::split_whitespace)
+            .map(store::folded_letters)
+            .collect();
+
+        words
+            .iter()
+            .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+    }
 }
 
 pub fn in_the_order_worth_offering(releases: &[RecordingRelease]) -> Vec<&RecordingRelease> {
@@ -73,12 +86,43 @@ pub(crate) fn words_asked(text: &str) -> Vec<String> {
 }
 
 pub fn asks_elsewhere(text: &str) -> bool {
-    words_asked(text)
+    songs_asked(text).is_some()
+}
+
+pub fn songs_asked(text: &str) -> Option<String> {
+    let words = words_asked(text);
+    let letters = words
         .iter()
         .flat_map(|word| word.chars())
         .filter(|letter| letter.is_alphanumeric())
-        .count()
-        >= FEWEST_LETTERS_ASKED_ELSEWHERE
+        .count();
+
+    (letters >= FEWEST_LETTERS_ASKED_ELSEWHERE).then(|| {
+        words
+            .iter()
+            .flat_map(|word| word.split_whitespace())
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+}
+
+pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
+    let words: Vec<String> = words_asked(text)
+        .iter()
+        .flat_map(|word| word.split_whitespace())
+        .map(store::folded_letters)
+        .filter(|word| !word.is_empty())
+        .collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    found
+        .iter()
+        .filter(|found| found.answers(&words))
+        .cloned()
+        .collect()
 }
 
 pub(crate) fn found_among(
@@ -471,5 +515,47 @@ mod tests {
             Some(TWO)
         );
         assert!(meant_release(&[]).is_none());
+    }
+
+    #[test]
+    fn a_search_is_asked_in_one_spelling_however_it_was_typed() {
+        assert_eq!(songs_asked("Pink  Floyd"), Some("pink floyd".to_owned()));
+        assert_eq!(
+            songs_asked("pink floyd year:1971"),
+            songs_asked("PINK floyd")
+        );
+        assert_eq!(songs_asked("ab"), None);
+    }
+
+    fn found(id: &str, title: &str, artist: &str, release: &str) -> Found {
+        let mut released = released(id, None);
+        released.title = release.to_owned();
+        Found {
+            recording: mbid(id),
+            title: title.to_owned(),
+            artist: artist.to_owned(),
+            length: None,
+            release: Some(released.clone()),
+            releases: vec![released],
+        }
+    }
+
+    #[test]
+    fn songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more() {
+        let answered = [
+            found(ONE, "Time", "Pink Floyd", "The Dark Side of the Moon"),
+            found(TWO, "Echoes", "Pink Floyd", "Meddle"),
+            found(THREE, "Pink Moon", "Nick Drake", "Pink Moon"),
+        ];
+
+        let narrowed = still_answering(&answered, "pink floyd ti");
+        let by_release = still_answering(&answered, "pink medd");
+        let accented = still_answering(&answered, "ÉCHO");
+
+        assert_eq!(narrowed, vec![answered[0].clone()]);
+        assert_eq!(by_release, vec![answered[1].clone()]);
+        assert_eq!(accented, vec![answered[1].clone()]);
+        assert!(still_answering(&answered, "").is_empty());
+        assert!(still_answering(&answered, "radiohead").is_empty());
     }
 }

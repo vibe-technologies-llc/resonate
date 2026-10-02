@@ -2168,8 +2168,16 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   answers `Found`s: a recording, its title, credit, length and the release it was meant for
   (`meant_release`), leaving out every recording the catalog names in `tracks.mbid` or
   `release_tracks.recording_mbid` and dropping a second recording of the same folded title by the same
-  folded credit, up to `FOUND_ELSEWHERE_AT_MOST` (12). `asks_elsewhere` is the guard weighed first: a
-  search whose words hold fewer than three letters is not sent. `Library::want_found` is the want: the
+  folded credit, up to `FOUND_ELSEWHERE_AT_MOST` (12). The two halves are public apart, because the
+  window keeps the reference's answer and weighs it again: `songs_asked` is the words as sent —
+  only the title, artist and album words, lower-cased and single-spaced, so *Pink  Floyd* and
+  *pink floyd year:1971* are one ask — or `None` for a search whose words hold fewer than three letters,
+  which is not sent (`asks_elsewhere` is its `is_some`); `Library::unheld_among` takes the matches and
+  asks the catalog about those recordings alone, `WHERE mbid IN (…)` under `tracks_by_recording` and
+  `release_tracks_by_recording` — a `MIGRATIONS` step — rather than reading every recording id the
+  catalog names. `still_answering` narrows songs found for one search to those every folded word of
+  another begins a word of — title, credit or a release's title — what the window shows while it asks
+  (`songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more`). `Library::want_found` is the want: the
   release the `Found` names, or the one its recording first came out on where the search answered none,
   is read whole through `Reference::release`; an album already carrying that mbid is taken as it stands,
   otherwise a new one is made — billed to `store::artist_named`, stamped `albums.found_elsewhere` — and

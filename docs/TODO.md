@@ -186,8 +186,6 @@ service or a format — and is not worked until that moves; everything else is o
   suggestion candidate
 - Setting an AcoustID key or *Refresh all* reads every unrecognised print into memory before the
   pool starts, on the order of a gigabyte for a large library
-- Each settled search of three letters or more with Online on reads every recording id in the
-  catalog to drop a dozen results found elsewhere
 - A row's tags and cover are looked up by statting its file under the catalog lock on the caller's
   thread, so a stalled network mount freezes the window's redraw and the bus
 - One thread reads the tags of every queued row, so a remote source that does not answer holds back

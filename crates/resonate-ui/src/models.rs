@@ -25,11 +25,11 @@ use resonate_library::{
     ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Measured, Missing,
     MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
     OrganiseSummary, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
-    PollStats, PollSummary, Raster, Recording, Reference, ReleaseAsked, ReleaseDetail,
-    ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
-    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
-    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Window, Wording, asks_elsewhere,
+    PollStats, PollSummary, Raster, Recording, RecordingMatch, Reference, ReleaseAsked,
+    ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
+    Shared, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Window, Wording, songs_asked, still_answering,
 };
 use resonate_providers::Providers;
 
@@ -64,11 +64,12 @@ const ALBUMS_HELD: NonZeroUsize = held(256);
 const PORTRAITS_HELD: NonZeroUsize = held(256);
 const DECODES_AT_ONCE: usize = 4;
 const RELEASED_COVERS_HELD: NonZeroUsize = held(64);
+const ANSWERS_HELD: NonZeroUsize = held(128);
 const FETCHES_AT_ONCE: usize = 2;
 
 const SCAN_POLL: Duration = Duration::from_millis(100);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
-const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(700);
+const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(450);
 const POLLS_PER_RELOAD: u32 = 20;
 const FIRST_ASKED_AFTER: Duration = Duration::from_secs(60);
 const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
@@ -185,7 +186,9 @@ pub enum ListedRow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Beyond {
     Elsewhere(usize),
+    Refining(usize),
     Asking,
+    Unreached,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -592,7 +595,12 @@ pub struct LibraryModel {
     sung: Option<Sung>,
     found: Arc<[Found]>,
     found_for: Option<String>,
+    narrowed: Arc<[Found]>,
     asking: Option<String>,
+    answers: Recent<String, Arc<[RecordingMatch]>>,
+    reaching_out: Option<String>,
+    owed: Option<String>,
+    unreached_for: Option<String>,
     wanting: AHashMap<Mbid, Task<()>>,
     release_tracks: Arc<[HeldReleaseTrack]>,
     release: Option<ReleaseDetail>,
@@ -685,6 +693,8 @@ pub struct LibraryModel {
     _kept: Task<()>,
     _aged: Task<()>,
     _finding: Task<()>,
+    _reaching: Task<()>,
+    _showing: Task<()>,
     _previewing: Task<()>,
 }
 
@@ -750,7 +760,12 @@ impl LibraryModel {
             sung: None,
             found: Arc::default(),
             found_for: None,
+            narrowed: Arc::default(),
             asking: None,
+            answers: Recent::new(ANSWERS_HELD),
+            reaching_out: None,
+            owed: None,
+            unreached_for: None,
             wanting: AHashMap::new(),
             release_tracks: Arc::default(),
             release: None,
@@ -843,6 +858,8 @@ impl LibraryModel {
             _kept: Task::ready(()),
             _aged: Task::ready(()),
             _finding: Task::ready(()),
+            _reaching: Task::ready(()),
+            _showing: Task::ready(()),
             _previewing: Task::ready(()),
         };
         model.reload(cx);
@@ -1034,6 +1051,7 @@ impl LibraryModel {
                 whole: listing.len() as u64 >= u64::from(self.tracks_measured.rows),
                 found: self.found_here().len(),
                 asking: self.is_asking_elsewhere(),
+                unreached: self.is_unreached(),
             })
             .into(),
         };
@@ -1042,12 +1060,19 @@ impl LibraryModel {
     fn found_here(&self) -> &[Found] {
         match self.found_for.as_deref() {
             Some(asked) if !self.query.is_empty() && asked == self.query => &self.found,
+            Some(_) | None if self.is_asking_elsewhere() => &self.narrowed,
             Some(_) | None => &[],
         }
     }
 
     pub fn is_asking_elsewhere(&self) -> bool {
         !self.query.is_empty() && self.asking.as_deref() == Some(self.query.as_str())
+    }
+
+    fn is_unreached(&self) -> bool {
+        !self.query.is_empty()
+            && !self.is_asking_elsewhere()
+            && self.unreached_for.as_deref() == Some(self.query.as_str())
     }
 
     pub fn found(&self) -> Arc<[Found]> {
@@ -1060,41 +1085,130 @@ impl LibraryModel {
 
     fn ask_elsewhere_after(&mut self, settling: Duration, cx: &mut Context<Self>) {
         let text = self.query.clone();
-        let reference = match &self.reference {
-            Some(reference) if self.online && asks_elsewhere(&text) => Arc::clone(reference),
+        let words = match songs_asked(&text) {
+            Some(words) if self.online && self.reference.is_some() => words,
             Some(_) | None => {
-                self.asking = None;
-                self._finding = Task::ready(());
+                self.stop_asking_elsewhere();
                 return;
             }
         };
         if self.found_for.as_deref() == Some(text.as_str()) {
-            self.asking = None;
-            self._finding = Task::ready(());
+            self.stop_asking_elsewhere();
             return;
         }
-        let library = Arc::clone(&self.library);
-        self.asking = Some(text.clone());
+        self.narrowed = still_answering(&self.found, &text).into();
+        self.asking = Some(text);
 
+        if let Some(answered) = self.answers.get(&words).cloned() {
+            self._finding = Task::ready(());
+            self.show_answer(answered, cx);
+            return;
+        }
         self._finding = cx.spawn(async move |this, cx| {
             if !settling.is_zero() {
                 cx.background_executor().timer(settling).await;
             }
-            let asked = text.clone();
+            let _ = this.update(cx, |this, cx| this.reach_out(cx));
+        });
+    }
+
+    fn stop_asking_elsewhere(&mut self) {
+        self.asking = None;
+        self.owed = None;
+        self.narrowed = Arc::default();
+        self._finding = Task::ready(());
+        self._showing = Task::ready(());
+    }
+
+    fn reach_out(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = self.asking.clone().filter(|text| *text == self.query) else {
+            return;
+        };
+        let Some(words) = songs_asked(&text) else {
+            return;
+        };
+        if let Some(answered) = self.answers.get(&words).cloned() {
+            self.show_answer(answered, cx);
+            return;
+        }
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            self.stop_asking_elsewhere();
+            return;
+        };
+        if self.reaching_out.is_some() {
+            self.owed = Some(text);
+            return;
+        }
+        self.reaching_out = Some(words.clone());
+
+        self._reaching = cx.spawn(async move |this, cx| {
+            let asked = words.clone();
+            let answered = cx
+                .background_executor()
+                .spawn(async move { reference.find_songs(&asked) })
+                .await;
+            let _ = this.update(cx, |this, cx| this.reached(words, answered, cx));
+        });
+    }
+
+    fn reached(
+        &mut self,
+        words: String,
+        answered: resonate_library::Result<Vec<RecordingMatch>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.reaching_out = None;
+        let current = self
+            .asking
+            .as_deref()
+            .filter(|text| *text == self.query)
+            .and_then(songs_asked)
+            .is_some_and(|asked| asked == words);
+        match answered {
+            Ok(matches) => {
+                self.answers.insert(words, matches.into());
+            }
+            Err(error) if current => {
+                tracing::warn!(%error, "a search could not be asked elsewhere");
+                self.unreached_for = self.asking.take();
+                self.narrowed = Arc::default();
+                self.owed = None;
+                self.restate_the_listing();
+                cx.notify();
+                return;
+            }
+            Err(error) => {
+                tracing::debug!(%error, "a search typed past could not be asked elsewhere");
+            }
+        }
+        let owed = self.owed.take();
+        if current || owed.is_some_and(|owed| self.asking.as_ref() == Some(&owed)) {
+            self.reach_out(cx);
+        }
+    }
+
+    fn show_answer(&mut self, answered: Arc<[RecordingMatch]>, cx: &mut Context<Self>) {
+        let Some(text) = self.asking.clone() else {
+            return;
+        };
+        let library = Arc::clone(&self.library);
+
+        self._showing = cx.spawn(async move |this, cx| {
             let found = cx
                 .background_executor()
-                .spawn(async move { library.found_elsewhere(reference.as_ref(), &asked) })
+                .spawn(async move { library.unheld_among(answered.to_vec()) })
                 .await;
-
-            let landed = this.update(cx, |this, cx| {
+            let _ = this.update(cx, |this, cx| {
                 if this.asking.as_deref() != Some(text.as_str()) {
                     return;
                 }
                 this.asking = None;
+                this.narrowed = Arc::default();
+                this.unreached_for = None;
                 this.found = match found {
                     Ok(found) => found.into(),
                     Err(error) => {
-                        tracing::warn!(%error, "a search could not be asked elsewhere");
+                        tracing::warn!(%error, "songs found elsewhere could not be weighed against the catalog");
                         Arc::default()
                     }
                 };
@@ -1102,8 +1216,22 @@ impl LibraryModel {
                 this.restate_the_listing();
                 cx.notify();
             });
-            let _ = landed;
         });
+    }
+
+    pub fn ask_elsewhere_now(&mut self, cx: &mut Context<Self>) {
+        if self.is_asking_elsewhere() {
+            self._finding = Task::ready(());
+            self.reach_out(cx);
+        }
+    }
+
+    pub fn ask_elsewhere_again(&mut self, cx: &mut Context<Self>) {
+        self.unreached_for = None;
+        self.found_for = None;
+        self.ask_elsewhere_after(Duration::ZERO, cx);
+        self.restate_the_listing();
+        cx.notify();
     }
 
     pub fn want_found(&mut self, found: Found, cx: &mut Context<Self>) {
@@ -3358,6 +3486,9 @@ impl LibraryModel {
             return;
         }
         self.online = online;
+        self.unreached_for = None;
+        self.ask_elsewhere_after(Duration::ZERO, cx);
+        self.restate_the_listing();
         cx.notify();
     }
 
@@ -4297,6 +4428,7 @@ struct Reaching {
     whole: bool,
     found: usize,
     asking: bool,
+    unreached: bool,
 }
 
 fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
@@ -4305,17 +4437,24 @@ fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
         whole,
         found,
         asking,
+        unreached,
     } = reaching;
-    if !whole || (found == 0 && !asking) {
+    if !whole || (found == 0 && !asking && !unreached) {
         return Vec::new();
     }
 
     let mut listed: Vec<ListedRow> = (0..held).map(ListedRow::Held).collect();
     if found > 0 {
-        listed.push(ListedRow::Beyond(Beyond::Elsewhere(found)));
+        listed.push(ListedRow::Beyond(if asking {
+            Beyond::Refining(found)
+        } else {
+            Beyond::Elsewhere(found)
+        }));
         listed.extend((0..found).map(ListedRow::Found));
     } else if asking {
         listed.push(ListedRow::Beyond(Beyond::Asking));
+    } else if unreached {
+        listed.push(ListedRow::Beyond(Beyond::Unreached));
     }
 
     listed
@@ -5229,6 +5368,7 @@ mod tests {
         whole: true,
         found: 2,
         asking: false,
+        unreached: false,
     };
 
     #[test]
@@ -5278,6 +5418,36 @@ mod tests {
         });
 
         assert_eq!(rows, vec![ListedRow::Beyond(Beyond::Asking)]);
+    }
+
+    #[test]
+    fn songs_still_listed_while_more_are_asked_for_say_the_rest_is_coming() {
+        let rows = beyond_the_listing(Reaching {
+            held: 0,
+            found: 1,
+            asking: true,
+            ..SEARCHED
+        });
+
+        assert_eq!(
+            rows,
+            vec![ListedRow::Beyond(Beyond::Refining(1)), ListedRow::Found(0)]
+        );
+    }
+
+    #[test]
+    fn a_search_musicbrainz_did_not_answer_says_so_under_what_the_catalog_answered() {
+        let rows = beyond_the_listing(Reaching {
+            held: 1,
+            found: 0,
+            unreached: true,
+            ..SEARCHED
+        });
+
+        assert_eq!(
+            rows,
+            vec![ListedRow::Held(0), ListedRow::Beyond(Beyond::Unreached)]
+        );
     }
 
     #[test]

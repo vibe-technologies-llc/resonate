@@ -35,11 +35,11 @@ use crate::{
     LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack,
     MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing, Playlist,
     PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned, Recording,
-    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
-    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
-    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
-    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable, Unfinished,
-    UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
+    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
+    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
+    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
+    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Undoable,
+    Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -2819,30 +2819,43 @@ impl Library {
     }
 
     pub fn found_elsewhere(&self, reference: &dyn Reference, text: &str) -> Result<Vec<Found>> {
-        let words = elsewhere::words_asked(text);
-        if words.is_empty() {
+        let Some(words) = elsewhere::songs_asked(text) else {
             return Ok(Vec::new());
-        }
-        let matches = reference.find_songs(&words.join(" "))?;
-        let held = self.recordings_named()?;
+        };
+
+        self.unheld_among(reference.find_songs(&words)?)
+    }
+
+    pub fn unheld_among(&self, matches: Vec<RecordingMatch>) -> Result<Vec<Found>> {
+        let held = self.recordings_held_of(&matches)?;
 
         Ok(elsewhere::found_among(matches, |recording| {
             held.contains(recording.as_str())
         }))
     }
 
-    fn recordings_named(&self) -> Result<AHashSet<String>> {
+    fn recordings_held_of(&self, matches: &[RecordingMatch]) -> Result<AHashSet<String>> {
+        if matches.is_empty() {
+            return Ok(AHashSet::new());
+        }
+        let asked = vec!["?"; matches.len()].join(", ");
+        let sql = format!(
+            "SELECT mbid FROM tracks WHERE mbid IN ({asked})
+             UNION SELECT recording_mbid FROM release_tracks WHERE recording_mbid IN ({asked})"
+        );
+        let named: Vec<Value> = matches
+            .iter()
+            .map(|matched| Value::Text(matched.recording.as_str().to_owned()))
+            .collect();
+        let binds = [named.clone(), named].concat();
+
         self.inner
             .read(|connection| {
-                rows(
-                    connection,
-                    "SELECT mbid FROM tracks WHERE mbid IS NOT NULL
-                 UNION SELECT recording_mbid FROM release_tracks WHERE recording_mbid IS NOT NULL",
-                    Vec::new(),
-                    |row| row.get::<_, String>(0).map(Ok),
-                )
+                rows(connection, &sql, binds, |row| {
+                    row.get::<_, String>(0).map(Ok)
+                })
             })
-            .map(|named| named.into_iter().collect())
+            .map(|held| held.into_iter().collect())
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {

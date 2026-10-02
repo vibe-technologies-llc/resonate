@@ -1876,13 +1876,37 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   window through `Driven::reaching` — a `Reaching` naming the reference and the providers). What
   becomes of it is the sidebar's downloads list, above. `wanting` holds a task
   per recording, not one for the lot, so wanting a second song before the first landed does not drop the
-  first's lookup and leave its mark grey. The ask is `ask_elsewhere_after`, `ASKED_ELSEWHERE_AFTER` (700
-  ms) behind the keystroke, only where the build `can_enrich` and `asks_elsewhere` says the words are
-  worth it, and its answer is kept against the text it answered, so a reload does not ask again. Going
-  back to an answered text cancels the ask in flight, and an answer is stored only while its text is
-  still `asking`, so an ask outrun by the box never overwrites the songs found for what it now says. A
-  search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in the
-  load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
+  first's lookup and leave its mark grey. **A search reaches MusicBrainz as
+  seldom as it can and never leaves the listener looking at nothing.** MusicBrainz answers one request
+  a second, so the window spends its turns only on what is still being typed:
+  - *Asked once per spelling.* An answer is kept in `answers`, a `Recent` of `ANSWERS_HELD` (128)
+    keyed by `songs_asked` — the words as sent, so case, spacing and grammar the ask ignores share
+    one — holding the reference's matches rather than the `Found`s, which `Library::unheld_among`
+    weighs again on the background executor each time one is shown, so a song that landed since
+    leaves the list. Typing back to a remembered search shows it at once, no settle and no request
+    (`words_searched_again_are_answered_from_memory_rather_than_asked_twice`).
+  - *One ask in flight, the latest text winning.* `ask_elsewhere_after` waits
+    `ASKED_ELSEWHERE_AFTER` (450 ms) behind the keystroke, only where the build `can_enrich`, Online
+    is on and `songs_asked` names words worth it, then `reach_out`. While one request is out
+    (`reaching_out`) another is not queued behind it: the text is `owed`, and when the request comes
+    back its answer is remembered whatever it was for and the text still in the box is asked next —
+    so a run of pauses mid-word costs at most two turns, not one per pause, and an answer outrun by
+    the box is never drawn over what it now says. Enter in the search box (`ask_elsewhere_now`) skips
+    the settle.
+  - *Narrowed while asking.* From the keystroke until the answer lands, `found` stands in as
+    `narrowed` — the songs the last answer found that `still_answering` the new words — under
+    `Beyond::Refining`, *Found on MusicBrainz · N songs so far · asking for the rest…*; only where
+    none still answers does the bare `Beyond::Asking` heading stand alone
+    (`songs_found_for_fewer_words_stay_listed_while_more_are_asked_for`).
+  - *A failure says so.* A request refused or unreachable for the text in the box is not
+    remembered; its text is `unreached_for` and the run ends in `Beyond::Unreached`, *MusicBrainz could
+    not be reached* with *Try again* (`ask_elsewhere_again`) beside it
+    (`a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press`). A failure for a text typed
+    past is a debug line and nothing more. Turning Online on asks for what the box holds; turning it
+    off drops the ask.
+  The answer drawn is kept against the text it answered (`found_for`), so a reload does not ask again.
+  A search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in
+  the load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
   nothing else matched, as a `search_instead`.
 - **The search box narrows the Missing pane, the two halves answering differently, one being in the
   catalog and the other not.** Both reads take the browse panes' query, so the *Reads* row stands under

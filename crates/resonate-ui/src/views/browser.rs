@@ -97,6 +97,8 @@ const WANT_FOUND_HINT: &str = "Download this song: its release is added to the c
 const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                 providers are asked for it now, the sidebar following how it goes";
 
+const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
+
 const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const DELETE_FROM_DISK: &str = "Delete from disk…";
@@ -786,8 +788,12 @@ impl RootView {
                                         }
                                         Some(ListedRow::Beyond(beyond)) => {
                                             drawn.push(
-                                                beyond_heading(beyond, shared_with_a_lookup)
-                                                    .into_any_element(),
+                                                this.beyond_heading(
+                                                    beyond,
+                                                    shared_with_a_lookup,
+                                                    cx,
+                                                )
+                                                .into_any_element(),
                                             );
                                         }
                                         Some(ListedRow::Found(at)) => {
@@ -1174,6 +1180,45 @@ impl RootView {
                 this.library
                     .update(cx, |library, cx| library.want_found(wanted, cx));
             }))
+    }
+
+    fn beyond_heading(
+        &self,
+        beyond: Beyond,
+        shared_with_a_lookup: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let said = match beyond {
+            Beyond::Elsewhere(rows) => format!(
+                "Found on MusicBrainz · {} · press one to download it",
+                format::counted(rows, "song", "songs")
+            ),
+            Beyond::Refining(rows) => format!(
+                "Found on MusicBrainz · {} so far · asking for the rest…",
+                format::counted(rows, "song", "songs")
+            ),
+            Beyond::Asking if shared_with_a_lookup => ASKING_BESIDE_A_LOOKUP.to_owned(),
+            Beyond::Asking => "Asking MusicBrainz…".to_owned(),
+            Beyond::Unreached => "MusicBrainz could not be reached".to_owned(),
+        };
+        let heading = run_heading(SharedString::from(said));
+        if beyond != Beyond::Unreached {
+            return heading;
+        }
+
+        heading.child(
+            kit::button(
+                "ask-elsewhere-again",
+                Some(Icon::Search),
+                "Try again",
+                ASK_AGAIN_HINT,
+                Tone::Ghost,
+            )
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.ask_elsewhere_again(cx));
+            })),
+        )
     }
 
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -2545,19 +2590,6 @@ fn pressing_note(said: &str) -> Div {
         .child(SharedString::from(said.to_owned()))
 }
 
-fn beyond_heading(beyond: Beyond, shared_with_a_lookup: bool) -> Div {
-    let said = match beyond {
-        Beyond::Elsewhere(rows) => format!(
-            "Found on MusicBrainz · {} · press one to download it",
-            format::counted(rows, "song", "songs")
-        ),
-        Beyond::Asking if shared_with_a_lookup => ASKING_BESIDE_A_LOOKUP.to_owned(),
-        Beyond::Asking => "Asking MusicBrainz…".to_owned(),
-    };
-
-    run_heading(SharedString::from(said))
-}
-
 pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
     match fetching {
         Fetching::Downloading => theme::accent(),
@@ -3284,20 +3316,27 @@ mod tests {
     }
 
     mod driven {
-        use std::{path::Path, sync::Arc};
+        use std::{
+            path::Path,
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+        };
 
         use gpui::TestAppContext;
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
             ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
-            Issued, Library, Link, LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked,
-            RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
-            ReleaseMatch, ReleaseTrack, Result, StreamAsked, Track, TrackQuery,
+            Issued, Library, Link, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Recording,
+            RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
+            ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
         use crate::{
+            Beyond, ListedRow,
             downloads::Fetching,
             driven::{Driven, Folder, Reaching},
             toast,
@@ -3336,6 +3375,18 @@ mod tests {
 
         struct MusicBrainz {
             source: SourceId,
+            searched: Arc<Mutex<Vec<String>>>,
+            refusing: Arc<AtomicBool>,
+        }
+
+        impl MusicBrainz {
+            fn new() -> Self {
+                Self {
+                    source: SourceId::new("musicbrainz").expect("a source name"),
+                    searched: Arc::default(),
+                    refusing: Arc::default(),
+                }
+            }
         }
 
         impl Reference for MusicBrainz {
@@ -3393,7 +3444,14 @@ mod tests {
                 Ok(Vec::new())
             }
 
-            fn find_songs(&self, _: &str) -> Result<Vec<RecordingMatch>> {
+            fn find_songs(&self, words: &str) -> Result<Vec<RecordingMatch>> {
+                self.searched.lock().push(words.to_owned());
+                if self.refusing.load(Ordering::Relaxed) {
+                    return Err(resonate_library::Error::Refused {
+                        op: LookupOp::FindRecording,
+                        status: 503,
+                    });
+                }
                 Ok(vec![RecordingMatch {
                     recording: mbid(HEROES_TONIGHT),
                     score: 100,
@@ -3492,9 +3550,7 @@ mod tests {
             let asked = Arc::new(Mutex::new(Vec::new()));
             let told = Arc::clone(&asked);
             let reaching = Reaching {
-                reference: Arc::new(MusicBrainz {
-                    source: SourceId::new("musicbrainz").expect("a source name"),
-                }),
+                reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(move |_: Option<&Path>| {
                     Providers::none().and(Arc::new(Shop {
                         source: SourceId::new("shop").expect("a source name"),
@@ -3544,6 +3600,104 @@ mod tests {
                     isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
                     artist: Some("Janji & Johnning".to_owned()),
                 }]
+            );
+        }
+
+        fn searching(musicbrainz: &MusicBrainz, cx: &mut TestAppContext) -> Driven {
+            let folder = Folder::new();
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz {
+                    source: musicbrainz.source.clone(),
+                    searched: Arc::clone(&musicbrainz.searched),
+                    refusing: Arc::clone(&musicbrainz.refusing),
+                }),
+                register: Arc::new(|_: Option<&Path>| Providers::none()),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
+            Driven::reaching(cx, library, &folder, reaching)
+        }
+
+        fn typed(driven: &mut Driven, query: &str) {
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.set_query(query.to_owned(), cx));
+            });
+        }
+
+        fn answered(driven: &mut Driven) {
+            driven.until(|root, cx| !root.library.read(cx).is_asking_elsewhere());
+        }
+
+        #[gpui::test]
+        fn words_searched_again_are_answered_from_memory_rather_than_asked_twice(
+            cx: &mut TestAppContext,
+        ) {
+            let musicbrainz = MusicBrainz::new();
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "Heroes Tonight");
+            answered(&mut driven);
+            typed(&mut driven, "janji heroes");
+            answered(&mut driven);
+            typed(&mut driven, "heroes   TONIGHT");
+            let at_once = driven.read(|root, cx| root.library.read(cx).found().len());
+            answered(&mut driven);
+
+            assert_eq!(at_once, 1, "an answer held in memory waited to be drawn");
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).found().len()),
+                1
+            );
+            assert_eq!(
+                musicbrainz.searched.lock().clone(),
+                ["heroes tonight", "janji heroes"]
+            );
+        }
+
+        #[gpui::test]
+        fn songs_found_for_fewer_words_stay_listed_while_more_are_asked_for(
+            cx: &mut TestAppContext,
+        ) {
+            let musicbrainz = MusicBrainz::new();
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "heroes");
+            answered(&mut driven);
+            typed(&mut driven, "heroes ton");
+            let narrowed = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                (library.found().len(), library.is_asking_elsewhere())
+            });
+            typed(&mut driven, "radiohead");
+            let unrelated = driven.read(|root, cx| root.library.read(cx).found().len());
+
+            assert_eq!(narrowed, (1, true));
+            assert_eq!(unrelated, 0);
+        }
+
+        #[gpui::test]
+        fn a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press(
+            cx: &mut TestAppContext,
+        ) {
+            let musicbrainz = MusicBrainz::new();
+            musicbrainz.refusing.store(true, Ordering::Relaxed);
+            let mut driven = searching(&musicbrainz, cx);
+
+            typed(&mut driven, "heroes tonight");
+            driven.until(|root, cx| {
+                root.library
+                    .read(cx)
+                    .rows()
+                    .contains(&ListedRow::Beyond(Beyond::Unreached))
+            });
+            musicbrainz.refusing.store(false, Ordering::Relaxed);
+            driven.click("ask-elsewhere-again");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+
+            assert_eq!(
+                musicbrainz.searched.lock().clone(),
+                ["heroes tonight", "heroes tonight"]
             );
         }
 

@@ -759,6 +759,8 @@ impl RootView {
         .detach();
 
         cx.subscribe_in(&search, window, |this, _, _: &Submitted, window, cx| {
+            this.library
+                .update(cx, |library, cx| library.ask_elsewhere_now(cx));
             this.go_to_the_results(window, cx);
         })
         .detach();
