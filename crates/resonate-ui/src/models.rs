@@ -183,14 +183,13 @@ pub enum ListedRow {
     Disc(u32),
     Held(usize),
     Missing(usize),
-    Beyond(Beyond),
+    NotHeld(usize),
     Found(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Beyond {
     Elsewhere(usize),
-    NotHeld(usize),
     Refining(usize),
     Asking,
     Unreached,
@@ -1069,26 +1068,22 @@ impl LibraryModel {
                 held: listing.len(),
                 whole: listing.len() as u64 >= u64::from(self.scoped_measured.rows),
                 found: self.shown.len(),
-                asking: false,
-                unreached: false,
-            })
-            .into_iter()
-            .map(|row| match row {
-                ListedRow::Beyond(Beyond::Elsewhere(songs)) => {
-                    ListedRow::Beyond(Beyond::NotHeld(songs))
-                }
-                row => row,
-            })
-            .collect(),
-            Selection::Everything => beyond_the_listing(Reaching {
-                held: listing.len(),
-                whole: listing.len() as u64 >= u64::from(self.tracks_measured.rows),
-                found: self.shown.len(),
-                asking: self.is_asking_elsewhere(),
-                unreached: self.is_unreached(),
             })
             .into(),
+            Selection::Everything => Arc::default(),
         };
+    }
+
+    pub fn elsewhere(&self) -> Option<Beyond> {
+        if self.selection != Selection::Everything || self.query.is_empty() {
+            return None;
+        }
+
+        elsewhere_standing(
+            self.shown.len(),
+            self.is_asking_elsewhere(),
+            self.is_unreached(),
+        )
     }
 
     fn restate_what_was_found(&mut self) {
@@ -3731,6 +3726,12 @@ impl LibraryModel {
         self.online && self.reference.is_some()
     }
 
+    pub(crate) fn follows_links(&self) -> Option<(Arc<Library>, Arc<dyn Reference>)> {
+        let reference = self.reference.clone().filter(|_| self.online)?;
+
+        Some((Arc::clone(&self.library), reference))
+    }
+
     pub fn is_enriching(&self) -> bool {
         self.enriching.is_some()
     }
@@ -4513,6 +4514,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Love => "a favourite told to a listening service",
         LookupOp::Token => "a check of a listening service's token",
         LookupOp::StreamLink => "a look for where a track streams",
+        LookupOp::FollowLink => "the song a link names",
     }
 }
 
@@ -4573,9 +4575,10 @@ impl Named {
 fn held_at(rows: &[ListedRow], row: usize) -> Option<usize> {
     match rows.get(row)? {
         ListedRow::Held(held) => Some(*held),
-        ListedRow::Disc(_) | ListedRow::Missing(_) | ListedRow::Beyond(_) | ListedRow::Found(_) => {
-            None
-        }
+        ListedRow::Disc(_)
+        | ListedRow::Missing(_)
+        | ListedRow::NotHeld(_)
+        | ListedRow::Found(_) => None,
     }
 }
 
@@ -4584,8 +4587,6 @@ struct Reaching {
     held: usize,
     whole: bool,
     found: usize,
-    asking: bool,
-    unreached: bool,
 }
 
 fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found> {
@@ -4605,32 +4606,26 @@ fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found> {
 }
 
 fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
-    let Reaching {
-        held,
-        whole,
-        found,
-        asking,
-        unreached,
-    } = reaching;
-    if !whole || (found == 0 && !asking && !unreached) {
+    let Reaching { held, whole, found } = reaching;
+    if !whole || found == 0 {
         return Vec::new();
     }
 
-    let mut listed: Vec<ListedRow> = (0..held).map(ListedRow::Held).collect();
-    if found > 0 {
-        listed.push(ListedRow::Beyond(if asking {
-            Beyond::Refining(found)
-        } else {
-            Beyond::Elsewhere(found)
-        }));
-        listed.extend((0..found).map(ListedRow::Found));
-    } else if asking {
-        listed.push(ListedRow::Beyond(Beyond::Asking));
-    } else if unreached {
-        listed.push(ListedRow::Beyond(Beyond::Unreached));
-    }
+    (0..held)
+        .map(ListedRow::Held)
+        .chain([ListedRow::NotHeld(found)])
+        .chain((0..found).map(ListedRow::Found))
+        .collect()
+}
 
-    listed
+const fn elsewhere_standing(found: usize, asking: bool, unreached: bool) -> Option<Beyond> {
+    match (found, asking) {
+        (0, true) => Some(Beyond::Asking),
+        (0, false) if unreached => Some(Beyond::Unreached),
+        (0, false) => None,
+        (found, true) => Some(Beyond::Refining(found)),
+        (found, false) => Some(Beyond::Elsewhere(found)),
+    }
 }
 
 pub(crate) enum AsDrawn {
@@ -4676,7 +4671,7 @@ fn held_in(rows: &[ListedRow]) -> Vec<usize> {
             ListedRow::Held(held) => Some(*held),
             ListedRow::Disc(_)
             | ListedRow::Missing(_)
-            | ListedRow::Beyond(_)
+            | ListedRow::NotHeld(_)
             | ListedRow::Found(_) => None,
         })
         .collect()
@@ -5458,8 +5453,8 @@ mod tests {
 
     use super::{
         Arranging, Beyond, Change, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching,
-        Shared, Wanted, arranged, beyond_the_listing, headed_by_disc, held_at, held_in,
-        kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
+        Shared, Wanted, arranged, beyond_the_listing, elsewhere_standing, headed_by_disc, held_at,
+        held_in, kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
         unheld_release_rows,
     };
 
@@ -5554,12 +5549,10 @@ mod tests {
         held: 2,
         whole: true,
         found: 2,
-        asking: false,
-        unreached: false,
     };
 
     #[test]
-    fn a_search_lists_musicbrainz_results_after_what_the_library_holds() {
+    fn an_artists_page_lists_what_its_discography_lacks_after_what_the_library_holds() {
         let rows = beyond_the_listing(SEARCHED);
 
         assert_eq!(
@@ -5567,7 +5560,7 @@ mod tests {
             vec![
                 ListedRow::Held(0),
                 ListedRow::Held(1),
-                ListedRow::Beyond(Beyond::Elsewhere(2)),
+                ListedRow::NotHeld(2),
                 ListedRow::Found(0),
                 ListedRow::Found(1),
             ]
@@ -5596,15 +5589,13 @@ mod tests {
     }
 
     #[test]
-    fn a_search_still_being_asked_elsewhere_says_so_under_what_the_catalog_answered() {
-        let rows = beyond_the_listing(Reaching {
-            held: 0,
-            found: 0,
-            asking: true,
-            ..SEARCHED
-        });
-
-        assert_eq!(rows, vec![ListedRow::Beyond(Beyond::Asking)]);
+    fn a_search_still_being_asked_elsewhere_says_so() {
+        assert_eq!(elsewhere_standing(0, true, false), Some(Beyond::Asking));
+        assert_eq!(elsewhere_standing(0, false, false), None);
+        assert_eq!(
+            elsewhere_standing(3, false, false),
+            Some(Beyond::Elsewhere(3))
+        );
     }
 
     fn a_song(recording: &str, title: &str, artist: &str) -> Found {
@@ -5648,32 +5639,16 @@ mod tests {
 
     #[test]
     fn songs_still_listed_while_more_are_asked_for_say_the_rest_is_coming() {
-        let rows = beyond_the_listing(Reaching {
-            held: 0,
-            found: 1,
-            asking: true,
-            ..SEARCHED
-        });
-
         assert_eq!(
-            rows,
-            vec![ListedRow::Beyond(Beyond::Refining(1)), ListedRow::Found(0)]
+            elsewhere_standing(1, true, false),
+            Some(Beyond::Refining(1))
         );
+        assert_eq!(elsewhere_standing(1, true, true), Some(Beyond::Refining(1)));
     }
 
     #[test]
-    fn a_search_musicbrainz_did_not_answer_says_so_under_what_the_catalog_answered() {
-        let rows = beyond_the_listing(Reaching {
-            held: 1,
-            found: 0,
-            unreached: true,
-            ..SEARCHED
-        });
-
-        assert_eq!(
-            rows,
-            vec![ListedRow::Held(0), ListedRow::Beyond(Beyond::Unreached)]
-        );
+    fn a_search_musicbrainz_did_not_answer_says_so() {
+        assert_eq!(elsewhere_standing(0, false, true), Some(Beyond::Unreached));
     }
 
     #[test]

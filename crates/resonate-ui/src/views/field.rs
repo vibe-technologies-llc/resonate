@@ -48,6 +48,8 @@ actions!(
 
 pub(crate) struct Submitted;
 
+pub(crate) struct Caught(pub(crate) String);
+
 const MASK: char = '•';
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,6 +140,7 @@ pub(crate) struct Field {
     holds_focus: bool,
     lit: bool,
     blink: Task<()>,
+    catches: Option<fn(&str) -> bool>,
 }
 
 impl Field {
@@ -164,7 +167,13 @@ impl Field {
             holds_focus: false,
             lit: false,
             blink: Task::ready(()),
+            catches: None,
         }
+    }
+
+    pub(crate) const fn catching(mut self, catches: fn(&str) -> bool) -> Self {
+        self.catches = Some(catches);
+        self
     }
 
     pub(crate) const fn masked(mut self) -> Self {
@@ -317,6 +326,10 @@ impl Field {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        if self.catches.is_some_and(|catches| catches(&text)) {
+            cx.emit(Caught(text.trim().to_owned()));
+            return;
+        }
         self.edit.paste(&one_line(&text));
         self.marked = None;
         self.touched(cx);
@@ -444,6 +457,8 @@ fn utf16_of(text: &str, offset: usize) -> usize {
 }
 
 impl EventEmitter<Submitted> for Field {}
+
+impl EventEmitter<Caught> for Field {}
 
 impl Focusable for Field {
     fn focus_handle(&self, _: &App) -> FocusHandle {

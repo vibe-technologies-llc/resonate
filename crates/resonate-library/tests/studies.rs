@@ -14,10 +14,10 @@ use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
     Agreement, ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, EnrichOptions,
     EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
-    Library, Link, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked,
-    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, ScanOptions, SortOrder, Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery,
-    Vault, Verdict, WAITS,
+    Library, Link, LinkNames, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording,
+    RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Result, ScanOptions, SongLink, SortOrder, Sounded, Sources, StreamAsked,
+    StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -285,6 +285,10 @@ impl Reference for Silent {
     }
 
     fn lyrics(&self, _asked: &LyricsAsked) -> Result<Option<LyricText>> {
+        Ok(None)
+    }
+
+    fn song_linked(&self, _link: &SongLink) -> Result<Option<LinkNames>> {
         Ok(None)
     }
 }

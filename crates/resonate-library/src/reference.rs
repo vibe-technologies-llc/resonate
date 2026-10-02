@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_core::SourceId;
 
-use crate::{CoverArt, Isrc, Link, Mbid, Relation, Result, Service};
+use crate::{CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result, Service, SongLink};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Credit {
@@ -195,6 +195,22 @@ pub struct RecordingMatch {
     pub length: Option<Duration>,
     pub isrcs: Vec<Isrc>,
     pub releases: Vec<RecordingRelease>,
+}
+
+const A_WHOLE_SCORE: u8 = 100;
+
+impl From<Recording> for RecordingMatch {
+    fn from(recording: Recording) -> Self {
+        Self {
+            recording: recording.id,
+            score: A_WHOLE_SCORE,
+            title: recording.title,
+            credit: recording.credit,
+            length: recording.length,
+            isrcs: recording.isrcs,
+            releases: recording.releases,
+        }
+    }
 }
 
 impl RecordingMatch {
@@ -395,6 +411,7 @@ pub enum LookupOp {
     Love,
     Token,
     StreamLink,
+    FollowLink,
 }
 
 pub trait Reference: Send + Sync {
@@ -433,6 +450,8 @@ pub trait Reference: Send + Sync {
     fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>>;
 
     fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>>;
+
+    fn song_linked(&self, link: &SongLink) -> Result<Option<LinkNames>>;
 }
 
 #[cfg(test)]

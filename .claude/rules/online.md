@@ -30,8 +30,8 @@ listener, every counted play, and only under a token.
 - **One `Client` serves every host and says what this build is and nothing else.** `Host` is
   `MusicBrainz`, `CoverArtArchive`, `Commons`, `Wikidata`, `Lrclib`, `AutoEq`, `AcoustId`, `Shazam`,
   `Audd`, `AppleArtwork`, `AppleMusic`, `Spotify`, `SpotifyPictures`, `SoundCloud`,
-  `SoundCloudPictures`, `Deezer`, `DeezerPictures` and `ListenBrainz`, each with its base URL in
-  `Host::base`. `AcoustId` is paced at `ACOUSTID_INTERVAL` (334 ms, the three requests a second that
+  `SoundCloudPictures`, `Deezer`, `DeezerPictures`, `SongLink` and `ListenBrainz`, each with its base
+  URL in `Host::base`. `AcoustId` is paced at `ACOUSTID_INTERVAL` (334 ms, the three requests a second that
   service asks for) and asked with the listener's `acoustid-key` alone; `analysis.md` has how its
   answer is read. The `AutoEq` host is `raw.githubusercontent.com/jaakkopasanen/AutoEq/master`, a
   file server rather than an API, which is why the search reading it lives in `resonate-eq`
@@ -87,9 +87,9 @@ listener, every counted play, and only under a token.
   to sleep, not by timing a test. **The window's search waits its turn and says so.** A lookup's
   pass asks MusicBrainz one request at a time and reserves one slot at a time, so a song searched
   from the window takes the slot after the pass's — at most an interval and the request in flight,
-  or a busy service's cooling-off — rather than a place behind a queue there is none of. The tracks
-  pane's *Asking MusicBrainz…* heading reads `ASKING_BESIDE_A_LOOKUP` wherever the library is
-  enriching, the one case the wait is longer than a request.
+  or a busy service's cooling-off — rather than a place behind a queue there is none of. The search
+  page's *Not in your library* section reads `ASKING_BESIDE_A_LOOKUP` while asking wherever the
+  library is enriching, the one case the wait is longer than a request.
 - **A 503, 429, 502 or 504 is asked three more times with the wait doubling, and `Retry-After` is
   read in seconds and capped.** `Client::exchange` retries what `busy` names —
   `SERVICE_UNAVAILABLE` (MusicBrainz's answer to a client going too fast), `TOO_MANY_REQUESTS`, and
@@ -383,6 +383,26 @@ Deezer's own field syntax (`artist:"…" track:"…"`) answers an empty list for
 the plain words. `deezer_track_isrc.json` and `deezer_search.json` are the fixtures, and the live
 test asks both routes.
 
+## Following a link to a song
+
+`Reference::song_linked` is `linked::named_at`: what a `SongLink` the listener pasted names, as
+`LinkNames` — the ISRCs a service files the song under and its length — leaving the weighing to
+`Library::follow_link` (`library.md`). A Deezer track is asked of Deezer's own API,
+`/track/<n>` (`deezer::track_named`), whose answer carries `isrc` and `duration`; an unknown number
+answers the `DataException` document and names nothing. **Every other service is read through
+song.link's page, not its API**: `api.song.link` answers every keyless request
+`401 PUBLIC_API_ACCESS_DEPRECATED`, while the page `SongLink::page` writes — the link percent-escaped
+after `https://song.link/`, or the song.link URL itself — still carries the data its page is drawn
+from. `Song::read` cuts the `__NEXT_DATA__` JSON out of it and reads
+`props.pageProps.pageData`: `entityData` must be of `type` `song` (an album or artist page names no
+song), its `isrc` and `duration` in milliseconds are taken, and the `deezer|song|<n>` id among the
+`sections`' links is the song's twin on Deezer. The page names an ISRC for Spotify, TIDAL and
+SoundCloud and none for Apple Music or YouTube, so the twin is asked whenever there is one and its
+code added after the page's (`named_with`): a SoundCloud upload registered under its own code still
+reaches the recording through the label's. `Host::SongLink` is paced at `OTHERS_INTERVAL` and told
+the bare User-Agent. `song_link_page.html` (a Spotify track's page, captured whole) and
+`deezer_track.json` are the fixtures.
+
 ## ListenBrainz
 
 - **What was heard is posted as JSON under the listener's token, and nothing else about them.**
@@ -532,7 +552,8 @@ test asks both routes.
 `release_group_search.json`, `release_group_browse.json`, `artist.json`, `artist_search.json`,
 `coverart.json`, `coverart_group.json`, `wikidata.json`, `wikipedia.json`, `lrclib_get.json`,
 `lrclib_search.json`, `acoustid_lookup.json`, the Deezer answers (`deezer_artist.json`,
-`deezer_unpictured.json`, `deezer_no_data.json`, `deezer_track_isrc.json`, `deezer_search.json`),
+`deezer_unpictured.json`, `deezer_no_data.json`, `deezer_track_isrc.json`, `deezer_search.json`,
+`deezer_track.json`), `song_link_page.html`,
 `autoeq_index.md`, `autoeq_parametric.txt`, `shazam_match.json` and `shazam_nothing.json` (captured live
 with a signature of a library track and of synthetic notes), and `audd_recognised.json`,
 `audd_nothing.json` and `audd_refused.json` (written from the service's documentation, no token being to

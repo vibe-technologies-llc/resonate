@@ -166,7 +166,8 @@ impl Host {
             | Self::Spotify
             | Self::SpotifyPictures
             | Self::SoundCloud
-            | Self::SoundCloudPictures => false,
+            | Self::SoundCloudPictures
+            | Self::SongLink => false,
         }
     }
 }
@@ -265,6 +266,7 @@ impl Host {
             | Self::SpotifyPictures
             | Self::SoundCloud
             | Self::SoundCloudPictures
+            | Self::SongLink
             | Self::CoverArtArchive
             | Self::Commons
             | Self::Wikidata

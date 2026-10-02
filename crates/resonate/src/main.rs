@@ -736,6 +736,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Love => "a favourite told to a listening service",
         LookupOp::Token => "a check of a listening service's token",
         LookupOp::StreamLink => "a look for where a track streams",
+        LookupOp::FollowLink => "the song a link names",
     }
 }
 

@@ -100,6 +100,7 @@ actions!(
         PlayReached,
         UndoEdit,
         RedoEdit,
+        PasteAway,
         FocusSearch,
         LeaveSearch,
         FocusFilter,
@@ -714,6 +715,7 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
         KeyBinding::new(key!(undo), UndoEdit, typed),
         KeyBinding::new(key!(redo), RedoEdit, typed),
         KeyBinding::new("ctrl-y", RedoEdit, typed),
+        KeyBinding::new(key!(paste), PasteAway, typed),
     ]
 }
 

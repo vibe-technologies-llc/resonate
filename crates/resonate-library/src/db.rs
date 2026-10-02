@@ -46,6 +46,7 @@ use crate::{
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, likeness,
+    linked::{self, HeldBy, Linked, SongLink},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
     playlist, resumed,
@@ -2921,6 +2922,61 @@ impl Library {
                 })
             })
             .map(|held| held.into_iter().collect())
+    }
+
+    pub fn follow_link(&self, reference: &dyn Reference, link: &SongLink) -> Result<Linked> {
+        let recording = match link {
+            SongLink::MusicBrainz(id) => {
+                if let Some(held) = self
+                    .inner
+                    .read(|connection| linked::held_as(connection, HeldBy::Recording(id)))?
+                {
+                    return Ok(held);
+                }
+                reference.recording(id)?
+            }
+            SongLink::Deezer(_) | SongLink::Elsewhere(_) => {
+                let Some(song) = reference.song_linked(link)? else {
+                    return Ok(Linked::Unnamed);
+                };
+                for isrc in &song.isrcs {
+                    if let Some(held) = self
+                        .inner
+                        .read(|connection| linked::held_as(connection, HeldBy::Isrc(isrc)))?
+                    {
+                        return Ok(held);
+                    }
+                }
+                let mut taken = None;
+                for isrc in &song.isrcs {
+                    let takes = reference.recordings_of_isrc(isrc)?;
+                    taken = linked::the_take_linked(takes, song.length);
+                    if taken.is_some() {
+                        break;
+                    }
+                }
+                match taken {
+                    Some(take) => reference.recording(&take.id)?.or(Some(take)),
+                    None => None,
+                }
+            }
+        };
+        let Some(recording) = recording else {
+            return Ok(Linked::Unnamed);
+        };
+        if let Some(held) = self
+            .inner
+            .read(|connection| linked::held_as(connection, HeldBy::Recording(&recording.id)))?
+        {
+            return Ok(held);
+        }
+
+        Ok(
+            elsewhere::found_among(vec![RecordingMatch::from(recording)], |_| false)
+                .into_iter()
+                .next()
+                .map_or(Linked::Unnamed, |found| Linked::Found(Box::new(found))),
+        )
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {

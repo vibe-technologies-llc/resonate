@@ -1683,8 +1683,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **An album's rows are what the catalog holds merged with what the release says is missing.**
   `LibraryModel::rows` is an `Arc<[ListedRow]>` built by `album_rows` whenever the selection is an
   album: `ListedRow::Held` indexes the tracks listing and `ListedRow::Missing` the release rows whose
-  `track` is `None` — beside the variants of their own, `Disc` heading each disc's run and `Beyond`,
-  `Unheld` and `Found` below a search's rows — the two sorted together by `(disc, position)` — a held
+  `track` is `None` — beside the variants of their own, `Disc` heading each disc's run and `NotHeld`
+  and `Found` below an artist page's rows — the two sorted together by `(disc, position)` — a held
   track at its paired release row's place, or its own disc and number where nothing paired it, no number
   sorting last — so the tracks pane's `uniform_list` counts `rows` inside an album and `tracks`
   everywhere else. That seat order is drawn while the pane's sort is the album's own, `Relevance` or
@@ -1775,9 +1775,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   otherwise the first still underway, otherwise the first not downloaded — and the caption says it in
   `fetching_colour` while the cell takes no press. An album landed with nothing on disk yet stays in the
   grid, so it does not vanish the moment it is pressed. *Tracks* follows the held rows with
-  `Beyond::NotHeld`, *Not in your library · N songs · press one to download it*, and a found row per
-  song — the same `found_row` a search draws, pressing it `want_found` — `restate_the_listing` building
-  the rows through `beyond_the_listing` as a search does. A query on the page narrows them through
+  `ListedRow::NotHeld`, *Not in your library · N songs · press one to download it*, and a found row
+  per song — the same `found_row` a search draws, pressing it `want_found` — `restate_the_listing`
+  building the rows through `beyond_the_listing`, which answers nothing until the listing is whole, so
+  a paged listing never draws later pages under the section. A query on the page narrows them through
   `still_answering`.
 - **The Missing pane is what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` sits under `Section::Collection` beside the playlists, its sidebar count
@@ -1852,8 +1853,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   where it stands: its format column draws the `Fetching` in its colour in place of the release
   title, the want mark is greyed with the state as its hint, and the row is a press only where
   nothing is asked for yet or `can_be_asked_again`, so the song stays in the results showing how it
-  is getting on rather than vanishing as the search is asked again. The section heading says *press
-  one to download it*.
+  is getting on rather than vanishing as the search is asked again. The section heading says *Press
+  a song to download it*.
   `pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it` asks for a song a
   shop does not have, waits for *Unfound*, opens the list and holds no toast up; the three tests in
   `downloads.rs` hold the states.
@@ -1869,15 +1870,37 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   No key confirms it, `enter` included. While open it `something_stands_over_the_pane`
   (`the_delete_sheet_holds_the_keys_back_from_the_queue_behind`), and
   `deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed` presses *Cancel* then *Delete*.
-- **A search lists MusicBrainz results after what the library holds.** `LibraryModel::rows` is a
-  `ListedRow` for every selection, not only an album: under *All tracks* with a search it is the held
-  rows followed by `Beyond::Elsewhere(n)` and the `Found` rows MusicBrainz answered, or
-  `Beyond::Asking` while it has not, and on an artist's page the rows its discography lacks under
-  `Beyond::NotHeld`. A search does not list the rows a held album is short of — those stay in the
-  Missing pane and on the artist's page — only the songs of releases not held at all, which
-  `songs_kept_for` answers. `beyond_the_listing` builds the rows and answers nothing until
-  the listing is whole, so a paged listing never draws later pages under the section, and an empty
-  `rows` still means one row per track, what `played_from` and `listed_rows` read. A found song's
+- **A search is a page of its own, and what the library lacks is never buried under what it holds.**
+  `views/search.rs` is the whole of it. `RootView::search_in_front` answers a `SearchShows` wherever
+  the box holds words, the pane in front is Albums, Artists or Tracks, nothing is scoped and no songs
+  are being added to a playlist; `content` then draws `search_pane` in place of the pane. Its heading
+  (`search_heading`) is *SEARCH* over the words in quotes, a summary — *12 songs · 3 albums · 1 artist
+  in your library · 18 songs not in it* — the *Sung in*, *Save this search*, sort, *Shuffle* and
+  *Play* actions, the *Reads* chips, and a row of tabs, each its count in a pill: *Top results*,
+  *Songs*, *Albums*, *Artists* and *Not in your library*, the last only where the build `can_enrich`
+  or something was found, counting *…* while MusicBrainz is asked. *Songs*, *Albums* and *Artists*
+  are the three panes themselves — `tracks`, `albums` and `artists` take `search_heading` in place of
+  their own — so choosing one is `show_in_the_search`, which sets the pane under it and keeps every
+  reach, sort and scroll the pane already had; a sidebar press on one of the three while searching is
+  that tab (`SearchShows::in_place_of`). *Top results* (`top_results`) is one scrolling page: the
+  matching artists as a strip of `ARTIST_AT_THE_TOP` portraits, the first `SONGS_AT_THE_TOP` (5) songs,
+  the first `FOUND_AT_THE_TOP` (6) songs not in the library with what MusicBrainz is doing beside the
+  heading, then the albums as a strip — each section headed by its name and, where more matched than
+  it shows, *See all N*, which opens its tab. *Not in your library* (`not_in_the_library`) is every
+  found row in a `uniform_list` of its own. A search begins on *Top results* from the tracks pane and on
+  the pane's own tab from Albums or Artists (`SearchShows::opening_on`, read where the box goes from
+  empty to holding words). It replaced the tracks pane listing every held row and only then, once the
+  whole listing had been paged in, the songs MusicBrainz found — searching an artist with a hundred
+  songs held put the found ones a hundred rows down, out of sight. So under *All tracks*
+  `LibraryModel::rows` is empty — one row per track, what `played_from` and `listed_rows` read — and
+  `LibraryModel::elsewhere` answers the MusicBrainz half on its own as a `Beyond`: `Elsewhere(n)`,
+  `Refining(n)` while asked again, `Asking` and `Unreached`, through `elsewhere_standing`. The keyboard
+  follows: `reachable` reaches the top songs under *Top results* (or the found rows where none is
+  held) and `Listed::Found` under *Not in your library*, enter on a found row being `want_found`.
+  `songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds` scans forty held songs and
+  asserts the found row is drawn inside the window. A search does not list the rows a held album is
+  short of — those stay in the Missing pane and on the artist's page — only the songs of releases not
+  held at all, which `songs_kept_for` answers. A found song's
   `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which
   `LibraryModel::released_cover` asks the reference for on the background executor while Online is on —
   `FETCHES_AT_ONCE` (2) at a time, decoded on the `Drawer` and held under the release's id in
@@ -1914,12 +1937,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
     the settle.
   - *Narrowed while asking.* From the keystroke until the answer lands, `found` stands in as
     `narrowed` — the songs the last answer found that `still_answering` the new words — under
-    `Beyond::Refining`, *Found on MusicBrainz · N songs so far · asking for the rest…*; only where
-    none still answers does the bare `Beyond::Asking` heading stand alone
+    `Beyond::Refining`, the summary reading *N songs not in it so far, asking MusicBrainz for the
+    rest…* and the tab counting *N…*; only where none still answers does `Beyond::Asking` stand alone,
+    *Asking MusicBrainz…* where the found songs would be
     (`songs_found_for_fewer_words_stay_listed_while_more_are_asked_for`).
   - *A failure says so.* A request refused or unreachable for the text in the box is not
-    remembered; its text is `unreached_for` and the run ends in `Beyond::Unreached`, *MusicBrainz could
-    not be reached* with *Try again* (`ask_elsewhere_again`) beside it
+    remembered; its text is `unreached_for` and `elsewhere` answers `Beyond::Unreached`, *MusicBrainz
+    could not be reached* with *Try again* (`ask_elsewhere_again`) beside it
     (`a_search_musicbrainz_refused_says_so_and_is_asked_again_on_a_press`). A failure for a text typed
     past is a debug line and nothing more. Turning Online on asks for what the box holds; turning it
     off drops the ask.
@@ -1934,6 +1958,18 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   A search whose plain words a held track sings is offered as `lyrics:"…"`: `Library::sung` rides in
   the load, and *Sung in N tracks* stands in the heading's actions, and in a pane's empty state where
   nothing else matched, as a `search_instead`.
+- **A link to a song pasted anywhere is the song, downloaded, not words to search.** The search
+  field is built `catching(is_a_song_link)`: a paste the predicate takes is emitted as `Caught` rather
+  than inserted, and `ctrl-v` away from any field is `PasteAway`, a paste into the search box, so the
+  same catch answers both. `RootView::follow_link` reads the `SongLink`, asks
+  `Library::follow_link` on the background executor through `LibraryModel::follows_links` — the
+  reference while Online is on, else a toast saying to turn it on — and `followed` answers: a song a
+  file already holds says so in a toast; a song found is `want_found`, the downloads list in the
+  sidebar following it as a pressed found row would be; either way the box then searches the song's
+  title and artist (`search_instead`), so the song is on screen, held or downloading. A link nothing
+  names is a toast. `a_song_link_pasted_into_the_search_is_downloaded_and_searched_for` and
+  `pasting_at_the_window_puts_the_words_in_the_search` are the claims; `library.md` has which links are
+  read and `online.md` how a service is asked.
 - **The search box narrows the Missing pane, the two halves answering differently, one being in the
   catalog and the other not.** Both reads take the browse panes' query, so the *Reads* row stands under
   this heading too and counts, sidebar figure and list cannot disagree (`library.md` has the SQL). A

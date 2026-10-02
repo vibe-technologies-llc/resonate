@@ -25,6 +25,7 @@ pub enum Host {
     SpotifyPictures,
     SoundCloud,
     SoundCloudPictures,
+    SongLink,
     ListenBrainz,
 }
 
@@ -48,6 +49,7 @@ impl Host {
             Self::SpotifyPictures => "https://i.scdn.co",
             Self::SoundCloud => "https://soundcloud.com",
             Self::SoundCloudPictures => "https://i1.sndcdn.com",
+            Self::SongLink => "https://song.link",
             Self::ListenBrainz => "https://api.listenbrainz.org",
         }
     }

@@ -982,6 +982,22 @@ mod tests {
     }
 
     #[gpui::test]
+    fn pasting_at_the_window_puts_the_words_in_the_search(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+
+        driven.cx.update(|_, cx| {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string("rush of".to_owned()));
+        });
+        driven.cx.simulate_keystrokes("ctrl-v");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "rush of"
+        );
+    }
+
+    #[gpui::test]
     fn the_caret_blinks_as_the_desktop_says_and_holds_still_where_it_says_not_to(
         cx: &mut TestAppContext,
     ) {

@@ -232,7 +232,7 @@ fn asked_for<'a>(query: &'a str, name: &str) -> Option<&'a str> {
         .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
 }
 
-fn escaped_for_a_path(url: &str) -> String {
+pub(crate) fn escaped_for_a_path(url: &str) -> String {
     let mut escaped = String::with_capacity(url.len());
     for byte in url.bytes() {
         match byte {

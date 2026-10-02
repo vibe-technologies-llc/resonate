@@ -23,6 +23,7 @@ mod queue;
 mod reorder;
 mod root;
 mod scrollbar;
+mod search;
 pub(crate) mod settings;
 mod slider;
 pub(crate) mod sorting;

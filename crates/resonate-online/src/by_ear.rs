@@ -10,7 +10,7 @@ use resonate_analysis::{Watch, excerpt};
 use resonate_codec::Sources;
 use resonate_core::SourceId;
 use resonate_library::{
-    Fingerprints, Printed, Recording, RecordingAsked, RecordingMatch, Reference, Sounded, Wording,
+    Fingerprints, Printed, RecordingAsked, RecordingMatch, Reference, Sounded, Wording,
 };
 
 use crate::{Client, Online, Shazam};
@@ -18,7 +18,6 @@ use crate::{Client, Online, Shazam};
 const BY_EAR: &str = "by-ear";
 const HEARD_FROM_AT_MOST: Duration = Duration::from_secs(30);
 const HEARD_FOR: Duration = Duration::from_secs(12);
-const A_WHOLE_SCORE: u8 = 100;
 const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(10);
 
 pub struct ByEar {
@@ -79,7 +78,7 @@ impl Fingerprints for ByEar {
                 .recordings_of_isrc(isrc)?
                 .into_iter()
                 .filter(|recording| lengths_agree(recording.length, sounded.length))
-                .map(matched)
+                .map(RecordingMatch::from)
                 .collect();
             if !coded.is_empty() {
                 return Ok(Printed::Recognised(coded));
@@ -103,18 +102,6 @@ fn lengths_agree(found: Option<Duration>, held: Option<Duration>) -> bool {
     match (found, held) {
         (Some(found), Some(held)) => found.abs_diff(held) <= LENGTHS_AGREE_WITHIN,
         _ => true,
-    }
-}
-
-fn matched(recording: Recording) -> RecordingMatch {
-    RecordingMatch {
-        recording: recording.id,
-        score: A_WHOLE_SCORE,
-        title: recording.title,
-        credit: recording.credit,
-        length: recording.length,
-        isrcs: recording.isrcs,
-        releases: recording.releases,
     }
 }
 

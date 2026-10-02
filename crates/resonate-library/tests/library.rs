@@ -29,15 +29,15 @@ use resonate_library::{
     DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error,
     Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
     HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout,
-    Library, LifeSpan, Link, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked,
-    Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
-    PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, Sidecar, SortOrder, Sought, Sources, StreamAsked, Suggestion, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease,
-    Unwritten, Vault, Waits, Window, Wording, Written,
+    Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold,
+    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
+    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
+    Pruned, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
+    Search, Service, Sidecar, SongLink, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery,
+    UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -8784,6 +8784,7 @@ enum Called {
     GroupCover(Mbid),
     Portrait(String),
     StreamedAt(StreamAsked),
+    SongLinked(SongLink),
 }
 
 impl Called {
@@ -8804,6 +8805,7 @@ impl Called {
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
             Self::StreamedAt(_) => LookupOp::StreamLink,
+            Self::SongLinked(_) => LookupOp::FollowLink,
         }
     }
 }
@@ -8838,6 +8840,7 @@ struct Canned {
     portraits: Vec<(String, CoverArt)>,
     streamed: Option<Link>,
     lyrics: Vec<(&'static str, LyricText)>,
+    linked: Option<LinkNames>,
 }
 
 struct Gate {
@@ -9108,6 +9111,11 @@ impl Reference for Fake {
     fn streamed_at(&self, asked: &StreamAsked) -> Result<Option<Link>> {
         self.note(Called::StreamedAt(asked.clone()))?;
         Ok(self.canned.streamed.clone())
+    }
+
+    fn song_linked(&self, link: &SongLink) -> Result<Option<LinkNames>> {
+        self.note(Called::SongLinked(link.clone()))?;
+        Ok(self.canned.linked.clone())
     }
 
     fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>> {
@@ -19350,6 +19358,118 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     assert!(library.unwant(want)?);
     scan(&library, &options(&tree))?;
     assert!(library.unheld_matching("echoes", None)?.is_empty());
+    Ok(())
+}
+
+const A_SPOTIFY_LINK: &str = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";
+
+fn linked_to_spotify() -> SongLink {
+    SongLink::read(A_SPOTIFY_LINK).expect("a song link")
+}
+
+#[test]
+fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_want() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let code = isrc(CODE);
+    let mut short = echoes_found().into_recording();
+    short.id = mbid(RECORDING);
+    short.length = Some(Duration::from_secs(300));
+    let mut take = echoes_found().into_recording();
+    take.releases = vec![take.releases[1].clone()];
+    let whole = echoes_found().into_recording();
+    let fake = Fake::new(Canned {
+        linked: Some(LinkNames {
+            isrcs: vec![code.clone()],
+            length: Some(Duration::from_secs(1_410)),
+        }),
+        isrcs: vec![(code.clone(), short), (code.clone(), take)],
+        recordings: vec![whole],
+        ..Canned::default()
+    });
+
+    let Linked::Found(found) = library.follow_link(&fake, &linked_to_spotify())? else {
+        panic!("the link named no song to want");
+    };
+
+    assert_eq!(found.recording, mbid(ECHOES));
+    assert_eq!(found.artist, "Pink Floyd");
+    assert_eq!(
+        found.release.as_ref().map(|release| release.id.clone()),
+        Some(mbid(MEDDLE)),
+        "the recording asked for whole is placed on the album it was meant for"
+    );
+    assert_eq!(
+        fake.calls(),
+        vec![
+            Called::SongLinked(linked_to_spotify()),
+            Called::Isrc(code),
+            Called::Recording(mbid(ECHOES)),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_nothing() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows[0] = ReleaseTrack {
+        recording: Some(mbid(RECORDING)),
+        isrc: Some("GBAYE7100195".to_owned()),
+        ..rows[0].clone()
+    };
+    let identifying = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(rows, Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &identifying, false)?;
+    let fake = Fake::new(Canned {
+        linked: Some(LinkNames {
+            isrcs: vec![isrc(CODE)],
+            length: None,
+        }),
+        ..Canned::default()
+    });
+
+    let by_isrc = library.follow_link(&fake, &linked_to_spotify())?;
+    let by_recording = library.follow_link(&fake, &SongLink::MusicBrainz(mbid(RECORDING)))?;
+
+    let held = Linked::Held {
+        title: ORBITS_TITLES[0].to_owned(),
+        artist: Some("The Orbiters".to_owned()),
+    };
+    assert_eq!(by_isrc, held);
+    assert_eq!(by_recording, held);
+    assert_eq!(
+        fake.calls(),
+        vec![Called::SongLinked(linked_to_spotify())],
+        "a song held is not asked about"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_link_no_service_can_name_names_nothing() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let unnamed = Fake::new(Canned::default());
+    let unknown = Fake::new(Canned {
+        linked: Some(LinkNames {
+            isrcs: vec![isrc(ANOTHER_CODE)],
+            length: None,
+        }),
+        ..Canned::default()
+    });
+
+    assert_eq!(
+        library.follow_link(&unnamed, &linked_to_spotify())?,
+        Linked::Unnamed
+    );
+    assert_eq!(
+        library.follow_link(&unknown, &linked_to_spotify())?,
+        Linked::Unnamed
+    );
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
     Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble,
-    Scrobbler, Service, StreamAsked, TokenHeld, Wording,
+    Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -69,6 +69,30 @@ fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
         .expect("deezer answered")
         .expect("deezer holds echoes");
     assert!(by_name.url.starts_with("https://www.deezer.com/track/"));
+}
+
+#[test]
+fn a_link_to_a_song_on_spotify_tidal_and_apple_music_names_its_isrc() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let never_gonna = Isrc::new("GBARL9300135").expect("a well-formed isrc");
+
+    for pasted in [
+        "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT",
+        "https://tidal.com/browse/track/491206012",
+        "https://music.apple.com/us/album/x/1559523357?i=1559523359",
+        "https://www.deezer.com/track/781592622",
+    ] {
+        let link = SongLink::read(pasted).expect("a song link");
+        let named = online
+            .song_linked(&link)
+            .expect("the services answered")
+            .unwrap_or_else(|| panic!("{pasted} named no song"));
+
+        assert!(named.isrcs.contains(&never_gonna), "{pasted}: {named:?}");
+    }
 }
 
 #[test]

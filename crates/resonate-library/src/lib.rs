@@ -12,6 +12,7 @@ mod hinted;
 mod history;
 mod import;
 mod likeness;
+mod linked;
 mod loose;
 mod m3u;
 mod model;
@@ -87,6 +88,7 @@ pub use crate::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
     },
+    linked::{LinkNames, Linked, SongLink, is_a_song_link},
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
         Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported, KeptCorrection, KeptIndex,

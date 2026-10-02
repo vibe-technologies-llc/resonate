@@ -20,7 +20,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, TokenHeld, Track,
+    SortOrder, TokenHeld, Track, is_a_song_link,
 };
 
 use crate::{
@@ -29,10 +29,10 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
-        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, Pause, PlayPauseUnlessTyping,
-        PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow,
-        ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove, ReachPageBelow,
-        ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
+        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, PasteAway, Pause,
+        PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove,
+        ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove,
+        ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
         SeekFurtherForward, Stop, TabOnward, ToggleMute, TogglePlayPause, ToggleQueue,
         ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
         attend, seek_further, seek_step,
@@ -49,7 +49,7 @@ use crate::{
         browser::{self, ArtistShows, ArtistsDrawn, OpenedRecord},
         chrome,
         dropping::{Incoming, TakingIn},
-        field::{Field, Submitted},
+        field::{Caught, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis},
@@ -61,6 +61,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         queue::{QueueMeasure, QueueNames, TakenBack, took_out},
         reorder::{Creeping, Listed, Reach, Shift, Step},
+        search::{self, SearchShows},
         settings::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
         },
@@ -562,6 +563,10 @@ pub struct RootView {
     pub(crate) shelf_scrolls: RefCell<AHashMap<&'static str, ScrollHandle>>,
     came_from: Vec<Wayback>,
     pub(crate) artist_shows: ArtistShows,
+    pub(crate) search_shows: SearchShows,
+    pub(crate) following_a_link: Task<()>,
+    pub(crate) search_scroll: ScrollHandle,
+    pub(crate) found_rows: UniformListScrollHandle,
     pub(crate) artists_drawn: ArtistsDrawn,
     pub(crate) missing_shows: MissingShows,
     pub(crate) playlists_drawn: PlaylistsDrawn,
@@ -743,7 +748,8 @@ impl RootView {
         let focus = cx.focus_handle();
         window.focus(&focus);
 
-        let search = cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx));
+        let search =
+            cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx).catching(is_a_song_link));
         cx.observe(&search, |this, search, cx| {
             let typed_anew = {
                 let typed = search.read(cx).text();
@@ -755,6 +761,11 @@ impl RootView {
 
             let query = search.read(cx).text().to_owned();
             this.set_query(query, cx);
+        })
+        .detach();
+
+        cx.subscribe_in(&search, window, |this, _, Caught(link), window, cx| {
+            this.follow_link(link, window, cx);
         })
         .detach();
 
@@ -998,6 +1009,10 @@ impl RootView {
             shelf_scrolls: RefCell::new(AHashMap::new()),
             came_from: Vec::new(),
             artist_shows: ArtistShows::default(),
+            search_shows: SearchShows::default(),
+            following_a_link: Task::ready(()),
+            search_scroll: ScrollHandle::default(),
+            found_rows: UniformListScrollHandle::default(),
             artists_drawn: ArtistsDrawn::default(),
             missing_shows: MissingShows::default(),
             playlists_drawn: PlaylistsDrawn::default(),
@@ -1715,6 +1730,18 @@ impl RootView {
         }
     }
 
+    pub(crate) fn show_in_the_search(&mut self, shows: SearchShows, cx: &mut Context<Self>) {
+        if let Some(pane) = shows.pane() {
+            self.set_pane(pane, cx);
+        }
+        if self.search_shows != shows {
+            self.ordering = false;
+            self.reach = None;
+        }
+        self.search_shows = shows;
+        cx.notify();
+    }
+
     pub(crate) fn set_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
         let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs) {
             pane
@@ -1730,6 +1757,9 @@ impl RootView {
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
         if self.pane != pane {
             self.ordering = false;
+            if let Some(shows) = SearchShows::in_place_of(pane) {
+                self.search_shows = shows;
+            }
         }
         self.pane = pane;
         if opens_the_queue {
@@ -1914,6 +1944,7 @@ impl RootView {
             Shift::Listing(Listed::Favourites) => &self.favourite_rows,
             Shift::Listing(Listed::Missing) => &self.missing_rows,
             Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
+            Shift::Listing(Listed::Found) => &self.found_rows,
             Shift::Listing(Listed::Offered) => return self.cards_a_page(),
             Shift::Listing(Listed::Heard) => return self.heard_a_page(),
         };
@@ -2035,6 +2066,13 @@ impl RootView {
                 self.play(&tracks, row, cx);
             }
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
+            Shift::Listing(Listed::Found) => {
+                let Some(found) = self.library.read(cx).found().get(row).cloned() else {
+                    return;
+                };
+                self.library
+                    .update(cx, |library, cx| library.want_found(found, cx));
+            }
             Shift::Listing(Listed::Suggested) => {
                 let Some(tracks) = self
                     .library
@@ -2209,6 +2247,24 @@ impl RootView {
     }
 
     fn reachable(&self, cx: &App) -> Option<(Shift, usize)> {
+        match self.search_in_front(cx) {
+            Some(SearchShows::Top) => {
+                let library = self.library.read(cx);
+                let songs = library.listing().len().min(search::SONGS_AT_THE_TOP);
+                let found = library.found().len().min(search::FOUND_AT_THE_TOP);
+                return match (songs, found) {
+                    (0, 0) => None,
+                    (0, found) => Some((Shift::Listing(Listed::Found), found)),
+                    (songs, _) => Some((Shift::Listing(Listed::Tracks), songs)),
+                };
+            }
+            Some(SearchShows::Elsewhere) => {
+                let found = self.library.read(cx).found().len();
+                return (found > 0).then_some((Shift::Listing(Listed::Found), found));
+            }
+            Some(SearchShows::Songs | SearchShows::Albums | SearchShows::Artists) | None => {}
+        }
+
         match self.pane {
             Pane::Queue => {
                 let rows = self.player.read(cx).queue().len();
@@ -2335,6 +2391,9 @@ impl RootView {
             Shift::Listing(Listed::Suggested) => {
                 self.suggestion_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
+            }
+            Shift::Listing(Listed::Found) => {
+                self.found_rows.scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Offered | Listed::Heard) => self.reached_unseen.set(true),
         }
@@ -3076,9 +3135,21 @@ impl RootView {
     }
 
     fn set_query(&mut self, query: String, cx: &mut Context<Self>) {
-        if self.library.read(cx).narrowing().unwrap_or_default() == query {
+        let was = self
+            .library
+            .read(cx)
+            .narrowing()
+            .unwrap_or_default()
+            .to_owned();
+        if was == query {
             return;
         }
+        if was.is_empty() {
+            self.search_shows = SearchShows::opening_on(self.pane);
+            self.ordering = false;
+        }
+        self.search_scroll.set_offset(point(px(0.0), px(0.0)));
+        self.found_rows.scroll_to_item(0, ScrollStrategy::Top);
         self.read_from_the_top(cx);
         if self
             .reach
@@ -4055,6 +4126,10 @@ impl RootView {
     }
 
     fn content(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        if let Some(shows) = self.search_in_front(cx) {
+            return self.search_pane(shows, cx);
+        }
+
         match self.pane {
             Pane::Albums => self.albums(cx),
             Pane::Artists => self.artists(cx),
@@ -4211,6 +4286,10 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &LeaveSearch, window, cx| {
                 this.dismiss_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PasteAway, window, cx| {
+                this.search
+                    .update(cx, |search, cx| search.pastes(window, cx));
             }))
             .on_action(cx.listener(|this, _: &GoToTheResults, window, cx| {
                 this.go_to_the_results(window, cx);

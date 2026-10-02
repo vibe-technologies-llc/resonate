@@ -47,6 +47,9 @@ macro_rules! key {
     (undo) => {
         "ctrl-z"
     };
+    (paste) => {
+        "ctrl-v"
+    };
     (redo) => {
         "ctrl-shift-z"
     };
@@ -133,7 +136,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 36] = [
+    const NAMED: [&str; 37] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -150,6 +153,7 @@ mod tests {
         key!(quit),
         key!(leave),
         key!(undo),
+        key!(paste),
         key!(redo),
         key!(reach_above),
         key!(reach_below),

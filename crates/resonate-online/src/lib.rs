@@ -8,6 +8,7 @@ mod commons;
 mod coverart;
 mod deezer;
 mod error;
+mod linked;
 mod listenbrainz;
 mod lrclib;
 mod musicbrainz;

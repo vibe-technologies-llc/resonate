@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use resonate_codec::{CoverArt, ImageFormat};
-use resonate_library::{Link, LookupOp, Relation, Service, StreamAsked, folded_letters};
+use resonate_library::{
+    Isrc, Link, LinkNames, LookupOp, Relation, Service, StreamAsked, folded_letters,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -11,6 +13,7 @@ use crate::{
 };
 
 const ARTIST: &str = "/artist/";
+const TRACK: &str = "/track/";
 const TRACK_BY_ISRC: &str = "/track/isrc:";
 const SEARCH: &str = "/search";
 const SEARCHED_AT_MOST: &str = "10";
@@ -94,6 +97,13 @@ pub(crate) fn streamed(client: &Client, asked: &StreamAsked) -> Result<Option<Li
     }))
 }
 
+pub(crate) fn track_named(client: &Client, track: u64) -> Result<Option<LinkNames>> {
+    let asked = format!("{TRACK}{track}");
+    let held = client.json::<TrackDoc>(Host::Deezer, LookupOp::FollowLink, &asked)?;
+
+    Ok(held.and_then(TrackDoc::named))
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -120,6 +130,7 @@ struct TrackDoc {
     title_short: Option<String>,
     duration: Option<u64>,
     artist: Option<Credited>,
+    isrc: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +139,18 @@ struct Credited {
 }
 
 impl TrackDoc {
+    fn named(self) -> Option<LinkNames> {
+        let isrc = Isrc::new(self.isrc.as_deref()?).ok()?;
+
+        Some(LinkNames {
+            isrcs: vec![isrc],
+            length: self
+                .duration
+                .filter(|seconds| *seconds > 0)
+                .map(Duration::from_secs),
+        })
+    }
+
     fn linked(self) -> Option<Link> {
         let url = self.link.filter(|url| url.starts_with(TRACK_PAGES))?;
 
@@ -280,9 +303,29 @@ mod tests {
             title_short: None,
             duration: None,
             artist: None,
+            isrc: None,
         };
 
         assert_eq!(elsewhere.linked(), None);
+    }
+
+    #[test]
+    fn a_deezer_track_names_its_code_and_length() {
+        let track: TrackDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_track.json"))
+                .expect("the captured answer reads back");
+        let unknown: TrackDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_no_data.json"))
+                .expect("the captured answer reads back");
+
+        assert_eq!(
+            track.named(),
+            Some(LinkNames {
+                isrcs: vec![Isrc::new("GBARL9300135").expect("an isrc")],
+                length: Some(Duration::from_secs(213)),
+            })
+        );
+        assert_eq!(unknown.named(), None);
     }
 
     #[test]

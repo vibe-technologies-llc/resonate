@@ -21,7 +21,7 @@ use resonate_library::{
 use smallvec::smallvec;
 
 use crate::{
-    Beyond, Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection,
+    Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection,
     downloads::Fetching,
     format,
     icons::{self, Icon},
@@ -55,8 +55,6 @@ const FIND_THE_RECORD_HINT: &str = "Ask MusicBrainz for the releases named like 
                                     take the one these files are";
 const ASKING_FOR_RELEASES: &str = "Asking MusicBrainz for releases named like this…";
 const NO_RELEASES: &str = "MusicBrainz named no release like this";
-const ASKING_BESIDE_A_LOOKUP: &str = "Asking MusicBrainz, which answers one request a second and \
-                                      is answering the running lookup too…";
 const TAKE_THE_PRESSING_HINT: &str = "Take this pressing for the album in place of the one in use";
 const PRESSING_IN_USE_HINT: &str = "The pressing the album is matched to now";
 const PRESSINGS_SHOWN: usize = 12;
@@ -102,8 +100,6 @@ const WANT_ALBUM_HINT: &str = "Download this album: it is added to the catalog a
                                are asked for every song on it, the sidebar following how it goes";
 
 const NOT_HELD_HEADING: &str = "Not in your library";
-
-const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
 
 const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
 
@@ -215,26 +211,28 @@ impl RootView {
             self.land_where_it_was_left(rows);
         }
 
-        let heading = kit::heading()
-            .child(
-                kit::heading_row()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w(px(theme::heading_name()))
-                            .gap_1()
-                            .child(kit::eyebrow("LIBRARY"))
-                            .child(kit::title("Albums"))
-                            .child(kit::subtitle(format::counted(counted, "album", "albums"))),
-                    )
-                    .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
-                    .child(kit::actions().child(self.orders_a_listing("order-albums", cx))),
-            )
-            .when(self.ordering, |heading| {
-                heading.child(self.albums_in_order(cx))
-            });
+        let heading = self.search_heading(cx).unwrap_or_else(|| {
+            kit::heading()
+                .child(
+                    kit::heading_row()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w(px(theme::heading_name()))
+                                .gap_1()
+                                .child(kit::eyebrow("LIBRARY"))
+                                .child(kit::title("Albums"))
+                                .child(kit::subtitle(format::counted(counted, "album", "albums"))),
+                        )
+                        .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
+                        .child(kit::actions().child(self.orders_a_listing("order-albums", cx))),
+                )
+                .when(self.ordering, |heading| {
+                    heading.child(self.albums_in_order(cx))
+                })
+        });
 
         div()
             .flex()
@@ -311,7 +309,12 @@ impl RootView {
         self.album_cell_captioned(album, theme::grid_cover(), Caption::ByArtist, reached, cx)
     }
 
-    fn album_cell_at(&self, album: &Album, side: f32, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn album_cell_at(
+        &self,
+        album: &Album,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         self.album_cell_captioned(album, side, Caption::ByArtist, false, cx)
     }
 
@@ -460,7 +463,7 @@ impl RootView {
         )
     }
 
-    fn nothing_matched(
+    pub(crate) fn nothing_matched(
         &mut self,
         icon: Icon,
         message: &'static str,
@@ -492,7 +495,7 @@ impl RootView {
         )
     }
 
-    fn sung_offer(&self, tone: Tone, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+    pub(crate) fn sung_offer(&self, tone: Tone, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let sung = self.library.read(cx).sung()?.clone();
         let offered = sung.query;
 
@@ -539,30 +542,34 @@ impl RootView {
             )
         });
 
-        let heading = kit::heading()
-            .child(
-                kit::heading_row()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w(px(theme::heading_name()))
-                            .gap_1()
-                            .child(kit::eyebrow("LIBRARY"))
-                            .child(kit::title("Artists"))
-                            .child(kit::subtitle(format::counted(counted, "artist", "artists"))),
-                    )
-                    .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
-                    .child(
-                        kit::actions()
-                            .child(self.artists_drawn_as(drawn, cx))
-                            .child(self.orders_a_listing("order-artists", cx)),
-                    ),
-            )
-            .when(self.ordering, |heading| {
-                heading.child(self.artists_in_order(cx))
-            });
+        let heading = self.search_heading(cx).unwrap_or_else(|| {
+            kit::heading()
+                .child(
+                    kit::heading_row()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w(px(theme::heading_name()))
+                                .gap_1()
+                                .child(kit::eyebrow("LIBRARY"))
+                                .child(kit::title("Artists"))
+                                .child(kit::subtitle(format::counted(
+                                    counted, "artist", "artists",
+                                ))),
+                        )
+                        .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
+                        .child(
+                            kit::actions()
+                                .child(self.artists_drawn_as(drawn, cx))
+                                .child(self.orders_a_listing("order-artists", cx)),
+                        ),
+                )
+                .when(self.ordering, |heading| {
+                    heading.child(self.artists_in_order(cx))
+                })
+        });
         let grid =
             (!nothing && drawn == ArtistsDrawn::Grid).then(|| self.artist_grid(&artists, cx));
 
@@ -688,7 +695,6 @@ impl RootView {
         let rowed = !rows.is_empty();
         let release_tracks = self.library.read(cx).release_tracks();
         let found = self.library.read(cx).found();
-        let shared_with_a_lookup = self.library.read(cx).is_enriching();
         let media: Arc<[HeldMedium]> = self
             .library
             .read(cx)
@@ -793,14 +799,10 @@ impl RootView {
                                                     .into_any_element(),
                                             );
                                         }
-                                        Some(ListedRow::Beyond(beyond)) => {
+                                        Some(ListedRow::NotHeld(songs)) => {
                                             drawn.push(
-                                                this.beyond_heading(
-                                                    beyond,
-                                                    shared_with_a_lookup,
-                                                    cx,
-                                                )
-                                                .into_any_element(),
+                                                Self::songs_not_held_heading(songs)
+                                                    .into_any_element(),
                                             );
                                         }
                                         Some(ListedRow::Found(at)) => {
@@ -1166,7 +1168,12 @@ impl RootView {
             )
     }
 
-    fn found_row(&self, index: usize, found: &Found, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn found_row(
+        &self,
+        index: usize,
+        found: &Found,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let fetching = self.library.read(cx).fetching_found(found);
         let row = self
             .unheld_row(index, Unheld::found(found, fetching), cx)
@@ -1189,47 +1196,11 @@ impl RootView {
             }))
     }
 
-    fn beyond_heading(
-        &self,
-        beyond: Beyond,
-        shared_with_a_lookup: bool,
-        cx: &mut Context<Self>,
-    ) -> Div {
-        let said = match beyond {
-            Beyond::Elsewhere(rows) => format!(
-                "Found on MusicBrainz · {} · press one to download it",
-                format::counted(rows, "song", "songs")
-            ),
-            Beyond::NotHeld(rows) => format!(
-                "Not in your library · {} · press one to download it",
-                format::counted(rows, "song", "songs")
-            ),
-            Beyond::Refining(rows) => format!(
-                "Found on MusicBrainz · {} so far · asking for the rest…",
-                format::counted(rows, "song", "songs")
-            ),
-            Beyond::Asking if shared_with_a_lookup => ASKING_BESIDE_A_LOOKUP.to_owned(),
-            Beyond::Asking => "Asking MusicBrainz…".to_owned(),
-            Beyond::Unreached => "MusicBrainz could not be reached".to_owned(),
-        };
-        let heading = run_heading(SharedString::from(said));
-        if beyond != Beyond::Unreached {
-            return heading;
-        }
-
-        heading.child(
-            kit::button(
-                "ask-elsewhere-again",
-                Some(Icon::Search),
-                "Try again",
-                ASK_AGAIN_HINT,
-                Tone::Ghost,
-            )
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.library
-                    .update(cx, |library, cx| library.ask_elsewhere_again(cx));
-            })),
-        )
+    fn songs_not_held_heading(rows: usize) -> Div {
+        run_heading(SharedString::from(format!(
+            "Not in your library · {} · press one to download it",
+            format::counted(rows, "song", "songs")
+        )))
     }
 
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1482,6 +1453,9 @@ impl RootView {
     }
 
     fn heading(&self, cx: &mut Context<Self>) -> Div {
+        if let Some(searched) = self.search_heading(cx) {
+            return searched;
+        }
         let heading = match self.library.read(cx).selection() {
             Selection::Everything => self.library_heading(cx),
             Selection::Album(id) => self.album_page_heading(id, cx),
@@ -2128,7 +2102,7 @@ impl RootView {
             .into_any_element()
     }
 
-    fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         kit::button(
             "play-all",
             Some(Icon::Play),
@@ -2144,7 +2118,7 @@ impl RootView {
         }))
     }
 
-    fn shuffle_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn shuffle_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         kit::button(
             "shuffle-all",
             Some(Icon::Shuffle),
@@ -2338,7 +2312,12 @@ impl RootView {
         shelf(id, named, artists.len(), cells, scroll, Scrollbars::of(cx))
     }
 
-    fn artist_cell_at(&self, artist: &Artist, side: f32, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn artist_cell_at(
+        &self,
+        artist: &Artist,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let id = artist.id;
         let favourite = self
             .library
@@ -2412,7 +2391,7 @@ impl RootView {
             .on_click(cx.listener(|this, _, _, cx| this.order_a_listing(cx)))
     }
 
-    fn tracks_in_order(&self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn tracks_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
         sorting::order_row(
@@ -2432,7 +2411,7 @@ impl RootView {
         )
     }
 
-    fn albums_in_order(&self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn albums_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
         sorting::order_row(
@@ -2452,7 +2431,7 @@ impl RootView {
         )
     }
 
-    fn artists_in_order(&self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn artists_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
         sorting::order_row(
@@ -3458,23 +3437,27 @@ mod tests {
             },
         };
 
-        use gpui::TestAppContext;
+        use gpui::{ClipboardItem, TestAppContext};
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
             ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
-            Issued, Library, Link, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Recording,
-            RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
-            ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, StreamAsked, Track, TrackQuery,
+            Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
+            Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
+            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, StreamAsked,
+            Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
         use crate::{
-            Beyond, ListedRow,
+            Beyond,
             downloads::Fetching,
             driven::{Driven, Folder, Reaching},
             toast,
-            views::root::Deleting,
+            views::{
+                root::{Deleting, Pane},
+                search::SearchShows,
+            },
         };
 
         const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
@@ -3566,12 +3549,15 @@ mod tests {
                 Ok(Vec::new())
             }
 
-            fn recording(&self, _: &Mbid) -> Result<Option<Recording>> {
-                Ok(None)
+            fn recording(&self, id: &Mbid) -> Result<Option<Recording>> {
+                Ok((id.as_str() == HEROES_TONIGHT).then(|| heroes_tonight().into_recording()))
             }
 
-            fn recordings_of_isrc(&self, _: &resonate_library::Isrc) -> Result<Vec<Recording>> {
-                Ok(Vec::new())
+            fn recordings_of_isrc(&self, isrc: &resonate_library::Isrc) -> Result<Vec<Recording>> {
+                Ok((isrc.as_str() == HEROES_TONIGHT_ISRC)
+                    .then(|| heroes_tonight().into_recording())
+                    .into_iter()
+                    .collect())
             }
 
             fn find_recording(&self, _: &RecordingAsked) -> Result<Vec<RecordingMatch>> {
@@ -3586,26 +3572,7 @@ mod tests {
                         status: 503,
                     });
                 }
-                Ok(vec![RecordingMatch {
-                    recording: mbid(HEROES_TONIGHT),
-                    score: 100,
-                    title: "Heroes Tonight".to_owned(),
-                    credit: janji(),
-                    length: None,
-                    isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
-                    releases: vec![RecordingRelease {
-                        id: mbid(HEROES_TONIGHT_RELEASE),
-                        title: "Heroes Tonight".to_owned(),
-                        date: Some("2015-12-22".to_owned()),
-                        disc: Some(1),
-                        position: Some(1),
-                        issued: Issued {
-                            kind: Some("Album".to_owned()),
-                            secondary: Vec::new(),
-                            status: Some("Official".to_owned()),
-                        },
-                    }],
-                }])
+                Ok(vec![heroes_tonight()])
             }
 
             fn release_group(&self, _: &Mbid) -> Result<Option<ReleaseGroup>> {
@@ -3650,6 +3617,36 @@ mod tests {
 
             fn lyrics(&self, _: &LyricsAsked) -> Result<Option<LyricText>> {
                 Ok(None)
+            }
+
+            fn song_linked(&self, _: &SongLink) -> Result<Option<LinkNames>> {
+                Ok(Some(LinkNames {
+                    isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
+                    length: None,
+                }))
+            }
+        }
+
+        fn heroes_tonight() -> RecordingMatch {
+            RecordingMatch {
+                recording: mbid(HEROES_TONIGHT),
+                score: 100,
+                title: "Heroes Tonight".to_owned(),
+                credit: janji(),
+                length: None,
+                isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
+                releases: vec![RecordingRelease {
+                    id: mbid(HEROES_TONIGHT_RELEASE),
+                    title: "Heroes Tonight".to_owned(),
+                    date: Some("2015-12-22".to_owned()),
+                    disc: Some(1),
+                    position: Some(1),
+                    issued: Issued {
+                        kind: Some("Album".to_owned()),
+                        secondary: Vec::new(),
+                        status: Some("Official".to_owned()),
+                    },
+                }],
             }
         }
 
@@ -3741,6 +3738,105 @@ mod tests {
             );
         }
 
+        #[gpui::test]
+        fn songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            for number in 0..40 {
+                let title = format!("Heroes {number}");
+                folder.tagged(
+                    &format!("{number:02}.wav"),
+                    1,
+                    &[(b"IART", "Janji"), (b"INAM", title.as_str())],
+                );
+            }
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: Option<&Path>| Providers::none()),
+            };
+            let mut driven = Driven::reaching(cx, library, &folder, reaching);
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|_, cx| {
+                search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+            });
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                library.listing().len() == 40 && !library.found().is_empty()
+            });
+            let found = driven.bounds_of("found-0");
+            let seen = driven.cx.update(|window, _| window.viewport_size());
+
+            assert!(
+                found.bottom() <= seen.height,
+                "the song found elsewhere was drawn below the window, at {found:?}"
+            );
+            assert_eq!(
+                driven.read(|root, cx| root.search_in_front(cx)),
+                Some(SearchShows::Top)
+            );
+
+            driven.click("search-songs");
+
+            assert_eq!(
+                driven.read(|root, cx| (root.pane, root.search_in_front(cx))),
+                (Pane::Tracks, Some(SearchShows::Songs))
+            );
+            assert!(driven.read(|root, cx| root.library.read(cx).rows().is_empty()));
+
+            driven.click("search-elsewhere");
+            driven.bounds_of("found-0");
+
+            driven.click("found-0");
+            driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+        }
+
+        #[gpui::test]
+        fn a_song_link_pasted_into_the_search_is_downloaded_and_searched_for(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: Option<&Path>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(
+                    "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=a1".to_owned(),
+                ));
+                search.update(cx, |search, cx| search.pastes(window, cx));
+            });
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert_eq!(
+                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                "Heroes Tonight Janji & Johnning",
+                "the box searches for the song rather than holding the link"
+            );
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).downloads().len()),
+                1
+            );
+            assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+            let wants = library.wants().expect("the wants read");
+            assert_eq!(wants.len(), 1);
+            assert_eq!(wants[0].title, "Heroes Tonight");
+        }
+
         fn searching(musicbrainz: &MusicBrainz, cx: &mut TestAppContext) -> Driven {
             let folder = Folder::new();
             let reaching = Reaching {
@@ -3823,12 +3919,7 @@ mod tests {
             let mut driven = searching(&musicbrainz, cx);
 
             typed(&mut driven, "heroes tonight");
-            driven.until(|root, cx| {
-                root.library
-                    .read(cx)
-                    .rows()
-                    .contains(&ListedRow::Beyond(Beyond::Unreached))
-            });
+            driven.until(|root, cx| root.library.read(cx).elsewhere() == Some(Beyond::Unreached));
             musicbrainz.refusing.store(false, Ordering::Relaxed);
             driven.click("ask-elsewhere-again");
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());
