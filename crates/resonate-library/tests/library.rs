@@ -18946,13 +18946,17 @@ fn echoes_found() -> RecordingMatch {
 #[test]
 fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+    let mut release = meddle_release();
+    release.has_front_cover = true;
+    let art = png_art(128);
     let fake = Fake::new(Canned {
         found_songs: vec![
             echoes_found(),
             recording_match(RECORDING, "Echoes"),
             recording_match(ANOTHER_RECORDING, "One of These Days"),
         ],
-        releases: vec![meddle_release()],
+        releases: vec![release],
+        covers: vec![(mbid(MEDDLE), art.clone())],
         ..Canned::default()
     });
 
@@ -18977,6 +18981,8 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     assert_eq!(wants[0].id, want);
     assert_eq!(wants[0].title, "Echoes");
     assert_eq!(wants[0].album_title, "Meddle");
+    assert_eq!(wants[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(library.cover_art(wants[0].album)?, Some(art));
     assert_eq!(
         library.missing_tracks(None, None)?.len(),
         1,

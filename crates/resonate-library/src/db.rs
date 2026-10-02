@@ -306,13 +306,14 @@ const ALBUM_DISCS: &str = "SELECT album_id, max(disc_number) FROM tracks
 const WANTS: &str = concat!(
     "SELECT w.id, w.release_track_id, rt.album_id, ",
     album_title!(),
-    ", rt.title, rt.artist,
+    ", rt.title, coalesce(rt.artist, ar.name),
             w.wanted, w.tried, w.offered,
             rt.recording_mbid, rt.track_mbid, a.mbid, rt.isrc, rt.length_ms, rt.disc, rt.position,
             rt.track_id
        FROM wants w
        JOIN release_tracks rt ON rt.id = w.release_track_id
        JOIN albums a ON a.id = rt.album_id
+       LEFT JOIN artists ar ON ar.id = a.artist_id
       ORDER BY w.wanted DESC, w.id DESC"
 );
 
@@ -2820,15 +2821,32 @@ impl Library {
             })?;
         let now = SystemTime::now();
 
-        self.inner.write(|transaction| {
+        let (want, album) = self.inner.write(|transaction| {
             let album = elsewhere::album_of_release(transaction, &landed, now)?;
             let row = elsewhere::release_track_of(transaction, album, &found.recording)?
                 .ok_or_else(|| Error::NotOnTheRelease {
                     recording: found.recording.clone(),
                     release: release.clone(),
                 })?;
-            elsewhere::want_in(transaction, row, now)
-        })
+            let want = elsewhere::want_in(transaction, row, now)?;
+            Ok((want, album))
+        })?;
+
+        if (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none() {
+            match reference.cover(&landed.id, landed.group.as_ref()) {
+                Ok(Some(art)) => {
+                    if let Err(error) = self.land_archive_cover(album, &art) {
+                        tracing::warn!(%error, %album, "a cover for a found song was dropped");
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, %album, "a cover for a found song did not arrive");
+                }
+            }
+        }
+
+        Ok(want)
     }
 
     pub fn unheld_releases(

@@ -2158,7 +2158,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   is read whole through `Reference::release`; an album already carrying that mbid is taken as it stands,
   otherwise a new one is made — billed to `store::artist_named`, stamped `albums.found_elsewhere` — and
   `land_release` writes its rows as the enrichment does, so the want is an ordinary `wants` row a
-  provider is asked for and a delivery lands on. A release the reference lacks is
+  provider is asked for and a delivery lands on. Its wanted artist is the track credit where present,
+  otherwise the landed release artist, so providers and the player retain the artist even when
+  MusicBrainz has no track-level credit. When the landed release advertises front art or belongs to a
+  release group and the album has no picture, `want_found` asks `Reference::cover` and saves the answer
+  on the album; failure to fetch or store art does not cancel the want. A release the reference lacks is
   `Error::UnknownRelease`, a recording with no release `Error::Unreleased`, and a release not carrying
   the recording `Error::NotOnTheRelease`. `store::ORPHANS` spares a trackless album only where it was
   found elsewhere and still wanted, so a scan keeps it while the want stands and removes it once it

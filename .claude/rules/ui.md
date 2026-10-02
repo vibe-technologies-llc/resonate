@@ -620,7 +620,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   that puts that text in the search field through `RootView::search_instead`, the field's own observer
   taking it from there — so the correction goes in the box, editable, rather than being run behind the
   listener's back. It draws `LibraryModel::instead`, which `browsed` fills only where the albums, the
-  artists, the tracks, the unheld rows and the sung matches all came back empty, so the offer cannot
+  artists, the tracks and the sung matches all came back empty, so the offer cannot
   contradict a pane listing something; where there is no spelling to offer but the words are sung
   somewhere, `nothing_matched` offers *Sung in N tracks* through `sung_offer` instead. `library.md` has
   how the spelling is found. All three panes ask through one method, all three emptying on the same
@@ -1809,25 +1809,24 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   has what a dismissal is. Empty, it is
   `kit::empty` under `Icon::Missing` saying nothing is missing, and where the build `can_enrich` a
   second sentence says where the answer would come from.
-- **A search lists what the library is short of after what it holds, greyed as an album's missing rows
-  are.** `LibraryModel::rows` is a `ListedRow` for every selection, not only an album: under *All
-  tracks* with a search it is the held rows followed by `ListedRow::Beyond(Beyond::InTheCatalog(n))` and
-  the `Unheld` rows `Library::unheld_matching` answered — release rows the catalog knows it lacks — then
-  `Beyond::Elsewhere(n)` and the `Found` rows MusicBrainz answered, or `Beyond::Asking` while it has
-  not. `beyond_the_listing` builds it and answers nothing until the listing is whole, so a paged listing
-  never draws later pages under the sections, and an empty `rows` still means one row per track, what
-  `played_from` and `listed_rows` read. Both kinds are `unheld_row` with a `Beside::ASearch` — a cover
-  column, the album cover faded to `UNHELD_COVER` or a dashed `Icon::Missing` frame where there is none;
-  a found song's column is its release's front, `Sleeve::Released`, which `LibraryModel::released_cover`
-  asks the reference for on the background executor while Online is on — `FETCHES_AT_ONCE` (2) at a
-  time, decoded on the `Drawer` and held under the release's id in `released_covers` for the run, a
-  release the archive holds nothing for held as nothing so it is not asked again — the matched runs lit,
+- **A search lists MusicBrainz results after what the library holds.** `LibraryModel::rows` is a
+  `ListedRow` for every selection, not only an album: under *All tracks* with a search it is the held
+  rows followed by `Beyond::Elsewhere(n)` and the `Found` rows MusicBrainz answered, or
+  `Beyond::Asking` while it has not. Local release tracks the library lacks stay in the Missing pane
+  and are not added to search results. `beyond_the_listing` builds the rows and answers nothing until
+  the listing is whole, so a paged listing never draws later pages under the section, and an empty
+  `rows` still means one row per track, what `played_from` and `listed_rows` read. A found song's
+  `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which
+  `LibraryModel::released_cover` asks the reference for on the background executor while Online is on —
+  `FETCHES_AT_ONCE` (2) at a time, decoded on the `Drawer` and held under the release's id in
+  `released_covers` for the run, a release the archive holds nothing for held as nothing so it is not
+  asked again — the matched runs lit,
   the release in the format column — and the want mark is `want_mark` over an `Asks`: a catalog row
   wants its `ReleaseTrackId` as ever; a found song calls `LibraryModel::want_found`, landing its release
   and wanting the row on the background executor, greying the mark meanwhile, then asking the providers
-  and MusicBrainz again, so the song moves up into the catalog's section wanted. **A found song's
-  whole row is that press**: `found_row` lays the row `unheld_row` draws under an id of its
-  recording with the pointer, a hover wash and `FETCH_FOUND_HINT`, so pressing anywhere on it wants
+  and MusicBrainz again, so the song leaves the remote results and appears among held tracks after
+  delivery. **A found song's whole row is that press**: `found_row` lays the row `unheld_row` draws
+  under an id of its recording with the pointer, a hover wash and `FETCH_FOUND_HINT`, so pressing anywhere on it wants
   the song and sends the providers for it, the mark's own press inside it finding the recording
   already `wanting` and doing nothing twice; while the want lands the row takes no press
   (`pressing_a_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it`, which opens the

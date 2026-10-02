@@ -53,7 +53,6 @@ const _: () = assert!(
     "a look-ahead past the page grows the window unasked"
 );
 const MISSING_AT_MOST: usize = 5_000;
-const UNHELD_MATCHED_AT_MOST: usize = 200;
 const PREVIEWED_AT_MOST: usize = 500;
 const FAVOURITES_AT_MOST: usize = 5_000;
 const MOST_LISTENED: usize = 10;
@@ -128,7 +127,6 @@ struct Browsed {
     favourite_tracks: Vec<Track>,
     standing: Option<Standing>,
     instead: Option<String>,
-    unheld: Vec<MissingTrack>,
     sung: Option<Sung>,
     albums_counted: u32,
     artists_counted: u32,
@@ -183,13 +181,11 @@ pub enum ListedRow {
     Held(usize),
     Missing(usize),
     Beyond(Beyond),
-    Unheld(usize),
     Found(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Beyond {
-    InTheCatalog(usize),
     Elsewhere(usize),
     Asking,
 }
@@ -595,7 +591,6 @@ pub struct LibraryModel {
     window: Window,
     scoped: Arc<[Track]>,
     rows: Arc<[ListedRow]>,
-    unheld: Arc<[MissingTrack]>,
     sung: Option<Sung>,
     found: Arc<[Found]>,
     found_for: Option<String>,
@@ -753,7 +748,6 @@ impl LibraryModel {
             window,
             scoped: Arc::default(),
             rows: Arc::default(),
-            unheld: Arc::default(),
             sung: None,
             found: Arc::default(),
             found_for: None,
@@ -1038,7 +1032,6 @@ impl LibraryModel {
             Selection::Everything => beyond_the_listing(Reaching {
                 held: listing.len(),
                 whole: listing.len() as u64 >= u64::from(self.tracks_measured.rows),
-                unheld: self.unheld.len(),
                 found: self.found_here().len(),
                 asking: self.is_asking_elsewhere(),
             })
@@ -1055,10 +1048,6 @@ impl LibraryModel {
 
     pub fn is_asking_elsewhere(&self) -> bool {
         !self.query.is_empty() && self.asking.as_deref() == Some(self.query.as_str())
-    }
-
-    pub fn unheld(&self) -> Arc<[MissingTrack]> {
-        Arc::clone(&self.unheld)
     }
 
     pub fn found(&self) -> Arc<[Found]> {
@@ -3013,7 +3002,6 @@ impl LibraryModel {
             self.suggestions = standing.suggestions;
             self.roots = standing.roots;
         }
-        renewed(&mut self.unheld, browsed.unheld);
         self.sung = browsed.sung;
         self.albums_counted = browsed.albums_counted;
         self.artists_counted = browsed.artists_counted;
@@ -4213,11 +4201,9 @@ impl Named {
 fn held_at(rows: &[ListedRow], row: usize) -> Option<usize> {
     match rows.get(row)? {
         ListedRow::Held(held) => Some(*held),
-        ListedRow::Disc(_)
-        | ListedRow::Missing(_)
-        | ListedRow::Beyond(_)
-        | ListedRow::Unheld(_)
-        | ListedRow::Found(_) => None,
+        ListedRow::Disc(_) | ListedRow::Missing(_) | ListedRow::Beyond(_) | ListedRow::Found(_) => {
+            None
+        }
     }
 }
 
@@ -4225,7 +4211,6 @@ fn held_at(rows: &[ListedRow], row: usize) -> Option<usize> {
 struct Reaching {
     held: usize,
     whole: bool,
-    unheld: usize,
     found: usize,
     asking: bool,
 }
@@ -4234,19 +4219,14 @@ fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
     let Reaching {
         held,
         whole,
-        unheld,
         found,
         asking,
     } = reaching;
-    if !whole || (unheld == 0 && found == 0 && !asking) {
+    if !whole || (found == 0 && !asking) {
         return Vec::new();
     }
 
     let mut listed: Vec<ListedRow> = (0..held).map(ListedRow::Held).collect();
-    if unheld > 0 {
-        listed.push(ListedRow::Beyond(Beyond::InTheCatalog(unheld)));
-        listed.extend((0..unheld).map(ListedRow::Unheld));
-    }
     if found > 0 {
         listed.push(ListedRow::Beyond(Beyond::Elsewhere(found)));
         listed.extend((0..found).map(ListedRow::Found));
@@ -4301,7 +4281,6 @@ fn held_in(rows: &[ListedRow]) -> Vec<usize> {
             ListedRow::Disc(_)
             | ListedRow::Missing(_)
             | ListedRow::Beyond(_)
-            | ListedRow::Unheld(_)
             | ListedRow::Found(_) => None,
         })
         .collect()
@@ -4802,10 +4781,6 @@ fn browsed(
     };
 
     let tracks_measured = library.measured(&asked.listing(None, None, None))?;
-    let unheld = match text {
-        Some(text) => library.unheld_matching(text, Some(UNHELD_MATCHED_AT_MOST))?,
-        None => Vec::new(),
-    };
     let sung = match text {
         Some(text) => library.sung(text)?,
         None => None,
@@ -4814,7 +4789,6 @@ fn browsed(
     let matched_nothing = paged.albums.is_empty()
         && paged.artists.is_empty()
         && paged.tracks.is_empty()
-        && unheld.is_empty()
         && sung.is_none();
 
     Ok(Browsed {
@@ -4836,7 +4810,6 @@ fn browsed(
             true => Some(standing(library, asked.window)?),
             false => None,
         },
-        unheld,
         sung,
         paged,
         release_tracks: match album {
@@ -5165,13 +5138,12 @@ mod tests {
     const SEARCHED: Reaching = Reaching {
         held: 2,
         whole: true,
-        unheld: 1,
         found: 2,
         asking: false,
     };
 
     #[test]
-    fn a_search_lists_what_the_catalog_lacks_and_what_was_found_elsewhere_after_what_it_holds() {
+    fn a_search_lists_musicbrainz_results_after_what_the_library_holds() {
         let rows = beyond_the_listing(SEARCHED);
 
         assert_eq!(
@@ -5179,8 +5151,6 @@ mod tests {
             vec![
                 ListedRow::Held(0),
                 ListedRow::Held(1),
-                ListedRow::Beyond(Beyond::InTheCatalog(1)),
-                ListedRow::Unheld(0),
                 ListedRow::Beyond(Beyond::Elsewhere(2)),
                 ListedRow::Found(0),
                 ListedRow::Found(1),
@@ -5202,7 +5172,6 @@ mod tests {
         );
         assert!(
             beyond_the_listing(Reaching {
-                unheld: 0,
                 found: 0,
                 ..SEARCHED
             })
@@ -5214,7 +5183,6 @@ mod tests {
     fn a_search_still_being_asked_elsewhere_says_so_under_what_the_catalog_answered() {
         let rows = beyond_the_listing(Reaching {
             held: 0,
-            unheld: 0,
             found: 0,
             asking: true,
             ..SEARCHED

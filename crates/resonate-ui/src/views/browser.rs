@@ -675,7 +675,6 @@ impl RootView {
         let in_an_album = matches!(self.library.read(cx).selection(), Selection::Album(_));
         let rowed = !rows.is_empty();
         let release_tracks = self.library.read(cx).release_tracks();
-        let unheld = self.library.read(cx).unheld();
         let found = self.library.read(cx).found();
         let shared_with_a_lookup = self.library.read(cx).is_enriching();
         let media: Arc<[HeldMedium]> = self
@@ -784,15 +783,6 @@ impl RootView {
                                         Some(ListedRow::Beyond(beyond)) => {
                                             drawn.push(
                                                 beyond_heading(beyond, shared_with_a_lookup)
-                                                    .into_any_element(),
-                                            );
-                                        }
-                                        Some(ListedRow::Unheld(at)) => {
-                                            let Some(row) = unheld.get(at) else {
-                                                continue;
-                                            };
-                                            drawn.push(
-                                                this.unheld_row(at, Unheld::searched_for(row), cx)
                                                     .into_any_element(),
                                             );
                                         }
@@ -1069,9 +1059,6 @@ impl RootView {
             .child(listing::number_cell(number))
             .when_some(beside.pictured(), |row, sleeve| {
                 row.child(match sleeve {
-                    Sleeve::Held(album) => self
-                        .cover(listing::Pictured::Album(*album), cx)
-                        .opacity(UNHELD_COVER),
                     Sleeve::Released(release) => {
                         let art = self.library.update(cx, |library, cx| {
                             library.released_cover(release, Drawn::InARow, cx)
@@ -2425,7 +2412,6 @@ pub(crate) enum Beside {
 }
 
 pub(crate) enum Sleeve {
-    Held(AlbumId),
     Released(Mbid),
     Unknown,
 }
@@ -2472,23 +2458,6 @@ impl Unheld {
     pub(crate) fn short_of(row: &MissingTrack) -> Self {
         Self {
             beside: Beside::ARun,
-            ..Self::from(row)
-        }
-    }
-
-    fn searched_for(row: &MissingTrack) -> Self {
-        Self {
-            number: SharedString::new_static(""),
-            artist: SharedString::from(
-                row.artist
-                    .clone()
-                    .or_else(|| row.owner.clone())
-                    .unwrap_or_default(),
-            ),
-            beside: Beside::ASearch {
-                pictured: Sleeve::Held(row.album),
-                on: SharedString::from(row.album_title.clone()),
-            },
             ..Self::from(row)
         }
     }
@@ -2542,10 +2511,6 @@ fn pressing_note(said: &str) -> Div {
 
 fn beyond_heading(beyond: Beyond, shared_with_a_lookup: bool) -> Div {
     let said = match beyond {
-        Beyond::InTheCatalog(rows) => format!(
-            "Not in the library · {}",
-            format::counted(rows, "track", "tracks")
-        ),
         Beyond::Elsewhere(rows) => format!(
             "Found on MusicBrainz · {}",
             format::counted(rows, "song", "songs")
@@ -3305,6 +3270,20 @@ mod tests {
             }]
         }
 
+        fn ncs_cover() -> CoverArt {
+            let mut bytes = Vec::new();
+            image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 40, 40, 255]))
+                .write_to(
+                    &mut std::io::Cursor::new(&mut bytes),
+                    image::ImageFormat::Png,
+                )
+                .expect("an image in memory");
+            CoverArt {
+                format: resonate_library::ImageFormat::Png,
+                bytes,
+            }
+        }
+
         struct MusicBrainz {
             source: SourceId,
         }
@@ -3327,7 +3306,7 @@ mod tests {
                     barcode: None,
                     kind: Some("Album".to_owned()),
                     disambiguation: None,
-                    has_front_cover: false,
+                    has_front_cover: true,
                     links: Vec::new(),
                     media: vec![Medium {
                         position: 1,
@@ -3412,7 +3391,7 @@ mod tests {
             }
 
             fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> Result<Option<CoverArt>> {
-                Ok(None)
+                Ok(Some(ncs_cover()))
             }
 
             fn portrait(&self, _: &[Link]) -> Result<Option<CoverArt>> {
@@ -3432,6 +3411,7 @@ mod tests {
         struct Asked {
             recording: Option<Mbid>,
             isrc: Option<Isrc>,
+            artist: Option<String>,
         }
 
         struct Shop {
@@ -3448,6 +3428,7 @@ mod tests {
                 self.asked.lock().push(Asked {
                     recording: identity.recording.clone(),
                     isrc: identity.isrc.clone(),
+                    artist: identity.artist.clone(),
                 });
                 Ok(Obtained::Nothing)
             }
@@ -3485,14 +3466,22 @@ mod tests {
             driven.click("found-0");
             driven.until(|_, _| !asked.lock().is_empty());
 
+            let wants = library.wants().expect("the wants read");
+            assert_eq!(wants.len(), 1);
+            assert_eq!(wants[0].artist.as_deref(), Some("Janji & Johnning"));
+            assert_eq!(
+                library.cover_art(wants[0].album).expect("the cover read"),
+                Some(ncs_cover())
+            );
+
             assert_eq!(
                 asked.lock().clone(),
                 vec![Asked {
                     recording: Some(mbid(HEROES_TONIGHT)),
                     isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
+                    artist: Some("Janji & Johnning".to_owned()),
                 }]
             );
-            assert_eq!(library.wants().expect("the wants read").len(), 1);
         }
     }
 }
