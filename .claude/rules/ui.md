@@ -1701,7 +1701,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   release row in one library transaction and starts one provider poll for the batch. `unheld_row`
   draws faint in the same eight cells, number, title, artist and length off an `Unheld` — built `From` a
   `HeldReleaseTrack` here and `From` a `MissingTrack` in the Missing pane, one row serving both — and in
-  `controls_place`, a held row's controls' width, one mark: `Icon::Want` sending `LibraryModel::want` or
+  `controls_place_of`, the width of the held row's controls beside it — `TRACK_CONTROLS`, `TRACK_ADD_CONTROLS` while songs are being added, so a missing row's cells line up with the held rows' and the header's; the Missing pane's `ROW_CONTROLS` — one mark: `Icon::Want` sending `LibraryModel::want` or
   `Icon::Wanted` sending `unwant`, both through `edit` like a playlist gesture — `want` through
   `edited_then`, asking the providers once the want is written — with `Loaded::wanted` mapping each
   `ReleaseTrackId` to its `WantId` so the mark knows which it is. **A want says how it is going where

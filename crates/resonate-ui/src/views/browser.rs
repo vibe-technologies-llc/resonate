@@ -1098,6 +1098,11 @@ impl RootView {
             }
             _ => None,
         };
+        let controls = match (&beside, self.adding_songs_to.is_some()) {
+            (Beside::ARun, _) => ROW_CONTROLS,
+            (_, true) => TRACK_ADD_CONTROLS,
+            (_, false) => TRACK_CONTROLS,
+        };
         let mark = self.want_mark(asks, cx);
         let fitted = self.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
@@ -1193,7 +1198,7 @@ impl RootView {
             )
             .child(listing::length_cell(length).text_color(rgb(theme::faint())))
             .child(
-                controls_place()
+                controls_place_of(controls)
                     .gap_1()
                     .when_some(dismissed, |controls, release_track| {
                         controls.child(
@@ -2837,12 +2842,16 @@ impl From<&MissingTrack> for Unheld {
 }
 
 pub(crate) fn controls_place() -> Div {
+    controls_place_of(ROW_CONTROLS)
+}
+
+fn controls_place_of(controls: usize) -> Div {
     div()
         .flex()
         .flex_none()
         .items_center()
         .justify_end()
-        .w(px(controls_width(ROW_CONTROLS)))
+        .w(px(controls_width(controls)))
 }
 
 pub(crate) fn portrait_frame(art: Picture, side: f32) -> Div {
