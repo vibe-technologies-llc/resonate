@@ -99,6 +99,8 @@ const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the 
 const WANT_ALBUM_HINT: &str = "Download this album: it is added to the catalog and the providers \
                                are asked for every song on it, the sidebar following how it goes";
 
+const GET_ALBUM_REST_HINT: &str = "Ask the providers for every missing track on this album";
+
 const NOT_HELD_HEADING: &str = "Not in your library";
 
 const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
@@ -1058,7 +1060,12 @@ impl RootView {
         )
     }
 
-    pub(crate) fn unheld_row(&self, index: usize, unheld: Unheld, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn unheld_row(
+        &self,
+        index: usize,
+        unheld: Unheld,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let Unheld {
             asks,
             number,
@@ -1067,9 +1074,23 @@ impl RootView {
             length,
             beside,
         } = unheld;
+        let download = match (&beside, &asks) {
+            (Beside::AnAlbum, Asks::Row(release_track))
+                if self.library.read(cx).wanted(*release_track).is_none() =>
+            {
+                Some(*release_track)
+            }
+            _ => None,
+        };
         let dismissed = match (&beside, &asks) {
             (Beside::ARun, Asks::Row(release_track)) => Some(*release_track),
             _ => None,
+        };
+        let id = match &asks {
+            Asks::Row(release_track) => {
+                ElementId::NamedInteger("unheld-row".into(), release_track.get())
+            }
+            Asks::Found(found) => listing::keyed_by("found", &found.recording),
         };
         let mark = self.want_mark(asks, cx);
         let fitted = self.columns_fit.shown();
@@ -1086,7 +1107,7 @@ impl RootView {
         };
         let artist = listing::matched(artist, lit_artist);
 
-        row(false)
+        let row = row(false)
             .child(listing::number_cell(number))
             .when_some(beside.pictured(), |row, sleeve| {
                 row.child(match sleeve {
@@ -1165,6 +1186,7 @@ impl RootView {
                             )
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
+                                    cx.stop_propagation();
                                     this.library.update(cx, |library, cx| {
                                         library.dismiss_missing(release_track, cx);
                                     });
@@ -1173,7 +1195,17 @@ impl RootView {
                         )
                     })
                     .child(mark),
-            )
+            );
+
+        row.id(id).when_some(download, |row, release_track| {
+            row.cursor_pointer()
+                .hover(|row| row.bg(rgb(theme::hover())))
+                .names(WANT_HINT)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.want(release_track, cx));
+                }))
+        })
     }
 
     pub(crate) fn found_row(
@@ -1185,7 +1217,6 @@ impl RootView {
         let fetching = self.library.read(cx).fetching_found(found);
         let row = self
             .unheld_row(index, Unheld::found(found, fetching), cx)
-            .id(listing::keyed_by("found", &found.recording))
             .debug_selector(move || format!("found-{index}"));
         let hint = match fetching {
             None => FETCH_FOUND_HINT,
@@ -1217,12 +1248,14 @@ impl RootView {
                 Some(want) => {
                     kit::icon_button(("unwant", release_track.get()), Icon::Wanted, UNWANT_HINT)
                         .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
                             this.library
                                 .update(cx, |library, cx| library.unwant(want, cx));
                         }))
                 }
                 None => kit::icon_button(("want", release_track.get()), Icon::Want, WANT_HINT)
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
                         this.library
                             .update(cx, |library, cx| library.want(release_track, cx));
                     })),
@@ -1249,6 +1282,7 @@ impl RootView {
                     WANT_FOUND_HINT,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
                     let wanted = Found::clone(&found);
                     this.library
                         .update(cx, |library, cx| library.want_found(wanted, cx));
@@ -1579,6 +1613,7 @@ impl RootView {
         let findable = library.can_enrich() && !library.release().is_some_and(is_matched);
         let record = record.map(drop).or(findable.then_some(()));
         let favourite = library.favoured_album(id);
+        let has_missing_tracks = album.is_some_and(|album| album.missing > 0);
 
         let cover = self
             .cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
@@ -1641,6 +1676,24 @@ impl RootView {
             .child(kit::subtitle(under))
             .child(
                 self.page_actions(Favoured::Album(id), favourite, true, true, cx)
+                    .when(has_missing_tracks, |row| {
+                        row.child(
+                            kit::button(
+                                "download-album-missing",
+                                Some(Icon::Download),
+                                "Get the rest",
+                                GET_ALBUM_REST_HINT,
+                                Tone::Ghost,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    this.library.update(cx, |library, cx| {
+                                        library.want_missing_tracks(id, cx)
+                                    });
+                                },
+                            )),
+                        )
+                    })
                     .when_some(record, |row, _| {
                         row.child(
                             kit::icon_button("album-record", Icon::Info, RECORD_HINT).on_click(
@@ -2690,7 +2743,7 @@ fn pressing_note(said: &str) -> Div {
 
 pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
     match fetching {
-        Fetching::Downloading => theme::accent(),
+        Fetching::Downloading { .. } => theme::accent(),
         Fetching::Downloaded => theme::done(),
         Fetching::GaveUp | Fetching::NoProvider | Fetching::Unwanted => theme::failure(),
         Fetching::Landing | Fetching::Queued | Fetching::Retrying { .. } => theme::muted(),

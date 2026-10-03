@@ -289,6 +289,7 @@ impl Driven {
                 file_dropped: true,
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
+                mouse_navigation: true,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
                 tabs: Tabs::AS_BUILT,

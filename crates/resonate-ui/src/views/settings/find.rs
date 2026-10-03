@@ -35,7 +35,8 @@ impl Category {
             Self::Desktop => "What this player tells the rest of the session about itself",
             Self::Appearance => {
                 "The palette the window is painted in, how large it is drawn, what its titlebar \
-                 carries and what the wheel does over the volume"
+                 carries, what the wheel does over the volume and whether mouse side buttons \
+                 navigate"
             }
             Self::About => "What this build is, where it keeps things, and how to put it back",
         }
@@ -111,6 +112,7 @@ pub(crate) enum Group {
     Layout,
     WindowButtons,
     VolumeWheel,
+    MouseNavigation,
     Scrollbars,
     Tabs,
     WindowState,
@@ -120,7 +122,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 54] = [
+    pub(crate) const ALL: [Self; 55] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -169,6 +171,7 @@ impl Group {
         Self::Layout,
         Self::WindowButtons,
         Self::VolumeWheel,
+        Self::MouseNavigation,
         Self::Scrollbars,
         Self::Tabs,
         Self::WindowState,
@@ -225,6 +228,7 @@ impl Group {
             | Self::Layout
             | Self::WindowButtons
             | Self::VolumeWheel
+            | Self::MouseNavigation
             | Self::Scrollbars
             | Self::Tabs
             | Self::WindowState => Category::Appearance,
@@ -286,6 +290,7 @@ impl Group {
             Self::Layout => "Layout",
             Self::WindowButtons => "Window buttons",
             Self::VolumeWheel => "The volume wheel",
+            Self::MouseNavigation => "Mouse navigation",
             Self::Scrollbars => "Scrollbars",
             Self::Tabs => "Sidebar tabs",
             Self::WindowState => "Window state",
@@ -345,6 +350,7 @@ impl Group {
             Self::Layout => LAYOUT_HINT,
             Self::WindowButtons => WINDOW_BUTTONS_HINT,
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
+            Self::MouseNavigation => MOUSE_NAVIGATION_HINT,
             Self::Scrollbars => SCROLLBARS_HINT,
             Self::Tabs => TABS_HINT,
             Self::WindowState => WINDOW_STATE_HINT,
@@ -477,6 +483,9 @@ impl Group {
                                      controls hide"
             }
             Self::VolumeWheel => "scroll mouse wheel touchpad volume slider louder quieter",
+            Self::MouseNavigation => {
+                "mouse side buttons back forward browser history navigate previous next"
+            }
             Self::Scrollbars => {
                 "scroll bar thumb track overlay lists panes drag hide auto-hide automatic hidden \
                  always never while scrolling fade mode"
@@ -558,6 +567,7 @@ impl Group {
             Self::Layout => &[SettingKey::TextSize],
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
+            Self::MouseNavigation => &[SettingKey::MouseNavigation],
             Self::Scrollbars => &[SettingKey::Scrollbars],
             Self::Tabs => &[
                 SettingKey::SuggestionsTab,
@@ -1004,6 +1014,9 @@ pub(crate) const WINDOW_BUTTONS_HINT: &str = "Whether the titlebar this window d
 pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the volume slider \
      moves the volume, a notch at a time. Off, the slider answers only to a press or a drag and \
      the keys.";
+
+pub(crate) const MOUSE_NAVIGATION_HINT: &str = "Whether the mouse side buttons move back and \
+     forward through album and artist pages opened in this window.";
 
 pub(crate) const SCROLLBARS_HINT: &str = "When the lists and panes that scroll draw a bar \
      down their edge that shows where the view stands and can be dragged: always, only while \

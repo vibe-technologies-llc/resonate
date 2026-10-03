@@ -430,6 +430,7 @@ impl RootView {
             Group::Layout => self.layout_group(cx),
             Group::WindowButtons => self.window_buttons_group(cx),
             Group::VolumeWheel => self.volume_wheel_group(cx),
+            Group::MouseNavigation => self.mouse_navigation_group(cx),
             Group::Scrollbars => self.scrollbars_group(cx),
             Group::Tabs => self.tabs_group(cx),
             Group::WindowState => self.window_state_group(cx),
@@ -560,6 +561,9 @@ impl RootView {
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
+            Group::MouseNavigation => {
+                self.navigate_with_mouse_buttons(defaults::MOUSE_NAVIGATION, cx);
+            }
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
             Group::WindowState => self.put_window_state_back(cx),
@@ -586,6 +590,7 @@ impl RootView {
         let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
+        let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let tabs = cx.global::<ResonateApp>().tabs;
         let remember_tab = cx.global::<ResonateApp>().remember_tab;
@@ -634,6 +639,7 @@ impl RootView {
             notify,
             window_buttons,
             scroll_volume,
+            mouse_navigation,
             scrollbars,
             tabs,
             remember_tab,

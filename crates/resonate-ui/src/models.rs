@@ -613,6 +613,7 @@ pub struct LibraryModel {
     songs_not_held: Arc<[Found]>,
     albums_not_held: Arc<[AlbumNotHeld]>,
     albums_wanted: AHashMap<Mbid, Task<()>>,
+    albums_missing_tracks_wanted: AHashSet<AlbumId>,
     album_songs: AHashMap<Mbid, Vec<Mbid>>,
     shown: Arc<[Found]>,
     asking: Option<String>,
@@ -790,6 +791,7 @@ impl LibraryModel {
             songs_not_held: Arc::default(),
             albums_not_held: Arc::default(),
             albums_wanted: AHashMap::new(),
+            albums_missing_tracks_wanted: AHashSet::new(),
             album_songs: AHashMap::new(),
             shown: Arc::default(),
             asking: None,
@@ -1436,6 +1438,38 @@ impl LibraryModel {
         cx.notify();
     }
 
+    pub fn want_missing_tracks(&mut self, album: AlbumId, cx: &mut Context<Self>) {
+        if !self.albums_missing_tracks_wanted.insert(album) {
+            return;
+        }
+
+        let library = Arc::clone(&self.library);
+        let wanting = cx.spawn(async move |this, cx| {
+            let wanted = cx
+                .background_executor()
+                .spawn(async move { library.want_missing_tracks(album) })
+                .await;
+
+            let landed = this.update(cx, |this, cx| {
+                this.albums_missing_tracks_wanted.remove(&album);
+                match wanted {
+                    Ok(wanted) if !wanted.is_empty() => {
+                        this.fetch_what_was_wanted(PollOptions::default(), cx);
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::error!(%error, %album, "the missing tracks of an album could not be wanted");
+                        toast::tell(toast::could_not("download the missing tracks", &error), cx);
+                    }
+                }
+                this.read(Wanted::Everything, cx);
+            });
+            let _ = landed;
+        });
+        wanting.detach();
+        cx.notify();
+    }
+
     pub fn fetching_album(&self, group: &Mbid) -> Option<Fetching> {
         if self.albums_wanted.contains_key(group) {
             return Some(Fetching::Landing);
@@ -1451,7 +1485,7 @@ impl LibraryModel {
         let underway = fetching.iter().copied().filter(|each| each.is_underway());
         underway
             .clone()
-            .find(|each| *each == Fetching::Downloading)
+            .find(|each| matches!(each, Fetching::Downloading { .. }))
             .or_else(|| underway.clone().next())
             .or_else(|| {
                 fetching

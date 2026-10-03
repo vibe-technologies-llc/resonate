@@ -11,7 +11,7 @@ use crate::format;
 pub enum Fetching {
     Landing,
     Queued,
-    Downloading,
+    Downloading { attempt: u32 },
     Downloaded,
     Retrying { tries: u32, at: SystemTime },
     GaveUp,
@@ -23,7 +23,7 @@ impl Fetching {
     pub const fn is_underway(self) -> bool {
         matches!(
             self,
-            Self::Landing | Self::Queued | Self::Downloading | Self::Retrying { .. }
+            Self::Landing | Self::Queued | Self::Downloading { .. } | Self::Retrying { .. }
         )
     }
 
@@ -37,15 +37,19 @@ impl Fetching {
     pub fn saying(self) -> SharedString {
         match self {
             Self::Landing => SharedString::new_static("Adding to the catalog…"),
-            Self::Queued => SharedString::new_static("Queued"),
-            Self::Downloading => SharedString::new_static("Downloading…"),
+            Self::Queued => {
+                SharedString::from(format!("Queued · attempt 1 of {TRIES_BEFORE_GIVING_UP}"))
+            }
+            Self::Downloading { attempt } => SharedString::from(format!(
+                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking providers…"
+            )),
             Self::Downloaded => SharedString::new_static("Downloaded"),
             Self::Retrying { tries, at } => SharedString::from(format!(
-                "Try {tries} of {TRIES_BEFORE_GIVING_UP} found nothing · again at {}",
+                "No match on attempt {tries} of {TRIES_BEFORE_GIVING_UP} · trying again at {}",
                 format::time_of_day(at)
             )),
             Self::GaveUp => {
-                SharedString::from(format!("Gave up after {TRIES_BEFORE_GIVING_UP} tries"))
+                SharedString::from(format!("No match after {TRIES_BEFORE_GIVING_UP} attempts"))
             }
             Self::NoProvider => SharedString::new_static("No provider is set up"),
             Self::Unwanted => SharedString::new_static("Couldn't add it"),
@@ -100,10 +104,13 @@ pub struct Download {
 impl Download {
     pub fn fetching_while(&self, asking: Option<WantId>) -> Fetching {
         match self.fetching {
-            Fetching::Queued | Fetching::Retrying { .. }
-                if asking.is_some() && asking == self.want =>
-            {
-                Fetching::Downloading
+            Fetching::Queued if asking.is_some() && asking == self.want => {
+                Fetching::Downloading { attempt: 1 }
+            }
+            Fetching::Retrying { tries, .. } if asking.is_some() && asking == self.want => {
+                Fetching::Downloading {
+                    attempt: tries.saturating_add(1),
+                }
             }
             held => held,
         }
@@ -259,7 +266,7 @@ mod tests {
         assert_eq!(fetching(&downloads, Some(want(8))), vec![Fetching::Queued]);
         assert_eq!(
             fetching(&downloads, Some(want(7))),
-            vec![Fetching::Downloading]
+            vec![Fetching::Downloading { attempt: 1 }]
         );
     }
 
@@ -304,7 +311,7 @@ mod tests {
         );
         assert_eq!(
             fetching(&unanswered, Some(want(2))),
-            vec![Fetching::Downloading],
+            vec![Fetching::Downloading { attempt: 2 }],
             "a retry the poll is asking for is downloading"
         );
         assert_eq!(fetching(&tried_before, None), vec![Fetching::Queued]);

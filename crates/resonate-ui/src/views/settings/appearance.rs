@@ -23,6 +23,7 @@ const MINIMISE_ID: &str = "show-the-minimise-button";
 const MAXIMISE_ID: &str = "show-the-maximise-button";
 
 const VOLUME_WHEEL_ID: &str = "wheel-the-volume";
+const MOUSE_NAVIGATION_ID: &str = "mouse-navigation";
 const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
 
 const MISSING_TAB_ID: &str = "show-the-missing-tab";
@@ -285,6 +286,25 @@ impl RootView {
         ))
     }
 
+    pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let enabled = cx.global::<ResonateApp>().mouse_navigation;
+
+        kit::section_body().child(self.in_the_ring(
+            MOUSE_NAVIGATION_ID,
+            switch_row(
+                "Use the mouse back and forward buttons",
+                "Move through the album and artist pages opened in this window",
+                enabled,
+                MOUSE_NAVIGATION_ID,
+            ),
+            move |this, _, cx| {
+                this.navigate_with_mouse_buttons(!enabled, cx);
+                this.store(&Setting::MouseNavigation(!enabled), cx);
+            },
+            cx,
+        ))
+    }
+
     pub(super) fn tabs_group(&mut self, cx: &mut Context<Self>) -> Div {
         let shown = cx.global::<ResonateApp>().tabs;
         let flip_suggestions = Tabs {
@@ -360,6 +380,11 @@ impl RootView {
 
     pub(crate) fn wheel_the_volume(&self, wheeled: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.scroll_volume = wheeled);
+        cx.notify();
+    }
+
+    pub(crate) fn navigate_with_mouse_buttons(&self, enabled: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.mouse_navigation = enabled);
         cx.notify();
     }
 

@@ -1693,8 +1693,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   what is drawn**: a row's click and Enter go through `LibraryModel::played_from`, queueing the `Held`
   rows in `rows` order, and *Play*, *Play next*, *Add to queue* and *Add to playlist* put the whole
   listing they read through `AsDrawn::ordered`, the same arrangement over the same release rows — so the
-  row under the pointer starts and what follows is the rows under it on screen. `unheld_row` draws faint
-  in the same eight cells, number, title, artist and length off an `Unheld` — built `From` a
+  row under the pointer starts and what follows is the rows under it on screen. **A missing row on an
+  album page is a download press.** `Beside::AnAlbum` makes an unheld release row clickable when it
+  has no want, with the title, artist or length click asking `LibraryModel::want`; marks and dismissal
+  controls stop propagation so they keep their own action. When the album heading counts any missing
+  tracks, *Get the rest* calls `LibraryModel::want_missing_tracks`, which wants every unresolved
+  release row in one library transaction and starts one provider poll for the batch. `unheld_row`
+  draws faint in the same eight cells, number, title, artist and length off an `Unheld` — built `From` a
   `HeldReleaseTrack` here and `From` a `MissingTrack` in the Missing pane, one row serving both — and in
   `controls_place`, a held row's controls' width, one mark: `Icon::Want` sending `LibraryModel::want` or
   `Icon::Wanted` sending `unwant`, both through `edit` like a playlist gesture — `want` through
@@ -1773,7 +1778,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   Pressing
   one is `LibraryModel::want_album`, which runs `Library::want_album` on the background executor, hands
   every song wanted to `Downloads` as a found song pressed would be and sends the providers for them;
-  `fetching_album` reads the album's songs back out of `Downloads` — *Downloading…* where any is,
+  `fetching_album` reads the album's songs back out of `Downloads` — the active attempt where any is,
   otherwise the first still underway, otherwise the first not downloaded — and the caption says it in
   `fetching_colour` while the cell takes no press. An album landed with nothing on disk yet stays in the
   grid, so it does not vanish the moment it is pressed. *Tracks* follows the held rows with
@@ -1839,14 +1844,18 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   reads a queued download as `Downloading` while `PollProgress::asking` names its want, and
   `Downloads::followed` reads each shelves load's `WantStanding`s — a want delivered (`held` or
   `offered`) is `Downloaded`, one tried since it was queued with nothing offered
-  `Retrying { tries, at }` — *Try 2 of 6 found nothing · again at 14:32*, the clock time
+  `Retrying { tries, at }` — *No match on attempt 2 of 6 · trying again at 14:32*, the clock time
   (`format::time_of_day`, the listener's zone) rather than a countdown so an idle window does not
-  draw a stale one — and one the catalog gave up on `GaveUp`, *Gave up after 6 tries*. A retry is
-  `Downloading` while the poll asks for it, as a queued one is, and counts as underway. A want the
+  draw a stale one — and one the catalog gave up on `GaveUp`, *No match after 6 attempts*. A queued
+  download says *Queued · attempt 1 of 6*; while the poll asks, `Downloading { attempt }` says
+  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries. Both count
+  as underway. A want the
   load does not hold is left as it stood, a stale load being no evidence it went. The sidebar draws
   `RootView::download_status` above the enrichment line while the list holds anything — the
-  `Icon::Download` in the accent and *Downloading…* while anything `is_underway`, *Downloads* in
-  `faint` once all is finished — and a press opens `downloads_over_the_app`, a panel floating
+  `Icon::Download` in the accent while anything is underway; the label shows the active attempt
+  number while the poll asks, *Queued* or *Retrying* while it waits, *Adding to the catalog…* while the
+  release lands and *Downloads* in `faint` once all is finished — and a press opens
+  `downloads_over_the_app`, a panel floating
   `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
   `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
   room for one song and a half: each song's title, its state in `browser::fetching_colour` (accent
@@ -2311,7 +2320,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   pane, the selection, the row the list was left on and the place's name, in a bounded `WAYS_BACK` stack,
   and every scoping gesture goes through `RootView::opened`. The name is read by `RootView::here` as the
   scope is left — the album's title, the artist's name or the pane's label — because by the time the way
-  back is drawn the library has moved to the new scope. The way back is `kit::way_back` at the page's top
+  back is drawn the library has moved to the new scope. `goes_forward` keeps the bounded forward stack;
+  going back saves the current page there, going forward saves it back to `came_from`, and opening a new
+  scope or `show_everything` clears the forward stack. When Appearance's *Mouse navigation* is on
+  (`mouse-navigation`, default true), the root handles the mouse's back and forward buttons through
+  these same stacks. The way back is `kit::way_back` at the page's top
   left, a chevron and that name — *‹ Tracks*, *‹ Hypnotize* — and where nothing was left behind it reads
   the category the page stands under and goes there, clearing the scope. It replaced a ghost *Show all*
   among the right-hand actions, which cleared the scope rather than returning and was the one control not

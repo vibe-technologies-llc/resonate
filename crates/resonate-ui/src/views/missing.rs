@@ -187,10 +187,13 @@ impl RootView {
                                         Some(MissingRow::Album(first)) => {
                                             tracks.get(first).map(|track| {
                                                 this.album_heading(first, track, &tracks, cx)
+                                                    .id(("missing-row", index))
                                             })
                                         }
                                         Some(MissingRow::Disc(first)) => {
-                                            tracks.get(first).map(|track| disc_heading(track.disc))
+                                            tracks.get(first).map(|track| {
+                                                disc_heading(track.disc).id(("missing-row", index))
+                                            })
                                         }
                                         Some(MissingRow::Track(track)) => {
                                             tracks.get(track).map(|row| {
@@ -200,11 +203,15 @@ impl RootView {
                                         Some(MissingRow::Artist(first)) => {
                                             releases.get(first).map(|release| {
                                                 this.artist_heading(first, release, &releases, cx)
+                                                    .id(("missing-row", index))
                                             })
                                         }
-                                        Some(MissingRow::Release(release)) => releases
-                                            .get(release)
-                                            .map(|held| this.release_row(release, held, cx)),
+                                        Some(MissingRow::Release(release)) => {
+                                            releases.get(release).map(|held| {
+                                                this.release_row(release, held, cx)
+                                                    .id(("missing-row", index))
+                                            })
+                                        }
                                         None => None,
                                     };
                                     if let Some(listed) = listed {
@@ -475,7 +482,7 @@ fn run_band(
         .child(controls_place())
 }
 
-fn in_a_card(listed: Div, place: Place) -> Div {
+fn in_a_card(listed: Stateful<Div>, place: Place) -> Div {
     let slice = div()
         .flex()
         .flex_1()

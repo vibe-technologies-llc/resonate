@@ -2207,7 +2207,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   first where the pass never reached it, through the one `want_from_release` `want_found` uses too: the
   release read and landed once, each recording's row wanted, the cover asked once
   (`an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off`,
-  `an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted`). `still_answering`
+  `an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted`). For an album already
+  in the catalog, `Library::want_missing_tracks` selects release rows without a held track and calls
+  `want_in` for them in disc and position order under one write transaction and one timestamp; an
+  existing want is due again just as when asked individually. The UI starts one provider poll after
+  the batch lands. `still_answering`
   narrows songs found for one search to those every folded word of
   another begins a word of — title, credit or a release's title — what the window shows while it asks
   (`songs_found_for_fewer_words_are_narrowed_to_those_still_answering_more`). `Library::want_found` is the want: the

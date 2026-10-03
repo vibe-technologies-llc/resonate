@@ -54,6 +54,7 @@ pub enum ConfigKey {
     MinimiseButton,
     MaximiseButton,
     ScrollVolume,
+    MouseNavigation,
     Scrollbars,
     SuggestionsTab,
     MissingTab,
@@ -89,7 +90,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 76] = [
+    pub const ALL: [Self; 77] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -134,6 +135,7 @@ impl ConfigKey {
         Self::MinimiseButton,
         Self::MaximiseButton,
         Self::ScrollVolume,
+        Self::MouseNavigation,
         Self::Scrollbars,
         Self::SuggestionsTab,
         Self::MissingTab,
@@ -214,6 +216,7 @@ impl ConfigKey {
             Self::MinimiseButton => "minimise-button",
             Self::MaximiseButton => "maximise-button",
             Self::ScrollVolume => "scroll-volume",
+            Self::MouseNavigation => "mouse-navigation",
             Self::Scrollbars => "scrollbars",
             Self::SuggestionsTab => "suggestions-tab",
             Self::MissingTab => "missing-tab",

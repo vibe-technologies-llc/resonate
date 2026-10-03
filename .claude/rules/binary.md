@@ -199,16 +199,17 @@ or a `window-size` from another build no longer fails every command — `sleep o
 included — while a file that is not TOML still does
 (`a_value_that_will_not_read_is_left_at_its_default_and_the_rest_are_read`). The tests' `read`
 collects the refusals, so each reader's refusal is still asserted. Nine of
-the seventy-six have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
+the seventy-seven have a flag — `sink`, `library`, `vault`, `quality`, `filter-phase`, `dither`,
 `noise-shaping`, `bit-perfect` (as `--bit-perfect` and `--no-bit-perfect`) and `volume` (as
-`play --volume`, a percent); the other sixty-seven are set only by the settings pane and the file:
+`play --volume`, a percent); the other sixty-eight are set only by the settings pane and the file:
 
 - the output's `true-peak`, `restore-lossy`, `replay-gain`, `replay-gain-pre-amp`,
   `replay-gain-untagged`, `dop`, `dsd-like-pcm`, `force-graph-rate`, `bluetooth-wake`,
   `bluetooth-lead-ms`, `bluetooth-awake-s`, `device-volume` and `buffer-ms`;
 - the window's `theme`, `accent`, `text-size`, `minimise-button`, `maximise-button`,
-  `scroll-volume`, `scrollbars`, `suggestions-tab`, `missing-tab`, `tab-counts`, `remember-tab`,
-  `last-tab`, `remember-window-size`, `window-size`, `remember-settings-category` and
+  `scroll-volume`, `mouse-navigation`, `scrollbars`, `suggestions-tab`, `missing-tab`,
+  `tab-counts`, `remember-tab`, `last-tab`, `remember-window-size`, `window-size`,
+  `remember-settings-category` and
   `last-settings-category`, which no headless subcommand uses;
 - the standing decisions: `online`, `enrich-after-scan`, `study`, `fetch-lyrics`,
   `identify-by-sound`, `contact`, `acoustid-key`, `equaliser`, `equaliser-for`,
@@ -267,6 +268,9 @@ What some of them mean:
   is never one of them.
 - `scroll-volume` (default true) rides on `Stored` onto `ResonateApp::scroll_volume`, written by
   Appearance's *The volume wheel*; while on, a wheel over the volume slider moves it a notch (5 %).
+- `mouse-navigation` (default true) rides on `Stored` onto `ResonateApp::mouse_navigation`, written
+  by Appearance's *Mouse navigation*; while on, the mouse side buttons move backward and forward
+  through the album and artist pages opened in the window.
 - `scrollbars` is a `resonate_core::ScrollbarMode` — `shown` (default), `auto-hide` or `hidden` —
   riding onto `ResonateApp::scrollbars`, written by Appearance's *Scrollbars*; hidden, no pane draws
   a bar and every region still scrolls. A file from when the key was a switch still reads, `true`

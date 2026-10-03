@@ -3608,6 +3608,30 @@ impl Library {
             .write(|transaction| elsewhere::want_in(transaction, release_track, SystemTime::now()))
     }
 
+    pub fn want_missing_tracks(&self, album: AlbumId) -> Result<Vec<(ReleaseTrackId, WantId)>> {
+        self.inner.write(|transaction| {
+            let release_tracks = rows(
+                transaction,
+                "SELECT id FROM release_tracks
+                  WHERE album_id = ?1 AND track_id IS NULL
+                  ORDER BY disc, position",
+                vec![Value::Integer(album.get() as i64)],
+                |row| {
+                    row.get::<_, i64>(0)
+                        .map(|id| ReleaseTrackId::new(id as u64).map_err(Error::from))
+                },
+            )?;
+            let now = SystemTime::now();
+            release_tracks
+                .into_iter()
+                .map(|release_track| {
+                    elsewhere::want_in(transaction, release_track, now)
+                        .map(|want| (release_track, want))
+                })
+                .collect()
+        })
+    }
+
     pub fn unwant(&self, id: WantId) -> Result<bool> {
         self.inner.write(|transaction| {
             transaction

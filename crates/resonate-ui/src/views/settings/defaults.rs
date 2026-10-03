@@ -20,6 +20,7 @@ pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
 pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
+pub(crate) const MOUSE_NAVIGATION: bool = true;
 
 pub(crate) const FILE_DROPPED: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::Shown;
@@ -50,6 +51,7 @@ pub(crate) struct Standing {
     pub(crate) notify: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
+    pub(crate) mouse_navigation: bool,
     pub(crate) scrollbars: ScrollbarMode,
     pub(crate) tabs: Tabs,
     pub(crate) remember_tab: bool,
@@ -88,6 +90,7 @@ impl Standing {
             notify: NOTIFY,
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
+            mouse_navigation: MOUSE_NAVIGATION,
             scrollbars: SCROLLBARS,
             tabs: TABS,
             remember_tab: REMEMBER_TAB,
@@ -171,6 +174,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Layout => standing.appearance.text_size != Appearance::DEFAULT.text_size,
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
+        Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
         Group::Tabs => standing.tabs != TABS,
         Group::WindowState => {
@@ -239,6 +243,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Layout
         | Group::WindowButtons
         | Group::VolumeWheel
+        | Group::MouseNavigation
         | Group::Scrollbars
         | Group::Tabs
         | Group::WindowState

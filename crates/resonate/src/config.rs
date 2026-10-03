@@ -141,6 +141,7 @@ pub struct Config {
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
+    pub mouse_navigation: Option<bool>,
     pub scrollbars: Option<ScrollbarMode>,
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
@@ -287,6 +288,11 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn scrolls_the_volume(&self) -> bool {
         self.scroll_volume.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn navigates_with_mouse_buttons(&self) -> bool {
+        self.mouse_navigation.unwrap_or(true)
     }
 
     #[cfg(feature = "ui")]
@@ -552,6 +558,9 @@ impl Config {
             ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
+            ConfigKey::MouseNavigation => {
+                config.mouse_navigation = Some(at.boolean(value)?);
+            }
             ConfigKey::Scrollbars => {
                 config.scrollbars = Some(match value.as_bool() {
                     Some(drawn) => ScrollbarMode::of_a_switch(drawn),

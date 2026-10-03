@@ -10,9 +10,9 @@ use ahash::{AHashMap, AHashSet, AHasher};
 use gpui::{
     AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId, Entity,
     ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseExitEvent, MouseMoveEvent, ObjectFit, Pixels, Point, Render, ScrollHandle, ScrollStrategy,
-    SharedString, Stateful, Task, UniformListScrollHandle, Window, canvas, div, hsla, img, point,
-    prelude::*, px, rgb, rgba,
+    MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point, Render,
+    ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle, Window,
+    canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume};
 use resonate_engine::{
@@ -20,7 +20,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, TokenHeld, Track, is_a_song_link,
+    SortOrder, TRIES_BEFORE_GIVING_UP, TokenHeld, Track, is_a_song_link,
 };
 
 use crate::{
@@ -562,6 +562,7 @@ pub struct RootView {
     pub(crate) picker_rows: UniformListScrollHandle,
     pub(crate) shelf_scrolls: RefCell<AHashMap<&'static str, ScrollHandle>>,
     came_from: Vec<Wayback>,
+    goes_forward: Vec<Wayback>,
     pub(crate) artist_shows: ArtistShows,
     pub(crate) search_shows: SearchShows,
     pub(crate) following_a_link: Task<()>,
@@ -1008,6 +1009,7 @@ impl RootView {
             picker_rows: UniformListScrollHandle::default(),
             shelf_scrolls: RefCell::new(AHashMap::new()),
             came_from: Vec::new(),
+            goes_forward: Vec::new(),
             artist_shows: ArtistShows::default(),
             search_shows: SearchShows::default(),
             following_a_link: Task::ready(()),
@@ -2557,19 +2559,12 @@ impl RootView {
     }
 
     pub(crate) fn opened(&mut self, selection: Selection, cx: &mut Context<Self>) {
-        let leaving = Wayback {
-            pane: self.pane,
-            selection: self.library.read(cx).selection(),
-            at: self.top_row(),
-            named: self.here(cx),
-        };
+        let leaving = self.here_now(cx);
         if leaving.selection == selection && leaving.pane == Pane::Tracks {
             return;
         }
-        if self.came_from.len() == WAYS_BACK {
-            self.came_from.remove(0);
-        }
-        self.came_from.push(leaving);
+        Self::keep_wayback(&mut self.came_from, leaving);
+        self.goes_forward.clear();
 
         if matches!(selection, Selection::Artist(_)) {
             self.artist_shows = ArtistShows::default();
@@ -2601,6 +2596,35 @@ impl RootView {
         )
     }
 
+    fn here_now(&self, cx: &App) -> Wayback {
+        Wayback {
+            pane: self.pane,
+            selection: self.library.read(cx).selection(),
+            at: self.top_row(),
+            named: self.here(cx),
+        }
+    }
+
+    fn keep_wayback(history: &mut Vec<Wayback>, wayback: Wayback) {
+        if history.len() == WAYS_BACK {
+            history.remove(0);
+        }
+        history.push(wayback);
+    }
+
+    fn restore_wayback(&mut self, wayback: Wayback, cx: &mut Context<Self>) {
+        let Wayback {
+            pane,
+            selection,
+            at,
+            named: _,
+        } = wayback;
+        self.library
+            .update(cx, |library, cx| library.select(selection, cx));
+        self.set_pane(pane, cx);
+        self.landing_on = pane.lands_where_it_was_left().then_some(at);
+    }
+
     pub(crate) fn way_back_to(&self) -> Option<SharedString> {
         self.came_from.last().map(|back| back.named.clone())
     }
@@ -2622,10 +2646,18 @@ impl RootView {
         let Some(back) = self.came_from.pop() else {
             return;
         };
-        self.library
-            .update(cx, |library, cx| library.select(back.selection, cx));
-        self.set_pane(back.pane, cx);
-        self.landing_on = back.pane.lands_where_it_was_left().then_some(back.at);
+        let current = self.here_now(cx);
+        Self::keep_wayback(&mut self.goes_forward, current);
+        self.restore_wayback(back, cx);
+    }
+
+    pub(crate) fn go_forward(&mut self, cx: &mut Context<Self>) {
+        let Some(forward) = self.goes_forward.pop() else {
+            return;
+        };
+        let current = self.here_now(cx);
+        Self::keep_wayback(&mut self.came_from, current);
+        self.restore_wayback(forward, cx);
     }
 
     pub(crate) fn land_where_it_was_left(&mut self, held: usize) {
@@ -3111,6 +3143,7 @@ impl RootView {
     pub(crate) fn show_everything(&mut self, cx: &mut Context<Self>) {
         pointed::forget();
         self.came_from.clear();
+        self.goes_forward.clear();
         if self.library.read(cx).selection() == Selection::Everything {
             return;
         }
@@ -3588,12 +3621,38 @@ impl RootView {
     }
 
     fn download_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let underway = self.library.read(cx).is_downloading();
+        let library = self.library.read(cx);
+        let fetching: Vec<Fetching> = library
+            .downloads()
+            .iter()
+            .map(|download| library.fetching(download))
+            .collect();
+        let underway = fetching.iter().copied().any(Fetching::is_underway);
+        let active = fetching.iter().find_map(|each| match each {
+            Fetching::Downloading { attempt } => Some(*attempt),
+            _ => None,
+        });
+        let queued = fetching.iter().any(|each| matches!(each, Fetching::Queued));
+        let retrying = fetching.iter().find_map(|each| match each {
+            Fetching::Retrying { tries, .. } => Some(*tries),
+            _ => None,
+        });
+        let landing = fetching
+            .iter()
+            .any(|each| matches!(each, Fetching::Landing));
         let open = self.downloads_open;
-        let said = if underway {
-            "Downloading…"
+        let said = if let Some(attempt) = active {
+            SharedString::from(format!("Attempt {attempt} of {TRIES_BEFORE_GIVING_UP}"))
+        } else if queued {
+            SharedString::from(format!("Queued · attempt 1 of {TRIES_BEFORE_GIVING_UP}"))
+        } else if let Some(tries) = retrying {
+            SharedString::from(format!("Retrying · {tries} of {TRIES_BEFORE_GIVING_UP}"))
+        } else if landing {
+            SharedString::new_static("Adding to the catalog…")
+        } else if underway {
+            SharedString::new_static("Preparing downloads…")
         } else {
-            "Downloads"
+            SharedString::new_static("Downloads")
         };
         let mark = if underway {
             theme::accent()
@@ -4193,6 +4252,7 @@ impl Render for RootView {
         self.player
             .read(cx)
             .listen_in(self.pane == Pane::Visualiser);
+        let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let grain = self.grain(window, cx);
         self.player.update(cx, |player, _| player.draw_at(grain));
 
@@ -4207,6 +4267,16 @@ impl Render for RootView {
             .font_family(theme::ui_face())
             .text_size(px(theme::text_base()))
             .text_color(rgb(theme::text()))
+            .when(mouse_navigation, |app| {
+                app.on_mouse_down(
+                    MouseButton::Navigate(NavigationDirection::Back),
+                    cx.listener(|this, _: &MouseDownEvent, _, cx| this.go_back(cx)),
+                )
+                .on_mouse_down(
+                    MouseButton::Navigate(NavigationDirection::Forward),
+                    cx.listener(|this, _: &MouseDownEvent, _, cx| this.go_forward(cx)),
+                )
+            })
             .on_action(cx.listener(|this, _: &TogglePlayPause, _, cx| {
                 this.send(Command::TogglePlayPause, cx);
             }))

@@ -185,6 +185,7 @@ pub enum SettingKey {
     MinimiseButton,
     MaximiseButton,
     ScrollVolume,
+    MouseNavigation,
     Scrollbars,
     SuggestionsTab,
     MissingTab,
@@ -215,7 +216,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 74] = [
+    pub const ALL: [Self; 75] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -263,6 +264,7 @@ impl SettingKey {
         Self::MinimiseButton,
         Self::MaximiseButton,
         Self::ScrollVolume,
+        Self::MouseNavigation,
         Self::Scrollbars,
         Self::SuggestionsTab,
         Self::MissingTab,
@@ -345,6 +347,7 @@ pub enum Setting {
     MinimiseButton(bool),
     MaximiseButton(bool),
     ScrollVolume(bool),
+    MouseNavigation(bool),
     Scrollbars(ScrollbarMode),
     SuggestionsTab(bool),
     MissingTab(bool),
@@ -424,6 +427,7 @@ impl Setting {
             Self::MinimiseButton(_) => SettingKey::MinimiseButton,
             Self::MaximiseButton(_) => SettingKey::MaximiseButton,
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
+            Self::MouseNavigation(_) => SettingKey::MouseNavigation,
             Self::Scrollbars(_) => SettingKey::Scrollbars,
             Self::SuggestionsTab(_) => SettingKey::SuggestionsTab,
             Self::MissingTab(_) => SettingKey::MissingTab,
@@ -603,6 +607,7 @@ pub struct Stored {
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
+    pub mouse_navigation: bool,
     pub scrollbars: ScrollbarMode,
     pub tabs: Tabs,
     pub remember_tab: bool,
