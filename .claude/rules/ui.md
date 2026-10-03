@@ -1704,7 +1704,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `controls_place`, a held row's controls' width, one mark: `Icon::Want` sending `LibraryModel::want` or
   `Icon::Wanted` sending `unwant`, both through `edit` like a playlist gesture — `want` through
   `edited_then`, asking the providers once the want is written — with `Loaded::wanted` mapping each
-  `ReleaseTrackId` to its `WantId` so the mark knows which it is. Neither the grid's caption nor the
+  `ReleaseTrackId` to its `WantId` so the mark knows which it is. **A want says how it is going where
+  it was pressed**: `LibraryModel` keeps each want's `WantStanding` from the shelves and `fetching_want`
+  reads it as a `Fetching` — *Queued*, *Downloading* while the poll asks for that want, *Retrying*,
+  *Gave up*, *Downloaded* — and the row's format cell says it in `fetching_colour`, so a filled heart is
+  never the only answer. `want` and `want_missing_tracks` start the poll through
+  `fetch_or_say_nobody_can`, which toasts *No provider is set up* where `has_a_source` is false, as a
+  found song's caption does. Neither the grid's caption nor the
   scoped heading counts what an album is short of any more: the Missing pane, the inline `unheld_row`s,
   the sidebar figure and the artist heading's *N releases not held* each say it once where it is the
   subject, not on every cell. The pressing is not drawn there. An info mark at the end of the row under
@@ -1930,7 +1936,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which
   `LibraryModel::released_cover` asks the reference for on the background executor while Online is on —
   `FETCHES_AT_ONCE` (2) at a time, decoded on the `Drawer` and held under the release's id in
-  `released_covers` for the run, a release the archive holds nothing for held as nothing so it is not
+  `released_covers` (`RELEASED_COVERS_HELD`, 512 — more than a discography draws, or the grid evicts what it is still asking for) for the run, a release the archive holds nothing for held as nothing so it is not
   asked again — the matched runs lit,
   the release in the format column — and the want mark is `want_mark` over an `Asks`: a catalog row
   wants its `ReleaseTrackId` as ever; a found song calls `LibraryModel::want_found`, landing its release

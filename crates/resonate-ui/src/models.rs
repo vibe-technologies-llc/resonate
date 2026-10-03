@@ -64,7 +64,7 @@ const NAMES_HELD: NonZeroUsize = held(4_096);
 const ALBUMS_HELD: NonZeroUsize = held(256);
 const PORTRAITS_HELD: NonZeroUsize = held(256);
 const DECODES_AT_ONCE: usize = 4;
-const RELEASED_COVERS_HELD: NonZeroUsize = held(64);
+const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
 const FETCHES_AT_ONCE: usize = 2;
 
@@ -105,6 +105,7 @@ fn read_further(read: usize) -> String {
 }
 
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
+const NO_PROVIDER: &str = "No provider is set up to download it";
 
 pub(crate) const fn side(pixels: u32) -> NonZeroU32 {
     match NonZeroU32::new(pixels) {
@@ -631,6 +632,7 @@ pub struct LibraryModel {
     artist_totals: ArtistTotals,
     album: Option<Album>,
     wanted: AHashMap<ReleaseTrackId, WantId>,
+    standings: AHashMap<WantId, WantStanding>,
     missing_tracks: Arc<[MissingTrack]>,
     unheld_releases: Arc<[UnheldRelease]>,
     missing: Missing,
@@ -809,6 +811,7 @@ impl LibraryModel {
             artist_totals: ArtistTotals::default(),
             album: None,
             wanted: AHashMap::new(),
+            standings: AHashMap::new(),
             missing_tracks: Arc::default(),
             unheld_releases: Arc::default(),
             missing: Missing::default(),
@@ -1453,9 +1456,7 @@ impl LibraryModel {
             let landed = this.update(cx, |this, cx| {
                 this.albums_missing_tracks_wanted.remove(&album);
                 match wanted {
-                    Ok(wanted) if !wanted.is_empty() => {
-                        this.fetch_what_was_wanted(PollOptions::default(), cx);
-                    }
+                    Ok(wanted) if !wanted.is_empty() => this.fetch_or_say_nobody_can(cx),
                     Ok(_) => {}
                     Err(error) => {
                         tracing::error!(%error, %album, "the missing tracks of an album could not be wanted");
@@ -1639,6 +1640,20 @@ impl LibraryModel {
         self.wanted.get(&release_track).copied()
     }
 
+    pub fn fetching_want(&self, release_track: ReleaseTrackId) -> Option<Fetching> {
+        let want = self.wanted(release_track)?;
+        let fetching = self.standings.get(&want)?.fetching();
+        let asked = self.asking_for() == Some(want);
+
+        Some(match fetching {
+            Fetching::Queued if asked => Fetching::Downloading { attempt: 1 },
+            Fetching::Retrying { tries, .. } if asked => Fetching::Downloading {
+                attempt: tries.saturating_add(1),
+            },
+            other => other,
+        })
+    }
+
     pub fn missing_track_rows(&self) -> Arc<[MissingRow]> {
         Arc::clone(&self.missing_track_rows)
     }
@@ -1670,7 +1685,7 @@ impl LibraryModel {
             move |library| library.want(release_track).map(|_| None),
             |this, edited, cx| {
                 if edited == Edited::Landed {
-                    this.fetch_what_was_wanted(PollOptions::default(), cx);
+                    this.fetch_or_say_nobody_can(cx);
                 }
             },
             cx,
@@ -3386,6 +3401,7 @@ impl LibraryModel {
         self.wanted = shelves.wanted;
         self.next_try = shelves.next_try;
         self.downloads.followed(&shelves.standings);
+        self.standings = shelves.standings;
         if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
             self.missing_track_rows = missing_track_rows(
                 self.missing_tracks
@@ -4081,6 +4097,14 @@ impl LibraryModel {
 
     pub fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_as(Prompted::ByHand, cx);
+    }
+
+    fn fetch_or_say_nobody_can(&mut self, cx: &mut Context<Self>) {
+        if self.sourcing.providers().has_a_source() {
+            self.fetch_what_was_wanted(PollOptions::default(), cx);
+        } else {
+            toast::tell(Notice::Trouble(NO_PROVIDER.to_owned()), cx);
+        }
     }
 
     fn fetch_what_was_wanted(&mut self, options: PollOptions, cx: &mut Context<Self>) {

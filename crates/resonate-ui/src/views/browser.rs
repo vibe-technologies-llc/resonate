@@ -1092,6 +1092,12 @@ impl RootView {
             }
             Asks::Found(found) => listing::keyed_by("found", &found.recording),
         };
+        let fetching = match (&beside, &asks) {
+            (Beside::AnAlbum, Asks::Row(release_track)) => {
+                self.library.read(cx).fetching_want(*release_track)
+            }
+            _ => None,
+        };
         let mark = self.want_mark(asks, cx);
         let fitted = self.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
@@ -1142,7 +1148,19 @@ impl RootView {
             )
             .when_some(
                 match beside {
-                    Beside::AnAlbum => Some(listing::format_cell(None)),
+                    Beside::AnAlbum => Some(listing::format_cell(None).when_some(
+                        fetching,
+                        |cell, fetching| {
+                            cell.child(
+                                div()
+                                    .text_size(px(theme::text_sm()))
+                                    .text_color(rgb(fetching_colour(fetching)))
+                                    .truncate()
+                                    .ends_in_an_ellipsis()
+                                    .child(fetching.saying()),
+                            )
+                        },
+                    )),
                     Beside::ARun => None,
                     Beside::ASearch {
                         on, fetching: None, ..

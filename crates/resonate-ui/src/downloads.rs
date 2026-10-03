@@ -77,6 +77,21 @@ impl WantStanding {
         }
     }
 
+    pub(crate) fn fetching(self) -> Fetching {
+        if self.delivered {
+            Fetching::Downloaded
+        } else if self.gave_up {
+            Fetching::GaveUp
+        } else if self.misses > 0 {
+            Fetching::Retrying {
+                tries: self.misses,
+                at: self.due_at.or(self.tried).unwrap_or(SystemTime::UNIX_EPOCH),
+            }
+        } else {
+            Fetching::Queued
+        }
+    }
+
     fn fetching_since(self, queued: SystemTime) -> Option<Fetching> {
         if self.delivered {
             return Some(Fetching::Downloaded);
