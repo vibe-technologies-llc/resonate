@@ -22,15 +22,15 @@ use resonate_library::{
     ArtistTotals, CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing,
     Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
     GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
-    ImportSummary, Imported, Kept, Layout, Library, Listen, LookupOp, Mbid, Meant, Measured,
-    Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
-    OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions,
-    PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch, Reference,
-    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
-    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
-    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
-    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording, folded_letters,
-    songs_asked, still_answering, weighed_for,
+    ImportSummary, Imported, Issued, Kept, Layout, Library, Listen, LookupOp, Mbid, Meant,
+    Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
+    OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
+    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
+    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
+    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -1455,15 +1455,12 @@ impl LibraryModel {
 
             let landed = this.update(cx, |this, cx| {
                 this.albums_missing_tracks_wanted.remove(&album);
-                match wanted {
-                    Ok(wanted) if !wanted.is_empty() => this.fetch_or_say_nobody_can(cx),
-                    Ok(_) => {}
-                    Err(error) => {
-                        tracing::error!(%error, %album, "the missing tracks of an album could not be wanted");
-                        toast::tell(toast::could_not("download the missing tracks", &error), cx);
-                    }
-                }
-                this.read(Wanted::Everything, cx);
+                this.wants_landed(
+                    wanted,
+                    "download the missing tracks",
+                    Wanted::Everything,
+                    cx,
+                );
             });
             let _ = landed;
         });
@@ -1679,17 +1676,97 @@ impl LibraryModel {
     }
 
     pub fn want(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
-        self.edited_then(
-            Wanted::ThePlaylists,
-            Change::Want,
-            move |library| library.want(release_track).map(|_| None),
-            |this, edited, cx| {
-                if edited == Edited::Landed {
-                    this.fetch_or_say_nobody_can(cx);
-                }
-            },
-            cx,
-        );
+        let library = Arc::clone(&self.library);
+        let wanting = cx.spawn(async move |this, cx| {
+            let wanted = cx
+                .background_executor()
+                .spawn(async move { library.want_release_tracks(&[release_track]) })
+                .await;
+
+            let landed = this.update(cx, |this, cx| {
+                this.wants_landed(wanted, Change::Want.doing(), Wanted::ThePlaylists, cx);
+            });
+            let _ = landed;
+        });
+        wanting.detach();
+        cx.notify();
+    }
+
+    fn wants_landed(
+        &mut self,
+        wanted: resonate_library::Result<Vec<(ReleaseTrackId, WantId)>>,
+        doing: &str,
+        reread: Wanted,
+        cx: &mut Context<Self>,
+    ) {
+        match wanted {
+            Ok(wanted) if !wanted.is_empty() => {
+                self.list_as_downloads(&wanted);
+                self.fetch_or_say_nobody_can(cx);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::error!(%error, "release tracks could not be wanted");
+                toast::tell(toast::could_not(doing, &error), cx);
+            }
+        }
+        self.read(reread, cx);
+    }
+
+    fn list_as_downloads(&mut self, wanted: &[(ReleaseTrackId, WantId)]) {
+        let fetched_by = if self.sourcing.providers().has_a_source() {
+            Fetcher::AProvider
+        } else {
+            Fetcher::Nobody
+        };
+        let now = SystemTime::now();
+        let owner = self
+            .album
+            .as_ref()
+            .and_then(|album| album.artist.clone())
+            .unwrap_or_default();
+        let album_title = self
+            .album
+            .as_ref()
+            .map(|album| album.title.clone())
+            .unwrap_or_default();
+        let pressing = self.release.as_ref();
+
+        for (release_track, want) in wanted {
+            let Some(row) = self
+                .release_tracks
+                .iter()
+                .find(|row| row.id == *release_track)
+            else {
+                continue;
+            };
+            let Some(recording) = row.recording.clone() else {
+                continue;
+            };
+            let release = pressing.and_then(|pressing| {
+                Some(RecordingRelease {
+                    id: pressing.mbid.clone()?,
+                    title: album_title.clone(),
+                    date: pressing.date.clone(),
+                    disc: Some(row.disc),
+                    position: Some(row.position),
+                    issued: Issued {
+                        kind: pressing.kind.clone(),
+                        ..Issued::default()
+                    },
+                })
+            });
+            let found = Found {
+                recording: recording.clone(),
+                title: row.title.clone(),
+                artist: row.artist.clone().unwrap_or_else(|| owner.clone()),
+                length: row.length,
+                release,
+                releases: Vec::new(),
+            };
+            self.downloads.landing(found, now);
+            self.downloads.wanted(&recording, *want, fetched_by);
+        }
     }
 
     pub fn unwant(&mut self, want: WantId, cx: &mut Context<Self>) {

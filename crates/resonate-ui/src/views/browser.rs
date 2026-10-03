@@ -3532,11 +3532,11 @@ mod tests {
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
-            ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, GroupAsked, GroupMatch,
-            Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
-            Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
-            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked,
-            StreamAsked, Track, TrackQuery,
+            ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, EnrichOptions,
+            Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames, LookupOp,
+            LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
+            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3544,6 +3544,7 @@ mod tests {
             Beyond,
             downloads::Fetching,
             driven::{Driven, Folder, Reaching},
+            models::Selection,
             toast,
             views::{
                 root::{Deleting, Pane},
@@ -3636,8 +3637,19 @@ mod tests {
                 }))
             }
 
-            fn find_release(&self, _: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
-                Ok(Vec::new())
+            fn find_release(&self, asked: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
+                Ok((asked.title == "Heroes Tonight")
+                    .then(|| ReleaseMatch {
+                        release: mbid(HEROES_TONIGHT_RELEASE),
+                        group: None,
+                        score: 100,
+                        title: "Heroes Tonight".to_owned(),
+                        credit: janji(),
+                        track_count: Some(1),
+                        date: Some("2015-12-22".to_owned()),
+                    })
+                    .into_iter()
+                    .collect())
             }
 
             fn recording(&self, id: &Mbid) -> Result<Option<Recording>> {
@@ -3935,6 +3947,77 @@ mod tests {
 
             driven.click("found-0");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+        }
+
+        #[gpui::test]
+        fn a_missing_song_pressed_on_an_album_is_listed_among_the_downloads(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tagged(
+                "other.wav",
+                1,
+                &[
+                    (b"IART", "Janji & Johnning"),
+                    (b"INAM", "Another Song"),
+                    (b"IPRD", "Heroes Tonight"),
+                ],
+            );
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: Option<&Path>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            library
+                .enrich(
+                    Arc::new(MusicBrainz::new()),
+                    Arc::new(Fingerprinters::none()),
+                    EnrichOptions::default(),
+                )
+                .expect("the enrichment starts")
+                .join()
+                .expect("the enrichment finishes");
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let missing = library
+                .missing_tracks(None, None)
+                .expect("the missing tracks read")
+                .remove(0);
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| {
+                    library.select(Selection::Album(missing.album), cx);
+                });
+            });
+            driven.until(|root, cx| !root.library.read(cx).release_tracks().is_empty());
+
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.want(missing.release_track, cx));
+            });
+            driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            let listed = driven.read(|root, cx| {
+                root.library
+                    .read(cx)
+                    .downloads()
+                    .iter()
+                    .map(|download| (download.found.title.clone(), download.found.artist.clone()))
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(
+                listed,
+                [("Heroes Tonight".to_owned(), "Janji & Johnning".to_owned())]
+            );
+            assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
         }
 
         #[gpui::test]

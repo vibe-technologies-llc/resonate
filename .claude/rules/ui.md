@@ -1708,7 +1708,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   it was pressed**: `LibraryModel` keeps each want's `WantStanding` from the shelves and `fetching_want`
   reads it as a `Fetching` — *Queued*, *Downloading* while the poll asks for that want, *Retrying*,
   *Gave up*, *Downloaded* — and the row's format cell says it in `fetching_colour`, so a filled heart is
-  never the only answer. `want` and `want_missing_tracks` start the poll through
+  never the only answer. `want` and `want_missing_tracks` also list each row they want, one with a recording, in `Downloads` as a `Found` built off the album page's release rows (`list_as_downloads`), so the sidebar and the downloads panel show it with the attempts as a found song's are shown; both start the poll through
   `fetch_or_say_nobody_can`, which toasts *No provider is set up* where `has_a_source` is false, as a
   found song's caption does. Neither the grid's caption nor the
   scoped heading counts what an album is short of any more: the Missing pane, the inline `unheld_row`s,

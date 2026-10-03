@@ -3608,6 +3608,22 @@ impl Library {
             .write(|transaction| elsewhere::want_in(transaction, release_track, SystemTime::now()))
     }
 
+    pub fn want_release_tracks(
+        &self,
+        release_tracks: &[ReleaseTrackId],
+    ) -> Result<Vec<(ReleaseTrackId, WantId)>> {
+        self.inner.write(|transaction| {
+            let now = SystemTime::now();
+            release_tracks
+                .iter()
+                .map(|release_track| {
+                    elsewhere::want_in(transaction, *release_track, now)
+                        .map(|want| (*release_track, want))
+                })
+                .collect()
+        })
+    }
+
     pub fn want_missing_tracks(&self, album: AlbumId) -> Result<Vec<(ReleaseTrackId, WantId)>> {
         self.inner.write(|transaction| {
             let release_tracks = rows(
