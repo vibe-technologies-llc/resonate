@@ -178,6 +178,11 @@ const MIGRATIONS: &[&str] = &[
          refusals      INTEGER NOT NULL
      ) STRICT, WITHOUT ROWID;",
     "ALTER TABLE wants ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;",
+    "CREATE TABLE unheld_covers (
+         release_group TEXT PRIMARY KEY,
+         cover         BLOB,
+         asked         INTEGER NOT NULL
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

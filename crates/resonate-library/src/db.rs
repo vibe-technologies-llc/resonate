@@ -400,6 +400,23 @@ const SONGS_DUE: &str = concat!(
       LIMIT ?3"
 );
 
+const UNHELD_COVERS_DUE: &str = concat!(
+    "SELECT r.mbid,
+            (SELECT s.release_mbid FROM discography_songs s WHERE s.release_group = r.mbid LIMIT 1)
+       FROM artist_releases r
+      WHERE ",
+    unheld_by_any_album!(),
+    "
+        AND NOT EXISTS (SELECT 1 FROM unheld_covers c
+                         WHERE c.release_group = r.mbid
+                           AND (c.cover IS NOT NULL OR c.asked > ?1))
+      GROUP BY r.mbid
+      ORDER BY max((SELECT coalesce(sum(t.plays), 0) FROM tracks t
+                     WHERE t.artist_id = r.artist_id)) DESC,
+               min(r.first_released IS NULL), min(r.first_released)
+      LIMIT ?2"
+);
+
 const SONG_HELD_NOWHERE: &str = concat!(
     "NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = s.recording_mbid)
      AND NOT EXISTS (SELECT 1 FROM release_tracks rt WHERE rt.recording_mbid = s.recording_mbid)
@@ -3147,6 +3164,56 @@ impl Library {
                     .map(|mbid| Mbid::new(&mbid).map_err(Error::from))
             })
         })
+    }
+
+    pub(crate) fn unheld_covers_due(
+        &self,
+        now: SystemTime,
+        at_most: Option<usize>,
+    ) -> Result<Vec<UnheldCoverDue>> {
+        let asked_before = now
+            .checked_sub(enriched::COVERS_ASKED_AGAIN_AFTER)
+            .unwrap_or(UNIX_EPOCH);
+        let binds = vec![
+            Value::Integer(store::to_nanos(asked_before)),
+            Value::Integer(limit(at_most)),
+        ];
+
+        self.inner.read(|connection| {
+            rows(connection, UNHELD_COVERS_DUE, binds, |row| {
+                let group: String = row.get(0)?;
+                let pressing: Option<String> = row.get(1)?;
+                Ok(Mbid::new(&group).map_err(Error::from).and_then(|group| {
+                    Ok(UnheldCoverDue {
+                        group,
+                        pressing: pressing.as_deref().map(Mbid::new).transpose()?,
+                    })
+                }))
+            })
+        })
+    }
+
+    pub(crate) fn land_unheld_cover(&self, group: &Mbid, art: Option<&CoverArt>) -> Result<()> {
+        self.inner.write(|transaction| {
+            enriched::land_unheld_cover(transaction, group, art, SystemTime::now())
+        })
+    }
+
+    pub fn unheld_cover(&self, group: &Mbid) -> Result<Option<CoverArt>> {
+        let stored = self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT cover FROM unheld_covers WHERE release_group = ?1",
+                    params![group.as_str()],
+                    |row| row.get::<_, Option<Vec<u8>>>(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
+
+        Ok(stored
+            .flatten()
+            .and_then(|bytes| ImageFormat::sniff(&bytes).map(|format| CoverArt { format, bytes })))
     }
 
     pub(crate) fn land_songs_of(
@@ -6229,6 +6296,11 @@ impl RawWant {
             release_links,
         })
     }
+}
+
+pub(crate) struct UnheldCoverDue {
+    pub(crate) group: Mbid,
+    pub(crate) pressing: Option<Mbid>,
 }
 
 fn held_cover(id: AlbumId, bytes: Vec<u8>, code: Option<i64>) -> Result<CoverArt> {

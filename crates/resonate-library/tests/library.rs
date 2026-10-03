@@ -10821,6 +10821,35 @@ fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Resul
 }
 
 #[test]
+fn the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_again() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let mut canned = learnt_canned();
+    canned.covers.push((mbid(HOURS), png_art(8)));
+    canned.group_covers.push((mbid(SCORE_GROUP), png_art(16)));
+    let fake = Arc::new(Fake::new(canned));
+
+    enrich(&library, &fake, false)?;
+
+    assert_eq!(
+        library.unheld_cover(&mbid(HOURS_GROUP))?,
+        Some(png_art(8)),
+        "the pressing the songs were read off was not the sleeve kept"
+    );
+    assert_eq!(
+        library.unheld_cover(&mbid(SCORE_GROUP))?,
+        Some(png_art(16)),
+        "a group with no pressing read was not asked for its own cover"
+    );
+    assert_eq!(library.unheld_cover(&mbid(SINGLE_GROUP))?, None);
+
+    let again = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &again, false)?;
+
+    assert_eq!(again.called(LookupOp::Cover), 0);
+    Ok(())
+}
+
+#[test]
 fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));

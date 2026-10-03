@@ -19,7 +19,7 @@ const UNCOVERED: &str = "albums.cover_art IS NULL AND albums.cover_path IS NULL"
 
 const WAITS_DOUBLE_AT_MOST: u32 = 5;
 
-const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub(crate) const COVERS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 const PORTRAITS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
@@ -794,6 +794,26 @@ pub(crate) fn land_archive_cover(
     )
     .map(|changed| changed > 0)
     .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+pub(crate) fn land_unheld_cover(
+    tx: &Transaction<'_>,
+    group: &Mbid,
+    art: Option<&CoverArt>,
+    at: SystemTime,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO unheld_covers (release_group, cover, asked) VALUES (?1, ?2, ?3)
+         ON CONFLICT(release_group)
+         DO UPDATE SET cover = coalesce(excluded.cover, cover), asked = excluded.asked",
+        params![
+            group.as_str(),
+            art.map(|art| art.bytes.as_slice()),
+            store::to_nanos(at)
+        ],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Insert, source))
 }
 
 pub(crate) fn covered_by_a_thumbnail(

@@ -508,6 +508,10 @@ enum Picture {
         album: AlbumId,
         group: Mbid,
     },
+    OfAnUnheldRelease {
+        group: Mbid,
+        pressing: Option<Mbid>,
+    },
     Portrait {
         artist: ArtistId,
         links: Vec<Link>,
@@ -590,8 +594,38 @@ fn fetch(
         Picture::OfTheGroup { album, group } => {
             land_cover(library, progress, album, reference.group_cover(&group));
         }
+        Picture::OfAnUnheldRelease { group, pressing } => {
+            let found = match &pressing {
+                Some(pressing) => reference.cover(pressing, Some(&group)),
+                None => reference.group_cover(&group),
+            };
+            land_unheld_cover(library, progress, &group, found);
+        }
         Picture::Portrait { artist, links } => {
             land_portrait(library, progress, artist, reference.portrait(&links));
+        }
+    }
+}
+
+fn land_unheld_cover(
+    library: &Library,
+    progress: &EnrichProgress,
+    group: &Mbid,
+    found: Result<Option<CoverArt>>,
+) {
+    match found {
+        Ok(art) => match library.land_unheld_cover(group, art.as_ref()) {
+            Ok(()) => {
+                if art.is_some() {
+                    progress.covers.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, %group, "a cover for a release not held was dropped");
+            }
+        },
+        Err(error) => {
+            answered(progress, Err(error));
         }
     }
 }
@@ -1369,7 +1403,25 @@ impl Pass<'_> {
         self.library.settle_the_credits()?;
         self.look_again_for_covers()?;
         self.look_again_for_portraits()?;
-        self.learn_the_songs(options)
+        self.learn_the_songs(options)?;
+        self.cover_the_unheld(options)
+    }
+
+    fn cover_the_unheld(&self, options: &EnrichOptions) -> Result<()> {
+        let due = self
+            .library
+            .unheld_covers_due(SystemTime::now(), options.at_most.map(NonZeroUsize::get))?;
+
+        for due in due {
+            if self.progress.is_cancelled() {
+                return Ok(());
+            }
+            self.want(Picture::OfAnUnheldRelease {
+                group: due.group,
+                pressing: due.pressing,
+            });
+        }
+        Ok(())
     }
 
     fn learn_the_songs(&self, options: &EnrichOptions) -> Result<()> {

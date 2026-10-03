@@ -3135,7 +3135,10 @@ impl LibraryModel {
         if let Some(held) = self.released_covers.get(&wanted) {
             return held.clone();
         }
-        let reference = self.reference.clone().filter(|_| self.online)?;
+        let reference = self.reference.clone().filter(|_| self.online);
+        if reference.is_none() && group.is_none() {
+            return None;
+        }
         if self.fetching_covers.contains(release) || self.fetching_covers.len() >= FETCHES_AT_ONCE {
             return None;
         }
@@ -3143,12 +3146,26 @@ impl LibraryModel {
 
         let asked = release.clone();
         let group = group.cloned();
-        let fetched = cx
-            .background_executor()
-            .spawn(async move { reference.cover(&asked, group.as_ref()) });
+        let library = Arc::clone(&self.library);
+        let fetched = cx.background_executor().spawn(async move {
+            if let Some(group) = &group {
+                match library.unheld_cover(group) {
+                    Ok(Some(kept)) => return (Ok(Some(kept)), true),
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "a kept cover for a release not held could not be read");
+                    }
+                }
+            }
+            match reference {
+                Some(reference) => (reference.cover(&asked, group.as_ref()), true),
+                None => (Ok(None), false),
+            }
+        });
         let side = wanted.side;
         cx.spawn(async move |this, cx| {
-            let art = fetched.await.unwrap_or_else(|error| {
+            let (art, answered) = fetched.await;
+            let art = art.unwrap_or_else(|error| {
                 tracing::warn!(%error, "a found song's cover could not be fetched");
                 None
             });
@@ -3162,8 +3179,10 @@ impl LibraryModel {
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
                 this.fetching_covers.remove(&wanted.key);
-                this.released_covers.insert(wanted, decoded).forget(cx);
-                cx.notify();
+                if answered || decoded.is_some() {
+                    this.released_covers.insert(wanted, decoded).forget(cx);
+                    cx.notify();
+                }
             });
             let _ = landed;
         })

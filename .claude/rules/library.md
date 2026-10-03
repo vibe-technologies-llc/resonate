@@ -2195,7 +2195,17 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   answer with no pressing stamps it read with nothing, a refusal counts in `refusals`, and an
   unreachable reference ends the pass as every other lookup does. `EnrichStats::songs` counts the rows
   (`the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_asking`,
-  `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). Three readers:
+  `a_release_group_refused_waits_before_its_songs_are_asked_for_again`). **The sleeves of those releases
+  are kept in the same pass.** `Pass::cover_the_unheld` runs after `learn_the_songs`: every release
+  group `unheld_covers_due` answers — unheld by the same predicate, with no cover held and none asked
+  within `COVERS_ASKED_AGAIN_AFTER`, the most played artist's first, `at_most` capping it — goes to the
+  picture readers as `Picture::OfAnUnheldRelease`, asked as `Reference::cover` for the pressing its
+  songs were read off with the group as the fallback, or `group_cover` where no pressing was read.
+  `land_unheld_cover` writes `unheld_covers` (group, the picture or none, when asked — a `MIGRATIONS`
+  step) for an answer of either kind, never for a fetch that failed or was refused, and a picture once
+  held is never replaced; `EnrichStats::covers` counts the pictures. `Library::unheld_cover` reads one
+  back, its format sniffed, which is what the artist's page draws before it asks the archive itself
+  (`the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_again`). Three readers:
   `songs_kept_for` is a search's — every folded word a word start in `folded`, held nowhere by recording
   and the group still unheld and no track of its artist the same `words_of`, albums first, one per
   folded title and credit, up to `FOUND_ELSEWHERE_AT_MOST`; `songs_not_held_by` is an artist page's —
