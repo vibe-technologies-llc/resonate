@@ -2195,10 +2195,13 @@ impl RootView {
         let group = album.release.mbid.clone();
         let fetching = self.library.read(cx).fetching_album(&group);
         let can_ask = self.library.read(cx).can_enrich();
-        let art = album.pressing.as_ref().and_then(|pressing| {
-            self.library.update(cx, |library, cx| {
-                library.released_cover(pressing, Drawn::InAGrid, cx)
-            })
+        let art = self.library.update(cx, |library, cx| {
+            library.released_cover_with_group(
+                album.pressing.as_ref().unwrap_or(&group),
+                Some(&group),
+                Drawn::InAGrid,
+                cx,
+            )
         });
         let cover = match art {
             Some(art) => framed_cover(Some(art), side).opacity(UNHELD_COVER),

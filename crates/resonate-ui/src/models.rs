@@ -2992,6 +2992,16 @@ impl LibraryModel {
         drawn: Drawn,
         cx: &mut Context<Self>,
     ) -> Option<Picture> {
+        self.released_cover_with_group(release, None, drawn, cx)
+    }
+
+    pub fn released_cover_with_group(
+        &mut self,
+        release: &Mbid,
+        group: Option<&Mbid>,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> Option<Picture> {
         let wanted = AtSide {
             key: release.clone(),
             side: drawn.side(self.scale),
@@ -3006,9 +3016,10 @@ impl LibraryModel {
         self.fetching_covers.insert(release.clone());
 
         let asked = release.clone();
+        let group = group.cloned();
         let fetched = cx
             .background_executor()
-            .spawn(async move { reference.cover(&asked, None) });
+            .spawn(async move { reference.cover(&asked, group.as_ref()) });
         let side = wanted.side;
         cx.spawn(async move |this, cx| {
             let art = fetched.await.unwrap_or_else(|error| {

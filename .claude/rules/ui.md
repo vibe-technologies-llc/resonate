@@ -1767,8 +1767,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `songs_not_held_by` (`library.md`) — whether the Missing tab is shown or not, the page being where the
   listener looks for an artist's work. *Albums* follows the held cells with `not_held_heading`, *Not in
   your library · N releases*, a full-width line breaking the grid, then an `album_not_held_cell` per
-  release: the pressing's front through `released_cover` at `UNHELD_COVER`, or `unheld_cover` at the
-  grid's side where none was read, the title in `theme::faint()` and kind and year under it. Pressing
+  release: the pressing's front through `released_cover_with_group` at `UNHELD_COVER`, with the
+  release-group id as its fallback and as the lookup where no pressing is known, or `unheld_cover` at
+  the grid's side where neither answers, the title in `theme::faint()` and kind and year under it.
+  Pressing
   one is `LibraryModel::want_album`, which runs `Library::want_album` on the background executor, hands
   every song wanted to `Downloads` as a found song pressed would be and sends the providers for them;
   `fetching_album` reads the album's songs back out of `Downloads` — *Downloading…* where any is,
