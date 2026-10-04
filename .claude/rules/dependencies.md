@@ -167,13 +167,23 @@ paths:
 - **`resonate-subsonic`** reaches `ureq`, `serde`, `serde_json` and `md-5` itself, as a network
   provider is told to rather than through `resonate-online`; `md-5` was in the lockfile under
   lofty, so the token costs an edge, and the binary takes the provider only under `online`.
+- **`rustls-native-certs`** and **`webpki-root-certs`** are `resonate-subsonic`'s and
+  `resonate-tidal`'s, for a server of the listener's behind a private CA (`providers.md`): the first
+  reads the system's store, pure Rust over `openssl-probe` (which only names paths) and in the
+  lockfile under gpui already; the second is the Mozilla roots as DER, the set `webpki-roots` holds as
+  trust anchors, since ureq's `RootCerts::Specific` takes certificates and cannot be handed the
+  built-in set beside the system's any other way. **`rustls`** itself, with `std` alone, is named by
+  both only to read a refused certificate out of the `io::Error` ureq hands back; it is the version
+  ureq links, and must stay so for the downcast to find it. Not ureq's `platform-verifier`: on Linux
+  it reads the system's store alone and fails where that is empty.
 - **`resonate-tidal`** reaches `ureq`, `serde` and `serde_json` as `resonate-subsonic` does, and
   `base64` (with `alloc` alone) for the manifests TIDAL answers base64-encoded — already in the
   lockfile under `ureq`, so an edge — and `roxmltree` (`std` alone, no `positions`) for a DASH MPD,
   pure Rust on `memchr`. gpui's fontconfig parser holds `roxmltree` 0.20; this is the current 0.21,
   a second copy of a small crate rather than a pin held back. The binary takes it only under
   `online`.
-- **`parking_lot`** is `resonate-codec`'s too, for the lock a `Deadlined` stream holds its answers
+- **`parking_lot`** is `resonate-inbox`'s, for the listing it holds between wants, and
+  `resonate-codec`'s too, for the lock a `Deadlined` stream holds its answers
   behind (`MediaStream` is `Sync`, `std`'s receiver is not); already in the lockfile, so an edge.
 - **`futures-channel`** is `resonate-ui`'s, with `alloc` alone, for the oneshot `Drawer::draw`
   hands a cover back through from a thread gpui does not own; gpui links it, so an edge.

@@ -117,6 +117,9 @@ md-5 = { version = "0.11.0", default-features = false }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.1", default-features = false, features = ["std"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
+rustls = { version = "0.23.45", default-features = false, features = ["std"] }
+rustls-native-certs = { version = "0.8.4", default-features = false }
+webpki-root-certs = { version = "1.0.9", default-features = false }
 uuid = { version = "1.26.1", default-features = false, features = ["std", "v4"] }
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }

@@ -1,4 +1,4 @@
-use std::{io, result};
+use std::{io, path::PathBuf, result};
 
 use resonate_core::SourceId;
 use thiserror::Error;
@@ -54,6 +54,14 @@ pub enum Error {
     #[error("{op:?} was still queued at the {provider} provider's server when it was given up")]
     StillQueued { provider: SourceId, op: ProviderOp },
 
+    #[error(
+        "{op:?} reached the {provider} provider's server, whose certificate this build does not trust"
+    )]
+    Untrusted { provider: SourceId, op: ProviderOp },
+
+    #[error("{file:?} is still arriving in the {provider} provider and is asked for again later")]
+    StillArriving { provider: SourceId, file: PathBuf },
+
     #[error("the sign-in to the {provider} provider lapsed before it was approved")]
     AuthorizationLapsed { provider: SourceId },
 
@@ -69,11 +77,15 @@ const SERVER_TROUBLE: u16 = 500;
 impl Error {
     pub fn is_the_provider_away(&self) -> bool {
         match self {
-            Self::Io { .. } | Self::Unwelcome { .. } | Self::StillQueued { .. } => true,
+            Self::Io { .. }
+            | Self::Unwelcome { .. }
+            | Self::StillQueued { .. }
+            | Self::Untrusted { .. } => true,
             Self::Refused { status, .. } => *status >= SERVER_TROUBLE,
             Self::Unreadable { .. }
             | Self::TurnedAway { .. }
             | Self::OffItsHosts { .. }
+            | Self::StillArriving { .. }
             | Self::AuthorizationLapsed { .. }
             | Self::AuthorizationDenied { .. }
             | Self::NotAnExtension => false,
@@ -117,8 +129,12 @@ mod tests {
             code: 40,
         };
         let queued = Error::StillQueued {
-            provider,
+            provider: provider.clone(),
             op: ProviderOp::Playback,
+        };
+        let untrusted = Error::Untrusted {
+            provider,
+            op: ProviderOp::Search,
         };
 
         assert!(unreachable.is_the_provider_away());
@@ -127,6 +143,17 @@ mod tests {
         assert!(!turned_away.is_the_provider_away());
         assert!(unwelcome.is_the_provider_away());
         assert!(queued.is_the_provider_away());
+        assert!(untrusted.is_the_provider_away());
+    }
+
+    #[test]
+    fn a_file_still_arriving_is_about_the_want_and_never_the_provider_being_away() {
+        let arriving = Error::StillArriving {
+            provider: SourceId::new("inbox").expect("a nameable source"),
+            file: PathBuf::from("/inbox/echoes.flac"),
+        };
+
+        assert!(!arriving.is_the_provider_away());
     }
 
     #[test]

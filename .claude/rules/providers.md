@@ -43,8 +43,13 @@ could not be asked, which `Providers::first` logs, counts as `refused` and carri
 `Error::is_the_provider_away` says which errors are about the provider rather than the want — an
 `Io` (a connection that failed, a folder that is not there), an `Unwelcome` (the server turned the
 listener away as a whole: a wrong password, an account barred), a `StillQueued` (a server holding
-the request in a queue of its own past the provider's patience) and a `Refused` of 500 or over — and
+the request in a queue of its own past the provider's patience), an `Untrusted` (a server whose
+certificate this build does not trust, every want failing alike) and a `Refused` of 500 or over — and
 `TurnedAway` or a 404 are the want's alone, a Subsonic code 70 being one song the server lacks.
+**A file still arriving is neither a miss nor the provider away.** `Error::StillArriving` names the
+file and is not away, so `Providers::first` counts it `refused`: the want is not stamped and stays
+due for the next poll, never counted a miss, and the provider is still asked about every other want
+of the poll (`a_file_still_arriving_is_about_the_want_and_never_the_provider_being_away`).
 
 - **`Delivery::File(PathBuf)`** is audio already on disk. The vault reads it and copies what it
   keeps, leaving the file where it stood: a provider's folder, like the library an import reads,
@@ -279,12 +284,35 @@ A provider does none of this, so none of it is written twice:
    added to the seam, with its op, when that provider lands — never as prose.
 
 `resonate-inbox` is the reference: `Inbox::at` over the folder the `inbox` key names, read and
-never written to, one directory read per want, a file directly inside whose stem is the recording
-MBID, then the track MBID, then the ISRC, ignoring case, never a nested folder or a shared title.
-Only audio is offered: a file counts where `resonate_core::names_audio` says its extension is one of
-`AUDIO_EXTENSIONS` — the list the scan walks by, moved into core so the inbox, which may not see the
-library, reads the same one — so `<mbid>.cue`, `<mbid>.jpg` or a rip log beside the audio is never
-delivered ahead of it (`only_audio_is_delivered_whatever_else_shares_its_name`).
+never written to, a file directly inside whose stem is the recording MBID, then the track MBID, then
+the ISRC, ignoring case, never a nested folder or a shared title. Only audio is offered: a file
+counts where `resonate_core::names_audio` says its extension is one of `AUDIO_EXTENSIONS` — the list
+the scan walks by, moved into core so the inbox, which may not see the library, reads the same one —
+so `<mbid>.cue`, `<mbid>.jpg` or a rip log beside the audio is never delivered ahead of it
+(`only_audio_is_delivered_whatever_else_shares_its_name`).
+
+- **The folder is read once a poll, not once a want.** The listing — each audio file's path and
+  folded stem, nothing statted — is held between wants with the folder's modification and change
+  times, and read again only where either moved or it is older than `LISTING_TRUSTED_FOR` (30 s), the
+  bound covering a filesystem whose timestamps are too coarse to move within a second; a want costs a
+  stat of the folder and of the file it names. A poll over 500 wants reads the folder once
+  (`a_poll_over_many_wants_reads_the_inbox_once`); a file dropped in moves the folder's times and is
+  seen by the next want (`a_file_dropped_in_after_the_inbox_was_read_is_seen_by_the_next_want`).
+- **The most exact name wins, and among the files one name matches the lossless one.** The listing
+  is sorted by `Fidelity` and then by name: `Lossless` — FLAC, WAVE, RF64, Wave64, AIFF, Monkey's
+  Audio, DSF and DSDIFF — before `LosslessOrLossy` — CAF, M4A, MP4, Matroska, `.oga` and WavPack,
+  each able to hold either and the inbox reading no codec — before `Lossy`. So `<mbid>.flac` is
+  delivered over `<mbid>.mp3` whatever the names sort as
+  (`the_lossless_file_one_name_matches_is_delivered_over_a_lossy_one_whatever_their_names_sort_as`),
+  while a recording's `.mp3` is still taken before an ISRC's `.flac`, an ISRC naming a recording less
+  exactly (`a_more_exact_name_is_delivered_before_a_lossless_file_a_looser_one_matches`).
+- **A file still being copied in is not delivered.** The file the best name matches is statted as
+  the want is asked, and where its modification or change time is within `SETTLES_FOR` (2 s, the
+  window's `INBOX_QUIET_FOR`, so the poll the watch starts finds it settled) of now it answers
+  `Error::StillArriving` rather than a half-written FLAC, and a lesser file is not delivered in its
+  place. The change time is the one a copy cannot keep old, `cp -p` setting the modification time
+  back as it finishes (`a_copy_that_kept_its_old_modification_time_is_still_arriving_by_its_change_time`);
+  a time in the future holds nothing back. A copy stalled longer than `SETTLES_FOR` reads as settled.
 
 ## A Subsonic server
 
@@ -308,6 +336,26 @@ poll.
   the claim over a captured Navidrome answer; `tests/server.rs` serves the rest from a local socket
   (`a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page`,
   `an_isrc_written_with_dashes_is_the_same_code`).
+- **An answer has a deadline, and a download one for silence alone.** API requests go through an
+  agent whose `timeout_global` is `Patience::answered_within` (`ANSWERED_WITHIN`, 20 s), the whole
+  answer, body included, so a server stalling mid-document is given up rather than holding a thread
+  and a socket per want until exit (`an_answer_that_stalls_part_way_is_given_up_within_its_deadline`).
+  A download may run for minutes, so its agent bounds the head alone and `stall.rs` bounds each read:
+  `BrokenOffAfter` is a connector chained after ureq's `DefaultConnector`, wrapping every transport in
+  `Stalling`, whose `await_input` caps the timeout it hands down at `Patience::broken_off_after`
+  (`BROKEN_OFF_AFTER`, 30 s, the poll's `ANSWERS_WITHIN`), so a socket silent that long is closed and the
+  read fails while one still delivering is read however long it takes
+  (`a_download_that_stalls_part_way_is_broken_off_rather_than_held`,
+  `a_download_that_keeps_coming_is_read_however_long_it_takes_in_all`). `Subsonic::waiting` takes
+  another `Patience`, which is how the tests stall in milliseconds. The connector is ureq's
+  `unversioned` transport API, outside its semver promise; a ureq bump is weighed against those tests.
+- **A server behind a private CA is reached.** The listener's server is often signed by a CA of their
+  own, so both agents trust `trust::system_and_built_in`: the Mozilla roots `webpki-root-certs`
+  carries — the same set ureq's default uses — and every certificate `rustls-native-certs` reads out of
+  the system's store (`SSL_CERT_FILE`, `SSL_CERT_DIR` or the distribution's bundle), read once a
+  process. A certificate the handshake still refuses — rustls's `InvalidCertificate`, inside an
+  `io::Error` or as ureq's own `Rustls` — is `Error::Untrusted`, not a refused connection
+  (`a_certificate_the_client_does_not_trust_is_told_apart_from_a_refused_connection`).
 - **It delivers the server's original file, and only a file.** `download` answers the bytes as they
   sit on the server, as a `Delivery::Stream` keyed by the song's id and hinted by its `suffix`, kept
   and validated like any other; a suffix that is no `Extension` answers `Nothing` rather than a
@@ -321,7 +369,8 @@ poll.
   `RETRIES_AT_MOST` is the `Refused` it was — a 503 the seam then reads as the provider away.
 - **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`,
   the MD5 of password and salt (the API's token scheme), beside `v` and `c=resonate`; the
-  User-Agent is `resonate/<version>` alone. `status: failed` is `Error::Unwelcome` with the
+  User-Agent is `resonate/<version>` alone, and `Server`'s `Debug` prints `<withheld>` for the
+  password (`a_server_never_prints_its_password`). `status: failed` is `Error::Unwelcome` with the
   server's code where the code is about the account rather than the song (`ACCOUNT_REFUSALS`: 20 and
   30 for a protocol too old or new, 40 to 44 for credentials, 50 unauthorised, 60 a trial over) and
   `Error::TurnedAway` with it otherwise (70, a song the server lacks), an HTTP refusal `Error::Refused`, an answer that is not
@@ -357,7 +406,12 @@ as every provider's does.
   listener brings the application the token was issued to. A 400 or 401 at the token endpoint is
   `Error::Unwelcome` under `ProviderOp::SignIn`, which the seam reads as the provider away, so a
   revoked token costs one sign-in a poll
-  (`a_refresh_token_turned_away_is_the_account_and_not_the_want`). A 401 from the API signs in
+  (`a_refresh_token_turned_away_is_the_account_and_not_the_want`). **A token TIDAL rotates is handed
+  back.** Where the grant answers a `refresh_token` other than the one sent, the provider signs in
+  with it from then on and calls what `Tidal::telling` registered with it as a `RefreshToken`, once
+  per rotation, so the binary can write it to `tidal-refresh-token` before the old one is refused
+  (`a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_then_on`,
+  `a_refresh_token_tidal_keeps_is_never_handed_back`). A 401 from the API signs in
   again once and asks again, and a second is `Unwelcome` with TIDAL's `subStatus`
   (`a_session_that_lapsed_signs_in_again_once`); a 401 whose `subStatus` is 4005 — the asset not
   ready for playback — is the want's, `TurnedAway`. A 403 or 404 is the track unavailable to this
@@ -465,3 +519,9 @@ keyed `track/<id>`.
   retries (`a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome`).
   The custom server sends no `Authorization` header; the hosted service sends each cached bearer
   token only to its token issuer or API. Every request identifies itself as `resonate/<version>`.
+- **A custom server is trusted as the Subsonic server is.** `HifiApi::at` asks through
+  `Asker::of_the_listeners_server`, whose agent trusts the system's store beside the built-in roots
+  (`trust.rs`, the same as the Subsonic crate's); the hosted service, TIDAL's API and its CDN keep the
+  built-in roots alone
+  (`a_server_of_the_listeners_is_trusted_by_the_systems_certificates_and_the_hosted_one_by_the_built_in`).
+  A certificate refused anywhere in the crate is `Error::Untrusted` through `asker::unreached`.

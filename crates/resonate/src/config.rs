@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    env,
+    env, fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
     ops::RangeInclusive,
@@ -96,7 +96,7 @@ pub fn config_path() -> Result<PathBuf> {
         .ok_or(Error::NoConfigDir)
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Config {
     pub sink: Option<NodeName>,
     pub library: Option<PathBuf>,
@@ -175,6 +175,188 @@ pub struct Config {
     pub discord_icon: Option<Icon>,
     pub discord_progress: Option<bool>,
     pub discord_paused: Option<bool>,
+}
+
+struct Withheld;
+
+impl fmt::Debug for Withheld {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<withheld>")
+    }
+}
+
+fn withheld(secret: Option<&String>) -> Option<Withheld> {
+    secret.map(|_| Withheld)
+}
+
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            sink,
+            library,
+            vault,
+            quality,
+            filter_phase,
+            true_peak,
+            restoration,
+            dither,
+            noise_shaping,
+            replay_gain,
+            pre_amp,
+            untagged,
+            bit_perfect,
+            dop,
+            dsd_like_pcm,
+            device_volume,
+            force_graph_rate,
+            bluetooth_wake,
+            bluetooth_lead,
+            bluetooth_awake,
+            volume,
+            buffer,
+            theme,
+            accent,
+            text_size,
+            online,
+            enrich_after_scan,
+            study,
+            fetch_lyrics,
+            identify_by_sound,
+            skip_repeats_queue,
+            previous_restarts,
+            contact,
+            read_from,
+            acoustid_key,
+            audd_token,
+            listenbrainz_token,
+            listen_from,
+            listen_for,
+            equaliser,
+            equaliser_for,
+            resume,
+            history_kept,
+            organise_as,
+            notify,
+            minimise_button,
+            maximise_button,
+            scroll_volume,
+            mouse_navigation,
+            scrollbars,
+            suggestions_tab,
+            missing_tab,
+            tab_counts,
+            remember_tab,
+            last_tab,
+            remember_window_size,
+            window_size,
+            remember_settings_category,
+            last_settings_category,
+            inbox,
+            music_folder,
+            file_dropped,
+            convolution,
+            subsonic,
+            subsonic_user,
+            subsonic_password,
+            tidal_client_id,
+            tidal_client_secret,
+            tidal_refresh_token,
+            hifi_api,
+            discord,
+            discord_app,
+            discord_shows,
+            discord_art,
+            discord_icon,
+            discord_progress,
+            discord_paused,
+        } = self;
+
+        f.debug_struct("Config")
+            .field("sink", sink)
+            .field("library", library)
+            .field("vault", vault)
+            .field("quality", quality)
+            .field("filter_phase", filter_phase)
+            .field("true_peak", true_peak)
+            .field("restoration", restoration)
+            .field("dither", dither)
+            .field("noise_shaping", noise_shaping)
+            .field("replay_gain", replay_gain)
+            .field("pre_amp", pre_amp)
+            .field("untagged", untagged)
+            .field("bit_perfect", bit_perfect)
+            .field("dop", dop)
+            .field("dsd_like_pcm", dsd_like_pcm)
+            .field("device_volume", device_volume)
+            .field("force_graph_rate", force_graph_rate)
+            .field("bluetooth_wake", bluetooth_wake)
+            .field("bluetooth_lead", bluetooth_lead)
+            .field("bluetooth_awake", bluetooth_awake)
+            .field("volume", volume)
+            .field("buffer", buffer)
+            .field("theme", theme)
+            .field("accent", accent)
+            .field("text_size", text_size)
+            .field("online", online)
+            .field("enrich_after_scan", enrich_after_scan)
+            .field("study", study)
+            .field("fetch_lyrics", fetch_lyrics)
+            .field("identify_by_sound", identify_by_sound)
+            .field("skip_repeats_queue", skip_repeats_queue)
+            .field("previous_restarts", previous_restarts)
+            .field("contact", &withheld(contact.as_ref()))
+            .field("read_from", read_from)
+            .field("acoustid_key", &withheld(acoustid_key.as_ref()))
+            .field("audd_token", &withheld(audd_token.as_ref()))
+            .field("listenbrainz_token", &withheld(listenbrainz_token.as_ref()))
+            .field("listen_from", listen_from)
+            .field("listen_for", listen_for)
+            .field("equaliser", equaliser)
+            .field("equaliser_for", equaliser_for)
+            .field("resume", resume)
+            .field("history_kept", history_kept)
+            .field("organise_as", organise_as)
+            .field("notify", notify)
+            .field("minimise_button", minimise_button)
+            .field("maximise_button", maximise_button)
+            .field("scroll_volume", scroll_volume)
+            .field("mouse_navigation", mouse_navigation)
+            .field("scrollbars", scrollbars)
+            .field("suggestions_tab", suggestions_tab)
+            .field("missing_tab", missing_tab)
+            .field("tab_counts", tab_counts)
+            .field("remember_tab", remember_tab)
+            .field("last_tab", last_tab)
+            .field("remember_window_size", remember_window_size)
+            .field("window_size", window_size)
+            .field("remember_settings_category", remember_settings_category)
+            .field("last_settings_category", last_settings_category)
+            .field("inbox", inbox)
+            .field("music_folder", music_folder)
+            .field("file_dropped", file_dropped)
+            .field("convolution", convolution)
+            .field("subsonic", subsonic)
+            .field("subsonic_user", subsonic_user)
+            .field("subsonic_password", &withheld(subsonic_password.as_ref()))
+            .field("tidal_client_id", tidal_client_id)
+            .field(
+                "tidal_client_secret",
+                &withheld(tidal_client_secret.as_ref()),
+            )
+            .field(
+                "tidal_refresh_token",
+                &withheld(tidal_refresh_token.as_ref()),
+            )
+            .field("hifi_api", hifi_api)
+            .field("discord", discord)
+            .field("discord_app", discord_app)
+            .field("discord_shows", discord_shows)
+            .field("discord_art", discord_art)
+            .field("discord_icon", discord_icon)
+            .field("discord_progress", discord_progress)
+            .field("discord_paused", discord_paused)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1046,6 +1228,36 @@ mod tests {
         match refusals.into_iter().next() {
             Some(error) => Err(error),
             None => Ok(config),
+        }
+    }
+
+    #[test]
+    fn no_key_holding_a_secret_or_the_contact_is_printed_by_debug() {
+        let config = read(
+            "subsonic = \"https://music.home.arpa\"\nsubsonic-user = \"listener\"\n\
+             subsonic-password = \"subsonic-sesame\"\ntidal-client-id = \"client\"\n\
+             tidal-client-secret = \"tidal-hush\"\ntidal-refresh-token = \"tidal-sesame\"\n\
+             audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
+             acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n",
+        )
+        .expect("a well formed document");
+
+        let printed = format!("{config:?}");
+
+        assert!(printed.contains("music.home.arpa"));
+        assert!(printed.contains("listener"));
+        assert!(printed.contains("client"));
+        assert!(printed.contains("<withheld>"));
+        for secret in [
+            "subsonic-sesame",
+            "tidal-hush",
+            "tidal-sesame",
+            "audd-sesame",
+            "listenbrainz-sesame",
+            "acoustid-sesame",
+            "someone at an address",
+        ] {
+            assert!(!printed.contains(secret), "{secret} was printed");
         }
     }
 

@@ -6,12 +6,15 @@ mod manifest;
 mod played;
 mod remux;
 mod sign_in;
+mod trust;
 
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
-use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
+use resonate_providers::{
+    Delivery, Error, Identity, Obtained, Provider, ProviderOp, RefreshToken, Result,
+};
 use serde::Deserialize;
 use ureq::{
     Agent,
@@ -50,6 +53,8 @@ struct Session {
 #[derive(Deserialize)]
 struct Granted {
     access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
     #[serde(default)]
     expires_in: Option<u64>,
     #[serde(default)]
@@ -92,12 +97,15 @@ enum Asked {
     Unavailable,
 }
 
+type Renewed = Box<dyn Fn(RefreshToken) + Send + Sync>;
+
 pub struct Tidal {
     asker: Asker,
-    account: Account,
+    account: Mutex<Account>,
     endpoints: Endpoints,
     media: Agent,
     session: Mutex<Option<Session>>,
+    renewed: Option<Renewed>,
 }
 
 pub(crate) fn source() -> SourceId {
@@ -112,10 +120,33 @@ impl Tidal {
     pub fn at(account: Account, endpoints: Endpoints) -> Self {
         Self {
             asker: Asker::new(source()),
-            account,
+            account: Mutex::new(account),
             endpoints,
             media: media_agent(),
             session: Mutex::new(None),
+            renewed: None,
+        }
+    }
+
+    #[must_use]
+    pub fn telling(self, renewed: impl Fn(RefreshToken) + Send + Sync + 'static) -> Self {
+        Self {
+            renewed: Some(Box::new(renewed)),
+            ..self
+        }
+    }
+
+    fn rotated_to(&self, rotated: String) {
+        {
+            let mut account = self.account.lock();
+            if rotated.is_empty() || account.refresh_token == rotated {
+                return;
+            }
+            account.refresh_token.clone_from(&rotated);
+        }
+        tracing::info!(provider = %self.asker.source, "TIDAL rotated the refresh token");
+        if let Some(renewed) = &self.renewed {
+            renewed(RefreshToken::new(rotated));
         }
     }
 
@@ -142,12 +173,13 @@ impl Tidal {
 
     fn sign_in(&self) -> Result<Session> {
         let op = ProviderOp::SignIn;
+        let account = self.account.lock().clone();
         let mut form = vec![
             ("grant_type", "refresh_token"),
-            ("refresh_token", self.account.refresh_token.as_str()),
-            ("client_id", self.account.client_id.as_str()),
+            ("refresh_token", account.refresh_token.as_str()),
+            ("client_id", account.client_id.as_str()),
         ];
-        if let Some(secret) = &self.account.client_secret {
+        if let Some(secret) = &account.client_secret {
             form.push(("client_secret", secret.as_str()));
         }
         let response = match self.asker.sent(op, || {
@@ -171,6 +203,9 @@ impl Tidal {
         let granted: Granted = self
             .asker
             .parsed(op, &self.asker.read_whole(op, response)?)?;
+        if let Some(rotated) = granted.refresh_token {
+            self.rotated_to(rotated);
+        }
         let lasts = granted
             .expires_in
             .map_or(LASTS_WHEN_UNSAID, Duration::from_secs)

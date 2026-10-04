@@ -570,6 +570,62 @@ fn a_session_turned_away_after_signing_in_again_is_unwelcome() {
     ));
 }
 
+#[test]
+fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_then_on() {
+    let fake = Fake::serving(|asked, before, _| match asked.path.as_str() {
+        "/auth/token" => Canned::json(
+            r#"{"access_token":"fresh-access","refresh_token":"rotated","expires_in":604800,"user":{"countryCode":"GB"}}"#,
+        ),
+        "/openapi/tracks"
+            if before
+                .iter()
+                .filter(|earlier| earlier.path == "/auth/token")
+                .count()
+                < 2 =>
+        {
+            Canned::refused(401, r#"{"status":401,"subStatus":11002}"#)
+        }
+        "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        _ => Canned::refused(500, "{}"),
+    });
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noted = Arc::clone(&told);
+    let tidal = fake
+        .tidal()
+        .telling(move |renewed| noted.lock().push(renewed.into_string()));
+
+    assert!(matches!(tidal.obtain(&by_isrc()), Ok(Obtained::Nothing)));
+
+    let signed_in = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.path == "/auth/token")
+        .collect::<Vec<_>>();
+    assert_eq!(signed_in.len(), 2);
+    assert!(signed_in[0].body.contains("refresh_token=sesame"));
+    assert!(signed_in[1].body.contains("refresh_token=rotated"));
+    assert_eq!(*told.lock(), vec!["rotated".to_owned()]);
+}
+
+#[test]
+fn a_refresh_token_tidal_keeps_is_never_handed_back() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => Canned::json(
+            r#"{"access_token":"fresh-access","refresh_token":"sesame","expires_in":604800,"user":{"countryCode":"GB"}}"#,
+        ),
+        "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        _ => Canned::refused(500, "{}"),
+    });
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noted = Arc::clone(&told);
+    let tidal = fake
+        .tidal()
+        .telling(move |renewed| noted.lock().push(renewed.into_string()));
+
+    assert!(matches!(tidal.obtain(&by_isrc()), Ok(Obtained::Nothing)));
+    assert!(told.lock().is_empty());
+}
+
 fn client() -> Client {
     Client {
         id: "client".to_owned(),

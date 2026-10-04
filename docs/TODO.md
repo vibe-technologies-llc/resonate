@@ -218,8 +218,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Robustness
 - Closing the window or pressing `ctrl-q` during a tag write, an organise, a vault import or a
   dropped file's copy neither cancels the pass nor waits for it
-- The Subsonic client sets no read deadline, so a server that stalls mid-answer keeps a thread and
-  a socket per want until exit
 - A failing ListenBrainz love blocks every later love and backs listen submissions off to an hour
 - A listen counted after the newest listens were removed reuses an id at or below the service's
   mark and is never submitted
@@ -236,8 +234,6 @@ service or a format — and is not worked until that moves; everything else is o
   lost, so the client stays disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
   stand stale until new ones overwrite them
-- A Subsonic server behind a private CA cannot be reached, and the failure is reported as a refused
-  connection
 - MCP's `start_scan` keeps any folder it is given as a root for good, `/` included, with no cap and
   no tool to remove one
 - MCP's `mark_favourite` commits each id alone, so an unknown id late in the list leaves the
@@ -252,8 +248,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A configured `vault` that is not there, an unmounted drive, is skipped in silence by every command
   but `vault`
 - A text field takes any length, shaped again on every caret blink and kept whole in its undo
-- The Subsonic password and the configured tokens are printed by `Debug`, ready for the first log
-  line that formats them
 - A Discord refusal that never clears is offered again every fifteen seconds for as long as the
   track plays
 
@@ -319,11 +313,8 @@ service or a format — and is not worked until that moves; everything else is o
   reading it by its path
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
-- With `<mbid>.flac` and `<mbid>.mp3` both in the inbox the name sorting first wins, and nothing
-  prefers the lossless one; the inbox also stats every entry for every want
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
-- TIDAL's device sign-in is the window's alone, with no command-line way in, and a refresh token
-  TIDAL rotates when the provider signs in is not written back
+- TIDAL's device sign-in is the window's alone, with no command-line way in
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either
 

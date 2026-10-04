@@ -210,8 +210,13 @@ impl HifiApi {
     }
 
     fn building(server: &str, hosts: MediaHosts, hosted: bool) -> Self {
+        let asker = if hosted {
+            Asker::new(source())
+        } else {
+            Asker::of_the_listeners_server(source())
+        };
         Self {
-            asker: Asker::new(source()),
+            asker,
             server: server.trim().trim_end_matches('/').to_owned(),
             hosts,
             media: media_agent(),
@@ -537,6 +542,21 @@ mod tests {
             HifiApi::at(" https://hifi.home.arpa/ ").server,
             "https://hifi.home.arpa"
         );
+    }
+
+    #[test]
+    fn a_server_of_the_listeners_is_trusted_by_the_systems_certificates_and_the_hosted_one_by_the_built_in()
+     {
+        let roots = |hifi: &HifiApi| hifi.asker.agent.config().tls_config().root_certs().clone();
+
+        assert!(matches!(
+            roots(&HifiApi::at("https://hifi.home.arpa")),
+            ureq::tls::RootCerts::Specific(_)
+        ));
+        assert!(matches!(
+            roots(&HifiApi::hosted()),
+            ureq::tls::RootCerts::WebPki
+        ));
     }
 
     #[test]
