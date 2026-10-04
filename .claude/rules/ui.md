@@ -1975,9 +1975,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the first `FOUND_AT_THE_TOP` (6) songs not in the library with what MusicBrainz is doing beside the
   heading, then the albums as a strip — each section headed by its name and, where more matched than
   it shows, *See all N*, which opens its tab. *Not in your library* (`not_in_the_library`) is every
-  found row in a `uniform_list` of its own. A search begins on *Top results* from the tracks pane and on
-  the pane's own tab from Albums or Artists (`SearchShows::opening_on`, read where the box goes from
-  empty to holding words). It replaced the tracks pane listing every held row and only then, once the
+  found row in a `uniform_list` of its own. A search always begins on *Top results*, read where the box goes
+  from empty to holding words (`RootView::open_the_search`): from Albums, Artists or Tracks the pane
+  stays and its page is replaced, and from any other pane — Queue, Playlists, Statistics, Settings —
+  the window goes to Tracks, showing everything, since the box lives in the header of every pane and
+  a search that drew nothing there looked like text typed at the top and no more
+  (`a_search_begun_on_any_pane_opens_the_top_results`). It replaced the tracks pane listing every held row and only then, once the
   whole listing had been paged in, the songs MusicBrainz found — searching an artist with a hundred
   songs held put the found ones a hundred rows down, out of sight. So under *All tracks*
   `LibraryModel::rows` is empty — one row per track, what `played_from` and `listed_rows` read — and

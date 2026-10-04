@@ -3932,6 +3932,40 @@ mod tests {
         }
 
         #[gpui::test]
+        fn a_search_begun_on_any_pane_opens_the_top_results(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            folder.tagged(
+                "one.wav",
+                1,
+                &[(b"IART", "Janji"), (b"INAM", "Heroes"), (b"IPRD", "Album")],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::opened_in(cx, library, &folder);
+            let search = driven.read(|root, _| root.search.clone());
+
+            for sidebar in ["queue", "tab-albums", "tab-artists", "tab-tracks", "tab-settings"] {
+                driven.click(sidebar);
+                driven.cx.update(|_, cx| {
+                    search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+                });
+                driven.until(|root, cx| root.search_in_front(cx).is_some());
+
+                let (pane, shows) = driven.read(|root, cx| (root.pane, root.search_in_front(cx)));
+                assert_eq!(shows, Some(SearchShows::Top), "searching from {sidebar}");
+                assert!(
+                    matches!(pane, Pane::Albums | Pane::Artists | Pane::Tracks),
+                    "searching from {sidebar} left the pane at {pane:?}"
+                );
+
+                driven.cx.update(|_, cx| {
+                    search.update(cx, |search, cx| search.clear(cx));
+                });
+                driven.until(|root, cx| root.search_in_front(cx).is_none());
+            }
+        }
+
+        #[gpui::test]
         fn songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds(
             cx: &mut TestAppContext,
         ) {

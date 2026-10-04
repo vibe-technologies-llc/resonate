@@ -3197,6 +3197,18 @@ impl RootView {
         }
     }
 
+    fn open_the_search(&mut self, cx: &mut Context<Self>) {
+        let browsing = matches!(self.pane, Pane::Albums | Pane::Artists | Pane::Tracks);
+        if !browsing {
+            if self.library.read(cx).selection() != Selection::Everything {
+                self.show_everything(cx);
+            }
+            self.set_pane(Pane::Tracks, cx);
+        }
+        self.search_shows = SearchShows::Top;
+        self.ordering = false;
+    }
+
     fn set_query(&mut self, query: String, cx: &mut Context<Self>) {
         let was = self
             .library
@@ -3208,8 +3220,7 @@ impl RootView {
             return;
         }
         if was.is_empty() {
-            self.search_shows = SearchShows::opening_on(self.pane);
-            self.ordering = false;
+            self.open_the_search(cx);
         }
         self.search_scroll.set_offset(point(px(0.0), px(0.0)));
         self.found_rows.scroll_to_item(0, ScrollStrategy::Top);

@@ -102,14 +102,6 @@ impl SearchShows {
         Self::Elsewhere,
     ];
 
-    pub(crate) const fn opening_on(pane: Pane) -> Self {
-        match pane {
-            Pane::Albums => Self::Albums,
-            Pane::Artists => Self::Artists,
-            _ => Self::Top,
-        }
-    }
-
     pub(crate) const fn in_place_of(pane: Pane) -> Option<Self> {
         match pane {
             Pane::Tracks => Some(Self::Songs),

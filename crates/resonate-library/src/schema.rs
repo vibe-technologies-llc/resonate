@@ -220,6 +220,17 @@ const MIGRATIONS: &[&str] = &[
      UPDATE sqlite_sequence
         SET seq = max(seq, coalesce((SELECT max(through) FROM submissions), 0))
       WHERE name = 'listens';",
+    "CREATE TRIGGER lyrics_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM lyrics_kept
+          WHERE path = old.path AND span_start = old.span_start;
+         DELETE FROM lyrics_refused
+          WHERE path = old.path AND span_start = old.span_start;
+     END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

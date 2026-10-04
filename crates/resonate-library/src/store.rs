@@ -59,6 +59,12 @@ DELETE FROM artists
  WHERE id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM track_credits);
+DELETE FROM lyrics_kept
+ WHERE NOT EXISTS (SELECT 1 FROM tracks t
+                    WHERE t.path = lyrics_kept.path AND t.span_start = lyrics_kept.span_start);
+DELETE FROM lyrics_refused
+ WHERE NOT EXISTS (SELECT 1 FROM tracks t
+                    WHERE t.path = lyrics_refused.path AND t.span_start = lyrics_refused.span_start);
 DELETE FROM likenesses
  WHERE picture NOT IN (SELECT ",
     the_picture_of!("a"),
