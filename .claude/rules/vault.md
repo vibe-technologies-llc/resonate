@@ -345,7 +345,12 @@ catalog written before was scanned again); a change now is a `MIGRATIONS` step (
   guard) clears `vault_key` and `vault_path` on every vaulted row whose `tracks.path` exists, so
   the player opens the file again, and counts the rest as `Released::stranded`, left alone because
   the vault holds their only copy. Objects a release leaves wait for `--prune`, the one deleting
-  gesture; the next `--import` weighs a released row again. Covers stay: an album's picture moved
+  gesture; the next `--import` weighs a released row again. Both previews until `--apply`, as every
+  other pass: `Library::vault_release_foretold` counts what `release_from_vault` would clear and
+  `vault_prune_foretold` what `prune_the_vault` would take, through the same `Applying` the two share,
+  `Vault::staging_a_sweep_would_take` counting the staging folder without sweeping it, so what is
+  printed is what `--apply` then does
+  (`a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it`). Covers stay: an album's picture moved
   into the vault had `cover_art` cleared in the same statement, so there is nothing to point back
   at.
 - **`retag` passes a vaulted row over** (`Unwritten::Vaulted`) — writing tags nothing reads is work

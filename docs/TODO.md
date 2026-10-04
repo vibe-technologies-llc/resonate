@@ -217,7 +217,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Later: The vault
 - `vault --verify` writes an object it could not open — an unmounted vault, a missing file — as one
   that did not read back, never checks covers, and offers nothing to mend one failing row
-- `vault --prune` and `--release` act at once where every other pass previews until `--apply`
 - A kept WAVE object reopened by path for a backward seek uses its old frame index against a renewal
   that replaced it
 - The stand-in's `TagSet` carries some twenty-one fields, so a vaulted row loses its composer,

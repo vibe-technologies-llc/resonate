@@ -1047,6 +1047,25 @@ fn connect(source: &Source, role: schema::Role) -> Result<Connection> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrittenElsewhere(i64);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Applying {
+    Yes,
+    No,
+}
+
+impl Applying {
+    fn forgets(
+        self,
+        vault: &Vault,
+        path: &Path,
+    ) -> std::result::Result<bool, resonate_vault::Error> {
+        match self {
+            Self::Yes => vault.forget(path),
+            Self::No => Ok(path.exists()),
+        }
+    }
+}
+
 pub struct Library {
     inner: Arc<Inner>,
 }
@@ -2275,6 +2294,14 @@ impl Library {
     }
 
     pub fn prune_the_vault(&self) -> Result<Pruned> {
+        self.pruning_the_vault(Applying::Yes)
+    }
+
+    pub fn vault_prune_foretold(&self) -> Result<Pruned> {
+        self.pruning_the_vault(Applying::No)
+    }
+
+    fn pruning_the_vault(&self, applying: Applying) -> Result<Pruned> {
         let _walk = self.walk_the_tree()?;
         let vault = Arc::clone(self.inner.opened_vault()?);
         let refused = |path: &Path, source| Error::Vault {
@@ -2284,10 +2311,12 @@ impl Library {
 
         let mut pruned = Pruned::default();
         for object in self.vault_objects_nothing_names()? {
-            match vault.forget(&object.path) {
+            match applying.forgets(&vault, &object.path) {
                 Ok(taken) => {
                     pruned.objects += u64::from(taken);
-                    self.forget_vault_object(&object.key)?;
+                    if applying == Applying::Yes {
+                        self.forget_vault_object(&object.key)?;
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(path = %object.path.display(), %error, "an object could not be taken away, so its row stays for the next prune");
@@ -2307,7 +2336,7 @@ impl Library {
             if noted.contains(&object.key) || !landed_before_it(&object.path, landed_before) {
                 continue;
             }
-            match vault.forget(&object.path) {
+            match applying.forgets(&vault, &object.path) {
                 Ok(taken) => pruned.objects += u64::from(taken),
                 Err(error) => {
                     tracing::warn!(path = %object.path.display(), %error, "an object no row names could not be taken away");
@@ -2339,17 +2368,19 @@ impl Library {
             if named.contains(&cover.key) {
                 continue;
             }
-            if vault
-                .forget(&cover.path)
+            if applying
+                .forgets(&vault, &cover.path)
                 .map_err(|source| refused(&cover.path, source))?
             {
                 pruned.covers += 1;
             }
         }
 
-        pruned.staged = vault
-            .sweep_the_staging()
-            .map_err(|source| refused(&root, source))?;
+        pruned.staged = match applying {
+            Applying::Yes => vault.sweep_the_staging(),
+            Applying::No => vault.staging_a_sweep_would_take(),
+        }
+        .map_err(|source| refused(&root, source))?;
         Ok(pruned)
     }
 
@@ -2370,6 +2401,14 @@ impl Library {
     }
 
     pub fn release_from_vault(&self, roots: &[PathBuf]) -> Result<Released> {
+        self.releasing_from_the_vault(roots, Applying::Yes)
+    }
+
+    pub fn vault_release_foretold(&self, roots: &[PathBuf]) -> Result<Released> {
+        self.releasing_from_the_vault(roots, Applying::No)
+    }
+
+    fn releasing_from_the_vault(&self, roots: &[PathBuf], applying: Applying) -> Result<Released> {
         let _walk = self.walk_the_tree()?;
         let known = self.roots()?;
         if let Some(stranger) = roots.iter().find(|root| !known.contains(root)) {
@@ -2387,6 +2426,13 @@ impl Library {
         })?;
         let (standing, stranded): (Vec<_>, Vec<_>) =
             vaulted.into_iter().partition(|(_, path)| path.exists());
+
+        if applying == Applying::No {
+            return Ok(Released {
+                released: standing.len() as u64,
+                stranded: stranded.len() as u64,
+            });
+        }
 
         let released = self.inner.write(|transaction| {
             let mut released = 0;

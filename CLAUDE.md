@@ -339,9 +339,9 @@ cargo run -- tag                      # the tags that would be written into ever
 cargo run -- vault                    # what the vault holds by form, sources' weight and saving;
                                       #   --import previews and --apply keeps, --root <root> and
                                       #   --at-most <N> narrow; --verify decodes every object
-                                      #   against what went in; --prune removes unnamed objects and
-                                      #   covers; --release points vaulted rows whose file is
-                                      #   still there back at it
+                                      #   against what went in; --prune counts unnamed objects and
+                                      #   covers and --release the vaulted rows whose file is
+                                      #   still there, each doing it only with --apply
 cargo run -- organise                 # the moves filing every track under `organise-as`, each
                                       #   within its root, with refusals and why; --apply moves,
                                       #   rewrites the catalog and prunes emptied folders, --as

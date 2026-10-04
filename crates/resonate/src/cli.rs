@@ -500,8 +500,8 @@ pub struct VaultArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["verify", "prune"],
-        help = "Make the import rather than printing it"
+        conflicts_with = "verify",
+        help = "Make the import, the release or the prune rather than printing it"
     )]
     pub apply: bool,
 
@@ -515,17 +515,18 @@ pub struct VaultArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "verify", "apply", "roots", "at_most", "release"],
-        help = "Take away the objects no track and no album names any more"
+        conflicts_with_all = ["import", "verify", "roots", "at_most", "release"],
+        help = "Count the objects no track and no album names any more, and with --apply take \
+                them away"
     )]
     pub prune: bool,
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "verify", "apply", "at_most"],
-        help = "Point every vaulted track whose own file is still there back at that file. A \
-                track the vault holds the only copy of stays in it, and the objects released \
-                are left for --prune to take away"
+        conflicts_with_all = ["import", "verify", "prune", "at_most"],
+        help = "Count the vaulted tracks whose own file is still there, and with --apply point \
+                each back at that file. A track the vault holds the only copy of stays in it, \
+                and the objects released are left for --prune to take away"
     )]
     pub release: bool,
 }

@@ -18166,6 +18166,60 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
 }
 
 #[test]
+fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let gone = tree.write(
+        "dogs.wav",
+        &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
+    );
+    let (library, vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    fs::remove_file(&gone).expect("one source goes");
+    let echoes_stands_in = |library: &Library| -> Result<bool> {
+        let row = all(library)?
+            .into_iter()
+            .find(|row| row.title == "Echoes")
+            .expect("the row is in the catalog");
+        Ok(library
+            .stand_in()
+            .stands_in(&row.location, row.span)
+            .is_some())
+    };
+
+    let foretold = library.vault_release_foretold(&[])?;
+    assert_eq!((foretold.released, foretold.stranded), (1, 1));
+    assert!(
+        echoes_stands_in(&library)?,
+        "a release foretold already pointed a row back"
+    );
+    assert!(library.vault_objects_nothing_names()?.is_empty());
+
+    assert_eq!(library.vault_prune_foretold()?, Pruned::default());
+
+    let released = library.release_from_vault(&[])?;
+    assert_eq!(released.released, foretold.released);
+    assert!(!echoes_stands_in(&library)?);
+
+    let objects = vault.holding().expect("a counted vault").objects;
+    let foretold = library.vault_prune_foretold()?;
+    assert_eq!(foretold.objects, 1);
+    assert_eq!(
+        vault.holding().expect("a counted vault").objects,
+        objects,
+        "a prune foretold took an object away"
+    );
+    assert_eq!(library.vault_objects_nothing_names()?.len(), 1);
+
+    let pruned = library.prune_the_vault()?;
+    assert_eq!(pruned.objects, foretold.objects);
+    assert_eq!(library.vault_prune_foretold()?, Pruned::default());
+    Ok(())
+}
+
+#[test]
 fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it_is() -> Result<()>
 {
     let tree = Tree::new();

@@ -219,7 +219,7 @@ impl Vault {
             drawings: Drawings::default(),
             landing: Mutex::new(()),
         };
-        if let Err(error) = vault.swept(Sweeping::WhatCrashed) {
+        if let Err(error) = vault.swept(Sweeping::WhatCrashed, Sweep::Taking) {
             tracing::warn!(%error, "what a crashed import left in the vault's staging could not be swept");
         }
         Ok(vault)
@@ -523,10 +523,14 @@ impl Vault {
     }
 
     pub fn sweep_the_staging(&self) -> Result<u64> {
-        self.swept(Sweeping::AllButTheLiving)
+        self.swept(Sweeping::AllButTheLiving, Sweep::Taking)
     }
 
-    fn swept(&self, sweeping: Sweeping) -> Result<u64> {
+    pub fn staging_a_sweep_would_take(&self) -> Result<u64> {
+        self.swept(Sweeping::AllButTheLiving, Sweep::Counting)
+    }
+
+    fn swept(&self, sweeping: Sweeping, sweep: Sweep) -> Result<u64> {
         let folder = self.root.join(STAGING);
         let mut swept = 0;
         let reading =
@@ -534,7 +538,14 @@ impl Vault {
         for entry in reading {
             let entry = entry.map_err(|source| Error::io(VaultOp::Walk, &folder, source))?;
             let path = entry.path();
-            if sweeping.takes(staged_by(&path)) && self.forget(&path)? {
+            if !sweeping.takes(staged_by(&path)) {
+                continue;
+            }
+            let taken = match sweep {
+                Sweep::Taking => self.forget(&path)?,
+                Sweep::Counting => true,
+            };
+            if taken {
                 swept += 1;
             }
         }
@@ -1061,6 +1072,12 @@ impl Vault {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sweep {
+    Taking,
+    Counting,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

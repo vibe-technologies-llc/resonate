@@ -17,7 +17,7 @@ pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()
         return verify(library, vault);
     }
     if args.prune {
-        return prune(library);
+        return prune(library, args);
     }
     if args.import {
         return import(library, args);
@@ -29,13 +29,26 @@ pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()
 }
 
 fn release(library: &Library, args: &VaultArgs) -> Result<()> {
-    let released = library.release_from_vault(&filed_from(&args.roots))?;
+    let roots = filed_from(&args.roots);
+    let released = if args.apply {
+        library.release_from_vault(&roots)?
+    } else {
+        library.vault_release_foretold(&roots)?
+    };
+    let verb = if args.apply {
+        "released"
+    } else {
+        "would release"
+    };
     said!(
-        "released {} | kept {} the vault holds the only copy of",
+        "{verb} {} | kept {} the vault holds the only copy of",
         released.released,
         released.stranded
     );
-    if released.released > 0 {
+    if !args.apply && released.released > 0 {
+        said!("nothing was released; --apply makes it so");
+    }
+    if args.apply && released.released > 0 {
         said!("resonate vault --prune takes away what nothing names any more");
     }
     Ok(())
@@ -234,15 +247,23 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     }
 }
 
-fn prune(library: &Library) -> Result<()> {
-    let pruned = library.prune_the_vault()?;
+fn prune(library: &Library, args: &VaultArgs) -> Result<()> {
+    let pruned = if args.apply {
+        library.prune_the_vault()?
+    } else {
+        library.vault_prune_foretold()?
+    };
+    let verb = if args.apply { "" } else { "would take " };
     said!(
-        "objects {} | covers {} | staged {} | left {}",
+        "{verb}objects {} | covers {} | staged {} | left {}",
         pruned.objects,
         pruned.covers,
         pruned.staged,
         pruned.left
     );
+    if !args.apply && pruned.objects + pruned.covers + pruned.staged > 0 {
+        said!("nothing was taken away; --apply makes it so");
+    }
     Ok(())
 }
 
