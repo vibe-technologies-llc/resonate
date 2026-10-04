@@ -13,7 +13,7 @@ use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, 
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, store, xspf};
 
-const LARGEST_PLAYLIST_FILE: u64 = 8 * 1024 * 1024;
+const LARGEST_PLAYLIST_FILE: u64 = 64 * 1024 * 1024;
 
 const STAGING_SUFFIX: &str = ".new";
 
@@ -192,6 +192,7 @@ pub fn write(path: &Path, name: &str, entries: &[PlaylistEntry]) -> Result<Playl
         PlaylistFormat::Xspf => xspf::write(name, entries, beside)?,
     };
 
+    read_back_within(path, &text, LARGEST_PLAYLIST_FILE)?;
     staged_over(path, &text)?;
     Ok(format)
 }
@@ -466,6 +467,18 @@ fn within_the_limit(path: &Path) -> Result<Vec<u8>> {
     Ok(taken)
 }
 
+fn read_back_within(path: &Path, text: &str, limit: u64) -> Result<()> {
+    let held = text.len() as u64;
+    if held > limit {
+        return Err(Error::PlaylistFileTooLarge {
+            path: path.to_path_buf(),
+            held,
+            limit,
+        });
+    }
+    Ok(())
+}
+
 fn too_large(path: &Path, held: u64) -> Error {
     Error::PlaylistFileTooLarge {
         path: path.to_path_buf(),
@@ -528,6 +541,21 @@ const fn hex(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sheet_too_large_to_import_is_refused_rather_than_exported() {
+        let path = Path::new("/music/everything.m3u");
+
+        assert!(read_back_within(path, "#EXTM3U\n", 8).is_ok());
+        assert!(matches!(
+            read_back_within(path, "#EXTM3U\n/music/a.flac\n", 8),
+            Err(Error::PlaylistFileTooLarge {
+                held: 22,
+                limit: 8,
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn a_file_whose_name_holds_a_backslash_is_written_as_a_row_that_reads_back_as_it() {

@@ -73,8 +73,6 @@ service or a format — and is not worked until that moves; everything else is o
   so it destroys rows the command line, MCP or another window added meanwhile
 - A playlist sheet from another machine or drive layout cannot be reconnected by its trailing path
   components, so every row of a Windows-written sheet imports as missing
-- A playlist exported with more than some 50 000 rows cannot be read back, since import refuses a
-  sheet over 8 MiB and export writes any size
 - An organise cancel is heard only between batches of 256 moves, so a run of copies across devices
   cannot be stopped for minutes
 - An untagged *99 Luftballons.mp3* or *21 Guns.flac* is read as track 99 or 21 titled *Luftballons*

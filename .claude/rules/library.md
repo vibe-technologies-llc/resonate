@@ -2816,8 +2816,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   location there before unescaping, as `MediaLocation::from_uri` reads one, so
   `file:///music/Echoes.flac#t=10` and this build's own `#frames=` URI are the file they name while
   `%23` and `%3F` still decode into it. A plain M3U or PLS row is no URI, so a `#` mid-row stays part of
-  the name. The 8 MiB ceiling (`LARGEST_PLAYLIST_FILE`) is weighed against what the name declares and
-  again against what the read took, so a FIFO reporting zero is refused rather than read unbounded.
+  the name. The 64 MiB ceiling (`LARGEST_PLAYLIST_FILE`, some 400 000 rows) is weighed against what
+  the name declares and again against what the read took, so a FIFO reporting zero is refused rather
+  than read unbounded — and against what an export would write, `read_back_within` refusing a sheet
+  past it as `PlaylistFileTooLarge` before a byte lands, so what this build writes it reads back
+  (`a_sheet_too_large_to_import_is_refused_rather_than_exported`).
   `Library::prune_playlist` is the companion dropping rows whose files have gone, asked for rather than
   automatic. A sheet saying how many rows it holds is taken at its word then weighed — PLS's
   `NumberOfEntries` against what the text held, the shortfall carried as `Imported::short` — so a
