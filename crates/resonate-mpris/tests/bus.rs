@@ -1495,6 +1495,33 @@ fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest(
 }
 
 #[test]
+fn a_running_player_told_where_files_went_follows_its_queued_rows_there() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let playing = tree.wav("playing.wav");
+    let rest = tree.wav("rest.wav");
+    let filed = tree.root.join("filed.wav");
+    harness.load_all(&[playing.clone(), rest.clone()]);
+    harness.wait_for(
+        |harness| harness.tracks().len() == 2,
+        "the queue to reach the track list",
+    );
+
+    std::fs::rename(&rest, &filed).expect("the file moves");
+    listed_as(&harness.destination)
+        .relocate(&[(MediaLocation::local(&rest), MediaLocation::local(&filed))])
+        .expect("the running player takes the moves");
+
+    harness.wait_for(
+        |harness| queued_rows(harness)[1] == MediaLocation::local(&filed),
+        "the moved row to follow its file",
+    );
+    assert_eq!(queued_rows(&harness)[0], MediaLocation::local(&playing));
+}
+
+#[test]
 fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_told_to_be() {
     let Some(harness) = Harness::start() else {
         return;

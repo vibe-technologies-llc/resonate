@@ -10,8 +10,6 @@ service or a format — and is not worked until that moves; everything else is o
   deadline, so Pause, Stop and quitting go unanswered until bytes arrive; a bounded read cannot fix
   it, symphonia taking a short read for the end and an error for damage, so the decode has to move
   off the engine thread
-- An organise run from the command line while the window plays is not told to the window's player,
-  so its queue keeps the old paths and its next resumption overwrites the rewritten one
 
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's

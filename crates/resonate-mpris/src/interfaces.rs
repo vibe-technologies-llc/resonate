@@ -451,6 +451,18 @@ impl OwnInterface {
         })
     }
 
+    fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {
+        let moved = moved
+            .iter()
+            .map(|(from, to)| Ok((moved_location(from)?, moved_location(to)?)))
+            .collect::<fdo::Result<Vec<_>>>()?;
+        if moved.is_empty() {
+            return Ok(());
+        }
+
+        self.shared.settle(Command::Relocate(moved))
+    }
+
     #[zbus(property)]
     fn sleep(&self) -> Sleep {
         sleep_status(self.shared.player.state().sleeping)
@@ -463,6 +475,11 @@ impl OwnInterface {
             self.shared.player.state().queue_position,
         )
     }
+}
+
+fn moved_location(uri: &str) -> fdo::Result<MediaLocation> {
+    MediaLocation::from_uri(uri)
+        .ok_or_else(|| fdo::Error::InvalidArgs(format!("{uri} names no location")))
 }
 
 pub(crate) fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> u32 {

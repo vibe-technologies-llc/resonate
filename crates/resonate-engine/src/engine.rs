@@ -30,7 +30,7 @@ use crate::{
     backend::Surveyor,
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
-    queue::{Queue, QueueItem, Queued, Removal},
+    queue::{self, Queue, QueueItem, Queued, Removal},
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     surveying::{Surveyed, Surveying},
 };
@@ -1241,9 +1241,9 @@ impl Engine {
             Command::Relocate(moved) => {
                 self.queue.relocate(&moved);
                 if let Some(track) = self.track.as_mut()
-                    && let Some((_, to)) = moved.iter().find(|(from, _)| *from == track.location)
+                    && let Some(to) = queue::landed_at(&track.location, &moved)
                 {
-                    track.location = to.clone();
+                    track.location = to;
                 }
                 Ok(())
             }

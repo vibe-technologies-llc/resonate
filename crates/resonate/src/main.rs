@@ -1186,7 +1186,40 @@ fn organise(
         return Ok(());
     }
     said_on!("{}", organised(&summary, &library.roots()?, how.apply));
+    if how.apply {
+        tell_the_players_where_files_went(&summary);
+    }
     finished(PassKind::Organise, summary.cancelled)
+}
+
+fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
+    let moved: Vec<(MediaLocation, MediaLocation)> = summary
+        .plan
+        .moves
+        .iter()
+        .flat_map(|planned| planned.files())
+        .map(|(from, to)| (MediaLocation::local(from), MediaLocation::local(to)))
+        .collect();
+    if moved.is_empty() {
+        return;
+    }
+
+    let running = match Running::listed() {
+        Ok(running) => running,
+        Err(error) => {
+            tracing::debug!(%error, "no session bus to tell a running player where files went");
+            return;
+        }
+    };
+    for player in running {
+        if let Err(error) = player.relocate(&moved) {
+            tracing::warn!(
+                %error,
+                name = %player.name(),
+                "a running player was not told where its queued files went"
+            );
+        }
+    }
 }
 
 fn until_told<Progress, Summary>(handle: PassHandle<Progress, Summary>) -> Result<Summary>

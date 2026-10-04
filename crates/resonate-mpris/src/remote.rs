@@ -32,6 +32,8 @@ const GET_PLAYLISTS: &str = "GetPlaylists";
 const ACTIVATE_PLAYLIST: &str = "ActivatePlaylist";
 const SET_SLEEP: &str = "SetSleep";
 const ADD_TRACKS: &str = "AddTracks";
+const RELOCATE: &str = "Relocate";
+const MOVES_A_CALL: usize = 4096;
 const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 const PLAYING_NEXT: &str = "PlayingNext";
 const PLAY: &str = "Play";
@@ -348,6 +350,19 @@ impl Running {
         self.proxy(OWN_INTERFACE)?
             .call::<_, _, ()>(SET_SLEEP, &(mode, seconds))
             .map_err(|source| Error::bus(BusOp::Call, source))
+    }
+
+    pub fn relocate(&self, moved: &[(MediaLocation, MediaLocation)]) -> Result<()> {
+        let own = self.proxy(OWN_INTERFACE)?;
+        for some in moved.chunks(MOVES_A_CALL) {
+            let uris: Vec<(String, String)> = some
+                .iter()
+                .map(|(from, to)| (from.to_uri(), to.to_uri()))
+                .collect();
+            own.call::<_, _, ()>(RELOCATE, &(uris,))
+                .map_err(|source| Error::bus(BusOp::Call, source))?;
+        }
+        Ok(())
     }
 
     fn told(&self, interface: &'static str, method: &'static str) -> Result<()> {

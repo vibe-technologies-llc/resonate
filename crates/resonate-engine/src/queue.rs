@@ -407,8 +407,8 @@ impl Queue {
     pub fn relocate(&mut self, moved: &[(MediaLocation, MediaLocation)]) -> bool {
         let mut relocated = false;
         for item in &mut self.items {
-            if let Some((_, to)) = moved.iter().find(|(from, _)| *from == item.location) {
-                item.location = to.clone();
+            if let Some(to) = landed_at(&item.location, moved) {
+                item.location = to;
                 relocated = true;
             }
         }
@@ -869,6 +869,19 @@ impl Default for Queue {
     }
 }
 
+pub(crate) fn landed_at(
+    location: &MediaLocation,
+    moved: &[(MediaLocation, MediaLocation)],
+) -> Option<MediaLocation> {
+    let mut at = location;
+    for (from, to) in moved {
+        if from == at {
+            at = to;
+        }
+    }
+    (at != location).then(|| at.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use resonate_core::{Frames, Resumable};
@@ -895,6 +908,33 @@ mod tests {
 
     fn current(queue: &Queue) -> Option<u64> {
         queue.current().map(|item| item.id.get())
+    }
+
+    #[test]
+    fn two_files_trading_names_through_a_parked_one_are_each_followed_to_where_they_landed() {
+        let mut queue = loaded(2, 0);
+        let first = MediaLocation::local("/music/1.flac");
+        let second = MediaLocation::local("/music/2.flac");
+        let parked = MediaLocation::local("/music/1.resonate-parked-7.flac");
+
+        let relocated = queue.relocate(&[
+            (first.clone(), parked.clone()),
+            (second.clone(), first.clone()),
+            (parked, second.clone()),
+        ]);
+
+        assert!(relocated);
+        assert_eq!(queue.items[0].location, second);
+        assert_eq!(queue.items[1].location, first);
+    }
+
+    #[test]
+    fn a_move_that_comes_back_where_it_started_relocates_nothing() {
+        let mut queue = loaded(1, 0);
+        let first = MediaLocation::local("/music/1.flac");
+        let parked = MediaLocation::local("/music/1.resonate-parked-7.flac");
+
+        assert!(!queue.relocate(&[(first.clone(), parked.clone()), (parked, first)]));
     }
 
     fn kept(number: u64) -> Resumable {

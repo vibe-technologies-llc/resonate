@@ -24,9 +24,13 @@ client a second `resonate` reaches a first through. Its playlists seam is in `li
   built from the same list, so the bus advertises what this build can open rather than a
   hard-coded list. `SupportedMimeTypes` answers the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets an interface of our own.** `org.resonate.Player1`, at the same
-  object path as the four MPRIS interfaces, carries `SetSleep`, `Sleep` and `PlayingNext`: the spec
-  has no vocabulary for a sleep timer or for rows queued apart from what plays, and stretching one
-  of its properties would be worse than a name plainly ours. Its mode strings are one typed mapping
+  object path as the four MPRIS interfaces, carries `SetSleep`, `Sleep`, `PlayingNext`, `AddTracks`
+  and `Relocate`: the spec has no vocabulary for a sleep timer, for rows queued apart from what plays
+  or for files that moved under the queue, and stretching one of its properties would be worse than a
+  name plainly ours. `Relocate(a(ss))` takes `(from, to)` URI pairs in landing order and is one
+  `Command::Relocate`; `Running::relocate` sends them `MOVES_A_CALL` (4 096) at a time, which a
+  sequence of moves composes across, so a whole library filed is never one message past the bus's
+  limit (`a_running_player_told_where_files_went_follows_its_queued_rows_there`). Its mode strings are one typed mapping
   in `track.rs` beside `PlaybackStatus`, written and read back through one vocabulary. The poll
   diffs the *published pair*, not the `Asleep` behind it: `left` ticks continuously, and diffing
   the domain value would announce a change five times a second while a timer ran.
