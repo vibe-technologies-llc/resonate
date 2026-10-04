@@ -1864,7 +1864,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (`format::time_of_day`, the listener's zone) rather than a countdown so an idle window does not
   draw a stale one — and one the catalog gave up on `GaveUp`, *No match after 6 attempts*. A queued
   download says *Queued · attempt 1 of 6*; while the poll asks, `Downloading { attempt }` says
-  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries. A poll that
+  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries — and, where
+  the poll says whom it is asking (`LibraryModel::fetched`, a `Fetched` off
+  `PollProgress::asking_provider` and `received`), `downloads::saying_while` names it — *Attempt 2 of
+  6 · asking TIDAL…* — and, once bytes arrive, *Downloading from TIDAL · 12.4 MiB*, drawn afresh on
+  every `SCAN_POLL` the poll's task notifies
+  (`a_download_says_which_provider_is_asked_and_how_much_has_arrived`). A poll that
   ended with a provider refusing or running late (`PollStats::refused` or `late`) sets
   `LibraryModel::providers_unheard`, and while it holds a queued download, or a retrying one whose
   clock time has passed, reads `Unreached { attempt }` — *Attempt N of 6 · a provider didn't answer,

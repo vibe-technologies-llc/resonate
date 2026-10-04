@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use ahash::AHashMap;
 use gpui::SharedString;
-use resonate_core::{AlbumId, TrackId, WantId};
+use resonate_core::{AlbumId, SourceId, TrackId, WantId};
 use resonate_library::{Found, Issued, Mbid, RecordingRelease, TRIES_BEFORE_GIVING_UP, Want};
 
 use crate::format;
@@ -93,6 +93,41 @@ impl Fetching {
             Self::NoProvider => SharedString::new_static("No provider is set up"),
             Self::Unwanted => SharedString::new_static("Couldn't add it"),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Fetched {
+    pub provider: SourceId,
+    pub received: u64,
+}
+
+impl Fetched {
+    fn from_whom(&self) -> String {
+        match self.provider.as_str() {
+            "inbox" => "the inbox".to_owned(),
+            "subsonic" => "your Subsonic server".to_owned(),
+            "tidal" => "TIDAL".to_owned(),
+            "hifi-api" => "TIDAL through hifi-api".to_owned(),
+            other => other.to_owned(),
+        }
+    }
+}
+
+pub(crate) fn saying_while(fetching: Fetching, fetched: Option<&Fetched>) -> SharedString {
+    match (fetching, fetched) {
+        (Fetching::Downloading { attempt }, Some(fetched)) if fetched.received == 0 => {
+            SharedString::from(format!(
+                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking {}…",
+                fetched.from_whom()
+            ))
+        }
+        (Fetching::Downloading { .. }, Some(fetched)) => SharedString::from(format!(
+            "Downloading from {} · {}",
+            fetched.from_whom(),
+            format::bytes(fetched.received)
+        )),
+        (fetching, _) => fetching.saying(),
     }
 }
 
@@ -537,6 +572,36 @@ mod tests {
         assert!(!Fetching::Landing.can_be_cancelled());
         assert!(!Fetching::Downloaded.can_be_cancelled());
         assert!(!Fetching::GaveUp.can_be_cancelled());
+    }
+
+    #[test]
+    fn a_download_says_which_provider_is_asked_and_how_much_has_arrived() {
+        let asking = Fetched {
+            provider: SourceId::new("tidal").expect("a source name"),
+            received: 0,
+        };
+        let arriving = Fetched {
+            received: 3 * 1024 * 1024,
+            ..asking.clone()
+        };
+        let downloading = Fetching::Downloading { attempt: 2 };
+
+        assert_eq!(
+            saying_while(downloading, Some(&asking)),
+            "Attempt 2 of 6 · asking TIDAL…"
+        );
+        assert_eq!(
+            saying_while(downloading, Some(&arriving)),
+            "Downloading from TIDAL · 3.0 MiB"
+        );
+        assert_eq!(
+            saying_while(downloading, None),
+            "Attempt 2 of 6 · asking providers…"
+        );
+        assert_eq!(
+            saying_while(Fetching::Queued, Some(&arriving)),
+            Fetching::Queued.saying()
+        );
     }
 
     #[test]

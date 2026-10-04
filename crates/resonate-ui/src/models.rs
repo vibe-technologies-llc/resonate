@@ -36,7 +36,9 @@ use resonate_providers::Providers;
 
 use crate::{
     ResonateApp, clipboard,
-    downloads::{Download, Downloads, Fetcher, Fetching, Polling, Unfinished, WantStanding},
+    downloads::{
+        Download, Downloads, Fetched, Fetcher, Fetching, Polling, Unfinished, WantStanding,
+    },
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
@@ -1521,6 +1523,14 @@ impl LibraryModel {
 
     pub fn fetching(&self, download: &Download) -> Fetching {
         download.fetching_while(self.polling())
+    }
+
+    pub fn fetched(&self) -> Option<Fetched> {
+        let progress = self.work.polling()?;
+        Some(Fetched {
+            provider: progress.asking_provider()?,
+            received: progress.received(),
+        })
     }
 
     fn polling(&self) -> Polling {

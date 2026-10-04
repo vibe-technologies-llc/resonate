@@ -3795,6 +3795,7 @@ impl RootView {
         let again = download.found.clone();
         let state = browser::fetching_colour(fetching);
         let library = self.library.read(cx);
+        let saying = downloads::saying_while(fetching, library.fetched().as_ref());
         let album = library.downloaded_album(download);
         let track = library
             .downloaded_track(download)
@@ -3839,12 +3840,7 @@ impl RootView {
                             .min_w_0()
                             .gap_1()
                             .text_size(px(theme::text_xs()))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_color(rgb(state))
-                                    .child(fetching.saying()),
-                            )
+                            .child(div().flex_none().text_color(rgb(state)).child(saying))
                             .child(
                                 div()
                                     .flex_1()
