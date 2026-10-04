@@ -62,6 +62,7 @@ fn spelled_channels(channels: ChannelSet) -> String {
 pub struct Reading {
     pub profile: Profile,
     pub passed_over: usize,
+    pub approximated: usize,
 }
 
 pub fn read_number(text: &str) -> Option<f64> {
@@ -160,6 +161,7 @@ struct Written {
     q: Option<f64>,
     bandwidth: Option<f64>,
     slope: Option<f64>,
+    rolloff_db_an_octave: Option<u32>,
 }
 
 impl Written {
@@ -185,7 +187,10 @@ impl Written {
                     taken = 3;
                 }
                 "S" => self.slope = value,
-                _ => taken = 1,
+                word => {
+                    self.rolloff_db_an_octave = rolloff_in(word).or(self.rolloff_db_an_octave);
+                    taken = 1;
+                }
             }
             at += taken;
         }
@@ -205,7 +210,18 @@ impl Written {
     }
 }
 
-fn band_of(line: &str) -> Option<Band> {
+const SECOND_ORDER_DB_AN_OCTAVE: u32 = 12;
+
+fn rolloff_in(word: &str) -> Option<u32> {
+    word.strip_suffix("DB")?.parse().ok()
+}
+
+struct Taken {
+    band: Band,
+    approximated: bool,
+}
+
+fn band_of(line: &str) -> Option<Taken> {
     let (_, tail) = line.split_once(':')?;
     let words: Vec<&str> = tail.split_whitespace().collect();
 
@@ -227,14 +243,21 @@ fn band_of(line: &str) -> Option<Band> {
         BandGain::FLAT
     };
 
-    Some(Band {
-        on,
-        ..Band::new(
-            kind,
-            clamped_frequency(hertz),
-            gain,
-            clamped_q(written.q_for(kind, decibels)),
-        )
+    let approximated = written
+        .rolloff_db_an_octave
+        .is_some_and(|rolloff| rolloff != SECOND_ORDER_DB_AN_OCTAVE);
+
+    Some(Taken {
+        band: Band {
+            on,
+            ..Band::new(
+                kind,
+                clamped_frequency(hertz),
+                gain,
+                clamped_q(written.q_for(kind, decibels)),
+            )
+        },
+        approximated,
     })
 }
 
@@ -256,6 +279,7 @@ pub fn read(text: &str) -> Result<Reading> {
     let mut target = None;
     let mut bands = Vec::new();
     let mut passed_over = 0;
+    let mut approximated = 0;
     let mut lines = 0;
     let mut scope = Scope::Reaching(ChannelSet::EVERY);
 
@@ -327,10 +351,16 @@ pub fn read(text: &str) -> Result<Reading> {
         }
 
         match band_of(line) {
-            Some(band) if bands.len() < MAX_BANDS => bands.push(Band {
-                channels: reaching,
-                ..band
-            }),
+            Some(taken) if bands.len() < MAX_BANDS => {
+                if taken.approximated {
+                    tracing::debug!(line, "a rolloff this build reads as a second-order filter");
+                    approximated += 1;
+                }
+                bands.push(Band {
+                    channels: reaching,
+                    ..taken.band
+                });
+            }
             Some(_) => {
                 tracing::debug!(line, "a filter past the bands a profile holds");
                 passed_over += 1;
@@ -356,6 +386,7 @@ pub fn read(text: &str) -> Result<Reading> {
     Ok(Reading {
         profile,
         passed_over,
+        approximated,
     })
 }
 
@@ -628,6 +659,21 @@ mod tests {
 
         let wide = "x".repeat(LARGEST_PROFILE + 1);
         assert!(matches!(read(&wide), Err(Error::TooLarge { .. })));
+    }
+
+    #[test]
+    fn a_rolloff_word_other_than_second_order_is_read_and_counted_as_approximated() {
+        let reading = read(
+            "Filter 1: ON LS 6dB Fc 105 Hz Gain 4 dB\n\
+             Filter 2: ON HP 12dB Fc 30 Hz\n\
+             Filter 3: ON LP 24dB Fc 18000 Hz\n\
+             Filter 4: ON PK Fc 1000 Hz Gain 2 dB Q 1",
+        )
+        .expect("it reads");
+
+        assert_eq!(reading.profile.bands().len(), 4);
+        assert_eq!(reading.approximated, 2);
+        assert_eq!(reading.passed_over, 0);
     }
 
     #[test]

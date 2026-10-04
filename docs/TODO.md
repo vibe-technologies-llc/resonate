@@ -263,8 +263,6 @@ service or a format — and is not worked until that moves; everything else is o
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer: lofty writes none of them
 
 ## Later: Equaliser and DSP extras
-- An unsupported EqualizerAPO filter or a `Device:` scope is dropped without a word, and a
-  `6dB`/`12dB` slope word on a pass or shelf filter is ignored
 - Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
   and two picks landing out of order keep the first
 - Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the

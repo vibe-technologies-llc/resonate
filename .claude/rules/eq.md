@@ -321,7 +321,12 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   neither read nor counted as passed over. Only `LARGEST_PROFILE` and `LINES_AT_MOST` refuse; a
   filter past `MAX_BANDS` is passed over and counted like any other unreadable line, the first 32
   kept. `read_number` is exported so the pane's numeric cells agree
-  with the file reader about what a number is.
+  with the file reader about what a number is. **What a read gave up is said, by the command line and
+  the window alike.** `Reading` and `Kept` carry `passed_over` — the lines nothing was made of,
+  an unsupported filter, a `Device:` or an unknown `Channel:` scope — and `approximated`, the
+  filters naming a rolloff word (`6dB`, `24dB`) other than the second order every band is, which
+  are read as second order and counted; `resonate eq --import` prints both and the pane's notice
+  appends them (`a_rolloff_word_other_than_second_order_is_read_and_counted_as_approximated`).
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** 127 points carry no bands,
   so the curve is fitted onto the 31 ISO third-octave centres at the third-octave Q (`Q::THIRD_OCTAVE`,
   4.318) by iterating the bank's response against the target — no linear algebra, `FITTING_PASSES`

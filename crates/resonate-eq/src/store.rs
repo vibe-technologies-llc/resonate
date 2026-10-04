@@ -78,6 +78,7 @@ pub struct Kept {
     pub profile: Profile,
     pub converted: bool,
     pub passed_over: usize,
+    pub approximated: usize,
 }
 
 pub struct Store {
@@ -256,6 +257,7 @@ impl Store {
             converted: reading.profile.target().is_some(),
             profile: reading.profile,
             passed_over: reading.passed_over,
+            approximated: reading.approximated,
         })
     }
 

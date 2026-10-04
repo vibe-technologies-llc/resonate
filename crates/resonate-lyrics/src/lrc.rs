@@ -97,7 +97,7 @@ fn disagree(declared: Option<&str>, wanted: Option<&str>) -> bool {
         return !declared.contains(&wanted) && !wanted.contains(&declared);
     }
 
-    !one_names_a_run_of_the_others_words(&words(&declared_text), &words(&wanted_text))
+    !one_names_a_run_of_the_others_words(&words(declared_text), &words(wanted_text))
 }
 
 fn words(text: &str) -> Vec<String> {

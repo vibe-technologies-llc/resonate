@@ -203,6 +203,12 @@ fn passed_over(kept: &Kept) {
     if kept.passed_over > 0 {
         said!("{} lines were passed over", kept.passed_over);
     }
+    if kept.approximated > 0 {
+        said!(
+            "{} filters name a rolloff this build reads as second order",
+            kept.approximated
+        );
+    }
 }
 
 fn export(

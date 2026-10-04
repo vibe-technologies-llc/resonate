@@ -75,6 +75,23 @@ pub struct Placed {
     pub gain: BandGain,
 }
 
+fn caveats(kept: &resonate_eq::Kept) -> String {
+    let mut said = String::new();
+    if kept.passed_over > 0 {
+        said.push_str(&format!(
+            "; {} lines this build does not read were passed over",
+            kept.passed_over
+        ));
+    }
+    if kept.approximated > 0 {
+        said.push_str(&format!(
+            "; {} filters name a rolloff it reads as second order",
+            kept.approximated
+        ));
+    }
+    said
+}
+
 pub fn a_band_at(placed: Placed) -> Band {
     Band::peaking(placed.frequency, placed.gain, Q::BUTTERWORTH)
 }
@@ -718,7 +735,7 @@ impl EqualiserModel {
                     this.reload();
                     this.replaced(&name);
                     this.reread(Curve::Kept(name.clone()));
-                    this.notice = Some(Notice::Done(if kept.converted {
+                    let said = if kept.converted {
                         format!(
                             "kept a graphic curve as {name}, fitted to {} bands here and again \
                              at the rate each stream plays at",
@@ -726,7 +743,8 @@ impl EqualiserModel {
                         )
                     } else {
                         format!("Kept {name}, {} bands", kept.profile.bands().len())
-                    }));
+                    };
+                    this.notice = Some(Notice::Done(format!("{said}{}", caveats(&kept))));
                     cx.notify();
                 }
                 Err(error) => {
