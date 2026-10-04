@@ -198,3 +198,11 @@ paths:
 - **`toml_edit`** rather than `toml`, with `display` as well as `parse`. The settings pane rewrites
   the user's `config.toml`; a value model round-trips the *settings* but throws away the comments,
   key order and spacing the user wrote, and `display` emits the edited document.
+
+## Pins held against `cargo update`
+
+- **`libc`** is held at `=0.2.189` on `resonate-ui`, which imports nothing from it: 0.2.190 took
+  out `ENOATTR` on Linux, and `xattr` 0.2.3 — under gpui through `gpui_http_client` and
+  `zed-async-tar` — names `libc::ENOATTR` and stops compiling. The `=` requirement is the one
+  thing that keeps `cargo update` from moving the lockfile past it, so it is the exception to a
+  declared dependency nothing imports. It goes when gpui no longer reaches `xattr` 0.2.
