@@ -69,8 +69,8 @@ use resonate_library::{
     Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, LookupOp, Missing,
     MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing, Playlist,
     PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused, RetagOptions, RetagSummary,
-    RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter, UnheldRelease, Vault,
-    VaultFiles, Want, folded_letters,
+    RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter, TRIES_BEFORE_GIVING_UP,
+    UnheldRelease, Vault, VaultFiles, Want, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Running, Standing};
 use resonate_pipewire::{
@@ -748,13 +748,15 @@ fn wants(library: &Library) -> Result<()> {
     }
 
     let mut table = Table::new(vec![
-        "TITLE", "ARTIST", "ALBUM", "WANTED", "TRIED", "OFFERED", "LINKS",
+        "TITLE", "ARTIST", "ALBUM", "STATE", "WANTED", "TRIED", "OFFERED", "LINKS",
     ]);
+    let now = SystemTime::now();
     for want in &wanted {
         table.push(vec![
             want.title.clone(),
             want.artist.clone().unwrap_or_default(),
             want.album_title.clone(),
+            standing_of(want, now),
             ago(Some(want.wanted)),
             ago(want.tried),
             want.offered.clone().unwrap_or_else(|| "-".to_owned()),
@@ -764,6 +766,39 @@ fn wants(library: &Library) -> Result<()> {
 
     said_on!("{}", table.render());
     Ok(())
+}
+
+fn standing_of(want: &Want, now: SystemTime) -> String {
+    if want.held.is_some() {
+        return "held".to_owned();
+    }
+    if want.gave_up() {
+        return format!("gave up after {TRIES_BEFORE_GIVING_UP} tries");
+    }
+    let due = want
+        .due_at()
+        .and_then(|at| at.duration_since(now).ok())
+        .filter(|left| !left.is_zero());
+    let waiting = |said: String| match due {
+        Some(left) => format!("{said}, again in {}", lasting_for(left)),
+        None => format!("{said}, due"),
+    };
+
+    match (want.offered.is_some(), want.misses) {
+        (true, _) => waiting("offered".to_owned()),
+        (false, 0) if want.tried.is_none() => "due".to_owned(),
+        (false, 0) => waiting("unanswered".to_owned()),
+        (false, misses) => waiting(format!("no match {misses} of {TRIES_BEFORE_GIVING_UP}")),
+    }
+}
+
+fn lasting_for(left: Duration) -> String {
+    let minutes = left.as_secs().div_ceil(60);
+    match (minutes / 60, minutes % 60) {
+        (0, minutes) => format!("{minutes}m"),
+        (hours, 0) => format!("{hours}h"),
+        (hours, minutes) => format!("{hours}h {minutes}m"),
+    }
 }
 
 fn linked_through(want: &Want) -> String {
@@ -2736,6 +2771,71 @@ mod tests {
 
     use super::*;
     use crate::cli::RepeatArg;
+
+    fn wanted_at(tried: Option<SystemTime>, misses: u32) -> Want {
+        Want {
+            id: resonate_core::WantId::new(1).expect("an id"),
+            release_track: resonate_core::ReleaseTrackId::new(1).expect("an id"),
+            album: resonate_core::AlbumId::new(1).expect("an id"),
+            album_title: "Heroes Tonight".to_owned(),
+            title: "Heroes Tonight".to_owned(),
+            artist: Some("Janji".to_owned()),
+            recording: None,
+            track: None,
+            release: None,
+            isrc: None,
+            length: None,
+            disc: 1,
+            position: 1,
+            wanted: SystemTime::UNIX_EPOCH,
+            tried,
+            offered: None,
+            misses,
+            held: None,
+            links: Vec::new(),
+            release_links: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_want_says_how_it_is_getting_on_and_when_it_is_asked_again() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let tried = Some(now - Duration::from_secs(60));
+
+        assert_eq!(standing_of(&wanted_at(None, 0), now), "due");
+        assert_eq!(
+            standing_of(&wanted_at(tried, 2), now),
+            "no match 2 of 6, again in 4m"
+        );
+        assert_eq!(
+            standing_of(&wanted_at(tried, 1), now),
+            "no match 1 of 6, due"
+        );
+        assert_eq!(
+            standing_of(&wanted_at(tried, TRIES_BEFORE_GIVING_UP), now),
+            "gave up after 6 tries"
+        );
+        assert_eq!(
+            standing_of(
+                &Want {
+                    offered: Some("file:///music/a.flac".to_owned()),
+                    ..wanted_at(tried, 0)
+                },
+                now
+            ),
+            "offered, again in 5h 59m"
+        );
+        assert_eq!(
+            standing_of(
+                &Want {
+                    held: Some(resonate_core::TrackId::new(3).expect("an id")),
+                    ..wanted_at(tried, 0)
+                },
+                now
+            ),
+            "held"
+        );
+    }
 
     fn located(argument: &str) -> Option<MediaLocation> {
         queue_items(&[OsString::from(argument)])

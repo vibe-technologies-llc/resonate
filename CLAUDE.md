@@ -316,7 +316,9 @@ cargo run -- roots                    # the roots a bare `scan` walks
 cargo run -- enrich                   # asks the reference about every album and artist not asked
                                       #   lately; --refresh asks the answered again, --albums <N>
                                       #   caps each
-cargo run -- wants                    # wanted release tracks and where a delivery landed
+cargo run -- wants                    # wanted release tracks, how each is getting on — due, no
+                                      #   match and when it is asked again, given up, held — and
+                                      #   where a delivery landed
 cargo run -- missing                  # release tracks with no file and releases of held artists
                                       #   with none held, as a count line and two tables;
                                       #   --artist <NAME> one artist's, --read-the-rest first reads
