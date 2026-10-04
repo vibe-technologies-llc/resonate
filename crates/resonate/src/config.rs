@@ -3,6 +3,7 @@ use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
+    ops::RangeInclusive,
     os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
     process,
@@ -32,6 +33,10 @@ use crate::{
 };
 
 const LOCK_SUFFIX: &str = ".lock";
+
+const BLUETOOTH_LEAD_MS: RangeInclusive<u64> = 0..=5_000;
+
+const BLUETOOTH_AWAKE_S: RangeInclusive<u64> = 0..=3 * 60 * 60;
 
 const STAGING_SUFFIX: &str = ".new";
 
@@ -483,11 +488,11 @@ impl Config {
             ConfigKey::ForceGraphRate => config.force_graph_rate = Some(at.boolean(value)?),
             ConfigKey::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
             ConfigKey::BluetoothLeadMs => {
-                let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                let millis = at.within(value, &BLUETOOTH_LEAD_MS)?;
                 config.bluetooth_lead = Some(Duration::from_millis(millis));
             }
             ConfigKey::BluetoothAwakeS => {
-                let seconds = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                let seconds = at.within(value, &BLUETOOTH_AWAKE_S)?;
                 config.bluetooth_awake = Some(Duration::from_secs(seconds));
             }
             ConfigKey::Volume => {
@@ -519,10 +524,7 @@ impl Config {
                 config.listen_from = Some(Listening::named(at.string(value)?));
             }
             ConfigKey::ListenFor => {
-                let seconds = u64::try_from(at.integer(value)?)
-                    .ok()
-                    .filter(|seconds| LISTENS_FOR_SECONDS.contains(seconds))
-                    .ok_or_else(|| at.rejected())?;
+                let seconds = at.within(value, &LISTENS_FOR_SECONDS)?;
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
             ConfigKey::Inbox => config.inbox = given(at.string(value)?).map(PathBuf::from),
@@ -644,6 +646,13 @@ impl At<'_> {
         value
             .as_integer()
             .ok_or_else(|| self.mistyped(ValueKind::Integer))
+    }
+
+    fn within(self, value: &Item, range: &RangeInclusive<u64>) -> Result<u64> {
+        u64::try_from(self.integer(value)?)
+            .ok()
+            .filter(|held| range.contains(held))
+            .ok_or_else(|| self.rejected())
     }
 
     fn float(self, value: &Item) -> Result<f64> {
@@ -1587,7 +1596,15 @@ mod tests {
 
     #[test]
     fn a_setting_outside_its_domain_names_the_key() {
-        for text in ["quality = \"perfect\"", "volume = 1.5", "buffer-ms = -1"] {
+        for text in [
+            "quality = \"perfect\"",
+            "volume = 1.5",
+            "buffer-ms = -1",
+            "bluetooth-lead-ms = 750000",
+            "bluetooth-lead-ms = -1",
+            "bluetooth-awake-s = 86400",
+            "listen-for = 3",
+        ] {
             let error = read(text).expect_err("outside the domain");
             assert!(
                 matches!(error, Error::ConfigValue { .. }),

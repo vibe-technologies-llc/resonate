@@ -233,6 +233,10 @@ What some of them mean:
   aborted on a large value (`a_length_to_listen_for_is_held_to_what_the_setting_takes`).
   `resonate listen --microphone` and `--seconds` outrank them for one run; the Online
   category's *Listening* group and the Listen sheet's chips write them.
+- `bluetooth-lead-ms` is a whole number of milliseconds from 0 to 5 000 and `bluetooth-awake-s` of
+  seconds from 0 to three hours (`BLUETOOTH_LEAD_MS`, `BLUETOOTH_AWAKE_S`), read through
+  `At::within` as `listen-for` is, so a slipped digit is refused at startup rather than playing hours
+  of silence before the first track or keeping headphones awake for days.
 - `music-folder` is the one folder new songs are copied into — what is dragged onto the window
   (`ui.md`, `library.md`'s *Taking files in*), and what a provider delivers where no vault is open
   (`providers.md`), filed by `organise-as` — an ordinary folder of files and never the vault. It rides on `Stored` onto `ResonateApp::music_folder`, written by

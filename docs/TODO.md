@@ -24,8 +24,6 @@ service or a format — and is not worked until that moves; everything else is o
   claimed only after the engine starts
 - Closing the terminal sends `play` and the headless passes a hang-up nothing catches, so the last
   listen is lost and a tag, organise or import is cut without the drain an interrupt gets
-- `bluetooth-lead-ms` and `bluetooth-awake-s` take any integer, so a typo plays hours of silence
-  before the first track after the link slept
 - After a load or *Next* that found no device, the first play/pause press pauses nothing and only
   the second plays
 - Removing the playing last row under *repeat queue* stops the queue rather than wrapping as a skip
