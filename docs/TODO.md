@@ -161,11 +161,8 @@ service or a format — and is not worked until that moves; everything else is o
 ## Robustness
 - Closing the window or pressing `ctrl-q` during a tag write, an organise, a vault import or a
   dropped file's copy neither cancels the pass nor waits for it
-- A failing ListenBrainz love blocks every later love and backs listen submissions off to an hour
 - A listen counted after the newest listens were removed reuses an id at or below the service's
   mark and is never submitted
-- A listening count infers a seek from the step size rather than `PlayerState::seeks`, so a short
-  forward seek counts as heard and a seek back after the half way counts the play twice
 - Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
   and the providers
 - A host that stays busy is no longer waited on, so a `Retry-After` on a 429 is never read

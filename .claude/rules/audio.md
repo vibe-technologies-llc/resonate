@@ -1346,11 +1346,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   argument.
 - **A play is what was heard, not what was started, and the transport is sampled, not hooked.**
   `Listening` is the whole rule: handed a `PlayerState` beside the queue in play order, it accumulates
-  the frames the position advanced while playing — a step larger than `A_SEEK` (5 s) is a seek and
-  adds nothing — and answers with the row's `MediaLocation` once half the track, or the four minutes
+  the frames the position advanced while playing — a sample whose `PlayerState::seeks` differs from the
+  last one's adds nothing, and so does a step larger than `A_SEEK` (5 s) the engine did not count as a
+  seek, a stall — and answers with the row's `MediaLocation` once half the track, or the four minutes
   `COUNTS_AS_HEARD` names, whichever is shorter, has gone by; a track declaring no length counts at the
-  four minutes. Once per visit, and a position going backwards starts the count again, so a track
-  played from the top counts again. A sampler because the write behind it is SQLite:
+  four minutes. Once per visit. A seek keeps the visit open, back or forward, so a seek back after the
+  mark does not count the play twice; the exception is a seek back from within `A_SEEK` of a known end,
+  which is a track on repeat wrapping and begins another visit. A position going backwards with no
+  seek counted starts the count again, so a track played from the top counts again. A sampler because the write behind it is SQLite:
   `Library::track_played` would leave the run loop waiting behind a scan holding the writer, so
   `RootView::count_a_play` runs it off the window's observer of `PlayerModel` and `resonate play`'s
   loop off a `HEARD_SAMPLE` (500 ms) tick — why a run with no catalog counts nothing.

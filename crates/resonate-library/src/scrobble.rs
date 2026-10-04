@@ -15,6 +15,10 @@ pub const LOVES_TOLD_AT_ONCE: usize = 25;
 
 const REFUSED_AS_MALFORMED: u16 = 400;
 
+const REFUSED_FOR_THE_TOKEN: [u16; 2] = [401, 403];
+
+const REFUSED_FOR_NOW: [u16; 2] = [408, 429];
+
 const THE_MARK: &str = "SELECT through FROM submissions WHERE service = ?1";
 
 const MARKED_THROUGH: &str = "INSERT INTO submissions (service, through) VALUES (?1, ?2)
@@ -222,11 +226,12 @@ pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Lov
                 Love::Loved => said.loved += 1,
                 Love::TakenBack => said.taken_back += 1,
             },
-            Err(error) if refused_as_malformed(&error) => {
+            Err(error) if refused_for_good(&error) => {
                 tracing::warn!(
                     %recording,
                     ?love,
-                    "a love was refused as malformed and is not told again"
+                    %error,
+                    "a love was refused outright and is not told again"
                 );
                 said.refused += 1;
             }
@@ -282,6 +287,18 @@ const fn refused_as_malformed(error: &Error) -> bool {
             ..
         }
     )
+}
+
+fn refused_for_good(error: &Error) -> bool {
+    match error {
+        Error::Refused { status, .. } => {
+            *status >= 400
+                && *status < 500
+                && !REFUSED_FOR_THE_TOKEN.contains(status)
+                && !REFUSED_FOR_NOW.contains(status)
+        }
+        _ => false,
+    }
 }
 
 fn mark(inner: &Inner, service: ListeningService) -> Result<Option<u64>> {

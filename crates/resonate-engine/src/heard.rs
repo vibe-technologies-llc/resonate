@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TrackId};
 
-use crate::{PlaybackState, PlayerState, QueueItem, TrackState};
+use crate::{PlaybackState, PlayerState, QueueItem, Seeks, TrackState};
 
 pub const COUNTS_AS_HEARD: Duration = Duration::from_secs(240);
 
@@ -16,6 +16,7 @@ pub const PASSES_AT_LEAST: Duration = Duration::from_secs(1);
 struct Listened {
     track: TrackId,
     rate: SampleRate,
+    seeks: Seeks,
     at: Frames,
     heard: Frames,
     told: Frames,
@@ -23,10 +24,11 @@ struct Listened {
 }
 
 impl Listened {
-    const fn starting(track: &TrackState) -> Self {
+    const fn starting(track: &TrackState, seeks: Seeks) -> Self {
         Self {
             track: track.id,
             rate: track.source.rate,
+            seeks,
             at: track.position,
             heard: Frames::ZERO,
             told: Frames::ZERO,
@@ -34,8 +36,19 @@ impl Listened {
         }
     }
 
-    fn resumes(&self, track: &TrackState) -> bool {
-        self.track == track.id && self.at <= track.position
+    fn resumes(&self, track: &TrackState, seeks: Seeks) -> bool {
+        self.track == track.id
+            && if self.seeks == seeks {
+                self.at <= track.position
+            } else {
+                track.position >= self.at || !self.was_at_the_end(track)
+            }
+    }
+
+    fn was_at_the_end(&self, track: &TrackState) -> bool {
+        track
+            .duration
+            .is_some_and(|whole| self.at.saturating_add(listened(track)) >= whole)
     }
 }
 
@@ -66,17 +79,19 @@ impl Listening {
         };
 
         let settled = match self.held.as_ref() {
-            Some(held) if held.resumes(track) => None,
+            Some(held) if held.resumes(track, state.seeks) => None,
             _ => self.ends(),
         };
         let mut held = self
             .held
             .take()
-            .unwrap_or_else(|| Listened::starting(track));
+            .unwrap_or_else(|| Listened::starting(track, state.seeks));
 
         let step = track.position.saturating_sub(held.at);
+        let seeked = held.seeks != state.seeks;
         held.at = track.position;
-        if state.playback == PlaybackState::Playing && step <= listened(track) {
+        held.seeks = state.seeks;
+        if state.playback == PlaybackState::Playing && !seeked && step <= listened(track) {
             held.heard = held.heard.saturating_add(step);
         }
 
@@ -437,6 +452,79 @@ mod tests {
             settles,
             [Duration::from_secs(120), Duration::from_secs(120)]
         );
+    }
+
+    fn sought(state: PlayerState, times: usize) -> PlayerState {
+        (0..times).fold(state, |state, _| PlayerState {
+            seeks: state.seeks.stepped(),
+            ..state
+        })
+    }
+
+    #[test]
+    fn a_short_forward_seek_is_not_listening() {
+        let mut listening = Listening::default();
+        let queue = queued(1);
+        let whole = Some(seconds(200));
+
+        for second in [0, 1, 2] {
+            assert_eq!(
+                listening.heard(&playing_at(1, seconds(second), whole), &queue),
+                None
+            );
+        }
+
+        let skipped = sought(playing_at(1, seconds(5), whole), 1);
+        assert_eq!(listening.heard(&skipped, &queue), None);
+
+        let ended = listening.heard(&PlayerState::default(), &queue);
+        assert_eq!(ended, Some(Counting::Passes(Duration::from_secs(2))));
+    }
+
+    #[test]
+    fn a_seek_back_after_the_mark_is_the_same_play() {
+        let mut listening = Listening::default();
+        let queue = queued(1);
+        let whole = Some(seconds(200));
+        let mut counts = 0;
+
+        assert_eq!(walked(&mut listening, 1, whole, 120), 1);
+
+        for second in 10..=120 {
+            let state = sought(playing_at(1, seconds(second), whole), 1);
+            if let Some(Counting::Counts(_)) = listening.heard(&state, &queue) {
+                counts += 1;
+            }
+        }
+        assert_eq!(counts, 0);
+
+        let ended = settled(listening.heard(&PlayerState::default(), &queue))
+            .expect("a counted visit settles");
+        assert_eq!(ended.heard, Duration::from_secs(120 + 110));
+    }
+
+    #[test]
+    fn a_track_on_repeat_that_wraps_counts_again() {
+        let mut listening = Listening::default();
+        let queue = queued(1);
+        let whole = Some(seconds(200));
+        let mut counts = 0;
+
+        for second in 0..=199 {
+            if let Some(Counting::Counts(_)) =
+                listening.heard(&playing_at(1, seconds(second), whole), &queue)
+            {
+                counts += 1;
+            }
+        }
+        for second in 0..=120 {
+            let state = sought(playing_at(1, seconds(second), whole), 1);
+            if let Some(Counting::Counts(_)) = listening.heard(&state, &queue) {
+                counts += 1;
+            }
+        }
+
+        assert_eq!(counts, 2);
     }
 
     #[test]

@@ -4907,6 +4907,7 @@ struct Told {
     batches: Mutex<Vec<Vec<Scrobble>>>,
     loves: Mutex<Vec<(Mbid, Love)>>,
     malformed: Option<&'static str>,
+    love_refused: Option<(&'static str, u16)>,
     unreachable: std::sync::atomic::AtomicBool,
 }
 
@@ -4914,6 +4915,13 @@ impl Told {
     fn refusing(title: &'static str) -> Self {
         Self {
             malformed: Some(title),
+            ..Self::default()
+        }
+    }
+
+    fn refusing_love(recording: &'static str, status: u16) -> Self {
+        Self {
+            love_refused: Some((recording, status)),
             ..Self::default()
         }
     }
@@ -4956,8 +4964,16 @@ impl Scrobbler for Told {
     }
 
     fn love(&self, recording: &Mbid, love: Love) -> Result<()> {
-        self.loves.lock().push((recording.clone(), love));
-        Ok(())
+        match self.love_refused {
+            Some((refused, status)) if recording.as_str() == refused => Err(Error::Refused {
+                op: LookupOp::Love,
+                status,
+            }),
+            _ => {
+                self.loves.lock().push((recording.clone(), love));
+                Ok(())
+            }
+        }
     }
 
     fn token_held(&self) -> Result<TokenHeld> {
@@ -5013,6 +5029,67 @@ fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmar
     );
     assert_eq!(library.tell_loves(&told)?, LovesTold::default());
     Ok(())
+}
+
+fn two_favourites_with_recordings() -> (Tree, Library) {
+    let tree = Tree::new();
+    for (name, recording) in [("first.wav", RECORDING), ("second.wav", HOURS)] {
+        tree.write(
+            name,
+            &Wav::new()
+                .text(TITLE, name)
+                .text(ARTIST, "Ada")
+                .identified(MUSICBRAINZ, recording)
+                .build(),
+        );
+    }
+    let library = Library::open_in_memory().expect("an in-memory library opens");
+    scan(&library, &options(&tree)).expect("the tree scans");
+    for track in library
+        .tracks(&TrackQuery::default())
+        .expect("the tracks list")
+    {
+        library
+            .favour(Favoured::Track(track.id), true)
+            .expect("a track is favoured");
+    }
+    (tree, library)
+}
+
+#[test]
+fn a_love_the_service_refuses_outright_is_passed_over_and_the_others_are_told() -> Result<()> {
+    let (_tree, library) = two_favourites_with_recordings();
+    let told = Told::refusing_love(RECORDING, 404);
+
+    let said = library.tell_loves(&told)?;
+
+    assert_eq!(
+        said,
+        LovesTold {
+            loved: 1,
+            taken_back: 0,
+            refused: 1,
+        }
+    );
+    assert_eq!(*told.loves.lock(), vec![(mbid(HOURS), Love::Loved)]);
+    assert_eq!(library.tell_loves(&told)?, LovesTold::default());
+    Ok(())
+}
+
+#[test]
+fn a_love_the_service_answers_with_a_rate_limit_is_asked_again_later() {
+    let (_tree, library) = two_favourites_with_recordings();
+    let told = Told::refusing_love(RECORDING, 429);
+
+    for _ in 0..2 {
+        assert!(matches!(
+            library.tell_loves(&told),
+            Err(Error::Refused {
+                op: LookupOp::Love,
+                status: 429,
+            })
+        ));
+    }
 }
 
 fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {

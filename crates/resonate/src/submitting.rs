@@ -59,9 +59,9 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
         .name("resonate-submit".to_owned())
         .spawn(move || {
             let mut token = Token::of(&config);
-            let mut due = Instant::now() + FIRST_AFTER;
+            let mut listens = Pace::after(FIRST_AFTER);
+            let mut loves = Pace::after(FIRST_AFTER);
             let mut refused: Option<String> = None;
-            let mut failed = 0;
             let mut told_playing: Option<Row> = None;
             let mut scrobbling: Option<(String, Arc<dyn Scrobbler>)> = None;
             loop {
@@ -93,27 +93,15 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                     }
                 }
 
-                if Instant::now() < due {
-                    continue;
-                }
-                due = Instant::now() + SUBMITTED_EVERY;
-                match told(&library, &*scrobbler) {
-                    Ok(()) => failed = 0,
-                    Err(LibraryError::Refused {
-                        op: LookupOp::Submit | LookupOp::Love,
-                        status,
-                    }) if TOKEN_REFUSED.contains(&status) => {
-                        tracing::warn!(
-                            status,
-                            "ListenBrainz refused the token; nothing is submitted until it changes"
-                        );
-                        refused = Some(held);
-                    }
-                    Err(error) => {
-                        failed += 1;
-                        due = Instant::now() + backed_off(failed);
-                        tracing::warn!(%error, "what was heard was not submitted; it is kept and tried again");
-                    }
+                let outcomes = [
+                    listens.settle(|| told_listens(&library, &*scrobbler)),
+                    loves.settle(|| told_loves(&library, &*scrobbler)),
+                ];
+                if outcomes.contains(&Outcome::TokenRefused) {
+                    tracing::warn!(
+                        "ListenBrainz refused the token; nothing is submitted until it changes"
+                    );
+                    refused = Some(held);
                 }
             }
         });
@@ -125,7 +113,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
 }
 
 #[cfg(feature = "online")]
-fn told(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
+fn told_listens(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
     let submitted = library.submit_listens(scrobbler)?;
     if submitted.submitted + submitted.refused > 0 {
         tracing::debug!(
@@ -135,7 +123,11 @@ fn told(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Resul
             "ListenBrainz was told what was heard"
         );
     }
+    Ok(())
+}
 
+#[cfg(feature = "online")]
+fn told_loves(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
     let loves = library.tell_loves(scrobbler)?;
     if loves.loved + loves.taken_back + loves.refused > 0 {
         tracing::debug!(
@@ -146,6 +138,54 @@ fn told(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Resul
         );
     }
     Ok(())
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Outcome {
+    Waiting,
+    Told,
+    TokenRefused,
+    Failed,
+}
+
+#[cfg(feature = "online")]
+struct Pace {
+    due: Instant,
+    failed: u32,
+}
+
+#[cfg(feature = "online")]
+impl Pace {
+    fn after(wait: Duration) -> Self {
+        Self {
+            due: Instant::now() + wait,
+            failed: 0,
+        }
+    }
+
+    fn settle(&mut self, tell: impl FnOnce() -> resonate_library::Result<()>) -> Outcome {
+        if Instant::now() < self.due {
+            return Outcome::Waiting;
+        }
+        self.due = Instant::now() + SUBMITTED_EVERY;
+        match tell() {
+            Ok(()) => {
+                self.failed = 0;
+                Outcome::Told
+            }
+            Err(LibraryError::Refused {
+                op: LookupOp::Submit | LookupOp::Love,
+                status,
+            }) if TOKEN_REFUSED.contains(&status) => Outcome::TokenRefused,
+            Err(error) => {
+                self.failed += 1;
+                self.due = Instant::now() + backed_off(self.failed);
+                tracing::warn!(%error, "what was heard was not submitted; it is kept and tried again");
+                Outcome::Failed
+            }
+        }
+    }
 }
 
 #[cfg(feature = "online")]
@@ -255,6 +295,42 @@ mod tests {
         assert_eq!(backed_off(6), Duration::from_secs(1_920));
         assert_eq!(backed_off(7), WAITED_AT_MOST);
         assert_eq!(backed_off(40), WAITED_AT_MOST);
+    }
+
+    #[test]
+    fn a_failing_pace_backs_off_alone_and_a_told_one_goes_back_to_the_usual_wait() {
+        let mut loves = Pace::after(Duration::ZERO);
+        let mut listens = Pace::after(Duration::ZERO);
+
+        let failing = loves.settle(|| {
+            Err(LibraryError::Refused {
+                op: LookupOp::Love,
+                status: 429,
+            })
+        });
+        let fine = listens.settle(|| Ok(()));
+
+        assert_eq!(failing, Outcome::Failed);
+        assert_eq!(fine, Outcome::Told);
+        assert_eq!(loves.failed, 1);
+        assert_eq!(listens.failed, 0);
+        assert!(loves.due > listens.due);
+        assert_eq!(loves.settle(|| Ok(())), Outcome::Waiting);
+    }
+
+    #[test]
+    fn a_refused_token_is_told_apart_from_a_failure() {
+        let mut pace = Pace::after(Duration::ZERO);
+
+        let outcome = pace.settle(|| {
+            Err(LibraryError::Refused {
+                op: LookupOp::Love,
+                status: 401,
+            })
+        });
+
+        assert_eq!(outcome, Outcome::TokenRefused);
+        assert_eq!(pace.failed, 0);
     }
 
     #[test]

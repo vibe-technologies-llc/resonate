@@ -472,8 +472,12 @@ its group.
   `Library::tell_loves` weighs the recordings of favourite tracks against `loves_told` — what the
   service was last told, per `ListeningService` — and tells the difference either way, at most
   `LOVES_TOLD_AT_ONCE` (25) a call so the submitter's two-second look is not held a minute behind a
-  first run; a love refused as malformed is noted as told and not sent again
-  (`a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmarked`). Unlike a
+  first run; a love refused with any 4xx but 401, 403, 408 and 429 — the service saying this
+  recording will never be taken — is noted as told and not sent again, so one cannot hold the rest
+  back (`a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmarked`,
+  `a_love_the_service_refuses_outright_is_passed_over_and_the_others_are_told`); any other failure
+  returns at once and the same love is asked again next time
+  (`a_love_the_service_answers_with_a_rate_limit_is_asked_again_later`). Unlike a
   listen, a favourite is a state, so every favourite held when a token is first given is told.
   `Scrobbler::token_held` asks `GET /1/validate-token` under the same `Authorization` —
   `Client::json_as`, the one GET carrying one, `Sending` being what `exchange` is handed — and answers
@@ -483,7 +487,9 @@ its group.
   `LookupOp::Token` name the two.
 - **The binary's half is a thread following the file.** `submitting.rs` starts `resonate-submit` for
   the window and every playing command: five seconds after start and every `SUBMITTED_EVERY` (30 s)
-  after, it asks `Library::submit_listens`, doubling the wait after each failure up to an hour.
+  after, it asks `Library::submit_listens`, doubling the wait after each failure up to an hour. The
+  loves have a `Pace` of their own beside the listens', so a failing love backs off alone and listens
+  are still submitted every `SUBMITTED_EVERY`.
   Between those it looks at the player every `PLAYING_LOOKED_AT_EVERY` (2 s), and a row begun since
   the last look is read through `Library::billed_as` and told as playing now — once per row, not
   while paused, never for a file the catalog names nothing for. Its `Token` follows the file as
@@ -493,8 +499,8 @@ its group.
   `ListenBrainz` client is built once per token and kept across the looks, so its connections and its
   pacing outlive the two seconds between them; a token that moves builds the next. A 401 or
   403 holds that token back until the file names another. A build without the feature starts
-  nothing and warns once where a token is set. Each submission is followed by `tell_loves` under
-  the same scrobbler, and a 401 or 403 to either holds the token back.
+  nothing and warns once where a token is set. `tell_loves` runs under the same scrobbler, and a
+  401 or 403 to either holds the token back.
 
 ## LRCLIB
 
