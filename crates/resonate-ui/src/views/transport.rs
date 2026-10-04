@@ -746,6 +746,23 @@ impl RootView {
         }
     }
 
+    pub(crate) fn name_the_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let model = self.player.read(cx);
+        let state = model.state().clone();
+        let digest = model.digest();
+        let title = match state.current {
+            Some(_) => {
+                let playing = self.playing(&state, digest.as_deref(), cx);
+                titled_by(&playing.title, &playing.artist)
+            }
+            None => SharedString::new_static(crate::app::WINDOW_TITLE),
+        };
+        if self.titled.as_ref() != Some(&title) {
+            window.set_window_title(&title);
+            self.titled = Some(title);
+        }
+    }
+
     pub(crate) fn playing(
         &self,
         state: &PlayerState,
@@ -1143,6 +1160,15 @@ fn along(duration: Frames, fraction: f32) -> Frames {
     Frames((duration.get() as f32 * fraction) as u64)
 }
 
+fn titled_by(title: &str, artist: &str) -> SharedString {
+    let app = crate::app::WINDOW_TITLE;
+    match (title.trim(), artist.trim()) {
+        ("", _) => SharedString::new_static(app),
+        (title, "") => format!("{title} · {app}").into(),
+        (title, artist) => format!("{title} — {artist} · {app}").into(),
+    }
+}
+
 fn nothing_playing() -> Playing {
     Playing {
         track: None,
@@ -1166,4 +1192,19 @@ pub(crate) fn copied_on_a_right_click(named: Stateful<Div>, name: SharedString) 
         clipboard::copy(name.to_string(), cx);
         toast::tell(Notice::Done(format!("{name} is on the clipboard")), cx);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does() {
+        assert_eq!(
+            titled_by("Echoes", "Pink Floyd"),
+            "Echoes — Pink Floyd · Resonate"
+        );
+        assert_eq!(titled_by("Echoes", " "), "Echoes · Resonate");
+        assert_eq!(titled_by("", "Pink Floyd"), "Resonate");
+    }
 }

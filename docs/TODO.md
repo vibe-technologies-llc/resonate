@@ -349,7 +349,6 @@ service or a format — and is not worked until that moves; everything else is o
 - Favourites cannot be sorted, by the date marked or otherwise
 - *Listen for* offers 8, 12 and 20 seconds while the file takes 4 to 60, and another value selects
   no chip and is labelled 20
-- The window's title never names what is playing
 - The statistics count the albums heard and never draw them
 - The `vault` key has no field, so the Vault group is reached only by editing `config.toml`
 

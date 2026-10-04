@@ -12,6 +12,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 
 ## Chrome and input
 
+- **The window's title names what plays.** `RootView::name_the_window` runs in `render`, reading the
+  transport's cached `Playing`, and sets *Echoes — Pink Floyd · Resonate* (the artist left out where
+  blank) or plain *Resonate* where nothing plays, only when the text moved, so a task switcher or a
+  taskbar says the song (`the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does`).
 - **The window is its own titlebar.** `WindowOptions` asks for `WindowDecorations::Client`, and the
   header carrying the Resonate wordmark and the search field draws the minimise, maximise and close
   controls beside them, drags the window and opens the compositor's window menu. The header is

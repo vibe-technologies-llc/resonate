@@ -42,7 +42,7 @@ use crate::{
 };
 
 const APP_ID: &str = "resonate";
-const WINDOW_TITLE: &str = "Resonate";
+pub(crate) const WINDOW_TITLE: &str = "Resonate";
 
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 

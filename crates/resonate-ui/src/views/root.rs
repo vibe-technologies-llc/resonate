@@ -571,6 +571,7 @@ pub struct RootView {
     pub(crate) shelf_scrolls: RefCell<AHashMap<&'static str, ScrollHandle>>,
     came_from: Vec<Wayback>,
     goes_forward: Vec<Wayback>,
+    pub(crate) titled: Option<SharedString>,
     pub(crate) artist_shows: ArtistShows,
     pub(crate) search_shows: SearchShows,
     pub(crate) following_a_link: Task<()>,
@@ -1018,6 +1019,7 @@ impl RootView {
             shelf_scrolls: RefCell::new(AHashMap::new()),
             came_from: Vec::new(),
             goes_forward: Vec::new(),
+            titled: None,
             artist_shows: ArtistShows::default(),
             search_shows: SearchShows::default(),
             following_a_link: Task::ready(()),
@@ -4310,6 +4312,7 @@ impl Render for RootView {
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let grain = self.grain(window, cx);
         self.player.update(cx, |player, _| player.draw_at(grain));
+        self.name_the_window(window, cx);
 
         let app = div()
             .track_focus(&self.focus)

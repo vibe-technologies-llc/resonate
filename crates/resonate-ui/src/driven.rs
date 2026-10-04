@@ -1087,6 +1087,11 @@ mod tests {
             .update(|_, cx| root.update(cx, |root, cx| root.go_forward(cx)));
         driven.settle();
         assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+        assert_eq!(
+            driven.read(|root, _| root.titled.as_ref().map(ToString::to_string)),
+            Some("Resonate".to_owned()),
+            "a window playing nothing was not titled by the app"
+        );
     }
 
     #[gpui::test]
