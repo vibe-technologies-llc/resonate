@@ -4,6 +4,7 @@ use gpui::{
     AnyElement, Bounds, Context, Div, Length, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Point, canvas, div, prelude::*, px, relative, rgb,
 };
+use resonate_core::TrackId;
 
 use crate::{RootView, theme};
 
@@ -39,6 +40,13 @@ impl Handle {
 pub(crate) struct Grab {
     handle: Handle,
     fraction: f32,
+    track: Option<TrackId>,
+}
+
+impl Grab {
+    fn seeks_still(self, playing: Option<TrackId>) -> bool {
+        self.handle == Handle::Seek && self.track == playing
+    }
 }
 
 #[derive(Clone, Default)]
@@ -76,7 +84,12 @@ impl RootView {
         let Some(fraction) = self.rail_of(handle).fraction_at(at) else {
             return;
         };
-        self.grabbed = Some(Grab { handle, fraction });
+        let track = self.player.read(cx).state().current.map(|track| track.id);
+        self.grabbed = Some(Grab {
+            handle,
+            fraction,
+            track,
+        });
         self.dragged(handle, fraction, cx);
     }
 
@@ -99,9 +112,9 @@ impl RootView {
         let Some(grab) = self.grabbed.take() else {
             return;
         };
-        match grab.handle {
-            Handle::Seek => self.seek_to(grab.fraction, cx),
-            Handle::Volume => {}
+        let playing = self.player.read(cx).state().current.map(|track| track.id);
+        if grab.seeks_still(playing) {
+            self.seek_to(grab.fraction, cx);
         }
         cx.notify();
     }
@@ -211,4 +224,37 @@ fn thumb(filled: f32, held: bool) -> Div {
                 .opacity(0.0)
                 .group_hover(RAIL_GROUP, |thumb| thumb.opacity(1.0))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn track(id: u64) -> Option<TrackId> {
+        Some(TrackId::new(id).expect("an id"))
+    }
+
+    #[test]
+    fn a_seek_rail_released_after_the_track_changed_seeks_nothing() {
+        let held = Grab {
+            handle: Handle::Seek,
+            fraction: 0.5,
+            track: track(3),
+        };
+
+        assert!(held.seeks_still(track(3)));
+        assert!(!held.seeks_still(track(4)));
+        assert!(!held.seeks_still(None));
+    }
+
+    #[test]
+    fn a_volume_rail_seeks_nothing_whatever_plays() {
+        let held = Grab {
+            handle: Handle::Volume,
+            fraction: 0.5,
+            track: track(3),
+        };
+
+        assert!(!held.seeks_still(track(3)));
+    }
 }

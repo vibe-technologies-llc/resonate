@@ -496,9 +496,9 @@ impl Resampler {
             });
         }
         if params.phases < MIN_PHASES {
-            return Err(Error::FilterLengthOutOfRange {
+            return Err(Error::TooFewPhases {
                 requested: params.phases,
-                max: u32::from(MAX_HALF_TAPS),
+                min: MIN_PHASES,
             });
         }
 
@@ -1715,5 +1715,26 @@ mod tests {
             loudest < VERY_HIGH_REJECTS_DB,
             "the stopband reaches {loudest:.1} dB at or past Nyquist"
         );
+    }
+
+    #[test]
+    fn a_resampler_given_too_few_phases_says_so_rather_than_naming_the_filter_length() {
+        let params = SincParams {
+            phases: MIN_PHASES - 1,
+            ..Quality::Fast.params()
+        };
+
+        let built = Resampler::with_params(
+            config(SampleRate::HZ_44100, SampleRate::HZ_48000, Quality::Fast),
+            params,
+        );
+
+        assert!(matches!(
+            built,
+            Err(Error::TooFewPhases {
+                requested,
+                min: MIN_PHASES,
+            }) if requested == MIN_PHASES - 1
+        ));
     }
 }

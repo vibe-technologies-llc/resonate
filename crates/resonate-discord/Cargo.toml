@@ -9,6 +9,7 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-engine.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

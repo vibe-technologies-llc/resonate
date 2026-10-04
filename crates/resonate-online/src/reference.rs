@@ -266,6 +266,21 @@ mod tests {
     }
 
     #[test]
+    fn a_throttled_host_is_a_failure_to_ask_again_and_not_a_picture_the_artist_lacks() {
+        let mut walk = Walk::default();
+
+        assert_eq!(walk.tried(refused(Host::Spotify, 429)).ok(), Some(None));
+        assert!(matches!(
+            walk.ended::<()>(),
+            Err(Error::Refused {
+                host: Host::Spotify,
+                status: 429,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn a_source_that_cannot_be_reached_ends_the_walk() {
         let mut walk = Walk::default();
 

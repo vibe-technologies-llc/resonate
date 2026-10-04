@@ -94,9 +94,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Identification
 - With an AcoustID key set, a service refusing or unreachable is still asked about every remaining
   track of the study pool, one failed request after another
-- *Listen* says nothing reached the recording when the capture itself failed, and that the services
-  could not be reached when one refused the clip
-- A throttled portrait host is recorded as having no portrait for the artist
 - A release too large for the 4 MiB document cap, a box set with per-recording relations, is never
   enriched and nothing says why
 - A file with no measured length asked by an ISRC naming several recordings is identified as the
@@ -175,7 +172,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A service link of any scheme, or one whose authority hides another host behind a backslash, is
   opened if its host looks like a known service, and image host checks are string suffix tests
   a `#` or `?` passes
-- Discord presence goes to whatever socket answers under `/tmp` without checking its owner
 - A daemon connection that dies with a reset rather than a broken pipe, or hangs, is never taken as
   lost, so the client stays disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
@@ -184,9 +180,6 @@ service or a format — and is not worked until that moves; everything else is o
   no tool to remove one
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
   once, and a session's passes are cancelled and joined one after another
-- A text field takes any length, shaped again on every caret blink and kept whole in its undo
-- A Discord refusal that never clears is offered again every fifteen seconds for as long as the
-  track plays
 
 ## Keyboard and accessibility
 - Keys, tokens, the contact, the Subsonic account and the organise layout typed in Settings and left
@@ -279,18 +272,12 @@ service or a format — and is not worked until that moves; everything else is o
 - `.caf`, `.mka`, `.oga` and the DSD containers have no writer: lofty writes none of them
 
 ## Later: Equaliser and DSP extras
-- `resonate eq --import` and `--fetch` replace a kept profile of the same name in silence, one
-  shaped by hand included
-- `resonate eq --list` fails whole when one kept profile is too large to read
-- An EqualizerAPO comment line is counted as unreadable, an unsupported filter or a `Device:` scope
-  is dropped without a word, and a `6dB`/`12dB` slope word on a pass or shelf filter is ignored
-- An equaliser profile is renamed into place without syncing its bytes or its folder, so a crash
-  can leave a bound profile empty and the device flat
+- An unsupported EqualizerAPO filter or a `Device:` scope is dropped without a word, and a
+  `6dB`/`12dB` slope word on a pass or shelf filter is ignored
 - A GraphicEQ line or measurement of more than 1 024 points loses its top frequencies rather than
   being thinned
 - Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
   and two picks landing out of order keep the first
-- `resonate eq --on` and `--suggest` take `--for` and ignore it, where `--off --for` is refused
 - Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the
   filter tail falls to −600 dB, the dither muting only on exact zeros
 - *Millibels* means hundredths of a dB for the trim and thousandths for a band gain and the preamp
@@ -301,7 +288,6 @@ service or a format — and is not worked until that moves; everything else is o
   own downmix coefficients are not read
 - Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its 1
   024-frame window, and leaves the first second and a half of an unstudied track unextended
-- A resampler given too few phases answers with the filter-length error rather than its own
 
 ## Later: Lyrics
 - A sidecar's declared title is weighed by substring, so `[ti:It]` agrees with any title holding
@@ -338,8 +324,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A track or album cannot be dragged from a listing into the queue or a playlist; only files from a
   file manager are taken
 - A scoped album or artist whose rows vanish leaves *album 17* heading an empty list
-- Releasing the seek rail after the track changed mid-drag seeks the new track to the dragged
-  fraction
 - The queue's total length leaves out rows the catalog has not scanned, with no hint it is partial
 - The by-line counts a character its face cannot draw — CJK, emoji — as no width, so the album clips
   with no ellipsis

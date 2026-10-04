@@ -2,7 +2,7 @@ use std::{
     collections::BinaryHeap,
     fmt::Write as _,
     fs,
-    io::Read,
+    io::{Read, Write as _},
     path::{Path, PathBuf},
 };
 
@@ -156,9 +156,21 @@ impl Store {
             fs::create_dir_all(folder).map_err(Self::failed(folder, StoreOp::Write))?;
         }
         let staged = path.with_extension(STAGED_EXTENSION);
-        fs::write(&staged, apo::write(profile))
-            .and_then(|()| fs::rename(&staged, path))
+        Self::written_and_synced(&staged, path, apo::write(profile).as_bytes())
             .map_err(Self::failed(path, StoreOp::Write))
+    }
+
+    fn written_and_synced(staged: &Path, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        let mut file = fs::File::create(staged)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+
+        fs::rename(staged, path)?;
+        match path.parent() {
+            Some(folder) => fs::File::open(folder)?.sync_all(),
+            None => Ok(()),
+        }
     }
 
     pub fn own_path(&self, device: Option<&str>) -> Result<PathBuf> {
@@ -247,15 +259,23 @@ impl Store {
         })
     }
 
-    pub fn import(&self, from: &Path, called: Option<&ProfileName>) -> Result<(ProfileName, Kept)> {
-        let kept = Self::read_in(from)?;
-        let name = match called {
+    pub fn holds(&self, name: &ProfileName) -> bool {
+        self.path_of(name).exists()
+    }
+
+    pub fn name_for_import(from: &Path, called: Option<&ProfileName>) -> ProfileName {
+        match called {
             Some(name) => name.clone(),
             None => from
                 .file_stem()
                 .and_then(|stem| stem.to_str())
                 .map_or_else(|| ProfileName::after("profile"), ProfileName::after),
-        };
+        }
+    }
+
+    pub fn import(&self, from: &Path, called: Option<&ProfileName>) -> Result<(ProfileName, Kept)> {
+        let kept = Self::read_in(from)?;
+        let name = Self::name_for_import(from, called);
         self.keep(&name, &kept.profile)?;
         Ok((name, kept))
     }
@@ -485,6 +505,28 @@ mod tests {
         assert_eq!(
             scratch.store.read(&name).expect("it reads"),
             Some(profile())
+        );
+    }
+
+    #[test]
+    fn a_store_says_whether_a_name_is_kept_before_an_import_takes_it() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let source = folder.join("source");
+        fs::create_dir_all(&source).expect("a writable folder");
+        let from = source.join("measured.txt");
+        fs::write(&from, apo::write(&profile())).expect("a writable file");
+
+        let name = Store::name_for_import(&from, None);
+        assert_eq!(name.as_str(), "measured");
+        assert!(!scratch.store.holds(&name));
+
+        scratch.store.import(&from, None).expect("it imports");
+        assert!(scratch.store.holds(&name));
+        assert_eq!(
+            Store::name_for_import(&from, Some(&named("other"))),
+            named("other")
         );
     }
 

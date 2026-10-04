@@ -1,4 +1,4 @@
-use std::{io, result};
+use std::{io, path::PathBuf, result};
 
 use thiserror::Error;
 
@@ -31,6 +31,9 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+
+    #[error("{} is not a socket of this user's", path.display())]
+    NotOurs { path: PathBuf },
 
     #[error("{op:?} failed on a Discord frame")]
     Json {

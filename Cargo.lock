@@ -5218,6 +5218,7 @@ dependencies = [
  "parking_lot",
  "resonate-core",
  "resonate-engine",
+ "rustix 1.1.5",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

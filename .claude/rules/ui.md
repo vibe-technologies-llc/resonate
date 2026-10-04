@@ -138,7 +138,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `Edit::edited` weighs what the range holds against what would replace it, and a backspace at the
   start, a delete at the end or a paste of what is selected only moves the caret, keeping no snapshot
   and leaving what was undone to redo; `set_content` with the text already there does the same. The history is `Edit`'s, not the view's, so
-  it is tested without a window. It holds 128 steps (`UNDO_DEPTH`) and lives only as long as the run,
+  it is tested without a window. It holds 128 steps (`UNDO_DEPTH`) of content at most
+  `LONGEST_CONTENT` (16 KiB) long — a typed, pasted or composed run is cut to what fits at a character
+  boundary (`a_paste_longer_than_a_field_holds_is_cut_to_what_fits`), where a field once took a
+  megabyte, shaped it again on every blink and kept it whole in each snapshot — and lives only as long as the run,
   and escape clears the field and blurs it in one stroke, so what it threw away is out of reach until a
   click puts the caret back: the three keys are bound under `SEARCH_CONTEXT` and a blurred field never
   sees them. Outside the field the same three walk a playlist edit, so what they reach depends on where
@@ -311,7 +314,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   element's listeners run in reverse order, so anything registered beside it in `render` would never see
   a move. Volume applies on every move and the `VOLUME_SETTLE` debounce keeps a drag from rewriting
   `config.toml` per pixel; a seek only previews and commits one `Command::Seek` on release, so a scrub
-  costs one gap. The wheel over the volume cluster is a notch of `VOLUME_A_NOTCH` — a touchpad's pixels
+  costs one gap — and only if the track the press began on still plays, a `Grab` carrying its
+  `TrackId`, so the fraction dragged on one track is never applied to the next
+  (`a_seek_rail_released_after_the_track_changed_seeks_nothing`). The wheel over the volume cluster is a notch of `VOLUME_A_NOTCH` — a touchpad's pixels
   counted in `PIXELS_A_NOTCH` — while `ResonateApp::scroll_volume` says so, and `RootView::volume_aimed`
   is what a run of notches or held keys adds to: the engine publishes the new volume a poll later, so
   reading it back each notch lost all notches but one in a poll. **A press on the speaker, or `ctrl-m`,
@@ -2601,8 +2606,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the clip and puts the sheet back at `Idle`, so a song named after Stop or after closing is neither told
   to the desktop nor drawn. `listening.rs` is the model and `views/listen.rs` the drawing. `ListenModel`
   holds the `Listens` the binary handed in and walks one `Stage` — `Recording` with the `Hearing` the bar
-  is drawn from and the source it records, `Asking`, then `Found`, `Unknown`, `Silent`, `Unreached`,
-  `Offline` or `NoService` — recording and asking each on the background executor, so the frame never
+  is drawn from and the source it records, `Asking`, then `Found`, `Unknown`, `Silent`, `CaptureFailed`,
+  `Unreached`, `Refused`, `Offline` or `NoService` — `stage_after` is which an error lands on, a
+  failed capture and a clip a service turned down having words of their own rather than *nothing
+  reached the recording* and *could not be reached*
+  (`a_service_that_refused_the_clip_is_not_one_that_could_not_be_reached`) — recording and asking
+  each on the background executor, so the frame never
   waits on PipeWire or a network. `listen` takes whether Online is on *now*, read off
   `ResonateApp::online` by `RootView::listen_now`: off is `Offline` and nothing is recorded, so Online
   switched off in the run stops Listen reaching Shazam though its recognisers were built at the start;
@@ -2616,7 +2625,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   artist, album and year, which service named it, and *Listen again*, *Open* where the service gave a
   link and *Find it* — `search_instead` and `choose_pane(Pane::Tracks)` over title and artist, so a held
   track is one press away and one not held lands on the search listing what the catalog and MusicBrainz
-  know of it. Those buttons, and the *Listen* under an idle, unknown, silent or unreached prompt, are
+  know of it. Those buttons, and the *Listen* under an idle, unknown, silent, failed or unreached prompt, are
   drawn in `sheet_actions`, a card-wide row starting at the prompt's left edge — `kit::actions` is a
   heading's row, pushed right and held to 64 % of its parent, and in the sheet's column it stood the
   button off at the right of a line the prompt and bar both begin at the left. The last `HEARD_KEPT` (8)

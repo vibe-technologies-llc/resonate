@@ -16,6 +16,24 @@ const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
 
 const EVERY_OTHER_DEVICE: &str = "every other device";
 const ITS_OWN_CURVE: &str = "its own curve";
+const UNREADABLE: &str = "unreadable";
+const NOTHING_TO_SHOW: &str = "—";
+
+fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
+    match read {
+        Ok(profile) => {
+            let profile = profile.unwrap_or_else(Profile::flat);
+            (
+                profile.bands().len().to_string(),
+                format!("{}", profile.preamp()),
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, "a kept curve could not be read for the list");
+            (UNREADABLE.to_owned(), NOTHING_TO_SHOW.to_owned())
+        }
+    }
+}
 
 pub fn run(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     let store = Store::at(config::equaliser_dir()?);
@@ -154,7 +172,9 @@ fn import(
     }
 
     let called = wanted.profile.as_deref().map(named).transpose()?;
+    let held = store.holds(&Store::name_for_import(from, called.as_ref()));
     let (name, kept) = store.import(from, called.as_ref())?;
+    replaced_if(held, &name);
 
     if kept.converted {
         said!(
@@ -171,6 +191,12 @@ fn import(
         return bind(store, settings, sink, name.as_str());
     }
     Ok(())
+}
+
+fn replaced_if(held: bool, name: &ProfileName) {
+    if held {
+        said!("{name} was kept already and is replaced");
+    }
 }
 
 fn passed_over(kept: &Kept) {
@@ -276,39 +302,38 @@ fn list(store: &Store, config: &Config) -> Result<()> {
     }
 
     if !names.is_empty() {
-        profiles(store, config, &names)?;
+        profiles(store, config, &names);
     }
     if !owners.is_empty() {
         if !names.is_empty() {
             said!();
         }
-        own_curves(store, config, &owners)?;
+        own_curves(store, config, &owners);
     }
     Ok(())
 }
 
-fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) -> Result<()> {
+fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) {
     let mut table = Table::new(vec!["OWN CURVE OF", "BANDS", "PREAMP", "BOUND"]);
     for owner in owners {
         let owner = owner.as_deref().map(NodeName::new);
-        let profile = store.own(owner.as_ref().map(NodeName::as_str))?;
+        let (bands, preamp) = counted(store.own(owner.as_ref().map(NodeName::as_str)).map(Some));
         let bound = bound_to_its_own(config, owner.as_ref());
 
         table.push(vec![
             spoken_of(owner.as_ref()),
-            profile.bands().len().to_string(),
-            format!("{}", profile.preamp()),
-            if bound { "yes" } else { "—" }.to_owned(),
+            bands,
+            preamp,
+            if bound { "yes" } else { NOTHING_TO_SHOW }.to_owned(),
         ]);
     }
     said_on!("{}", table.render());
-    Ok(())
 }
 
-fn profiles(store: &Store, config: &Config, names: &[ProfileName]) -> Result<()> {
+fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
     let mut table = Table::new(vec!["PROFILE", "BANDS", "PREAMP", "BOUND TO"]);
     for name in names {
-        let profile = store.read(name)?.unwrap_or_else(Profile::flat);
+        let (bands, preamp) = counted(store.read(name));
         let binding = Binding::Profile(name.clone());
         let bound = config.equaliser_for.as_ref().map_or_else(Vec::new, |held| {
             held.by_sink()
@@ -320,17 +345,16 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) -> Result<()>
 
         table.push(vec![
             name.to_string(),
-            profile.bands().len().to_string(),
-            format!("{}", profile.preamp()),
+            bands,
+            preamp,
             if bound.is_empty() {
-                "—".to_owned()
+                NOTHING_TO_SHOW.to_owned()
             } else {
                 bound.join(", ")
             },
         ]);
     }
     said_on!("{}", table.render());
-    Ok(())
 }
 
 fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> {
@@ -485,7 +509,9 @@ fn fetch(
         Some(name) => named(name)?,
         None => ProfileName::after(id.as_str().rsplit('/').next().unwrap_or(device)),
     };
+    let held = store.holds(&name);
     store.keep(&name, &profile)?;
+    replaced_if(held, &name);
     said!("kept {name}, {} bands", profile.bands().len());
 
     if wanted.r#for.is_some() {
@@ -752,5 +778,28 @@ mod tests {
 
         assert!(scratch.store.owners().expect("it walks").is_empty());
         assert_eq!(scratch.bound(Some(&device)), Some(Binding::Profile(held)));
+    }
+
+    #[test]
+    fn a_kept_profile_too_large_to_read_is_a_row_of_the_list_and_not_its_end() {
+        let scratch = Scratch::new();
+        let held = ProfileName::new("held").expect("a usable name");
+        let huge = ProfileName::new("huge").expect("a usable name");
+        scratch
+            .store
+            .keep(&held, &Profile::flat())
+            .expect("a writable folder");
+        fs::write(
+            scratch.store.path_of(&huge),
+            "#".repeat(resonate_eq::LARGEST_PROFILE + 1),
+        )
+        .expect("a writable folder");
+
+        assert_eq!(
+            counted(scratch.store.read(&huge)),
+            (UNREADABLE.to_owned(), NOTHING_TO_SHOW.to_owned())
+        );
+        assert_eq!(counted(scratch.store.read(&held)).0, "0");
+        profiles(&scratch.store, &scratch.config(), &[held, huge]);
     }
 }

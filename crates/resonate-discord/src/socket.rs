@@ -1,7 +1,10 @@
 use std::{
-    env,
+    env, fs,
     io::{self, Read},
-    os::unix::net::UnixStream,
+    os::unix::{
+        fs::{FileTypeExt, MetadataExt},
+        net::UnixStream,
+    },
     path::{Path, PathBuf},
     process,
     time::{Duration, Instant},
@@ -60,6 +63,10 @@ fn candidates_here() -> Vec<PathBuf> {
     let runtime = env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
     let temporary = env::var_os("TMPDIR").map(PathBuf::from);
     candidates(runtime.as_deref(), temporary.as_deref())
+}
+
+fn held_by(socket: &fs::Metadata, user: u32) -> bool {
+    socket.file_type().is_socket() && socket.uid() == user
 }
 
 #[derive(Serialize)]
@@ -127,6 +134,9 @@ impl Session {
                 }
                 Err(error) if error.names_no_application() => return Err(error),
                 Err(Error::Socket { .. }) => {}
+                Err(Error::NotOurs { path }) => {
+                    tracing::warn!(path = %path.display(), "a Discord socket another user owns was passed over");
+                }
                 Err(error) => {
                     tracing::debug!(%error, path = %path.display(), "a Discord socket would not take this client; trying the next");
                     answered.get_or_insert(error);
@@ -137,6 +147,7 @@ impl Session {
     }
 
     pub(crate) fn open(path: &Path, app: AppId) -> Result<Self> {
+        Self::ours(path)?;
         let stream = UnixStream::connect(path).map_err(|source| Error::Socket {
             op: IpcOp::Connect,
             source,
@@ -157,6 +168,20 @@ impl Session {
         session.send(Opcode::Handshake, &encoded(&handshake)?)?;
         session.await_ready()?;
         Ok(session)
+    }
+
+    fn ours(path: &Path) -> Result<()> {
+        let held = fs::metadata(path).map_err(|source| Error::Socket {
+            op: IpcOp::Connect,
+            source,
+        })?;
+        if held_by(&held, rustix::process::getuid().as_raw()) {
+            Ok(())
+        } else {
+            Err(Error::NotOurs {
+                path: path.to_path_buf(),
+            })
+        }
     }
 
     pub(crate) fn set(&mut self, activity: Option<&Activity>) -> Result<()> {
@@ -565,6 +590,33 @@ mod tests {
                 op: IpcOp::Connect,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn a_socket_is_held_by_the_user_that_made_it_and_by_no_other() {
+        let folder = Folder::new();
+        let path = folder.0.join("discord-ipc-0");
+        let _listener = UnixListener::bind(&path).expect("bound");
+        let held = fs::metadata(&path).expect("a socket");
+        let user = rustix::process::getuid().as_raw();
+
+        assert!(held_by(&held, user));
+        assert!(!held_by(&held, user.wrapping_add(1)));
+    }
+
+    #[test]
+    fn a_file_that_is_no_socket_is_not_connected_to_and_the_search_goes_on() {
+        let folder = Folder::new();
+        let plain = folder.0.join("discord-ipc-0");
+        fs::write(&plain, b"").expect("a file");
+
+        let refused = Session::open(&plain, app());
+
+        assert!(matches!(refused, Err(Error::NotOurs { .. })));
+        assert!(matches!(
+            Session::find_among(app(), [plain]),
+            Err(Error::NoDiscord)
         ));
     }
 }

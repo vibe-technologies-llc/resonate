@@ -36,6 +36,9 @@ pub enum Error {
 
     #[error("filter half-length {requested} exceeds the maximum {max}")]
     FilterLengthOutOfRange { requested: u32, max: u32 },
+
+    #[error("{requested} filter phases are fewer than the {min} a resampler needs")]
+    TooFewPhases { requested: u32, min: u32 },
 }
 
 pub type Result<T> = result::Result<T, Error>;

@@ -3,6 +3,7 @@ use std::{collections::VecDeque, ops::Range};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 const UNDO_DEPTH: usize = 128;
+const LONGEST_CONTENT: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Motion {
@@ -95,6 +96,17 @@ impl History {
     }
 }
 
+fn fitted(text: &str, room: usize) -> &str {
+    if text.len() <= room {
+        return text;
+    }
+    let end = (0..=room)
+        .rev()
+        .find(|&at| text.is_char_boundary(at))
+        .unwrap_or(0);
+    &text[..end]
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Edit {
     content: String,
@@ -182,6 +194,10 @@ impl Edit {
 
     fn edited(&mut self, span: Span, range: Range<usize>, text: &str) {
         let range = self.clamped(range);
+        let text = fitted(
+            text,
+            LONGEST_CONTENT.saturating_sub(self.content.len() - range.len()),
+        );
         if self.slice(range.clone()) == text {
             let at = range.end;
             self.selection = at..at;
@@ -803,5 +819,26 @@ mod tests {
         assert_eq!(edit.selection(), 9..9);
         assert!(edit.undo());
         assert_eq!(edit.content(), "");
+    }
+
+    #[test]
+    fn a_paste_longer_than_a_field_holds_is_cut_to_what_fits() {
+        let mut held = edit("");
+
+        held.paste(&"a".repeat(LONGEST_CONTENT * 4));
+
+        assert_eq!(held.content().len(), LONGEST_CONTENT);
+        assert_eq!(held.cursor(), LONGEST_CONTENT);
+    }
+
+    #[test]
+    fn a_cut_never_splits_a_character_and_a_replaced_selection_makes_room() {
+        let mut held = edit(&"a".repeat(LONGEST_CONTENT - 1));
+        held.paste("é");
+        assert_eq!(held.content().len(), LONGEST_CONTENT - 1);
+
+        held.select(0..LONGEST_CONTENT - 1);
+        held.paste("é");
+        assert_eq!(held.content(), "é");
     }
 }

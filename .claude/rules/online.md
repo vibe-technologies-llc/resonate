@@ -299,7 +299,9 @@ not only the first: an artist whose first image link was a shop's photograph res
 with a Commons one behind it. A link to any of these counts towards `may_be_pictured`, so a catalog
 enriched before a source joined is asked again by `look_again_for_portraits`. A picture refused with
 a status under 500 is a miss, not a refusal (`passed_over_when_refused`): a page taken down or a CDN
-not serving a region is a fact about that link, not a bad day to count against the artist.
+not serving a region is a fact about that link, not a bad day to count against the artist — except
+429, a host asking for fewer requests saying nothing about the picture, which is a failure like a
+500 and leaves the artist asked again.
 **A source that fails does not end the walk.** Every step goes through `Walk::tried`: a refusal
 under 500 is that miss; a refusal at or over it, an unreadable answer or one too large is kept as
 the walk's first failure and the next source asked, so a Commons, Wikidata or Wikipedia having a

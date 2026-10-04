@@ -28,10 +28,13 @@ pub(crate) const LARGEST_DOCUMENT: usize = 4 * 1024 * 1024;
 pub(crate) const LARGEST_PICTURE: usize = 8 * 1024 * 1024;
 
 const REFUSED_FOR_GOOD: u16 = 500;
+const THROTTLED: u16 = 429;
 
 pub(crate) fn passed_over_when_refused<T>(answered: Result<Option<T>>) -> Result<Option<T>> {
     match answered {
-        Err(Error::Refused { host, status, .. }) if status < REFUSED_FOR_GOOD => {
+        Err(Error::Refused { host, status, .. })
+            if status < REFUSED_FOR_GOOD && status != THROTTLED =>
+        {
             tracing::debug!(
                 ?host,
                 status,

@@ -34,9 +34,23 @@ pub(crate) enum Stage {
     Found(Found),
     Unknown,
     Silent,
+    CaptureFailed,
     Unreached,
+    Refused,
     Offline,
     NoService,
+}
+
+fn stage_after(error: &ListenError) -> Stage {
+    match error {
+        ListenError::Stopped => Stage::Idle,
+        ListenError::NothingHeard => Stage::Silent,
+        ListenError::Capture { .. } => Stage::CaptureFailed,
+        ListenError::Unreachable { .. } => Stage::Unreached,
+        ListenError::Refused { .. }
+        | ListenError::Unreadable { .. }
+        | ListenError::TooLarge { .. } => Stage::Refused,
+    }
 }
 
 pub(crate) struct ListenModel {
@@ -250,21 +264,55 @@ impl ListenModel {
     }
 
     fn fell_through(&mut self, error: &ListenError, cx: &mut Context<Self>) {
-        self.stage = match error {
-            ListenError::Stopped => Stage::Idle,
-            ListenError::NothingHeard => Stage::Silent,
+        match error {
             ListenError::Capture { .. } => {
                 tracing::warn!(%error, "nothing could be listened to");
-                Stage::Silent
             }
             ListenError::Unreachable { .. }
             | ListenError::Refused { .. }
             | ListenError::Unreadable { .. }
             | ListenError::TooLarge { .. } => {
                 tracing::warn!(%error, "what was heard could not be named");
-                Stage::Unreached
             }
-        };
+            ListenError::Stopped | ListenError::NothingHeard => {}
+        }
+        self.stage = stage_after(error);
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_core::SourceId;
+
+    use super::*;
+
+    fn service() -> SourceId {
+        SourceId::new("shazam").expect("a source name")
+    }
+
+    #[test]
+    fn a_service_that_refused_the_clip_is_not_one_that_could_not_be_reached() {
+        let refused = ListenError::Refused {
+            service: service(),
+            status: 400,
+        };
+        let unreadable = ListenError::Unreadable { service: service() };
+        let too_large = ListenError::TooLarge { service: service() };
+        let unreachable = ListenError::Unreachable { service: service() };
+
+        assert!(matches!(stage_after(&refused), Stage::Refused));
+        assert!(matches!(stage_after(&unreadable), Stage::Refused));
+        assert!(matches!(stage_after(&too_large), Stage::Refused));
+        assert!(matches!(stage_after(&unreachable), Stage::Unreached));
+    }
+
+    #[test]
+    fn a_stopped_listening_is_idle_and_a_silent_one_is_silent() {
+        assert!(matches!(stage_after(&ListenError::Stopped), Stage::Idle));
+        assert!(matches!(
+            stage_after(&ListenError::NothingHeard),
+            Stage::Silent
+        ));
     }
 }

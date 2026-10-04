@@ -253,9 +253,17 @@ impl RootView {
             Stage::Silent => {
                 self.listen_again("Nothing reached the recording. Is anything playing?", cx)
             }
+            Stage::CaptureFailed => self.listen_again(
+                "The recording could not be made. Is the source there for PipeWire to capture?",
+                cx,
+            ),
             Stage::Unreached => {
                 self.listen_again("The services that name a song could not be reached.", cx)
             }
+            Stage::Refused => self.listen_again(
+                "A service that names songs refused the clip, or answered with nothing readable.",
+                cx,
+            ),
             Stage::Offline => listen_note(OFFLINE.to_owned()),
             Stage::NoService => listen_note(NO_SERVICE.to_owned()),
             Stage::Idle => self.listen_again("Hear what is sounding and name it.", cx),

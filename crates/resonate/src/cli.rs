@@ -545,7 +545,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["off", "import", "export", "find", "fetch", "suggest", "list", "forget", "forget_own"],
+        conflicts_with_all = ["for", "off", "import", "export", "find", "fetch", "suggest", "list", "forget", "forget_own"],
         help = "Turn the equaliser on. It is a filter, so the stream stops being bit-perfect \
                 and `resonate explain` says so"
     )]
@@ -617,7 +617,7 @@ pub struct EqArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["on", "off", "profile", "import", "export", "find", "fetch", "list", "forget", "own", "forget_own"],
+        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "find", "fetch", "list", "forget", "own", "forget_own"],
         help = "Name the measured device the chosen sink looks like, or say that nothing \
                 answers to it clearly enough to be worth guessing at"
     )]

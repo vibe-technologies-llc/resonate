@@ -277,11 +277,13 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 
 - **Profiles are files, not rows**: `$XDG_DATA_HOME/resonate/equaliser/<name>.txt` in
   EqualizerAPO text, hand-editable and readable by any other player. `.txt`, not `.apo` or `.eq`,
-  is what AutoEq and EqualizerAPO write. A write stages and renames (the `settings::File`
-  discipline). Not a SQLite table, because `resonate play` and `resonate eq` must work with no
+  is what AutoEq and EqualizerAPO write. A write stages, syncs the bytes, renames
+  and syncs the folder (the `settings::File` discipline), so a crash cannot leave a bound profile
+  empty. Not a SQLite table, because `resonate play` and `resonate eq` must work with no
   catalog. A `ProfileName` is at most `NAME_AT_MOST` (96) *bytes*, and `ProfileName::after` cuts a
   file's stem at the last letter those bytes hold, so a name in any script is cut rather than
-  falling back to `profile` and two long imports keep two files. `Store::names` and
+  falling back to `profile` and two long imports keep two files. `resonate eq --import` and `--fetch` say
+  when the name they keep under was kept already and is replaced (`Store::holds`). `Store::names` and
   `Store::owners` walk the whole folder and keep the first `PROFILES_AT_MOST` (256) by name in a
   bounded heap, so which are listed past the limit is the folder's alphabet, not its order on disc.
 - **An own curve is a profile file too, where no name can reach it.** `Store::own` and
@@ -294,8 +296,9 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   `..` from naming a folder; one too long for a file name is `Error::DeviceNotNameable`.
   `no_device_name_reaches_the_file_another_device_or_the_rest_are_kept_in` is the claim.
 - **The switch is one for every device.** `equaliser` is a single key, so `resonate eq --off --for
-  <sink>` is refused by the grammar rather than switching every device off; one device is let go
-  with `--unbind`.
+  <sink>` and `--on --for <sink>` are refused by the grammar rather than switching every device;
+  one device is let go with `--unbind`. `--suggest` reads the sink `--sink` or the default names,
+  so `--for` is refused beside it too.
 - **The command line binds, shapes and forgets an own curve as the pane does.** `resonate eq --own`
   binds the device `--for` names — or every other device — to its own curve and switches the
   equaliser on as `--profile` does; beside `--import` or `--fetch` what is read is kept as that
@@ -306,14 +309,18 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   of its own. `Store::owners` reads the folder back into the owners it was written for — a stem is
   taken only where escaping the name it unescapes to writes the same stem, so no hand-made file reads
   as a device's — and `--list` draws them beside the kept profiles, which is how a device gone for
-  good is found to forget. `an_own_curve_forgotten_takes_its_file_and_its_binding_and_nothing_else`
+  good is found to forget. A kept profile or own curve too large or too broken to read is a row
+  reading `unreadable`, warned of on the log, not the end of the list
+  (`a_kept_profile_too_large_to_read_is_a_row_of_the_list_and_not_its_end`).
+  `an_own_curve_forgotten_takes_its_file_and_its_binding_and_nothing_else`
   is the claim.
 - **A profile is read as far as it parses and never fails on a line** (the `lrc.rs` and `cue.rs`
   rule). Parameters are read by name, not position; `BW Oct` and `S` (slope) convert to the Q they
   stand for, a comma decimal reads, and a value past what a band holds is clamped rather than
-  dropped — the listener asked for as much as the build gives. Only `LARGEST_PROFILE` and
-  `LINES_AT_MOST` refuse; a filter past `MAX_BANDS` is passed over and counted like any other
-  unreadable line, the first 32 kept. `read_number` is exported so the pane's numeric cells agree
+  dropped — the listener asked for as much as the build gives. A line starting `#` is a comment,
+  neither read nor counted as passed over. Only `LARGEST_PROFILE` and `LINES_AT_MOST` refuse; a
+  filter past `MAX_BANDS` is passed over and counted like any other unreadable line, the first 32
+  kept. `read_number` is exported so the pane's numeric cells agree
   with the file reader about what a number is.
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** 127 points carry no bands,
   so the curve is fitted onto the 31 ISO third-octave centres at the third-octave Q (`Q::THIRD_OCTAVE`,

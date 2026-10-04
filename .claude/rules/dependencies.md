@@ -96,7 +96,8 @@ paths:
   time with no `unsafe` — and `process`, whose `getpgrp` tells a `play` sent to the background from
   one in front, and `resonate-codec`'s, for `fs`: a tag write carries a file's extended
   attributes onto its staged copy through `listxattr`, `getxattr` and `setxattr`, which `std` does
-  not reach. It was in the lockfile under zbus and libspa, so it adds features, not a crate.
+  not reach. It is `resonate-discord`'s too, for `getuid`, which weighs who owns the socket it is
+  about to speak to. It was in the lockfile under zbus and libspa, so it adds features, not a crate.
 - **`unicode-width`** is what `Table` measures a column with rather than `chars().count()`: a CJK
   character takes two terminal columns and a combining mark none. Not `unicode-segmentation`, which
   counts graphemes and would still leave a CJK name a column short per character.

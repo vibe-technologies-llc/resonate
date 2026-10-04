@@ -10,7 +10,7 @@ paths:
 
 `resonate-discord` tells a running Discord client what is playing, over Discord's local IPC socket,
 as a *Listening* activity. It reaches `resonate-core`, the engine's vocabulary,
-`serde`/`serde_json`, `crossbeam-channel` and `parking_lot`; only the binary reaches it, behind
+`serde`/`serde_json`, `crossbeam-channel`, `parking_lot` and `rustix`; only the binary reaches it, behind
 the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the library and `ureq`.
 
 ## Off means nothing runs
@@ -48,10 +48,12 @@ the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the 
   at once rather than a wait to `READY_WITHIN`; a `Close` carrying 4000 is an application
   Discord does not know, warned about once and waited out until the id changes. A `Ping` is
   answered with a `Pong`; an `ERROR` reply is a `Refused` warning that keeps the session — the
-  `Sent` is marked `refused`, so `due` offers the same activity again after
-  `SENT_AGAIN_AFTER_A_REFUSAL`, and a
-  change is sent on the usual spacing. Closing the socket over it would reconnect every fifteen
-  seconds to be refused the same payload.
+  `Sent` counts its `refusals`, so `due` offers the same activity again after
+  `SENT_AGAIN_AFTER_A_REFUSAL` (15 s) doubled for each refusal already met, up to
+  `SENT_AGAIN_AT_MOST` (10 min), and a change is sent on the usual spacing with the count started
+  over (`refusals_carried`). Closing the socket over it would reconnect every fifteen seconds to be
+  refused the same payload, and offering it every fifteen seconds for a whole track would do the
+  same on the one socket.
 - **The socket is looked for where every Discord puts it**: `$XDG_RUNTIME_DIR`, `$TMPDIR` and
   `/tmp`, each plain and under the Flatpak, Snap and Vesktop sandboxes, `discord-ipc-0` to `-9`,
   the path that answered last tried first. `find_among` goes on past a socket that will not take
@@ -62,6 +64,12 @@ the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the 
   `an_application_every_discord_refuses_ends_the_search_at_the_first`). A search that finds
   nothing asks again after `RETRY_AFTER_AT_FIRST` (5 s), doubling to `RETRY_AFTER_AT_MOST`
   (2 min), and a session reached or lost starts the wait over.
+- **Only a socket of the listener's own is connected to.** `/tmp` is shared, so another user could
+  bind a `discord-ipc-0` there and be told what is playing. `Session::open` takes the path's
+  metadata — followed, since a Flatpak or Vesktop may link one — and refuses with `NotOurs` unless it
+  is a socket whose owner is `rustix::process::getuid`; `find_among` warns and goes on to the next
+  (`a_socket_is_held_by_the_user_that_made_it_and_by_no_other`,
+  `a_file_that_is_no_socket_is_not_connected_to_and_the_search_goes_on`).
 - **`Activity::of` is the whole policy**, pure and tested without a socket.
   - `Shown::Application` says nothing about the track and draws no cover even where asked; `Track`
     is the title over the artist; `Album` adds the album as the picture's caption, or after the

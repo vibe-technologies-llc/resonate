@@ -11,6 +11,7 @@ pub const LARGEST_PROFILE: usize = 64 * 1024;
 const LINES_AT_MOST: usize = 4_096;
 const PREAMP: &str = "preamp:";
 const FILTER: &str = "filter";
+const COMMENT: char = '#';
 const CHANNEL: &str = "channel:";
 const EVERY_CHANNEL: &str = "all";
 const CHANNEL_NAMES: [&str; ChannelSet::NAMED_AT_MOST] =
@@ -260,7 +261,7 @@ pub fn read(text: &str) -> Result<Reading> {
 
     for line in text.lines() {
         let line = line.trim_start_matches('\u{feff}').trim();
-        if line.is_empty() {
+        if line.is_empty() || line.starts_with(COMMENT) {
             continue;
         }
 
@@ -539,7 +540,7 @@ mod tests {
 
         assert_eq!(reading.profile.preamp().millibels(), -3_500);
         assert_eq!(reading.profile.bands().len(), 2);
-        assert_eq!(reading.passed_over, 4);
+        assert_eq!(reading.passed_over, 3);
 
         let shelf = reading.profile.bands().get(1).copied().expect("two bands");
         assert_eq!(shelf.kind, BandKind::HighShelf);
@@ -641,5 +642,17 @@ mod tests {
         assert_eq!(reading.profile.bands().len(), MAX_BANDS);
         assert_eq!(reading.passed_over, 2);
         assert_eq!(last.frequency.centihertz(), 10_000 * MAX_BANDS as u32);
+    }
+
+    #[test]
+    fn a_comment_line_is_no_line_passed_over_and_a_filter_inside_one_is_not_read() {
+        let text = "# measured on a rig\nPreamp: -3 dB\n# Filter 2: ON PK Fc 900 Hz Gain 4 dB Q 1\n\
+                    Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\n";
+
+        let reading = read(text).expect("it reads");
+
+        assert_eq!(reading.passed_over, 0);
+        assert_eq!(reading.profile.bands().len(), 1);
+        assert_eq!(reading.profile.preamp().decibels(), -3.0);
     }
 }

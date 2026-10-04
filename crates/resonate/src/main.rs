@@ -2969,7 +2969,22 @@ mod tests {
             "--for",
             "alsa_output.usb"
         ]));
+        assert!(!parsed(&[
+            "resonate",
+            "eq",
+            "--on",
+            "--for",
+            "alsa_output.usb"
+        ]));
+        assert!(!parsed(&[
+            "resonate",
+            "eq",
+            "--suggest",
+            "--for",
+            "alsa_output.usb"
+        ]));
         assert!(parsed(&["resonate", "eq", "--off"]));
+        assert!(parsed(&["resonate", "eq", "--on"]));
     }
 
     #[test]

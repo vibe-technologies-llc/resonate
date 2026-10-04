@@ -22,6 +22,7 @@ const DRIFT_ALLOWED: Duration = Duration::from_secs(2);
 const RETRY_AFTER_AT_FIRST: Duration = Duration::from_secs(5);
 const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(120);
 const SENT_AGAIN_AFTER_A_REFUSAL: Duration = Duration::from_secs(15);
+const SENT_AGAIN_AT_MOST: Duration = Duration::from_secs(10 * 60);
 const COVER_REFRESH_AFTER: Duration = Duration::from_secs(15);
 const FAREWELL: Duration = Duration::from_millis(500);
 
@@ -82,7 +83,7 @@ impl Running {
 struct Sent {
     activity: Option<Activity>,
     at: Instant,
-    refused: bool,
+    refusals: u32,
 }
 
 struct CachedCover {
@@ -191,10 +192,11 @@ impl Publisher {
                 return Ok(());
             }
             let set = session.set(wanted.as_ref());
+            let refusals = refusals_carried(sent.as_ref(), wanted.as_ref());
             *sent = Some(Sent {
                 activity: wanted,
                 at: now,
-                refused: false,
+                refusals,
             });
             set
         });
@@ -203,7 +205,7 @@ impl Publisher {
             Err(Error::Refused { code }) => {
                 tracing::warn!(code, "Discord refused what was playing");
                 if let Some(sent) = sent.as_mut() {
-                    sent.refused = true;
+                    sent.refusals = sent.refusals.saturating_add(1);
                 }
             }
             Err(error) => {
@@ -329,7 +331,25 @@ fn due(sent: Option<&Sent>, wanted: Option<&Activity>, now: Instant) -> bool {
     if changed {
         waited >= SENDS_APART
     } else {
-        sent.refused && waited >= SENT_AGAIN_AFTER_A_REFUSAL
+        sent.refusals > 0 && waited >= wait_after_refusals(sent.refusals)
+    }
+}
+
+fn wait_after_refusals(refusals: u32) -> Duration {
+    let doublings = refusals.saturating_sub(1).min(u32::BITS - 1);
+    SENT_AGAIN_AFTER_A_REFUSAL
+        .saturating_mul(1 << doublings)
+        .min(SENT_AGAIN_AT_MOST)
+}
+
+fn refusals_carried(sent: Option<&Sent>, wanted: Option<&Activity>) -> u32 {
+    match (sent, wanted) {
+        (Some(sent), Some(wanted)) => sent
+            .activity
+            .as_ref()
+            .filter(|was| was.alike(wanted))
+            .map_or(0, |_| sent.refusals),
+        (Some(_) | None, None | Some(_)) => 0,
     }
 }
 
@@ -471,7 +491,7 @@ mod tests {
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
-            refused: false,
+            refusals: 0,
         };
 
         assert!(!due(
@@ -487,7 +507,7 @@ mod tests {
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
-            refused: false,
+            refusals: 0,
         };
         let next = activity("Time", 0);
 
@@ -502,7 +522,7 @@ mod tests {
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
-            refused: true,
+            refusals: 1,
         };
         let same = activity("Echoes", 1);
 
@@ -520,12 +540,63 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_that_never_clears_is_offered_again_ever_less_often_up_to_a_ceiling() {
+        let now = Instant::now();
+        let same = activity("Echoes", 1);
+        let sent = |refusals| Sent {
+            activity: Some(activity("Echoes", 0)),
+            at: now,
+            refusals,
+        };
+
+        assert!(due(
+            Some(&sent(1)),
+            Some(&same),
+            now + Duration::from_secs(15)
+        ));
+        assert!(!due(
+            Some(&sent(2)),
+            Some(&same),
+            now + Duration::from_secs(15)
+        ));
+        assert!(due(
+            Some(&sent(2)),
+            Some(&same),
+            now + Duration::from_secs(30)
+        ));
+        assert!(due(
+            Some(&sent(3)),
+            Some(&same),
+            now + Duration::from_secs(60)
+        ));
+        assert_eq!(wait_after_refusals(u32::MAX), SENT_AGAIN_AT_MOST);
+        assert_eq!(wait_after_refusals(40), SENT_AGAIN_AT_MOST);
+    }
+
+    #[test]
+    fn refusals_are_carried_to_the_same_activity_and_to_nothing_else() {
+        let was = Sent {
+            activity: Some(activity("Echoes", 0)),
+            at: Instant::now(),
+            refusals: 3,
+        };
+
+        assert_eq!(
+            refusals_carried(Some(&was), Some(&activity("Echoes", 1))),
+            3
+        );
+        assert_eq!(refusals_carried(Some(&was), Some(&activity("Time", 0))), 0);
+        assert_eq!(refusals_carried(Some(&was), None), 0);
+        assert_eq!(refusals_carried(None, Some(&activity("Echoes", 0))), 0);
+    }
+
+    #[test]
     fn a_seek_is_sent_as_a_change() {
         let now = Instant::now();
         let sent = Sent {
             activity: Some(activity("Echoes", 0)),
             at: now,
-            refused: false,
+            refusals: 0,
         };
 
         assert!(due(
