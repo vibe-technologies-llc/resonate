@@ -354,6 +354,13 @@ const fn made_where_asked(cli: &Cli, config: &Config) -> bool {
 fn vault_already_kept(cli: &Cli, config: &Config) -> Option<Arc<Vault>> {
     let path = vault_path(cli, config).ok()?;
     if !path.is_dir() && cli.vault.is_none() {
+        if config.vault.is_some() {
+            tracing::warn!(
+                path = %path.display(),
+                "the vault the settings name is not there, an unmounted drive perhaps; \
+                 what it holds will not play until it is"
+            );
+        }
         return None;
     }
     let opened = if cli.vault.is_some() {

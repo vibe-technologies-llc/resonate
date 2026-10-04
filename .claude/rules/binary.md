@@ -319,7 +319,11 @@ What some of them mean:
   which refuses a root that is not there (`vault::Error::NotThere`) rather than making `audio/`,
   `covers/` and `staging/` under an empty mount point, so `resonate vault --import` against a vault
   on an unmounted drive says so instead of filling the wrong disc
-  (`a_vault_opened_where_none_is_makes_nothing_there_and_one_made_is_opened_after`).
+  (`a_vault_opened_where_none_is_makes_nothing_there_and_one_made_is_opened_after`). Every other
+  command opens a vault through `vault_already_kept`, which passes over a missing one; where the
+  `vault` key named it, that is a warning saying the folder is not there and what it holds will not
+  play, rather than silence — the default place being absent is a build nobody imported into, and
+  stays quiet.
 
 **The settings pane writes through `resonate_ui::Settings`**, which the binary fills with
 `settings::File`. It edits the document with `toml_edit` rather than reserialising a parsed
