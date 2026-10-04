@@ -327,7 +327,6 @@ service or a format — and is not worked until that moves; everything else is o
   stops recognition
 
 ## Later: Visualiser
-- A 22.05 kHz stream is labelled 22.0 kHz in the visualiser and analysis readouts
 - A track of four and a half hours or more gets no time marks on the analysis waveform
 - The spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at 20 kHz
   at every rate

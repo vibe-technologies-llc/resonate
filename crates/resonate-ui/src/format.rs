@@ -43,15 +43,6 @@ pub fn quality(spec: StreamSpec) -> String {
     format!("{} / {}", depth(spec.format), spec.rate)
 }
 
-pub fn kilohertz(rate: SampleRate) -> String {
-    let hz = rate.hz();
-    if hz.is_multiple_of(1_000) {
-        format!("{}", hz / 1_000)
-    } else {
-        format!("{}.{}", hz / 1_000, (hz % 1_000) / 100)
-    }
-}
-
 pub fn spanned(played: Duration) -> String {
     let seconds = played.as_secs();
     let minutes = seconds / 60;

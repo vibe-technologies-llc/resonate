@@ -325,7 +325,7 @@ fn read_back(analysis: &Analysis) -> String {
     format!(
         "{}{depth} · {} kHz",
         examined.codec,
-        format::kilohertz(examined.rate)
+        examined.rate.kilohertz()
     )
 }
 
@@ -749,10 +749,7 @@ fn source_card(analysis: &Analysis) -> Div {
         ),
         (
             "rate",
-            Some(Cow::Owned(format!(
-                "{} kHz",
-                format::kilohertz(examined.rate)
-            ))),
+            Some(Cow::Owned(format!("{} kHz", examined.rate.kilohertz()))),
         ),
         (
             "content ends",

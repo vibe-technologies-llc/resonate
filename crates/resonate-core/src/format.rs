@@ -79,19 +79,25 @@ impl SampleRate {
 const HZ_A_KILOHERTZ: u32 = 1_000;
 const DIGITS_OF_A_KILOHERTZ: usize = 3;
 
-impl fmt::Display for SampleRate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl SampleRate {
+    pub fn kilohertz(self) -> String {
         let hz = self.hz();
         let mut fraction = hz % HZ_A_KILOHERTZ;
         if fraction == 0 {
-            return write!(f, "{} kHz", hz / HZ_A_KILOHERTZ);
+            return format!("{}", hz / HZ_A_KILOHERTZ);
         }
         let mut digits = DIGITS_OF_A_KILOHERTZ;
         while fraction.is_multiple_of(10) {
             fraction /= 10;
             digits -= 1;
         }
-        write!(f, "{}.{fraction:0digits$} kHz", hz / HZ_A_KILOHERTZ)
+        format!("{}.{fraction:0digits$}", hz / HZ_A_KILOHERTZ)
+    }
+}
+
+impl fmt::Display for SampleRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} kHz", self.kilohertz())
     }
 }
 
@@ -312,6 +318,7 @@ mod tests {
         ] {
             let rate = SampleRate::new(hz).expect("a supported rate");
             assert_eq!(rate.to_string(), written);
+            assert_eq!(format!("{} kHz", rate.kilohertz()), written);
         }
     }
 

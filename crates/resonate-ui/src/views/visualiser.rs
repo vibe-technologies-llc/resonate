@@ -10,7 +10,7 @@ use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
 use smallvec::SmallVec;
 
 use crate::{
-    PlayerModel, format,
+    PlayerModel,
     icons::Icon,
     spectrum::{CEILING_DB, Column, FLOOR_DB, MARKED_EVERY_DB, Spectrum, height_of, rising_edge},
     theme,
@@ -123,7 +123,7 @@ impl Visualiser {
     }
 
     fn readback(&self) -> SharedString {
-        let rate = format::kilohertz(self.spectrum.rate());
+        let rate = self.spectrum.rate().kilohertz();
         match self.showing {
             Showing::Spectrum => format!("{}-point · {rate} kHz", self.spectrum.points()),
             Showing::Scope => format!("{} ms · {rate} kHz", SCOPE_SPAN.as_millis()),

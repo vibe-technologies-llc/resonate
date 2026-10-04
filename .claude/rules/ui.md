@@ -2218,7 +2218,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   reached, in words — the port, the profile the card is switched to and whose volume it is — as faint
   `kit::detail`s, each ending in an ellipsis where it outruns its line (the default entry's *Whatever
   PipeWire routes to, which is …* was sliced by the card's edge), and what it takes, in figures — depths and rates through `format::depth` and
-  `format::kilohertz`, comma-listed — as `kit::figure`s. What it replaced drew all five as identical grey
+  `SampleRate::kilohertz` (core's, every digit the rate holds, so 22.05 kHz is not 22.0 and the
+  visualiser, the analysis and Settings read as the core's `Display` does), comma-listed — as `kit::figure`s. What it replaced drew all five as identical grey
   mono badges in one wrapping cloud, words in the figures' face, listed with a slash that read as
   shorthand. A port with nothing plugged in is a badge and a `muted` name rather than a parenthesis, and
   the default entry says which device PipeWire routes to now where the graph names one. The node name is

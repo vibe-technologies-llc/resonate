@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
-use resonate_core::{SampleFormat, StreamSpec};
+use resonate_core::{SampleFormat, SampleRate, StreamSpec};
 use resonate_engine::{
     BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
 };
@@ -116,7 +116,7 @@ fn rates_of(sink: &SinkInfo) -> Option<String> {
         .allowed_rates
         .iter()
         .copied()
-        .map(format::kilohertz)
+        .map(SampleRate::kilohertz)
         .collect();
 
     (!offered.is_empty()).then(|| format!("{} kHz", offered.join(OR)))
