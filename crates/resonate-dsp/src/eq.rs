@@ -95,6 +95,63 @@ impl Blend {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Preamping {
+    from: f64,
+    to: f64,
+    over: usize,
+    done: usize,
+}
+
+impl Preamping {
+    const fn steady(amplitude: f64) -> Self {
+        Self {
+            from: amplitude,
+            to: amplitude,
+            over: 0,
+            done: 0,
+        }
+    }
+
+    fn toward(self, to: f64, over: NonZeroUsize) -> Self {
+        let from = self.at(0);
+        if from.to_bits() == to.to_bits() {
+            return Self::steady(to);
+        }
+        Self {
+            from,
+            to,
+            over: over.get(),
+            done: 0,
+        }
+    }
+
+    fn at(&self, offset: usize) -> f64 {
+        let reached = self.done.saturating_add(offset);
+        if reached >= self.over {
+            return self.to;
+        }
+        self.from + (self.to - self.from) * (reached as f64 / self.over as f64)
+    }
+
+    fn advanced(self, frames: usize) -> Self {
+        let done = self.done.saturating_add(frames);
+        if done >= self.over {
+            Self::steady(self.to)
+        } else {
+            Self { done, ..self }
+        }
+    }
+
+    const fn settled(self) -> Self {
+        Self::steady(self.to)
+    }
+
+    const fn is_steady(&self) -> bool {
+        self.done >= self.over
+    }
+}
+
 fn usable(value: f64) -> f64 {
     let magnitude = value.abs();
     if magnitude > DENORMAL_FLOOR && magnitude < f64::INFINITY {
@@ -313,7 +370,7 @@ struct Piece<'a> {
     made: &'a mut [f64],
     channels: usize,
     first_channel: usize,
-    preamp: f64,
+    preamp: Preamping,
 }
 
 impl Piece<'_> {
@@ -324,18 +381,19 @@ impl Piece<'_> {
         widened: &mut [f64],
     ) {
         let frames = widened.as_chunks_mut::<WIDTH>().0;
-        if self.channels == WIDTH {
-            widen(self.taken, frames.as_flattened_mut(), self.preamp);
+        if self.channels == WIDTH && self.preamp.is_steady() {
+            widen(self.taken, frames.as_flattened_mut(), self.preamp.to);
         } else {
-            for (taken, slot) in self
+            for (at, (taken, slot)) in self
                 .taken
                 .chunks_exact(self.channels)
                 .zip(frames.iter_mut())
+                .enumerate()
             {
                 widen(
                     taken.get(self.first_channel..).unwrap_or_default(),
                     slot,
-                    self.preamp,
+                    self.preamp.at(at),
                 );
             }
         }
@@ -360,7 +418,7 @@ pub struct Equaliser {
     profile: Arc<Profile>,
     rate: SampleRate,
     channels: NonZeroUsize,
-    preamp: f64,
+    preamp: Preamping,
     coefficients: Vec<Biquad>,
     bands: usize,
     state: Vec<Section>,
@@ -375,7 +433,7 @@ impl Equaliser {
             profile,
             rate,
             channels: NonZeroUsize::MIN,
-            preamp: 1.0,
+            preamp: Preamping::steady(1.0),
             coefficients: Vec::with_capacity(MAX_BANDS),
             bands: 0,
             state: Vec::new(),
@@ -385,6 +443,7 @@ impl Equaliser {
         };
         stage.blend.over(eased_over(rate));
         stage.take_the_profile();
+        stage.preamp = Preamping::steady(stage.profile.preamp().amplitude());
         stage
     }
 
@@ -401,7 +460,6 @@ impl Equaliser {
     }
 
     fn take_the_profile(&mut self) {
-        self.preamp = self.profile.preamp().amplitude();
         let bands = self
             .profile
             .bands()
@@ -458,6 +516,7 @@ impl Processor for Equaliser {
             .fold(0, usize::saturating_add);
         self.widened = Widened::holding(room);
         self.take_the_profile();
+        self.preamp = Preamping::steady(self.profile.preamp().amplitude());
 
         Ok(max_frames_in)
     }
@@ -465,6 +524,7 @@ impl Processor for Equaliser {
     fn reset(&mut self) {
         self.state.fill(Section::default());
         self.blend.settle();
+        self.preamp = self.preamp.settled();
     }
 
     fn latency_frames(&self) -> f64 {
@@ -476,7 +536,7 @@ impl Processor for Equaliser {
     }
 
     fn is_ramping(&self) -> bool {
-        self.blend.is_moving()
+        self.blend.is_moving() || !self.preamp.is_steady()
     }
 
     fn ease_equalisation(&mut self, easing: Easing) {
@@ -486,6 +546,9 @@ impl Processor for Equaliser {
     fn set_equalisation(&mut self, profile: &Arc<Profile>) {
         self.profile = Arc::clone(profile);
         self.take_the_profile();
+        self.preamp = self
+            .preamp
+            .toward(self.profile.preamp().amplitude(), eased_over(self.rate));
         self.silence_what_is_no_longer_reached();
     }
 
@@ -551,6 +614,7 @@ impl Processor for Equaliser {
                     channels,
                 );
             }
+            self.preamp = self.preamp.advanced(whole);
         }
 
         ProcessCount {
@@ -700,6 +764,44 @@ mod tests {
         assert!(
             switched > heard * 2.0,
             "a stage switched in at once stepped only {switched} where the tone steps {heard}"
+        );
+    }
+
+    #[test]
+    fn a_preamp_change_is_eased_in_rather_than_stepped_within_a_sample() {
+        let rate = SampleRate::HZ_48000;
+        let over = eased_over(rate).get();
+        let flat = Arc::new(Profile::new(Preamp::NONE, Vec::new()).expect("a profile in range"));
+        let quieter = Arc::new(
+            Profile::new(Preamp::from_decibels(-12.0).expect("in range"), Vec::new())
+                .expect("a profile in range"),
+        );
+        let mut stage = prepared(&flat, rate);
+        let steady = vec![0.5; BLOCK * 2];
+        let mut output = vec![0.0; BLOCK * 2];
+        stage.process(&steady, &mut output);
+
+        stage.set_equalisation(&quieter);
+        assert!(stage.is_ramping());
+        let mut heard = Vec::new();
+        for _ in 0..over / BLOCK + 2 {
+            stage.process(&steady, &mut output);
+            heard.extend_from_slice(&output);
+        }
+
+        let whole_step = 0.5 * (1.0 - quieter.preamp().amplitude());
+        assert!(
+            !stage.is_ramping(),
+            "the preamp's easing outlived its length"
+        );
+        assert!(
+            largest_step(&heard) < whole_step / 100.0,
+            "the preamp stepped {} of {whole_step} in one sample",
+            largest_step(&heard)
+        );
+        assert_eq!(
+            heard.last().copied(),
+            Some(0.5 * quieter.preamp().amplitude())
         );
     }
 
@@ -1048,7 +1150,7 @@ mod tests {
     struct FrameMajor {
         rate: SampleRate,
         channels: usize,
-        preamp: f64,
+        preamp: Preamping,
         coefficients: Vec<Biquad>,
         histories: Vec<[f64; 4]>,
     }
@@ -1058,7 +1160,7 @@ mod tests {
             let mut cascade = Self {
                 rate,
                 channels,
-                preamp: 1.0,
+                preamp: Preamping::steady(profile.preamp().amplitude()),
                 coefficients: Vec::new(),
                 histories: vec![[0.0; 4]; channels * MAX_BANDS],
             };
@@ -1067,7 +1169,9 @@ mod tests {
         }
 
         fn retune(&mut self, profile: &Profile) {
-            self.preamp = profile.preamp().amplitude();
+            self.preamp = self
+                .preamp
+                .toward(profile.preamp().amplitude(), eased_over(self.rate));
             self.coefficients = profile.designed(self.rate).collect();
             let reached = self.coefficients.len();
             for lane in self.histories.as_chunks_mut::<MAX_BANDS>().0 {
@@ -1079,6 +1183,7 @@ mod tests {
 
         fn reset(&mut self) {
             self.histories.fill([0.0; 4]);
+            self.preamp = self.preamp.settled();
         }
 
         fn process(&mut self, input: &[f64], output: &mut [f64]) -> usize {
@@ -1087,12 +1192,14 @@ mod tests {
                 .chunks_exact(self.channels)
                 .zip(output.chunks_exact_mut(self.channels))
             {
+                let preamp = self.preamp.at(0);
+                self.preamp = self.preamp.advanced(1);
                 for ((sample, slot), lane) in taken
                     .iter()
                     .zip(made.iter_mut())
                     .zip(self.histories.as_chunks_mut::<MAX_BANDS>().0)
                 {
-                    let mut carried = usable(*sample * self.preamp);
+                    let mut carried = usable(*sample * preamp);
                     for (filter, history) in self.coefficients.iter().zip(lane.iter_mut()) {
                         let [behind_in, further_behind_in, behind_out, further_behind_out] =
                             *history;

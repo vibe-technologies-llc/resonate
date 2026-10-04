@@ -197,7 +197,14 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
 - **The preamp is a scalar at the head of the stage, before the bands, as the text says.** Nothing
   else guards a boost: clip prevention attenuates rather than limits (`audio.md`), and a preamp *is*
   the attenuation. *Fit* sets it from the profile's own peak; a listener overriding it meets the
-  existing clamps, their doing and visible in `resonate explain`.
+  existing clamps, their doing and visible in `resonate explain`. **A preamp change glides.**
+  `set_equalisation` — *Fit*, a typed value, another profile — moves `Preamping` from the amplitude
+  in force toward the new one over `EASED_OVER`, a frame at a time, rather than stepping it within
+  a sample and ringing the step through the cascade; the ramp is weighed by frames since it began,
+  never accumulated, so it lands on the new amplitude exactly whatever the blocks, and the stage
+  says `is_ramping` until it has
+  (`a_preamp_change_is_eased_in_rather_than_stepped_within_a_sample`). A steady preamp keeps the
+  one-multiply `widen` over the whole block.
 
 ## Room correction
 
