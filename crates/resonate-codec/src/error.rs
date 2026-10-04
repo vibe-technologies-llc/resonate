@@ -8,7 +8,10 @@ use symphonia::core::{
 };
 use thiserror::Error;
 
-use crate::dsd::{DsdChunk, DsdField};
+use crate::{
+    Container,
+    dsd::{DsdChunk, DsdField},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StreamTrackId(pub u32);
@@ -153,6 +156,12 @@ pub enum Error {
     #[error("{location} is not seekable")]
     NotSeekable { location: MediaLocation },
 
+    #[error("{location} is {container:?}, which is read by seeking, on a source that cannot seek")]
+    ReadBySeeking {
+        location: MediaLocation,
+        container: Container,
+    },
+
     #[error("{location} can only be seeked forward")]
     SeekBackwardUnsupported { location: MediaLocation },
 
@@ -247,6 +256,7 @@ impl Error {
             | Self::RateNotRepresentable { location, .. }
             | Self::LayoutNotRepresentable { location, .. }
             | Self::NotSeekable { location }
+            | Self::ReadBySeeking { location, .. }
             | Self::SeekBackwardUnsupported { location }
             | Self::SeekInvalidTrack { location }
             | Self::ResetRequired { location }

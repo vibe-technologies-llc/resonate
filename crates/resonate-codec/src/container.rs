@@ -46,6 +46,12 @@ use crate::{
 };
 
 const MP3_DECODER_DELAY: u32 = 529;
+const READ_BY_SEEKING: [(&[u8; 4], Container); 4] = [
+    (b"DSD ", Container::Dsf),
+    (b"FRM8", Container::Dff),
+    (b"MAC ", Container::MonkeysAudio),
+    (b"MACF", Container::MonkeysAudio),
+];
 const ALAC_ATOM_BYTES: usize = 12;
 const ALAC_ATOM_IDS: [&[u8; 4]; 2] = [b"frma", b"alac"];
 const ALAC_COOKIE_BYTES: [usize; 2] = [24, 48];
@@ -232,6 +238,12 @@ fn open_spooling_within(
                 Prescan::buffered(bytes.as_mut())
             }
             Spooled::Head(head) => {
+                if let Some(container) = read_by_seeking(&head) {
+                    return Err(Error::ReadBySeeking {
+                        location: location.clone(),
+                        container,
+                    });
+                }
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
                 bytes = match Spool::beginning_with(&head, bytes, named.clone()) {
                     Ok(held) => {
@@ -305,6 +317,12 @@ fn open_spooling_within(
         chunk_pictures: chunk.map(|held| held.media.visuals).unwrap_or_default(),
         spool,
     })))
+}
+
+fn read_by_seeking(head: &[u8]) -> Option<Container> {
+    READ_BY_SEEKING
+        .iter()
+        .find_map(|(magic, container)| head.starts_with(magic.as_slice()).then_some(*container))
 }
 
 fn refuse_what_the_wave_reader_would_overflow_on(
@@ -890,6 +908,25 @@ mod tests {
             .into_coded()
             .expect("a coded stream");
         assert!(short.seekable, "a pipe under the spool was not read whole");
+    }
+
+    #[test]
+    fn a_dsd_or_monkeys_audio_pipe_too_long_to_hold_is_named_as_wanting_a_seek() {
+        let location = MediaLocation::local("long.dsf");
+        for (magic, container) in READ_BY_SEEKING {
+            let mut bytes = magic.to_vec();
+            bytes.extend(std::iter::repeat_n(0, 4_096));
+
+            let opened = open_spooling(piped(bytes), &location, 1_024);
+
+            assert!(
+                matches!(
+                    opened,
+                    Err(Error::ReadBySeeking { container: named, .. }) if named == container
+                ),
+                "{container:?} over a pipe was not named as read by seeking"
+            );
+        }
     }
 
     struct Trickling {

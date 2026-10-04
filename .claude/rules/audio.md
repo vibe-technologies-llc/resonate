@@ -457,7 +457,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   (`Engine::settle_what_was_spooled`) and republishes the digest, so MPRIS's `CanSeek` and the window
   follow. A spool that could not be made (no writable temporary folder) falls back to the `Replaying`
   head, and one cut short by its ceiling or a failing source plays to where it stopped and never
-  claims to be whole. `a_pipe_too_long_to_hold_is_spooled_on_disc_and_seeks_once_it_has_all_arrived`
+  claims to be whole. A DSF, DSDIFF or Monkey's Audio stream is read by seeking — the DSD layout walks
+  its chunks and `ape.rs` its seek table — so one too long to hold whole is refused at once as
+  `Error::ReadBySeeking` naming its `Container`, its head's magic read against `READ_BY_SEEKING`,
+  rather than handed to a probe that answered `UnrecognisedContainer`
+  (`a_dsd_or_monkeys_audio_pipe_too_long_to_hold_is_named_as_wanting_a_seek`).
+  `a_pipe_too_long_to_hold_is_spooled_on_disc_and_seeks_once_it_has_all_arrived`
   holds the stream to every sample across the swap and a seek after;
   `a_source_that_cannot_seek_is_spooled_and_keeps_even_the_tags_after_its_audio`,
   `a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek`,

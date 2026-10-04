@@ -34,8 +34,8 @@ service or a format — and is not worked until that moves; everything else is o
 - A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
   unseekable and the bar fills early
 - The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read
-- A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
-  container rather than played as it arrives or named as needing a seek
+- A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek, too long to hold whole, is
+  refused as wanting a seek rather than played as it arrives
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is

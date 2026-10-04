@@ -156,6 +156,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::DsdCompressed { .. } => Cause::Unsupported,
         Read::SeekOutOfRange { .. }
         | Read::NotSeekable { .. }
+        | Read::ReadBySeeking { .. }
         | Read::SeekBackwardUnsupported { .. }
         | Read::SeekInvalidTrack { .. } => Cause::CannotSeek,
         Read::TrackPropertyMissing { .. }

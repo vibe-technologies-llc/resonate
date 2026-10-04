@@ -124,6 +124,7 @@ impl Failure {
             | Codec::LocatorNotUsable { .. }
             | Codec::SeekOutOfRange { .. }
             | Codec::NotSeekable { .. }
+            | Codec::ReadBySeeking { .. }
             | Codec::SeekBackwardUnsupported { .. }
             | Codec::SeekInvalidTrack { .. }
             | Codec::ResetRequired { .. }
