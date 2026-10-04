@@ -9,7 +9,9 @@ const MILLISECONDS: u8 = 2;
 const STAMP_BYTES: usize = 4;
 const MILLISECONDS_PER_MINUTE: u32 = 60_000;
 const MILLISECONDS_PER_SECOND: u32 = 1_000;
-const MOST_LINES: usize = 4_096;
+const MOST_SYLLABLES: usize = 65_536;
+const CONTENT_OF_LYRICS: u8 = 1;
+const CONTENT_OF_A_TRANSCRIPTION: u8 = 2;
 
 const UTF16_LE_BOM: [u8; 2] = [0xFF, 0xFE];
 const UTF16_BE_BOM: [u8; 2] = [0xFE, 0xFF];
@@ -90,7 +92,10 @@ pub(crate) fn as_lrc(frame: &[u8]) -> Option<String> {
     if stamps != MILLISECONDS {
         return None;
     }
-    let (_, rest) = rest.split_first()?;
+    let (&content, rest) = rest.split_first()?;
+    if content != CONTENT_OF_LYRICS && content != CONTENT_OF_A_TRANSCRIPTION {
+        return None;
+    }
     let (descriptor, after_descriptor) = encoding.text_at(rest)?;
     encoding.read(&rest[..descriptor]);
 
@@ -100,7 +105,14 @@ pub(crate) fn as_lrc(frame: &[u8]) -> Option<String> {
 
 fn syllables(mut encoding: Encoding, mut rest: &[u8]) -> Vec<Syllable> {
     let mut read = Vec::new();
-    while read.len() < MOST_LINES {
+    loop {
+        if read.len() == MOST_SYLLABLES {
+            tracing::warn!(
+                kept = MOST_SYLLABLES,
+                "a timed-lyrics frame holds more syllables than are read; the rest are passed over"
+            );
+            break;
+        }
         let Some((end, after)) = encoding.text_at(rest) else {
             break;
         };
@@ -169,7 +181,17 @@ mod tests {
     use super::*;
 
     fn frame(encoding: u8, stamps: u8, entries: &[(&[u8], u32)], terminator: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![encoding, b'e', b'n', b'g', stamps, 1];
+        framed_as(CONTENT_OF_LYRICS, encoding, stamps, entries, terminator)
+    }
+
+    fn framed_as(
+        content: u8,
+        encoding: u8,
+        stamps: u8,
+        entries: &[(&[u8], u32)],
+        terminator: &[u8],
+    ) -> Vec<u8> {
+        let mut bytes = vec![encoding, b'e', b'n', b'g', stamps, content];
         bytes.extend_from_slice(terminator);
         for (text, at) in entries {
             bytes.extend_from_slice(text);
@@ -237,6 +259,21 @@ mod tests {
         assert_eq!(
             as_lrc(&bytes).as_deref(),
             Some("[00:00.000]Überall\n[00:02.000]wo\n"),
+        );
+    }
+
+    #[test]
+    fn only_a_frame_of_lyrics_or_a_transcription_is_read_as_words() {
+        let entries: &[(&[u8], u32)] = &[(b"Overhead", 1_000)];
+        let chords = framed_as(5, 3, MILLISECONDS, entries, &[0]);
+        let events = framed_as(3, 3, MILLISECONDS, entries, &[0]);
+        let transcribed = framed_as(CONTENT_OF_A_TRANSCRIPTION, 3, MILLISECONDS, entries, &[0]);
+
+        assert_eq!(as_lrc(&chords), None);
+        assert_eq!(as_lrc(&events), None);
+        assert_eq!(
+            as_lrc(&transcribed).as_deref(),
+            Some("[00:01.000]Overhead\n")
         );
     }
 

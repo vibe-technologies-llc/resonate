@@ -203,10 +203,6 @@ service or a format — and is not worked until that moves; everything else is o
   alone; nothing adds a row with Control
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
-## Lyrics
-- A timed-lyrics frame is read as words whatever its content type, cut at 4 096 syllables in
-  silence, and the last of several languages wins
-
 ## Testing
 - No transport test covers a failed rebind, a setting changed while a row is parked, a seek during
   the sleep fade, a track of unknown length, removing the playing row under repeat, or a

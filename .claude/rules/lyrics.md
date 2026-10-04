@@ -93,7 +93,12 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   into one line at the first one's moment, each syllable after an inline `<mm:ss.xxx>` stamp of its
   own, so a syllable-timed frame is a word-timed line — read by the same reader and outranking an
   unsynchronised frame beside it. A frame timed in MPEG frames rather than milliseconds is left
-  unread, nothing saying how long a frame is. Both parse through the same `lrc` reader, so a tag with
+  unread, nothing saying how long a frame is, and so is one whose content type is not lyrics (1) or
+  a transcription (2) — chords, events, trivia and URLs are no words to sing
+  (`only_a_frame_of_lyrics_or_a_transcription_is_read_as_words`). `MOST_SYLLABLES` (65 536) bounds
+  the read and a frame past it says so in a warning; and where one tag carries a frame per language
+  the first stands, a tagger writing the primary first, where the last once replaced it
+  (`the_first_timed_lyrics_frame_of_a_tag_is_the_sheet_whatever_follows_it`). Both parse through the same `lrc` reader, so a tag with
   timestamps is a synced set exactly as a file would be, and a sidecar outranks the file's own as
   the deliberate one. `read_lyrics(source, text)` is the reader's one public door — `lrc::read` with
   its `Sheet` folded to its `Lyrics` — and `Embedded` and the online crate's `Lrclib` both use it, so

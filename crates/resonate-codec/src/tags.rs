@@ -460,6 +460,7 @@ struct Builder {
     date: Option<(DateRank, String)>,
     day_and_month: Option<DayAndMonth>,
     synced_lyrics: Option<String>,
+    synced_in_this_revision: bool,
     listed_in_this_revision: u16,
 }
 
@@ -498,6 +499,7 @@ impl Builder {
 
     fn absorb(&mut self, tags: &[&Tag]) {
         self.listed_in_this_revision = 0;
+        self.synced_in_this_revision = false;
         let naming = Naming::of(tags);
         for tag in tags {
             match Id3DatePart::of(tag) {
@@ -525,7 +527,12 @@ impl Builder {
                 self.absorb_one(&total);
             }
             if let Some(sheet) = synchronised_lyrics(tag) {
-                self.synced_lyrics = Some(sheet);
+                if self.synced_in_this_revision {
+                    tracing::debug!("a second timed-lyrics frame in one tag is passed over");
+                } else {
+                    self.synced_lyrics = Some(sheet);
+                    self.synced_in_this_revision = true;
+                }
             }
         }
     }
@@ -1752,6 +1759,29 @@ mod tests {
         let synced = Tag::new(RawTag::new("SYLT", frame.as_slice()));
 
         let set = absorb(&[synced, tag(StandardTag::Lyrics(text("all that you touch")))]);
+
+        assert_eq!(
+            set.lyrics.as_deref(),
+            Some("[00:01.500]all that you touch\n")
+        );
+    }
+
+    #[test]
+    fn the_first_timed_lyrics_frame_of_a_tag_is_the_sheet_whatever_follows_it() {
+        let synced = |language: &[u8; 3], words: &str| {
+            let mut frame = vec![3];
+            frame.extend_from_slice(language);
+            frame.extend_from_slice(&[2, 1, 0]);
+            frame.extend_from_slice(words.as_bytes());
+            frame.push(0);
+            frame.extend_from_slice(&1_500_u32.to_be_bytes());
+            Tag::new(RawTag::new("SYLT", frame.as_slice()))
+        };
+
+        let set = absorb(&[
+            synced(b"eng", "all that you touch"),
+            synced(b"deu", "alles was du beruhrst"),
+        ]);
 
         assert_eq!(
             set.lyrics.as_deref(),
