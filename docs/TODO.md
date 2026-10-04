@@ -127,7 +127,6 @@ service or a format — and is not worked until that moves; everything else is o
   components, so every row of a Windows-written sheet imports as missing
 - A playlist exported with more than some 50 000 rows cannot be read back, since import refuses a
   sheet over 8 MiB and export writes any size
-- `file:/path#fragment` with a single slash keeps the fragment in the file name
 - An organise cancel is heard only between batches of 256 moves, so a run of copies across devices
   cannot be stopped for minutes
 - An untagged *99 Luftballons.mp3* or *21 Guns.flac* is read as track 99 or 21 titled *Luftballons*
@@ -271,7 +270,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A configured `vault` that is not there, an unmounted drive, is skipped in silence by every command
   but `vault`
 - A text field takes any length, shaped again on every caret blink and kept whole in its undo
-- A file URI with an encoded NUL becomes a local location holding the byte
 - The Subsonic password and the configured tokens are printed by `Debug`, ready for the first log
   line that formats them
 - A Discord refusal that never clears is offered again every fifteen seconds for as long as the

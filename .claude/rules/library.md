@@ -2704,7 +2704,7 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   sheet not being allowed to cost the other fifty rows. The scheme and a `localhost` authority are read
   in any case, as RFC 3986 has them, so `FILE:///a.wav` and `file://LocalHost/a.wav` are local rows and
   an `xml:base` written either way still resolves what sits under it; `file:/a.wav`, with no authority,
-  reads as `file:///a.wav`, while `file:track.flac`, with no slash, stays a relative path. A row empty
+  reads as `file:///a.wav` — its query and fragment cut off as they are after an authority — while `file:track.flac`, with no slash, stays a relative path. A row empty
   once trimmed — a PLS `File1=` with nothing after — names nothing and is counted as elsewhere, where it
   once resolved to the sheet's own folder and was stored. A sheet is read as its byte-order mark says —
   UTF-8 or UTF-16 either way round, one of odd length refused — else as UTF-8 where it is, else in the

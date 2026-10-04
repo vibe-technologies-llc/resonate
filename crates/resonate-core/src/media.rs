@@ -17,6 +17,7 @@ const EXTENSION_SEPARATOR: char = '.';
 const FILE_SCHEME: &str = "file://";
 const FILE_LOCALHOST: &str = "localhost";
 const PERCENT: u8 = b'%';
+const NO_PATH_HOLDS: u8 = 0;
 const PATH_ENDS: [char; 2] = ['?', '#'];
 const SPAN_FRAGMENT: &str = "#frames=";
 const SPAN_TO: char = '-';
@@ -225,7 +226,11 @@ impl MediaLocation {
             if !encoded.starts_with(KEY_SEPARATOR) {
                 return None;
             }
-            return Some(Self::local(OsString::from_vec(uri_unescaped(encoded)?)));
+            let path = uri_unescaped(encoded)?;
+            if path.contains(&NO_PATH_HOLDS) {
+                return None;
+            }
+            return Some(Self::local(OsString::from_vec(path)));
         }
 
         let (scheme, key) = uri.split_once(SOURCE_SEPARATOR)?;
@@ -464,6 +469,11 @@ mod tests {
         assert_eq!(MediaLocation::from_uri("nothing"), None);
         assert_eq!(MediaLocation::from_uri("local:music/a.mp3"), None);
         assert_eq!(MediaLocation::from_uri("/music/Pink Floyd/a:b.flac"), None);
+        assert_eq!(MediaLocation::from_uri("file:///music/a%00.mp3"), None);
+        assert_eq!(
+            MediaLocation::from_uri_within("file:///music/a%00b.mp3#frames=0-"),
+            None
+        );
         assert_eq!(
             MediaLocation::from_uri("file://localhost/music/a.mp3"),
             Some(MediaLocation::local("/music/a.mp3"))

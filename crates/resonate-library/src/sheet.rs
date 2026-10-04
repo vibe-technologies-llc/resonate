@@ -290,13 +290,14 @@ pub fn local_file(line: &str) -> Option<String> {
     if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
         return None;
     }
-    let encoded = match path_of_reference(rest).strip_prefix(AUTHORITY_MARK) {
+    let reference = path_of_reference(rest);
+    let encoded = match reference.strip_prefix(AUTHORITY_MARK) {
         Some(named) => {
             let (authority, path) = named.split_at(named.find('/')?);
             let here = authority.is_empty() || authority.eq_ignore_ascii_case(LOCAL_AUTHORITY);
             here.then_some(path)?
         }
-        None => rest,
+        None => reference,
     };
     let encoded = forward_escaped(encoded);
     if !encoded.starts_with('/') {
@@ -556,6 +557,8 @@ mod tests {
         assert_eq!(read_at("File://LocalHost/tmp/a.wav"), echoes);
         assert_eq!(read_at("file:/tmp/a.wav"), echoes);
         assert_eq!(read_at("FILE:/tmp/a.wav"), echoes);
+        assert_eq!(read_at("file:/tmp/a.wav#t=30"), echoes);
+        assert_eq!(read_at("file:/tmp/a.wav?query"), echoes);
         assert_eq!(
             read_at("file:track.flac"),
             Some(PathBuf::from("/music/file:track.flac"))

@@ -61,7 +61,7 @@ queued and named). A queue row is published on the bus, kept for the next run an
 library row by what it holds, and none of the three can read a relative path: `to_uri` writes
 `file://track.wav`, which names a host. A local path is escaped and unescaped as *bytes*, so a
 Latin-1 name survives its URI rather than becoming U+FFFD and refusing to read back; only an opaque
-key is held to UTF-8. An argument is read as another source's URI only where its scheme names a
+key is held to UTF-8. A `%00` decoding into a local path refuses the URI, no file name holding one. An argument is read as another source's URI only where its scheme names a
 source this build's `Sources` holds, so `01:intro.flac` is a file here, not a key under a source
 called `01`. The scheme and `localhost` are read in any case, as RFC 3986 has them — `FILE://`,
 `file://LocalHost/`, `Subsonic:` (`a_scheme_and_localhost_are_read_in_any_case`). A command that
