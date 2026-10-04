@@ -15,7 +15,9 @@ everything else. The seam is on `resonate-core`, `thiserror` and `tracing` alone
 `cargo tree -p resonate-providers` stays free of the library, codec, vault and gpui: a provider
 that depended on the catalog could not be written without it. `Providers` is the registry:
 `Providers::none()` holds the `Unprovided` stub and `and` registers one per name, as
-`Lyricists::and` does.
+`Lyricists::and` does. `Providers::only` answers a registry holding the one provider named — the
+stub alone where nothing is registered under the name — for a poll only that provider can answer
+(below).
 
 ## What a provider is handed
 
@@ -76,6 +78,20 @@ A provider does none of this, so none of it is written twice:
   later, and is never given up for it. The cost is a failing provider asked once a poll for as long as it fails
   (`a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll`,
   `a_want_one_provider_answered_and_another_refused_stays_due`).
+- **A poll only one provider can answer asks that one alone, and its silence says nothing of the
+  rest.** `Providers::only` narrows the registry to one provider and marks it narrowed wherever it
+  left another real provider out; `Providers::first` copies the mark onto `Answer::narrowed`, and a
+  narrowed answer is never `heard_from_every_provider`. So a want the narrowed provider has nothing
+  for is neither stamped nor counted a miss — the providers left out were never asked, and a want
+  missed by the inbox alone would otherwise wait out a retry or be given up for what the network
+  might hold — while a delivery it does make lands and is noted as any other. The narrowing is the
+  registry's, not an option beside it, so a caller cannot hand a narrowed registry to a poll that
+  takes its silence for everybody's. A registry that held the one provider anyway is not narrowed.
+  The window's inbox poll (`Prompted::ByTheInbox`) asks through `only` with the inbox's name: a
+  file landing there can only be the inbox's, and asking every network provider about every unheld
+  want again for it was the whole cost of the watch
+  (`a_registry_narrowed_to_one_provider_asks_it_alone_and_never_hears_from_every_provider`,
+  `a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_holds`).
 - **A want dismissed or withdrawn while it is asked about is passed over.** The poll reads the wants
   once as it starts; stamping one the window or another process took away meanwhile answers
   `Error::UnknownWant`, which `supply::tried` logs and passes over, so the poll goes on to the wants
@@ -90,8 +106,10 @@ A provider does none of this, so none of it is written twice:
   (`a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want`,
   `a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want`).
 - **How long a provider is waited on.** `Providers::first` takes an `Asking` — `within` (the poll's
-  `answers_within`, `ANSWERS_WITHIN` by default) and a `cancelled` the poll reads off its progress —
-  and asks each provider on a thread of its own, looking at both every `LOOKED_AT_EVERY`. One that
+  `answers_within`, `ANSWERS_WITHIN` by default), a `cancelled` the poll reads off its progress, a
+  `turning_to` it calls with each real provider's name as it asks it (never the stub's), and a
+  `declined` it weighs every delivery against (below) — and asks each provider on a thread of its
+  own, looking at both every `LOOKED_AT_EVERY`. One that
   has not answered by the deadline is left behind and counted `late`, not `refused` (it said
   nothing was wrong), and the next is asked; its thread runs on to whatever end it reaches and its
   answer is dropped. A cancel ends the wait at once and asks nobody else, and the want is not
@@ -106,6 +124,23 @@ A provider does none of this, so none of it is written twice:
   provider's is, and ends on the first read that does, its channel gone.
 - **Staging, validating, deduping and keeping**, through `Vault::keep` and `Vault::keep_delivered`,
   so a delivery is held to the import's bit-exact, never-larger promise.
+- **A delivery is weighed against the length of the row it was wanted for.** Where the release row
+  names a length, `Want::lasts_as_long_as` takes a delivery only where what it decodes to is within
+  `LENGTHS_AGREE_WITHIN` (5 s, the tolerance a followed link's takes are held to) of it: the vault's
+  `Kept::frames` — the frames the source decoded to, a kept object's included — and, in the music
+  folder, a whole decode of the landing. One further off is counted `unkept` and noted as nothing:
+  no row, no pairing, no offer — the object it landed as is left to `--prune` like any no row
+  names, and the filed landing is removed. It counts a miss, as a vault refusal does, so a provider
+  that keeps offering the wrong song, or a file still being copied into the inbox, is asked after
+  the retry's wait rather than at every poll — and the window's inbox watch asks again once the copy
+  has been quiet. A release row naming no length weighs nothing
+  (`a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_does`,
+  `a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_does`).
+- **A refused delivery waits like a want that found nothing.** `note_tried` steps `misses` for any
+  try that offered nothing — a vault refusal, a failed keep, a length that disagrees — so the want
+  waits `RETRY_WAITS` and is given up as one missed is; only a want still carrying an earlier offer
+  keeps its count at nothing, and forgetting a delivery clears that offer (below)
+  (`a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again`).
 - **Where no vault is open, a delivery is filed in the music folder instead.** `Library::deliver_into`
   names a `DeliveryFolder` — the `music-folder` key's path and the `organise-as` layout — which the
   binary sets as it opens the library and the window sets afresh before every poll from its live
@@ -115,7 +150,8 @@ A provider does none of this, so none of it is written twice:
   names under the folder's `Naming`, the bytes are staged as a hidden `.<name>.<pid>-<n>.resonate-delivery`
   beside it — at most `LARGEST_FILED` — and landed by `hard_link` under the first free name
   `take_in::candidates` offers (`name (2).ext` and on), so nothing is overwritten. A landing the
-  decoder cannot probe is removed and counted `unkept`. The file is then tagged through `FileTags` with
+  decoder cannot probe — or, where the want names a length, cannot decode whole to a length within
+  `LENGTHS_AGREE_WITHIN` of it — is removed and counted `unkept`. The file is then tagged through `FileTags` with
   everything the want and album say — title, artist, album, album artist, track and disc, the year,
   the recording, release-track and release ids and the ISRC — so a later rescan reads the same row.
   **It joins the album it was wanted for, not one of its own**: before any scan reads it,
@@ -145,7 +181,15 @@ A provider does none of this, so none of it is written twice:
   `vault --release` never reach it: a vault object is not the user's library to move, write into or
   hand back. One object delivered for two wants pairs the second with the row the first made, and
   that row keeps the first want's names in the search index as on the row
-  (`one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed`).
+  (`one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed`). **A row held
+  meanwhile keeps its pairing.** The poll reads the wants as it starts, so a scan and a rematch can
+  pair the wanted release row with the listener's own file while a provider is still answering;
+  `note_delivered` asks inside its transaction whether the release row is still unheld and, where
+  it is not, writes nothing — no object row, no track row — and answers `None`, which the poll
+  counts `unkept`, leaving the object to `--prune`. The pairing it once took silently stays with the
+  file, and the want is held by it (`a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_file_leaves_it_paired`).
+  A filing in the music folder needs no such guard: `pair_what_landed` pairs only an unheld row, so
+  a filed copy of a song already held is an ordinary scanned file.
 - **Recording what landed on the want** — `offered` is the object's URI — and counting `offered`,
   `kept`, `unkept`, `nothing`, `refused` and `late`. A want whose release track holds a row has its
   `held` set and is never due again, so a filled want is the record of where its delivery went and
@@ -155,7 +199,22 @@ A provider does none of this, so none of it is written twice:
   nothing a scan filed, leaving the object to `--prune` and the want standing, so a wrong file
   dropped in the inbox is replaced by the next poll. The window reaches it too: `Track::delivered`
   reads `root_id IS NULL` with every other column, and a delivered row's menu offers *Forget this
-  delivery* (`LibraryModel::forget_delivered`).
+  delivery* (`LibraryModel::forget_delivered`). **What was forgotten is remembered, and the want is
+  due at once.** In the same transaction, each want the row held has its offer, `tried` and `misses`
+  put back to nothing — an offer standing would have kept the want six hours off and its misses at
+  nothing for ever — and gains a `forgotten_deliveries` row (a `MIGRATIONS` step, cascading with the
+  want): the `vault_objects.taken_from` the object came from, `<provider>:<key>` or the file's URI,
+  and when it was forgotten. The poll reads them once as it starts and hands each want's to
+  `Providers::first` as `Asking::declined`, which passes a matching delivery over — counted in
+  `Answer::declined`, never `refused` — and asks the next provider, so the same file is not fetched
+  and kept again and another provider's answer lands instead; with nobody else answering, the want
+  was heard from every provider and missed. A stream is declined by its key alone, a provider's key
+  naming what it delivers; a file only where its later modification or status change is no later
+  than the forgetting, so a right file put back in the inbox under the same name is delivered.
+  `land_release` carries a want's forgotten deliveries across the release rows it writes again, as
+  it carries the want (`a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_instead`,
+  `a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_again`,
+  `a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again`).
 
 ## Writing one
 
@@ -193,14 +252,22 @@ A provider does none of this, so none of it is written twice:
    `PollProgress::asking` is the `WantId` handed to the providers, held through the delivery's
    landing and `None` between wants and once the walk is done
    (`a_poll_names_the_want_it_is_asking_about_while_it_asks`), which is what the window draws as
-   *Downloading…*. *Poll now* and `resonate poll --again` poll under
+   *Downloading…*. **It names the provider too, and how far the delivery has got.**
+   `PollProgress::asking_provider` is the provider `Asking::turning_to` last named — the one being
+   asked, then the one that delivered, through the landing — and `None` once a want is answered
+   with nothing, between wants and once the walk is done; `PollProgress::received` is the bytes of
+   the delivery being landed read so far, counted by `Pumped` as each chunk of a stream reaches the
+   keep and by the reader a file is filed through, and put back to nothing at each want. A file the
+   vault keeps by its path is read by the vault, so it counts nothing. Both are read every frame, so
+   the provider sits under a `parking_lot::Mutex` held for a clone and the count is an atomic
+   (`a_poll_names_the_provider_it_is_asking_and_counts_what_it_received`). *Poll now* and `resonate poll --again` poll under
    `PollOptions::ASKING_EVERY_WANT`, asking every unheld want whenever last tried — somebody who
    just dropped a file in the inbox means *now*; the timer and a bare `resonate poll` keep to
    `Want::due_at`, which spares a network service.
    **The window watches the inbox folder**, through the same `RootsWatch` as the roots: once a
    write of an audio file or sheet under it has been quiet for `INBOX_QUIET_FOR`, it polls as
-   `Prompted::ByTheInbox` — every unheld want, as a press does, but raising and clearing no notice,
-   as the timer does. A poll that could not start because a pass ran stays owed and is asked again
+   `Prompted::ByTheInbox` — every unheld want, as a press does, but of the inbox alone, through
+   `Providers::only`, and raising and clearing no notice, as the timer does. A poll that could not start because a pass ran stays owed and is asked again
    on the next look, `INBOX_LOOKED_AT_EVERY` later, and a folder chosen in the pane is watched from
    the next look. **What landed while no window was open is asked about when one opens**: the first
    look weighs the newest file directly in the folder — the later of its modification and change

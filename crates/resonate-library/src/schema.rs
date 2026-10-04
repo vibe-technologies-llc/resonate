@@ -183,6 +183,12 @@ const MIGRATIONS: &[&str] = &[
          cover         BLOB,
          asked         INTEGER NOT NULL
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE forgotten_deliveries (
+         want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+         taken_from TEXT NOT NULL,
+         forgotten  INTEGER NOT NULL,
+         PRIMARY KEY (want_id, taken_from)
+     ) STRICT, WITHOUT ROWID;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

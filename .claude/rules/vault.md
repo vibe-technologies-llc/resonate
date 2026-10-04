@@ -415,7 +415,13 @@ boundary like every pass: a landed object is noted, row and want, before the pol
 an unnamed object is otherwise left for `--prune` to find on the disc
 (`a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted`).
 `a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went` and
-`a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims.
+`a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims. Two landed
+objects are deliberately not noted, and so wait for `--prune`: one whose `Kept::frames` disagree
+with the length of the release row it was wanted for, and one landing after that row was paired
+with a file of the listener's (`providers.md`). **`Kept::frames` is what the source decoded to in
+every form** — a re-encode's count, a WAVE's, and for `Form::Kept` the frames `kept_whole` weighed
+the copy by rather than the length the container declared, which a half-written MP3 whose Xing
+header names the whole song would have overstated.
 
 ## An Ogg stream's comments are rewritten, and every page after renumbered
 
