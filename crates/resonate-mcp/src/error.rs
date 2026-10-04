@@ -235,6 +235,9 @@ pub enum Refusal {
 
     #[error("{field} is not a value {tool} can read")]
     Unreadable { tool: Tool, field: &'static str },
+
+    #[error("{tool} needs a {field} that is not blank, a blank one matching the whole library")]
+    BlankField { tool: Tool, field: &'static str },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -273,6 +276,7 @@ impl Refusal {
             | Self::UnknownArgument(_)
             | Self::BadPromptArguments { .. }
             | Self::BlankArgument { .. }
+            | Self::BlankField { .. }
             | Self::BadArguments { .. }
             | Self::OneOf { .. }
             | Self::AtLeastOneOf { .. }

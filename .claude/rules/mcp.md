@@ -190,7 +190,11 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   `remove_from_playlist`, `discard_playlist` and `remove_from_queue`, and `play_playlist`, which
   replaces a queue.
 - An unreadable combination is a refusal: `OneOf` where exactly one field must be given,
-  `AtLeastOneOf` for a mark naming nothing, `AtMostOneOf` for a playlist started from two sources.
+  `AtLeastOneOf` for a mark naming nothing, `AtMostOneOf` for a playlist started from two sources,
+  `BlankField` for a `query` or `fills_from` given blank — which the grammar reads as no condition, so
+  `add_to_queue`, `add_to_playlist` and `create_playlist` would take the first rows of the whole
+  library and a playlist filled from it every track
+  (`a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library`).
 
 ## The long passes
 

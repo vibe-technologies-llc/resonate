@@ -754,7 +754,7 @@ impl Tool {
         match (track_ids, query) {
             (Some(ids), None) => Ok(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query)) => Ok(Wanted::Matching {
-                query,
+                query: self.unblank("query", query)?,
                 most: rows(limit, QUEUED_BY_DEFAULT),
             }),
             (Some(_), Some(_)) | (None, None) => Err(Refusal::OneOf {
@@ -762,6 +762,13 @@ impl Tool {
                 fields: &["track_ids", "query"],
             }),
         }
+    }
+
+    fn unblank(self, field: &'static str, text: String) -> std::result::Result<String, Refusal> {
+        if text.trim().is_empty() {
+            return Err(Refusal::BlankField { tool: self, field });
+        }
+        Ok(text)
     }
 
     fn track_ids(self, ids: Vec<NonZeroU64>) -> std::result::Result<Vec<TrackId>, Refusal> {
@@ -823,11 +830,11 @@ impl Tool {
             (None, None, None) => Filling::Empty,
             (Some(ids), None, None) => Filling::Rows(Wanted::Tracks(self.track_ids(ids)?)),
             (None, Some(query), None) => Filling::Rows(Wanted::Matching {
-                query,
+                query: self.unblank("query", query)?,
                 most: rows(asked.limit, QUEUED_BY_DEFAULT),
             }),
             (None, None, Some(query)) => Filling::Search {
-                query,
+                query: self.unblank("fills_from", query)?,
                 most: asked.limit.map(|most| most.clamp(1, MOST_ROWS)),
             },
             _ => {

@@ -1362,6 +1362,37 @@ fn a_scan_started_over_the_protocol_runs_behind_the_session_and_says_what_it_fou
 }
 
 #[test]
+fn a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library() {
+    let server = nothing_running();
+
+    for (tool, arguments) in [
+        ("add_to_queue", json!({ "query": "  " })),
+        ("add_to_playlist", json!({ "playlist": "Mix", "query": "" })),
+        ("create_playlist", json!({ "name": "Mix", "query": " " })),
+        (
+            "create_playlist",
+            json!({ "name": "Mix", "fills_from": "" }),
+        ),
+    ] {
+        assert_eq!(
+            error_code(
+                &server,
+                &request(
+                    "tools/call",
+                    json!({ "name": tool, "arguments": arguments })
+                )
+            ),
+            -32_602,
+            "{tool} took a blank search"
+        );
+    }
+    assert_eq!(
+        called(&server, "list_playlists", json!({}))["playlists"],
+        json!([])
+    );
+}
+
+#[test]
 fn a_folder_that_is_not_there_is_refused_rather_than_kept_as_a_root() {
     let server = nothing_running();
 
