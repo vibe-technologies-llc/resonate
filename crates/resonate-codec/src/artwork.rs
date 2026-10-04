@@ -455,8 +455,8 @@ mod tests {
 
     use super::{
         CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LARGEST_COVER_SIDE,
-        LINEAR_FROM_EIGHT_BIT,
-        Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb, sides_within, srgb_from_linear,
+        LINEAR_FROM_EIGHT_BIT, Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb,
+        sides_within, srgb_from_linear,
     };
 
     fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {

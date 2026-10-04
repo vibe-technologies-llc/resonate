@@ -997,11 +997,7 @@ mod tests {
         let found = |query: &str| -> Vec<i64> {
             connection
                 .prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1")
-                .and_then(|mut statement| {
-                    statement
-                        .query_map([query], |row| row.get(0))?
-                        .collect()
-                })
+                .and_then(|mut statement| statement.query_map([query], |row| row.get(0))?.collect())
                 .expect("the index is read")
         };
         assert_eq!(found("e*"), vec![7]);

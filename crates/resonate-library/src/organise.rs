@@ -1275,7 +1275,10 @@ impl<'a> Planner<'a> {
     }
 
     fn in_the_way(&self, from: &Path, to: &Path) -> Option<InTheWay> {
-        if to.file_name().is_some_and(|name| name.len() > COMPONENT_BYTES) {
+        if to
+            .file_name()
+            .is_some_and(|name| name.len() > COMPONENT_BYTES)
+        {
             return Some(InTheWay::Stands(Refusal::Collided {
                 with: to.to_path_buf(),
             }));
