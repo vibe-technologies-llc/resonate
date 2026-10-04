@@ -969,21 +969,31 @@ fn count(value: u64) -> Option<u32> {
     u32::try_from(value).ok().filter(|value| *value > 0)
 }
 
-fn decibels(value: &str) -> Option<Decibels> {
-    let text = strip_db(value);
-    let Ok(db) = text.parse::<f32>() else {
+pub(crate) fn decibels(value: &str) -> Option<Decibels> {
+    let Some(db) = gain_number(strip_db(value)) else {
         tracing::debug!(value, "discarding an unparseable ReplayGain gain");
         return None;
     };
     Decibels::new(db).ok()
 }
 
-fn peak(value: &str) -> Option<f32> {
-    let Ok(peak) = value.trim().parse::<f32>() else {
+pub(crate) fn peak(value: &str) -> Option<f32> {
+    let Some(peak) = gain_number(value.trim()) else {
         tracing::debug!(value, "discarding an unparseable ReplayGain peak");
         return None;
     };
     (peak.is_finite() && peak >= 0.0).then_some(peak)
+}
+
+fn gain_number(text: &str) -> Option<f32> {
+    if let Ok(number) = text.parse::<f32>() {
+        return Some(number);
+    }
+    let written_with_a_decimal_comma =
+        !text.contains('.') && text.matches(DECIMAL_COMMA).count() == 1;
+    written_with_a_decimal_comma
+        .then(|| text.replacen(DECIMAL_COMMA, ".", 1).parse::<f32>().ok())
+        .flatten()
 }
 
 fn strip_db(value: &str) -> &str {
@@ -996,6 +1006,8 @@ fn strip_db(value: &str) -> &str {
         _ => text,
     }
 }
+
+const DECIMAL_COMMA: char = ',';
 
 #[cfg(test)]
 mod tests {
@@ -1498,6 +1510,22 @@ mod tests {
             set.replay_gain.album_gain,
             Some(Decibels::new(3.5).expect("finite"))
         );
+        assert_eq!(set.replay_gain.track_peak, Some(0.987_654));
+    }
+
+    #[test]
+    fn a_replay_gain_written_with_a_decimal_comma_is_read() {
+        let set = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7,06 dB"))),
+            tag(StandardTag::ReplayGainAlbumGain(text("1,000,5 dB"))),
+            tag(StandardTag::ReplayGainTrackPeak(text("0,987654"))),
+        ]);
+
+        assert_eq!(
+            set.replay_gain.track_gain,
+            Some(Decibels::new(-7.06).expect("finite"))
+        );
+        assert_eq!(set.replay_gain.album_gain, None);
         assert_eq!(set.replay_gain.track_peak, Some(0.987_654));
     }
 

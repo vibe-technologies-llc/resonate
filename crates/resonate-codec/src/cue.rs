@@ -6,11 +6,15 @@ use std::{
 };
 
 use resonate_core::{
-    Decibels, FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding,
+    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding,
     text::{UTF8_BOM, decoded, decoded_as, encoded},
 };
 
-use crate::{Error, MediaInfo, ReplayGain, Result, TagSet, source::Sources, tags::Uppercased};
+use crate::{
+    Error, MediaInfo, ReplayGain, Result, TagSet,
+    source::Sources,
+    tags::{Uppercased, decibels, peak},
+};
 
 const SECTORS_PER_SECOND: u64 = 75;
 const MOST_TRACKS: usize = 999;
@@ -995,22 +999,10 @@ fn numbered(value: &str) -> (Option<u32>, Option<u32>) {
     (read(number), total.and_then(read))
 }
 
-fn decibels(value: &str) -> Option<Decibels> {
-    let text = value.trim();
-    let text = text
-        .strip_suffix("dB")
-        .or(text.strip_suffix("DB"))
-        .unwrap_or(text);
-    Decibels::new(text.trim().parse().ok()?).ok()
-}
-
-fn peak(value: &str) -> Option<f32> {
-    let held: f32 = value.trim().parse().ok()?;
-    (held.is_finite() && held >= 0.0).then_some(held)
-}
-
 #[cfg(test)]
 mod tests {
+    use resonate_core::Decibels;
+
     use super::*;
 
     const MEDDLE: &str = r#"REM GENRE "Progressive Rock"

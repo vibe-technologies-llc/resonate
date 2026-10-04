@@ -40,8 +40,7 @@ service or a format — and is not worked until that moves; everything else is o
   unseekable and the bar fills early
 - A 64-bit float WAVE, RF64 or CAF is refused though the reader opens it; decoding it to 32-bit
   float loses nothing a recording holds
-- The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read,
-  and a gain written with a decimal comma is dropped
+- The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read
 - A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
   container rather than played as it arrives or named as needing a seek
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,

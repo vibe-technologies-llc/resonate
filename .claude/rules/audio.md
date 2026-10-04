@@ -101,7 +101,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   written after a name does not unname it and a later name still wins
   (`a_blank_text_tag_is_no_tag_and_a_padded_one_is_stored_trimmed`). The four ReplayGain values keep
   the rule through `parsed`: a blank or unparsable gain or peak leaves what an earlier frame or
-  revision gave, so an empty frame after a real one does not play the track at no gain. A date is
+  revision gave, so an empty frame after a real one does not play the track at no gain. A value is
+  read by `tags::decibels` and `tags::peak` — the cue sheet's `REM REPLAYGAIN_*` lines through the
+  same two — which take a unit in any case and a decimal comma where it is the number's only
+  separator, so a tagger in a German locale writing `-7,06 dB` is heard at its gain and `1,000,5`
+  is still refused (`a_replay_gain_written_with_a_decimal_comma_is_read`). A date is
   weighed by kind — recording date over recording year over release date and so on — and one of the
   held kind replaces it, so the newest revision wins a retagged year as it wins a retagged title.
   ID3v2.3 splits a date three ways, and symphonia hands its `TDAT` and `TIME` over as a recording date
