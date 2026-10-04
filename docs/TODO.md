@@ -197,7 +197,6 @@ service or a format — and is not worked until that moves; everything else is o
   queue, though `ui.md` says the pair always steps it
 - Word motions in a field split a decomposed accent from its letter, and take a whole CJK sentence
   as one word
-- The `play` readout can outgrow an 80-column terminal, leaving a stale row at each redraw
 - Only Settings and the search field take focus: the transport, the sidebar, the heading buttons,
   the seek and volume rails and every row control are reachable by the mouse alone
 - A menu opens on the right button alone, so a row's *Add to playlist*, *Go to artist*, *Share* and

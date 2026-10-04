@@ -147,7 +147,10 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   terminal too, `readout::Readout` redraws one line — the transport's glyph, position out of
   length, volume, shuffle, repeat, the sleep timer and what is being typed — every 500 ms sample
   and after every key, clearing it before anything else prints so an event or refusal is a line
-  of its own above. Piped input is read a line at a time with no readout, as a script sends it. **A
+  of its own above. The line is cut, by display width and ending in `…`, to a column short of the
+  terminal's width (`tcgetwinsize`, asked at every draw so a resize is followed), since one that
+  wraps leaves its first row behind at each redraw
+  (`a_readout_wider_than_the_terminal_is_cut_to_it_so_a_redraw_overwrites_it_whole`). Piped input is read a line at a time with no readout, as a script sends it. **A
   `play` sent to the background reads nothing.** `input::played_in_the_background` weighs the
   terminal's foreground group (`tcgetpgrp`) against the process's own (`getpgrp`, rustix's `process`
   feature), and where they differ neither the modes are touched nor stdin read — a `tcsetattr` or a

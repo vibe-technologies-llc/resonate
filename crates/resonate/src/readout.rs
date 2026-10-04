@@ -1,11 +1,14 @@
-use std::time::Duration;
+use std::{io, time::Duration};
 
 use resonate_engine::{Asleep, PlaybackState, PlayerState, RepeatMode, TrackState, Until};
+use unicode_width::UnicodeWidthChar as _;
 
 const CLEAR_THE_LINE: &str = "\r\x1b[K";
 const SECONDS_A_MINUTE: u64 = 60;
 const MINUTES_AN_HOUR: u64 = 60;
 const WHOLE: f32 = 100.0;
+const CUT_SHORT: char = '…';
+const LEFT_FOR_THE_CARET: usize = 1;
 
 pub struct Readout {
     live: bool,
@@ -39,7 +42,12 @@ impl Readout {
             return;
         }
         crate::said::raw(CLEAR_THE_LINE);
-        said_on!("{}", line_of(state, &self.typing));
+        let line = line_of(state, &self.typing);
+        let shown = match columns() {
+            Some(columns) => within(&line, columns.saturating_sub(LEFT_FOR_THE_CARET)),
+            None => line,
+        };
+        said_on!("{shown}");
         crate::said::flushed();
         self.drawn = true;
     }
@@ -69,6 +77,34 @@ pub fn line_of(state: &PlayerState, typing: &str) -> String {
         line.push_str(typing);
     }
     line
+}
+
+fn columns() -> Option<usize> {
+    rustix::termios::tcgetwinsize(io::stdout())
+        .ok()
+        .map(|size| usize::from(size.ws_col))
+        .filter(|columns| *columns > 0)
+}
+
+fn within(line: &str, columns: usize) -> String {
+    let wide = |text: &str| -> usize { text.chars().filter_map(char::width).sum() };
+    if wide(line) <= columns {
+        return line.to_owned();
+    }
+
+    let room = columns.saturating_sub(CUT_SHORT.width().unwrap_or(1));
+    let mut kept = String::with_capacity(line.len());
+    let mut taken = 0;
+    for letter in line.chars() {
+        let width = letter.width().unwrap_or(0);
+        if taken + width > room {
+            break;
+        }
+        taken += width;
+        kept.push(letter);
+    }
+    kept.push(CUT_SHORT);
+    kept
 }
 
 const fn glyph(playback: PlaybackState) -> &'static str {
@@ -162,5 +198,16 @@ mod tests {
             line_of(&state, ":z tr"),
             "▶ 0:00 / 1:00  vol 80%  shuffle  repeat queue  sleep in 12:34  > :z tr"
         );
+    }
+
+    #[test]
+    fn a_readout_wider_than_the_terminal_is_cut_to_it_so_a_redraw_overwrites_it_whole() {
+        let line = "▶ 0:00 / 1:00  vol 80%  shuffle  repeat queue  sleep in 12:34";
+        let cut = within(line, 20);
+
+        assert_eq!(within(line, 80), line);
+        assert_eq!(cut, "▶ 0:00 / 1:00  vol …");
+        assert_eq!(cut.chars().filter_map(char::width).sum::<usize>(), 20);
+        assert_eq!(within("▶ 東京 1:00", 6), "▶ 東…");
     }
 }
