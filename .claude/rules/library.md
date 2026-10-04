@@ -2133,13 +2133,15 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   box of punctuation, a blank saved query and no text at all are one answer: the catalog. Each once
   became an FTS `MATCH` of nothing and answered no rows. `cuts_matching` answers a `Narrowed` of
   three: `Unasked` where the matching `narrows` nothing, `To` a narrowing, and `Nothing` where no
-  row can match. A list narrowed by a text asking nothing therefore holds every row, as a saved query
-  does; a drop is the one reader kept refusing, taking only `To`, so a text asking nothing removes no
-  row — nothing empties a list in one gesture.
-  `a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything`,
+  row can match. A list narrowed by a blank text holds every row, as a saved query does; one narrowed
+  by a text that is there but that a search reads nothing in — `!!!`, `???` — is `Nothing` and holds
+  no row (`asks_for_nothing_it_can_read`), since taking it as no condition played and copied the whole
+  list. The search box keeps reading punctuation as no condition, a caret mid-word not emptying the
+  pane. A drop is the one reader kept refusing, taking only `To`, so nothing empties a list in one
+  gesture. `a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything`,
   `a_saved_query_with_no_search_fills_itself_with_the_whole_catalog` and
-  `a_list_narrowed_by_a_text_asking_nothing_holds_every_row_and_drops_none` in `tests/search.rs` are
-  the claims.
+  `a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_none` in
+  `tests/search.rs` are the claims.
 - **A number is read as meant, to the precision it was typed in.** A `Term::Length` carries a `Grain`
   — the finest `ClockUnit` a component names and how many decimals its count was written to — and is
   weighed as the track's length cut down to that grain: `length:3:30` and `length:3m30s` hold
