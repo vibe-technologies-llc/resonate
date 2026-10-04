@@ -182,8 +182,6 @@ service or a format — and is not worked until that moves; everything else is o
   stand stale until new ones overwrite them
 - MCP's `start_scan` keeps any folder it is given as a root for good, `/` included, with no cap and
   no tool to remove one
-- MCP's `mark_favourite` commits each id alone, so an unknown id late in the list leaves the
-  earlier ones written without saying how many
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
   once, and a session's passes are cancelled and joined one after another
 - A text field takes any length, shaped again on every caret blink and kept whole in its undo

@@ -983,6 +983,18 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
         json!({ "name": "mark_favourite", "arguments": {} }),
     );
     assert_eq!(error_code(&server, &nothing), -32_602);
+
+    let said = failed(
+        &server,
+        "mark_favourite",
+        json!({ "track_ids": [track, 999_999] }),
+    );
+    assert!(said.contains("999999"), "{said}");
+    assert_eq!(
+        called(&server, "favourites", json!({}))["tracks"],
+        json!([]),
+        "a mark naming an unknown id left the known one before it marked"
+    );
 }
 
 #[test]

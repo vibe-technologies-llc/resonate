@@ -1370,6 +1370,38 @@ impl Library {
         })
     }
 
+    pub fn favour_all(&self, marked: &[Favoured], favourite: bool) -> Result<usize> {
+        let at = favourite.then(|| store::to_nanos(SystemTime::now()));
+        let standing = if favourite { "IS NULL" } else { "IS NOT NULL" };
+
+        self.inner.write(|transaction| {
+            let mut changed = 0;
+            for what in marked {
+                let (table, row) = favoured(*what);
+                let held = transaction
+                    .query_row(
+                        &format!("SELECT 1 FROM {table} WHERE id = ?1"),
+                        params![row],
+                        |_| Ok(()),
+                    )
+                    .optional()
+                    .map_err(|source| Error::store(StoreOp::Query, source))?;
+                if held.is_none() {
+                    return Err(unknown(*what));
+                }
+                changed += transaction
+                    .execute(
+                        &format!(
+                            "UPDATE {table} SET favourite = ?1 WHERE id = ?2 AND favourite {standing}"
+                        ),
+                        params![at, row],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Update, source))?;
+            }
+            Ok(changed)
+        })
+    }
+
     pub fn passed(&self, heard: Duration) -> Result<()> {
         let nanos = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
 
@@ -6003,6 +6035,14 @@ fn read_artist(row: &Row<'_>) -> rusqlite::Result<Result<Artist>> {
                 favourite: favourite.map(store::from_nanos),
             })
         }))
+}
+
+const fn unknown(what: Favoured) -> Error {
+    match what {
+        Favoured::Track(id) => Error::UnknownTrack(id),
+        Favoured::Album(id) => Error::UnknownAlbum(id),
+        Favoured::Artist(id) => Error::UnknownArtist(id),
+    }
 }
 
 const fn favoured(what: Favoured) -> (&'static str, i64) {

@@ -170,7 +170,9 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
 ## What a model may change
 
 - **The edits are the library's own calls, holding to its rules.** `mark_favourite` is
-  `Library::favour` per id, counting the marks that moved; `create_playlist` is `create_playlist`,
+  `Library::favour_all`, every id in one transaction, counting the marks that moved, so an unknown id
+  anywhere in the list answers `UnknownTrack`, `UnknownAlbum` or `UnknownArtist` and marks none of
+  them (`a_favourite_is_marked_and_taken_away_by_its_catalog_id`); `create_playlist` is `create_playlist`,
   `start_playlist` or — with `fills_from` — `save_query` in relevance order; `add_to_playlist`,
   `remove_from_playlist` and `rename_playlist` are the library's calls of those names and
   `discard_playlist` is `Library::remove_playlist`, so a duplicate or blank name and a row another

@@ -28,12 +28,7 @@ pub enum Dropping {
 }
 
 pub(crate) fn favour(library: &Library, marking: &Marking) -> Result<Value> {
-    let mut changed = 0_usize;
-    for what in &marking.favoured {
-        if library.favour(*what, marking.favourite)? {
-            changed += 1;
-        }
-    }
+    let changed = library.favour_all(&marking.favoured, marking.favourite)?;
 
     Ok(json!({
         "favourite": marking.favourite,
