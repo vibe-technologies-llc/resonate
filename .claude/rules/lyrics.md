@@ -124,8 +124,12 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
 - **A sidecar is checked against its track; an embedded set never is.** `lrc::read` answers a
   `Sheet` — the `Lyrics`, credits and all, and a `Declared` of what its `[ti:]`, `[ar:]` and
   `[length:]` say it is about. `Sidecar` passes over a sheet declaring another track, folded to
-  alphanumerics and case with either side allowed to contain the other, so "Echoes" answers for
-  "Echoes (Live at Pompeii)" while Jeff Buckley's "Hallelujah" does not answer for Leonard Cohen's.
+  alphanumerics and case, the two agreeing where they fold to the same letters or one is a run of
+  whole words of the other — so "Echoes" answers for "Echoes (Live at Pompeii)" while Jeff Buckley's
+  "Hallelujah" does not answer for Leonard Cohen's, and `[ti:It]` for "It Takes Two" but not "Bit of
+  Luck" — an apostrophe dropped rather than splitting a word. A name holding kana, CJK ideographs or
+  Thai, which no space divides into words, agrees by containing the other as before
+  (`a_short_title_agrees_with_a_longer_one_only_by_whole_words`).
   A sheet declaring none of the three is read as always, as is one beside a row nothing has named.
   `Embedded` never checks: the text came out of the file.
 - **A row cut out of a file gets its own share of the file's words, on its own clock.** `Wanted`
@@ -190,6 +194,10 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   walked again.
 
 ## The LRC reader
+
+- **A line ends at `\n`, `\r\n` or a lone `\r`.** `lrc::lines_of` is the one splitter — `str::lines`
+  reads an old Mac sheet as one line — the reader, a Lyricsfile's plain text and the sidecar's cut at
+  its bound all use it (`a_sheet_ended_by_a_lone_carriage_return_is_read_line_by_line`).
 
 - **The ten LRC id tags are nine meanings, and the closed set a bracket must name to be a tag.**
   `Identified::NAMED` is the whole table, ten names against nine variants (`re` and `tool` being one

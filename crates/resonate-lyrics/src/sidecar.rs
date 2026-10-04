@@ -405,7 +405,7 @@ fn whole_lines_within_a_sheet(head: Vec<u8>) -> String {
         within -= 1;
     }
     sheet.truncate(within);
-    let ended = sheet.rfind('\n').map_or(0, |last| last + 1);
+    let ended = sheet.rfind(['\n', '\r']).map_or(0, |last| last + 1);
     sheet.truncate(ended);
     sheet
 }

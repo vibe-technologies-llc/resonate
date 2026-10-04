@@ -4,7 +4,10 @@ use resonate_core::SourceId;
 use serde::Deserialize;
 use serde_saphyr::{Budget, Options};
 
-use crate::{LyricLine, Lyrics, SungWord, Voice, lrc::Declared};
+use crate::{
+    LyricLine, Lyrics, SungWord, Voice,
+    lrc::{Declared, lines_of},
+};
 
 const VERSION: &str = "1.0";
 
@@ -125,7 +128,7 @@ pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unrea
         let plain = document.plain?;
         Some(Lyrics::plain(
             source,
-            plain.lines().map(str::to_owned).collect(),
+            lines_of(&plain).map(str::to_owned).collect(),
         ))
         .filter(|lyrics| !lyrics.is_empty())
     });

@@ -281,8 +281,6 @@ service or a format — and is not worked until that moves; everything else is o
   024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- A sidecar's declared title is weighed by substring, so `[ti:It]` agrees with any title holding
-  *it*, and a lone `\r` ending reads a sheet as one line
 - `Song.en.lrc` and `Song.ja.lrc` are never offered, and an unrelated `<stem>.txt` is read as words
 - A lookup still running when its row leaves the queue lands the last track's words over *none*
 - There is no offset of the listener's own for a sheet that runs early or late

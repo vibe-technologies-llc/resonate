@@ -84,12 +84,46 @@ fn disagree(declared: Option<&str>, wanted: Option<&str>) -> bool {
     let (Some(declared), Some(wanted)) = (declared, wanted) else {
         return false;
     };
+    let (declared_text, wanted_text) = (declared, wanted);
     let (declared, wanted) = (folded(declared), folded(wanted));
     if declared.is_empty() || wanted.is_empty() || transliterated(&declared, &wanted) {
         return false;
     }
 
-    !declared.contains(&wanted) && !wanted.contains(&declared)
+    if declared == wanted {
+        return false;
+    }
+    if declared.chars().chain(wanted.chars()).any(is_unspaced) {
+        return !declared.contains(&wanted) && !wanted.contains(&declared);
+    }
+
+    !one_names_a_run_of_the_others_words(&words(&declared_text), &words(&wanted_text))
+}
+
+fn words(text: &str) -> Vec<String> {
+    folded_letters(text)
+        .replace(['\'', '\u{2019}'], "")
+        .split(|glyph: char| !glyph.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn one_names_a_run_of_the_others_words(one: &[String], other: &[String]) -> bool {
+    let (shorter, longer) = if one.len() <= other.len() {
+        (one, other)
+    } else {
+        (other, one)
+    };
+
+    shorter.is_empty() || longer.windows(shorter.len()).any(|run| run == shorter)
+}
+
+const fn is_unspaced(glyph: char) -> bool {
+    matches!(
+        glyph as u32,
+        0x0E00..=0x0E7F | 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF
+    )
 }
 
 fn transliterated(one: &str, other: &str) -> bool {
@@ -117,10 +151,24 @@ pub(crate) fn read(source: SourceId, text: &str) -> Result<Sheet> {
     }
 
     let mut reading = Reading::new(source);
-    for line in text.lines() {
+    for line in lines_of(text) {
         reading.absorb(line)?;
     }
     reading.finish()
+}
+
+pub(crate) fn lines_of(text: &str) -> impl Iterator<Item = &str> {
+    let mut rest = Some(text);
+    iter::from_fn(move || {
+        let current = rest.take().filter(|current| !current.is_empty())?;
+        let Some(end) = current.find(['\n', '\r']) else {
+            return Some(current);
+        };
+        let after = &current[end..];
+        let ending = if after.starts_with("\r\n") { 2 } else { 1 };
+        rest = Some(&after[ending..]);
+        Some(&current[..end])
+    })
 }
 
 fn beyond_what_a_sheet_holds(provider: SourceId) -> Error {
@@ -1037,6 +1085,72 @@ mod tests {
                 .declared
                 .names_another_track(&about(Some("Звезда"), None))
         );
+    }
+
+    #[test]
+    fn a_short_title_agrees_with_a_longer_one_only_by_whole_words() {
+        let short = sheet("[ti:It]\n[00:01.00]la");
+
+        assert!(
+            short
+                .declared
+                .names_another_track(&about(Some("Bit of Luck"), None))
+        );
+        assert!(
+            short
+                .declared
+                .names_another_track(&about(Some("Sit Down"), None))
+        );
+        assert!(!short.declared.names_another_track(&about(Some("It"), None)));
+        assert!(
+            !short
+                .declared
+                .names_another_track(&about(Some("It Takes Two"), None))
+        );
+
+        let apostrophe = sheet("[ti:Dont Stop]\n[00:01.00]la");
+        assert!(
+            !apostrophe
+                .declared
+                .names_another_track(&about(Some("Don't Stop Believin'"), None))
+        );
+
+        let glued = sheet("[ti:ACDC]\n[00:01.00]la");
+        assert!(
+            !glued
+                .declared
+                .names_another_track(&about(Some("AC/DC"), None))
+        );
+    }
+
+    #[test]
+    fn a_title_in_a_script_with_no_spaces_still_agrees_by_what_it_holds() {
+        let sheet = sheet("[ti:愛]\n[00:01.00]la");
+
+        assert!(
+            !sheet
+                .declared
+                .names_another_track(&about(Some("愛の歌"), None))
+        );
+        assert!(
+            sheet
+                .declared
+                .names_another_track(&about(Some("空の歌"), None))
+        );
+    }
+
+    #[test]
+    fn a_sheet_ended_by_a_lone_carriage_return_is_read_line_by_line() {
+        let lyrics = lyrics("[00:01.00]one\r[00:02.00]two\r\n[00:03.00]three\n").expect("lyrics");
+
+        assert_eq!(lyrics.lines().len(), 3);
+        assert_eq!(lyrics.lines()[1].text, "two");
+        assert_eq!(
+            lines_of("a\r\rb\r\n\r\nc\n").collect::<Vec<_>>(),
+            ["a", "", "b", "", "c"]
+        );
+        assert_eq!(lines_of("").count(), 0);
+        assert_eq!(lines_of("a\n").count(), 1);
     }
 
     #[test]
