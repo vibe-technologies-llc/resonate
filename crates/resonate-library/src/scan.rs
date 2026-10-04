@@ -108,7 +108,6 @@ impl Failure {
             | Codec::LayoutNotRepresentable { .. }
             | Codec::TooManyChannels { .. }
             | Codec::ChannelMaskNotRepresentable { .. }
-            | Codec::SampleFormatNotRepresentable { .. }
             | Codec::DsdChunkMissing { .. }
             | Codec::DsdFieldNotUsable { .. }
             | Codec::PacketTooLarge { .. }

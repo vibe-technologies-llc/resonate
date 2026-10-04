@@ -3,7 +3,6 @@ use std::{fmt, io, result};
 use lofty::error::{FileEncodingError, FileParseError};
 use resonate_core::{ChannelCount, Frames, MediaLocation};
 use symphonia::core::{
-    audio::sample::SampleFormat as SymphoniaSampleFormat,
     codecs::audio::AudioCodecId,
     errors::{self, SeekErrorKind},
 };
@@ -141,13 +140,6 @@ pub enum Error {
         channels: ChannelCount,
     },
 
-    #[error("{location} track {track} decodes to {actual:?}, which resonate cannot represent")]
-    SampleFormatNotRepresentable {
-        location: MediaLocation,
-        track: StreamTrackId,
-        actual: SymphoniaSampleFormat,
-    },
-
     #[error("seek to {requested} is past the track duration of {duration}")]
     SeekOutOfRange { requested: Frames, duration: Frames },
 
@@ -246,7 +238,6 @@ impl Error {
             | Self::TrackPropertyMissing { location, .. }
             | Self::RateNotRepresentable { location, .. }
             | Self::LayoutNotRepresentable { location, .. }
-            | Self::SampleFormatNotRepresentable { location, .. }
             | Self::NotSeekable { location }
             | Self::SeekBackwardUnsupported { location }
             | Self::SeekInvalidTrack { location }

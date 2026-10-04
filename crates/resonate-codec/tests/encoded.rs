@@ -875,6 +875,31 @@ fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_
     }
 }
 
+#[test]
+fn a_sixty_four_bit_float_wave_rf64_or_caf_decodes_as_thirty_two_bit_float_losing_nothing() {
+    let tree = Tree::new();
+    let cases: [(&str, &[&str]); 3] = [
+        ("double.wav", &["-c:a", "pcm_f64le"]),
+        ("double-rf64.wav", &["-c:a", "pcm_f64le", "-rf64", "always"]),
+        ("double.caf", &["-c:a", "pcm_f64be"]),
+    ];
+
+    for (name, codec) in cases {
+        let Some((path, samples)) = shaped(&tree, STUDIO, name, codec) else {
+            return;
+        };
+
+        let decoded = decode(&path);
+
+        assert_eq!(decoded.spec.format, SampleFormat::F32, "{name}");
+        assert_eq!(decoded.samples.len(), samples.len(), "{name}");
+        assert!(
+            drift(&decoded.samples, &widened(&samples, STUDIO.bits)) < f64::from(f32::EPSILON),
+            "{name} did not decode to what went in"
+        );
+    }
+}
+
 const CHAPTERS: &str = ";FFMETADATA1\ntitle=Meddle\nartist=Pink Floyd\n\
 [CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=One of These Days\n\
 [CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=1500\ntitle=A Pillow of Winds\n\

@@ -604,7 +604,7 @@ fn stream_spec(
     Ok(StreamSpec::new(
         sample_rate(params, location, track)?,
         channel_layout(params, location, track)?,
-        sample_format(params, location, track)?,
+        sample_format(params),
     ))
 }
 
@@ -700,20 +700,16 @@ fn discrete_layout(count: ChannelCount) -> ChannelLayout {
     }
 }
 
-fn sample_format(
-    params: &AudioCodecParameters,
-    location: &MediaLocation,
-    track: StreamTrackId,
-) -> Result<SampleFormat> {
-    if let Some(format) = params.sample_format {
-        return representable(format, location, track);
-    }
-    if let Some(format) = float_pcm_format(params.codec) {
-        return representable(format, location, track);
+fn sample_format(params: &AudioCodecParameters) -> SampleFormat {
+    if let Some(format) = params
+        .sample_format
+        .or_else(|| float_pcm_format(params.codec))
+    {
+        return representable(format);
     }
     match params.bits_per_sample.or_else(|| alac_bit_depth(params)) {
-        Some(bits) => Ok(integer_format(bits)),
-        None => Ok(undeclared_format(params.codec)),
+        Some(bits) => integer_format(bits),
+        None => undeclared_format(params.codec),
     }
 }
 
@@ -799,23 +795,14 @@ const fn undeclared_format(codec: AudioCodecId) -> SampleFormat {
     }
 }
 
-fn representable(
-    format: SymphoniaSampleFormat,
-    location: &MediaLocation,
-    track: StreamTrackId,
-) -> Result<SampleFormat> {
+const fn representable(format: SymphoniaSampleFormat) -> SampleFormat {
     use SymphoniaSampleFormat as S;
 
     match format {
-        S::U8 | S::S8 | S::U16 | S::S16 => Ok(SampleFormat::S16),
-        S::U24 | S::S24 => Ok(SampleFormat::S24),
-        S::U32 | S::S32 => Ok(SampleFormat::S32),
-        S::F32 => Ok(SampleFormat::F32),
-        S::F64 => Err(Error::SampleFormatNotRepresentable {
-            location: location.clone(),
-            track,
-            actual: format,
-        }),
+        S::U8 | S::S8 | S::U16 | S::S16 => SampleFormat::S16,
+        S::U24 | S::S24 => SampleFormat::S24,
+        S::U32 | S::S32 => SampleFormat::S32,
+        S::F32 | S::F64 => SampleFormat::F32,
     }
 }
 
@@ -1066,11 +1053,7 @@ mod tests {
     }
 
     fn format(params: &AudioCodecParameters) -> Result<SampleFormat> {
-        sample_format(
-            params,
-            &MediaLocation::local("/music/a.flac"),
-            StreamTrackId(0),
-        )
+        Ok(sample_format(params))
     }
 
     #[test]
@@ -1225,14 +1208,11 @@ mod tests {
     }
 
     #[test]
-    fn sixty_four_bit_samples_are_rejected_rather_than_silently_narrowed() {
+    fn sixty_four_bit_float_samples_are_decoded_as_thirty_two_bit_float() {
         let mut params = params(CODEC_ID_PCM_F64LE);
         params.with_bits_per_sample(64);
 
-        assert!(matches!(
-            format(&params),
-            Err(Error::SampleFormatNotRepresentable { .. })
-        ));
+        assert_eq!(format(&params).expect("representable"), SampleFormat::F32);
     }
 
     #[test]

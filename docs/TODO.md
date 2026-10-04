@@ -38,8 +38,6 @@ service or a format — and is not worked until that moves; everything else is o
   encoder's delay and padding
 - A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
   unseekable and the bar fills early
-- A 64-bit float WAVE, RF64 or CAF is refused though the reader opens it; decoding it to 32-bit
-  float loses nothing a recording holds
 - The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read
 - A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
   container rather than played as it arrives or named as needing a seek
