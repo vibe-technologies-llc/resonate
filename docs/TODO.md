@@ -117,21 +117,12 @@ else is open to be done.
   the local rows behind it five seconds a row. After the item above
 - Scrolling a large library to the end reads the whole prefix of tracks, albums and artists again at
   every page, quadratic in its length; design it with the `End` item under Keyboard
-- Setting an AcoustID key or *Refresh all* reads every unrecognised print into memory before the
-  pool starts, on the order of a gigabyte for a large library
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is
   open, and each type-ahead key folds every row's name on the UI thread
 - The Analysis pane decodes a vaulted track whose file has gone on every visit, since a kept
   analysis is keyed on the file's size and time
-- MCP's `playlist_tracks` and playlist resource read every row, or the whole catalog for a
-  self-filling playlist, before taking a few hundred, and the resource list recounts every playlist
-  twice a second
 - Dragging files from a file manager stats every path on entering and on dropping, and copies the
   paths on every pointer move
-- Following or filing moved files updates playlist rows and resumption rows by an unindexed path
-  once per file, N moves times M rows inside the scan's write
-- The scan's 34-parameter track upsert, and the per-row reads beside it, are parsed again for every
-  file rather than prepared once, which is what `library.md` says of every per-row write
 - Every lookup pass re-pairs each album short of a track in a write transaction of its own, and the
   identify update it runs per matched row counts as a catalog write though nothing moved
 - Planning a tag run parses every file with lofty twice more than it needs, covers and audio
@@ -142,8 +133,6 @@ else is open to be done.
   release, on each narrowing key
 - Opening a DST DSDIFF reads one header per compressed frame through the whole file on every open
   and rebind
-- The window polls the player every 16 ms for as long as it is open, paused or not; backing off when
-  paused and unchanged is the first step
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first, and the Xing table
   of contents is never used
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window

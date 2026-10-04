@@ -507,9 +507,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   through `prepare_cached`, and every per-row write goes through it — the scan's store writes
   (`touch`, the index row, the album's key, year and cover among them), the resumption's and
   queue order's rows and a playlist's inserts — so an incremental scan of 500 000 tracks parses its
-  `UPDATE` once rather than 500 000 times. A scan cycles through more distinct statements a record
-  than rusqlite's default cache of 16 holds, so `connect` raises it to `STATEMENTS_CACHED` (64),
-  or the statements would evict each other and every one be parsed again. SQL built by `format!`
+  `UPDATE` once rather than 500 000 times. The per-row reads and the 37-column track upsert go
+  through `store::queried`, the same cache for a statement returning a row. A scan cycles through
+  more distinct statements a record than rusqlite's default cache of 16 holds, so `connect` raises it
+  to `STATEMENTS_CACHED` (128), or the statements would evict each other and every one be parsed again. SQL built by `format!`
   stays on `execute`, each spelling being its own statement.
 - **A track is keyed by `(path, span_start)`, not path.** N cue rows share one path, so the `UNIQUE` is
   on the pair and `span_start` is `NOT NULL DEFAULT 0`, not nullable — SQLite treats NULLs as distinct
@@ -1900,7 +1901,8 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   row standing at the destination, both keyed by path, else the `UPDATE` is refused: `standing` weighs
   the *file* there, so a row whose file had gone — not yet tidied by a scan of another root — once
   failed all 256 moves of its batch. `playlist_entries` and `resume_rows` need no such delete, neither
-  being unique on path. A failing rename puts back only its own move's steps — the audio and whichever
+  being unique on path — and are each found by an index of their own (`playlist_entries_by_path`,
+  `resume_rows_by_uri`) rather than a scan per moved file. A failing rename puts back only its own move's steps — the audio and whichever
   sidecars had gone — and is refused as `Refusal::Unmoved` with the volume's `io::ErrorKind`, the rest
   of the batch going on; a batch was once put back whole for one refused file, and with the same plan
   next time it failed the same way every run. A failing catalog write still runs `put_back` over all of

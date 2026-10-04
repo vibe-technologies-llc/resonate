@@ -535,12 +535,35 @@ pub fn entries(
     id: PlaylistId,
     matching: Option<&str>,
 ) -> Result<Vec<PlaylistEntry>> {
+    entries_within(inner, id, matching, None).map(|(entries, _)| entries)
+}
+
+pub fn entries_within(
+    inner: &Inner,
+    id: PlaylistId,
+    matching: Option<&str>,
+    most: Option<usize>,
+) -> Result<(Vec<PlaylistEntry>, usize)> {
     if let Some(query) = inner.read(|connection| asked_in(connection, id))? {
-        return Ok(db::tracks(inner, &TrackQuery::from(&query), matching)?
+        let mut asked = TrackQuery::from(&query);
+        let matched = match most {
+            Some(_) => db::measured_narrowed(inner, &asked, matching)?.rows as usize,
+            None => 0,
+        };
+        if let Some(most) = most {
+            asked.limit = Some(asked.limit.map_or(most, |held| held.min(most)));
+        }
+        let entries: Vec<PlaylistEntry> = db::tracks(inner, &asked, matching)?
             .into_iter()
             .zip(0..)
             .map(|(track, position)| listed(position, track))
-            .collect());
+            .collect();
+        let matched = if most.is_some() {
+            matched
+        } else {
+            entries.len()
+        };
+        return Ok((entries, matched));
     }
 
     let mut filters = vec![HELD_BY_THE_PLAYLIST.to_owned()];
@@ -551,12 +574,33 @@ pub fn entries(
             filters.push(narrowed.sql);
             binds.extend(narrowed.binds);
         }
-        Some(Narrowed::Nothing) => return Ok(Vec::new()),
+        Some(Narrowed::Nothing) => return Ok((Vec::new(), 0)),
     }
 
+    let matched = match most {
+        Some(_) => {
+            let sql = format!(
+                "SELECT count(*) FROM playlist_entries e
+                 LEFT JOIN tracks ON {ON_THE_SAME_CUT}{}",
+                db::clause(&filters)
+            );
+            inner.read(|connection| {
+                connection
+                    .query_row(&sql, params_from_iter(binds.iter()), |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })? as usize
+        }
+        None => 0,
+    };
+    let limit = match most {
+        Some(most) => format!(" LIMIT {}", i64::try_from(most).unwrap_or(i64::MAX)),
+        None => String::new(),
+    };
     let sql = format!(
         "SELECT {TRACK_COLUMNS}, {ROW_COLUMNS}, e.position FROM playlist_entries e
-         LEFT JOIN tracks ON {ON_THE_SAME_CUT}{} ORDER BY e.position",
+         LEFT JOIN tracks ON {ON_THE_SAME_CUT}{} ORDER BY e.position{limit}",
         db::clause(&filters)
     );
 
@@ -576,7 +620,8 @@ pub fn entries(
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
 
-    raw.into_iter()
+    let entries: Vec<PlaylistEntry> = raw
+        .into_iter()
         .map(|(track, row, position)| {
             Ok(PlaylistEntry {
                 position: position as usize,
@@ -584,7 +629,13 @@ pub fn entries(
                 track: track.map(RawTrack::into_track).transpose()?,
             })
         })
-        .collect()
+        .collect::<Result<_>>()?;
+    let matched = if most.is_some() {
+        matched
+    } else {
+        entries.len()
+    };
+    Ok((entries, matched))
 }
 
 pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {

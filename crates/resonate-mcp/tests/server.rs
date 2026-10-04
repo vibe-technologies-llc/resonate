@@ -895,6 +895,60 @@ fn a_playlists_rows_are_listed_from_the_catalog_with_no_player() {
 }
 
 #[test]
+fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
+    let tree = Tree::new();
+    tree.wav("a.wav", "Night Signal", "Hours", "1");
+    tree.wav("b.wav", "Night Fire", "Hours", "2");
+    tree.wav("c.wav", "Day Signal", "Hours", "3");
+    let library = scanned(&tree);
+    let cuts: Vec<_> = library
+        .tracks(&Default::default())
+        .expect("the catalog to be read")
+        .iter()
+        .map(resonate_library::Cut::of)
+        .collect();
+    library
+        .start_playlist("Hours", &cuts)
+        .expect("a playlist to be made");
+    library
+        .save_query(
+            "Signals",
+            &resonate_library::SavedQuery {
+                text: Some("signal".to_owned()),
+                sort: resonate_library::SortOrder::Title,
+                reading: resonate_library::SortOrder::Title.reads(),
+                limit: None,
+            },
+        )
+        .expect("a query to be saved");
+    let server = server(library, Fake::default());
+
+    let list = called(
+        &server,
+        "playlist_tracks",
+        json!({ "playlist": "Hours", "limit": 2 }),
+    );
+    assert_eq!(list["matched"], 3);
+    assert_eq!(list["tracks"].as_array().map(Vec::len), Some(2));
+
+    let narrowed = called(
+        &server,
+        "playlist_tracks",
+        json!({ "playlist": "Hours", "matching": "night", "limit": 1 }),
+    );
+    assert_eq!(narrowed["matched"], 2);
+    assert_eq!(narrowed["tracks"].as_array().map(Vec::len), Some(1));
+
+    let query = called(
+        &server,
+        "playlist_tracks",
+        json!({ "playlist": "Signals", "limit": 1 }),
+    );
+    assert_eq!(query["matched"], 2);
+    assert_eq!(query["tracks"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
 fn a_transport_gesture_answers_with_what_the_player_reads_back_once_it_has_landed() {
     let (players, _) = Fake::with(Standing {
         rows: vec![row(9, "Echoes"), row(8, "Time"), row(7, "Money")],

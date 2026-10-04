@@ -129,7 +129,7 @@ pub(crate) struct ToStudy {
     pub(crate) id: TrackId,
     pub(crate) location: MediaLocation,
     pub(crate) span: Option<FrameSpan>,
-    pub(crate) print: Option<Chromaprint>,
+    pub(crate) print_held: bool,
 }
 
 const STUDIED_COLUMNS: &str = "s.studied, s.verdict, s.cutoff_hz, s.cutoff_drop, s.lossy_guess,
@@ -440,7 +440,7 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
     let mut statement = connection
         .prepare(
             "SELECT t.id, t.path, t.span_start, t.span_frames,
-                    s.track_id IS NOT NULL AND s.studied_under = ?1, s.print, s.print_length
+                    s.track_id IS NOT NULL AND s.studied_under = ?1 AND s.print IS NOT NULL
                FROM tracks t LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE (s.track_id IS NULL
                      OR s.studied_under != ?1
@@ -458,32 +458,38 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
                 row.get::<_, i64>(2)?,
                 row.get::<_, Option<i64>>(3)?,
                 row.get::<_, bool>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<i64>>(6)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     rows.into_iter()
-        .map(
-            |(id, path, span_start, span_frames, current, print, print_length)| {
-                let print = current
-                    .then(|| {
-                        let length =
-                            Duration::from_secs(print_length.unwrap_or_default().max(0) as u64);
-                        print.and_then(|encoded| Chromaprint::new(&encoded, length).ok())
-                    })
-                    .flatten();
-                Ok(ToStudy {
-                    id: TrackId::new(id as u64)?,
-                    location: MediaLocation::local(path),
-                    span: store::span(span_start, span_frames),
-                    print,
-                })
-            },
-        )
+        .map(|(id, path, span_start, span_frames, print_held)| {
+            Ok(ToStudy {
+                id: TrackId::new(id as u64)?,
+                location: MediaLocation::local(path),
+                span: store::span(span_start, span_frames),
+                print_held,
+            })
+        })
         .collect()
+}
+
+pub(crate) fn print_held(connection: &Connection, track: TrackId) -> Result<Option<Chromaprint>> {
+    let held = connection
+        .query_row(
+            "SELECT print, print_length FROM track_studies
+              WHERE track_id = ?1 AND studied_under = ?2 AND print IS NOT NULL",
+            params![track.get() as i64, i64::from(JUDGED_UNDER)],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(held.and_then(|(encoded, length)| {
+        let length = Duration::from_secs(length.unwrap_or_default().max(0) as u64);
+        Chromaprint::new(&encoded, length).ok()
+    }))
 }
 
 #[derive(Debug, Default)]
@@ -552,7 +558,7 @@ impl Studies {
         let recognising = fingerprinters.has_a_source();
         let asked: Arc<[ToStudy]> = asked
             .into_iter()
-            .filter(|asked| asked.print.is_none() || recognising)
+            .filter(|asked| !asked.print_held || recognising)
             .collect();
         let next = Arc::new(AtomicUsize::new(0));
         let workers = (0..workers_for(asked.len()))
@@ -607,8 +613,16 @@ fn study_one(
     progress: &EnrichProgress,
     asked: &ToStudy,
 ) {
-    let print = match &asked.print {
-        Some(print) => Some(print.clone()),
+    let held = if asked.print_held {
+        library.print_held(asked.id).unwrap_or_else(|error| {
+            tracing::warn!(%error, track = %asked.id, "a kept print could not be read, so the track is studied again");
+            None
+        })
+    } else {
+        None
+    };
+    let print = match held {
+        Some(print) => Some(print),
         None => match studied_now(library, sources, progress, asked) {
             Some(print) => print,
             None => return,

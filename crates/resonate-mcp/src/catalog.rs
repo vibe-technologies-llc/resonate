@@ -90,11 +90,10 @@ pub(crate) fn playlist_tracks(
     most: usize,
 ) -> Result<Value> {
     let found = playlist_called(library, name)?;
-    let entries = library.playlist_entries(found.id, matching)?;
+    let (entries, matched) = library.playlist_entries_within(found.id, matching, most)?;
     let mut titles = AlbumTitles::over(library);
     let rows = entries
         .iter()
-        .take(most)
         .map(|entry| {
             let mut row = match &entry.track {
                 Some(track) => titles.track(track)?,
@@ -109,7 +108,7 @@ pub(crate) fn playlist_tracks(
 
     Ok(json!({
         "playlist": written::playlist(&found),
-        "matched": entries.len(),
+        "matched": matched,
         "tracks": rows,
     }))
 }

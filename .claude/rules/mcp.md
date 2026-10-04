@@ -104,6 +104,10 @@ keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features)
 - **A playlist row is named by where it sits**: `playlist_tracks` answers each `row`, and
   `remove_from_playlist` takes a run from `row` to `through_row` (one `Span`, one statement, one undo
   step) or every row a search matches. A row past the end is `Error::NotInThePlaylist`.
+  **Only the rows asked for are read**: `Library::playlist_entries_within` takes the limit into the
+  `LIMIT` (a saved query's cap lowered to it) and counts `matched` in a query of its own, so a playlist
+  of a hundred thousand rows or a self-filling one costs a few hundred.
+  The resource list is made from `Library::playlist_names`, with no row counted, since it is read on every tick.
 - **A missing track is named by its `release_track_id`.** `want_tracks` is
   `Library::want_release_tracks` over the whole list in one transaction, so a list naming one unknown
   row wants none of it.

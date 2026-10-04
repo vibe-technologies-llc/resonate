@@ -1957,6 +1957,15 @@ impl Library {
         playlist::entries(&self.inner, id, matching)
     }
 
+    pub fn playlist_entries_within(
+        &self,
+        id: PlaylistId,
+        matching: Option<&str>,
+        most: usize,
+    ) -> Result<(Vec<PlaylistEntry>, usize)> {
+        playlist::entries_within(&self.inner, id, matching, Some(most))
+    }
+
     pub fn playlist_cuts(&self, id: PlaylistId) -> Result<Vec<Cut>> {
         playlist::cuts(&self.inner, id)
     }
@@ -4338,6 +4347,11 @@ impl Library {
             .read(|connection| studies::studied(connection, filter))
     }
 
+    pub(crate) fn print_held(&self, track: TrackId) -> Result<Option<Chromaprint>> {
+        self.inner
+            .read(|connection| studies::print_held(connection, track))
+    }
+
     pub(crate) fn to_study(&self, again: bool) -> Result<Vec<ToStudy>> {
         self.inner
             .read(|connection| studies::to_study(connection, again))
@@ -4427,7 +4441,15 @@ fn listing(query: &TrackQuery, narrowing: Option<&str>) -> Option<(String, Vec<V
 }
 
 pub(crate) fn measured(inner: &Inner, query: &TrackQuery) -> Result<Measured> {
-    let Some(scoped) = scoped(query, None) else {
+    measured_narrowed(inner, query, None)
+}
+
+pub(crate) fn measured_narrowed(
+    inner: &Inner,
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+) -> Result<Measured> {
+    let Some(scoped) = scoped(query, narrowing) else {
         return Ok(Measured::default());
     };
     let whole = query.limit.is_none() && query.offset == 0;

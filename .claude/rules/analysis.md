@@ -132,7 +132,8 @@ keeps, could change, since stored studies and kept analyses are weighed against 
   `available_parallelism / 2` threads (at least one) named `resonate-study-<n>`, drawing off one
   counter, started before the pass and joined after the pictures. `to_study` is every track with no
   study, a study under an older `JUDGED_UNDER`, or a print not yet recognised (only where something
-  can recognise it; `refresh` asks the service again from the kept print rather than decoding twice).
+  can recognise it; `refresh` asks the service again from the kept print rather than decoding twice). The list says only *whether* a print is kept (`ToStudy::print_held`); the worker reads
+  the print when it takes the row (`Library::print_held`), so a large library's prints are never all in memory.
   `EnrichOptions::studies` (the `study` key) leaves the pool unstarted; the fingerprint route still
   studies the one track it must recognise.
 - **A study reads what the player reads.** `Library::sources` carries `VaultFiles` where a vault is

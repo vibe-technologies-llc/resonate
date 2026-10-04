@@ -247,6 +247,8 @@ const MIGRATIONS: &[&str] = &[
           SELECT id, title, artist, album, genre, lyrics FROM tracks_fts_held;
      DROP TABLE tracks_fts_held;",
     "CREATE INDEX tracks_by_credit ON tracks(artist);",
+    "CREATE INDEX playlist_entries_by_path ON playlist_entries(path);
+     CREATE INDEX resume_rows_by_uri ON resume_rows(uri);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -786,6 +788,41 @@ mod tests {
         let connection = Connection::open_in_memory().expect("a database in memory");
         configure(&connection, Role::Writing).expect("the pragmas apply");
         connection
+    }
+
+    #[test]
+    fn a_move_followed_finds_the_rows_naming_a_path_by_an_index() {
+        let connection = opened();
+        lay_out(&connection).expect("the schema applies");
+
+        for (statement, index) in [
+            (
+                "UPDATE playlist_entries SET path = 'b' WHERE path = 'a'",
+                "playlist_entries_by_path",
+            ),
+            (
+                "UPDATE resume_rows SET uri = 'b' WHERE uri = 'a'",
+                "resume_rows_by_uri",
+            ),
+            (
+                "UPDATE playlists SET modified = 1 WHERE id IN
+                 (SELECT playlist_id FROM playlist_entries WHERE path = 'a')",
+                "playlist_entries_by_path",
+            ),
+        ] {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {statement}"))
+                .and_then(|mut plan| {
+                    plan.query_map([], |row| row.get::<_, String>(3))
+                        .and_then(Iterator::collect)
+                })
+                .expect("a plan");
+
+            assert!(
+                plan.iter().any(|step| step.contains(index)),
+                "{statement} reads every row: {plan:?}"
+            );
+        }
     }
 
     #[test]

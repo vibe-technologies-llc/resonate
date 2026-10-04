@@ -15,8 +15,9 @@ use gpui::{
 };
 use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId};
 use resonate_engine::{
-    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, OutputSettings, Player,
-    PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped, TrackState,
+    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, OutputSettings,
+    PlaybackState, Player, PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
+    TrackState,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, HistoryKept, Library, Reference, Scrobblers};
@@ -45,6 +46,10 @@ const APP_ID: &str = "resonate";
 pub(crate) const WINDOW_TITLE: &str = "Resonate";
 
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
+
+const RESTING_POLL_INTERVAL: Duration = Duration::from_millis(64);
+
+const QUIET_POLLS_BEFORE_RESTING: u32 = 30;
 
 const QUIT_POLL: Duration = Duration::from_millis(100);
 
@@ -272,10 +277,18 @@ pub struct PlayerModel {
 impl PlayerModel {
     pub fn new(player: Arc<Player>, cx: &mut Context<Self>) -> Self {
         let poll = cx.spawn(async move |this, cx| {
+            let mut quiet = 0_u32;
             loop {
-                cx.background_executor().timer(POLL_INTERVAL).await;
-                if this.update(cx, Self::refresh).is_err() {
-                    return;
+                let interval = if quiet >= QUIET_POLLS_BEFORE_RESTING {
+                    RESTING_POLL_INTERVAL
+                } else {
+                    POLL_INTERVAL
+                };
+                cx.background_executor().timer(interval).await;
+                match this.update(cx, Self::refresh) {
+                    Ok(Poll::Quiet) => quiet = quiet.saturating_add(1),
+                    Ok(Poll::Busy) => quiet = 0,
+                    Err(_) => return,
                 }
             }
         });
@@ -527,7 +540,7 @@ impl PlayerModel {
         POLL_INTERVAL
     }
 
-    fn refresh(&mut self, cx: &mut Context<Self>) {
+    fn refresh(&mut self, cx: &mut Context<Self>) -> Poll {
         let mut moved = None;
 
         for event in self.player.events().try_iter() {
@@ -606,11 +619,21 @@ impl PlayerModel {
             moved = Some(Moved::More);
         }
 
+        let busy = moved.is_some()
+            || self.state.playback == PlaybackState::Playing
+            || self.state.sleeping.is_some();
         if let Some(moved) = moved {
             self.moved = moved;
             cx.notify();
         }
+        if busy { Poll::Busy } else { Poll::Quiet }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Poll {
+    Busy,
+    Quiet,
 }
 
 fn moved_by(before: &PlayerState, after: &PlayerState) -> Moved {

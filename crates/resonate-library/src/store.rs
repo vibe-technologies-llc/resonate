@@ -219,13 +219,13 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
 }
 
 pub fn refold_the_index(connection: &mut Connection) -> Result<usize> {
-    let wanted: bool = connection
-        .query_row(
-            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'index_refold_wanted')",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let wanted: bool = queried(
+        connection,
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'index_refold_wanted')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
     if !wanted {
         return Ok(0);
     }
@@ -921,13 +921,13 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
-    let id = tx
-        .query_row(
-            "SELECT id FROM roots WHERE path = ?1",
-            params![text],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let id = queried(
+        tx,
+        "SELECT id FROM roots WHERE path = ?1",
+        params![text],
+        |row| row.get::<_, i64>(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let taken_in: Vec<i64> = held
         .iter()
@@ -974,7 +974,7 @@ fn take_in(tx: &Transaction<'_>, root: i64, taken: &[i64]) -> Result<()> {
         .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
-pub(crate) const STATEMENTS_CACHED: usize = 64;
+pub(crate) const STATEMENTS_CACHED: usize = 128;
 
 pub(crate) fn cached(
     connection: &rusqlite::Connection,
@@ -982,6 +982,15 @@ pub(crate) fn cached(
     bound: impl rusqlite::Params,
 ) -> rusqlite::Result<usize> {
     connection.prepare_cached(sql)?.execute(bound)
+}
+
+pub(crate) fn queried<T>(
+    connection: &rusqlite::Connection,
+    sql: &str,
+    bound: impl rusqlite::Params,
+    read: impl FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    connection.prepare_cached(sql)?.query_row(bound, read)
 }
 
 pub fn touch(tx: &Transaction<'_>, id: TrackId, generation: i64) -> Result<()> {
@@ -1220,20 +1229,20 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
                 marks: marks.max(held_marks),
             }
         }
-        None => tx
-            .query_row(
-                "INSERT INTO artists (key, name, mbid) VALUES (?1, ?2, ?3)
+        None => queried(
+            tx,
+            "INSERT INTO artists (key, name, mbid) VALUES (?1, ?2, ?3)
                  RETURNING id, mbid IS NOT NULL",
-                params![key, billed.name, mbid.as_ref().map(Mbid::as_str)],
-                |row| {
-                    Ok(KnownArtist {
-                        id: row.get(0)?,
-                        identified: row.get(1)?,
-                        marks,
-                    })
-                },
-            )
-            .map_err(|source| Error::store(StoreOp::Insert, source))?,
+            params![key, billed.name, mbid.as_ref().map(Mbid::as_str)],
+            |row| {
+                Ok(KnownArtist {
+                    id: row.get(0)?,
+                    identified: row.get(1)?,
+                    marks,
+                })
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?,
     };
 
     cache.artists.insert(key, known);
@@ -1245,7 +1254,8 @@ pub(crate) fn artist_named_in(tx: &Transaction<'_>, name: &str, mbid: Option<&st
 }
 
 fn held_artist(tx: &Transaction<'_>, key: &str) -> Result<Option<Held>> {
-    tx.query_row(
+    queried(
+        tx,
         "SELECT id, name, key, mbid IS NOT NULL FROM artists WHERE key = ?1",
         params![key],
         Held::read,
@@ -1265,7 +1275,8 @@ pub(crate) fn artist_named(tx: &Transaction<'_>, name: &str, mbid: Option<&Mbid>
         return Ok(held.id);
     }
 
-    tx.query_row(
+    queried(
+        tx,
         "INSERT INTO artists (key, name, mbid) VALUES (?1, ?2, ?3) RETURNING id",
         params![key, name, mbid.map(Mbid::as_str)],
         |row| row.get(0),
@@ -1368,7 +1379,8 @@ struct Tagged<'a> {
 }
 
 pub(crate) fn album_keyed(tx: &Transaction<'_>, key: &str) -> Result<Option<i64>> {
-    tx.query_row(
+    queried(
+        tx,
         "SELECT album_id FROM album_keys WHERE key = ?1",
         params![key],
         |row| row.get(0),
@@ -1410,7 +1422,8 @@ pub(crate) fn re_key_album(tx: &Transaction<'_>, was: &str, now: &str) -> Result
 }
 
 fn fill_album(tx: &Transaction<'_>, album: i64, tagged: &Tagged<'_>) -> Result<Grouped> {
-    tx.query_row(
+    queried(
+        tx,
         "UPDATE albums SET
              title          = ?2,
              artist_id      = CASE WHEN artist_id IS ?3 THEN artist_id END,
@@ -1465,16 +1478,16 @@ fn kept_where_it_was(
         }
     }
 
-    let held = tx
-        .query_row(
-            "SELECT id, artist_id, year, barcode IS NOT NULL, catalog_number IS NOT NULL,
+    let held = queried(
+        tx,
+        "SELECT id, artist_id, year, barcode IS NOT NULL, catalog_number IS NOT NULL,
                     label IS NOT NULL, tagged_tracks IS NOT NULL, title
                FROM albums WHERE id = ?1",
-            params![was],
-            |row| Ok((grouped_row(row)?, row.get::<_, String>(7)?)),
-        )
-        .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+        params![was],
+        |row| Ok((grouped_row(row)?, row.get::<_, String>(7)?)),
+    )
+    .optional()
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
     Ok(held
         .filter(|(_, called)| called.to_lowercase() == title.to_lowercase())
         .map(|(grouped, _)| grouped))
@@ -1546,28 +1559,28 @@ fn name_the_album(
 }
 
 fn make_album(tx: &Transaction<'_>, tagged: &Tagged<'_>) -> Result<Grouped> {
-    let grouped = tx
-        .query_row(
-            "INSERT INTO albums (title, artist_id, year, mbid, release_group,
+    let grouped = queried(
+        tx,
+        "INSERT INTO albums (title, artist_id, year, mbid, release_group,
                                  barcode, catalog_number, label, tagged_tracks)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              RETURNING id, artist_id, year, barcode IS NOT NULL,
                        catalog_number IS NOT NULL, label IS NOT NULL,
                        tagged_tracks IS NOT NULL",
-            params![
-                tagged.title,
-                tagged.owner_id,
-                tagged.year,
-                tagged.mbid,
-                tagged.release_group,
-                tagged.declaration.barcode,
-                tagged.declaration.catalog_number,
-                tagged.declaration.label,
-                tagged.declaration.tagged_tracks,
-            ],
-            grouped_row,
-        )
-        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        params![
+            tagged.title,
+            tagged.owner_id,
+            tagged.year,
+            tagged.mbid,
+            tagged.release_group,
+            tagged.declaration.barcode,
+            tagged.declaration.catalog_number,
+            tagged.declaration.label,
+            tagged.declaration.tagged_tracks,
+        ],
+        grouped_row,
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
     Ok(grouped)
 }
@@ -1642,16 +1655,16 @@ pub(crate) fn held_picture(
     album: i64,
     source: Option<CoverSource>,
 ) -> Result<Option<CoverArt>> {
-    let held = connection
-        .query_row(
-            "SELECT cover_art FROM albums
+    let held = queried(
+        connection,
+        "SELECT cover_art FROM albums
               WHERE id = ?1 AND cover_path IS NULL AND cover_art IS NOT NULL
                 AND (?2 IS NULL OR cover_source = ?2)",
-            params![album, source.map(cover_source_code)],
-            |row| row.get::<_, Vec<u8>>(0),
-        )
-        .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+        params![album, source.map(cover_source_code)],
+        |row| row.get::<_, Vec<u8>>(0),
+    )
+    .optional()
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
     Ok(held.and_then(|bytes| {
         Some(CoverArt {
             format: ImageFormat::sniff(&bytes)?,
@@ -1661,14 +1674,14 @@ pub(crate) fn held_picture(
 }
 
 fn cover(tx: &Transaction<'_>, album: i64, record: &TrackRecord) -> Result<bool> {
-    let present = tx
-        .query_row(
-            "SELECT (cover_art IS NOT NULL AND cover_source = ?2) OR cover_path IS NOT NULL
+    let present = queried(
+        tx,
+        "SELECT (cover_art IS NOT NULL AND cover_source = ?2) OR cover_path IS NOT NULL
                FROM albums WHERE id = ?1",
-            params![album, cover_source_code(CoverSource::File)],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
+        params![album, cover_source_code(CoverSource::File)],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
     if present {
         return Ok(true);
     }
@@ -1834,7 +1847,8 @@ fn track(
     let path = path_text(&record.path)?;
     let (span_start, span_frames) = span_columns(record.span);
 
-    tx.query_row(
+    queried(
+        tx,
         UPSERT_TRACK.as_str(),
         params![
             record.root_id,
@@ -1943,8 +1957,7 @@ const THE_WORDS_A_TRACK_SINGS: &str = "SELECT coalesce(t.lyrics, k.text)
       WHERE t.id = ?1";
 
 fn sung_by(tx: &Transaction<'_>, id: i64) -> Result<String> {
-    let held: Option<String> = tx
-        .query_row(THE_WORDS_A_TRACK_SINGS, params![id], |row| row.get(0))
+    let held: Option<String> = queried(tx, THE_WORDS_A_TRACK_SINGS, params![id], |row| row.get(0))
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?
         .flatten();

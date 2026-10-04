@@ -1322,6 +1322,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `canvas` calling `Window::request_animation_frame` while any clock is in flight — the 16 ms poll
   (`POLL_INTERVAL`) notifying only when the player's state *changed*, so a turn started by a press, seek
   or chip while paused would otherwise freeze half way.
+  **The poll rests while nothing moves**: `PlayerModel::refresh` answers `Poll::Quiet` when the
+  player is not playing, no sleep timer counts down and nothing changed, and after
+  `QUIET_POLLS_BEFORE_RESTING` (30) quiet polls the loop waits `RESTING_POLL_INTERVAL` (64 ms)
+  instead of `POLL_INTERVAL` until the next change, so a paused window still answers a press within a
+  frame or four and costs a quarter of the wakeups.
 - **A press on a line is a seek, and a scroll of your own is not fought.** Every timed line carries
   `RootView::seek_to_moment`, clamping to the track's duration before `Command::Seek`, since the engine
   refuses a frame past the end and a hand-written `.lrc` whose last stamp overruns the file would leave a

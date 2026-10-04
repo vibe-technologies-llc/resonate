@@ -260,7 +260,7 @@ pub(crate) const fn over(window: Window) -> &'static str {
 }
 
 pub(crate) fn every(library: &Library) -> Result<Vec<Resource>> {
-    let playlists = library.playlists(PlaylistOrder::Name, Direction::Ascending, None)?;
+    let playlists = library.playlist_names(PlaylistOrder::Name, Direction::Ascending, 0, None)?;
 
     Ok(Resource::FIXED
         .into_iter()
