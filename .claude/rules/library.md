@@ -859,7 +859,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   takes the file's names as always. The two columns hold what `scan::name_from_stem` left in the
   `TagSet`, not the tag alone: a file naming no title is read through `stem.rs` first, so
   `tagged_title IS NULL` means neither tags nor file name said anything, and `title` is then the bare
-  stem `store::title` falls back to. **A name the file's *name* gave is not a tag, so renaming the file
+  stem `store::title` falls back to. `stem::read` takes a leading number for the track only where
+  punctuation parts it from the rest (`03.`, `03 -`, `7)`, `003_`) or it is padded (`03 So What`): a
+  number a space alone parts, unpadded, is the title's own, so *99 Luftballons* and *21 Guns* keep
+  their names (`a_number_only_a_space_parts_from_the_title_is_the_titles_own_unless_padded`).
+  **A name the file's *name* gave is not a tag, so renaming the file
   is not retagging it.** `tracks.named_by_its_stem` — a `MIGRATIONS` step, nothing before having kept
   the fact — says the scan's reading took its title or artist off the stem, and `store::RETAGGED` is the
   one reading of *the file said something else* every upsert column weighs: the tagged names moved, and

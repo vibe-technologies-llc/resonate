@@ -1,5 +1,7 @@
 const DIGITS_AT_MOST: usize = 3;
 
+const PADDED_WITH: char = '0';
+
 const AFTER_A_NUMBER: &[char] = &['-', '.', '_', ')'];
 
 const HYPHEN_BETWEEN: &str = " - ";
@@ -58,6 +60,11 @@ fn leading_number(stem: &str) -> (Option<u32>, &str) {
     let after = &stem[digits..];
     let rest = after.trim_start_matches(a_boundary);
     if rest.len() == after.len() || rest.is_empty() {
+        return (None, stem);
+    }
+    let punctuated = after[..after.len() - rest.len()].contains(AFTER_A_NUMBER);
+    let padded = digits > 1 && stem.starts_with(PADDED_WITH);
+    if !punctuated && !padded {
         return (None, stem);
     }
 
@@ -158,6 +165,26 @@ mod tests {
         assert!(read("12Stones").is_none());
         assert!(read("").is_none());
         assert!(read(" - ").is_none());
+    }
+
+    #[test]
+    fn a_number_only_a_space_parts_from_the_title_is_the_titles_own_unless_padded() {
+        assert!(read("99 Luftballons").is_none());
+        assert!(read("21 Guns").is_none());
+        assert_eq!(
+            read_as("7 Seconds - Youssou N'Dour"),
+            (
+                None,
+                Some("7 Seconds".to_owned()),
+                "Youssou N'Dour".to_owned()
+            )
+        );
+        assert_eq!(read_as("09 So What"), (Some(9), None, "So What".to_owned()));
+        assert_eq!(read_as("9. So What"), (Some(9), None, "So What".to_owned()));
+        assert_eq!(
+            read_as("9 - So What"),
+            (Some(9), None, "So What".to_owned())
+        );
     }
 
     #[test]

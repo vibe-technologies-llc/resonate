@@ -71,8 +71,6 @@ service or a format — and is not worked until that moves; everything else is o
   components, so every row of a Windows-written sheet imports as missing
 - An organise cancel is heard only between batches of 256 moves, so a run of copies across devices
   cannot be stopped for minutes
-- An untagged *99 Luftballons.mp3* or *21 Guns.flac* is read as track 99 or 21 titled *Luftballons*
-  or *Guns*
 - Dismissing one missing *Interlude* or *Skit* hides every missing row on that disc with the same
   title
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
