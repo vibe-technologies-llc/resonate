@@ -1,8 +1,10 @@
 use std::{
     ffi::OsStr,
-    fs::File,
+    fs::{self, File},
     io::{self, Read},
     num::{NonZeroU64, NonZeroUsize},
+    os::unix::fs::MetadataExt as _,
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -12,14 +14,17 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use ahash::AHashMap;
+use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{MediaLocation, WantId};
+use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
 use resonate_providers::{Asking, Away, Delivered, Delivery, Identity, Providers};
 use resonate_vault::{Keeping, Taking};
 
 use crate::{
     Error, Library, Result, ScanOptions, Want,
     filed::{self, Filed, Unfiled},
+    linked::LENGTHS_AGREE_WITHIN,
     pass::{Cancelling, PassHandle, PassKind, PollHandle},
 };
 
@@ -59,6 +64,12 @@ impl Want {
         self.held.is_none() && self.misses >= TRIES_BEFORE_GIVING_UP
     }
 
+    pub(crate) fn lasts_as_long_as(&self, heard: Frames, rate: SampleRate) -> bool {
+        let heard = heard.to_duration(rate);
+        self.length
+            .is_none_or(|wanted| wanted.abs_diff(heard) <= LENGTHS_AGREE_WITHIN)
+    }
+
     pub fn due_at(&self) -> Option<SystemTime> {
         if self.held.is_some() {
             return None;
@@ -73,6 +84,37 @@ impl Want {
 
         tried.checked_add(wait)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ForgottenDelivery {
+    pub(crate) taken_from: String,
+    pub(crate) forgotten: SystemTime,
+}
+
+impl ForgottenDelivery {
+    fn declines(&self, delivered: &Delivered) -> bool {
+        if delivered.taken_from().to_uri() != self.taken_from {
+            return false;
+        }
+        match &delivered.delivery {
+            Delivery::Stream { .. } => true,
+            Delivery::File(path) => {
+                last_changed(path).is_some_and(|changed| changed <= self.forgotten)
+            }
+        }
+    }
+}
+
+fn last_changed(path: &Path) -> Option<SystemTime> {
+    let metadata = fs::metadata(path).ok()?;
+    metadata.modified().ok().max(status_changed(&metadata))
+}
+
+fn status_changed(metadata: &fs::Metadata) -> Option<SystemTime> {
+    let seconds = u64::try_from(metadata.ctime()).ok()?;
+    let nanos = u32::try_from(metadata.ctime_nsec()).ok()?;
+    SystemTime::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +160,8 @@ pub struct PollProgress {
     refused: AtomicU64,
     late: AtomicU64,
     asking: AtomicU64,
+    asking_provider: Mutex<Option<SourceId>>,
+    received: AtomicU64,
     cancelled: AtomicBool,
 }
 
@@ -140,9 +184,27 @@ impl PollProgress {
         NonZeroU64::new(self.asking.load(Ordering::Relaxed)).map(WantId::of)
     }
 
+    pub fn asking_provider(&self) -> Option<SourceId> {
+        self.asking_provider.lock().clone()
+    }
+
+    pub fn received(&self) -> u64 {
+        self.received.load(Ordering::Relaxed)
+    }
+
     fn asks_about(&self, want: Option<WantId>) {
+        self.turns_to(None);
+        self.received.store(0, Ordering::Relaxed);
         self.asking
             .store(want.map_or(ASKING_NOTHING, WantId::get), Ordering::Relaxed);
+    }
+
+    fn turns_to(&self, provider: Option<&SourceId>) {
+        *self.asking_provider.lock() = provider.cloned();
+    }
+
+    fn received_more(&self, bytes: usize) {
+        self.received.fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
     pub fn cancel(&self) {
@@ -211,8 +273,22 @@ fn landed(
     };
 
     match keeping {
+        Ok(Keeping::Kept(kept)) if !want.lasts_as_long_as(kept.frames, kept.spec.rate) => {
+            tracing::warn!(
+                %taken_from,
+                wanted = ?want.length,
+                heard = ?kept.frames.to_duration(kept.spec.rate),
+                "a delivery not as long as the track it was wanted for was refused"
+            );
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        }
         Ok(Keeping::Kept(kept)) => {
-            library.note_delivered(want, &kept, &taken_from)?;
+            if library.note_delivered(want, &kept, &taken_from)?.is_none() {
+                tracing::info!(%taken_from, want = %want.id, "a delivery landed after its wanted row was held by another and was not paired");
+                progress.unkept.fetch_add(1, Ordering::Relaxed);
+                return Ok(None);
+            }
             progress.kept.fetch_add(1, Ordering::Relaxed);
             Ok(Some(MediaLocation::local(&kept.path)))
         }
@@ -303,9 +379,23 @@ impl Read for Pumped<'_> {
                 return Ok(0);
             }
             self.held = self.next_chunk()?;
+            self.progress.received_more(self.held.len());
             self.read = 0;
             self.ended = self.held.is_empty();
         }
+    }
+}
+
+struct Counted<'a, R> {
+    reader: R,
+    progress: &'a PollProgress,
+}
+
+impl<R: Read> Read for Counted<'_, R> {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        let read = self.reader.read(into)?;
+        self.progress.received_more(read);
+        Ok(read)
     }
 }
 
@@ -376,7 +466,16 @@ fn filed_in_the_music_folder(
                 .unwrap_or_default()
                 .to_ascii_lowercase();
             match File::open(&path) {
-                Ok(mut file) => filed::filed(library, &into, want, &mut file, &extension),
+                Ok(file) => filed::filed(
+                    library,
+                    &into,
+                    want,
+                    &mut Counted {
+                        reader: file,
+                        progress,
+                    },
+                    &extension,
+                ),
                 Err(error) => Err(Unfiled::Io(error)),
             }
         }
@@ -407,6 +506,16 @@ fn filed_in_the_music_folder(
         Err(Unfiled::Catalog(error)) => Err(error),
         Err(Unfiled::Io(error)) => {
             tracing::warn!(%taken_from, %error, "a delivered track could not be written into the music folder");
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(None)
+        }
+        Err(Unfiled::NotAsLongAsWanted { heard }) => {
+            tracing::warn!(
+                %taken_from,
+                wanted = ?want.length,
+                ?heard,
+                "a delivery not as long as the track it was wanted for was refused"
+            );
             progress.unkept.fetch_add(1, Ordering::Relaxed);
             Ok(None)
         }
@@ -452,6 +561,7 @@ fn run(
     scanned_and_paired(library, &[])?;
     let now = SystemTime::now();
     let wants = library.wants()?;
+    let forgotten = library.forgotten_deliveries()?;
     let mut away = Away::default();
     let mut filed = Vec::new();
 
@@ -462,11 +572,20 @@ fn run(
         progress.asked.fetch_add(1, Ordering::Relaxed);
         progress.asks_about(Some(want.id));
         let cancelled = || progress.is_cancelled();
+        let turning_to = |provider: &SourceId| progress.turns_to(Some(provider));
+        let forgotten_for_it = forgotten.get(&want.id).map_or(&[][..], Vec::as_slice);
+        let declined = |delivered: &Delivered| {
+            forgotten_for_it
+                .iter()
+                .any(|forgotten| forgotten.declines(delivered))
+        };
         let answer = providers.first(
             &want.identity(),
             &Asking {
                 within: options.answers_within,
                 cancelled: &cancelled,
+                turning_to: &turning_to,
+                declined: &declined,
             },
             &mut away,
         );
@@ -474,6 +593,9 @@ fn run(
             .refused
             .fetch_add(answer.refused, Ordering::Relaxed);
         progress.late.fetch_add(answer.late, Ordering::Relaxed);
+        if answer.delivered.is_none() {
+            progress.turns_to(None);
+        }
         if answer.cancelled {
             break;
         }
@@ -508,6 +630,7 @@ fn run(
                 refused = answer.refused,
                 late = answer.late,
                 passed_over = answer.passed_over,
+                narrowed = answer.narrowed,
                 "not every provider answered, so the want stays due"
             ),
         }
@@ -540,6 +663,14 @@ impl Library {
 
     pub fn next_want_due(&self) -> Result<Option<SystemTime>> {
         Ok(self.wants()?.iter().filter_map(Want::due_at).min())
+    }
+
+    pub(crate) fn forgotten_deliveries(&self) -> Result<AHashMap<WantId, Vec<ForgottenDelivery>>> {
+        let mut forgotten: AHashMap<WantId, Vec<ForgottenDelivery>> = AHashMap::new();
+        for (want, delivery) in self.forgotten_delivery_rows()? {
+            forgotten.entry(want).or_default().push(delivery);
+        }
+        Ok(forgotten)
     }
 
     pub fn last_tried(&self) -> Result<Option<SystemTime>> {

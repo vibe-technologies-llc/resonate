@@ -6,10 +6,13 @@ use std::{
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
-use resonate_codec::{FileTags, Sources, TagEdit, TagField, TagSink as _, Writing};
-use resonate_core::{Isrc, MediaLocation};
+use resonate_codec::{
+    DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
+};
+use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate};
 
 use crate::{
     Error, Library, Want,
@@ -42,6 +45,7 @@ pub(crate) enum Unfiled {
     Unnamed,
     TooLarge,
     Undecodable,
+    NotAsLongAsWanted { heard: Duration },
     Io(io::Error),
     Catalog(Error),
 }
@@ -103,9 +107,9 @@ pub(crate) fn filed(
     let _ = fs::remove_file(&staged);
     let path = landed?;
 
-    if resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path)).is_err() {
+    if let Err(unfiled) = weighed(&path, want) {
         let _ = fs::remove_file(&path);
-        return Err(Unfiled::Undecodable);
+        return Err(unfiled);
     }
     tagged(&path, want, &album);
 
@@ -113,6 +117,37 @@ pub(crate) fn filed(
         .claim_album_keys(want.album, &keys_for(&path, &root, &album, want))
         .map_err(Unfiled::Catalog)?;
     Ok(Filed { path, root })
+}
+
+fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {
+    let location = MediaLocation::local(path);
+    if want.length.is_none() {
+        return resonate_codec::probe(&Sources::local(), &location)
+            .map(drop)
+            .map_err(|_| Unfiled::Undecodable);
+    }
+
+    let (heard, rate) = heard_whole(&location).ok_or(Unfiled::Undecodable)?;
+    if want.lasts_as_long_as(heard, rate) {
+        Ok(())
+    } else {
+        Err(Unfiled::NotAsLongAsWanted {
+            heard: heard.to_duration(rate),
+        })
+    }
+}
+
+fn heard_whole(location: &MediaLocation) -> Option<(Frames, SampleRate)> {
+    let (mut decoder, info) = Decoder::open(&Sources::local(), location).ok()?;
+    let mut block = AudioBuffer::empty(info.spec);
+    let mut frames = 0_u64;
+
+    loop {
+        match decoder.next_block(&mut block).ok()? {
+            DecodeStatus::Decoded => frames += block.frames() as u64,
+            DecodeStatus::EndOfStream => return Some((Frames(frames), info.spec.rate)),
+        }
+    }
 }
 
 fn staged_beside(whole: &Path) -> PathBuf {

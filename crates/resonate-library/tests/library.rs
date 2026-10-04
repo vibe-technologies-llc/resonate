@@ -18617,8 +18617,8 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
     assert!(library.track(scanned.id)?.is_some());
     let wants = library.wants()?;
     assert_eq!(wants[0].id, want);
-    assert_eq!(wants[0].held, None);
-    assert!(library.is_a_want_due(PollOptions::ASKING_EVERY_WANT)?);
+    assert_eq!((wants[0].held, wants[0].offered.as_deref()), (None, None));
+    assert!(library.is_a_want_due(PollOptions::default())?);
     assert_eq!(library.prune_the_vault()?.objects, 1);
     Ok(())
 }
@@ -19114,6 +19114,507 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
     let again = library.track(held)?.expect("the row a rescan kept");
     assert_eq!(again.album_id, Some(album.id));
     assert_eq!(library.wants()?[0].held, Some(held));
+    Ok(())
+}
+
+fn wanted_lasting(library: &Library, length: Option<Duration>) -> Result<WantId> {
+    let album = only_album(library)?;
+    let mut rows = orbits_rows();
+    rows.push(ReleaseTrack {
+        length,
+        ..release_row(4, "San Tropez", Vec::new())
+    });
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    let missing = library
+        .release_tracks(album.id)?
+        .into_iter()
+        .find(|row| row.title == "San Tropez")
+        .expect("the release holds the row");
+    library.want(missing.id)
+}
+
+fn source(name: &str) -> SourceId {
+    SourceId::new(name).expect("a nameable source")
+}
+
+fn handed_over(poll: &Mutex<Option<Arc<PollProgress>>>) -> Arc<PollProgress> {
+    let started = Instant::now();
+    loop {
+        if let Some(progress) = poll.lock().as_ref() {
+            return Arc::clone(progress);
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the poll was never handed to the provider"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+struct Watching {
+    source: SourceId,
+    delivers: Option<Vec<u8>>,
+    poll: Mutex<Option<Arc<PollProgress>>>,
+    named: Arc<Mutex<Vec<Option<SourceId>>>>,
+    received: Arc<Mutex<Vec<u64>>>,
+}
+
+struct ReadWatched {
+    bytes: io::Cursor<Vec<u8>>,
+    progress: Arc<PollProgress>,
+    received: Arc<Mutex<Vec<u64>>>,
+}
+
+impl io::Read for ReadWatched {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        self.received.lock().push(self.progress.received());
+        io::Read::read(&mut self.bytes, into)
+    }
+}
+
+impl Provider for Watching {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        let progress = handed_over(&self.poll);
+        self.named.lock().push(progress.asking_provider());
+
+        Ok(match &self.delivers {
+            None => Obtained::Nothing,
+            Some(bytes) => Obtained::Found(Delivery::Stream {
+                key: "track/1".into(),
+                extension: Extension::new("wav")?,
+                reader: Box::new(ReadWatched {
+                    bytes: io::Cursor::new(bytes.clone()),
+                    progress,
+                    received: Arc::clone(&self.received),
+                }),
+            }),
+        })
+    }
+}
+
+#[test]
+fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, None)?;
+
+    let bytes = Wav::new().text(TITLE, "San Tropez").frames(400_000).build();
+    let size = bytes.len() as u64;
+    let named = Arc::new(Mutex::new(Vec::new()));
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let watching = |name: &str, delivers: Option<Vec<u8>>| {
+        Arc::new(Watching {
+            source: source(name),
+            delivers,
+            poll: Mutex::new(None),
+            named: Arc::clone(&named),
+            received: Arc::clone(&received),
+        })
+    };
+    let quiet = watching("quiet", None);
+    let shop = watching("shop", Some(bytes));
+
+    let handle = library.poll(
+        Arc::new(
+            Providers::none()
+                .and(Arc::clone(&quiet) as Arc<dyn Provider>)
+                .and(Arc::clone(&shop) as Arc<dyn Provider>),
+        ),
+        PollOptions::default(),
+    )?;
+    let progress = Arc::clone(handle.progress());
+    *quiet.poll.lock() = Some(Arc::clone(&progress));
+    *shop.poll.lock() = Some(Arc::clone(&progress));
+    let summary = handle.join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(
+        *named.lock(),
+        [Some(source("quiet")), Some(source("shop"))],
+        "a provider was not named while it was asked"
+    );
+    let most = received.lock().iter().copied().max().unwrap_or_default();
+    assert!(
+        most > 0 && most <= size,
+        "{most} of {size} bytes were counted as the stream was read"
+    );
+    assert_eq!(progress.asking_provider(), None);
+    assert_eq!(progress.received(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_holds() -> Result<()>
+{
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let want = wanted_san_tropez(&library)?;
+
+    let empty = Arc::new(Offering::new("inbox", Delivering::Nothing));
+    let server = Arc::new(Offering::new("server", Delivering::File(delivered.clone())));
+    let every_provider = Providers::none()
+        .and(Arc::clone(&empty) as Arc<dyn Provider>)
+        .and(Arc::clone(&server) as Arc<dyn Provider>);
+    let summary = library
+        .poll(
+            Arc::new(every_provider.only(&source("inbox"))),
+            PollOptions::ASKING_EVERY_WANT,
+        )?
+        .join()?;
+
+    assert_eq!(summary.stats.asked, 1);
+    assert_eq!(summary.stats.nothing, 0);
+    assert_eq!(empty.asked().len(), 1);
+    assert!(server.asked().is_empty(), "the network was asked");
+    let untried = library.wants()?[0].clone();
+    assert_eq!((untried.tried, untried.misses), (None, 0));
+    assert!(library.is_a_want_due(PollOptions::default())?);
+
+    let holding = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    let every_provider = Providers::none()
+        .and(Arc::clone(&holding) as Arc<dyn Provider>)
+        .and(Arc::clone(&server) as Arc<dyn Provider>);
+    let summary = library
+        .poll(
+            Arc::new(every_provider.only(&source("inbox"))),
+            PollOptions::ASKING_EVERY_WANT,
+        )?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    assert!(server.asked().is_empty());
+    let landed = library.wants()?[0].clone();
+    assert_eq!(landed.id, want);
+    assert!(landed.held.is_some(), "what the inbox held was not landed");
+    Ok(())
+}
+
+fn half_of_san_tropez() -> Arc<Offering> {
+    Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/half",
+            extension: "wav",
+            bytes: Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+        },
+    ))
+}
+
+fn every_file_under(folder: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(folder).expect("a readable folder").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(every_file_under(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[test]
+fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_does() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(60)))?;
+
+    let summary = library
+        .poll(half_of_san_tropez().registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.unkept
+        ),
+        (1, 0, 1)
+    );
+    assert!(
+        library.vault_objects()?.is_empty(),
+        "a delivery of the wrong length was noted"
+    );
+    assert!(
+        all(&library)?
+            .iter()
+            .all(|track| track.title != "San Tropez")
+    );
+    let refused = library.wants()?[0].clone();
+    assert_eq!((refused.held, refused.offered), (None, None));
+    assert_eq!(refused.misses, 1);
+    assert!(!library.is_a_want_due(PollOptions::default())?);
+    Ok(())
+}
+
+#[test]
+fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_does() -> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    wanted_lasting(&library, Some(Duration::from_secs(60)))?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+    let before = every_file_under(tree.path());
+
+    let summary = library
+        .poll(half_of_san_tropez().registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.unkept
+        ),
+        (1, 0, 1)
+    );
+    assert_eq!(
+        every_file_under(tree.path()),
+        before,
+        "a filing of the wrong length was left in the music folder"
+    );
+    assert!(
+        all(&library)?
+            .iter()
+            .all(|track| track.title != "San Tropez")
+    );
+    let refused = library.wants()?[0].clone();
+    assert_eq!((refused.held, refused.offered), (None, None));
+    assert_eq!(refused.misses, 1);
+    assert!(!library.is_a_want_due(PollOptions::default())?);
+    Ok(())
+}
+
+struct PairedAsItAnswers {
+    source: SourceId,
+    file: PathBuf,
+    library: Arc<Library>,
+    scanning: ScanOptions,
+}
+
+impl Provider for PairedAsItAnswers {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        scan(&self.library, &self.scanning).expect("the listener's own file is scanned");
+        let album = only_album(&self.library).expect("the album the file joined");
+        let paired = self
+            .library
+            .rematch(album.id)
+            .expect("the album's rows are paired");
+        assert!(paired > 0, "the listener's own file was not paired");
+        Ok(Obtained::Found(Delivery::File(self.file.clone())))
+    }
+}
+
+#[test]
+fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_file_leaves_it_paired()
+-> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    let library = Arc::new(library);
+    scan(&library, &options(&orbits))?;
+    let want = wanted_san_tropez(&library)?;
+    orbits.write("4.wav", &orbits_track("San Tropez", 4).build());
+
+    let provider = Arc::new(PairedAsItAnswers {
+        source: source("inbox"),
+        file: delivered,
+        library: Arc::clone(&library),
+        scanning: options(&orbits),
+    });
+    let summary = library
+        .poll(
+            Arc::new(Providers::none().and(provider as Arc<dyn Provider>)),
+            PollOptions::default(),
+        )?
+        .join()?;
+
+    assert_eq!((summary.stats.kept, summary.stats.unkept), (0, 1));
+    let tropez: Vec<Track> = all(&library)?
+        .into_iter()
+        .filter(|track| track.title == "San Tropez")
+        .collect();
+    assert_eq!(tropez.len(), 1, "the delivery became a row beside the file");
+    assert!(!tropez[0].delivered);
+    let wants = library.wants()?;
+    assert_eq!(wants[0].id, want);
+    assert_eq!(
+        wants[0].held,
+        Some(tropez[0].id),
+        "the delivery took the pairing from the listener's own file"
+    );
+    assert!(library.vault_objects()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_instead() -> Result<()>
+{
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    let object = library.vault_objects()?[0].path.clone();
+
+    assert!(library.forget_delivered(&object)?);
+
+    let forgotten = library.wants()?[0].clone();
+    assert_eq!(
+        (forgotten.held, forgotten.offered, forgotten.tried),
+        (None, None, None)
+    );
+    assert!(
+        library.is_a_want_due(PollOptions::default())?,
+        "a want whose delivery was forgotten waits out an offer's six hours"
+    );
+
+    let want = wanted_san_tropez(&library)?;
+    let summary = library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    assert_eq!(inbox.asked().len(), 2);
+    assert_eq!((summary.stats.offered, summary.stats.kept), (0, 0));
+    assert_eq!(summary.stats.nothing, 1);
+    assert_eq!(library.wants()?[0].held, None);
+
+    let shop = Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/55391743",
+            extension: "wav",
+            bytes: Wav::new().text(TITLE, "San Tropez").frames(4_410).build(),
+        },
+    ));
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&inbox) as Arc<dyn Provider>)
+            .and(Arc::clone(&shop) as Arc<dyn Provider>),
+    );
+    let summary = library
+        .poll(providers, PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert_eq!(inbox.asked().len(), 3);
+    assert_eq!(shop.asked().len(), 1);
+    assert_eq!(summary.stats.kept, 1);
+    let landed = library.wants()?[0].clone();
+    assert_eq!(landed.id, want);
+    let row = library
+        .track(landed.held.expect("the second provider's delivery is held"))?
+        .expect("the delivered row");
+    let object = library
+        .vault_objects()?
+        .into_iter()
+        .find(|object| row.location.as_path() == Some(object.path.as_path()))
+        .expect("the row's object");
+    assert_eq!(object.taken_from, Path::new("shop:track/55391743"));
+    Ok(())
+}
+
+#[test]
+fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_again() -> Result<()>
+{
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
+    library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    let object = library.vault_objects()?[0].path.clone();
+    assert!(library.forget_delivered(&object)?);
+
+    thread::sleep(Duration::from_millis(50));
+    tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "San Tropez").frames(6_615).build(),
+    );
+    let summary = library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 1, "the file put back was declined");
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let shop = Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/silent",
+            extension: "wav",
+            bytes: Wav::new().frames(0).build(),
+        },
+    ));
+
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!((summary.stats.offered, summary.stats.unkept), (1, 1));
+    let refused = library.wants()?[0].clone();
+    assert_eq!(refused.misses, 1);
+    assert_eq!(
+        refused.due_at(),
+        refused.tried.map(|tried| tried + RETRY_WAITS[0])
+    );
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+    assert_eq!(
+        summary.stats.asked, 0,
+        "a refused delivery was fetched again at once"
+    );
+    assert_eq!(shop.asked().len(), 1);
     Ok(())
 }
 

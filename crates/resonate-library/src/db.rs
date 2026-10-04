@@ -321,6 +321,22 @@ const WANTS: &str = concat!(
       ORDER BY w.wanted DESC, w.id DESC"
 );
 
+const REMEMBER_THE_DELIVERY_FORGOTTEN: &str =
+    "INSERT INTO forgotten_deliveries (want_id, taken_from, forgotten)
+     SELECT w.id, o.taken_from, ?2
+       FROM tracks t
+       JOIN vault_objects o ON o.key = t.vault_key
+       JOIN release_tracks rt ON rt.track_id = t.id
+       JOIN wants w ON w.release_track_id = rt.id
+      WHERE t.root_id IS NULL AND t.path = ?1
+     ON CONFLICT(want_id, taken_from) DO UPDATE SET forgotten = excluded.forgotten";
+
+const ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD: &str =
+    "UPDATE wants SET offered = NULL, tried = NULL, misses = 0
+      WHERE release_track_id IN (SELECT rt.id FROM release_tracks rt
+                                   JOIN tracks t ON t.id = rt.track_id
+                                  WHERE t.root_id IS NULL AND t.path = ?1)";
+
 const MISSING_TRACKS: &str = concat!(
     "SELECT rt.album_id, ",
     album_title!(),
@@ -1768,11 +1784,20 @@ impl Library {
     }
 
     pub fn forget_delivered(&self, path: &Path) -> Result<bool> {
+        let forgotten_at = store::to_nanos(SystemTime::now());
+
         self.inner.write(|transaction| {
+            let path = store::path_text(path)?;
+            transaction
+                .execute(REMEMBER_THE_DELIVERY_FORGOTTEN, params![path, forgotten_at])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            transaction
+                .execute(ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD, params![path])
+                .map_err(|source| Error::store(StoreOp::Update, source))?;
             let forgotten = transaction
                 .execute(
                     "DELETE FROM tracks WHERE root_id IS NULL AND path = ?1",
-                    params![store::path_text(path)?],
+                    params![path],
                 )
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
             if forgotten > 0 {
@@ -2442,7 +2467,7 @@ impl Library {
         want: &Want,
         kept: &VaultKept,
         from: &MediaLocation,
-    ) -> Result<TrackId> {
+    ) -> Result<Option<TrackId>> {
         let key = kept.key.to_string();
         let held = self.inner.within_the_vault(&kept.path)?;
         let path = store::path_text(&kept.path)?.to_owned();
@@ -2456,6 +2481,9 @@ impl Library {
         let gain = declared.replay_gain;
 
         let id = self.inner.write(|transaction| {
+            if !still_unheld(transaction, want.release_track)? {
+                return Ok(None);
+            }
             transaction
                 .execute(
                     "INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels,
@@ -2555,14 +2583,15 @@ impl Library {
             };
             transaction
                 .execute(
-                    "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2",
+                    "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2 AND track_id IS NULL",
                     params![id, want.release_track.get() as i64],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
-            Ok(id)
+            Ok(Some(id))
         })?;
 
-        Ok(TrackId::new(id as u64)?)
+        id.map(|id| TrackId::new(id as u64).map_err(Error::from))
+            .transpose()
     }
 
     pub(crate) fn note_vaulted_cover(
@@ -3797,6 +3826,28 @@ impl Library {
                     raw.into_want(links, release_links)
                 })
                 .collect()
+        })
+    }
+
+    pub(crate) fn forgotten_delivery_rows(
+        &self,
+    ) -> Result<Vec<(WantId, supply::ForgottenDelivery)>> {
+        self.inner.read(|connection| {
+            rows(
+                connection,
+                "SELECT want_id, taken_from, forgotten FROM forgotten_deliveries",
+                Vec::new(),
+                |row| {
+                    let want = row.get::<_, i64>(0)?;
+                    let delivery = supply::ForgottenDelivery {
+                        taken_from: row.get(1)?,
+                        forgotten: store::from_nanos(row.get(2)?),
+                    };
+                    Ok(WantId::new(want as u64)
+                        .map(|want| (want, delivery))
+                        .map_err(Error::from))
+                },
+            )
         })
     }
 
@@ -5276,6 +5327,19 @@ fn rows<T>(
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     found.into_iter().collect()
+}
+
+fn still_unheld(connection: &Connection, release_track: ReleaseTrackId) -> Result<bool> {
+    let held_by: Option<Option<i64>> = connection
+        .query_row(
+            "SELECT track_id FROM release_tracks WHERE id = ?1",
+            params![release_track.get() as i64],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(held_by == Some(None))
 }
 
 const fn limit(limit: Option<usize>) -> i64 {

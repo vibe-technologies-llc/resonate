@@ -99,6 +99,7 @@ struct HeldWant {
     tried: Option<i64>,
     offered: Option<String>,
     misses: i64,
+    forgotten: Vec<(String, i64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -544,15 +545,21 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
     let mut statement = tx
         .prepare(
             "SELECT rt.track_mbid, rt.recording_mbid, rt.disc, rt.position,
-                    w.wanted, w.tried, w.offered, w.misses
+                    w.wanted, w.tried, w.offered, w.misses, w.id
                FROM wants w JOIN release_tracks rt ON rt.id = w.release_track_id
               WHERE rt.album_id = ?1",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let mut forgotten_for = tx
+        .prepare(
+            "SELECT taken_from, forgotten FROM forgotten_deliveries
+              WHERE want_id = ?1",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
-    statement
+    let held = statement
         .query_map(params![album], |row| {
-            Ok(HeldWant {
+            let want = HeldWant {
                 track: row.get(0)?,
                 recording: row.get(1)?,
                 disc: row.get(2)?,
@@ -561,10 +568,22 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
                 tried: row.get(5)?,
                 offered: row.get(6)?,
                 misses: row.get(7)?,
-            })
+                forgotten: Vec::new(),
+            };
+            Ok((row.get::<_, i64>(8)?, want))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
-        .map_err(|source| Error::store(StoreOp::Query, source))
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    held.into_iter()
+        .map(|(id, want)| {
+            let forgotten = forgotten_for
+                .query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            Ok(HeldWant { forgotten, ..want })
+        })
+        .collect()
 }
 
 fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<()> {
@@ -583,8 +602,14 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
              ON CONFLICT(release_track_id) DO NOTHING",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let mut remember = tx
+        .prepare(
+            "INSERT INTO forgotten_deliveries (want_id, taken_from, forgotten)
+             VALUES (?1, ?2, ?3)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     for (_, row, want) in landing {
-        insert
+        let landed = insert
             .execute(params![
                 row,
                 want.wanted,
@@ -593,6 +618,15 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
                 want.misses
             ])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        if landed == 0 {
+            continue;
+        }
+        let id = tx.last_insert_rowid();
+        for (taken_from, forgotten) in &want.forgotten {
+            remember
+                .execute(params![id, taken_from, forgotten])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
     }
 
     Ok(())

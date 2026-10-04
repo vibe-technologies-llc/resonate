@@ -797,7 +797,7 @@ impl Vault {
             bytes: 0,
             was: 0,
             spec: info.spec,
-            frames: info.duration.unwrap_or(Frames::ZERO),
+            frames: went_in.frames,
             codec,
             deduped: false,
             replaced: false,

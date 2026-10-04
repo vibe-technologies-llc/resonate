@@ -12,7 +12,7 @@ const SPOTIFY_TRACK_PAGE: &str = "https://open.spotify.com/track/";
 const SONG_LINK_PAGES: &str = "https://song.link/";
 const HELD_BY_RECORDING: &str = "SELECT title, artist FROM tracks WHERE mbid = ?1 LIMIT 1";
 const HELD_BY_ISRC: &str = "SELECT title, artist FROM tracks WHERE isrc = ?1 LIMIT 1";
-const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(5);
+pub(crate) const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(5);
 const SOUNDCLOUD_PAGES_NAMING_NO_SONG: [&str; 9] = [
     "sets",
     "likes",

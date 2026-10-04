@@ -45,6 +45,8 @@ impl Provider for Unprovided {
 pub struct Asking<'a> {
     pub within: Duration,
     pub cancelled: &'a (dyn Fn() -> bool + Sync),
+    pub turning_to: &'a (dyn Fn(&SourceId) + Sync),
+    pub declined: &'a (dyn Fn(&Delivered) -> bool + Sync),
 }
 
 #[derive(Debug, Default)]
@@ -53,12 +55,18 @@ pub struct Answer {
     pub refused: u64,
     pub late: u64,
     pub passed_over: u64,
+    pub declined: u64,
+    pub narrowed: bool,
     pub cancelled: bool,
 }
 
 impl Answer {
     pub fn heard_from_every_provider(&self) -> bool {
-        self.refused == 0 && self.late == 0 && self.passed_over == 0 && !self.cancelled
+        !self.narrowed
+            && self.refused == 0
+            && self.late == 0
+            && self.passed_over == 0
+            && !self.cancelled
     }
 }
 
@@ -89,12 +97,35 @@ enum Asked {
 
 pub struct Providers {
     providers: Vec<Arc<dyn Provider>>,
+    narrowed: bool,
 }
 
 impl Providers {
     pub fn none() -> Self {
         Self {
             providers: vec![Arc::new(Unprovided::default())],
+            narrowed: false,
+        }
+    }
+
+    #[must_use]
+    pub fn only(&self, source: &SourceId) -> Self {
+        let others_left_out = self
+            .providers
+            .iter()
+            .any(|provider| is_a_source(provider) && provider.source() != source);
+        let narrowed = Self {
+            narrowed: self.narrowed || others_left_out,
+            ..Self::none()
+        };
+
+        match self
+            .providers
+            .iter()
+            .find(|provider| provider.source() == source)
+        {
+            Some(provider) => narrowed.and(Arc::clone(provider)),
+            None => narrowed,
         }
     }
 
@@ -114,25 +145,35 @@ impl Providers {
     }
 
     pub fn has_a_source(&self) -> bool {
-        self.providers
-            .iter()
-            .any(|provider| provider.source().as_str() != UNPROVIDED)
+        self.providers.iter().any(is_a_source)
     }
 
     pub fn first(&self, identity: &Identity, asking: &Asking<'_>, away: &mut Away) -> Answer {
-        let mut answer = Answer::default();
+        let mut answer = Answer {
+            narrowed: self.narrowed,
+            ..Answer::default()
+        };
 
         for provider in &self.providers {
             if away.holds(provider.source()) {
                 answer.passed_over += 1;
                 continue;
             }
+            if is_a_source(provider) {
+                (asking.turning_to)(provider.source());
+            }
             match asked(provider, identity, asking) {
                 Asked::Answered(Ok(Obtained::Found(delivery))) => {
-                    answer.delivered = Some(Delivered {
+                    let delivered = Delivered {
                         provider: provider.source().clone(),
                         delivery,
-                    });
+                    };
+                    if (asking.declined)(&delivered) {
+                        tracing::info!(provider = %provider.source(), taken_from = %delivered.taken_from(), title = %identity.title, "a delivery the poll declines was passed over");
+                        answer.declined += 1;
+                        continue;
+                    }
+                    answer.delivered = Some(delivered);
                     return answer;
                 }
                 Asked::Answered(Ok(Obtained::Nothing)) => {}
@@ -158,6 +199,10 @@ impl Providers {
 
         answer
     }
+}
+
+fn is_a_source(provider: &Arc<dyn Provider>) -> bool {
+    provider.source().as_str() != UNPROVIDED
 }
 
 fn asked(provider: &Arc<dyn Provider>, identity: &Identity, asking: &Asking<'_>) -> Asked {
@@ -318,10 +363,18 @@ mod tests {
         true
     }
 
+    fn unheard(_: &SourceId) {}
+
+    fn declining_nothing(_: &Delivered) -> bool {
+        false
+    }
+
     fn patient() -> Asking<'static> {
         Asking {
             within: Duration::from_secs(60),
             cancelled: &never,
+            turning_to: &unheard,
+            declined: &declining_nothing,
         }
     }
 
@@ -336,7 +389,7 @@ mod tests {
             &Identity::named("Echoes"),
             &Asking {
                 within: Duration::from_millis(100),
-                cancelled: &never,
+                ..patient()
             },
             &mut Away::default(),
         );
@@ -359,8 +412,8 @@ mod tests {
         let answer = providers.first(
             &Identity::named("Echoes"),
             &Asking {
-                within: Duration::from_secs(60),
                 cancelled: &always,
+                ..patient()
             },
             &mut Away::default(),
         );
@@ -421,7 +474,7 @@ mod tests {
         let mut away = Away::default();
         let hurried = Asking {
             within: Duration::from_millis(100),
-            cancelled: &never,
+            ..patient()
         };
 
         let first = providers.first(&Identity::named("Echoes"), &hurried, &mut away);
@@ -440,5 +493,95 @@ mod tests {
         let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
 
         assert!(answer.heard_from_every_provider());
+    }
+
+    fn found_elsewhere() -> Result<Obtained> {
+        Ok(Obtained::Found(Delivery::File(PathBuf::from(
+            "/shop/b.flac",
+        ))))
+    }
+
+    fn turned_to(providers: &Providers, asking: &Asking<'_>) -> (Answer, Vec<String>) {
+        let (told, heard) = mpsc::channel();
+        let turning_to = move |source: &SourceId| {
+            let _ = told.send(source.as_str().to_owned());
+        };
+        let answer = providers.first(
+            &Identity::named("Echoes"),
+            &Asking {
+                turning_to: &turning_to,
+                ..*asking
+            },
+            &mut Away::default(),
+        );
+
+        (answer, heard.try_iter().collect())
+    }
+
+    #[test]
+    fn each_provider_turned_to_is_told_and_the_stub_never_is() {
+        let providers = Providers::none()
+            .and(Fixed::registered("empty", nothing))
+            .and(Fixed::registered("shop", found))
+            .and(Fixed::registered("later", found));
+
+        let (answer, heard) = turned_to(&providers, &patient());
+
+        assert_eq!(heard, ["empty", "shop"]);
+        assert_eq!(
+            answer.delivered.map(|delivered| delivered.provider),
+            Some(SourceId::new("shop").expect("a nameable source"))
+        );
+    }
+
+    #[test]
+    fn a_delivery_the_poll_declines_is_passed_over_and_the_next_provider_asked() {
+        let providers = Providers::none()
+            .and(Fixed::registered("inbox", found))
+            .and(Fixed::registered("shop", found_elsewhere));
+        let forgotten = |delivered: &Delivered| delivered.provider.as_str() == "inbox";
+
+        let (answer, heard) = turned_to(
+            &providers,
+            &Asking {
+                declined: &forgotten,
+                ..patient()
+            },
+        );
+
+        assert_eq!(heard, ["inbox", "shop"]);
+        assert_eq!(answer.declined, 1);
+        assert!(answer.heard_from_every_provider());
+        let delivered = answer.delivered.expect("the next provider's delivery");
+        assert_eq!(delivered.provider.as_str(), "shop");
+        assert_eq!(delivered.taken_from().to_uri(), "file:///shop/b.flac");
+    }
+
+    #[test]
+    fn a_registry_narrowed_to_one_provider_asks_it_alone_and_never_hears_from_every_provider() {
+        let inbox = SourceId::new("inbox").expect("a nameable source");
+        let providers = Providers::none()
+            .and(Fixed::registered("inbox", nothing))
+            .and(Fixed::registered("shop", found));
+
+        let (answer, heard) = turned_to(&providers.only(&inbox), &patient());
+
+        assert_eq!(heard, ["inbox"]);
+        assert!(answer.delivered.is_none());
+        assert!(answer.narrowed);
+        assert!(!answer.heard_from_every_provider());
+
+        let alone = Providers::none().and(Fixed::registered("inbox", nothing));
+        let (answer, _) = turned_to(&alone.only(&inbox), &patient());
+        assert!(
+            answer.heard_from_every_provider(),
+            "a registry holding the inbox alone left nobody out"
+        );
+
+        let absent = providers.only(&SourceId::new("server").expect("a nameable source"));
+        assert!(!absent.has_a_source());
+        let (answer, heard) = turned_to(&absent, &patient());
+        assert!(heard.is_empty());
+        assert!(!answer.heard_from_every_provider());
     }
 }

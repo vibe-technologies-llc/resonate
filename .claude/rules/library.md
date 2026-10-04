@@ -1461,10 +1461,15 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   through `Vault::keep` and a `Delivery::Stream` through `Vault::keep_delivered`; either kept writes the
   `vault_objects` row through `note_delivered` with `taken_from` the file's URI or `<provider>:<key>`,
   and `wants.offered` is the vault object's URI. With no vault a file's own URI is the offer and a stream
-  is dropped, having nowhere to be kept; that, a vault refusal and a vault failure each count `unkept`
-  and offer nothing, so `offered` never names what cannot be opened. `note_tried` keeps an earlier offer
-  where the new pass found none, and is not called where a provider refused, ran late or was passed over
-  as away, the want staying due. `providers.md` has the rest.
+  is dropped, having nowhere to be kept; that, a vault refusal, a vault failure, a delivery whose
+  length disagrees with the release row's and one landing after the row was held by another each count
+  `unkept` and offer nothing, so `offered` never names what cannot be opened. `note_tried` keeps an
+  earlier offer where the new pass found none, and is not called where a provider refused, ran late or
+  was passed over as away, or where a registry narrowed to one provider found nothing, the want
+  staying due.
+  `forget_delivered` clears the offer and remembers what was forgotten in `forgotten_deliveries`, which
+  `land_release`'s `wants_under` and `want_again` carry onto the want's new row with the want itself.
+  `providers.md` has the rest.
 - **A lyric fetched once is kept, and so is a miss; what is kept only gets better.** `lyrics_kept` is
   keyed by `(path, span_start)` as `tracks` is, so a cue row keeps its words apart from the file's;
   `text` is `NULL` for a remembered miss and `taken` says when last asked. A kept row is a `KeptLyrics`

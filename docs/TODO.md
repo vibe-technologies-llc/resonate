@@ -185,9 +185,6 @@ service or a format — and is not worked until that moves; everything else is o
   thread, so a stalled network mount freezes the window's redraw and the bus
 - One thread reads the tags of every queued row, so a remote source that does not answer holds back
   the local rows behind it five seconds a row
-- A file landing in the inbox asks every network provider about every unheld want again, though
-  only the inbox can have the new file
-- A delivery the vault refuses is fetched again at every poll with no lengthening wait
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first, and the Xing table
   of contents is never used
 - Planning a tag run parses every file with lofty twice more than it needs, covers and audio
@@ -223,10 +220,6 @@ service or a format — and is not worked until that moves; everything else is o
   dropped file's copy neither cancels the pass nor waits for it
 - The Subsonic client sets no read deadline, so a server that stalls mid-answer keeps a thread and
   a socket per want until exit
-- A file still being copied into the inbox is delivered, a half-written FLAC kept as the want's
-  track, and nothing weighs a delivery's length against the release row's
-- A delivery landing after a scan paired the wanted row to the listener's own file takes the pairing
-  from it
 - A failing ListenBrainz love blocks every later love and backs listen submissions off to an hour
 - A listen counted after the newest listens were removed reuses an id at or below the service's
   mark and is never submitted
@@ -322,9 +315,12 @@ service or a format — and is not worked until that moves; everything else is o
 ## Later: Sources and providers
 - The Subsonic and hifi-api server fields take any text, so a bare `music.local:4533` fails every
   poll with no word to the listener
-- *Forget this delivery* remembers nothing, so the next poll fetches the same file again
 - A want is carried onto whatever song sits at its disc and position after the release is chosen
   again or reordered
+- A file the inbox delivers into the vault counts nothing in `PollProgress::received`, the vault
+  reading it by its path
+- Forgetting a delivered row remembers only the delivery its object was first noted from, so a
+  second provider that delivered the same audio is fetched from again
 - With `<mbid>.flac` and `<mbid>.mp3` both in the inbox the name sorting first wins, and nothing
   prefers the lossless one; the inbox also stats every entry for every want
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
