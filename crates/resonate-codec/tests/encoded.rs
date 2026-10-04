@@ -769,6 +769,40 @@ fn a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in() {
 }
 
 #[test]
+fn a_wide_wave_cut_short_reports_the_frames_it_holds_and_decodes_them_to_the_end() {
+    let tree = Tree::new();
+    let samples = tone(STUDIO);
+    let lost_frames = 10_000_u64;
+    let lost_bytes = lost_frames * u64::from(STUDIO.block_align());
+
+    for wide in [Wide::Rf64, Wide::Bw64, Wide::Wave64] {
+        let path = tree.at(&format!("{wide:?}-cut.wav"));
+        wide_wave(&path, wide, STUDIO, &samples);
+        let whole = fs::metadata(&path).expect("a file just written").len();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("a writable temporary file")
+            .set_len(whole - lost_bytes)
+            .expect("a file that can be cut");
+
+        let info = probe(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a cut wide wave still probes");
+        let held = info.duration.expect("a duration").0;
+        let full = STUDIO.frames() as u64;
+        assert!(
+            (full - lost_frames - 2..=full - lost_frames).contains(&held),
+            "{wide:?} reported {held} of {full} frames"
+        );
+        assert_eq!(
+            decode(&path).samples.len() as u64,
+            held * u64::from(STUDIO.channels),
+            "{wide:?} decoded other than what it reported"
+        );
+    }
+}
+
+#[test]
 fn a_seek_into_a_wide_wave_lands_on_the_frame_asked_for() {
     let tree = Tree::new();
     let samples = tone(STUDIO);

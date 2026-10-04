@@ -402,8 +402,11 @@ impl<'s> WideReader<'s> {
         data_bytes: u64,
         options: FormatOptions,
     ) -> Self {
-        let frames = data_bytes / format.frame_bytes.max(1);
         let data_start = reader.pos();
+        let held_bytes = reader
+            .byte_len()
+            .map_or(data_bytes, |len| len.saturating_sub(data_start));
+        let frames = data_bytes.min(held_bytes) / format.frame_bytes.max(1);
 
         let mut params = AudioCodecParameters::new();
         params

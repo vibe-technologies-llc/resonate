@@ -285,7 +285,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   chunk — `Wide::chunk` is the one reading of a chunk header in both layouts, `Sizes` the `ds64`
   table — reads the `fmt ` chunk it passes on the way (integer PCM of 8 to 32 bits, IEEE float of 32
   or 64, extensible with either, its valid bits and channel mask), and answers packets of at most
-  `FRAMES_A_PACKET` frames and `MOST_PACKET_BYTES`, seeking to the exact frame. Its markers are
+  `FRAMES_A_PACKET` frames and `MOST_PACKET_BYTES`, seeking to the exact frame. A data size running
+  past a source that states its length is cut to the bytes held, so a truncated file reports and
+  decodes the frames it has (`a_wide_wave_cut_short_reports_the_frames_it_holds_and_decodes_them_to_the_end`).
+  Its markers are
   `RF64`, `BW64` and Wave64's `riff`; `Container::Rf64` and `Container::Wave64` name what opened.
   `riff.rs` walks the same two layouts through `Wide::chunk`, so an RF64's `LIST INFO` and `id3 `
   chunk are read as a WAVE's are; the channel and mask refusals stay the plain WAVE's, guarding
@@ -537,7 +540,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   why a cue row on the bus carries its own title.
 - **The 1/75 s unit a cue sheet counts in is a `sector`, never a frame.** `Frames` means a PCM frame
   everywhere here, and a sheet's `mm:ss:ff` does not; calling both "frame" is the mistake the format
-  invites. `CueStamp::at` is the one conversion, exact at every supported rate (44100/75 is 588). A
+  invites. `CueStamp::at` is the one conversion, exact at every rate 75 divides (44100/75 is 588) and floored
+  to the frame before the boundary at 8, 16 and 32 kHz, which it does not. A
   stamp's minutes are a `u32` and its seconds and sectors a `u8` each, so a minute count no sheet
   could mean is refused as the stamp is read rather than multiplied past `u64` on a scan worker or
   the engine thread.

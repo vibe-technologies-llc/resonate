@@ -114,9 +114,13 @@ fn clock_nanos(value: &str) -> Option<u64> {
     if fields.next().is_some() || fraction.len() > FRACTION_DIGITS {
         return None;
     }
-    let whole = hours.parse::<u64>().ok()?.checked_mul(3_600)?
-        + minutes.parse::<u64>().ok().filter(|held| *held < 60)? * 60
-        + seconds.parse::<u64>().ok().filter(|held| *held < 60)?;
+    let minutes = minutes.parse::<u64>().ok().filter(|held| *held < 60)?;
+    let seconds = seconds.parse::<u64>().ok().filter(|held| *held < 60)?;
+    let whole = hours
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(3_600)?
+        .checked_add(minutes * 60 + seconds)?;
     let nanos = match fraction {
         "" => 0,
         digits => digits.parse::<u64>().ok()? * 10_u64.pow((FRACTION_DIGITS - digits.len()) as u32),
@@ -255,6 +259,18 @@ mod tests {
                 (Frames(3_600 * 48_000), None),
             ]
         );
+    }
+
+    #[test]
+    fn a_clock_with_an_hour_count_too_large_to_hold_is_unreadable() {
+        let comments = [
+            ("CHAPTER001", "5124095576030431:59:59.000"),
+            ("CHAPTER002", "5124095576030431:59:59"),
+            ("CHAPTER003", "18446744073709551615:00:00"),
+        ]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()));
+
+        assert!(of_comments(&comments).is_empty());
     }
 
     #[test]

@@ -62,11 +62,8 @@ service or a format — and is not worked until that moves; everything else is o
   and a gain written with a decimal comma is dropped
 - A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
   container rather than played as it arrives or named as needing a seek
-- An RF64 or Wave64 whose data size runs past the file reports the declared length
 - A CAF packet table is walked as far as its declared count rather than its chunk, reading audio as
   packet sizes
-- A `CHAPTERnnn` comment with an enormous hour count overflows an unchecked add and panics a debug
-  or fuzz build
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is
@@ -301,12 +298,6 @@ service or a format — and is not worked until that moves; everything else is o
   and the platform's own drag events are unproved here
 - **Blocked on hardware:** A microphone recording has not been proved against real sound reaching a
   microphone
-
-## Rules and docs
-- `audio.md` says a cue stamp is exact at every supported rate, but 8, 16 and 32 kHz do not divide
-  by 75 and a boundary floors by up to a frame
-- `CLAUDE.md` says `resonate-online` reaches the library, lyrics, codec and core, where it also
-  reaches analysis, eq and listen
 
 ## Later: Sources and providers
 - A want is carried onto whatever song sits at its disc and position after the release is chosen

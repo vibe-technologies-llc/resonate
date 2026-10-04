@@ -81,8 +81,8 @@ resonate            bin — CLI, tracing, wiring
 
 The tree says what each crate is *for*, not every edge (`cargo tree` is the authority). The binary
 also reaches `resonate-codec`, `resonate-pipewire` and `resonate-vault`; `resonate-ui` the engine,
-library, lyrics and `resonate-listen`; `resonate-online` the library, lyrics, codec and core, and only
-the binary reaches it. `resonate-mcp` reaches the library, `resonate-mpris`, the engine's
+library, lyrics and `resonate-listen`; `resonate-online` the library, lyrics, codec, analysis, eq,
+listen and core, and only the binary reaches it. `resonate-mcp` reaches the library, `resonate-mpris`, the engine's
 vocabulary, the provider seam and core; `resonate-discord` core and the engine's vocabulary — both
 the binary's alone. `resonate-library` reaches `resonate-providers` for the seam its poll walks and
 `resonate-analysis` for the studies its enrichment takes; the engine reaches `resonate-analysis` to
