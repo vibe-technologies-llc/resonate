@@ -7,8 +7,9 @@ use std::{
 use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
-    Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked, Scrobble,
-    Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording, songs_asked, weighed_for,
+    AlbumLink, Billed, Error, Isrc, Link, LookupOp, Mbid, Reference, Relation, ReleaseAsked,
+    Scrobble, Scrobbler, Service, SongLink, StreamAsked, TokenHeld, Wording, songs_asked,
+    weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{LyricProvider, Timing, Wanted};
@@ -120,6 +121,40 @@ fn a_link_to_a_song_on_spotify_tidal_and_apple_music_names_its_isrc() {
 
         assert!(named.isrcs.contains(&never_gonna), "{pasted}: {named:?}");
     }
+}
+
+#[test]
+fn a_link_to_an_album_names_a_barcode_musicbrainz_files_the_release_group_under() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let whenever = mbid("082c6aff-a7cc-36e0-a960-35a578ecd937");
+
+    let link = AlbumLink::read("https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4")
+        .expect("an album link");
+    let named = online
+        .album_linked(&link)
+        .expect("the services answered")
+        .expect("the link named an album");
+    let mut groups = Vec::new();
+    for barcode in &named.barcodes {
+        groups.extend(
+            online
+                .releases_by_barcode(barcode)
+                .expect("musicbrainz answered")
+                .into_iter()
+                .filter(|found| {
+                    found
+                        .barcode
+                        .as_deref()
+                        .is_some_and(|held| barcode.names(held))
+                })
+                .filter_map(|found| found.group),
+        );
+    }
+
+    assert!(groups.contains(&whenever), "{named:?} named {groups:?}");
 }
 
 #[test]

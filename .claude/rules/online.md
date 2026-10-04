@@ -396,22 +396,48 @@ test asks both routes.
 ## Following a link to a song
 
 `Reference::song_linked` is `linked::named_at`: what a `SongLink` the listener pasted names, as
-`LinkNames` — the ISRCs a service files the song under and its length — leaving the weighing to
-`Library::follow_link` (`library.md`). A Deezer track is asked of Deezer's own API,
-`/track/<n>` (`deezer::track_named`), whose answer carries `isrc` and `duration`; an unknown number
-answers the `DataException` document and names nothing. **Every other service is read through
-song.link's page, not its API**: `api.song.link` answers every keyless request
-`401 PUBLIC_API_ACCESS_DEPRECATED`, while the page `SongLink::page` writes — the link percent-escaped
-after `https://song.link/`, or the song.link URL itself — still carries the data its page is drawn
-from. `Song::read` cuts the `__NEXT_DATA__` JSON out of it and reads
-`props.pageProps.pageData`: `entityData` must be of `type` `song` (an album or artist page names no
-song), its `isrc` and `duration` in milliseconds are taken, and the `deezer|song|<n>` id among the
-`sections`' links is the song's twin on Deezer. The page names an ISRC for Spotify, TIDAL and
-SoundCloud and none for Apple Music or YouTube, so the twin is asked whenever there is one and its
-code added after the page's (`named_with`): a SoundCloud upload registered under its own code still
-reaches the recording through the label's. `Host::SongLink` is paced at `OTHERS_INTERVAL` and told
-the bare User-Agent. `song_link_page.html` (a Spotify track's page, captured whole) and
-`deezer_track.json` are the fixtures.
+`LinkNames` — the ISRCs a service files the song under, its length and the title and artist it is
+billed under — leaving the weighing to `Library::follow_link` (`library.md`). A Deezer track is asked
+of Deezer's own API, `/track/<n>` (`deezer::track_named`), whose answer carries `isrc`, `duration`,
+`title` and `artist.name`; an unknown number answers the `DataException` document and names
+nothing. **Every other service is read through song.link's page, not its API**: `api.song.link`
+answers every keyless request `401 PUBLIC_API_ACCESS_DEPRECATED`, while the page `SongLink::page`
+writes — the link percent-escaped after `https://song.link/`, or the song.link URL itself — still
+carries the data its page is drawn from. `page_data` cuts the `__NEXT_DATA__` JSON out of it and
+reads `props.pageProps.pageData`; `Song::read` takes its `entityData` only where it is of `type`
+`song` (an album or artist page names no song): its `isrc`, `duration` in milliseconds, `title` and
+`artistName`, and the `deezer|song|<n>` id among the `sections`' links is the song's twin on Deezer.
+The page names an ISRC for Spotify, TIDAL and SoundCloud and none for Apple Music or YouTube, so the
+twin is asked whenever there is one and its code added after the page's, its names standing in for
+any the page left out (`named_with`): a SoundCloud upload registered under its own code still
+reaches the recording through the label's. A page naming no code and no twin still names its title
+and artist — what a YouTube upload is found by — and only a page naming neither a code nor both
+names is nothing; reading an upload's billing, and the strict weighing, are the library's.
+`Host::SongLink` is paced at `OTHERS_INTERVAL` and told the bare User-Agent. `song_link_page.html`
+(a Spotify track's page, captured whole), `song_link_youtube_page.html` (a YouTube video's, which
+names no ISRC) and `deezer_track.json` are the fixtures
+(`a_page_of_a_video_names_no_isrc_but_the_title_and_artist_it_is_billed_under`).
+
+## Following a link to an album
+
+`Reference::album_linked` is `linked::album_named_at`, answering `AlbumNames` — the `Barcode`s the
+album is sold under — and `Reference::releases_by_barcode` is `musicbrainz::releases_by_barcode`,
+leaving which release to take to `Library::follow_album_link` (`library.md`); a MusicBrainz release
+or group link asks neither. An album page is album.link's: `AlbumLink::page` writes the link
+percent-escaped after `https://album.link/` — where song.link sends an album anyway — or keeps an
+album.link URL as it stands, and it is fetched under `Host::SongLink`, one service and one pace.
+`Album::read` takes an `entityData` of `type` `album`, its `upc` and the `deezer|album|<n>` twin;
+the twin is asked of Deezer's `/album/<n>` (`deezer::album_named`), whose `upc` is added after the
+page's unless it is the same code a leading zero apart. The two can differ — Deezer answered the
+captured album's id with a reissue under another UPC — so both are offered and the library asks each
+in turn. A Deezer album link asks Deezer alone. The search is the release index's `barcode` field
+under every spelling a leading zero makes of the code — `barcode:"035627515026" OR
+barcode:"0035627515026"`, `Barcode::spellings` — since MusicBrainz files a UPC-A as twelve digits or
+as its thirteen-digit EAN, and `ReleaseFoundDoc::into_barcoded` answers each hit's release, group,
+title, credit and the barcode it carries, so the library can weigh the code rather than the score.
+`album_link_page.html` (a Spotify album's page), `deezer_album.json` and
+`release_barcode_search.json` are the fixtures, and the live test follows the same Spotify album to
+its group.
 
 ## ListenBrainz
 
@@ -563,7 +589,8 @@ the bare User-Agent. `song_link_page.html` (a Spotify track's page, captured who
 `coverart.json`, `coverart_group.json`, `wikidata.json`, `wikipedia.json`, `lrclib_get.json`,
 `lrclib_search.json`, `acoustid_lookup.json`, the Deezer answers (`deezer_artist.json`,
 `deezer_unpictured.json`, `deezer_no_data.json`, `deezer_track_isrc.json`, `deezer_search.json`,
-`deezer_track.json`), `song_link_page.html`,
+`deezer_track.json`, `deezer_album.json`), `song_link_page.html`, `song_link_youtube_page.html`,
+`album_link_page.html`, `release_barcode_search.json`,
 `autoeq_index.md`, `autoeq_parametric.txt`, `shazam_match.json` and `shazam_nothing.json` (captured live
 with a signature of a library track and of synthetic notes), and `audd_recognised.json`,
 `audd_nothing.json` and `audd_refused.json` (written from the service's documentation, no token being to
@@ -575,8 +602,8 @@ assert over all twenty-five releases a recording names. `tests/live.rs` is the o
 `RESONATE_ONLINE_TESTS` and printing a skip without it, it shares one client through a `OnceLock` so the
 pacing holds across its tests, and asks the real services for the release, artist and track the fixtures
 were captured from, that artist's release groups (at least a hundred, *Meddle* among them), AutoEq's
-whole index and one correction, Deezer's two stream routes, LRCLIB, Spotify and SoundCloud pages, Shazam
-and ListenBrainz.
+whole index and one correction, Deezer's two stream routes, a song link and an album link, LRCLIB,
+Spotify and SoundCloud pages, Shazam and ListenBrainz.
 
 ## The binary's half
 

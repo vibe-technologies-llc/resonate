@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_codec::{CoverArt, ImageFormat};
 use resonate_library::{
-    Isrc, Link, LinkNames, LookupOp, Relation, Service, StreamAsked, folded_letters,
+    Barcode, Isrc, Link, LinkNames, LookupOp, Relation, Service, StreamAsked, folded_letters,
 };
 use serde::Deserialize;
 
@@ -13,6 +13,7 @@ use crate::{
 };
 
 const ARTIST: &str = "/artist/";
+const ALBUM: &str = "/album/";
 const TRACK: &str = "/track/";
 const TRACK_BY_ISRC: &str = "/track/isrc:";
 const SEARCH: &str = "/search";
@@ -104,6 +105,13 @@ pub(crate) fn track_named(client: &Client, track: u64) -> Result<Option<LinkName
     Ok(held.and_then(TrackDoc::named))
 }
 
+pub(crate) fn album_named(client: &Client, album: u64) -> Result<Option<Barcode>> {
+    let asked = format!("{ALBUM}{album}");
+    let held = client.json::<AlbumDoc>(Host::Deezer, LookupOp::FollowLink, &asked)?;
+
+    Ok(held.and_then(AlbumDoc::barcode))
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -138,16 +146,45 @@ struct Credited {
     name: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct AlbumDoc {
+    upc: Option<String>,
+}
+
+impl AlbumDoc {
+    fn barcode(self) -> Option<Barcode> {
+        Barcode::new(self.upc.as_deref()?)
+    }
+}
+
+fn named(text: Option<&str>) -> Option<String> {
+    text.map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+}
+
 impl TrackDoc {
     fn named(self) -> Option<LinkNames> {
-        let isrc = Isrc::new(self.isrc.as_deref()?).ok()?;
+        let isrcs: Vec<Isrc> = self
+            .isrc
+            .as_deref()
+            .and_then(|code| Isrc::new(code).ok())
+            .into_iter()
+            .collect();
+        let title = named(self.title.as_deref());
+        let artist = named(self.artist.as_ref().map(|credited| credited.name.as_str()));
+        if isrcs.is_empty() && (title.is_none() || artist.is_none()) {
+            return None;
+        }
 
         Some(LinkNames {
-            isrcs: vec![isrc],
+            isrcs,
             length: self
                 .duration
                 .filter(|seconds| *seconds > 0)
                 .map(Duration::from_secs),
+            title,
+            artist,
         })
     }
 
@@ -323,9 +360,24 @@ mod tests {
             Some(LinkNames {
                 isrcs: vec![Isrc::new("GBARL9300135").expect("an isrc")],
                 length: Some(Duration::from_secs(213)),
+                title: Some("Never Gonna Give You Up".to_owned()),
+                artist: Some("Rick Astley".to_owned()),
             })
         );
         assert_eq!(unknown.named(), None);
+    }
+
+    #[test]
+    fn a_deezer_album_names_its_barcode() {
+        let album: AlbumDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_album.json"))
+                .expect("the captured answer reads back");
+        let unknown: AlbumDoc =
+            serde_json::from_str(include_str!("../tests/fixtures/deezer_no_data.json"))
+                .expect("the captured answer reads back");
+
+        assert_eq!(album.barcode(), Barcode::new("859381157694"));
+        assert_eq!(unknown.barcode(), None);
     }
 
     #[test]

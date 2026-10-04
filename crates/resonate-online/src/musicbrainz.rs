@@ -1,10 +1,10 @@
 use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
-    ArtistMatch, ArtistProfile, ArtistRelease, ByArtist, Credit, Discography, Genre, GroupAsked,
-    GroupMatch, GroupRelease, Isrc, Issued, LifeSpan, Link, LookupOp, Mbid, Medium, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Release, ReleaseAsked, ReleaseGroup,
-    ReleaseMatch, ReleaseTrack, SongsAsked, Wording,
+    ArtistMatch, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch, ByArtist, Credit,
+    Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Isrc, Issued, LifeSpan, Link,
+    LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Release,
+    ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, SongsAsked, Wording,
 };
 use serde::Deserialize;
 
@@ -176,6 +176,8 @@ struct ReleaseFoundDoc {
     track_count: Option<u32>,
     #[serde(default)]
     date: Option<String>,
+    #[serde(default)]
+    barcode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -455,6 +457,29 @@ pub(crate) fn find_release(client: &Client, asked: &ReleaseAsked) -> Result<Vec<
         .into_iter()
         .filter_map(ReleaseFoundDoc::into_match)
         .collect())
+}
+
+pub(crate) fn releases_by_barcode(client: &Client, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
+    let op = LookupOp::FindRelease;
+    let path = searched("/release/", &barcode_query(barcode), RELEASES_FOUND_AT_MOST);
+    let found = client
+        .json::<ReleaseSearchDoc>(Host::MusicBrainz, op, &path)?
+        .map(|document| document.releases)
+        .unwrap_or_default();
+
+    Ok(found
+        .into_iter()
+        .filter_map(ReleaseFoundDoc::into_barcoded)
+        .collect())
+}
+
+fn barcode_query(barcode: &Barcode) -> String {
+    barcode
+        .spellings()
+        .iter()
+        .map(|spelt| format!("barcode:{}", lucene_quoted(spelt)))
+        .collect::<Vec<_>>()
+        .join(" OR ")
 }
 
 pub(crate) fn artist(client: &Client, id: &Mbid) -> Result<Option<ArtistProfile>> {
@@ -982,6 +1007,20 @@ impl ReleaseFoundDoc {
             date: present(self.date),
         })
     }
+
+    fn into_barcoded(self) -> Option<BarcodeMatch> {
+        let release = mbid(Some(&self.id))?;
+
+        Some(BarcodeMatch {
+            release,
+            group: self
+                .release_group
+                .and_then(|group| mbid(group.id.as_deref())),
+            barcode: present(self.barcode),
+            title: self.title,
+            credit: credits(self.artist_credit),
+        })
+    }
 }
 
 fn counted(media: &[TrackedMediumDoc]) -> Option<u32> {
@@ -1265,6 +1304,8 @@ mod tests {
     const RELEASE: &str = include_str!("../tests/fixtures/release.json");
     const RELEASE_LINKED: &str = include_str!("../tests/fixtures/release_linked.json");
     const RELEASE_SEARCH: &str = include_str!("../tests/fixtures/release_search.json");
+    const RELEASE_BARCODE_SEARCH: &str =
+        include_str!("../tests/fixtures/release_barcode_search.json");
     const RECORDING: &str = include_str!("../tests/fixtures/recording.json");
     const ISRC: &str = include_str!("../tests/fixtures/isrc.json");
     const RECORDING_SEARCH: &str = include_str!("../tests/fixtures/recording_search.json");
@@ -1451,6 +1492,46 @@ mod tests {
                 .and_then(|credit| credit.mbid.as_ref())
                 .map(Mbid::as_str),
             Some(PINK_FLOYD)
+        );
+    }
+
+    #[test]
+    fn a_barcode_search_answers_each_release_with_the_code_it_carries_and_its_group() {
+        let found: Vec<BarcodeMatch> =
+            serde_json::from_str::<ReleaseSearchDoc>(RELEASE_BARCODE_SEARCH)
+                .expect("the fixture parses")
+                .releases
+                .into_iter()
+                .filter_map(ReleaseFoundDoc::into_barcoded)
+                .collect();
+
+        assert_eq!(
+            found,
+            vec![BarcodeMatch {
+                release: Mbid::new("98c0cd5f-fa84-45d9-839f-cc5d276dd5be").expect("an mbid"),
+                group: Some(Mbid::new("082c6aff-a7cc-36e0-a960-35a578ecd937").expect("an mbid")),
+                barcode: Some("035627515026".to_owned()),
+                title: "Whenever You Need Somebody".to_owned(),
+                credit: vec![Credit {
+                    name: "Rick Astley".to_owned(),
+                    joined_by: String::new(),
+                    mbid: Some(Mbid::new("db92a151-1ac2-438b-bc43-b82e149ddd50").expect("an mbid")),
+                }],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_barcode_is_searched_for_as_every_spelling_a_leading_zero_makes_of_it() {
+        let upc = Barcode::new("035627515026").expect("a barcode");
+
+        assert_eq!(
+            barcode_query(&upc),
+            "barcode:\"035627515026\" OR barcode:\"0035627515026\""
+        );
+        assert_eq!(
+            searched("/release/", &barcode_query(&upc), RELEASES_FOUND_AT_MOST),
+            "/release/?query=barcode%3A%22035627515026%22%20OR%20barcode%3A%220035627515026%22&fmt=json&limit=10"
         );
     }
 

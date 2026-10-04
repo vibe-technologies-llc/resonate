@@ -3535,11 +3535,12 @@ mod tests {
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
-            ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, EnrichOptions,
-            Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames, LookupOp,
-            LyricText, LyricsAsked, Mbid, Medium, Recording, RecordingAsked, RecordingMatch,
-            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
+            AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, CoverArt,
+            Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked, GroupMatch, Issued,
+            Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Recording,
+            RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
+            ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked,
+            Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3558,6 +3559,7 @@ mod tests {
         const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
         const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
         const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
+        const HEROES_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
 
         fn mbid(id: &str) -> Mbid {
             Mbid::new(id).expect("an mbid")
@@ -3607,37 +3609,11 @@ mod tests {
             }
 
             fn release(&self, id: &Mbid) -> Result<Option<Release>> {
-                Ok((id.as_str() == HEROES_TONIGHT_RELEASE).then(|| Release {
-                    id: mbid(HEROES_TONIGHT_RELEASE),
-                    group: None,
-                    title: "Heroes Tonight".to_owned(),
-                    credit: janji(),
-                    date: Some("2015-12-22".to_owned()),
-                    country: None,
-                    label: None,
-                    catalog_number: None,
-                    barcode: None,
-                    kind: Some("Album".to_owned()),
-                    disambiguation: None,
-                    has_front_cover: true,
-                    links: Vec::new(),
-                    media: vec![Medium {
-                        position: 1,
-                        format: None,
-                        title: None,
-                        tracks: vec![ReleaseTrack {
-                            position: 1,
-                            number: "1".to_owned(),
-                            title: "Heroes Tonight".to_owned(),
-                            artist: None,
-                            recording: Some(mbid(HEROES_TONIGHT)),
-                            track: None,
-                            length: None,
-                            isrc: Some(HEROES_TONIGHT_ISRC.to_owned()),
-                            links: Vec::new(),
-                        }],
-                    }],
-                }))
+                Ok((id.as_str() == HEROES_TONIGHT_RELEASE).then(heroes_tonight_release))
+            }
+
+            fn releases_by_barcode(&self, _: &Barcode) -> Result<Vec<BarcodeMatch>> {
+                Ok(Vec::new())
             }
 
             fn find_release(&self, asked: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
@@ -3681,8 +3657,17 @@ mod tests {
                 Ok(vec![heroes_tonight()])
             }
 
-            fn release_group(&self, _: &Mbid) -> Result<Option<ReleaseGroup>> {
-                Ok(None)
+            fn release_group(&self, id: &Mbid) -> Result<Option<ReleaseGroup>> {
+                Ok((id.as_str() == HEROES_TONIGHT_GROUP).then(|| ReleaseGroup {
+                    id: mbid(HEROES_TONIGHT_GROUP),
+                    title: "Heroes Tonight".to_owned(),
+                    credit: janji(),
+                    kind: Some("Single".to_owned()),
+                    first_released: Some("2015-12-22".to_owned()),
+                    disambiguation: None,
+                    links: Vec::new(),
+                    releases: Vec::new(),
+                }))
             }
 
             fn find_release_group(&self, _: &GroupAsked) -> Result<Vec<GroupMatch>> {
@@ -3705,8 +3690,14 @@ mod tests {
                 Ok(Discography::default())
             }
 
-            fn releases_of_group(&self, _: &Mbid) -> Result<Vec<Release>> {
-                Ok(Vec::new())
+            fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>> {
+                Ok((group.as_str() == HEROES_TONIGHT_GROUP)
+                    .then(|| Release {
+                        group: Some(mbid(HEROES_TONIGHT_GROUP)),
+                        ..heroes_tonight_release()
+                    })
+                    .into_iter()
+                    .collect())
             }
 
             fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> Result<Option<CoverArt>> {
@@ -3729,7 +3720,47 @@ mod tests {
                 Ok(Some(LinkNames {
                     isrcs: vec![Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")],
                     length: None,
+                    title: None,
+                    artist: None,
                 }))
+            }
+
+            fn album_linked(&self, _: &AlbumLink) -> Result<Option<AlbumNames>> {
+                Ok(None)
+            }
+        }
+
+        fn heroes_tonight_release() -> Release {
+            Release {
+                id: mbid(HEROES_TONIGHT_RELEASE),
+                group: None,
+                title: "Heroes Tonight".to_owned(),
+                credit: janji(),
+                date: Some("2015-12-22".to_owned()),
+                country: None,
+                label: None,
+                catalog_number: None,
+                barcode: None,
+                kind: Some("Album".to_owned()),
+                disambiguation: None,
+                has_front_cover: true,
+                links: Vec::new(),
+                media: vec![Medium {
+                    position: 1,
+                    format: None,
+                    title: None,
+                    tracks: vec![ReleaseTrack {
+                        position: 1,
+                        number: "1".to_owned(),
+                        title: "Heroes Tonight".to_owned(),
+                        artist: None,
+                        recording: Some(mbid(HEROES_TONIGHT)),
+                        track: None,
+                        length: None,
+                        isrc: Some(HEROES_TONIGHT_ISRC.to_owned()),
+                        links: Vec::new(),
+                    }],
+                }],
             }
         }
 
@@ -4071,6 +4102,49 @@ mod tests {
             let wants = library.wants().expect("the wants read");
             assert_eq!(wants.len(), 1);
             assert_eq!(wants[0].title, "Heroes Tonight");
+        }
+
+        #[gpui::test]
+        fn an_album_link_pasted_into_the_search_wants_every_song_of_the_album_it_names(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: Option<&Path>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://musicbrainz.org/release-group/{HEROES_TONIGHT_GROUP}"
+                )));
+                search.update(cx, |search, cx| search.pastes(window, cx));
+            });
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert_eq!(
+                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                "",
+                "the album link was taken for words to search"
+            );
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).downloads().len()),
+                1
+            );
+            assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+            let wants = library.wants().expect("the wants read");
+            assert_eq!(wants.len(), 1);
+            assert_eq!(wants[0].album_title, "Heroes Tonight");
         }
 
         fn searching(musicbrainz: &MusicBrainz, cx: &mut TestAppContext) -> Driven {

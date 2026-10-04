@@ -12,12 +12,12 @@ use std::{
 
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
-    Agreement, ArtistMatch, ArtistProfile, CoverArt, Credit, Discography, EnrichOptions,
-    EnrichSummary, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc,
-    Library, Link, LinkNames, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording,
-    RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources,
-    StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
+    Agreement, AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, CoverArt,
+    Credit, Discography, EnrichOptions, EnrichSummary, Fingerprinters, Fingerprints, GroupAsked,
+    GroupMatch, ImportOptions, Isrc, Library, Link, LinkNames, LyricText, LyricsAsked, Mbid,
+    Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked,
+    ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink, SongsAsked, SortOrder,
+    Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -290,6 +290,14 @@ impl Reference for Silent {
 
     fn song_linked(&self, _link: &SongLink) -> Result<Option<LinkNames>> {
         Ok(None)
+    }
+
+    fn album_linked(&self, _link: &AlbumLink) -> Result<Option<AlbumNames>> {
+        Ok(None)
+    }
+
+    fn releases_by_barcode(&self, _barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
+        Ok(Vec::new())
     }
 }
 

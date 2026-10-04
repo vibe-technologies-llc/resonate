@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
     rgb, transparent_black, uniform_list,
 };
-use resonate_library::{Linked, SongLink};
+use resonate_library::{FollowedLink, Linked};
 
 use crate::{
     Beyond, Notice, Selection, format,
@@ -51,14 +51,37 @@ const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
 
 const PRESS_TO_DOWNLOAD: &str = "Press a song to download it";
 
-const LOOKING_THE_LINK_UP: &str = "Looking up the song that link names…";
+const LOOKING_THE_SONG_UP: &str = "Looking up the song that link names…";
 
-const ONLINE_TO_FOLLOW_A_LINK: &str =
-    "Turn Online on in Settings to download the song a link names";
+const LOOKING_THE_ALBUM_UP: &str = "Looking up the album that link names…";
 
-const NOTHING_AT_THE_LINK: &str = "No service could tell which song that link names";
+const ONLINE_TO_FOLLOW_A_LINK: &str = "Turn Online on in Settings to download what a link names";
 
-const FOLLOWING_THE_LINK: &str = "look up the song that link names";
+const NO_SONG_AT_THE_LINK: &str = "No service could tell which song that link names";
+
+const NO_ALBUM_AT_THE_LINK: &str = "No service could tell which album that link names";
+
+const FOLLOWING_THE_LINK: &str = "look up what that link names";
+
+struct Told {
+    looking: &'static str,
+    nothing: &'static str,
+}
+
+impl Told {
+    const fn of(link: &FollowedLink) -> Self {
+        match link {
+            FollowedLink::Song(_) => Self {
+                looking: LOOKING_THE_SONG_UP,
+                nothing: NO_SONG_AT_THE_LINK,
+            },
+            FollowedLink::Album(_) => Self {
+                looking: LOOKING_THE_ALBUM_UP,
+                nothing: NO_ALBUM_AT_THE_LINK,
+            },
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum SearchShows {
@@ -261,27 +284,45 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(link) = SongLink::read(pasted) else {
+        let Some(link) = FollowedLink::read(pasted) else {
             return;
         };
         let Some((library, reference)) = self.library.read(cx).follows_links() else {
             toast::tell(Notice::Noted(ONLINE_TO_FOLLOW_A_LINK.to_owned()), cx);
             return;
         };
-        toast::tell(Notice::Noted(LOOKING_THE_LINK_UP.to_owned()), cx);
+        let told = Told::of(&link);
+        toast::tell(Notice::Noted(told.looking.to_owned()), cx);
 
         self.following_a_link = cx.spawn_in(window, async move |this, cx| {
             let followed = cx
                 .background_executor()
-                .spawn(async move { library.follow_link(reference.as_ref(), &link) })
+                .spawn(async move {
+                    match &link {
+                        FollowedLink::Song(song) => library.follow_link(reference.as_ref(), song),
+                        FollowedLink::Album(album) => {
+                            library.follow_album_link(reference.as_ref(), album)
+                        }
+                    }
+                })
                 .await;
-            let _ = this.update(cx, |this, cx| this.followed(followed, cx));
+            let _ = this.update(cx, |this, cx| this.followed(followed, &told, cx));
         });
     }
 
-    fn followed(&mut self, followed: resonate_library::Result<Linked>, cx: &mut Context<Self>) {
+    fn followed(
+        &mut self,
+        followed: resonate_library::Result<Linked>,
+        told: &Told,
+        cx: &mut Context<Self>,
+    ) {
         match followed {
-            Ok(Linked::Held { title, .. }) => toast::tell(
+            Ok(
+                Linked::Held { title, .. }
+                | Linked::HeldAlbum {
+                    title, missing: 0, ..
+                },
+            ) => toast::tell(
                 Notice::Done(format!("“{title}” is already in your library")),
                 cx,
             ),
@@ -290,8 +331,18 @@ impl RootView {
                 self.library
                     .update(cx, |library, cx| library.want_found(*found, cx));
             }
+            Ok(Linked::HeldAlbum { album, .. }) => {
+                toast::dismiss(cx);
+                self.library
+                    .update(cx, |library, cx| library.want_missing_tracks(album, cx));
+            }
+            Ok(Linked::Album { group, .. }) => {
+                toast::dismiss(cx);
+                self.library
+                    .update(cx, |library, cx| library.want_album(group, cx));
+            }
             Ok(Linked::Unnamed) => {
-                toast::tell(Notice::Trouble(NOTHING_AT_THE_LINK.to_owned()), cx);
+                toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);
             }
             Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
         }
