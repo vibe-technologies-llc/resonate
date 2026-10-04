@@ -7,7 +7,7 @@ use lofty::{
     error::{FileEncodingError, FileParseError},
     file::{AudioFile, FileType},
     flac::FlacFile,
-    id3::v2::Id3v2Tag,
+    id3::v2::{Id3v2Tag, Id3v2Version},
     iff::{aiff::AiffFile, wav::WavFile},
     io::FileLike,
     mp4::{Atom, AtomData, AtomIdent, Ilst, Mp4File},
@@ -99,6 +99,18 @@ impl Counted {
         })
     }
 
+    pub(crate) fn holds_id3v2_3(path: &Path, kind: FileType) -> bool {
+        let framed = matches!(
+            kind,
+            FileType::Mpeg | FileType::Aac | FileType::Aiff | FileType::Wav
+        );
+        framed
+            && matches!(
+                Self::read(path, kind),
+                Ok(Some(Self::Framed(frames))) if frames.original_version() == Id3v2Version::V3
+            )
+    }
+
     pub(crate) fn plays(&self) -> Option<u64> {
         let text = match self {
             Self::Commented(comments) => comments.get(COMMENTED_PLAYS),
@@ -169,8 +181,11 @@ impl Counted {
         }
     }
 
-    pub(crate) fn save<F: FileLike>(&self, file: &mut F) -> Result<(), FileEncodingError> {
-        let options = WriteOptions::default();
+    pub(crate) fn save<F: FileLike>(
+        &self,
+        file: &mut F,
+        options: WriteOptions,
+    ) -> Result<(), FileEncodingError> {
         match self {
             Self::Commented(comments) => comments.save_to(file, options),
             Self::Ape(tag) => tag.save_to(file, options),

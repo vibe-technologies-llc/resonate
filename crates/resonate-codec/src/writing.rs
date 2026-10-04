@@ -493,6 +493,8 @@ impl FileTags {
     ) -> Result<()> {
         let mut tagged = opened(rechunked.unwrap_or(path), location)?;
         let kind = tagged.file_type();
+        let options = WriteOptions::default()
+            .use_id3v23(Counted::holds_id3v2_3(rechunked.unwrap_or(path), kind));
         let others = cleared_elsewhere(&tagged, writing.taken);
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
@@ -539,6 +541,7 @@ impl FileTags {
             unkeyed: &unkeyed,
             others: &others,
             taken,
+            options,
         };
         match rechunked {
             Some(staged) => landed_through(staged, path, location, &saving),
@@ -668,12 +671,13 @@ fn saved<F: FileLike>(
     counting: Option<Popularity>,
     unkeyed: &[(TagField, Option<&str>)],
     file: &mut F,
+    options: WriteOptions,
 ) -> std::result::Result<(), FileEncodingError> {
     let concrete = (counting.is_some() || !unkeyed.is_empty())
         .then(|| Counted::of(tag.clone()))
         .flatten();
     let Some(mut counted) = concrete else {
-        return tag.save_to(file, WriteOptions::default());
+        return tag.save_to(file, options);
     };
 
     if let Some(popularity) = counting {
@@ -687,7 +691,7 @@ fn saved<F: FileLike>(
             _ => {}
         }
     }
-    counted.save(file)
+    counted.save(file, options)
 }
 
 fn credit_performers(frames: &mut Id3v2Tag, performers: Option<&str>) {
@@ -771,6 +775,7 @@ struct Saving<'a> {
     unkeyed: &'a [(TagField, Option<&'a str>)],
     others: &'a [Tag],
     taken: Taken,
+    options: WriteOptions,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -811,7 +816,7 @@ impl Saving<'_> {
         file: &mut F,
     ) -> std::result::Result<(), FileEncodingError> {
         file.rewind()?;
-        saved(self.tag, self.counting, self.unkeyed, file)?;
+        saved(self.tag, self.counting, self.unkeyed, file, self.options)?;
         self.others_written_into(file)
     }
 
@@ -821,7 +826,7 @@ impl Saving<'_> {
     ) -> std::result::Result<(), FileEncodingError> {
         for other in self.others {
             file.rewind()?;
-            other.save_to(file, WriteOptions::default())?;
+            other.save_to(file, self.options)?;
         }
         Ok(())
     }
@@ -845,7 +850,13 @@ impl Saving<'_> {
         let past = held[usize::try_from(head.length).unwrap_or(length)..].to_vec();
 
         let mut copy = io::Cursor::new(held);
-        saved(self.tag, self.counting, self.unkeyed, &mut copy)?;
+        saved(
+            self.tag,
+            self.counting,
+            self.unkeyed,
+            &mut copy,
+            self.options,
+        )?;
         let written = copy.into_inner();
         let Some(written) = written.strip_suffix(past.as_slice()) else {
             return Ok(false);
@@ -1609,6 +1620,7 @@ mod tests {
                 unkeyed: &[],
                 others: &[],
                 taken: Taken::of(path).expect("a writable file"),
+                options: WriteOptions::default(),
             },
         )
     }
@@ -1994,6 +2006,44 @@ mod tests {
         };
         assert_eq!(kept.get("MOOD"), Some("calm"));
         assert_eq!(kept.get("ACOUSTID_ID"), Some("abc"));
+    }
+
+    #[test]
+    fn an_id3v2_3_tag_is_written_back_as_the_version_it_was() {
+        const MAJOR_VERSION_AT: usize = 3;
+
+        let folder = Folder::new();
+        for (name, three) in [("three.mp3", true), ("four.mp3", false)] {
+            let location = folder.holding(name, &mp3());
+            let path = location.as_path().expect("a local file").to_path_buf();
+            let mut frames = Id3v2Tag::new();
+            frames.insert_user_text("MOOD".to_owned(), "calm".to_owned());
+            frames
+                .save_to_path(&path, WriteOptions::default().use_id3v23(three))
+                .expect("a framed MP3");
+
+            FileTags::default()
+                .write(
+                    &location,
+                    just(&[
+                        edited(TagField::Title, "Echoes"),
+                        edited(TagField::Date, "1971-10-30"),
+                    ]),
+                )
+                .expect("a written MP3");
+
+            let written = fs::read(&path).expect("the file");
+            assert!(written.starts_with(b"ID3"), "{name}");
+            assert_eq!(
+                written[MAJOR_VERSION_AT],
+                if three { 3 } else { 4 },
+                "{name} changed its tag's version"
+            );
+            assert_eq!(
+                titled(&FileTags::default(), &location).as_deref(),
+                Some("Echoes")
+            );
+        }
     }
 
     #[test]

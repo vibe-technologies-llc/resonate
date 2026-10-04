@@ -1621,6 +1621,11 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   primary, one settle for the lot (`a_field_cleared_from_a_wave_file_is_gone_from_its_info_list_too`).
   A field *set* needs no such pass: the primary tag outranks the rest wherever the reader weighs them
   (`audio.md`).
+- **An ID3v2.3 tag stays v2.3.** lofty writes v2.4 unless told, and a player reading only v2.3
+  loses a tag upgraded under it, so `FileTags::write` asks `Counted::holds_id3v2_3` — the file's own
+  ID3v2 tag read whole, for the four kinds that carry one — and saves every tag through
+  `WriteOptions::use_id3v23` where it was, lofty folding the v2.4 frames back
+  (`an_id3v2_3_tag_is_written_back_as_the_version_it_was`). A file with no tag gets v2.4.
 - **A write never touches its file until it is whole.** lofty's `save_to_path` splices a FLAC's
   metadata and shifts the audio behind it in place, so a full disc or a killed run left a truncated
   file. `FileTags::write` copies the file to a staged sibling — `.<stem>.<pid>-<n>.<ext>`

@@ -48,7 +48,6 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
-- Writing a tag turns an ID3v2.3 tag into v2.4 without a word, which players reading only v2.3 lose
 - A file's own sort names — `ARTISTSORT`, `ALBUMARTISTSORT`, `TITLESORT`, `TSOP`, `soar` — are never
   read, so an unenriched artist never orders the way its tagger meant
 - On a filesystem that cannot clone a file — ext4 — a tag write that grows past the tag's room, and
