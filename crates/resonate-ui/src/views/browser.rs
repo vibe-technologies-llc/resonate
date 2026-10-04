@@ -4204,7 +4204,7 @@ mod tests {
             let told = Arc::clone(&asked);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(move |_: Option<&Path>| {
+                register: Arc::new(move |_: &Supplying<'_>| {
                     Providers::none().and(Arc::new(Shop {
                         source: SourceId::new("shop").expect("a source name"),
                         asked: Arc::clone(&told),

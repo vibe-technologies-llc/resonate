@@ -4,7 +4,7 @@ use std::{
 };
 
 use resonate_inbox::Inbox;
-use resonate_providers::{Provider as _, Providers};
+use resonate_providers::Providers;
 #[cfg(feature = "online")]
 use resonate_subsonic::{Server, Subsonic};
 #[cfg(feature = "online")]
@@ -27,7 +27,7 @@ pub fn sourced(settings: Option<PathBuf>) -> resonate_ui::Registering {
         let every = registry(supplying.inbox, &Accounts::given(supplying.online), &made);
         match (supplying.asking, supplying.inbox) {
             (resonate_ui::Asking::TheInboxAlone, Some(folder)) => {
-                every.only(Inbox::at(folder).source())
+                every.only(resonate_providers::Provider::source(&Inbox::at(folder)))
             }
             (resonate_ui::Asking::TheInboxAlone, None) => Providers::none(),
             (resonate_ui::Asking::EveryProvider, _) => every,
@@ -156,7 +156,7 @@ struct Made;
 
 #[cfg(not(feature = "online"))]
 impl Made {
-    const fn new(_settings: Option<PathBuf>) -> Self {
+    fn new(_settings: Option<PathBuf>) -> Self {
         Self
     }
 }
