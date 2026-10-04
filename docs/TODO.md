@@ -193,8 +193,6 @@ service or a format — and is not worked until that moves; everything else is o
   without Enter look saved and are not
 - `End`, select-all and the scrollbar act on the 2 000 rows loaded so far, so `End` in a
   50 000-track library lands on row 2 000
-- `ctrl-shift-left` and `ctrl-shift-right` select a word inside a field rather than stepping the
-  queue, though `ui.md` says the pair always steps it
 - Word motions in a field split a decomposed accent from its letter, and take a whole CJK sentence
   as one word
 - Only Settings and the search field take focus: the transport, the sidebar, the heading buttons,

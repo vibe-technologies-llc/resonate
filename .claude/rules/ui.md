@@ -166,7 +166,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   what it has no order of its own to change: `Shift::is_edited` is the reading, so `delete`, `alt-up` and
   `alt-down` are dead there while the reach, the page keys and `enter` are not — `enter` plays a track or
   opens an artist, as a click does. `ctrl-shift-left` and `ctrl-shift-right` join the media keys in
-  `answering_anywhere`, so one pair always steps the queue, caret or not.
+  `answering_anywhere`, so the pair steps the queue wherever the caret is not in a field; in one,
+  `field.rs`'s `SelectWordLeft` and `SelectWordRight` under the field's own context outrank them,
+  selecting a word as every text field does, so a listener extending a selection never skips the
+  track instead.
 - **A search is left for its results from the keyboard, and the albums grid is reached too.** With the
   caret in the search box, `down`, `tab` and `enter` are `GoToTheResults`, `TabOnward` and the field's
   own `Submitted`, all landing on `RootView::go_to_the_results`: the caret goes back to the window and
