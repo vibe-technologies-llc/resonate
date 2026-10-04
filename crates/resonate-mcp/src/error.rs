@@ -54,6 +54,15 @@ pub enum Error {
     #[error("{path} is not a folder that can be scanned", path = path.display())]
     NoSuchFolder { path: PathBuf },
 
+    #[error("{path} is the whole filesystem, not a folder of music", path = path.display())]
+    FilesystemRoot { path: PathBuf },
+
+    #[error("the library already holds {held} folders and takes no more than {limit}")]
+    TooManyRoots { held: usize, limit: usize },
+
+    #[error("{path} is not one of the library's folders", path = path.display())]
+    NotARoot { path: PathBuf },
+
     #[error("{landed} of the {asked} rows reached the queue before the player failed")]
     QueuedPartway {
         landed: usize,

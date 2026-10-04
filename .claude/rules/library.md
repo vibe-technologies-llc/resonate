@@ -307,7 +307,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   matched against the audio listed there, and the claim is kept in the walk's `claimed_from_above`,
   which that folder's own pass — always later, the walk being depth first with a folder's children
   pushed before it is read — takes the file out of; a sheet in the lower folder naming a file one
-  above already claims is passed over, so no file is cut twice. Otherwise a `FILE` is matched against
+  above already claims is passed over, so no file is cut twice. **Two sheets in one folder naming one
+  file are read in name order and the first keeps it**, the listing's own order being arbitrary
+  (`two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_order`). Otherwise a `FILE` is matched against
   the audio beside the sheet by its last component — split on `/` and `\\` alike, so a Windows path
   names the file in the sheet's own folder — through `cue::Naming`: the name exactly, else the name
   in any case, else the same stem with another extension (a rip converted after its sheet was written, `FILE "ALBUM.WAV"` beside
@@ -1832,7 +1834,7 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   skipped and the path closes up; the *last* answers `None`, read by the planner as
   `Refusal::Unidentified`, a file with no name to give being left where it stands. **What a volume
   takes is read per root**: `Naming::of` finds the root's mount in `/proc/self/mounts` — the deepest
-  mount point above it, the table's octal escapes read back — and a root on vfat, exFAT or NTFS is
+  mount point above it, the table's octal escapes read back — and a root on vfat, exFAT, NTFS or a CIFS/SMB share (`cifs`, `smb3`, `smbfs`) is
   `Naming::Portable`, which writes `\ : * ? " < > |` as `-` too, so a title ending in a question mark
   becomes a file such a drive takes rather than a rename refused every run. Any other root keeps every
   character but the separator. **A name derived beside a destination is held to the same 255 bytes**:
@@ -2799,6 +2801,16 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   a step on `walked` can never name a playlist SQLite has since handed the id to. `RootView::undo_edit`
   and `RootView::redo_edit` are the playlists headings' *Undo* and *Redo*, and `ctrl-z`, `ctrl-shift-z`
   and `ctrl-y` away from the search field, where the field's own three are bound inside it.
+  **A step is walked only over the playlist its edit left.** Each `Step` holds `left_at`, the playlist's
+  `modified` stamp as the edit finished (`None` where the edit discarded it), read inside the edit's own
+  transaction, and `walk` reads the stamp again inside the transaction that would restore it: any other
+  value is `Error::PlaylistChanged`, the step is dropped rather than put back so it is not refused for
+  ever, and nothing is written. The command line, MCP or a second instance adding a row, and
+  `organise::files_moved` rewriting the paths of a playlist's rows (it touches `modified` for each
+  playlist it changed), end the steps under them, so an undo never destroys a row it did not hold or puts
+  back a path that has since moved. The inverse a walk pushes carries the stamp the restore wrote, the
+  held one. `an_undo_refuses_a_playlist_another_catalog_changed_since_the_edit` and
+  `a_playlist_row_followed_to_its_new_path_ends_what_an_undo_could_put_back` are the claims.
   `Inner::walked` is bounded like `steps` — 32 steps or 50 000 rows — but as a second bound, not a
   shared one, so a long run of undos over long playlists can hold both ends of each, and nothing
   collapses a step walked back and forth into the one it came from: a press either way costs the edit's

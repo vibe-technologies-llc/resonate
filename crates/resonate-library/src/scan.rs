@@ -889,6 +889,8 @@ fn walk(
             }
         }
 
+        sheets.sort_by(|first, second| first.0.cmp(&second.0));
+
         if !directory_of(walking, &sheets, &audio, &mut claimed_from_above)? {
             return Ok(false);
         }
@@ -1004,6 +1006,14 @@ fn directory_of(
                     sheet = %path.display(),
                     file = %held.0.display(),
                     "a cue sheet names a file a sheet in a folder above already cuts"
+                );
+                continue;
+            }
+            if claimed.contains(&held.0) {
+                tracing::debug!(
+                    sheet = %path.display(),
+                    file = %held.0.display(),
+                    "a cue sheet names a file a sheet before it in its folder already cuts"
                 );
                 continue;
             }

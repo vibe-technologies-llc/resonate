@@ -1447,6 +1447,59 @@ fn a_folder_that_is_there_is_not_kept_when_a_later_one_in_the_list_is_refused() 
 }
 
 #[test]
+fn the_whole_filesystem_is_refused_rather_than_kept_as_a_root() {
+    let server = nothing_running();
+
+    let said = failed(&server, "start_scan", json!({ "roots": ["/"] }));
+
+    assert!(said.contains("whole filesystem"), "{said}");
+    assert_eq!(
+        called(&server, "library_passes", json!({}))["scan"]["state"],
+        "idle"
+    );
+    assert_eq!(called(&server, "start_scan", json!({}))["roots"], json!([]));
+}
+
+#[test]
+fn a_library_takes_no_more_folders_than_its_cap_and_keeps_none_of_a_refused_list() {
+    let server = nothing_running();
+    let trees: Vec<Tree> = (0..65).map(|_| Tree::new()).collect();
+    let folders: Vec<String> = trees
+        .iter()
+        .map(|tree| tree.root.display().to_string())
+        .collect();
+
+    let said = failed(&server, "start_scan", json!({ "roots": folders }));
+
+    assert!(said.contains("takes no more than 64"), "{said}");
+    assert_eq!(called(&server, "start_scan", json!({}))["roots"], json!([]));
+}
+
+#[test]
+fn a_folder_forgotten_takes_its_tracks_with_it_and_one_never_kept_is_refused() {
+    let tree = Tree::new();
+    tree.wav("01.wav", "Signal", "Hours", "1");
+    let server = nothing_running();
+    let folder = tree.root.display().to_string();
+
+    called(&server, "start_scan", json!({ "roots": [folder.clone()] }));
+    assert_eq!(once_settled(&server, "scan")["state"], "finished");
+
+    let forgotten = called(
+        &server,
+        "forget_folder",
+        json!({ "folder": folder.clone() }),
+    );
+    assert_eq!(forgotten["forgotten"], folder);
+    assert_eq!(forgotten["roots"], json!([]));
+    let found = called(&server, "search_library", json!({ "query": "signal" }));
+    assert_eq!(found["tracks"].as_array().map(Vec::len), Some(0), "{found}");
+
+    let said = failed(&server, "forget_folder", json!({ "folder": folder }));
+    assert!(said.contains("not one of the library's folders"), "{said}");
+}
+
+#[test]
 fn a_lookup_asked_of_a_build_that_reaches_nothing_is_that_tool_failing_alone() {
     let server = nothing_running();
 

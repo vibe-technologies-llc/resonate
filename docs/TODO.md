@@ -11,13 +11,6 @@ else is open to be done.
 - Closing the window or pressing `ctrl-q` during a tag write, an organise, a vault import or a
   dropped file's copy neither cancels the pass nor waits for it, and a tag is written in place, so a
   kill mid-write can leave a damaged file
-- A playlist undo rewrites the playlist from the rows its step holds without checking it is
-  unchanged since, so it destroys rows the command line, MCP or a second instance added meanwhile;
-  recording the playlist's `modified` stamp in the step fixes it
-- A playlist undo restores rows under the paths they had when the edit was made, so after an
-  organise or a followed move it puts back dead paths. Fix it with the item above
-- Two cue sheets in one folder naming the same file cut it twice, and its rows flip between the two
-  on every scan
 - A steady writer under a root defers its rescan indefinitely, and a root the watch could not cover
   (the inotify limit reached) is never tried again
 - A tidy drops the rows of an unplugged drive never scanned whose mount point's parent still holds
@@ -29,17 +22,12 @@ else is open to be done.
 - A lookup still running when its row leaves the queue lands the last track's words over *none*
 - Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
   and two picks landing out of order keep the first
-- MCP's `start_scan` keeps any folder it is given as a root for good, `/` included, with no cap and
-  no tool to remove one
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
-- A root on a CIFS or SMB share is named as if it took any character, so a title with `?`, `:` or
-  `"` fails on a share that refuses them; `cifs`, `smb3` and `smbfs` are missing from the portable
-  volumes
 - A lyric in a dropped album's `lyrics/` folder keeps its name when the track it is named after
   lands as `name (2).ext`, so it is matched to nothing
-- A daemon connection that dies with a reset rather than a broken pipe, or hangs, is never taken as
-  lost, so the client stays disconnected
+- A daemon connection that hangs without closing is never taken as lost, so the client stays
+  disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
   stand stale until new ones overwrite them
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
@@ -197,7 +185,7 @@ else is open to be done.
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
   are never run
-- Scanning a non-UTF-8 file name, two sheets naming one file and the inotify limit are untested
+- Scanning a non-UTF-8 file name and the inotify limit are untested
 - The `probe` fuzz target never seeks, decodes DSD to samples, hints an extension or reads a stream
   that cannot seek, so the seeks of `ape.rs`, `matroska.rs` and `dsd/` and the whole spooled path are
   unfuzzed; its seeds also lack Matroska lacing and unknown-size clusters, fragmented MP4, m4b

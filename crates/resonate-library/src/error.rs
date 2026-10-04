@@ -193,6 +193,9 @@ pub enum Error {
     #[error("no playlist with id {0}")]
     UnknownPlaylist(PlaylistId),
 
+    #[error("the playlist {0} changed since the edit this would put back")]
+    PlaylistChanged(PlaylistId),
+
     #[error("no release track with id {0}")]
     UnknownReleaseTrack(ReleaseTrackId),
 

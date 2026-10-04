@@ -6768,6 +6768,42 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
     Ok(())
 }
 
+const MEDDLE_TWO_TRACK_SHEET: &str = r#"PERFORMER "Pink Floyd"
+TITLE "Meddle (the other sheet)"
+FILE "Meddle.wav" WAVE
+  TRACK 01 AUDIO
+    TITLE "Side One"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Side Two"
+    INDEX 01 00:00:30
+"#;
+
+#[test]
+fn two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_order() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("A.cue", MEDDLE_SHEET.as_bytes());
+    tree.write("B.cue", MEDDLE_TWO_TRACK_SHEET.as_bytes());
+    let library = Library::open_in_memory()?;
+
+    for _ in 0..3 {
+        scan(&library, &options(&tree))?;
+
+        let titles: Vec<String> = library
+            .tracks(&TrackQuery::default())?
+            .into_iter()
+            .map(|row| row.title)
+            .collect();
+        assert_eq!(
+            titles,
+            ["One of These Days", "A Pillow of Winds", "Echoes"],
+            "the file was cut by both sheets or by whichever the directory listed first"
+        );
+    }
+    Ok(())
+}
+
 const GAPS_APPENDED_SHEET: &str = "PERFORMER \"AURORA\"\r\nTITLE \"The Gods We Can Touch\"\r\nFILE \"13.wav\" WAVE\r\n  TRACK 13 AUDIO\r\n    TITLE \"A Little Place Called The Moon\"\r\n    INDEX 01 00:00:00\r\n  TRACK 14 AUDIO\r\n    TITLE \"Blood In The Wine\"\r\n    INDEX 00 00:00:70\r\nFILE \"14.wav\" WAVE\r\n    INDEX 01 00:00:00\r\n";
 
 #[test]

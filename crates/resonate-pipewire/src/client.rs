@@ -908,7 +908,13 @@ impl Reaching {
 
 fn is_a_broken_connection(res: i32) -> bool {
     res.checked_neg().is_some_and(|errno| {
-        io::Error::from_raw_os_error(errno).kind() == io::ErrorKind::BrokenPipe
+        matches!(
+            io::Error::from_raw_os_error(errno).kind(),
+            io::ErrorKind::BrokenPipe
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::NotConnected
+        )
     })
 }
 
@@ -1441,6 +1447,30 @@ fn build_capture_stream(
 mod tests {
     use super::*;
     use crate::{HardwareVolume, Plugged};
+
+    #[test]
+    fn a_daemon_gone_by_reset_or_abort_is_as_lost_as_one_gone_by_a_broken_pipe() {
+        const EPIPE: i32 = 32;
+        const ECONNRESET: i32 = 104;
+        const ECONNABORTED: i32 = 103;
+        const ENOTCONN: i32 = 107;
+        const ENOENT: i32 = 2;
+        const EBUSY: i32 = 16;
+        const EINVAL: i32 = 22;
+
+        for errno in [EPIPE, ECONNRESET, ECONNABORTED, ENOTCONN] {
+            assert!(
+                is_a_broken_connection(-errno),
+                "errno {errno} was not taken as lost"
+            );
+        }
+        for errno in [EINVAL, ENOENT, EBUSY] {
+            assert!(
+                !is_a_broken_connection(-errno),
+                "errno {errno} was taken as lost"
+            );
+        }
+    }
 
     fn sink(names_an_api: bool, device: Option<u32>) -> SinkRecord {
         SinkRecord {

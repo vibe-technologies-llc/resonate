@@ -18,6 +18,8 @@ use serde_json::{Value, json};
 
 use crate::{Error, Result, error::said};
 
+const MOST_ROOTS: usize = 64;
+
 pub struct Lookups {
     pub reference: Option<Arc<dyn Reference>>,
     pub fingerprinters: Arc<Fingerprinters>,
@@ -296,6 +298,8 @@ impl Passes {
             });
         }
 
+        Self::admit(library, roots)?;
+
         let handle = library.scan(ScanOptions {
             roots: roots.to_vec(),
             incremental: true,
@@ -313,6 +317,42 @@ impl Passes {
         Ok(json!({
             "started": Pass::Scan.name(),
             "roots": walked.iter().map(|root| spoken(root)).collect::<Vec<_>>(),
+        }))
+    }
+
+    fn admit(library: &Library, roots: &[PathBuf]) -> Result<()> {
+        let held = library.roots()?;
+        let mut kept = held.clone();
+        for root in roots {
+            let canonical = root
+                .canonicalize()
+                .map_err(|_| Error::NoSuchFolder { path: root.clone() })?;
+            if canonical.parent().is_none() {
+                return Err(Error::FilesystemRoot { path: canonical });
+            }
+            if !kept.contains(&canonical) {
+                kept.push(canonical);
+            }
+        }
+        if kept.len() > MOST_ROOTS && kept.len() > held.len() {
+            return Err(Error::TooManyRoots {
+                held: held.len(),
+                limit: MOST_ROOTS,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn forget_folder(&self, library: &Library, folder: &Path) -> Result<Value> {
+        if !library.remove_root(folder)? {
+            return Err(Error::NotARoot {
+                path: folder.to_path_buf(),
+            });
+        }
+
+        Ok(json!({
+            "forgotten": spoken(folder),
+            "roots": library.roots()?.iter().map(|root| spoken(root)).collect::<Vec<_>>(),
         }))
     }
 

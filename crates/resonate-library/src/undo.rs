@@ -108,6 +108,7 @@ pub(crate) struct Step {
     playlist: PlaylistId,
     reached: Reached,
     standing: Standing,
+    left_at: Option<i64>,
 }
 
 impl Step {
@@ -169,12 +170,15 @@ pub(crate) fn edited<T>(
         let before = held_in(transaction, id, reached)?;
 
         Ok(match change(transaction)? {
-            Change::Made(value) => (value, before.map(|held| (reached, held))),
+            Change::Made(value) => {
+                let left_at = modified_in(transaction, id)?;
+                (value, before.map(|held| (reached, held, left_at)))
+            }
             Change::Nothing(value) => (value, None),
         })
     })?;
 
-    if let Some((reached, held)) = held {
+    if let Some((reached, held, left_at)) = held {
         note(
             inner,
             Step {
@@ -182,6 +186,7 @@ pub(crate) fn edited<T>(
                 playlist: id,
                 reached,
                 standing: Standing::Was(held),
+                left_at,
             },
         );
     }
@@ -205,7 +210,11 @@ pub(crate) fn started_under_a_name_found<T>(
     edit: Edit,
     change: impl FnOnce(&Transaction<'_>) -> Result<(PlaylistId, PlaylistName, T)>,
 ) -> Result<T> {
-    let (id, name, value) = inner.write(change)?;
+    let (id, name, value, left_at) = inner.write(|transaction| {
+        let (id, name, value) = change(transaction)?;
+        let left_at = modified_in(transaction, id)?;
+        Ok((id, name, value, left_at))
+    })?;
 
     note(
         inner,
@@ -214,6 +223,7 @@ pub(crate) fn started_under_a_name_found<T>(
             playlist: id,
             reached: Reached::Whole,
             standing: Standing::Fresh(name.as_str().to_owned()),
+            left_at,
         },
     );
     Ok(value)
@@ -258,21 +268,31 @@ fn walk(
     let back = step.reached.turned();
 
     let put_back = inner.write(|transaction| {
+        if modified_in(transaction, id)? != step.left_at {
+            return Err(Error::PlaylistChanged(id));
+        }
+
         let standing = standing_in(transaction, id, step.named(), back)?;
         match &step.standing {
             Standing::Was(held) => restored(transaction, id, held, step.reached)?,
             Standing::Fresh(_) => discarded(transaction, id)?,
         }
 
+        let left_at = match &step.standing {
+            Standing::Was(held) => Some(held.modified),
+            Standing::Fresh(_) => None,
+        };
         Ok(Step {
             edit: step.edit,
             playlist: id,
             reached: back,
             standing,
+            left_at,
         })
     });
     let inverse = match put_back {
         Ok(inverse) => inverse,
+        Err(error @ Error::PlaylistChanged(_)) => return Err(error),
         Err(error) => {
             from.lock().push(step);
             return Err(error);
@@ -536,6 +556,17 @@ fn held_in(
             }
         },
     }))
+}
+
+fn modified_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<i64>> {
+    transaction
+        .query_row(
+            "SELECT modified FROM playlists WHERE id = ?1",
+            params![id.get() as i64],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 struct Unedited {

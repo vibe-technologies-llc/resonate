@@ -58,6 +58,7 @@ pub enum Tool {
     PlayPlaylist,
     SleepTimer,
     StartScan,
+    ForgetFolder,
     StartLookup,
     StartPoll,
     LibraryPasses,
@@ -65,7 +66,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
@@ -90,6 +91,7 @@ impl Tool {
         Self::PlayPlaylist,
         Self::SleepTimer,
         Self::StartScan,
+        Self::ForgetFolder,
         Self::StartLookup,
         Self::StartPoll,
         Self::LibraryPasses,
@@ -122,6 +124,7 @@ impl Tool {
             Self::PlayPlaylist => "play_playlist",
             Self::SleepTimer => "set_sleep_timer",
             Self::StartScan => "start_scan",
+            Self::ForgetFolder => "forget_folder",
             Self::StartLookup => "start_lookup",
             Self::StartPoll => "start_poll",
             Self::LibraryPasses => "library_passes",
@@ -156,6 +159,7 @@ impl Tool {
                 | Self::DiscardPlaylist
                 | Self::RemoveFromQueue
                 | Self::PlayPlaylist
+                | Self::ForgetFolder
         )
     }
 
@@ -258,6 +262,12 @@ impl Tool {
                                 folders given as roots, which are kept as library roots from \
                                 then on. Answers at once; library_passes says how far it has \
                                 come. Needs no player."
+                .to_owned(),
+            Self::ForgetFolder => "Take a folder out of the library's roots, and every track \
+                                   the catalog holds under it, including the plays and \
+                                   playlist rows kept for them. The files stay where they \
+                                   are. Refused while a scan is walking the library. Needs \
+                                   no player."
                 .to_owned(),
             Self::StartLookup => "Start asking MusicBrainz and the other services this build \
                                   reaches about the albums, tracks and artists not asked about \
@@ -386,6 +396,12 @@ impl Tool {
                                     root the library already holds.",
                 },
             }),
+            Self::ForgetFolder => json!({
+                "folder": {
+                    "type": "string",
+                    "description": "One of the folders start_scan lists in its answer.",
+                },
+            }),
             Self::StartLookup => json!({
                 "refresh": {
                     "type": "boolean",
@@ -497,6 +513,7 @@ impl Tool {
             Self::SetVolume => &["percent"],
             Self::RemoveFromQueue => &["queue_id"],
             Self::StopPass => &["pass"],
+            Self::ForgetFolder => &["folder"],
             Self::Playlists
             | Self::Favourites
             | Self::Statistics
@@ -671,6 +688,10 @@ impl Tool {
             Self::StartScan => {
                 let asked: Scanning = self.taken(arguments)?;
                 passes.scan(library, &asked.roots)
+            }
+            Self::ForgetFolder => {
+                let asked: Forgetting = self.taken(arguments)?;
+                passes.forget_folder(library, &asked.folder)
             }
             Self::StartLookup => {
                 let asked: LookingUp = self.taken(arguments)?;
@@ -1100,6 +1121,11 @@ struct Sleeping {
 struct Scanning {
     #[serde(default)]
     roots: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct Forgetting {
+    folder: PathBuf,
 }
 
 #[derive(Deserialize)]

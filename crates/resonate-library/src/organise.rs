@@ -16,6 +16,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
+    time::SystemTime,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -44,7 +45,9 @@ const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
 const SEPARATOR_STANDS_IN: char = '-';
 const REFUSED_BY_A_PORTABLE_VOLUME: [char; 8] = ['\\', ':', '*', '?', '"', '<', '>', '|'];
-const PORTABLE_VOLUMES: [&str; 7] = ["vfat", "msdos", "exfat", "ntfs", "ntfs3", "fuseblk", "fat"];
+const PORTABLE_VOLUMES: [&str; 10] = [
+    "vfat", "msdos", "exfat", "ntfs", "ntfs3", "fuseblk", "fat", "cifs", "smb3", "smbfs",
+];
 const MOUNT_TABLE: &str = "/proc/self/mounts";
 const OCTAL_ESCAPE: char = '\\';
 const EXTENSION_SEPARATOR: char = '.';
@@ -2495,6 +2498,12 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut lyrics = prepared(tx, "UPDATE lyrics_kept SET path = ?2 WHERE path = ?1")?;
     let mut tracks = prepared(tx, "UPDATE tracks SET path = ?2 WHERE path = ?1")?;
     let mut entries = prepared(tx, "UPDATE playlist_entries SET path = ?2 WHERE path = ?1")?;
+    let mut touched = prepared(
+        tx,
+        "UPDATE playlists SET modified = ?2
+         WHERE id IN (SELECT playlist_id FROM playlist_entries WHERE path = ?1)",
+    )?;
+    let moved_at = store::to_nanos(SystemTime::now());
     let mut queued = prepared(tx, "UPDATE resume_rows SET uri = ?2 WHERE uri = ?1")?;
 
     for (from_path, to_path) in landed.iter().flat_map(Move::files) {
@@ -2506,9 +2515,17 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
                 .execute(params![to])
                 .map_err(|source| Error::store(StoreOp::Delete, source))?;
         }
-        for statement in [&mut lyrics, &mut tracks, &mut entries] {
+        for statement in [&mut lyrics, &mut tracks] {
             statement
                 .execute(params![from, to])
+                .map_err(|source| Error::store(StoreOp::Update, source))?;
+        }
+        let renamed = entries
+            .execute(params![from, to])
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+        if renamed > 0 {
+            touched
+                .execute(params![to, moved_at])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
         }
 
@@ -2753,11 +2770,58 @@ mod tests {
     }
 
     #[test]
+    fn a_playlist_row_followed_to_its_new_path_ends_what_an_undo_could_put_back() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+        let id = library
+            .start_playlist("Evening", &[row("/music/a.flac")])
+            .expect("a playlist");
+        library
+            .add_to_playlist(id, &[row("/music/b.flac")])
+            .expect("a row appended");
+
+        library
+            .files_moved(&[Move {
+                from: PathBuf::from("/music/a.flac"),
+                to: PathBuf::from("/music/Artist/a.flac"),
+                rows: 1,
+                companions: Vec::new(),
+                sidecars: Vec::new(),
+            }])
+            .expect("a move followed");
+
+        assert!(matches!(library.undo(), Err(Error::PlaylistChanged(changed)) if changed == id));
+        let paths: Vec<_> = library
+            .playlist_cuts(id)
+            .expect("the playlist's rows")
+            .into_iter()
+            .filter_map(|cut| cut.location.as_path().map(Path::to_path_buf))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                PathBuf::from("/music/Artist/a.flac"),
+                PathBuf::from("/music/b.flac")
+            ],
+            "an undo put back a path that is no longer there"
+        );
+        assert!(matches!(library.undo(), Err(Error::PlaylistChanged(changed)) if changed == id));
+        assert_eq!(
+            library.undoable(),
+            None,
+            "a refused step stayed to be refused again"
+        );
+    }
+
+    #[test]
     fn a_root_on_a_windows_volume_is_named_in_what_that_volume_takes() {
         let table = "/dev/nvme0n1p2 / ext4 rw,relatime 0 0\n\
                      /dev/sdb1 /run/media/me/My\\040Stick vfat rw 0 0\n\
                      /dev/sdc1 /mnt/Shared ntfs3 rw 0 0\n\
-                     /dev/sdc2 /mnt/Shared/inner btrfs rw 0 0\n";
+                     /dev/sdc2 /mnt/Shared/inner btrfs rw 0 0\n\
+                     //nas/media /mnt/nas cifs rw 0 0\n\
+                     //nas/other /mnt/other smb3 rw 0 0\n\
+                     //nas/old /mnt/old smbfs rw 0 0\n";
 
         assert_eq!(
             Naming::in_table(table, Path::new("/run/media/me/My Stick/Music")),
@@ -2776,6 +2840,14 @@ mod tests {
             Naming::in_table(table, Path::new("/home/me/Music")),
             Naming::Anything
         );
+
+        for share in ["/mnt/nas/Music", "/mnt/other/Music", "/mnt/old/Music"] {
+            assert_eq!(
+                Naming::in_table(table, Path::new(share)),
+                Naming::Portable,
+                "a share that refuses `?` and `:` was named as if it took anything"
+            );
+        }
     }
 
     #[test]

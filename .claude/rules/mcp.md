@@ -107,8 +107,8 @@ keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features)
 - **A missing track is named by its `release_track_id`.** `want_tracks` is
   `Library::want_release_tracks` over the whole list in one transaction, so a list naming one unknown
   row wants none of it.
-- **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint` (the removals, and
-  `play_playlist`, which replaces a queue); `Tool::reaches_the_network` is `openWorldHint`
+- **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint` (the removals, `forget_folder`,
+  and `play_playlist`, which replaces a queue); `Tool::reaches_the_network` is `openWorldHint`
   (`start_lookup` and `start_poll` alone).
 - **An unreadable combination is a refusal**: `OneOf`, `AtLeastOneOf`, `AtMostOneOf`, and `BlankField`
   for a blank `query` or `fills_from`, which the grammar reads as no condition and would take the
@@ -125,7 +125,10 @@ keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features)
 - **Passes start as the command line starts them.** A scan refuses a non-folder with
   `Error::NoSuchFolder` before anything starts, then hands the folders to `Library::scan`, which
   registers them as roots in one transaction once it holds the walk, so a refused scan keeps none of
-  them (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). What the passes need from
+  them (`a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots`). **A folder is admitted before
+  that**: the filesystem's own root is `Error::FilesystemRoot`, and a list that would take the library past
+  `MOST_ROOTS` (64) is `Error::TooManyRoots`; `forget_folder` is the way back, `Library::remove_root`
+  with its tracks, and `Error::NotARoot` for a folder never kept. What the passes need from
   outside arrives as `Lookups`, filled by the binary from what `resonate enrich` and `resonate poll`
   read; `Server::new` alone carries `Lookups::none()`, so a session with no network answers
   `start_lookup` with `Error::NoReference` as that tool's failure, not a refusal.

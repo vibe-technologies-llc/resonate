@@ -938,7 +938,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **The client outlives its daemon.** Everything a connection holds (core, registry, listeners, bound
   proxies) is one `Graph`, and `Reaching` makes one: the loop keeps its main loop and context for the
   process's life and connects a core through them as often as it must. The core's `error` event with a
-  broken pipe is the daemon gone; it sends `Request::Lost` through the loop's own channel (a connection
+  broken pipe, a reset, an abort or a missing connection is the daemon gone; it sends `Request::Lost` through the loop's own channel (a connection
   cannot be torn down inside its own callback). `Lost` drops the streams and the graph, answers every
   pending `Sync` by dropping it, empties `Discovered` and announces each known sink removed, and a thread
   sends `Request::Reconnect` a second later, again until a core connects, **the first connect being one

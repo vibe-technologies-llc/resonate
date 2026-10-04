@@ -175,6 +175,27 @@ fn an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached() -> Res
 }
 
 #[test]
+fn an_undo_refuses_a_playlist_another_catalog_changed_since_the_edit() -> Result<()> {
+    let tree = Tree::new();
+    let database = tree.path().join("library.db");
+    let ours = Library::open(&database)?;
+    let theirs = Library::open(&database)?;
+    let id = ours.start_playlist("Evening", &[whole("/music/a.wav")])?;
+    ours.add_to_playlist(id, &[whole("/music/b.wav")])?;
+
+    theirs.add_to_playlist(id, &[whole("/music/c.wav")])?;
+
+    assert!(matches!(ours.undo(), Err(Error::PlaylistChanged(changed)) if changed == id));
+    assert_eq!(
+        paths(&ours, id)?,
+        ["/music/a.wav", "/music/b.wav", "/music/c.wav"].map(PathBuf::from),
+        "an undo destroyed the row the other catalog added"
+    );
+    assert_eq!(ours.redoable(), None);
+    Ok(())
+}
+
+#[test]
 fn an_edit_near_the_top_of_a_long_playlist_holds_only_the_rows_it_crossed() -> Result<()> {
     let library = Library::open_in_memory()?;
     let rows: Vec<Cut> = (0..PAST_WHAT_THE_UNDO_STACK_HOLDS)
