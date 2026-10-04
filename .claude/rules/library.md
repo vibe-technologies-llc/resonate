@@ -1382,9 +1382,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `unheld_by_any_album!` predicates they already share. A dismissal is its own table, because what it
   names is rewritten under it: `land_release` deletes and reinserts an album's `release_tracks` on
   every refresh and `land_artist_releases` an artist's `artist_releases`, so a flag on either row died
-  with the next lookup. `dismissed_missing` holds the album, the disc and the row's `folded` — title,
-  artist and release title, stable across a refresh of the same release and not across another track —
-  and `dismissed_releases` the artist and the release group's MBID, both cascading with their album or
+  with the next lookup. `dismissed_missing` holds the album, the disc, the row's position on it and
+  its `folded` — title, artist and release title, stable across a refresh of the same release and not
+  across another track — the position since a later `MIGRATIONS` step, so dismissing one *Interlude*
+  leaves the disc's other *Interlude* listed
+  (`dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed`); the step keys a dismissal
+  held before at every position its title stood at, hiding what it hid — and `dismissed_releases` the artist and the release group's MBID, both cascading with their album or
   artist (a `MIGRATIONS` step). **A want and a dismissal undo each other**: dismissing a row withdraws
   its want, and `want_in` clears a dismissal of the row it wants, so a row is never both asked for and
   hidden. **A want asked for again is due at once**: `want_in` puts back to nothing the `tried` and

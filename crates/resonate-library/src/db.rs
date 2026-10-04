@@ -354,7 +354,7 @@ macro_rules! held_or_wanted {
           OR EXISTS (SELECT 1 FROM wants wn WHERE wn.release_track_id = rt.id))
          AND NOT EXISTS (SELECT 1 FROM dismissed_missing d
                           WHERE d.album_id = rt.album_id AND d.disc = rt.disc
-                            AND d.folded = rt.folded)"
+                            AND d.position = rt.position AND d.folded = rt.folded)"
     };
 }
 
@@ -461,7 +461,7 @@ const MISSING_FROM_AN_ARTISTS_ALBUMS: &str =
         AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.mbid = rt.recording_mbid)
         AND NOT EXISTS (SELECT 1 FROM dismissed_missing d
                          WHERE d.album_id = rt.album_id AND d.disc = rt.disc
-                           AND d.folded = rt.folded)
+                           AND d.position = rt.position AND d.folded = rt.folded)
         AND NOT EXISTS (SELECT 1 FROM tracks t
                          WHERE t.artist_id = a.artist_id AND words_of(t.title) = words_of(rt.title))
       ORDER BY a.id, rt.disc, rt.position";
@@ -482,8 +482,9 @@ const ALBUMS_NOT_HELD_BY_AN_ARTIST: &str =
                          WHERE d.artist_id = r.artist_id AND d.mbid = r.mbid)
       ORDER BY r.first_released IS NULL, r.first_released, r.title COLLATE NOCASE";
 
-const DISMISS_A_MISSING_ROW: &str = "INSERT INTO dismissed_missing (album_id, disc, folded)
-     SELECT album_id, disc, folded FROM release_tracks WHERE id = ?1
+const DISMISS_A_MISSING_ROW: &str =
+    "INSERT INTO dismissed_missing (album_id, disc, position, folded)
+     SELECT album_id, disc, position, folded FROM release_tracks WHERE id = ?1
      ON CONFLICT DO NOTHING";
 
 const DISMISS_AN_UNHELD_RELEASE: &str = "INSERT INTO dismissed_releases (artist_id, mbid)
@@ -492,7 +493,8 @@ const DISMISS_AN_UNHELD_RELEASE: &str = "INSERT INTO dismissed_releases (artist_
 
 const DISMISSED_MISSING_ROWS: &str = "SELECT count(*) FROM release_tracks rt
        JOIN dismissed_missing d
-         ON d.album_id = rt.album_id AND d.disc = rt.disc AND d.folded = rt.folded
+         ON d.album_id = rt.album_id AND d.disc = rt.disc AND d.position = rt.position
+        AND d.folded = rt.folded
       WHERE rt.track_id IS NULL";
 
 const DISMISSED_UNHELD_RELEASES: &str = "SELECT count(*) FROM artist_releases r

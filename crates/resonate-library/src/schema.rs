@@ -189,6 +189,20 @@ const MIGRATIONS: &[&str] = &[
          forgotten  INTEGER NOT NULL,
          PRIMARY KEY (want_id, taken_from)
      ) STRICT, WITHOUT ROWID;",
+    "CREATE TABLE dismissed_missing_at (
+         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+         disc     INTEGER NOT NULL,
+         position INTEGER NOT NULL,
+         folded   TEXT NOT NULL,
+         PRIMARY KEY (album_id, disc, position, folded)
+     ) STRICT, WITHOUT ROWID;
+     INSERT OR IGNORE INTO dismissed_missing_at (album_id, disc, position, folded)
+          SELECT d.album_id, d.disc, rt.position, d.folded
+            FROM dismissed_missing d
+            JOIN release_tracks rt
+              ON rt.album_id = d.album_id AND rt.disc = d.disc AND rt.folded = d.folded;
+     DROP TABLE dismissed_missing;
+     ALTER TABLE dismissed_missing_at RENAME TO dismissed_missing;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

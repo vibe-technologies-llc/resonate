@@ -11268,6 +11268,38 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
 }
 
 #[test]
+fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "Interlude", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    rows.push(release_row(6, "Interlude", Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    library.rematch(album.id)?;
+    let first = library
+        .release_tracks(album.id)?
+        .into_iter()
+        .find(|row| row.title == "Interlude")
+        .expect("the release holds the row")
+        .id;
+
+    assert!(library.dismiss_missing(first)?);
+
+    let listed: Vec<(u32, String)> = library
+        .missing_tracks(None, None)?
+        .into_iter()
+        .map(|row| (row.position, row.title))
+        .collect();
+    assert_eq!(
+        listed,
+        [(5, "Seamus".to_owned()), (6, "Interlude".to_owned())]
+    );
+    assert_eq!(library.dismissed()?.tracks, 1);
+    Ok(())
+}
+
+#[test]
 fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
