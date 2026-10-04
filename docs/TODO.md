@@ -8,8 +8,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
   depth later, half a second by default, because gain and filters run ahead of a ring kept full
-- A source too long to hold in memory is spooled under the temporary folder, which is tmpfs on
-  Arch, Fedora and Flatpak, so up to 8 GiB lands in RAM and what was read is never let go
 - The PipeWire open and sink enumeration wait on the engine thread for seconds, so a daemon slow to
   answer freezes the transport and the window's close
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another

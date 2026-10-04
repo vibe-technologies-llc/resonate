@@ -424,8 +424,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   exactly, the seek bar and the end bound a priming is trimmed against. The wait keeps a slow remote
   stream from holding the first sample for its whole download: a local provider's copy lands well
   inside it, and a stream still arriving when it runs out — or past the cap — goes on arriving onto
-  the disc. `spool::Spool` is an unnamed file under the temporary folder, made and unlinked at once
-  so nothing is left whatever ends the run, holding the head, and a `resonate-spool` thread copies the
+  the disc. `spool::Spool` is an unnamed file under `/var/tmp`, made and unlinked at once so nothing
+  is left whatever ends the run — on disc, because `/tmp` is tmpfs on Arch, Fedora and Flatpak and
+  8 GiB spooled there was 8 GiB of memory; a `TMPDIR` the listener set is taken instead, and the
+  temporary folder is the fallback where neither takes a file
+  (`a_spool_lands_in_the_first_folder_that_takes_it_and_leaves_no_name_behind`) — holding the head, and a `resonate-spool` thread copies the
   rest into it as it arrives, up to `SPOOLED_ON_DISC_AT_MOST` (8 GiB), stopping the moment nothing but
   itself holds the spool. symphonia gets its `Spooling` side, which reads what has arrived and waits
   on a condition for the rest — still `is_seekable() == false` and `byte_len() == None`, since a

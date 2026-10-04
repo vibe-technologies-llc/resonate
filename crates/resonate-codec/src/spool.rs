@@ -3,7 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
     os::unix::fs::FileExt as _,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process,
     sync::{
         Arc,
@@ -19,6 +19,8 @@ use crate::source::{FormatHint, Media, MediaStream};
 
 pub(crate) const SPOOLED_ON_DISC_AT_MOST: u64 = 8 << 30;
 const COPIED_AT_A_TIME: usize = 64 << 10;
+const CHOSEN_TEMPORARY_FOLDER: &str = "TMPDIR";
+const KEPT_ON_DISC: &str = "/var/tmp";
 
 static NAMED: AtomicU64 = AtomicU64::new(0);
 
@@ -166,8 +168,29 @@ impl Spool {
     }
 }
 
+fn spooled_under() -> Vec<PathBuf> {
+    let chosen = env::var_os(CHOSEN_TEMPORARY_FOLDER).filter(|dir| !dir.is_empty());
+    let on_disc = chosen.is_none().then(|| PathBuf::from(KEPT_ON_DISC));
+    on_disc.into_iter().chain([env::temp_dir()]).collect()
+}
+
 fn unnamed_file() -> io::Result<File> {
-    let path: PathBuf = env::temp_dir().join(format!(
+    unnamed_file_under(&spooled_under())
+}
+
+fn unnamed_file_under(folders: &[PathBuf]) -> io::Result<File> {
+    let mut refused = io::Error::from(io::ErrorKind::NotFound);
+    for folder in folders {
+        match unnamed_file_in(folder) {
+            Ok(file) => return Ok(file),
+            Err(source) => refused = source,
+        }
+    }
+    Err(refused)
+}
+
+fn unnamed_file_in(folder: &Path) -> io::Result<File> {
+    let path = folder.join(format!(
         "resonate-spool-{}-{}",
         process::id(),
         NAMED.fetch_add(1, Ordering::Relaxed)
@@ -274,6 +297,38 @@ mod tests {
     impl Seek for Piped {
         fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
             Err(io::Error::from(io::ErrorKind::Unsupported))
+        }
+    }
+
+    #[test]
+    fn a_spool_lands_in_the_first_folder_that_takes_it_and_leaves_no_name_behind() {
+        let missing = env::temp_dir().join(format!("resonate-no-such-folder-{}", process::id()));
+        let taking = env::temp_dir().join(format!("resonate-spool-folder-{}", process::id()));
+        fs::create_dir_all(&taking).expect("a folder to spool into");
+
+        let spooled = unnamed_file_under(&[missing.clone(), taking.clone()]);
+        let refused = unnamed_file_under(std::slice::from_ref(&missing));
+        let left = fs::read_dir(&taking)
+            .map(Iterator::count)
+            .unwrap_or(usize::MAX);
+        let _ = fs::remove_dir(&taking);
+
+        assert!(
+            spooled.is_ok(),
+            "a folder that takes a file was passed over"
+        );
+        assert!(refused.is_err(), "a folder that is not there took a file");
+        assert_eq!(left, 0, "the spool left its name behind");
+    }
+
+    #[test]
+    fn a_spool_is_kept_on_disc_unless_a_temporary_folder_was_chosen() {
+        let folders = spooled_under();
+
+        if env::var_os(CHOSEN_TEMPORARY_FOLDER).is_some_and(|dir| !dir.is_empty()) {
+            assert_eq!(folders, [env::temp_dir()]);
+        } else {
+            assert_eq!(folders, [PathBuf::from(KEPT_ON_DISC), env::temp_dir()]);
         }
     }
 
