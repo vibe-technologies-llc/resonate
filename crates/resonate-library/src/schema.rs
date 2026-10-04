@@ -203,6 +203,23 @@ const MIGRATIONS: &[&str] = &[
               ON rt.album_id = d.album_id AND rt.disc = d.disc AND rt.folded = d.folded;
      DROP TABLE dismissed_missing;
      ALTER TABLE dismissed_missing_at RENAME TO dismissed_missing;",
+    "CREATE TABLE listens_never_reused (
+         id       INTEGER PRIMARY KEY AUTOINCREMENT,
+         track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+         at       INTEGER NOT NULL,
+         heard    INTEGER NOT NULL DEFAULT 0,
+         began    INTEGER
+     ) STRICT;
+     INSERT INTO listens_never_reused (id, track_id, at, heard, began)
+          SELECT id, track_id, at, heard, began FROM listens;
+     DROP TABLE listens;
+     ALTER TABLE listens_never_reused RENAME TO listens;
+     CREATE INDEX listens_by_track ON listens(track_id, at);
+     CREATE INDEX listens_by_time ON listens(at);
+     INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('listens', 0);
+     UPDATE sqlite_sequence
+        SET seq = max(seq, coalesce((SELECT max(through) FROM submissions), 0))
+      WHERE name = 'listens';",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

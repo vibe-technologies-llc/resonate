@@ -152,7 +152,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   visit, a `MIGRATIONS` step the unheld plays carry too — joined to track, album and artist for the
   names and MusicBrainz ids a `Scrobble` carries, hands them to the `Scrobbler` (the seam the library
   owns, as it owns `Reference`; `resonate-online`'s `ListenBrainz` fills it) and moves the mark past
-  the batch in a `max` so it never goes back. A listen of a row naming no title or artist is a
+  the batch in a `max` so it never goes back. `listens.id` is `AUTOINCREMENT` — a later step rebuilt
+  the table, seeding the sequence at the greater of its newest id and every mark — so an id the history
+  aged away is never handed out again below a mark
+  (`a_play_counted_after_the_newest_listens_were_forgotten_is_still_told`). A listen of a row naming no title or artist is a
   `Submitted::unnamed` and passed over, a service filing nothing under a blank name. A batch refused as
   malformed — `Refused` with a 400 — is told again a listen at a time, so one bad row costs itself,
   and a listen refused alone is `Submitted::refused` and passed over; any other failure moves the mark

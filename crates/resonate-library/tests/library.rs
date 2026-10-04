@@ -5254,6 +5254,38 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
 }
 
 #[test]
+fn a_play_counted_after_the_newest_listens_were_forgotten_is_still_told() -> Result<()> {
+    const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+    let tree = Tree::new();
+    let cold = MediaLocation::local(tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    ));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+
+    let told = Told::default();
+    assert!(library.submit_listens(&told)?.started);
+    library.track_played(&cold, None, Duration::ZERO)?;
+    library.track_played(&cold, None, Duration::ZERO)?;
+    assert_eq!(library.submit_listens(&told)?.submitted, 2);
+
+    beside(&database)
+        .execute_batch(&format!(
+            "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
+        ))
+        .expect("the history is moved back past a year");
+    let a_year = HistoryKept::parse("365").expect("a span of days");
+    assert_eq!(library.age_the_history(a_year)?.listens, 2);
+
+    library.track_played(&cold, None, Duration::ZERO)?;
+
+    assert_eq!(library.submit_listens(&told)?.submitted, 1);
+    Ok(())
+}
+
+#[test]
 fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Result<()> {
     const TWO_MONTHS: i64 = 60 * 86_400 * 1_000_000_000;
     let tree = Tree::new();
