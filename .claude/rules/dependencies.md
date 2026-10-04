@@ -93,7 +93,8 @@ paths:
   lowercased then composed so one letter has one spelling in `folded` whatever was typed. Its
   `std` feature is not default, and it brings `tinyvec` alone, keeping core a short link.
 - **`rustix`** is the binary's, for `termios` (beside `std`) — `resonate play`'s terminal a key at a
-  time with no `unsafe` — and `resonate-codec`'s, for `fs`: a tag write carries a file's extended
+  time with no `unsafe` — and `process`, whose `getpgrp` tells a `play` sent to the background from
+  one in front, and `resonate-codec`'s, for `fs`: a tag write carries a file's extended
   attributes onto its staged copy through `listxattr`, `getxattr` and `setxattr`, which `std` does
   not reach. It was in the lockfile under zbus and libspa, so it adds features, not a crate.
 - **`unicode-width`** is what `Table` measures a column with rather than `chars().count()`: a CJK

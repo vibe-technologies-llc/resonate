@@ -2113,16 +2113,25 @@ fn play_queue(
         .as_ref()
         .map(|library| submitting::start(config, library, &player));
 
-    let keyed = input::KeyAtATime::where_a_terminal();
+    let behind = input::played_in_the_background();
+    let keyed = (!behind)
+        .then(input::KeyAtATime::where_a_terminal)
+        .flatten();
     let help = if keyed.is_some() {
         input::KEYS
     } else {
         input::HELP
     };
     let mut readout = Readout::over(keyed.is_some() && io::stdout().is_terminal());
-    said!("{help}");
+    if behind {
+        told!("playing in the background, so no key is read; fg and an interrupt stop it");
+    } else {
+        said!("{help}");
+    }
     let events = player.events().clone();
-    let mut keys = if keyed.is_some() {
+    let mut keys = if behind {
+        never()
+    } else if keyed.is_some() {
         input::keys()
     } else {
         input::lines()

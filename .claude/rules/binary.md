@@ -147,7 +147,13 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   terminal too, `readout::Readout` redraws one line — the transport's glyph, position out of
   length, volume, shuffle, repeat, the sleep timer and what is being typed — every 500 ms sample
   and after every key, clearing it before anything else prints so an event or refusal is a line
-  of its own above. Piped input is read a line at a time with no readout, as a script sends it.
+  of its own above. Piped input is read a line at a time with no readout, as a script sends it. **A
+  `play` sent to the background reads nothing.** `input::played_in_the_background` weighs the
+  terminal's foreground group (`tcgetpgrp`) against the process's own (`getpgrp`, rustix's `process`
+  feature), and where they differ neither the modes are touched nor stdin read — a `tcsetattr` or a
+  read from the background is the `SIGTTOU` or `SIGTTIN` the shell answers by stopping the job, so
+  `resonate play file &` stood stopped instead of playing; it says so on stderr and plays on, an
+  interrupt or `kill` stopping it.
 - **A length is read one way wherever one is typed.** `lasting::lasting` takes a bare number in
   the unit its caller names — seconds for `play`'s seeks, minutes for a sleep spec — a clock
   (`1:30`, `1:02:03`, every field after the first under 60) or units coarsest first (`1h30m`,

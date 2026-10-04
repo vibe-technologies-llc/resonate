@@ -67,6 +67,12 @@ pub enum Pressed {
 
 pub struct KeyAtATime;
 
+pub fn played_in_the_background() -> bool {
+    let stdin = io::stdin();
+    termios::isatty(&stdin)
+        && termios::tcgetpgrp(&stdin).is_ok_and(|in_front| in_front != rustix::process::getpgrp())
+}
+
 impl KeyAtATime {
     pub fn where_a_terminal() -> Option<Self> {
         let stdin = io::stdin();
