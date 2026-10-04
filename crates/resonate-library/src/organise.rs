@@ -1878,6 +1878,9 @@ fn batch_landing(
     let mut refused: Vec<Refused> = Vec::new();
 
     for planned in batch {
+        if progress.is_cancelled() {
+            break;
+        }
         if let Some(refusal) = standing(planned) {
             refused.push(refused_now(progress, planned, refusal));
             continue;
@@ -3637,6 +3640,31 @@ mod tests {
         assert_eq!(whole.moves[0].companions.len(), 1, "{whole:?}");
         assert_eq!(paged.moves, whole.moves);
         assert_eq!(paged.refused, whole.refused);
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_cancel_is_heard_between_the_moves_of_a_batch() {
+        let folder = env::temp_dir().join(format!("resonate-cancelled-{}", std::process::id()));
+        fs::create_dir_all(&folder).expect("a writable temporary folder");
+        let from = folder.join("a.wav");
+        fs::write(&from, b"audio").expect("a writable file");
+        let batch = [Move {
+            from: from.clone(),
+            to: folder.join("b.wav"),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        }];
+        let progress = OrganiseProgress::default();
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        progress.cancel();
+
+        let applied = batch_moved(&library, &batch, &progress);
+
+        assert!(applied.landed.is_empty());
+        assert!(applied.refused.is_empty());
+        assert!(from.exists(), "a move began after the run was cancelled");
         let _ = fs::remove_dir_all(folder);
     }
 }

@@ -1867,7 +1867,9 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   something or at the root — but both sort `deepest_first`, so a preview names the folders an apply
   would take, in its order.
 - **A file moves before the catalog does, in batches, and a batch that cannot finish is put back.**
-  `apply` walks the moves `MOVES_PER_BATCH` (256) at a time. In a batch each move is weighed against the
+  `apply` walks the moves `MOVES_PER_BATCH` (256) at a time, and a cancel is heard before each move —
+  the batch ends where it stood, what had landed is settled and followed by the catalog, and the rest
+  is not begun (`a_cancel_is_heard_between_the_moves_of_a_batch`). In a batch each move is weighed against the
   disc again (`standing`: a vanished source is `SourceGone`, a destination now taken `Collided`), renamed
   with its sidecars and recorded in `done`. A sidecar is weighed apart from its track
   (`with_the_sidecars_that_can_go`): one gone since is dropped and one whose destination is now taken
