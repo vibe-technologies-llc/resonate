@@ -536,11 +536,7 @@ impl Queue {
             self.after += 1;
             self.seat = Seat::InOrder;
         } else if self.repeat == RepeatMode::Queue && !self.order.is_empty() {
-            if self.shuffle {
-                self.reshuffle_after_a_pass();
-            }
-            self.after = 1;
-            self.seat = Seat::InOrder;
+            self.wrap_to_the_start();
         } else {
             self.seat = Seat::Nowhere;
         }
@@ -635,9 +631,19 @@ impl Queue {
         } else if self.after < self.order.len() {
             self.after += 1;
             self.seat = Seat::InOrder;
+        } else if self.repeat == RepeatMode::Queue && !self.order.is_empty() {
+            self.wrap_to_the_start();
         } else {
             self.seat = Seat::Nowhere;
         }
+    }
+
+    fn wrap_to_the_start(&mut self) {
+        if self.shuffle {
+            self.reshuffle_after_a_pass();
+        }
+        self.after = 1;
+        self.seat = Seat::InOrder;
     }
 
     fn split(&mut self, drawn: Flagged, heard: Option<usize>) {
@@ -1345,6 +1351,29 @@ mod tests {
             None,
             "a row past the end was removed"
         );
+    }
+
+    #[test]
+    fn removing_the_playing_row_at_the_end_wraps_to_the_start_when_the_queue_repeats() {
+        let mut queue = loaded(3, 2);
+        queue.set_repeat(RepeatMode::Queue);
+
+        assert_eq!(queue.remove_rows(Span::one(2)), Some(Removal::Playing));
+
+        assert_eq!(queue.cursor(), Some(0));
+        assert_eq!(current(&queue), Some(1));
+        assert_eq!(queue.len(), 2);
+    }
+
+    #[test]
+    fn removing_the_only_row_under_repeat_queue_leaves_nothing_playing() {
+        let mut queue = loaded(1, 0);
+        queue.set_repeat(RepeatMode::Queue);
+
+        assert_eq!(queue.remove_rows(Span::one(0)), Some(Removal::Playing));
+
+        assert_eq!(queue.cursor(), None);
+        assert_eq!(current(&queue), None);
     }
 
     #[test]

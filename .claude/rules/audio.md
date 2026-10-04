@@ -1138,7 +1138,14 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Load` whose rows are empty leaves `playing` clear whatever `autoplay` says, and `Play` over a
   queue with no current row answers `QueueEmpty` before touching it, so the first play/pause after
   rows arrive plays rather than answering `InvalidTransition` for a pause of nothing
-  (`a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next`).
+  (`a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next`). **A toggle weighs what
+  is heard, not what was wanted.** A load or `Next` answered `NoSink` leaves `playing` set over a
+  track with no stream and nothing waiting for a device — `Engine::is_stranded` — and
+  `TogglePlayPause` plays there, binding the row, where it once paused nothing and only the second
+  press played (`the_first_play_pause_after_a_load_that_found_no_device_plays`). A row waiting for
+  a device is not stranded, so the toggle pauses it, and the transport then says `Paused` rather than
+  `Loading`, the device coming back no longer starting it
+  (`a_pause_while_the_row_waits_for_a_device_says_it_is_paused`).
 - **A track change nothing will be heard through opens the file and binds nothing else.**
   `Engine::start` reaching a paused transport records the frame it would bind at in `Engine::unbound`
   and stops, so a run of skips through a paused queue costs one `Unwrapped::open` a row rather than a
@@ -1257,6 +1264,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   swaps it with a row picked from the rest, so the same row is never heard twice running across a
   pass (`a_new_shuffled_pass_never_opens_on_the_row_the_last_one_ended_on`). A one-row queue has
   nothing to swap with and repeats it, as it must.
+- **Removing the playing row moves on as a skip would.** `Queue::hand_on` is `advance` without the
+  repeat-track hold: the queued row next, else the row after, else — under `RepeatMode::Queue` —
+  `wrap_to_the_start`, the same wrap `advance` takes, so removing the last row while it plays starts
+  the queue over rather than stopping it
+  (`removing_the_playing_row_at_the_end_wraps_to_the_start_when_the_queue_repeats`). Only a queue
+  left empty stops.
 - **A queue comes back in the order it was loaded and plays in the order it was playing.**
   `Resumption::rows` is the load order and `Resumption::order` the play order over it, one entry per
   playing position naming the loaded row there — the pair `Queue` holds as `items` and `order`, so

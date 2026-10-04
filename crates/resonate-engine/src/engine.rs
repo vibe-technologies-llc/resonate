@@ -1195,7 +1195,7 @@ impl Engine {
             Command::Play => self.play(),
             Command::Pause => self.pause(),
             Command::TogglePlayPause => {
-                if self.playing {
+                if self.playing && !self.is_stranded() {
                     self.pause()
                 } else {
                     self.play()
@@ -1541,7 +1541,11 @@ impl Engine {
             });
         }
         self.playing = false;
-        if self.transport == TransportState::Playing {
+        if self.transport == TransportState::Playing
+            || (self.transport == TransportState::Loading
+                && self.output.is_none()
+                && self.unbound.is_some())
+        {
             self.transport = TransportState::Paused;
         }
         let keeps_the_link_awake = self.keeps_the_link_awake();
@@ -1674,6 +1678,7 @@ impl Engine {
             self.emit(Event::TrackFinished(id));
         }
         let wraps = self.queue.wraps_next();
+        let leaving = self.queue.current().map(|item| item.id);
 
         if natural && self.sleep.is_some_and(Sleeping::ends_the_track) {
             self.nods_off();
@@ -1688,6 +1693,9 @@ impl Engine {
         }
         if wraps && self.sleep.is_some_and(Sleeping::ends_the_queue) {
             self.nods_off();
+        }
+        if self.queue.current().map(|item| item.id) == leaving {
+            self.seeks = self.seeks.stepped();
         }
         self.start(Frames::ZERO)
     }

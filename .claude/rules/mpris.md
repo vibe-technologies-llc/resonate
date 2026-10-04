@@ -78,7 +78,11 @@ property changes.
 - **`Seeked` is the engine's own count of seeks, not a jump read out of the position.**
   `PlayerState::seeks` is a `Seeks` stepped by `Engine::seek` only where the seek landed, so a
   refused one does not announce and a track change (which `start` reaches and `seek` does not)
-  announces `Metadata` alone, which the spec says `Seeked` is not for. The poll emits it with the
+  announces `Metadata` alone, which the spec says `Seeked` is not for. A row heard again from its
+  start — a track under *repeat track*, the only row of a repeating queue — is the one move `skip`
+  makes that keeps the track id, so `skip` steps the count there too: nothing else tells a client
+  extrapolating the position that it went back to zero
+  (`a_row_heard_again_from_the_start_is_counted_as_a_seek`). The poll emits it with the
   position from the same sample as the count. It replaced a heuristic calling any drift past
   750 ms from the extrapolated position a jump, which missed shorter seeks, went blind when the
   rate changed, read a track change as a jump and a paused transport as a jump backwards; it is

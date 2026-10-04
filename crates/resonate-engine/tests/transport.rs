@@ -1317,6 +1317,47 @@ fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> 
 }
 
 #[test]
+fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, 4_000);
+    let path = tree.write("short.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player
+        .request(Command::SetRepeat(RepeatMode::Track))?
+        .wait_for(PATIENCE)?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let unseeked = player.state().seeks;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| player.state().seeks != unseeked,
+        "the repeating track to start over as a seek",
+    );
+
+    player
+        .request(Command::SetRepeat(RepeatMode::Queue))?
+        .wait_for(PATIENCE)?;
+    let repeated = player.state().seeks;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| player.state().seeks != repeated,
+        "the only row of a repeating queue to start over as a seek",
+    );
+    assert!(plays(&player, 1), "{}", transport(&player));
+    Ok(())
+}
+
+#[test]
 fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
@@ -3615,6 +3656,60 @@ fn a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence() -> R
 
     assert!(outcome.is_err(), "a queue with no sink started playing");
     assert_eq!(graph.lock().opens, 0);
+    Ok(())
+}
+
+#[test]
+fn the_first_play_pause_after_a_load_that_found_no_device_plays() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(Vec::new())?;
+    let outcome = player
+        .request(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(PATIENCE);
+    assert!(outcome.is_err(), "a queue with no sink started playing");
+
+    announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
+    thread::sleep(A_SHORT_DOZE);
+    player
+        .request(Command::TogglePlayPause)?
+        .wait_for(PATIENCE)?;
+
+    wait_for(&player, playing, "the first press to play");
+    assert_eq!(graph.lock().opens, 1);
+    Ok(())
+}
+
+#[test]
+fn a_pause_while_the_row_waits_for_a_device_says_it_is_paused() -> Result<()> {
+    let (player, graph, _) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+    player
+        .request(Command::TogglePlayPause)?
+        .wait_for(PATIENCE)?;
+
+    assert!(paused(&player), "{}", transport(&player));
     Ok(())
 }
 

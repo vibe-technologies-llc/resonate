@@ -24,12 +24,6 @@ service or a format — and is not worked until that moves; everything else is o
   claimed only after the engine starts
 - Closing the terminal sends `play` and the headless passes a hang-up nothing catches, so the last
   listen is lost and a tag, organise or import is cut without the drain an interrupt gets
-- After a load or *Next* that found no device, the first play/pause press pauses nothing and only
-  the second plays
-- Removing the playing last row under *repeat queue* stops the queue rather than wrapping as a skip
-  would
-- A track repeating under *repeat track*, or the only row under *repeat queue*, restarts with no
-  `Seeked` on the bus, so a client extrapolating the position runs past the length
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
   anything under 100 % leaves bit-perfect there
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
