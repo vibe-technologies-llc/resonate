@@ -164,9 +164,6 @@ service or a format — and is not worked until that moves; everything else is o
 - Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
   and the providers
 - A host that stays busy is no longer waited on, so a `Retry-After` on a 429 is never read
-- A service link of any scheme, or one whose authority hides another host behind a backslash, is
-  opened if its host looks like a known service, and image host checks are string suffix tests
-  a `#` or `?` passes
 - A daemon connection that dies with a reset rather than a broken pipe, or hangs, is never taken as
   lost, so the client stays disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values

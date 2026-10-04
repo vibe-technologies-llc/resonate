@@ -564,7 +564,7 @@ its group.
   build's, so nothing about the listener goes out but the peaks of twelve seconds of sound. An empty
   `matches` is nothing heard; a match is read for `track.title`, `subtitle` as artist, the `SONG`
   section's *Album* and *Released*, the ISRC and the track's page, and its `coverarthq` is fetched from
-  `AppleArtwork` — only an https URL whose host ends in `.mzstatic.com` — and handed on as a `Picture`
+  `AppleArtwork` — only an https URL `shared::on_host` finds on `mzstatic.com` or a subdomain — the host being what stands before the first `/`, `?`, `#` or backslash, letters, digits, `-` and `.` alone, as every image host check weighs it — and handed on as a `Picture`
   sniffed by its first bytes. The endpoint is undocumented and the likeliest to change;
   `shazam_answers_a_clip_it_does_not_know_with_nothing_rather_than_a_refusal` is the live test that
   notices.

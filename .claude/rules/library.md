@@ -1467,7 +1467,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
 - **A link is a relation, a service and a URL, both names read off the reference's own words.**
   `Relation::of_type` matches the exact type string MusicBrainz writes — `streaming`, `free
   streaming`, `official homepage`, `image` and the rest of `Relation::TYPES` — else `Relation::Other`;
-  `Service::of_url` reads the host, lowercases it, drops a leading `www.`, and matches it or a parent
+  `Service::of_url` reads the host of an `http` or `https` URL alone — any other scheme, and an
+  authority carrying a backslash, which a browser reads as the path's start, is `Other` — lowercases it, drops a leading `www.`, and matches it or a parent
   domain against `Service::HOSTS`, `x.com` and `twitter.com` both `Twitter` and any host with an
   `amazon` label `AmazonMusic`, else `Service::Other`, keeping the URL. `Service::name` is the lowercase
   figure a pane draws. All three live in `resonate-core`'s `link.rs` (what was the library's `Provider`

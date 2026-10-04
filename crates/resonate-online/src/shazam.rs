@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::{
     Client, Host,
     client::{Encoded, LARGEST_PICTURE, Posted},
+    shared::on_host,
 };
 
 const SHAZAM: &str = "shazam";
@@ -24,8 +25,7 @@ const TIMEZONE: &str = "UTC";
 const ALBUM: &str = "Album";
 const RELEASED: &str = "Released";
 const SONG_SECTION: &str = "SONG";
-const PICTURES_SERVED_BY: &str = ".mzstatic.com";
-const SECURE: &str = "https://";
+const PICTURES_SERVED_BY: &str = "mzstatic.com";
 const YEAR_DIGITS: usize = 4;
 
 #[derive(Serialize)]
@@ -201,9 +201,7 @@ impl Shazam {
 }
 
 fn served_by_the_picture_host(url: &str) -> bool {
-    url.strip_prefix(SECURE)
-        .and_then(|rest| rest.split('/').next())
-        .is_some_and(|host| host.ends_with(PICTURES_SERVED_BY))
+    on_host(url, PICTURES_SERVED_BY).is_some()
 }
 
 fn heard_in(answer: Option<Answer>, service: &SourceId) -> Option<(Heard, Option<String>)> {

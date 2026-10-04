@@ -10,6 +10,7 @@ use crate::{
     Client, Host, Result,
     client::{LARGEST_PICTURE, passed_over_when_refused},
     query::Params,
+    shared::on_host,
 };
 
 const ARTIST: &str = "/artist/";
@@ -21,7 +22,7 @@ const SEARCHED_AT_MOST: &str = "10";
 const TRACK_PAGES: &str = "https://www.deezer.com/";
 const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
 const SECURE: &str = "https://";
-const PICTURES_SERVED_BY: &str = ".dzcdn.net";
+const PICTURES_SERVED_BY: &str = "dzcdn.net";
 const NOTHING_HASHED: &str = "/d41d8cd98f00b204e9800998ecf8427e/";
 
 pub(crate) fn portrait(client: &Client, url: &str) -> Result<Option<CoverArt>> {
@@ -242,9 +243,7 @@ impl ArtistDoc {
 }
 
 fn served_by_the_picture_host(url: &str) -> bool {
-    url.strip_prefix(SECURE)
-        .and_then(|rest| rest.split('/').next())
-        .is_some_and(|host| host.ends_with(PICTURES_SERVED_BY))
+    on_host(url, PICTURES_SERVED_BY).is_some()
 }
 
 #[cfg(test)]

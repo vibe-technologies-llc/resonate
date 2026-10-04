@@ -33,9 +33,13 @@ pub(crate) fn picture_at(client: &Client, host: Host, url: &str) -> Result<Optio
 
 pub(crate) fn on_host<'a>(url: &'a str, served_by: &str) -> Option<&'a str> {
     let rest = url.strip_prefix("https://")?;
-    let (host, path) = rest.split_once('/')?;
+    let (host, path) = rest.split_at(rest.find(['/', '?', '#', '\\'])?);
+    let path = path.strip_prefix('/')?;
+    let plain = host
+        .chars()
+        .all(|letter| letter.is_ascii_alphanumeric() || letter == '-' || letter == '.');
 
-    (host == served_by || host.ends_with(&format!(".{served_by}"))).then_some(path)
+    (plain && (host == served_by || host.ends_with(&format!(".{served_by}")))).then_some(path)
 }
 
 #[cfg(test)]
@@ -65,5 +69,22 @@ mod tests {
         );
         assert_eq!(on_host("https://notsndcdn.com/a", "sndcdn.com"), None);
         assert_eq!(on_host("http://i.scdn.co/image/a", "i.scdn.co"), None);
+    }
+
+    #[test]
+    fn a_host_a_delimiter_or_a_userinfo_disguises_is_not_the_host_it_names() {
+        for url in [
+            "https://evil.com#.sndcdn.com/a",
+            "https://evil.com?.sndcdn.com/a",
+            "https://evil.com\\.sndcdn.com/a",
+            "https://evil.com\\@i1.sndcdn.com/a",
+            "https://i1.sndcdn.com@evil.com/a",
+            "https://evil.com@i1.sndcdn.com/a",
+            "https://i1.sndcdn.com:8080/a",
+            "https://i1.sndcdn.com",
+            "https://i1.sndcdn.com?a",
+        ] {
+            assert_eq!(on_host(url, "sndcdn.com"), None, "{url}");
+        }
     }
 }

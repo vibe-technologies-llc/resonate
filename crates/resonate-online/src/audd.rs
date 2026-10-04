@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::{
     Client, Host,
     client::{Encoded, LARGEST_PICTURE, Posted},
+    shared::on_host,
 };
 
 const AUDD: &str = "audd";
@@ -24,8 +25,7 @@ const WAVE_HEADER_BYTES: u32 = 36;
 const PCM: u16 = 1;
 const MONO: u16 = 1;
 const SIXTEEN_BITS: u16 = 16;
-const PICTURES_SERVED_BY: &str = ".mzstatic.com";
-const SECURE: &str = "https://";
+const PICTURES_SERVED_BY: &str = "mzstatic.com";
 
 #[derive(Deserialize)]
 struct Answer {
@@ -94,10 +94,7 @@ impl Audd {
     }
 
     fn picture(&self, url: &str) -> Option<Picture> {
-        let served = url
-            .strip_prefix(SECURE)
-            .and_then(|rest| rest.split('/').next())
-            .is_some_and(|host| host.ends_with(PICTURES_SERVED_BY));
+        let served = on_host(url, PICTURES_SERVED_BY).is_some();
         if !served {
             return None;
         }

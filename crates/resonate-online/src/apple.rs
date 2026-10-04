@@ -4,11 +4,11 @@ use resonate_library::LookupOp;
 use crate::{
     Client, Host, Result,
     client::{LARGEST_DOCUMENT, LARGEST_PICTURE, passed_over_when_refused},
-    shared::shared_picture,
+    shared::{on_host, shared_picture},
 };
 
 const SECURE: &str = "https://";
-const PICTURES_SERVED_BY: &str = ".mzstatic.com";
+const PICTURES_SERVED_BY: &str = "mzstatic.com";
 const THUMBNAIL: &str = "/image/thumb/";
 const SQUARE: &str = "600x600cc.jpg";
 const ARTIST_BUCKETS: [&str; 2] = ["AMCArtistImages", "Features"];
@@ -75,11 +75,7 @@ pub(crate) fn artist_page(url: &str) -> Option<String> {
 }
 
 fn squared(picture: &str) -> Option<String> {
-    let rest = picture.strip_prefix(SECURE)?;
-    let (host, _) = rest.split_once('/')?;
-    if !host.ends_with(PICTURES_SERVED_BY) {
-        return None;
-    }
+    on_host(picture, PICTURES_SERVED_BY)?;
     let thumbnail = &picture[picture.find(THUMBNAIL)? + THUMBNAIL.len()..];
     let bucket = thumbnail.split('/').next()?;
     let (named, _sized) = picture.rsplit_once('/')?;

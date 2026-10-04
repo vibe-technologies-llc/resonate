@@ -1,4 +1,5 @@
 const SCHEME_END: &str = "://";
+const SCHEMES: [&str; 2] = ["https", "http"];
 const BARE_WWW: &str = "www.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -180,11 +181,20 @@ impl Service {
 }
 
 fn host_of(url: &str) -> Option<String> {
-    let (_, after_scheme) = url.split_once(SCHEME_END)?;
+    let (scheme, after_scheme) = url.split_once(SCHEME_END)?;
+    if !SCHEMES
+        .iter()
+        .any(|known| scheme.eq_ignore_ascii_case(known))
+    {
+        return None;
+    }
     let authority = after_scheme
         .split(['/', '?', '#'])
         .next()
         .unwrap_or_default();
+    if authority.contains('\\') {
+        return None;
+    }
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
@@ -284,6 +294,17 @@ mod tests {
             ),
             ("https://mora.jp/artist/579953/", Service::Other),
             ("https://notspotify.com/track/1", Service::Other),
+            ("javascript://open.spotify.com/%0aalert(1)", Service::Other),
+            ("file://open.spotify.com/track/1", Service::Other),
+            ("ftp://open.spotify.com/track/1", Service::Other),
+            (
+                "https://evil.com\\@open.spotify.com/track/1",
+                Service::Other,
+            ),
+            (
+                "https://open.spotify.com\\.evil.com/track/1",
+                Service::Other,
+            ),
             ("not a url at all", Service::Other),
         ] {
             assert_eq!(Service::of_url(url), service, "{url}");
