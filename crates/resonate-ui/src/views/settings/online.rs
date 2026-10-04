@@ -95,7 +95,8 @@ impl Choice for ClipLength {
         match self.0.as_secs() {
             8 => "8 s",
             12 => "12 s",
-            _ => "20 s",
+            20 => "20 s",
+            _ => "Other",
         }
     }
 
@@ -107,7 +108,8 @@ impl Choice for ClipLength {
         SharedString::new_static(match self.0.as_secs() {
             8 => "Quickest to answer; enough for a clear recording of a well-known song.",
             12 => "Enough for most songs, even over a little noise.",
-            _ => "The best chance with a noisy room, a quiet passage or a rarer song.",
+            20 => "The best chance with a noisy room, a quiet passage or a rarer song.",
+            _ => "A length of your own, set in the settings file.",
         })
     }
 }

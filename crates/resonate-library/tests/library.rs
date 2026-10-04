@@ -15030,6 +15030,51 @@ fn a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track
 }
 
 #[test]
+fn a_sidecar_travels_with_the_track_whose_longer_stem_it_carries() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("loose/echoes.wav", &meddle("One of These Days", "1"));
+    tree.write("loose/echoes.lrc", b"[00:01.00]overhead the albatross");
+    tree.write("loose/echoes.x.wav", &meddle("Echoes", "2"));
+    tree.write("loose/echoes.x.lrc", b"[00:01.00]live");
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+
+    let summary = applied(&library)?;
+
+    let filed = root.join("Pink Floyd/Meddle");
+    assert_eq!(summary.stats.moved, 2, "{:?}", summary.plan.refused);
+    assert_eq!(
+        fs::read(filed.join("01 One of These Days.lrc")).expect("the sidecar of the shorter stem"),
+        b"[00:01.00]overhead the albatross"
+    );
+    assert_eq!(
+        fs::read(filed.join("02 Echoes.lrc")).expect("the sidecar of the longer stem"),
+        b"[00:01.00]live"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sidecar_whose_new_name_would_outrun_a_component_is_left_and_its_track_still_moves()
+-> Result<()> {
+    let tree = Tree::new();
+    let long = format!("echoes.{}", "x".repeat(248));
+    tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+    tree.write(&format!("loose/{long}"), b"notes");
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+
+    let summary = applied(&library)?;
+
+    assert_eq!(summary.stats.moved, 1, "{:?}", summary.plan.refused);
+    assert!(root.join("Pink Floyd/Meddle/02 Echoes.wav").is_file());
+    assert!(root.join("loose").join(&long).is_file());
+    Ok(())
+}
+
+#[test]
 fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
     let tree = Tree::new();
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));

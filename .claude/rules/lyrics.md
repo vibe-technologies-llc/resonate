@@ -167,7 +167,10 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   `Place::Within`). `WITHIN` is the folder names it descends into — `lyrics`, `lyric`, `lrc` —
   matched case-insensitively against entries the parent walk already listed, so `Lyrics/` in any
   casing is found without a stat per guess. `Rank` is the whole precedence, read in order: `.lrc`
-  over `.txt`, then how the name was arrived at — the file's stem, its whole name, then
+  over `.txt`, then how the name was arrived at — the file's stem, its whole name, the stem and a
+  language (`Echoes.en.lrc`, `Echoes.pt-BR.lrc`: two lowercase letters and optional region subtags,
+  so `Echoes.live.lrc` is no language; the first in name order answers, since nothing says which the
+  listener reads), then
   `<artist> - <title>` and `<title>` off `Wanted` — and only then where it was found, so a sheet
   beside the track outranks the same name in `Lyrics/`, while one named exactly after the file
   outranks a tag-named one beside it. Tag spellings go through `lrc::folded` and are compared for

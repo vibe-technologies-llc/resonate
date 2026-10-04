@@ -592,6 +592,15 @@ fn every_tool_is_listed_with_a_schema_naming_what_it_requires() {
         assert_eq!(entry["inputSchema"]["type"], "object");
         assert_eq!(entry["annotations"]["readOnlyHint"], tool.reads_only());
         assert_eq!(entry["annotations"]["destructiveHint"], tool.destroys());
+        assert_eq!(
+            entry["annotations"]["openWorldHint"],
+            tool.reaches_the_network()
+        );
+        assert!(
+            !(tool.reads_only() && tool.reaches_the_network()),
+            "{}",
+            tool.name()
+        );
         assert!(!(tool.reads_only() && tool.destroys()), "{}", tool.name());
         assert!(
             entry["description"]

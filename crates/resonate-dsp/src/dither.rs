@@ -43,6 +43,8 @@ const LIPSHITZ_1992_TAPS: usize = LIPSHITZ_1992_E_WEIGHTED.len();
 const LIPSHITZ_1992_DESIGN_RATES: [SampleRate; 2] = [SampleRate::HZ_44100, SampleRate::HZ_48000];
 
 const SILENT_FOR_BEFORE_MUTING_SECONDS: f64 = 0.05;
+const SILENCE_FLOOR_BITS_BELOW_FULL_SCALE: u32 = 48;
+const SILENCE_FLOOR: f64 = 1.0 / (1_u64 << SILENCE_FLOOR_BITS_BELOW_FULL_SCALE) as f64;
 
 const THRESHOLD_ORDER: usize = 12;
 const THRESHOLD_LAGS: usize = THRESHOLD_ORDER + 1;
@@ -297,7 +299,7 @@ impl Dither {
     }
 
     fn hearing(&self, frame: &[f64]) -> (Heard, usize) {
-        let silent_for = if frame.iter().all(|sample| *sample == 0.0) {
+        let silent_for = if frame.iter().all(|sample| sample.abs() <= SILENCE_FLOOR) {
             self.silent_for.saturating_add(1)
         } else {
             0
@@ -1208,6 +1210,20 @@ mod tests {
             assert!(
                 stage.history.iter().all(|error| *error == 0.0),
                 "{shaping:?}: an error from before the silence was kept"
+            );
+        }
+    }
+
+    #[test]
+    fn a_filter_tail_far_under_any_step_is_digital_silence_too() {
+        for shaping in every_curve() {
+            let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+            through_in_blocks(&mut stage, &sine(SampleRate::HZ_44100, 997.0, 0.5, 4_096));
+            let tail = through_in_blocks(&mut stage, &[1e-30; 4 * 4_096]);
+            let (_, after) = tail.split_at(a_moment_at_44_1_khz());
+            assert!(
+                after.iter().all(|sample| *sample == 0.0),
+                "{shaping:?}: a tail at -600 dB came out as hiss"
             );
         }
     }

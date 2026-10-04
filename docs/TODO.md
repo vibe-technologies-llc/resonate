@@ -139,11 +139,6 @@ service or a format — and is not worked until that moves; everything else is o
   paths on every pointer move
 - Opening a DST DSDIFF reads one header per compressed frame through the whole file on every open
   and rebind
-- Queueing tens of thousands of rows inserts each id into a sorted list, quadratic in the batch
-- Cover decoding has no pixel limit beyond the image crate's, and a cover with transparency is
-  shrunk without premultiplying its alpha
-- One- and two-letter search prefixes enumerate every matching term, the full-text index declaring
-  no prefix indexes
 - The window polls the player every 16 ms for as long as it is open, paused or not
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window
   paint on the GPU; gpui draws the scene whole, so only a newer gpui avoids it
@@ -243,10 +238,6 @@ service or a format — and is not worked until that moves; everything else is o
   seek in it still restarts the stream
 
 ## Later: Tagging and organising
-- The names derived beside a long destination — the staging and parked names, a sidecar's longer
-  suffix — are not held to 255 bytes, so the move fails the same way every run
-- A sidecar such as `Song.live.lrc` travels with `Song.flac` rather than `Song.live.flac`, the
-  shorter stem claiming it first
 - A root on a CIFS or SMB share is named as if it took any character, so a title with `?`, `:` or
   `"` fails on a share that refuses them
 - A cue-cut row is never written, and an album landed as a release group gets no totals
@@ -255,8 +246,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Later: Equaliser and DSP extras
 - Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
   and two picks landing out of order keep the first
-- Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the
-  filter tail falls to −600 dB, the dither muting only on exact zeros
 - A binding for a device not plugged in cannot be seen or taken away alone
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time
@@ -266,7 +255,8 @@ service or a format — and is not worked until that moves; everything else is o
   024-frame window, and leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- `Song.en.lrc` and `Song.ja.lrc` are never offered, and an unrelated `<stem>.txt` is read as words
+- An unrelated `<stem>.txt` is read as words, and of `Song.en.lrc` and `Song.ja.lrc` the first in
+  name order answers whatever the listener reads
 - A lookup still running when its row leaves the queue lands the last track's words over *none*
 - There is no offset of the listener's own for a sheet that runs early or late
 - **Blocked on gpui:** The sung line cannot grow as it lights: gpui on Linux draws a glyph on a whole
@@ -305,8 +295,6 @@ service or a format — and is not worked until that moves; everything else is o
   gesture and the click moves or removes the wrong rows
 - The seek bar shows only the total length, with no remaining time and no time under the pointer
 - Favourites cannot be sorted, by the date marked or otherwise
-- *Listen for* offers 8, 12 and 20 seconds while the file takes 4 to 60, and another value selects
-  no chip and is labelled 20
 - The statistics count the albums heard and never draw them
 - The `vault` key has no field, so the Vault group is reached only by editing `config.toml`
 
@@ -321,8 +309,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Later: MCP
 - A model has no tool to undo its own edits, so a discarded playlist or removed rows cannot be taken
   back by the session that made them
-- Tools carry the read-only and destructive hints alone, so every read-only catalog tool reads as
-  reaching an open world
 - An edit a model makes is not on the window's *Undo*, since undo stacks live in the process that
   made the edit
 

@@ -1835,7 +1835,12 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
   mount point above it, the table's octal escapes read back — and a root on vfat, exFAT or NTFS is
   `Naming::Portable`, which writes `\ : * ? " < > |` as `-` too, so a title ending in a question mark
   becomes a file such a drive takes rather than a rename refused every run. Any other root keeps every
-  character but the separator.
+  character but the separator. **A name derived beside a destination is held to the same 255 bytes**:
+  `noted_staging` cuts the file name to leave room for `.resonate-staging`, `a_place_to_park` cuts
+  the stem to leave room for its `.resonate-parked-<pid>` tail, and `in_the_way` treats a sidecar
+  destination longer than a component as a destination it cannot take — a loose sidecar is left
+  where it stands, a sheet travelling with its audio refuses the move
+  (`the_names_derived_beside_a_longest_name_still_fit_a_component`).
 - **`{albumartist}` falls back to nothing, never `{artist}`.** Its column is the album's own owner, and
   an album whose tracks disagree about one has none (what `COMPILATION` meant). Falling back to the
   track artist would scatter a compilation into a folder per singer — the split the grouping's third
@@ -1995,7 +2000,9 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
 - **A file beside a track sharing its name travels with it.** `Planner::sidecars` takes the files in
   the track's folder that are not scanned rows, whose name is the track's stem followed by `.` and more,
   and whose extension is not audio — so `Meddle.cue` and `Meddle.wav.log` follow `Meddle.wav` onto the
-  destination's stem. A cue-cut file is the exception proving the rule: the rows cut from one file are
+  destination's stem. A file that also carries the stem of a longer-named audio file beside it
+  — `Song.live.lrc` beside `Song.flac` and `Song.live.flac` — is left to that one
+  (`a_sidecar_travels_with_the_track_whose_longer_stem_it_carries`). A cue-cut file is the exception proving the rule: the rows cut from one file are
   filed by the folder their layouts agree on and keep their name, the sheet beside them naming that
   file, so the sidecar lands under an unchanged stem and still names its audio. Rows of one file naming
   two folders are `Unidentified`, not filed under whichever came first. A sheet cutting *one* row from a
@@ -2187,7 +2194,10 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   a dotless i being a letter of its own — so *Kıskanç* was reachable only by typing the dotless ı and
   *KISKANÇ* only by not. The same fold lets *Przybylowicz* find *Przybyłowicz*. `remove_diacritics`
   stays on the tokenizer although the fold did the work, costing nothing, the index not resting on the
-  fold being complete. Nothing reads a `tracks_fts` column back — only `MATCH` and `rank` — so no
+  fold being complete. The index declares `prefix = '1 2'`, so a one- or two-letter word typed ahead of
+  its rest is answered from a prefix index rather than by enumerating every term it begins
+  (`a_catalog_carried_forward_keeps_its_index_and_gains_the_short_prefixes`: the step copies the rows
+  out, drops and declares the table again, and puts them back). Nothing reads a `tracks_fts` column back — only `MATCH` and `rank` — so no
   spelling is kept beside the fold. It is a schema break without a migration: an index written before
   the fold holds spellings no folded query matches, and an incremental rescan never rewrites an
   unchanged row, so such a catalog is deleted and scanned again.

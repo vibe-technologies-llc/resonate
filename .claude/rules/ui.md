@@ -730,7 +730,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
 - **`resonate-codec` decodes and scales cover art, and gpui is handed the pixels.**
   `Drawing::no_larger_than` and `Drawing::squared` answer a `Raster` — width, height and pixels already in
   the blue-first order gpui's atlas holds — and `models::picture_of` wraps it in a `RenderImage`, so a
-  cover is decoded once, by us, never written back out as PNG for gpui to decode again. A tag-catalog
+  cover is decoded once, by us, never written back out as PNG for gpui to decode again. A picture more than `LARGEST_COVER_SIDE` (8 192)
+  pixels either way is refused before it is decoded rather than held whole, and a shrink weighs each
+  pixel by its alpha — the filter runs on premultiplied linear light and divides it back out, so what is
+  transparent tints nothing (`what_is_transparent_does_not_tint_what_is_shrunk_with_it`). A tag-catalog
   picture arrives the same way, through `CoverArt` re-exported by `resonate-engine`. Each is read once and
   held in a `Recent` keyed by album, artist or file *and the side drawn at*, a fresh `Arc<RenderImage>`
   every frame being a new texture every frame. Read and decode run on `Drawer`'s two threads rather than

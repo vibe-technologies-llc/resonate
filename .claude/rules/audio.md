@@ -1776,8 +1776,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **Digital silence held a moment is handed on as digital silence.** Dither decorrelates the error of
   a signal the grid cannot hold, and a run of exact zeros has none: dithered, a gap between tracks or a
   track's leading silence reached a 16-bit device as shaped hiss a DAC's silence detection could never
-  see as silence. Once every channel has read exact zero for `SILENT_FOR_BEFORE_MUTING_SECONDS`
-  (50 ms), the stage writes zeros and clears the error it feeds back, and the first non-zero frame is
+  see as silence. Once every channel has read zero — or under `SILENCE_FLOOR`, 2⁻⁴⁸, 17 bits
+  below a 32-bit step, which is where an equaliser's filter tail rings on long after its input
+  stopped (`a_filter_tail_far_under_any_step_is_digital_silence_too`) — for
+  `SILENT_FOR_BEFORE_MUTING_SECONDS` (50 ms), the stage writes zeros and clears the error it feeds back, and the first non-zero frame is
   dithered again from that clean history — so a fade, however far under the last step, is never taken
   for silence, and the 50 ms before the mute let the shaped error of what came before ring out rather
   than stop on a step. `digital_silence_held_for_a_moment_comes_out_as_digital_silence`,

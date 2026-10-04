@@ -1,5 +1,6 @@
 use std::{mem::take, ops::Range, sync::Arc};
 
+use ahash::AHashSet;
 use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, Span, TrackId};
 
 use crate::{RepeatMode, seed};
@@ -76,23 +77,20 @@ fn one_id_each(items: Vec<QueueItem>, beside: &[QueueItem]) -> Vec<QueueItem> {
 }
 
 pub struct Unclaimed {
-    taken: Vec<u64>,
+    taken: AHashSet<u64>,
     next: u64,
 }
 
 impl Unclaimed {
     pub fn beside(queue: &[QueueItem]) -> Self {
-        let mut taken: Vec<u64> = queue.iter().map(|item| item.id.get()).collect();
-        taken.sort_unstable();
-
         Self {
-            taken,
+            taken: queue.iter().map(|item| item.id.get()).collect(),
             next: u64::MAX,
         }
     }
 
     pub fn mint(&mut self) -> TrackId {
-        while self.taken.binary_search(&self.next).is_ok() {
+        while self.taken.contains(&self.next) {
             match self.next.checked_sub(1) {
                 Some(below) => self.next = below,
                 None => return TrackId::MAX,
@@ -106,13 +104,7 @@ impl Unclaimed {
     }
 
     pub fn claim(&mut self, id: TrackId) -> Option<TrackId> {
-        match self.taken.binary_search(&id.get()) {
-            Ok(_) => None,
-            Err(at) => {
-                self.taken.insert(at, id.get());
-                Some(id)
-            }
-        }
+        self.taken.insert(id.get()).then_some(id)
     }
 }
 
@@ -1706,6 +1698,18 @@ mod tests {
             loaded_at,
             "the same files under other ids stamped as another queue"
         );
+    }
+
+    #[test]
+    fn a_batch_of_rows_all_claiming_one_id_is_given_an_id_each() {
+        let mut queue = Queue::new();
+        let batch: Vec<QueueItem> = (0..50_000).map(|_| item(1)).collect();
+
+        queue.insert(batch, Placement::Queued);
+
+        let ids: AHashSet<u64> = queue.items.iter().map(|item| item.id.get()).collect();
+        assert_eq!(ids.len(), 50_000);
+        assert!(ids.contains(&1));
     }
 
     #[test]

@@ -1,11 +1,14 @@
 use std::{
     cmp::Ordering as Ranking,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fmt, fs,
     io::{self, Read as _},
     iter, mem,
     num::NonZeroU32,
-    os::unix::fs::MetadataExt as _,
+    os::unix::{
+        ffi::{OsStrExt as _, OsStringExt as _},
+        fs::MetadataExt as _,
+    },
     path::{Path, PathBuf},
     process,
     sync::{
@@ -1272,6 +1275,11 @@ impl<'a> Planner<'a> {
     }
 
     fn in_the_way(&self, from: &Path, to: &Path) -> Option<InTheWay> {
+        if to.file_name().is_some_and(|name| name.len() > COMPONENT_BYTES) {
+            return Some(InTheWay::Stands(Refusal::Collided {
+                with: to.to_path_buf(),
+            }));
+        }
         if let Some(winner) = self.claimed.get(to) {
             return Some(InTheWay::Stands(Refusal::Collided {
                 with: winner.clone(),
@@ -1411,11 +1419,24 @@ impl<'a> Planner<'a> {
             .filter(|claiming| !claiming.files.is_empty())
             .map(|claiming| claiming.sheet.clone())
             .collect();
-        let candidates: Vec<PathBuf> = listing(&mut self.beside, folder)
+        let beside = listing(&mut self.beside, folder);
+        let longer_stems: Vec<&str> = beside
+            .files
+            .iter()
+            .filter(|file| names_audio(file))
+            .filter_map(|file| file.file_stem().and_then(OsStr::to_str))
+            .filter(|other| other.len() > stem.len() && other.starts_with(stem))
+            .collect();
+        let candidates: Vec<PathBuf> = beside
             .files
             .iter()
             .filter(|file| !self.sources.contains(file.as_path()))
             .filter(|file| !claiming_elsewhere.contains(file.as_path()))
+            .filter(|file| {
+                !longer_stems
+                    .iter()
+                    .any(|longer| trailing(file, longer).is_some())
+            })
             .cloned()
             .collect();
 
@@ -1695,10 +1716,15 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
 
 fn a_place_to_park(from: &Path) -> Option<PathBuf> {
     let stem = from.file_stem()?.to_str()?;
-    let named = match from.extension().and_then(OsStr::to_str) {
-        Some(extension) => format!("{stem}.{PARKED}-{}.{extension}", process::id()),
-        None => format!("{stem}.{PARKED}-{}", process::id()),
+    let extension = from.extension().and_then(OsStr::to_str);
+    let tail = match extension {
+        Some(extension) => format!(".{PARKED}-{}.{extension}", process::id()),
+        None => format!(".{PARKED}-{}", process::id()),
     };
+    let named = format!(
+        "{}{tail}",
+        largest_prefix_within(stem, COMPONENT_BYTES.saturating_sub(tail.len()))
+    );
     let parking = from.with_file_name(named);
     fs::symlink_metadata(&parking).is_err().then_some(parking)
 }
@@ -2047,9 +2073,11 @@ fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
 }
 
 fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
-    let mut staging = landing.as_os_str().to_owned();
-    staging.push(STAGED);
-    let staged = PathBuf::from(staging);
+    let name = landing.file_name().map(OsStr::as_bytes).unwrap_or_default();
+    let kept = &name[..name.len().min(COMPONENT_BYTES - STAGED.len())];
+    let mut staging = kept.to_vec();
+    staging.extend_from_slice(STAGED.as_bytes());
+    let staged = landing.with_file_name(OsString::from_vec(staging));
     library.staging(&staged)?;
     Ok(staged)
 }
@@ -3035,6 +3063,43 @@ mod tests {
             rendered(&layout, &named),
             format!("The Wall/{}.flac", "a".repeat(249))
         );
+    }
+
+    #[test]
+    fn the_names_derived_beside_a_longest_name_still_fit_a_component() {
+        let folder = a_folder_of_its_own();
+        let longest = format!("{}.flac", "a".repeat(COMPONENT_BYTES - ".flac".len()));
+        let landing = folder.join(&longest);
+        let library = Library::open_in_memory().expect("an in-memory library");
+
+        let staged = noted_staging(&library, &landing).expect("a staging name");
+        let parking = a_place_to_park(&landing).expect("a free place to park");
+
+        for derived in [&staged, &parking] {
+            let name = derived.file_name().expect("a name");
+            assert!(name.len() <= COMPONENT_BYTES, "{derived:?}");
+            assert_eq!(derived.parent(), landing.parent());
+        }
+        assert!(staged.to_string_lossy().ends_with(STAGED));
+        assert!(parking.to_string_lossy().ends_with(".flac"));
+        assert!(
+            Move {
+                from: landing.clone(),
+                to: parking,
+                rows: 1,
+                companions: Vec::new(),
+                sidecars: Vec::new(),
+            }
+            .parks()
+        );
+
+        let shorter = folder.join("01 Echoes.flac");
+        assert_eq!(
+            noted_staging(&library, &shorter).expect("a staging name"),
+            folder.join(format!("01 Echoes.flac{STAGED}"))
+        );
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 
     #[test]

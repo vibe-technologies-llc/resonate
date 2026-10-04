@@ -23,9 +23,12 @@ const BESIDE: [(&str, Written); 4] = [
 ];
 const WITHIN: [&str; 3] = ["lyrics", "lyric", "lrc"];
 const LARGEST_SIDECAR: u64 = lrc::LARGEST_SHEET as u64;
+const LANGUAGE_CODE_LETTERS: usize = 2;
 const FOLDERS_WALKED: usize = 32;
 const TIMESTAMPS_SETTLE_IN: Duration = Duration::from_secs(1);
-const NAMED_AFTER_THE_FILE: usize = 2;
+const SPELLED_AFTER_THE_FILE: usize = 2;
+const SPELLED_IN_A_LANGUAGE: usize = SPELLED_AFTER_THE_FILE;
+const NAMED_AFTER_THE_FILE: usize = SPELLED_IN_A_LANGUAGE + 1;
 
 pub struct Sidecar {
     source: SourceId,
@@ -344,15 +347,35 @@ impl Named {
     }
 
     fn names(&self, stem: &str) -> Option<usize> {
-        let after_the_file: [&String; NAMED_AFTER_THE_FILE] = [&self.stem, &self.whole];
+        let after_the_file: [&String; SPELLED_AFTER_THE_FILE] = [&self.stem, &self.whole];
         if let Some(named) = after_the_file.iter().position(|held| held.as_str() == stem) {
             return Some(named);
+        }
+        if self.in_a_language(stem) {
+            return Some(SPELLED_IN_A_LANGUAGE);
         }
         let folded = lrc::folded(stem);
         let named = self.tagged.iter().position(|held| *held == folded)?;
 
-        Some(after_the_file.len() + named)
+        Some(NAMED_AFTER_THE_FILE + named)
     }
+
+    fn in_a_language(&self, stem: &str) -> bool {
+        stem.strip_prefix(self.stem.as_str())
+            .and_then(|rest| rest.strip_prefix('.'))
+            .is_some_and(a_language_tag)
+    }
+}
+
+fn a_language_tag(tag: &str) -> bool {
+    let mut subtags = tag.split(['-', '_']);
+    let language = subtags.next().unwrap_or_default();
+
+    language.len() == LANGUAGE_CODE_LETTERS
+        && language.chars().all(|letter| letter.is_ascii_lowercase())
+        && subtags.all(|subtag| {
+            (2..=4).contains(&subtag.len()) && subtag.chars().all(|ch| ch.is_ascii_alphanumeric())
+        })
 }
 
 fn tagged(wanted: &Wanted) -> Vec<String> {
@@ -857,6 +880,34 @@ mod tests {
         let lyrics = found(&wanted).expect("the sheet named after the file");
 
         assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    #[test]
+    fn a_sheet_named_after_the_file_and_a_language_is_found() {
+        let tree = Tree::new();
+        tree.write("Echoes.pt-BR.lrc", LRC);
+
+        assert!(found(&tree.track("Echoes.flac")).is_some());
+    }
+
+    #[test]
+    fn a_sheet_named_after_the_file_outranks_one_in_a_language() {
+        let tree = Tree::new();
+        tree.write("Echoes.en.lrc", "[00:01.00]all that you distrust");
+        tree.write("Echoes.lrc", LRC);
+
+        let lyrics = found(&tree.track("Echoes.flac")).expect("the sheet named after the file");
+
+        assert_eq!(lyrics.lines().len(), 2);
+    }
+
+    #[test]
+    fn a_sheet_named_after_the_file_and_a_word_that_is_no_language_is_passed_over() {
+        let tree = Tree::new();
+        tree.write("Echoes.live.lrc", LRC);
+        tree.write("Echoes.1.lrc", LRC);
+
+        assert!(found(&tree.track("Echoes.flac")).is_none());
     }
 
     #[test]

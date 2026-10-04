@@ -190,7 +190,8 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   where a want committed per id left the earlier ones written.
 - **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint`: the removals
   `remove_from_playlist`, `discard_playlist` and `remove_from_queue`, and `play_playlist`, which
-  replaces a queue.
+  replaces a queue. `Tool::reaches_the_network` is `openWorldHint`: `start_lookup` and `start_poll`
+  alone ask a service, so every catalog tool reads as closed.
 - An unreadable combination is a refusal: `OneOf` where exactly one field must be given,
   `AtLeastOneOf` for a mark naming nothing, `AtMostOneOf` for a playlist started from two sources,
   `BlankField` for a `query` or `fills_from` given blank — which the grammar reads as no condition, so

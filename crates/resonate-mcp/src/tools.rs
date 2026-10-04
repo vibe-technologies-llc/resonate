@@ -159,6 +159,10 @@ impl Tool {
         )
     }
 
+    pub const fn reaches_the_network(self) -> bool {
+        matches!(self, Self::StartLookup | Self::StartPoll)
+    }
+
     fn describes(self) -> String {
         match self {
             Self::Search => format!(
@@ -518,6 +522,7 @@ impl Tool {
             "annotations": {
                 "readOnlyHint": self.reads_only(),
                 "destructiveHint": self.destroys(),
+                "openWorldHint": self.reaches_the_network(),
             },
         })
     }

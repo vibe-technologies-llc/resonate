@@ -18,6 +18,8 @@ const EIGHT_BIT_FULL_SCALE: f32 = 255.0;
 
 const OPAQUE: f32 = 1.0;
 
+const LARGEST_COVER_SIDE: u32 = 8_192;
+
 const RGB: usize = 3;
 const RGBA: usize = 4;
 
@@ -229,6 +231,16 @@ impl<'a> Plane<'a> {
         }
     }
 
+    fn premultiplied(&self, y: u32, into: &mut [Linear]) {
+        self.linear(y, into);
+        for held in into {
+            let alpha = held[RGB];
+            for channel in &mut held[..RGB] {
+                *channel *= alpha;
+            }
+        }
+    }
+
     fn to_rgba(self) -> RgbaImage {
         let mut rgba = RgbaImage::new(self.width, self.height);
         for (y, into) in (0..self.height).zip(rgba.rows_mut()) {
@@ -271,6 +283,14 @@ fn taps(from: u32, to: u32) -> Vec<Taps> {
         .collect()
 }
 
+fn unpremultiplied(value: f32, alpha: f32) -> f32 {
+    if alpha > 0.0 {
+        (value / alpha).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 fn catmull_rom(x: f32) -> f32 {
     let (b, c) = (CATMULL_ROM_B, CATMULL_ROM_C);
     let a = x.abs();
@@ -308,7 +328,7 @@ impl Held {
     fn row(&mut self, plane: &Plane<'_>, y: u32) -> &[Linear] {
         let slot = y as usize % self.rows.len();
         if y >= self.reached {
-            plane.linear(y, &mut self.rows[slot]);
+            plane.premultiplied(y, &mut self.rows[slot]);
             self.reached = y + 1;
         }
         &self.rows[slot]
@@ -338,10 +358,11 @@ fn drawn_smaller(plane: Plane<'_>, width: u32, height: u32) -> RgbaImage {
                     *channel += value * weight;
                 }
             }
+            let alpha = sum[RGB].clamp(0.0, 1.0);
             for (drawn, &value) in pixel.0.iter_mut().zip(&sum[..RGB]) {
-                *drawn = eight_bit(srgb_from_linear(value.clamp(0.0, 1.0)));
+                *drawn = eight_bit(srgb_from_linear(unpremultiplied(value, alpha)));
             }
-            pixel.0[RGB] = eight_bit(sum[RGB].clamp(0.0, 1.0));
+            pixel.0[RGB] = eight_bit(alpha);
         }
     }
     drawn
@@ -361,7 +382,14 @@ impl CoverArt {
 }
 
 fn read_art(art: &CoverArt) -> Option<DynamicImage> {
-    match image::load_from_memory_with_format(&art.bytes, read_as(art.format)) {
+    let mut reader =
+        image::ImageReader::with_format(std::io::Cursor::new(&art.bytes), read_as(art.format));
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(LARGEST_COVER_SIDE);
+    limits.max_image_height = Some(LARGEST_COVER_SIDE);
+    reader.limits(limits);
+
+    match reader.decode() {
         Ok(read) => Some(read),
         Err(error) => {
             tracing::warn!(%error, "cover art could not be read for drawing");
@@ -426,7 +454,8 @@ mod tests {
     use image::{RgbImage, Rgba, Rgba32FImage, RgbaImage, imageops::FilterType};
 
     use super::{
-        CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LINEAR_FROM_EIGHT_BIT,
+        CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat, LARGEST_COVER_SIDE,
+        LINEAR_FROM_EIGHT_BIT,
         Likeness, RGB, drawn_smaller, eight_bit, linear_from_srgb, sides_within, srgb_from_linear,
     };
 
@@ -458,21 +487,28 @@ mod tests {
         let linear = &*LINEAR_FROM_EIGHT_BIT;
         let held = Rgba32FImage::from_fn(read.width(), read.height(), |x, y| {
             let Rgba([red, green, blue, alpha]) = *read.get_pixel(x, y);
+            let alpha = f32::from(alpha) / EIGHT_BIT_FULL_SCALE;
             Rgba([
-                linear[usize::from(red)],
-                linear[usize::from(green)],
-                linear[usize::from(blue)],
-                f32::from(alpha) / EIGHT_BIT_FULL_SCALE,
+                linear[usize::from(red)] * alpha,
+                linear[usize::from(green)] * alpha,
+                linear[usize::from(blue)] * alpha,
+                alpha,
             ])
         });
         let resized = image::imageops::resize(&held, width, height, FilterType::CatmullRom);
         RgbaImage::from_fn(width, height, |x, y| {
             let Rgba(from) = *resized.get_pixel(x, y);
+            let alpha = from[RGB].clamp(0.0, 1.0);
             let mut into = [0; 4];
             for (drawn, value) in into.iter_mut().zip(&from[..RGB]) {
-                *drawn = eight_bit(srgb_from_linear(*value));
+                let straight = if alpha > 0.0 {
+                    (*value / alpha).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                *drawn = eight_bit(srgb_from_linear(straight));
             }
-            into[RGB] = eight_bit(from[RGB]);
+            into[RGB] = eight_bit(alpha);
             Rgba(into)
         })
     }
@@ -587,6 +623,36 @@ mod tests {
                 "{width}x{height}"
             );
         }
+    }
+
+    #[test]
+    fn a_cover_wider_than_any_sleeve_is_refused_rather_than_decoded() {
+        let wide = RgbaImage::from_pixel(LARGEST_COVER_SIDE + 1, 1, image::Rgba([9, 9, 9, 255]));
+        let art = written_as_png(&wide).expect("a wide strip is written");
+
+        assert!(Drawing::of(&art).is_none());
+        assert!(Drawing::of(&painted(LARGEST_COVER_SIDE, 1, 9)).is_some());
+    }
+
+    #[test]
+    fn what_is_transparent_does_not_tint_what_is_shrunk_with_it() {
+        let checker = RgbaImage::from_fn(8, 8, |x, y| {
+            if (x + y) % 2 == 0 {
+                image::Rgba([255, 0, 0, 255])
+            } else {
+                image::Rgba([0, 0, 255, 0])
+            }
+        });
+        let drawn = Drawing(Decoded::Rgba(checker))
+            .no_larger_than(NonZeroU32::new(1).expect("1 is not zero"))
+            .expect("the checker shrinks to a point");
+
+        let [blue, green, red, alpha] = drawn.bgra[..4] else {
+            panic!("a pixel holds four bytes");
+        };
+        assert!((100..=155).contains(&alpha), "alpha {alpha}");
+        assert!(red >= 250, "red {red}");
+        assert!(blue <= 5 && green <= 5, "blue {blue} green {green}");
     }
 
     #[test]

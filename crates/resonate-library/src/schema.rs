@@ -231,6 +231,21 @@ const MIGRATIONS: &[&str] = &[
          DELETE FROM lyrics_refused
           WHERE path = old.path AND span_start = old.span_start;
      END;",
+    "CREATE TEMP TABLE tracks_fts_held AS
+          SELECT rowid AS id, title, artist, album, genre, lyrics FROM tracks_fts;
+     DROP TABLE tracks_fts;
+     CREATE VIRTUAL TABLE tracks_fts USING fts5(
+         title,
+         artist,
+         album,
+         genre,
+         lyrics,
+         tokenize = 'unicode61 remove_diacritics 2',
+         prefix = '1 2'
+     );
+     INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
+          SELECT id, title, artist, album, genre, lyrics FROM tracks_fts_held;
+     DROP TABLE tracks_fts_held;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -957,6 +972,49 @@ mod tests {
                 .expect("the track remains visible"),
             0
         );
+        lay_out(&connection).expect("opening again is idempotent");
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_keeps_its_index_and_gains_the_short_prefixes() {
+        let connection = opened();
+        let rebuilding = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("prefix = '1 2'"))
+            .expect("the step that indexes the short prefixes");
+        lay_out_through(&connection, V1, &MIGRATIONS[..rebuilding])
+            .expect("the previous schema applies");
+        connection
+            .execute(
+                "INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
+                 VALUES (7, 'echoes', 'pink floyd', 'meddle', 'rock', 'overhead the albatross')",
+                [],
+            )
+            .expect("a row is indexed");
+
+        lay_out(&connection).expect("the catalog migrates");
+
+        let found = |query: &str| -> Vec<i64> {
+            connection
+                .prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1")
+                .and_then(|mut statement| {
+                    statement
+                        .query_map([query], |row| row.get(0))?
+                        .collect()
+                })
+                .expect("the index is read")
+        };
+        assert_eq!(found("e*"), vec![7]);
+        assert_eq!(found("pi*"), vec![7]);
+        assert_eq!(found("albatross"), vec![7]);
+        let declared: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'tracks_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the index is declared");
+        assert!(declared.contains("prefix = '1 2'"));
         lay_out(&connection).expect("opening again is idempotent");
     }
 
