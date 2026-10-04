@@ -1492,7 +1492,7 @@ impl RootView {
         let busy = library.is_busy();
         let polling = library.is_polling();
         let stopping = library.is_stopping_poll();
-        let held_back = busy || !library.can_poll();
+        let held_back = busy || !library.can_poll(cx);
         let told = library.poll_stats().map(asked_of_the_inbox);
 
         kit::section_body()

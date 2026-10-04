@@ -36,7 +36,7 @@ use resonate_providers::Providers;
 
 use crate::{
     ResonateApp, clipboard,
-    downloads::{Download, Downloads, Fetcher, Fetching, Polling, WantStanding},
+    downloads::{Download, Downloads, Fetcher, Fetching, Polling, Unfinished, WantStanding},
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
@@ -72,6 +72,7 @@ const SCAN_POLL: Duration = Duration::from_millis(100);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
 const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(450);
 const POLLS_PER_RELOAD: u32 = 20;
+const POLLS_PER_REREAD_WHILE_ASKING: u32 = 5;
 const FIRST_ASKED_AFTER: Duration = Duration::from_secs(60);
 const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
 const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
@@ -176,6 +177,7 @@ struct Shelves {
     entries: Vec<PlaylistEntry>,
     wanted: AHashMap<ReleaseTrackId, WantId>,
     standings: AHashMap<WantId, WantStanding>,
+    unfinished: Vec<Unfinished>,
     next_try: Option<SystemTime>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
@@ -716,6 +718,7 @@ pub struct LibraryModel {
     roots_waiting: Vec<RootWaiting>,
     poll_owed: Option<PollOptions>,
     downloads: Downloads,
+    downloads_restored: bool,
     to_file: Option<ToFile>,
     _pressings: Task<()>,
     _kept: Task<()>,
@@ -724,6 +727,29 @@ pub struct LibraryModel {
     _reaching: Task<()>,
     _showing: Task<()>,
     _previewing: Task<()>,
+}
+
+#[derive(Debug, Default)]
+struct Followed {
+    seen: PollStats,
+    since: u32,
+}
+
+impl Followed {
+    fn reread(&mut self, now: PollStats) -> Option<Wanted> {
+        self.since = self.since.saturating_add(1);
+        if now == self.seen || self.since < POLLS_PER_REREAD_WHILE_ASKING {
+            return None;
+        }
+        let landed = now.kept > self.seen.kept;
+        self.seen = now;
+        self.since = 0;
+        Some(if landed {
+            Wanted::Everything
+        } else {
+            Wanted::ThePlaylists
+        })
+    }
 }
 
 fn delivery_folder(cx: &App) -> Option<DeliveryFolder> {
@@ -896,6 +922,7 @@ impl LibraryModel {
             roots_waiting: Vec::new(),
             poll_owed: None,
             downloads: Downloads::default(),
+            downloads_restored: false,
             to_file: None,
             _pressings: Task::ready(()),
             _kept: Task::ready(()),
@@ -1363,11 +1390,7 @@ impl LibraryModel {
                 }
                 match wanted {
                     Ok(want) => {
-                        let fetched_by = if this.sourcing.providers().has_a_source() {
-                            Fetcher::AProvider
-                        } else {
-                            Fetcher::Nobody
-                        };
+                        let fetched_by = this.fetched_by(cx);
                         this.downloads.wanted(&found.recording, want, fetched_by);
                         if fetched_by == Fetcher::AProvider {
                             this.fetch_what_was_wanted(PollOptions::default(), cx);
@@ -1408,11 +1431,7 @@ impl LibraryModel {
                 }
                 match wanted {
                     Ok(wanted) => {
-                        let fetched_by = if this.sourcing.providers().has_a_source() {
-                            Fetcher::AProvider
-                        } else {
-                            Fetcher::Nobody
-                        };
+                        let fetched_by = this.fetched_by(cx);
                         let now = SystemTime::now();
                         this.album_songs.insert(
                             group,
@@ -1540,6 +1559,24 @@ impl LibraryModel {
         self.downloads.dismiss(recording);
         self.unwant(want, cx);
         cx.notify();
+    }
+
+    pub fn sources_moved(&mut self, cx: &mut Context<Self>) {
+        if self.fetched_by(cx) == Fetcher::Nobody {
+            return;
+        }
+        if self.downloads.provided() {
+            cx.notify();
+        }
+        self.fetch_what_was_wanted(PollOptions::ASKING_EVERY_WANT, cx);
+    }
+
+    pub fn downloaded_track(&self, download: &Download) -> Option<TrackId> {
+        self.standings.get(&download.want()?)?.held()
+    }
+
+    pub fn downloaded_album(&self, download: &Download) -> Option<AlbumId> {
+        self.standings.get(&download.want()?)?.album()
     }
 
     pub fn clear_finished_downloads(&mut self, cx: &mut Context<Self>) {
@@ -1716,7 +1753,7 @@ impl LibraryModel {
     ) {
         match wanted {
             Ok(wanted) if !wanted.is_empty() => {
-                self.list_as_downloads(&wanted);
+                self.list_as_downloads(&wanted, cx);
                 self.fetch_or_say_nobody_can(cx);
             }
             Ok(_) => {}
@@ -1728,12 +1765,8 @@ impl LibraryModel {
         self.read(reread, cx);
     }
 
-    fn list_as_downloads(&mut self, wanted: &[(ReleaseTrackId, WantId)]) {
-        let fetched_by = if self.sourcing.providers().has_a_source() {
-            Fetcher::AProvider
-        } else {
-            Fetcher::Nobody
-        };
+    fn list_as_downloads(&mut self, wanted: &[(ReleaseTrackId, WantId)], cx: &App) {
+        let fetched_by = self.fetched_by(cx);
         let now = SystemTime::now();
         let owner = self
             .album
@@ -3511,6 +3544,9 @@ impl LibraryModel {
     fn take_the_shelves(&mut self, shelves: Shelves) {
         self.wanted = shelves.wanted;
         self.next_try = shelves.next_try;
+        if !mem::replace(&mut self.downloads_restored, true) {
+            self.downloads.restored(shelves.unfinished);
+        }
         self.downloads.followed(&shelves.standings);
         self.standings = shelves.standings;
         if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
@@ -3870,6 +3906,9 @@ impl LibraryModel {
         self.unreached_for = None;
         self.ask_elsewhere_after(Duration::ZERO, cx);
         self.restate_the_listing();
+        if online {
+            self.sources_moved(cx);
+        }
         cx.notify();
     }
 
@@ -4188,8 +4227,23 @@ impl LibraryModel {
         cx.notify();
     }
 
-    pub fn can_poll(&self) -> bool {
-        self.sourcing.providers().has_a_source()
+    pub fn can_poll(&self, cx: &App) -> bool {
+        self.providers(cx).has_a_source()
+    }
+
+    fn providers(&self, cx: &App) -> Providers {
+        match cx.try_global::<ResonateApp>() {
+            Some(global) => self.sourcing.providers(&global.online),
+            None => self.sourcing.providers(&Online::default()),
+        }
+    }
+
+    fn fetched_by(&self, cx: &App) -> Fetcher {
+        if self.providers(cx).has_a_source() {
+            Fetcher::AProvider
+        } else {
+            Fetcher::Nobody
+        }
     }
 
     pub fn is_polling(&self) -> bool {
@@ -4211,7 +4265,7 @@ impl LibraryModel {
     }
 
     fn fetch_or_say_nobody_can(&mut self, cx: &mut Context<Self>) {
-        if self.sourcing.providers().has_a_source() {
+        if self.providers(cx).has_a_source() {
             self.fetch_what_was_wanted(PollOptions::default(), cx);
         } else {
             toast::tell(Notice::Trouble(NO_PROVIDER.to_owned()), cx);
@@ -4248,7 +4302,7 @@ impl LibraryModel {
             }
             return false;
         }
-        let providers = Arc::new(self.sourcing.providers());
+        let providers = Arc::new(self.providers(cx));
         if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
             return true;
         }
@@ -4267,9 +4321,17 @@ impl LibraryModel {
         cx.notify();
 
         self._poll = cx.spawn(async move |this, cx| {
+            let mut followed = Followed::default();
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                let reread = followed.reread(handle.progress().snapshot());
+                let ticked = this.update(cx, |this, cx| {
+                    if let Some(wanted) = reread {
+                        this.read(wanted, cx);
+                    }
+                    cx.notify();
+                });
+                if ticked.is_err() {
                     return;
                 }
             }
@@ -5255,6 +5317,7 @@ fn shelves(
         .iter()
         .map(|want| (want.id, WantStanding::of(want)))
         .collect();
+    let unfinished = wants.iter().rev().filter_map(Unfinished::of).collect();
 
     let playlists = library.playlists(asked.order, asked.reading, narrowing)?;
     let pictured = pictures_of(library, playlists.iter().chain(held.as_ref()))?;
@@ -5268,6 +5331,7 @@ fn shelves(
         entries,
         wanted,
         standings,
+        unfinished,
         next_try: wants
             .iter()
             .filter_map(resonate_library::Want::due_at)
@@ -5711,14 +5775,43 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
-    use resonate_library::{Direction, Found, Library, Mbid, SortOrder};
+    use resonate_library::{Direction, Found, Library, Mbid, PollStats, SortOrder};
 
     use super::{
-        Arranging, Beyond, Change, Favourited, ListedRow, MissingRow, Pass, Planned, Reaching,
-        Shared, Wanted, arranged, beyond_the_listing, elsewhere_standing, headed_by_disc, held_at,
-        held_in, kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
+        Arranging, Beyond, Change, Favourited, Followed, ListedRow, MissingRow,
+        POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching, Shared, Wanted, arranged,
+        beyond_the_listing, elsewhere_standing, headed_by_disc, held_at, held_in,
+        kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
         unheld_release_rows,
     };
+
+    #[test]
+    fn a_poll_that_moved_is_read_again_while_it_runs_and_a_landing_rereads_everything() {
+        let mut followed = Followed::default();
+        let answered = PollStats {
+            asked: 2,
+            nothing: 1,
+            ..PollStats::default()
+        };
+        let landed = PollStats {
+            kept: 1,
+            ..answered
+        };
+        let mut rereads = Vec::new();
+
+        for _ in 0..POLLS_PER_REREAD_WHILE_ASKING {
+            rereads.push(followed.reread(answered));
+        }
+        for _ in 0..POLLS_PER_REREAD_WHILE_ASKING {
+            rereads.push(followed.reread(answered));
+        }
+        for _ in 0..POLLS_PER_REREAD_WHILE_ASKING {
+            rereads.push(followed.reread(landed));
+        }
+        let reread: Vec<Wanted> = rereads.into_iter().flatten().collect();
+
+        assert_eq!(reread, [Wanted::ThePlaylists, Wanted::Everything]);
+    }
 
     #[test]
     fn a_read_asked_for_while_another_runs_covers_what_both_would_have_read() {

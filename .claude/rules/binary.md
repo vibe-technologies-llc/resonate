@@ -218,9 +218,9 @@ the seventy-seven have a flag — `sink`, `library`, `vault`, `quality`, `filter
   `listen-for`, `music-folder` and `file-dropped` (the Library category's *Primary music folder*
   group),
   `inbox` (the Library category's *The inbox* group, which polls from the window too),
-  `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, used from
-  the next start) and `tidal-client-id`, `tidal-client-secret`, `tidal-refresh-token` and
-  `hifi-api` (its *A TIDAL account* group, likewise);
+  `subsonic`, `subsonic-user`, `subsonic-password` (its *A Subsonic server* group, asked by the
+  window as soon as they are given) and `tidal-client-id`, `tidal-client-secret`,
+  `tidal-refresh-token` and `hifi-api` (its *A TIDAL account* group, likewise);
 - the seven shaping a Discord presence — `discord`, `discord-app`, `discord-shows`, `discord-art`,
   `discord-icon`, `discord-progress`, `discord-paused` — written by the Desktop category's two
   Discord groups and live at once.
@@ -245,8 +245,9 @@ What some of them mean:
   (`unusable_as_the_music_folder`), and adds it to the roots through `add_roots` unless a root
   already reaches it, so what lands there is scanned like any other folder.
 - `hifi-api` is an optional custom server address. Blank or absent, the hosted TIDAL HiFi service
-  is used while `online` is on; a custom address replaces it from the next start. The *A TIDAL
-  account* group's field writes it (`providers.md`).
+  is used while `online` is on; a custom address replaces it — in the window at once, the field
+  refusing an address with no `http://` or `https://`. The *A TIDAL account* group's field writes
+  it (`providers.md`).
 - `file-dropped` (default true): what is dropped on the window is filed by `organise-as` once the
   scan has it, rather than left under the names and folders it came with. It rides on `Stored` onto
   `ResonateApp::file_dropped`, and the *Primary music folder* group's switch writes it.

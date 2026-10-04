@@ -164,13 +164,20 @@ A provider does none of this, so none of it is written twice:
    not through `resonate-online`, and paces and identifies itself as `online.md` says — by name
    and version and nothing else.
 2. A workspace member and a `[workspace.dependencies]` entry.
-3. A dependency of the binary and one `.and(Arc::new(..))` in `providers::sourced` (the inbox is
-   registered by `with_inbox`), gated on the `Config` key saying it is wanted. `providers::registered`
-   is the public entry and the one place any is registered — in code, never loaded at run time.
-   The window builds its registry through the same function, handed over as
-   `resonate_ui::Sourcing::register` beside the settings it reads, so a folder chosen in *The
-   inbox* group is polled from at once; a provider with a key of its own widens `Sourcing` and that
-   function together.
+3. A dependency of the binary and one `.and(..)` in `providers::registry` (the inbox is
+   registered by `with_inbox`), gated on the settings saying it is wanted: `Accounts` is what the
+   network providers are built from, read off the `Config` by `Accounts::of` for a headless run and
+   off the window's live `resonate_ui::Online` by `Accounts::given`. `providers::registered` is the
+   headless entry and `providers::sourced` the window's — handed over as
+   `resonate_ui::Sourcing::register`, a `Fn(&Supplying)` the window calls with its inbox and its
+   `Online` every time it asks (`LibraryModel::providers`) — and `registry` is the one place any is
+   registered, in code, never loaded at run time. So a folder chosen in *The inbox* group, a
+   Subsonic account or a TIDAL sign-in is asked from the next poll, no restart between. A network
+   provider holds state worth keeping — a signed-in session, cached tokens, its pacing — so
+   `Made` keeps the last one built for each kind beside the settings it was built from (`Kept`),
+   handing the same `Arc` back until those settings change
+   (`the_window_registers_what_its_settings_say_now_and_keeps_a_provider_its_settings_left_alone`).
+   A provider with a setting of its own widens `Online`, `Accounts` and `registry` together.
    **The window polls on its own** as well as on *Poll now*: when the soonest want is due —
    `Shelves::next_try`, read off each shelves load, the wake moved earlier by
    `LibraryModel::ask_when_due` whenever a load brings it closer — never before `FIRST_ASKED_AFTER`
@@ -216,10 +223,11 @@ delivered ahead of it (`only_audio_is_delivered_whatever_else_shares_its_name`).
 
 `resonate-subsonic` reaches a network: a server of the listener's — Navidrome, Airsonic, Gonic,
 anything speaking the Subsonic API — named by `subsonic`, `subsonic-user` and `subsonic-password`.
-`providers::sourced` registers it after the inbox only where all three are given and `online` is
+`providers::registry` registers it after the inbox only where all three are given and `online` is
 on, behind the binary's `online` feature, so a build with no HTTP client carries none of it; the
-window builds its registry through the same closure (`Sourcing::register`), and the Library
-category's *A Subsonic server* group writes the keys for the next start.
+window builds its registry through the same function (`Sourcing::register`) from what its settings
+say now, and the Library category's *A Subsonic server* group writes the keys, asked from the next
+poll.
 
 - **Asked by the identifiers, never by a title.** A want with neither a recording MBID nor an ISRC
   answers `Nothing` without a request. Otherwise `search3` is asked in words — the title and the
@@ -260,10 +268,10 @@ when a browser is refused TIDAL's CDN: what the proxy did — fetch a signed seg
 TIDAL audio host, forward `Range`, stream it without holding it whole — is what the provider does
 for itself, a native client meeting no CORS and needing no proxy in between. It is the listener's
 own subscription, named by `tidal-client-id`, `tidal-client-secret` and `tidal-refresh-token`;
-`providers::sourced` registers it after the inbox and the Subsonic server only where the client id
+`providers::registry` registers it after the inbox and the Subsonic server only where the client id
 and the refresh token are given (the secret is sent where given) and `online` is on, behind the
-binary's `online` feature, and the Library category's *A TIDAL account* group writes the keys for
-the next start, the secret and the token drawn as marks. Nothing is downloaded to play: a delivery
+binary's `online` feature, and the Library category's *A TIDAL account* group writes the keys,
+asked from the next poll, the secret and the token drawn as marks. Nothing is downloaded to play: a delivery
 is fetched whole into the vault — or, with none open, the music folder — and lands as a track row,
 as every provider's does.
 
@@ -335,7 +343,7 @@ as every provider's does.
   cancel every `LOOKED_AT_EVERY`. The *A TIDAL account* group's *Sign in to TIDAL*, greyed until a
   client id is given and while Online is off, runs both on the background executor, draws the code,
   *Open the page* and *Stop* while it waits, and writes the token it is handed into the refresh-token
-  field and `tidal-refresh-token`, the provider asking from the next start
+  field, the global `Online` and `tidal-refresh-token`, the provider asking from the next poll
   (`a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token`,
   `a_device_sign_in_turned_down_or_left_to_lapse_says_which`,
   `a_device_sign_in_cancelled_while_waiting_stops_asking`). No client id is built in.
@@ -351,11 +359,11 @@ as every provider's does.
 ## A hifi-api server
 
 `HifiApi`, in the same crate, is the second way to a TIDAL subscription. With `online` on,
-`providers::sourced` registers it after `Tidal` as `hifi-api`, using the hosted
+`providers::registry` registers it after `Tidal` as `hifi-api`, using the hosted
 [`tidal.odskyler.com`](https://tidal.odskyler.com/) service by default. The `hifi-api` setting and
 the *hifi-api server* field of the *A TIDAL account* group are an optional override for a
 [hifi-api](https://github.com/binimum/hifi-api) server the listener runs; clearing the field restores
-the hosted service from the next start. The hosted service holds no listener credential. Its public
+the hosted service. The hosted service holds no listener credential. Its public
 TIDAL token worker is asked for a search token, and the HiFi service for a short-lived playback
 token; each is cached only until shortly before its expiry. Those tokens are sent only to the
 corresponding public service. The TIDAL web API is searched by the wanted title and artist, matching

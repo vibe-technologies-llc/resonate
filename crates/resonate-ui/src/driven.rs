@@ -29,8 +29,10 @@ use resonate_providers::Providers;
 
 use crate::{
     AppIcon, Bindings, Ephemeral, Launcher, Listens, Online, Places, Present, ResonateApp,
-    RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app, drawing::Drawer,
-    settings::Registering, theme,
+    RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app,
+    drawing::Drawer,
+    settings::{Registering, Supplying},
+    theme,
 };
 
 pub(crate) const WIDE: f32 = 1_400.0;
@@ -248,7 +250,7 @@ impl Driven {
                 register,
             }) => (Some(reference), register),
             None => {
-                let register: Registering = Arc::new(|_: Option<&Path>| Providers::none());
+                let register: Registering = Arc::new(|_: &Supplying<'_>| Providers::none());
                 (None, register)
             }
         };

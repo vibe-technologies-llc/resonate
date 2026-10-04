@@ -3523,12 +3523,9 @@ mod tests {
     }
 
     mod driven {
-        use std::{
-            path::Path,
-            sync::{
-                Arc,
-                atomic::{AtomicBool, Ordering},
-            },
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
         };
 
         use gpui::{ClipboardItem, TestAppContext};
@@ -3544,7 +3541,7 @@ mod tests {
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
         use crate::{
-            Beyond,
+            Beyond, Supplying,
             downloads::Fetching,
             driven::{Driven, Folder, Reaching},
             models::Selection,
@@ -3792,7 +3789,7 @@ mod tests {
             let told = Arc::clone(&asked);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(move |_: Option<&Path>| {
+                register: Arc::new(move |_: &Supplying<'_>| {
                     Providers::none().and(Arc::new(Shop {
                         source: SourceId::new("shop").expect("a source name"),
                         asked: Arc::clone(&told),
@@ -3870,7 +3867,7 @@ mod tests {
             Driven::scanned(&library, &folder);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(|_: Option<&Path>| Providers::none()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
@@ -3920,7 +3917,7 @@ mod tests {
             Driven::scanned(&library, &folder);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(|_: Option<&Path>| Providers::none()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
@@ -3977,7 +3974,7 @@ mod tests {
             let told = Arc::clone(&asked);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(move |_: Option<&Path>| {
+                register: Arc::new(move |_: &Supplying<'_>| {
                     Providers::none().and(Arc::new(Shop {
                         source: SourceId::new("shop").expect("a source name"),
                         asked: Arc::clone(&told),
@@ -4030,6 +4027,100 @@ mod tests {
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
         }
 
+        fn shop_reaching(asked: &Arc<Mutex<Vec<Asked>>>, open: &Arc<AtomicBool>) -> Reaching {
+            let told = Arc::clone(asked);
+            let opened = Arc::clone(open);
+            Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    if !opened.load(Ordering::Relaxed) {
+                        return Providers::none();
+                    }
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            }
+        }
+
+        fn heroes_tonight_found() -> resonate_library::Found {
+            let matched = heroes_tonight();
+            resonate_library::Found {
+                recording: matched.recording,
+                title: matched.title,
+                artist: "Janji & Johnning".to_owned(),
+                length: None,
+                release: matched.releases.first().cloned(),
+                releases: matched.releases,
+            }
+        }
+
+        #[gpui::test]
+        fn a_song_still_wanted_is_listed_among_the_downloads_when_the_window_opens_again(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let open = Arc::new(AtomicBool::new(true));
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            library
+                .want_found(&MusicBrainz::new(), &heroes_tonight_found())
+                .expect("the song is wanted");
+
+            let mut driven = Driven::reaching(cx, library, &folder, shop_reaching(&asked, &open));
+            driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+
+            let listed = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                library
+                    .downloads()
+                    .iter()
+                    .map(|download| {
+                        (
+                            download.found.title.clone(),
+                            library.fetching(download).is_underway(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(listed, [("Heroes Tonight".to_owned(), true)]);
+        }
+
+        #[gpui::test]
+        fn a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let open = Arc::new(AtomicBool::new(false));
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, library, &folder, shop_reaching(&asked, &open));
+
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| {
+                    library.want_found(heroes_tonight_found(), cx);
+                });
+            });
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                library
+                    .downloads()
+                    .first()
+                    .is_some_and(|download| library.fetching(download) == Fetching::NoProvider)
+            });
+            assert!(asked.lock().is_empty());
+
+            open.store(true, Ordering::Relaxed);
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.sources_moved(cx));
+            });
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+        }
+
         #[gpui::test]
         fn a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was(
             cx: &mut TestAppContext,
@@ -4039,7 +4130,7 @@ mod tests {
             let told = Arc::clone(&asked);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
-                register: Arc::new(move |_: Option<&Path>| {
+                register: Arc::new(move |_: &Supplying<'_>| {
                     Providers::none().and(Arc::new(Shop {
                         source: SourceId::new("shop").expect("a source name"),
                         asked: Arc::clone(&told),
@@ -4081,7 +4172,7 @@ mod tests {
                     searched: Arc::clone(&musicbrainz.searched),
                     refusing: Arc::clone(&musicbrainz.refusing),
                 }),
-                register: Arc::new(|_: Option<&Path>| Providers::none()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
 

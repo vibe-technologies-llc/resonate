@@ -17,7 +17,10 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::{action, note},
+        settings::{
+            action, note,
+            subsonic::{not_a_server, reads_as_a_server},
+        },
     },
 };
 
@@ -29,7 +32,7 @@ const NO_CLIENT: &str = "Give the client id above first";
 
 const OFFLINE: &str = "TIDAL is signed in to only while Online is on";
 
-const SIGNED_IN: &str = "Signed in to TIDAL — it is asked from the next start";
+const SIGNED_IN: &str = "Signed in to TIDAL — it is asked from now on";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) enum TidalSigning {
@@ -80,7 +83,7 @@ const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, you
                           application the refresh token was issued to. The hosted hifi-api \
                           service is used where no custom server is given; a hifi-api server \
                           you run can replace it. Both use the same ISRC and whole-track checks. \
-                          Used from the next start, and only while Online is on.";
+                          Asked as soon as they are given, and only while Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
@@ -192,6 +195,10 @@ impl RootView {
 
     fn tidal_given(&mut self, account: TidalAccount, window: &mut Window, cx: &mut Context<Self>) {
         let given = self.tidal_field(account).read(cx).text().trim().to_owned();
+        if account == TidalAccount::HifiApi && !given.is_empty() && !reads_as_a_server(&given) {
+            self.report(not_a_server(), cx);
+            return;
+        }
         self.tidal_field(account)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
@@ -200,17 +207,14 @@ impl RootView {
         });
 
         let said = match (account, given.is_empty()) {
-            (TidalAccount::HifiApi, true) => {
-                "The hosted hifi-api service is asked from the next start"
-            }
-            (TidalAccount::HifiApi, false) => {
-                "The custom hifi-api server is asked from the next start"
-            }
-            (_, true) => "TIDAL is not asked from the next start",
-            (_, false) => "TIDAL is asked from the next start",
+            (TidalAccount::HifiApi, true) => "The hosted hifi-api service is asked from now on",
+            (TidalAccount::HifiApi, false) => "The custom hifi-api server is asked from now on",
+            (_, true) => "TIDAL is no longer asked",
+            (_, false) => "TIDAL is asked from now on",
         };
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
+        self.the_sources_moved(cx);
         window.focus(&self.focus);
         cx.notify();
     }
@@ -308,6 +312,7 @@ impl RootView {
                 });
                 self.store(&account.setting(token), cx);
                 self.report(Notice::Done(SIGNED_IN.to_owned()), cx);
+                self.the_sources_moved(cx);
             }
             Ok(None) => {}
             Err(error) => {

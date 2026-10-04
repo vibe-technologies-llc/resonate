@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     hash::{Hash as _, Hasher as _},
     rc::Rc,
+    slice,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -20,7 +21,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, TRIES_BEFORE_GIVING_UP, TokenHeld, Track, is_a_song_link,
+    SortOrder, TokenHeld, Track, is_a_song_link,
 };
 
 use crate::{
@@ -37,7 +38,7 @@ use crate::{
         ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
         attend, seek_further, seek_step,
     },
-    downloads::{Download, Fetching},
+    downloads::{self, Download, Fetching},
     format,
     icons::{self, Icon},
     listening::ListenModel,
@@ -143,6 +144,10 @@ const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
 const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const CANCEL_DOWNLOAD_HINT: &str = "Stop downloading this song";
+
+const PLAY_DOWNLOAD_HINT: &str = "Play this song";
+
+const OPEN_DOWNLOAD_HINT: &str = "Open the album this song is on";
 
 const KEEP_THE_TRACK_HINT: &str = keyed!("Keep the song", key!(leave));
 
@@ -3630,40 +3635,8 @@ impl RootView {
             .map(|download| library.fetching(download))
             .collect();
         let underway = fetching.iter().copied().any(Fetching::is_underway);
-        let active = fetching.iter().find_map(|each| match each {
-            Fetching::Downloading { attempt } => Some(*attempt),
-            _ => None,
-        });
-        let queued = fetching.iter().any(|each| matches!(each, Fetching::Queued));
-        let retrying = fetching.iter().find_map(|each| match each {
-            Fetching::Retrying { tries, .. } => Some(*tries),
-            _ => None,
-        });
-        let unreached = fetching.iter().find_map(|each| match each {
-            Fetching::Unreached { attempt } => Some(*attempt),
-            _ => None,
-        });
-        let landing = fetching
-            .iter()
-            .any(|each| matches!(each, Fetching::Landing));
+        let said = downloads::summed_up(&fetching);
         let open = self.downloads_open;
-        let said = if let Some(attempt) = active {
-            SharedString::from(format!("Attempt {attempt} of {TRIES_BEFORE_GIVING_UP}"))
-        } else if let Some(attempt) = unreached {
-            SharedString::from(format!(
-                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · provider didn't answer"
-            ))
-        } else if queued {
-            SharedString::from(format!("Queued · attempt 1 of {TRIES_BEFORE_GIVING_UP}"))
-        } else if let Some(tries) = retrying {
-            SharedString::from(format!("Retrying · {tries} of {TRIES_BEFORE_GIVING_UP}"))
-        } else if landing {
-            SharedString::new_static("Adding to the catalog…")
-        } else if underway {
-            SharedString::new_static("Preparing downloads…")
-        } else {
-            SharedString::new_static("Downloads")
-        };
         let mark = if underway {
             theme::accent()
         } else {
@@ -3821,6 +3794,11 @@ impl RootView {
         let recording = download.found.recording.clone();
         let again = download.found.clone();
         let state = browser::fetching_colour(fetching);
+        let library = self.library.read(cx);
+        let album = library.downloaded_album(download);
+        let track = library
+            .downloaded_track(download)
+            .filter(|_| fetching == Fetching::Downloaded);
 
         div()
             .id(listing::keyed_by("download", &recording))
@@ -3834,10 +3812,19 @@ impl RootView {
             .rounded_md()
             .child(
                 div()
+                    .id(listing::keyed_by("open-download", &recording))
                     .flex()
                     .flex_col()
                     .flex_1()
                     .min_w_0()
+                    .when_some(album, |text, album| {
+                        text.cursor_pointer()
+                            .names(OPEN_DOWNLOAD_HINT)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.close_the_downloads(cx);
+                                this.opened(Selection::Album(album), cx);
+                            }))
+                    })
                     .child(
                         div()
                             .text_size(px(theme::text_sm()))
@@ -3872,6 +3859,18 @@ impl RootView {
                             ),
                     ),
             )
+            .when_some(track, |row, track| {
+                row.child(
+                    kit::icon_button(
+                        listing::keyed_by("play-download", &recording),
+                        Icon::Play,
+                        PLAY_DOWNLOAD_HINT,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.play_what_was_downloaded(track, cx);
+                    })),
+                )
+            })
             .when(fetching.can_be_asked_again(), |row| {
                 row.child(
                     kit::icon_button(
@@ -3916,6 +3915,25 @@ impl RootView {
                     })),
                 )
             })
+    }
+
+    fn play_what_was_downloaded(&mut self, track: TrackId, cx: &mut Context<Self>) {
+        let catalog = self.library.read(cx).catalog();
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { catalog.track(track) })
+                .await;
+            let played = this.update(cx, |this, cx| match read {
+                Ok(Some(track)) => this.play(slice::from_ref(&track), 0, cx),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "a downloaded song could not be read to play");
+                }
+            });
+            let _ = played;
+        })
+        .detach();
     }
 
     pub(crate) fn ask_to_delete(&mut self, deleting: Deleting, cx: &mut Context<Self>) {

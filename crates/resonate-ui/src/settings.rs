@@ -478,7 +478,13 @@ pub struct Online {
     pub hifi_api: String,
 }
 
-pub type Registering = Arc<dyn Fn(Option<&Path>) -> Providers + Send + Sync>;
+#[derive(Clone, Copy, Debug)]
+pub struct Supplying<'a> {
+    pub inbox: Option<&'a Path>,
+    pub online: &'a Online,
+}
+
+pub type Registering = Arc<dyn Fn(&Supplying<'_>) -> Providers + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Sourcing {
@@ -487,8 +493,11 @@ pub struct Sourcing {
 }
 
 impl Sourcing {
-    pub fn providers(&self) -> Providers {
-        (self.register)(self.inbox.as_deref())
+    pub fn providers(&self, online: &Online) -> Providers {
+        (self.register)(&Supplying {
+            inbox: self.inbox.as_deref(),
+            online,
+        })
     }
 }
 

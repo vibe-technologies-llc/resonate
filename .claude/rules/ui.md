@@ -97,8 +97,18 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   *Open the page* (`cx.open_url`) and *Stop*, which sets the flag the waiting call reads. The token
   it is handed is held in the refresh-token field, the global and the settings file at once; a
   refusal is a toast naming which (`providers.md` has the seam). The group's hifi-api address is
-  an optional custom-server override: blank selects the hosted service from the next start, and
-  submitting a blank field says so.
+  an optional custom-server override: blank selects the hosted service, and submitting a blank
+  field says so. **An account given is asked at once.** Every field of the *A Subsonic server* and
+  *A TIDAL account* groups writes the global `Online` as it writes the file, and the registry is
+  built from that global (`Sourcing::providers`, below), so a sign-in, a server or a password takes
+  effect on the next poll; `the_sources_moved` then hands the model `LibraryModel::sources_moved`,
+  which — wherever a provider is now registered — turns every *No provider is set up* download back
+  to *Queued* and asks every unheld want, as *Poll now* does
+  (`a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is`); turning Online on
+  does the same. A server address — the Subsonic server and a custom hifi-api server — must begin
+  `http://` or `https://` with a host after it (`reads_as_a_server`); anything else is a toast
+  saying so and nothing stored, where a bare `music.local:4533` once failed every poll in
+  silence.
 - **A secret is drawn as marks.** `Field::masked` — the Subsonic password, the TIDAL client secret and
   refresh token and the AcoustID, AudD and ListenBrainz keys — shapes one `•` a letter in place of the text, and `Shown` maps every content
   offset the caret, selection, marked range and IME bounds hold to the drawn line and a pointer's
@@ -1862,17 +1872,35 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   alternate between *Downloading* while asked and a stale *No match* between polls; a poll that
   hears every provider clears it, a cancelled one leaves it (`Fetching::while_polling` is the one
   reading, shared by the song list and the album's cells). All of them count as underway. A want the
-  load does not hold is left as it stood, a stale load being no evidence it went. The sidebar draws
+  load does not hold is left as it stood, a stale load being no evidence it went. **The standings are
+  read again while the poll runs**, not only once it ends: `Followed` weighs the poll's `PollStats`
+  every `SCAN_POLL` and, where they moved and `POLLS_PER_REREAD_WHILE_ASKING` ticks have passed since
+  the last read, reads the shelves — the whole page where a delivery was kept, a new row being drawn
+  — so a song that landed reads *Downloaded* while the poll goes on to the next, where it once sat
+  *Queued* until an album's last song was asked
+  (`a_poll_that_moved_is_read_again_while_it_runs_and_a_landing_rereads_everything`). **The list
+  outlives the window.** The catalog's wants are the downloads, so the first shelves load hands
+  `Downloads::restored` an `Unfinished` per want with a recording — newest last, as they were
+  pressed — and every one still underway (not delivered, not given up) is listed again with the
+  state its standing reads, so a song asked for before a restart is still followed after it
+  (`a_song_still_wanted_is_listed_among_the_downloads_when_the_window_opens_again`,
+  `what_was_still_underway_comes_back_after_a_restart_and_nothing_finished_does`). The sidebar draws
   `RootView::download_status` above the enrichment line while the list holds anything — the
-  `Icon::Download` in the accent while anything is underway; the label shows the active attempt
-  number while the poll asks, *Queued* or *Retrying* while it waits, *Adding to the catalog…* while the
-  release lands and *Downloads* in `faint` once all is finished — and a press opens
+  `Icon::Download` in the accent while anything is underway; the label is `downloads::summed_up`,
+  what is happening first — *Downloading*, *Waiting for a provider*, *Adding to the catalog…*,
+  *Queued*, *Trying again later* — with *· N left* wherever more than one song is underway, and once
+  all is finished how many were downloaded and how many not, the attempt counts being each row's to
+  say (`the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left`) — and a press opens
   `downloads_over_the_app`, a panel floating
   `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
   `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
   room for one song and a half: each song's title, its state in `browser::fetching_colour` (accent
   downloading, `done` downloaded, `failure` given up, unprovided or unwanted, `muted` landing, queued
-  or retrying) and its artist, an `Icon::Redo` asking again where `can_be_asked_again` — a retry,
+  or retrying) and its artist — the title and state a press opening the album the want is on
+  (`LibraryModel::downloaded_album`, read off its standing) and putting the panel away, and a
+  downloaded song carrying an `Icon::Play` that reads the row it landed as
+  (`LibraryModel::downloaded_track`) and plays it — an `Icon::Redo` asking again where
+  `can_be_asked_again` — a retry,
   which it tries at once, or a song given up, which it starts again from the first try — a ✕ on a
   finished one, and
   *Clear finished* and a close mark in its heading. A song that can be cancelled

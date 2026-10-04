@@ -37,8 +37,9 @@ pub use crate::{
         Planned, Portrayed, Pressings, Previewed, RootWaiting, Selection, Tone,
     },
     settings::{
-        Bindings, CaretBlink, Ephemeral, Online, Places, Present, Setting, SettingChange,
-        SettingKey, Settings, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons, WindowSize,
+        Bindings, CaretBlink, Ephemeral, Online, Places, Present, Registering, Setting,
+        SettingChange, SettingKey, Settings, SettingsCategory, Sourcing, Stored, Supplying, Tabs,
+        WindowButtons, WindowSize,
     },
     views::{Pane, RootView},
 };

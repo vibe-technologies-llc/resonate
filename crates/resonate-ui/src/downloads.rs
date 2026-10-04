@@ -2,8 +2,8 @@ use std::time::SystemTime;
 
 use ahash::AHashMap;
 use gpui::SharedString;
-use resonate_core::WantId;
-use resonate_library::{Found, Mbid, TRIES_BEFORE_GIVING_UP, Want};
+use resonate_core::{AlbumId, TrackId, WantId};
+use resonate_library::{Found, Issued, Mbid, RecordingRelease, TRIES_BEFORE_GIVING_UP, Want};
 
 use crate::format;
 
@@ -96,6 +96,48 @@ impl Fetching {
     }
 }
 
+pub(crate) fn summed_up(fetching: &[Fetching]) -> SharedString {
+    let underway = fetching.iter().filter(|each| each.is_underway()).count();
+    let left = |said: &str| match underway {
+        0 | 1 => SharedString::from(said.to_owned()),
+        more => SharedString::from(format!("{said} · {more} left")),
+    };
+    let any = |state: fn(&Fetching) -> bool| fetching.iter().any(state);
+
+    if any(|each| matches!(each, Fetching::Downloading { .. })) {
+        left("Downloading")
+    } else if any(|each| matches!(each, Fetching::Unreached { .. })) {
+        left("Waiting for a provider")
+    } else if any(|each| matches!(each, Fetching::Landing)) {
+        SharedString::new_static("Adding to the catalog…")
+    } else if any(|each| matches!(each, Fetching::Queued)) {
+        left("Queued")
+    } else if any(|each| matches!(each, Fetching::Retrying { .. })) {
+        left("Trying again later")
+    } else {
+        finished(fetching)
+    }
+}
+
+fn finished(fetching: &[Fetching]) -> SharedString {
+    let downloaded = fetching
+        .iter()
+        .filter(|each| **each == Fetching::Downloaded)
+        .count();
+    let unfinished = fetching.len() - downloaded;
+    let said: Vec<String> = [(downloaded, "downloaded"), (unfinished, "not downloaded")]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, what)| format!("{count} {what}"))
+        .collect();
+
+    if said.is_empty() {
+        SharedString::new_static("Downloads")
+    } else {
+        SharedString::from(said.join(" · "))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Polling {
     pub asking: Option<WantId>,
@@ -110,6 +152,8 @@ pub(crate) struct WantStanding {
     misses: u32,
     due_at: Option<SystemTime>,
     gave_up: bool,
+    held: Option<TrackId>,
+    album: Option<AlbumId>,
 }
 
 impl WantStanding {
@@ -120,7 +164,17 @@ impl WantStanding {
             misses: want.misses,
             due_at: want.due_at(),
             gave_up: want.gave_up(),
+            held: want.held,
+            album: Some(want.album),
         }
+    }
+
+    pub(crate) const fn held(self) -> Option<TrackId> {
+        self.held
+    }
+
+    pub(crate) const fn album(self) -> Option<AlbumId> {
+        self.album
     }
 
     pub(crate) fn fetching(self) -> Fetching {
@@ -244,6 +298,31 @@ impl Downloads {
         moved
     }
 
+    pub(crate) fn restored(&mut self, unfinished: Vec<Unfinished>) {
+        for each in unfinished {
+            if self.of(&each.found.recording).is_some() || !each.fetching.is_underway() {
+                continue;
+            }
+            self.held.push(Download {
+                found: each.found,
+                want: Some(each.want),
+                queued: each.queued,
+                fetching: each.fetching,
+            });
+        }
+    }
+
+    pub(crate) fn provided(&mut self) -> bool {
+        let mut moved = false;
+        for download in &mut self.held {
+            if download.fetching == Fetching::NoProvider && download.want.is_some() {
+                download.fetching = Fetching::Queued;
+                moved = true;
+            }
+        }
+        moved
+    }
+
     pub(crate) fn dismiss(&mut self, recording: &Mbid) {
         self.held
             .retain(|download| &download.found.recording != recording);
@@ -257,6 +336,42 @@ impl Downloads {
         self.held
             .iter_mut()
             .find(|download| &download.found.recording == recording)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Unfinished {
+    found: Found,
+    want: WantId,
+    queued: SystemTime,
+    fetching: Fetching,
+}
+
+impl Unfinished {
+    pub(crate) fn of(want: &Want) -> Option<Self> {
+        let recording = want.recording.clone()?;
+        let release = want.release.clone().map(|id| RecordingRelease {
+            id,
+            title: want.album_title.clone(),
+            date: None,
+            disc: Some(want.disc),
+            position: Some(want.position),
+            issued: Issued::default(),
+        });
+
+        Some(Self {
+            found: Found {
+                recording,
+                title: want.title.clone(),
+                artist: want.artist.clone().unwrap_or_default(),
+                length: want.length,
+                release,
+                releases: Vec::new(),
+            },
+            want: want.id,
+            queued: want.wanted,
+            fetching: WantStanding::of(want).fetching(),
+        })
     }
 }
 
@@ -340,6 +455,8 @@ mod tests {
             misses,
             due_at: Some(tried + Duration::from_secs(60)),
             gave_up: misses >= TRIES_BEFORE_GIVING_UP,
+            held: None,
+            album: None,
         }
     }
 
@@ -420,6 +537,81 @@ mod tests {
         assert!(!Fetching::Landing.can_be_cancelled());
         assert!(!Fetching::Downloaded.can_be_cancelled());
         assert!(!Fetching::GaveUp.can_be_cancelled());
+    }
+
+    #[test]
+    fn the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left() {
+        let retrying = Fetching::Retrying {
+            tries: 1,
+            at: SystemTime::UNIX_EPOCH,
+        };
+
+        assert_eq!(
+            summed_up(&[
+                Fetching::Downloading { attempt: 1 },
+                Fetching::Queued,
+                retrying
+            ]),
+            "Downloading · 3 left"
+        );
+        assert_eq!(summed_up(&[Fetching::Queued]), "Queued");
+        assert_eq!(
+            summed_up(&[Fetching::Downloaded, retrying, Fetching::Queued]),
+            "Queued · 2 left"
+        );
+        assert_eq!(
+            summed_up(&[retrying, Fetching::Unreached { attempt: 2 }]),
+            "Waiting for a provider · 2 left"
+        );
+        assert_eq!(summed_up(&[Fetching::Landing]), "Adding to the catalog…");
+        assert_eq!(
+            summed_up(&[Fetching::Downloaded, Fetching::Downloaded, Fetching::GaveUp]),
+            "2 downloaded · 1 not downloaded"
+        );
+        assert_eq!(summed_up(&[Fetching::GaveUp]), "1 not downloaded");
+    }
+
+    #[test]
+    fn what_was_still_underway_comes_back_after_a_restart_and_nothing_finished_does() {
+        let now = SystemTime::now();
+        let underway = Unfinished {
+            found: found(ECHOES),
+            want: want(1),
+            queued: now,
+            fetching: Fetching::Retrying { tries: 2, at: now },
+        };
+        let given_up = Unfinished {
+            found: found(SEAMUS),
+            want: want(2),
+            queued: now,
+            fetching: Fetching::GaveUp,
+        };
+        let mut downloads = queued(ECHOES, want(1), now);
+        downloads.dismiss(&found(ECHOES).recording);
+
+        downloads.restored(vec![underway.clone(), given_up]);
+        downloads.restored(vec![underway]);
+
+        assert_eq!(
+            fetching(&downloads, None),
+            vec![Fetching::Retrying { tries: 2, at: now }]
+        );
+    }
+
+    #[test]
+    fn a_song_nobody_could_fetch_is_queued_once_a_provider_is_set_up() {
+        let now = SystemTime::now();
+        let mut downloads = Downloads::default();
+        downloads.landing(found(ECHOES), now);
+        downloads.wanted(&found(ECHOES).recording, want(1), Fetcher::Nobody);
+
+        let unprovided = fetching(&downloads, None);
+        let moved = downloads.provided();
+
+        assert_eq!(unprovided, vec![Fetching::NoProvider]);
+        assert!(moved);
+        assert_eq!(fetching(&downloads, None), vec![Fetching::Queued]);
+        assert!(!downloads.provided());
     }
 
     #[test]

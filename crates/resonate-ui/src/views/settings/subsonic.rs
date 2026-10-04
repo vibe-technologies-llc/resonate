@@ -16,9 +16,25 @@ use crate::{
 const SUBSONIC_NOTE: &str = "A Subsonic server of your own — Navidrome, Airsonic, Gonic — is \
                              asked for every track marked wanted, by the recording's \
                              MusicBrainz id or its ISRC and never by a title, and what it holds \
-                             is kept in the vault. Used from the next start, and only while \
-                             Online is on; the password is sent as a salted token, never as it \
-                             was typed.";
+                             is kept in the vault. Asked as soon as all three are given, and \
+                             only while Online is on; the password is sent as a salted token, \
+                             never as it was typed.";
+
+const NOT_A_SERVER: &str = "A server's address starts with http:// or https://, as \
+                            http://music.local:4533";
+
+pub(super) fn reads_as_a_server(given: &str) -> bool {
+    let lowered = given.to_ascii_lowercase();
+    ["http://", "https://"].iter().any(|scheme| {
+        lowered
+            .strip_prefix(scheme)
+            .is_some_and(|rest| rest.chars().next().is_some_and(|first| first != '/'))
+    })
+}
+
+pub(super) fn not_a_server() -> Notice {
+    Notice::Trouble(NOT_A_SERVER.to_owned())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Account {
@@ -122,6 +138,10 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+        if account == Account::Server && !given.is_empty() && !reads_as_a_server(&given) {
+            self.report(not_a_server(), cx);
+            return;
+        }
         self.account_field(account)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
@@ -130,14 +150,20 @@ impl RootView {
         });
 
         let said = if given.is_empty() {
-            "No Subsonic server is asked from the next start"
+            "The Subsonic server is no longer asked"
         } else {
-            "The Subsonic server is asked from the next start"
+            "The Subsonic server is asked from now on"
         };
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
+        self.the_sources_moved(cx);
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(super) fn the_sources_moved(&mut self, cx: &mut Context<Self>) {
+        self.library
+            .update(cx, |library, cx| library.sources_moved(cx));
     }
 
     pub(crate) fn leave_the_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {

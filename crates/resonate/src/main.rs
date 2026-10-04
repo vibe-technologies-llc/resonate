@@ -2434,7 +2434,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),
-                register: providers::sourced(&config),
+                register: providers::sourced(),
             },
             listens,
         },

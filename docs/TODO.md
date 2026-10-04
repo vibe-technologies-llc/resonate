@@ -320,8 +320,6 @@ service or a format — and is not worked until that moves; everything else is o
   reaches analysis, eq and listen
 
 ## Later: Sources and providers
-- The Subsonic and hifi-api server fields take any text, so a bare `music.local:4533` fails every
-  poll with no word to the listener
 - *Forget this delivery* remembers nothing, so the next poll fetches the same file again
 - A want is carried onto whatever song sits at its disc and position after the release is chosen
   again or reordered
@@ -330,8 +328,6 @@ service or a format — and is not worked until that moves; everything else is o
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
 - TIDAL's device sign-in is the window's alone, with no command-line way in, and a refresh token
   TIDAL rotates when the provider signs in is not written back
-- The TIDAL and hifi-api providers are registered from the next start, so a sign-in or a server
-  named in the window is not polled with until the window is opened again
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either
 
