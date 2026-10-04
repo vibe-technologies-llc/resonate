@@ -257,7 +257,11 @@ it.
   `HEARD_AT_LEAST` (80): none is `Unheard`; a row whose file named no title `Unnamed`; a match on the
   row's recording id — its own `tracks.mbid` or its paired release row's — or on title and credit
   through the enrichment's `same_name` and `same_credit` `Agrees`; anything else `Disagrees`. A
-  refused lookup stamps nothing, so it is asked again.
+  refused lookup stamps nothing, so it is asked again — but not by the pass that was refused
+  `RECOGNITIONS_REFUSED_BEFORE_GIVING_UP` (5) in a row: `EnrichProgress` counts them across the study
+  workers, any answer resets it, and past it the pass goes on studying and asks no more prints, so a
+  service that is down costs five requests rather than one per track of the pool
+  (`a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked`).
 - **`Route::Fingerprint` reads the stored recognition before it asks.** With none kept it studies
   the track on the spot through the same claim, and takes a match under the strict score as
   `Certainty::Nearly`, so audio fills a name the file never gave and never overwrites one it did.

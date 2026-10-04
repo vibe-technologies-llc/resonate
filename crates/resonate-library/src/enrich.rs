@@ -3,7 +3,7 @@ use std::{
     num::NonZeroUsize,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, SystemTime},
@@ -74,6 +74,8 @@ const EXACT_SCORE: u8 = 100;
 const RECORDING_MAY_DIFFER_BY: Duration = Duration::from_secs(5);
 
 const REFUSALS_THAT_END_A_PASS: u32 = 10;
+
+const RECOGNITIONS_REFUSED_BEFORE_GIVING_UP: u32 = 5;
 
 #[derive(Clone, Debug)]
 pub struct EnrichOptions {
@@ -187,6 +189,7 @@ pub struct EnrichProgress {
     portraits: AtomicU64,
     releases_found: AtomicU64,
     refused: AtomicU64,
+    recognitions_refused_in_a_row: AtomicU32,
     studied: AtomicU64,
     fakes: AtomicU64,
     recognised: AtomicU64,
@@ -237,7 +240,20 @@ impl EnrichProgress {
         }
     }
 
+    pub(crate) fn refuse_recognition(&self) {
+        self.refuse();
+        self.recognitions_refused_in_a_row
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn recognition_is_given_up(&self) -> bool {
+        self.recognitions_refused_in_a_row.load(Ordering::Relaxed)
+            >= RECOGNITIONS_REFUSED_BEFORE_GIVING_UP
+    }
+
     pub(crate) fn note_recognised(&self, agreement: Agreement) {
+        self.recognitions_refused_in_a_row
+            .store(0, Ordering::Relaxed);
         self.recognised.fetch_add(1, Ordering::Relaxed);
         if agreement == Agreement::Disagrees {
             self.misnamed.fetch_add(1, Ordering::Relaxed);

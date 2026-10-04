@@ -13,11 +13,12 @@ use std::{
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
     Agreement, AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, CoverArt,
-    Credit, Discography, EnrichOptions, EnrichSummary, Fingerprinters, Fingerprints, GroupAsked,
-    GroupMatch, ImportOptions, Isrc, Library, Link, LinkNames, LyricText, LyricsAsked, Mbid,
-    Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink, SongsAsked, SortOrder,
-    Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
+    Credit, Discography, EnrichOptions, EnrichSummary, Error, Fingerprinters, Fingerprints,
+    GroupAsked, GroupMatch, ImportOptions, Isrc, Library, Link, LinkNames, LookupOp, LyricText,
+    LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink,
+    SongsAsked, SortOrder, Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault,
+    Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -535,6 +536,61 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
     assert_eq!(
         again.stats.studied, 0,
         "a study already held is not taken again"
+    );
+    Ok(())
+}
+
+struct Refusing {
+    source: SourceId,
+    asked: AtomicU64,
+}
+
+impl Fingerprints for Refusing {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn recognise(&self, _sounded: &Sounded) -> Result<Printed> {
+        self.asked.fetch_add(1, Ordering::Relaxed);
+        Err(Error::Refused {
+            op: LookupOp::Recognise,
+            status: 503,
+        })
+    }
+}
+
+#[test]
+fn a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked() -> Result<()> {
+    const TRACKS: u32 = 24;
+    let tree = Tree::new();
+    for seed in 0..TRACKS {
+        tree.write(
+            &format!("track {seed}.wav"),
+            &song(
+                21_700.0,
+                seed + 1,
+                &[(TITLE, &format!("Track {seed}")), (ARTIST, "Ada")],
+            ),
+        );
+    }
+    let library = scanned(&tree)?;
+    let refusing = Arc::new(Refusing {
+        source: SourceId::new("refusing").expect("a nameable source"),
+        asked: AtomicU64::new(0),
+    });
+
+    let summary = enriched(
+        &library,
+        Silent::new(),
+        Fingerprinters::none().and(Arc::clone(&refusing) as Arc<dyn Fingerprints>),
+    )?;
+
+    assert_eq!(summary.stats.studied, u64::from(TRACKS));
+    assert_eq!(summary.stats.recognised, 0);
+    let asked = refusing.asked.load(Ordering::Relaxed);
+    assert!(
+        asked < u64::from(TRACKS),
+        "{asked} of {TRACKS} tracks were asked of a service that refused every one"
     );
     Ok(())
 }

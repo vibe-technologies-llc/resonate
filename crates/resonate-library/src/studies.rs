@@ -617,7 +617,10 @@ fn study_one(
     let Some(print) = print else {
         return;
     };
-    if fingerprinters.has_a_source() && !progress.is_cancelled() {
+    if fingerprinters.has_a_source()
+        && !progress.is_cancelled()
+        && !progress.recognition_is_given_up()
+    {
         recognised_and_noted(library, fingerprinters, progress, asked.id, print);
     }
 }
@@ -706,7 +709,7 @@ pub(crate) fn recognised_and_noted(
 ) -> Option<Vec<RecordingMatch>> {
     let heard = heard_and_noted(library, fingerprinters, id, print)?;
     if heard.refused {
-        progress.refuse();
+        progress.refuse_recognition();
         return None;
     }
     progress.note_recognised(heard.agreement);

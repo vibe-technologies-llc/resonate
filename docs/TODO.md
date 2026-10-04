@@ -92,8 +92,6 @@ service or a format — and is not worked until that moves; everything else is o
   lyric text
 
 ## Identification
-- With an AcoustID key set, a service refusing or unreachable is still asked about every remaining
-  track of the study pool, one failed request after another
 - A release too large for the 4 MiB document cap, a box set with per-recording relations, is never
   enriched and nothing says why
 - A file with no measured length asked by an ISRC naming several recordings is identified as the
