@@ -101,7 +101,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   written after a name does not unname it and a later name still wins
   (`a_blank_text_tag_is_no_tag_and_a_padded_one_is_stored_trimmed`). The four ReplayGain values keep
   the rule through `parsed`: a blank or unparsable gain or peak leaves what an earlier frame or
-  revision gave, so an empty frame after a real one does not play the track at no gain. A value is
+  revision gave, so an empty frame after a real one does not play the track at no gain. The track and
+  disc numbers, their totals and the tempo take the same door: a zero or a number past a `u32` is
+  none, and leaves a valid one an earlier tag gave standing
+  (`a_zero_or_unreadable_number_after_a_valid_one_leaves_the_valid_one_standing`). A value is
   read by `tags::decibels` and `tags::peak` — the cue sheet's `REM REPLAYGAIN_*` lines through the
   same two — which take a unit in any case and a decimal comma where it is the number's only
   separator, so a tagger in a German locale writing `-7,06 dB` is heard at its gain and `1,000,5`

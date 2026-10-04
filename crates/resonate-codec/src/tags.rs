@@ -556,11 +556,11 @@ impl Builder {
             T::Engineer(value) => self.listed(Listed::Engineer, value),
             T::Producer(value) => self.listed(Listed::Producer, value),
 
-            T::Bpm(value) => self.tags.beats_per_minute = count(*value),
-            T::TrackNumber(value) => self.tags.track_number = count(*value),
-            T::TrackTotal(value) => self.tags.track_total = count(*value),
-            T::DiscNumber(value) => self.tags.disc_number = count(*value),
-            T::DiscTotal(value) => self.tags.disc_total = count(*value),
+            T::Bpm(value) => parsed(&mut self.tags.beats_per_minute, count(*value)),
+            T::TrackNumber(value) => parsed(&mut self.tags.track_number, count(*value)),
+            T::TrackTotal(value) => parsed(&mut self.tags.track_total, count(*value)),
+            T::DiscNumber(value) => parsed(&mut self.tags.disc_number, count(*value)),
+            T::DiscTotal(value) => parsed(&mut self.tags.disc_total, count(*value)),
 
             T::MusicBrainzTrackId(value) | T::MusicBrainzRecordingId(value) => {
                 given(&mut self.tags.musicbrainz_track_id, value);
@@ -1869,5 +1869,27 @@ mod tests {
 
         assert_eq!(set.track_number, None);
         assert_eq!(set.disc_number, Some(1));
+    }
+
+    #[test]
+    fn a_zero_or_unreadable_number_after_a_valid_one_leaves_the_valid_one_standing() {
+        let set = absorb(&[
+            tag(StandardTag::TrackNumber(3)),
+            tag(StandardTag::TrackTotal(12)),
+            tag(StandardTag::DiscNumber(2)),
+            tag(StandardTag::DiscTotal(2)),
+            tag(StandardTag::Bpm(120)),
+            tag(StandardTag::TrackNumber(0)),
+            tag(StandardTag::TrackTotal(u64::MAX)),
+            tag(StandardTag::DiscNumber(0)),
+            tag(StandardTag::DiscTotal(0)),
+            tag(StandardTag::Bpm(0)),
+        ]);
+
+        assert_eq!(set.track_number, Some(3));
+        assert_eq!(set.track_total, Some(12));
+        assert_eq!(set.disc_number, Some(2));
+        assert_eq!(set.disc_total, Some(2));
+        assert_eq!(set.beats_per_minute, Some(120));
     }
 }
