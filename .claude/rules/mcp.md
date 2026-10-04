@@ -183,7 +183,9 @@ grammar (`build.rs` reads `cli.rs` with no features) and answers `Error::NoMcp`.
   one undo step — or every row a search matches. A row past the end is `Error::NotInThePlaylist`.
 - **A missing track is named by its `release_track_id`.** `list_missing` is
   `Library::missing_tracks` under the search narrowing `resonate missing` takes, and `want_tracks`
-  is `Library::want` for each, standing a want the providers fill like any other.
+  is `Library::want_release_tracks` over the whole list in one transaction, standing a want the
+  providers fill like any other — so a list naming one unknown row wants none of it and says so,
+  where a want committed per id left the earlier ones written.
 - **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint`: the removals
   `remove_from_playlist`, `discard_playlist` and `remove_from_queue`, and `play_playlist`, which
   replaces a queue.

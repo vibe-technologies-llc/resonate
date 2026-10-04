@@ -247,8 +247,8 @@ service or a format — and is not worked until that moves; everything else is o
   connection
 - MCP's `start_scan` keeps any folder it is given as a root for good, `/` included, with no cap and
   no tool to remove one
-- MCP's `want_tracks` and `mark_favourite` commit each id alone, so an unknown id late in the list
-  leaves the earlier ones written without saying how many
+- MCP's `mark_favourite` commits each id alone, so an unknown id late in the list leaves the
+  earlier ones written without saying how many
 - A blank query given to MCP's `add_to_queue`, `add_to_playlist` or `create_playlist` takes the
   first rows of the whole library, and a blank `fills_from` saves a playlist of everything
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at

@@ -1176,6 +1176,20 @@ fn a_track_an_album_is_short_of_is_listed_and_wanted() {
     assert_eq!(afterglow["number"], "3");
     assert_eq!(afterglow["wanted"], false);
 
+    assert!(
+        !failed(
+            &server,
+            "want_tracks",
+            json!({ "release_track_ids": [afterglow["release_track_id"], 999] })
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        called(&server, "list_missing", json!({}))["tracks"][0]["wanted"],
+        false,
+        "a list naming an unknown row wants none of it"
+    );
+
     let wanted = called(
         &server,
         "want_tracks",

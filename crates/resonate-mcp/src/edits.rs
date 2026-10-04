@@ -123,11 +123,9 @@ pub(crate) fn discard_playlist(library: &Library, name: &str) -> Result<Value> {
 }
 
 pub(crate) fn want(library: &Library, release_tracks: &[ReleaseTrackId]) -> Result<Value> {
-    for release_track in release_tracks {
-        library.want(*release_track)?;
-    }
+    let wanted = library.want_release_tracks(release_tracks)?;
 
-    Ok(json!({ "wanted": release_tracks.len() }))
+    Ok(json!({ "wanted": wanted.len() }))
 }
 
 fn cuts(library: &Library, wanted: &Wanted) -> Result<Vec<Cut>> {
