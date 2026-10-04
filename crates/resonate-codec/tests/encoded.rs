@@ -8,7 +8,7 @@ use std::{
 
 use resonate_codec::{
     Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags,
-    ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSet, TagSink,
+    Holes, ImageFormat, Picturing, Popularity, Rated, Sources, TagEdit, TagField, TagSet, TagSink,
     TagSource, Writing, probe, probe_cover_art, probe_stream,
 };
 use resonate_core::{
@@ -1145,22 +1145,50 @@ fn frames_decoded(path: &Path) -> usize {
     frames
 }
 
+fn spoil(bytes: &mut [u8], header: usize) {
+    let protected = bytes[header + 1] & 1 == 0;
+    let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
+    bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
+    bytes[side + 5] |= 0x80;
+}
+
+const UNPADDED_MP3: [&str; 8] = [
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "128k",
+    "-write_xing",
+    "0",
+    "-id3v2_version",
+    "0",
+];
+
+fn decoded_with_holes(
+    path: &Path,
+    refusing: bool,
+) -> (usize, Holes, Option<resonate_codec::Error>) {
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("the file opens");
+    if refusing {
+        decoder.refuse_holes();
+    }
+    let mut block = AudioBuffer::empty(info.spec);
+    let mut frames = 0;
+    loop {
+        match decoder.next_block(&mut block) {
+            Ok(DecodeStatus::Decoded) => frames += block.frames(),
+            Ok(DecodeStatus::EndOfStream) => return (frames, decoder.holes(), None),
+            Err(error) => return (frames, decoder.holes(), Some(error)),
+        }
+    }
+}
+
 #[test]
-fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted() {
+fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_counted() {
     const SPOILED: usize = 20;
 
     let tree = Tree::new();
-    let codec = [
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        "128k",
-        "-write_xing",
-        "0",
-        "-id3v2_version",
-        "0",
-    ];
-    let Some((pristine, _)) = fixture(&tree, "tone.mp3", &codec) else {
+    let Some((pristine, _)) = fixture(&tree, "tone.mp3", &UNPADDED_MP3) else {
         return;
     };
     let mut bytes = fs::read(&pristine).expect("the encoded file");
@@ -1168,17 +1196,57 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted() {
         eprintln!("skipped: ffmpeg wrote frames this walk does not read");
         return;
     };
-    let protected = bytes[header + 1] & 1 == 0;
-    let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
-    bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
-    bytes[side + 5] |= 0x80;
+    spoil(&mut bytes, header);
     let spoiled = tree.at("spoiled.mp3");
     fs::write(&spoiled, &bytes).expect("a writable temporary file");
 
+    let (frames, holes, failed) = decoded_with_holes(&spoiled, false);
+    let (_, _, refused) = decoded_with_holes(&spoiled, true);
+
     assert_eq!(
-        frames_decoded(&spoiled),
+        frames,
         frames_decoded(&pristine),
         "a packet that would not decode left the stream short by its length"
+    );
+    assert!(
+        failed.is_none(),
+        "one hole failed the whole decode: {failed:?}"
+    );
+    assert_eq!(holes.packets, 1);
+    assert!(holes.frames > Frames::ZERO);
+    assert!(
+        matches!(
+            refused,
+            Some(resonate_codec::Error::PacketUndecodable { holes: 1, .. })
+        ),
+        "a decoder refusing holes played one: {refused:?}"
+    );
+}
+
+#[test]
+fn a_stream_none_of_whose_packets_decode_is_refused_rather_than_played_silent() {
+    let tree = Tree::new();
+    let Some((pristine, _)) = fixture(&tree, "tone.mp3", &UNPADDED_MP3) else {
+        return;
+    };
+    let mut bytes = fs::read(&pristine).expect("the encoded file");
+    let mut nth = 0;
+    while let Some(header) = frame_at(&bytes, nth) {
+        spoil(&mut bytes, header);
+        nth += 1;
+    }
+    let spoiled = tree.at("silent.mp3");
+    fs::write(&spoiled, &bytes).expect("a writable temporary file");
+
+    let (_, holes, failed) = decoded_with_holes(&spoiled, false);
+
+    assert!(nth > 64, "the fixture holds only {nth} frames");
+    assert!(
+        matches!(
+            failed,
+            Some(resonate_codec::Error::PacketUndecodable { .. })
+        ),
+        "a stream that never decoded was played: {failed:?}, {holes:?}"
     );
 }
 

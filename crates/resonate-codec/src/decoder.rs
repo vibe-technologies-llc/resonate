@@ -27,6 +27,8 @@ use crate::{
     timeline::Timeline,
 };
 
+const SILENT_PACKETS_BEFORE_REFUSING: u64 = 64;
+
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DecodeStatus {
@@ -322,6 +324,32 @@ impl Delivery {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Holes {
+    pub packets: u64,
+    pub frames: Frames,
+}
+
+impl Holes {
+    pub const fn is_none(&self) -> bool {
+        self.packets == 0
+    }
+
+    fn noted(self, frames: Frames) -> Self {
+        Self {
+            packets: self.packets.saturating_add(1),
+            frames: self.frames.saturating_add(frames),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Undecodable {
+    #[default]
+    SilencedUntilNothingSounds,
+    Refused,
+}
+
 struct Coded {
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn AudioDecoder>,
@@ -329,6 +357,9 @@ struct Coded {
     pending: usize,
     consumed: usize,
     silent: bool,
+    holes: Holes,
+    sounded: bool,
+    undecodable: Undecodable,
     ahead: Option<Packet>,
     trailing: usize,
     first_ts: Option<Timestamp>,
@@ -518,6 +549,9 @@ impl Decoder {
                         pending: 0,
                         consumed: 0,
                         silent: false,
+                        holes: Holes::default(),
+                        sounded: false,
+                        undecodable: Undecodable::default(),
                         ahead: None,
                         trailing: padding_past_an_open_window(&info),
                         first_ts: None,
@@ -647,6 +681,19 @@ impl Decoder {
         self.delivery = wanted;
         if let Held::Dsd(held) = &mut self.reading {
             held.deliver(wanted.packing);
+        }
+    }
+
+    pub fn holes(&self) -> Holes {
+        match &self.reading {
+            Held::Coded(coded) => coded.holes,
+            Held::Dsd(_) => Holes::default(),
+        }
+    }
+
+    pub fn refuse_holes(&mut self) {
+        if let Held::Coded(coded) = &mut self.reading {
+            coded.undecodable = Undecodable::Refused;
         }
     }
 
@@ -803,9 +850,21 @@ impl Decoder {
                             location: location.clone(),
                         });
                     }
+                    coded.sounded = true;
                     (decoded.frames(), false)
                 }
                 Err(errors::Error::DecodeError(reason)) => {
+                    coded.holes = coded.holes.noted(span.frames);
+                    let refused = coded.undecodable == Undecodable::Refused
+                        || (!coded.sounded
+                            && coded.holes.packets >= SILENT_PACKETS_BEFORE_REFUSING);
+                    if refused {
+                        return Err(Error::PacketUndecodable {
+                            location: location.clone(),
+                            at: span.at,
+                            holes: coded.holes.packets,
+                        });
+                    }
                     let lasted = usize::try_from(span.frames.get()).unwrap_or(usize::MAX);
                     tracing::debug!(
                         reason,

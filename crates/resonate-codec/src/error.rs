@@ -103,6 +103,13 @@ pub enum Error {
         packets: u64,
     },
 
+    #[error("{location} holds a packet at frame {at} that will not decode, {holes} so far")]
+    PacketUndecodable {
+        location: MediaLocation,
+        at: Frames,
+        holes: u64,
+    },
+
     #[error("{location} declares {declared} packets in a packet table holding {held}")]
     PacketTableCut {
         location: MediaLocation,
@@ -234,6 +241,7 @@ impl Error {
             | Self::FrameCountNotRepresentable { location, .. }
             | Self::PacketOffsetNotRepresentable { location, .. }
             | Self::PacketTableCut { location, .. }
+            | Self::PacketUndecodable { location, .. }
             | Self::NoDecoder { location, .. }
             | Self::TrackPropertyMissing { location, .. }
             | Self::RateNotRepresentable { location, .. }

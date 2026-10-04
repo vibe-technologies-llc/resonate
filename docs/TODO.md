@@ -29,9 +29,6 @@ service or a format — and is not worked until that moves; everything else is o
   card here offers 48 kHz alone — nor DoP against a DAC that decodes it
 
 ## Formats
-- A packet that fails to decode is played as silence with nothing counted, so the vault keeps, and
-  `--verify` passes, a damaged source with holes, and a decoder failing every packet plays the
-  whole track silent
 - DSD128 and DSD256 are decimated through the same 512 taps as DSD64, so DSD256 falls 0.2 dB by
   10 kHz and 0.9 dB by 20 kHz, and DSD128 0.06 dB by 20 kHz
 - An iTunes-encoded MP3's gapless data in its `iTunSMPB` comment is never read, so it plays with the

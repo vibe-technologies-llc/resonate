@@ -114,7 +114,8 @@ impl Failure {
             | Codec::PacketTooLong { .. }
             | Codec::FrameCountNotRepresentable { .. }
             | Codec::PacketOffsetNotRepresentable { .. }
-            | Codec::PacketTableCut { .. } => Self::Undecodable,
+            | Codec::PacketTableCut { .. }
+            | Codec::PacketUndecodable { .. } => Self::Undecodable,
             Codec::Io { .. }
             | Codec::Symphonia { .. }
             | Codec::SheetTooLarge { .. }

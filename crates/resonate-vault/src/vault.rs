@@ -328,6 +328,7 @@ impl Vault {
             None => Decoder::open(taking.sources, taking.location),
         };
         let (mut decoder, info) = opened.map_err(|source| Error::codec(VaultOp::Read, source))?;
+        decoder.refuse_holes();
 
         let codec = Codec::from_id(info.codec);
         let bits = info
@@ -363,6 +364,7 @@ impl Vault {
                 Foretold::Misdeclared => {
                     let (mut again, _) = Decoder::open(taking.sources, taking.location)
                         .map_err(|source| Error::codec(VaultOp::Read, source))?;
+                    again.refuse_holes();
                     self.kept_as_flac(weighing, &mut again, info.spec, speakers, bits, codec)?
                 }
             },
@@ -1176,6 +1178,7 @@ fn pcm_of(decoder: &mut Decoder, info: &MediaInfo, format: Option<SampleFormat>)
         }
     });
     decoder.set_output_format(format);
+    decoder.refuse_holes();
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
     let mut block = AudioBuffer::empty(spec);

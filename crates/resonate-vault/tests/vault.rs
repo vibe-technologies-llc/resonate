@@ -14,7 +14,7 @@ use resonate_codec::{
     Sources, probe,
 };
 use resonate_core::{AudioBuffer, MediaLocation, SampleData, SampleFormat, SourceId, StreamSpec};
-use resonate_vault::{Form, Keeping, Kept, Taking, Vault, VaultFiles};
+use resonate_vault::{Form, Keeping, Kept, Refusal, Taking, Vault, VaultFiles};
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -859,6 +859,76 @@ fn a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample() {
     assert_eq!(
         decoded(&held.path, SampleFormat::S16),
         decoded(&path, SampleFormat::S16)
+    );
+}
+
+const MPEG_ONE_LAYER_THREE_KBPS: [u32; 15] = [
+    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+];
+const MPEG_ONE_RATES: [u32; 3] = [44_100, 48_000, 32_000];
+const SIDE_INFO_AFTER: usize = 4;
+const BIG_VALUES_PAST_THE_GREATEST: u8 = 0xff;
+
+fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
+    let kbps = *MPEG_ONE_LAYER_THREE_KBPS.get(usize::from(header.get(2)? >> 4))?;
+    let rate = *MPEG_ONE_RATES.get(usize::from((header.get(2)? >> 2) & 0b11))?;
+    let padding = usize::from((header.get(2)? >> 1) & 1);
+    (kbps > 0).then(|| (144_000 * kbps / rate) as usize + padding)
+}
+
+fn frame_at(stream: &[u8], nth: usize) -> Option<usize> {
+    let mut at = 0;
+    for _ in 0..nth {
+        at += mpeg_frame_length(stream.get(at..at + 4)?)?;
+    }
+    (stream.get(at) == Some(&0xff)).then_some(at)
+}
+
+#[test]
+fn a_source_with_a_packet_that_will_not_decode_is_not_kept() {
+    const SPOILED: usize = 20;
+
+    let tree = Tree::new();
+    let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
+    let path = tree.root.join("spoiled.mp3");
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(["-c:a", "libmp3lame", "-b:a", "128k"])
+        .args(["-write_xing", "0", "-id3v2_version", "0"])
+        .arg(&path)
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: no ffmpeg with libmp3lame to write an MP3");
+        return;
+    }
+    let mut bytes = fs::read(&path).expect("the encoded file");
+    let Some(header) = frame_at(&bytes, SPOILED) else {
+        eprintln!("skipped: ffmpeg wrote frames this walk does not read");
+        return;
+    };
+    let protected = bytes[header + 1] & 1 == 0;
+    let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
+    bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
+    bytes[side + 5] |= 0x80;
+    fs::write(&path, &bytes).expect("a writable temporary file");
+    let vault = tree.vault();
+
+    let keeping = vault.keep(&Taking {
+        sources: &Sources::local(),
+        location: &MediaLocation::local(&path),
+        span: None,
+        renewing: false,
+        foretold: None,
+    });
+
+    assert!(
+        matches!(
+            keeping,
+            Ok(Keeping::Refused(Refusal::NotValidated)) | Err(_)
+        ),
+        "a source with a hole in it was kept: {:?}",
+        keeping.map(|kept| matches!(kept, Keeping::Kept(_)))
     );
 }
 

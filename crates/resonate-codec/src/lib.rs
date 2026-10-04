@@ -42,7 +42,7 @@ pub use crate::{
         the_best_named as the_best_a_cue_names, the_file_named as the_file_a_cue_names,
         the_one_named as the_one_a_cue_names,
     },
-    decoder::{Codec, Container, DecodeStatus, Decoder, Delivery, MediaInfo},
+    decoder::{Codec, Container, DecodeStatus, Decoder, Delivery, Holes, MediaInfo},
     dsd::{DsdChunk, DsdField, DsdRate, Packing},
     error::{CodecOp, Error, Result, StreamTrackId, TrackProperty},
     probe::{

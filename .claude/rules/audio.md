@@ -758,8 +758,17 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `coded_block` writes zeros for them rather than skipping the packet; the stream keeps its length,
   the position its clock, and a cut whose limit counts delivered frames ends where its row does. A
   packet whose length the container never said is still passed over, there being nothing to fill.
-  `an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted` spoils one MP3 frame's side
-  information and weighs the decode against the pristine file's.
+  **Every such hole is counted, and a stream that is nothing but holes is refused.**
+  `Decoder::holes` answers a `Holes` — packets and frames silenced so far — and a run of
+  `SILENT_PACKETS_BEFORE_REFUSING` (64) failures with no packet ever decoded answers
+  `Error::PacketUndecodable`, so a decoder failing every packet is a row passed over as damaged
+  rather than a whole track played silent. `Decoder::refuse_holes` makes the first hole that error,
+  for a reader that must have every sample: the vault calls it on what it keeps and on what it reads
+  back, so a damaged source is refused `NotValidated` rather than kept with its holes and
+  `--verify` fails an object that has one (`a_source_with_a_packet_that_will_not_decode_is_not_kept`).
+  `an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_counted` spoils one MP3
+  frame's side information and weighs the decode against the pristine file's, and
+  `a_stream_none_of_whose_packets_decode_is_refused_rather_than_played_silent` spoils them all.
 - **A DSD read that fails is an error, as a PCM codec's is.** `Planes` holds the location, and a
   seek or read the stream refuses — an `EIO`, a DST frame `dst::Unpacked` cannot decode — reaches
   `next_block` as `Error::Io`, so the engine reports and skips the row rather than taking it as
