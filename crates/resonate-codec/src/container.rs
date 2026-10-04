@@ -15,7 +15,7 @@ use symphonia::core::{
         audio::{
             AudioCodecId, AudioCodecParameters,
             well_known::{
-                CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_OPUS, CODEC_ID_PCM_F32BE,
+                CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_PCM_F32BE,
                 CODEC_ID_PCM_F32BE_PLANAR, CODEC_ID_PCM_F32LE, CODEC_ID_PCM_F32LE_PLANAR,
                 CODEC_ID_PCM_F64BE, CODEC_ID_PCM_F64BE_PLANAR, CODEC_ID_PCM_F64LE,
                 CODEC_ID_PCM_F64LE_PLANAR,
@@ -31,7 +31,7 @@ use symphonia::core::{
 
 use crate::{
     CodecOp, Container, Error, MediaInfo, Result, Speakers, StreamTrackId, TrackProperty,
-    boxes::Priming,
+    boxes::{self, Priming},
     caf, chapters,
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
@@ -45,6 +45,7 @@ use crate::{
     timeline::Timeline,
 };
 
+const MP3_DECODER_DELAY: u32 = 529;
 const ALAC_ATOM_BYTES: usize = 12;
 const ALAC_ATOM_IDS: [&[u8; 4]; 2] = [b"frma", b"alac"];
 const ALAC_COOKIE_BYTES: [usize; 2] = [24, 48];
@@ -423,7 +424,8 @@ pub(crate) fn coded_info(
     let spec = stream_spec(params, location, id)?;
     let prescan = &opened.prescan;
     let carrying = Carrying::of(opened.reader.format_info().format, params.codec);
-    let primed = priming(track, params, carrying, prescan, spec.rate);
+    let noted = itunes_priming(opened, track, params);
+    let primed = priming(track, params, carrying, prescan, spec.rate).or(noted);
     let playable = primed.and_then(Priming::window);
     let tags = tags::read(
         &opened.revisions,
@@ -547,6 +549,16 @@ fn priming(
     }
     .or_else(|| priming_the_reader_read(track))
     .or_else(|| prescan.boxes.priming_at(rate))
+}
+
+fn itunes_priming(opened: &Coded, track: &Track, params: &AudioCodecParameters) -> Option<Priming> {
+    if params.codec != CODEC_ID_MP3 {
+        return None;
+    }
+    tags::itunes_gapless_note(&opened.revisions, track.id)
+        .as_deref()
+        .and_then(boxes::gapless_fields)
+        .map(|noted| noted.behind_a_decoder_delay(MP3_DECODER_DELAY))
 }
 
 fn priming_counted_inside_the_granules(track: &Track) -> Option<Priming> {

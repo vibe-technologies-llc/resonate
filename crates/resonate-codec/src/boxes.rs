@@ -251,6 +251,14 @@ impl Priming {
         }
     }
 
+    pub(crate) const fn behind_a_decoder_delay(self, frames: u32) -> Self {
+        Self {
+            delay: self.delay.saturating_add(frames),
+            padding: self.padding.saturating_sub(frames),
+            playable: self.playable,
+        }
+    }
+
     pub(crate) fn window(self) -> Option<FrameSpan> {
         if self.delay == 0 && self.padding == 0 {
             return None;
@@ -596,7 +604,7 @@ fn item_list<S: Read + Seek + ?Sized>(source: &mut S, meta: Extent) -> Option<Ex
     child(source, past_flags, ILST).or_else(|| child(source, meta, ILST))
 }
 
-fn gapless_fields(value: &str) -> Option<Priming> {
+pub(crate) fn gapless_fields(value: &str) -> Option<Priming> {
     let mut fields = value.split_ascii_whitespace().skip(1);
 
     Some(Priming {

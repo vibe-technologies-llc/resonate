@@ -22,6 +22,7 @@ const MUSICIAN_CREDITS: &str = "TMCL";
 const IDENTIFIER_OWNER: &str = "OWNER";
 const COMMENT_DESCRIPTION: &str = "SHORT_DESCRIPTION";
 const ITUNES_DESCRIPTIONS_BEGIN: &str = "itun";
+const ITUNES_GAPLESS_NOTE: &str = "iTunSMPB";
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
 const R128_ALBUM_GAIN: &str = "R128_ALBUM_GAIN";
@@ -311,6 +312,33 @@ pub(crate) fn read_cue_sheet(revisions: &Revisions, track: u32) -> Option<String
         }
     }
     newest
+}
+
+pub(crate) fn itunes_gapless_note(revisions: &Revisions, track: u32) -> Option<String> {
+    let mut newest = None;
+    for set in revisions.sets(track) {
+        for tag in set {
+            if !described_as(tag, ITUNES_GAPLESS_NOTE) {
+                continue;
+            }
+            if let RawValue::String(text) = &tag.raw.value {
+                newest = Some(text.to_string());
+            }
+        }
+    }
+    newest
+}
+
+fn described_as(tag: &Tag, description: &str) -> bool {
+    tag.raw
+        .sub_fields
+        .iter()
+        .flat_map(|fields| fields.iter())
+        .filter(|field| field.field.eq_ignore_ascii_case(COMMENT_DESCRIPTION))
+        .any(|field| match &field.value {
+            RawValue::String(described) => described.trim().eq_ignore_ascii_case(description),
+            _ => false,
+        })
 }
 
 fn collect(tags: &[&Tag], into: &mut Vec<RawTag>) {
@@ -1146,6 +1174,24 @@ mod tests {
 
         let named = logged(vec![revision(vec![described("Liner", "pressed in 1971")])]);
         assert_eq!(set_of(&named).comment.as_deref(), Some("pressed in 1971"));
+    }
+
+    #[test]
+    fn the_newest_itunes_gapless_note_is_read_from_its_comment_frame() {
+        let noted = logged(vec![
+            revision(vec![described("iTunSMPB", " 00000000 00000210")]),
+            revision(vec![
+                described("iTunNORM", " 00000A2B 00000B3C"),
+                described("itunsmpb", " 00000000 00000240 000001C0"),
+            ]),
+        ]);
+        let none = logged(vec![revision(vec![described("iTunNORM", " 00000A2B")])]);
+
+        assert_eq!(
+            itunes_gapless_note(&noted, 0).as_deref(),
+            Some(" 00000000 00000240 000001C0")
+        );
+        assert_eq!(itunes_gapless_note(&none, 0), None);
     }
 
     #[test]

@@ -31,8 +31,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Formats
 - DSD128 and DSD256 are decimated through the same 512 taps as DSD64, so DSD256 falls 0.2 dB by
   10 kHz and 0.9 dB by 20 kHz, and DSD128 0.06 dB by 20 kHz
-- An iTunes-encoded MP3's gapless data in its `iTunSMPB` comment is never read, so it plays with the
-  encoder's delay and padding
 - A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
   unseekable and the bar fills early
 - The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read

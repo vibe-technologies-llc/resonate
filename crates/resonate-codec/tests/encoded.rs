@@ -1223,6 +1223,80 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_count
     );
 }
 
+const MP3_DECODER_DELAY: u32 = 529;
+
+fn id3v2_3_comment(description: &str, text: &str) -> Vec<u8> {
+    let mut body = vec![0];
+    body.extend_from_slice(b"eng");
+    body.extend_from_slice(description.as_bytes());
+    body.push(0);
+    body.extend_from_slice(text.as_bytes());
+
+    let mut frame = b"COMM".to_vec();
+    frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(&body);
+
+    let size = frame.len() as u32;
+    let synchsafe = [
+        ((size >> 21) & 0x7f) as u8,
+        ((size >> 14) & 0x7f) as u8,
+        ((size >> 7) & 0x7f) as u8,
+        (size & 0x7f) as u8,
+    ];
+    let mut tag = b"ID3".to_vec();
+    tag.extend_from_slice(&[3, 0, 0]);
+    tag.extend_from_slice(&synchsafe);
+    tag.extend_from_slice(&frame);
+    tag
+}
+
+#[test]
+fn an_mp3_whose_gapless_note_itunes_wrote_plays_without_its_delay_and_padding() {
+    let tree = Tree::new();
+    let Some((lame, _)) = fixture(&tree, "lame.mp3", &["-c:a", "libmp3lame", "-b:a", "128k"])
+    else {
+        return;
+    };
+    let Some((plain, _)) = fixture(&tree, "plain.mp3", &UNPADDED_MP3) else {
+        return;
+    };
+    let told = probe(&Sources::local(), &MediaLocation::local(&lame)).expect("a LAME-tagged MP3");
+    let heard = decode(&lame).samples;
+    let music = heard.len() / usize::from(CHANNELS);
+    if told.encoder_delay <= MP3_DECODER_DELAY {
+        eprintln!("skipped: ffmpeg wrote no LAME tag to take the delay from");
+        return;
+    }
+    let note = format!(
+        " 00000000 {:08X} {:08X} {:016X}",
+        told.encoder_delay - MP3_DECODER_DELAY,
+        told.encoder_padding + MP3_DECODER_DELAY,
+        music
+    );
+    let mut bytes = id3v2_3_comment("iTunSMPB", &note);
+    bytes.extend_from_slice(&fs::read(&plain).expect("the encoded file"));
+    let noted = tree.at("itunes.mp3");
+    fs::write(&noted, &bytes).expect("a writable temporary file");
+
+    let untold = decode(&plain).samples;
+    let played = decode(&noted).samples;
+
+    assert!(
+        untold.len() > heard.len(),
+        "the plain file has no delay to drop"
+    );
+    assert_eq!(
+        played.len(),
+        heard.len(),
+        "the iTunes note did not cut the stream to its music"
+    );
+    assert_eq!(
+        played, heard,
+        "the iTunes note cut the stream somewhere else"
+    );
+}
+
 #[test]
 fn a_stream_none_of_whose_packets_decode_is_refused_rather_than_played_silent() {
     let tree = Tree::new();

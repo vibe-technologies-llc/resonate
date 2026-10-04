@@ -326,7 +326,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   media one, weighed against what the `stts` table says the decoder will emit — the sample count
   times the longest delta, not the sum, the last sample's declared duration being short by exactly
   the padding. It answers for the `soun` track alone and only where the media timescale is the sample
-  rate, which is what makes a media tick a sample frame.
+  rate, which is what makes a media tick a sample frame. An MP3 iTunes encoded carries no LAME tag but the same
+  note in an ID3 `COMM` frame described `iTunSMPB`, which `tags::itunes_gapless_note` reads and
+  `container::itunes_priming` takes last, after the reader and the box scan: its delay and padding
+  are the encoder's, so `Priming::behind_a_decoder_delay` adds the MP3 decoder's `MP3_DECODER_DELAY`
+  (529) to the one and takes it off the other, as symphonia does with a LAME tag's, and its sample
+  count is the music's exact length (`an_mp3_whose_gapless_note_itunes_wrote_plays_without_its_delay_and_padding`).
 - **A fragmented MP4's length is in its fragments, not its `moov`.** A DASH-style file — `ftyp`
   `iso8`/`dash`, a `moov` whose `mvhd`, `mdhd` and sample tables are empty, the audio in `moof`/`mdat`
   pairs — declares a length of nothing, which symphonia hands back, so the seek bar and catalog read
