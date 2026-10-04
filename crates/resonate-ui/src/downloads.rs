@@ -103,7 +103,7 @@ pub(crate) struct Fetched {
 }
 
 impl Fetched {
-    fn from_whom(&self) -> String {
+    fn asked_of(&self) -> String {
         match self.provider.as_str() {
             "inbox" => "the inbox".to_owned(),
             "subsonic" => "your Subsonic server".to_owned(),
@@ -119,12 +119,12 @@ pub(crate) fn saying_while(fetching: Fetching, fetched: Option<&Fetched>) -> Sha
         (Fetching::Downloading { attempt }, Some(fetched)) if fetched.received == 0 => {
             SharedString::from(format!(
                 "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking {}…",
-                fetched.from_whom()
+                fetched.asked_of()
             ))
         }
         (Fetching::Downloading { .. }, Some(fetched)) => SharedString::from(format!(
             "Downloading from {} · {}",
-            fetched.from_whom(),
+            fetched.asked_of(),
             format::bytes(fetched.received)
         )),
         (fetching, _) => fetching.saying(),

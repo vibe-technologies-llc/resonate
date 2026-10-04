@@ -1525,7 +1525,7 @@ impl LibraryModel {
         download.fetching_while(self.polling())
     }
 
-    pub fn fetched(&self) -> Option<Fetched> {
+    pub(crate) fn fetched(&self) -> Option<Fetched> {
         let progress = self.work.polling()?;
         Some(Fetched {
             provider: progress.asking_provider()?,
