@@ -1223,7 +1223,8 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   carries being evidence of the recording, not of which take
   (`an_isrcs_only_take_is_nearly_the_file_where_the_title_agrees_and_the_length_does_not` in
   `enrich.rs`); several are narrowed to those within `RECORDING_MAY_DIFFER_BY` (5 s) of the file, then
-  the closest, `Exactly`. A `MUSICBRAINZ_TRACKID` is the recording id and asked for directly. A search
+  the closest, `Exactly`; a file with no measured length cannot tell them apart, so it takes the first
+  as `Nearly`, the recording named and no title the file carried renamed. A `MUSICBRAINZ_TRACKID` is the recording id and asked for directly. A search
   is `find_recording` with the title, the length and what `asked_with` answers — the track's artist and
   its `artists.mbid`, or where the file names none the album owner's name and mbid — and the album's
   billed title as `release` only where neither is known; it is weighed by `matches_a_recording`:
@@ -1259,7 +1260,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   not having asked.
 - **What a lookup may overwrite is `Certainty`, a type rather than a rule each caller remembers.**
   `Exactly` is a recording id the *file itself* named, or a named ISRC whose take is as long as the file;
-  `Nearly` is a text search, a fingerprint, or an ISRC whose only take is another length under the same
+  `Nearly` is a text search, a fingerprint, an ISRC naming several takes of a file with no length, or an ISRC whose only take is another length under the same
   title. `land_recording` reads it in one `CASE` per column: a name is filled wherever the file named
   none — `tagged_title IS NULL`, `tagged_artist IS NULL` — whatever the certainty, and a name the file
   *did* carry is corrected only under `Exactly`. So a lookup tidies *one of these days* into *One of

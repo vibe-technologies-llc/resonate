@@ -1288,7 +1288,7 @@ fn best_recording(
         return recordings
             .into_iter()
             .next()
-            .map(|first| (first, Certainty::Exactly));
+            .map(|first| (first, Certainty::Nearly));
     };
 
     recordings
@@ -3395,6 +3395,10 @@ mod tests {
         assert_eq!(
             named_by(best_recording(two_takes(), &unmeasured).as_ref()),
             Some(ORBITS)
+        );
+        assert_eq!(
+            best_recording(two_takes(), &unmeasured).map(|(_, certainty)| certainty),
+            Some(Certainty::Nearly)
         );
     }
 
