@@ -15903,14 +15903,13 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
     retagged(&library, true)?;
     assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
 
-    let folder = shut.parent().expect("a folder").to_path_buf();
     let mode = |bits: u32| {
-        fs::set_permissions(&folder, os::unix::fs::PermissionsExt::from_mode(bits))
-            .expect("the folder's mode changes");
+        fs::set_permissions(&shut, os::unix::fs::PermissionsExt::from_mode(bits))
+            .expect("the file's mode changes");
     };
-    mode(0o555);
+    mode(0o444);
     let cut_short = walked_back(&library, true)?;
-    mode(0o755);
+    mode(0o644);
     assert_eq!(cut_short.stats.written, 1);
     assert_eq!(cut_short.retagging.passed_over.len(), 1);
     assert_eq!(tags_of(&open).title.as_deref(), Some("Echos"));
@@ -16065,18 +16064,17 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
-    let shut = tree.path().join("shut");
-    fs::set_permissions(&shut, fs::Permissions::from_mode(0o555))
-        .expect("the fixture folder takes a mode");
-    if fs::write(shut.join("probe"), b"").is_ok() {
-        fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
-            .expect("the fixture folder takes a mode");
-        eprintln!("skipping: this user writes into a folder whatever its mode");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o444))
+        .expect("the fixture file takes a mode");
+    if fs::OpenOptions::new().write(true).open(&file).is_ok() {
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+            .expect("the fixture file takes a mode");
+        eprintln!("skipping: this user writes a file whatever its mode");
         return Ok(());
     }
     let summary = retagged(&library, true);
-    fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
-        .expect("the fixture folder takes a mode");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+        .expect("the fixture file takes a mode");
 
     assert_eq!(summary?.stats.written, 0);
     assert!(

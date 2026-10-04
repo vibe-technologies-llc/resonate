@@ -343,7 +343,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
 - **One pass walks the tree at a time, and a second is refused rather than queued.**
   `Inner::walking` is the flag and `Walk` the guard holding it: every pass walking or rewriting the
   tree — `Library::scan`, `organise`, `retag`, `import`, `prune_the_vault`, `release_from_vault` and
-  `delete_tracks` — takes one (the first two in `start`, before the thread is spawned), and the thread owns it for its
+  `delete_tracks` — takes one (the first two in `start`, before the thread is spawned), and so do the
+  root edits a walk reads under — `add_root`, `remove_root`, `forget_the_gone` and `retire` — so
+  `resonate forget` and the window's *Add folder* refuse beside a scan rather than landing under it
+  (`a_root_is_neither_added_nor_dropped_under_a_pass_walking_the_tree`). `resonate scan <roots>`
+  checks each is a folder and leaves the registering to the scan's own `roots`, inside the guard, so a
+  scan refused for a walk already running registers nothing. The thread owns it for its
   life, so it is handed back from `Drop` on a panic as `Reader` hands back a pooled connection. Taking
   it never waits — a caller finding the tree walked gets `Error::AlreadyWalking` at once, a pass
   blocking for minutes being no pass a window or command line can start. What it protects is

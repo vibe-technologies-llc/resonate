@@ -59,10 +59,6 @@ service or a format — and is not worked until that moves; everything else is o
   path shows the old song's words and the tables only grow
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
-- `resonate forget <root>` and adding or removing a root take no walk guard, so they can land under
-  a scan running in the window or another process and abort it
-- `resonate scan <root>` registers each root before the scan starts, so a refused scan still leaves
-  them registered
 - Two cue sheets in one folder naming the same file cut it twice, and its rows flip between the two
   on every scan
 - A steady writer under a root defers its rescan indefinitely, and a root the watch could not cover

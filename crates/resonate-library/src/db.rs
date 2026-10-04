@@ -1748,6 +1748,7 @@ impl Library {
             path: path.to_path_buf(),
             source,
         })?;
+        let _walking = self.inner.walk_the_tree()?;
 
         self.inner
             .write(|transaction| store::register_root(transaction, &canonical).map(drop))
@@ -1755,6 +1756,7 @@ impl Library {
 
     pub fn remove_root(&self, path: &Path) -> Result<bool> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let _walking = self.inner.walk_the_tree()?;
 
         self.inner.write(|transaction| {
             let Some(id) = transaction
@@ -6998,5 +7000,23 @@ mod tests {
             .expect("the tree is walkable after a pass panicked")
             .join()
             .expect("the scan finished");
+    }
+
+    #[test]
+    fn a_root_is_neither_added_nor_dropped_under_a_pass_walking_the_tree() {
+        let library = Library::open_in_memory().expect("a catalog opens in memory");
+        let root = std::env::temp_dir();
+
+        let walking = library.walk_the_tree().expect("nothing else is walking");
+        let added = library.add_root(&root);
+        let dropped = library.remove_root(&root);
+        drop(walking);
+
+        assert!(matches!(added, Err(Error::AlreadyWalking)), "{added:?}");
+        assert!(matches!(dropped, Err(Error::AlreadyWalking)), "{dropped:?}");
+        library
+            .add_root(&root)
+            .expect("a root added once the walk ended");
+        assert!(library.remove_root(&root).expect("a root dropped"));
     }
 }

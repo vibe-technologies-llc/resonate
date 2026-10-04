@@ -585,11 +585,8 @@ fn comes_out_of(sink: &SinkInfo) -> String {
 
 fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
     let roots = &wanted.roots;
-    for root in roots {
-        if !root.is_dir() {
-            return Err(Error::MissingLibraryRoot { path: root.clone() });
-        }
-        library.add_root(root)?;
+    if let Some(root) = roots.iter().find(|root| !root.is_dir()) {
+        return Err(Error::MissingLibraryRoot { path: root.clone() });
     }
 
     let workers = thread::available_parallelism().unwrap_or(NonZeroUsize::MIN);
