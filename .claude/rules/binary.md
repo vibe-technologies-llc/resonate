@@ -173,7 +173,9 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   (`a_pass_whose_files_failed_answers_an_error_so_the_command_exits_1`); a scan cancelled asks the
   reference nothing after it. The six handles are one `resonate_library::PassHandle` over
   each pass's progress and summary (`ScanHandle` and the rest are aliases) whose progress is
-  `Cancelling`, and a thread that dies answers `Error::Stopped { pass }` naming its `PassKind`;
+  `Cancelling`, and a thread that dies answers `Error::Stopped { pass }` naming its `PassKind`, what
+  the panic said going to an error record first (`pass::what_it_said`, the payload read as a `&str`
+  or a `String`), the error staying matchable;
   `until_told` is generic over it, so a seventh pass is an alias and a `PassKind` variant, not a
   struct, an error and a macro arm.
 

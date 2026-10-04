@@ -188,7 +188,6 @@ service or a format — and is not worked until that moves; everything else is o
   first rows of the whole library, and a blank `fills_from` saves a playlist of everything
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
   once, and a session's passes are cancelled and joined one after another
-- A pass thread that panics is reported as stopped, the panic lost
 - A text field takes any length, shaped again on every caret blink and kept whole in its undo
 - A Discord refusal that never clears is offered again every fifteen seconds for as long as the
   track plays
