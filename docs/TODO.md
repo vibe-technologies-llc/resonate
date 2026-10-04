@@ -79,8 +79,6 @@ service or a format — and is not worked until that moves; everything else is o
   or *Guns*
 - Dismissing one missing *Interlude* or *Skit* hides every missing row on that disc with the same
   title
-- `resonate missing --artist <unknown> --read-the-rest` reads nothing and then says nothing of that
-  artist is missing
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned whose mount point's parent still holds another drive
 - A lyric in a dropped album's `lyrics/` folder keeps its name when the track it is named after

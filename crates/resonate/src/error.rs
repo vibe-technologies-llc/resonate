@@ -89,6 +89,21 @@ pub enum ConfigKey {
     DiscordPaused,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ArtistName(Box<str>);
+
+impl ArtistName {
+    pub fn new(name: &str) -> Self {
+        Self(name.into())
+    }
+}
+
+impl fmt::Display for ArtistName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 impl ConfigKey {
     pub const ALL: [Self; 77] = [
         Self::Sink,
@@ -374,6 +389,9 @@ pub enum Error {
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),
+
+    #[error("the catalog holds no artist named {0}")]
+    NoSuchArtist(ArtistName),
 
     #[error("nothing is playing on the session bus, so there is nothing to share")]
     NothingPlaying,

@@ -1351,6 +1351,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   lands them `Discographed::Further` — beside, not over, what the first read kept — moving the unread
   count and offset on, so the artist page's *Read the rest* and `resonate missing --artist <NAME>
   --read-the-rest` each read a thousand more and a discography read to its end is not asked again.
+  A name the catalog holds no artist under is `Error::NoSuchArtist` from `resonate missing --artist`,
+  with or without `--read-the-rest`, exiting 1, where it read nothing and then said nothing of that
+  artist was missing.
   `ArtistDetail::releases_unread` carries it to the artist page's *N releases not held* button and
   `resonate missing --artist` prints it; `Library::unheld_releases` lists them under a cap by artist and
   first release date, `ArtistDetail::releases_unheld` counts one artist's, and

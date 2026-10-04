@@ -59,7 +59,7 @@ use resonate_codec::{
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
-    AlbumId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
+    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec, Volume,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
@@ -86,7 +86,7 @@ use tracing_subscriber::{
 use crate::{
     cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, Sub, TransportArgs},
     config::Config,
-    error::{ConfigKey, Error, Result, ValueKind},
+    error::{ArtistName, ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
     input::{Action, Pressed},
     readout::Readout,
@@ -237,8 +237,12 @@ fn run() -> Result<()> {
             if *bring_back {
                 said!("{}", brought_back(library.bring_back_dismissed()?));
             }
-            if *read_the_rest && let Some(named) = artist.as_deref() {
-                read_the_rest_of(&library, &config, named)?;
+            let held = match artist.as_deref() {
+                Some(named) => Some((named, held_artist(&library, named)?)),
+                None => None,
+            };
+            if *read_the_rest && let Some((named, id)) = held {
+                read_the_rest_of(&library, &config, named, id)?;
             }
             missing(&library, artist.as_deref())
         }
@@ -814,11 +818,19 @@ fn linked_through(want: &Want) -> String {
     named.join(", ")
 }
 
-fn read_the_rest_of(library: &Library, config: &Config, named: &str) -> Result<()> {
+fn held_artist(library: &Library, named: &str) -> Result<ArtistId> {
+    library
+        .artist_named(named)?
+        .ok_or_else(|| Error::NoSuchArtist(ArtistName::new(named)))
+}
+
+fn read_the_rest_of(
+    library: &Library,
+    config: &Config,
+    named: &str,
+    artist: ArtistId,
+) -> Result<()> {
     let reference = online::reference_asked_for(config)?;
-    let Some(artist) = library.artist_named(named)? else {
-        return Ok(());
-    };
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
     said!(
         "read {} more of {named}'s discography",
