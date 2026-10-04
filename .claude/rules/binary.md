@@ -99,6 +99,14 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
 
 ## Signals and the terminal
 
+- **A hang-up asks to leave, as an interrupt does.** `signals::ASKING_TO_LEAVE` is `SIGINT`,
+  `SIGTERM` and `SIGHUP`, watched by both `quit_when_told` and `cancel_when_told`, so closing the
+  terminal under `resonate play` drains and settles the last listen, and under a headless pass
+  finishes the file in hand, where the default action killed the process mid-write. A hang-up also
+  tells `said` nobody is reading where the standard output is a terminal, the terminal being gone
+  (`said::the_terminal_hung_up`). `tests/signals.rs` hangs up a `resonate mcp` it has spoken to and
+  asserts the process left on its own rather than being killed by the signal
+  (`a_hang_up_is_heard_as_a_request_to_leave_rather_than_killing_the_process`).
 - **One signal silences the graph even where the front end never answers.** `signals.rs` asks the
   front end to quit and leaves anyway after `DRAINS_WITHIN` (5 s), which bounds how long a wedged
   window lives but not how long it is *heard*: the engine played on for those five seconds. The
@@ -151,7 +159,7 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   is `track`, `queue`, `off` or a non-zero length, kept to the second.
 - **A headless pass stops at a file boundary on the first signal.** `resonate scan`, `enrich`,
   `poll`, `tag`, `organise` and `vault --import` run through `until_told`, which puts
-  `signals::cancel_when_told` over the pass: the first `SIGINT` or `SIGTERM` calls the pass's
+  `signals::cancel_when_told` over the pass: the first `SIGINT`, `SIGTERM` or `SIGHUP` calls the pass's
   `cancel`, so the file being written is finished, the catalog follows and the summary says
   `cancelled`; a second leaves at once. A cancelled pass then answers `Error::Cancelled { pass }`
   through `finished`, so the command exits 1 and a script can tell a pass cut short from one that

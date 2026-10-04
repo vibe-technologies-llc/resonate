@@ -8,18 +8,20 @@ use std::{
 use crossbeam_channel::{Sender, TrySendError};
 use resonate_engine::{Command, Player};
 use signal_hook::{
-    consts::{SIGINT, SIGTERM},
+    consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::{Handle, Signals},
 };
 
 const TERMINATED_BY: i32 = 128;
+
+const ASKING_TO_LEAVE: [i32; 3] = [SIGINT, SIGTERM, SIGHUP];
 
 const DRAINS_WITHIN: Duration = Duration::from_secs(5);
 
 const SILENCED_AFTER: Duration = Duration::from_secs(1);
 
 pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, player: Arc<Player>) {
-    let watched = match Signals::new([SIGINT, SIGTERM]) {
+    let watched = match Signals::new(ASKING_TO_LEAVE) {
         Ok(watched) => watched,
         Err(error) => {
             tracing::warn!(%error, "no signal watch; an interrupt will not drain what is playing");
@@ -39,6 +41,7 @@ pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, player: Arc<Player>) {
 fn relay(mut watched: Signals, asked_to_quit: &Sender<()>, player: &Arc<Player>) {
     let mut told = false;
     for signal in watched.forever() {
+        heard(signal);
         if told {
             tracing::warn!(
                 signal,
@@ -97,7 +100,7 @@ impl Drop for Interrupting {
 }
 
 pub(crate) fn cancel_when_told(cancel: impl Fn() + Send + 'static) -> Option<Interrupting> {
-    let watched = match Signals::new([SIGINT, SIGTERM]) {
+    let watched = match Signals::new(ASKING_TO_LEAVE) {
         Ok(watched) => watched,
         Err(error) => {
             tracing::warn!(%error, "no signal watch; an interrupt will stop the pass mid-file");
@@ -124,6 +127,7 @@ pub(crate) fn cancel_when_told(cancel: impl Fn() + Send + 'static) -> Option<Int
 fn stop_the_pass(mut watched: Signals, cancel: &impl Fn()) {
     let mut told = false;
     for signal in watched.forever() {
+        heard(signal);
         if told {
             tracing::warn!(
                 signal,
@@ -134,6 +138,12 @@ fn stop_the_pass(mut watched: Signals, cancel: &impl Fn()) {
         told = true;
         told!("stopping once the file in hand is finished; a second interrupt leaves at once");
         cancel();
+    }
+}
+
+fn heard(signal: i32) {
+    if signal == SIGHUP {
+        crate::said::the_terminal_hung_up();
     }
 }
 

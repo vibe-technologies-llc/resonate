@@ -27,6 +27,8 @@ mod settings;
 mod share;
 mod signals;
 mod sleep;
+#[cfg(feature = "ui")]
+mod starting;
 mod stats;
 mod studies;
 mod submitting;
@@ -2396,6 +2398,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
 
 #[cfg(feature = "ui")]
 fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
+    let starting = starting::one_window_at_a_time();
     if let Some(window) = Running::a_window().ok().flatten() {
         return handed_to(&window, &cli.files);
     }
@@ -2432,6 +2435,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         }),
         &notify,
     );
+    drop(starting);
     let listens = listen::in_the_window(&config, mpris.as_ref().map(resonate_mpris::Mpris::teller));
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     let submitting = submitting::start(&config, &library, &player);

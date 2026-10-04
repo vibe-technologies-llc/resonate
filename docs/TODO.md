@@ -20,10 +20,6 @@ service or a format — and is not worked until that moves; everything else is o
   the true-peak guard, so the guard never sees those overs while the track is being measured
 - The stream's exclusive flag, the latency requests other than *Auto* and the underrun hook are
   never set or reached outside tests
-- A launch made while another is still starting opens a second window, because the bus name is
-  claimed only after the engine starts
-- Closing the terminal sends `play` and the headless passes a hang-up nothing catches, so the last
-  listen is lost and a tag, organise or import is cut without the drain an interrupt gets
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
   anything under 100 % leaves bit-perfect there
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
@@ -284,7 +280,7 @@ service or a format — and is not worked until that moves; everything else is o
   readers and the MCP line reader have no fuzz target
 - Scanning a non-UTF-8 file name, two sheets naming one file, a sheet with no audio track and the
   inotify limit are untested
-- Nothing drives the signal paths or the terminal restore of `play`
+- Nothing drives `play`'s signal paths or its terminal restore; only `mcp`'s hang-up is driven
 - *Take this name* is checked by eye alone: driving it wants a recognition the catalog holds, which
   no fake fingerprinter hands the analysis pane yet
 - The drop overlay has never been dragged onto on a real compositor from this tree: gpui's test

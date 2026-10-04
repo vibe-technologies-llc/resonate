@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Write as _},
-    io::{self, Write as _},
+    io::{self, IsTerminal as _, Write as _},
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -50,6 +50,12 @@ pub fn written(said: fmt::Arguments<'_>, ending: &str) {
     }
     text.push_str(ending);
     raw(&plain(&text));
+}
+
+pub fn the_terminal_hung_up() {
+    if io::stdout().is_terminal() {
+        NOBODY_IS_READING.store(true, Ordering::Relaxed);
+    }
 }
 
 pub fn raw(text: &str) {

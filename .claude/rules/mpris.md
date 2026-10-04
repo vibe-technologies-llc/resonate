@@ -249,7 +249,13 @@ rather than reimplementing the bus.
   of this build able to raise (`Running::a_window`) hands it its files as `AddTrack`s placed next
   and heard now, raises it and leaves, rather than starting a second window, engine and stream
   under an `instance<pid>` name writing the same resumption. A headless `resonate play` cannot
-  raise, so it never swallows a window being opened.
+  raise, so it never swallows a window being opened. The name is claimed only once the engine has
+  started, so two launches a moment apart would both find no window: `starting::one_window_at_a_time`
+  takes an exclusive lock on `resonate-starting.lock` under `$XDG_RUNTIME_DIR` before asking the bus,
+  and the launch holds it until `Mpris::start` has claimed the name, so the second waits for the first
+  to be reachable and hands its files over. It waits at most `WAITS_AT_MOST` (15 s) for a first that
+  wedged while starting, and a lock that cannot be taken at all starts the window as before
+  (`a_second_launch_waits_for_the_first_to_be_reachable`).
 - **Which player a call reaches is a name, and one reading of the bus answers every way of
   choosing.** `ours` is the names that are `org.mpris.MediaPlayer2.resonate` or an `instance` under
   it, sorted (the plain name first, being a prefix of every other). `Running::found` is its first —
