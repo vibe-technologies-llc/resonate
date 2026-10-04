@@ -114,7 +114,7 @@ fn ordered(byte: u8, bits: BitOrder) -> u8 {
 fn convolved(table: &PartialSums, history: &History) -> f32 {
     let mask = table.bytes - 1;
     let mut sum = 0.0;
-    for (step, sums) in table.sums.chunks_exact(BYTE_VALUES).enumerate() {
+    for (step, sums) in table.sums.as_chunks::<BYTE_VALUES>().0.iter().enumerate() {
         let byte = history.held[(history.oldest + step) & mask];
         sum += sums[usize::from(byte)];
     }
@@ -127,7 +127,7 @@ fn partial_sums(dsd_hz: u32) -> PartialSums {
     let kernel = kaiser_sinc(bytes * 8, cutoff, beta_for(STOPBAND_DB));
 
     let mut sums = vec![0.0_f32; bytes * BYTE_VALUES];
-    for (step, steps) in sums.chunks_exact_mut(BYTE_VALUES).enumerate() {
+    for (step, steps) in sums.as_chunks_mut::<BYTE_VALUES>().0.iter_mut().enumerate() {
         for (value, slot) in steps.iter_mut().enumerate() {
             let mut sum = 0.0;
             for bit in 0..8 {
