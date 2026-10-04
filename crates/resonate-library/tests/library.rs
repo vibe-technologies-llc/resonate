@@ -1804,6 +1804,40 @@ fn a_failed_file_is_counted_as_what_went_wrong_with_it() -> Result<()> {
 }
 
 #[test]
+fn a_file_with_a_name_that_is_not_text_is_counted_unnamed_and_the_rest_are_scanned() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
+    let bytes = |name: &[u8]| {
+        tree.path()
+            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(name))
+    };
+    fs::write(
+        bytes(b"caf\xe9.wav"),
+        Wav::new().text(TITLE, "cafe").build(),
+    )
+    .expect("a file with a name that is not text");
+    fs::create_dir(bytes(b"dir\xff")).expect("a folder with a name that is not text");
+    fs::write(
+        bytes(b"dir\xff").join("inside.wav"),
+        Wav::new().text(TITLE, "inside").build(),
+    )
+    .expect("a file inside it");
+
+    let library = Library::open_in_memory()?;
+    for _ in 0..2 {
+        let stats = scan(&library, &options(&tree))?;
+
+        assert_eq!(
+            stats.failed.unnamed, 2,
+            "a name that is not text was not counted as such, got {:?}",
+            stats.failed
+        );
+        assert_eq!(titles(&all(&library)?), vec!["good"]);
+    }
+    Ok(())
+}
+
+#[test]
 fn a_file_that_will_not_probe_is_counted_and_stepped_over() -> Result<()> {
     let tree = Tree::new();
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());

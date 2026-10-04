@@ -61,3 +61,24 @@ path = "fuzz_targets/lyricsfile.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "search"
+path = "fuzz_targets/search.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "uri"
+path = "fuzz_targets/uri.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decoded"
+path = "fuzz_targets/decoded.rs"
+test = false
+doc = false
+bench = false

@@ -51,9 +51,6 @@ else is open to be done.
   card here offers 48 kHz alone) nor DoP against a DAC that decodes it
 
 ## Formats
-- DSD128 and DSD256 are decimated through the same 512 taps as DSD64, so DSD256 falls 0.2 dB by
-  10 kHz and 0.9 dB by 20 kHz, and DSD128 0.06 dB by 20 kHz; scaling the kernel with the rate fixes
-  it
 - A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek and is over the 256 MiB memory
   spool is refused as wanting a seek, though the disc spool could hold it whole
 - A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
@@ -161,14 +158,13 @@ else is open to be done.
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
   are never run
-- Scanning a non-UTF-8 file name and the inotify limit are untested
+- The inotify limit is untested
 - The `probe` fuzz target never seeks, decodes DSD to samples, hints an extension or reads a stream
   that cannot seek, so the seeks of `ape.rs`, `matroska.rs` and `dsd/` and the whole spooled path are
   unfuzzed; its seeds also lack Matroska lacing and unknown-size clusters, fragmented MP4, m4b
   chapters, FLAC `CHAPTER` comments and a variable-packet CAF, and `cue` reaches none of the file
   resolution
-- The search grammar, `MediaLocation::from_uri`, `text::decoded`, the EqualizerAPO and GraphicEQ
-  readers and the MCP line reader have no fuzz target
+- The EqualizerAPO and GraphicEQ readers and the MCP line reader have no fuzz target
 - No test records from a microphone node, though the reconnect test's hosted daemon could serve a
   virtual source
 - Nothing drives `play`'s signal paths or its terminal restore; only `mcp`'s hang-up is driven

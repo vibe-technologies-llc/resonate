@@ -1,0 +1,1 @@
+artist:="Air Supply" title:moon year:1970-1979 -is:lossy or plays:>5@30d "a quoted phrase" length:3:30

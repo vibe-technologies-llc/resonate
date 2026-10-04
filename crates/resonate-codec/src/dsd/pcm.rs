@@ -6,38 +6,53 @@ use crate::dsd::{
 
 const PASSBAND_HZ: f64 = 45_000.0;
 const STOPBAND_DB: f64 = 96.0;
-const FIR_BYTES: usize = 64;
-const FIR_STEP_MASK: usize = FIR_BYTES - 1;
-const FIR_TAPS: usize = FIR_BYTES * 8;
+const DSD64_HZ: u32 = 2_822_400;
+const DSD64_FIR_BYTES: usize = 64;
+const MOST_FIR_BYTES: usize = 256;
 const BYTE_VALUES: usize = 256;
 const DC_BLOCK_HZ: f64 = 2.0;
 const ONE_BIT_HIGH: f64 = 1.0;
 const ONE_BIT_LOW: f64 = -1.0;
 
-type PartialSums = [[f32; BYTE_VALUES]; FIR_BYTES];
+fn fir_bytes_for(dsd_hz: u32) -> usize {
+    let multiple = (dsd_hz.saturating_add(DSD64_HZ / 2) / DSD64_HZ).max(1) as usize;
+    (DSD64_FIR_BYTES * multiple.next_power_of_two()).min(MOST_FIR_BYTES)
+}
 
-#[derive(Clone, Copy)]
+struct PartialSums {
+    sums: Vec<f32>,
+    bytes: usize,
+}
+
+impl PartialSums {
+    #[cfg(test)]
+    fn at(&self, step: usize, byte: u8) -> f32 {
+        self.sums[step * BYTE_VALUES + usize::from(byte)]
+    }
+}
+
+#[derive(Clone)]
 struct History {
-    held: [u8; FIR_BYTES],
+    held: Vec<u8>,
     oldest: usize,
 }
 
 impl History {
-    const fn silent() -> Self {
+    fn silent(bytes: usize) -> Self {
         Self {
-            held: [DSD_SILENCE; FIR_BYTES],
+            held: vec![DSD_SILENCE; bytes],
             oldest: 0,
         }
     }
 
     fn took(&mut self, byte: u8) {
         self.held[self.oldest] = byte;
-        self.oldest = (self.oldest + 1) & FIR_STEP_MASK;
+        self.oldest = (self.oldest + 1) & (self.held.len() - 1);
     }
 }
 
 pub(crate) struct Decimator {
-    table: Box<PartialSums>,
+    table: PartialSums,
     history: Vec<History>,
     blocked: Vec<DcBlock>,
     bits: BitOrder,
@@ -45,9 +60,10 @@ pub(crate) struct Decimator {
 
 impl Decimator {
     pub(crate) fn new(dsd_hz: u32, carrier_hz: u32, lanes: usize, bits: BitOrder) -> Self {
+        let table = partial_sums(dsd_hz);
         Self {
-            table: partial_sums(dsd_hz),
-            history: vec![History::silent(); lanes],
+            history: vec![History::silent(table.bytes); lanes],
+            table,
             blocked: vec![DcBlock::at(carrier_hz); lanes],
             bits,
         }
@@ -55,7 +71,7 @@ impl Decimator {
 
     pub(crate) fn prime(&mut self) {
         for plane in &mut self.history {
-            *plane = History::silent();
+            *plane = History::silent(self.table.bytes);
         }
         for blocked in &mut self.blocked {
             blocked.forget();
@@ -96,21 +112,23 @@ fn ordered(byte: u8, bits: BitOrder) -> u8 {
 }
 
 fn convolved(table: &PartialSums, history: &History) -> f32 {
+    let mask = table.bytes - 1;
     let mut sum = 0.0;
-    for (step, sums) in table.iter().enumerate() {
-        let byte = history.held[(history.oldest + step) & FIR_STEP_MASK];
+    for (step, sums) in table.sums.chunks_exact(BYTE_VALUES).enumerate() {
+        let byte = history.held[(history.oldest + step) & mask];
         sum += sums[usize::from(byte)];
     }
     sum
 }
 
-fn partial_sums(dsd_hz: u32) -> Box<PartialSums> {
+fn partial_sums(dsd_hz: u32) -> PartialSums {
+    let bytes = fir_bytes_for(dsd_hz);
     let cutoff = PASSBAND_HZ / f64::from(dsd_hz);
-    let kernel = kaiser_sinc(FIR_TAPS, cutoff, beta_for(STOPBAND_DB));
+    let kernel = kaiser_sinc(bytes * 8, cutoff, beta_for(STOPBAND_DB));
 
-    let mut table = vec![[0.0_f32; BYTE_VALUES]; FIR_BYTES];
-    for (step, sums) in table.iter_mut().enumerate() {
-        for (value, slot) in sums.iter_mut().enumerate() {
+    let mut sums = vec![0.0_f32; bytes * BYTE_VALUES];
+    for (step, steps) in sums.chunks_exact_mut(BYTE_VALUES).enumerate() {
+        for (value, slot) in steps.iter_mut().enumerate() {
             let mut sum = 0.0;
             for bit in 0..8 {
                 let set = (value >> (7 - bit)) & 1 == 1;
@@ -120,10 +138,7 @@ fn partial_sums(dsd_hz: u32) -> Box<PartialSums> {
             *slot = sum as f32;
         }
     }
-    table
-        .into_boxed_slice()
-        .try_into()
-        .unwrap_or_else(|_| Box::new([[0.0_f32; BYTE_VALUES]; FIR_BYTES]))
+    PartialSums { sums, bytes }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,6 +188,41 @@ mod tests {
         out
     }
 
+    fn gain_db(kernel: &[f64], hz: f64, dsd_hz: u32) -> f64 {
+        let cycles = hz / f64::from(dsd_hz);
+        let (mut real, mut imaginary) = (0.0, 0.0);
+        for (tap, weight) in kernel.iter().enumerate() {
+            let angle = std::f64::consts::TAU * cycles * tap as f64;
+            real += weight * angle.cos();
+            imaginary -= weight * angle.sin();
+        }
+        20.0 * real.hypot(imaginary).log10()
+    }
+
+    #[test]
+    fn the_kernel_grows_with_the_rate_so_the_audio_band_stays_flat_at_every_one() {
+        for (dsd_hz, bytes) in [
+            (DSD64, 64),
+            (2 * DSD64, 128),
+            (4 * DSD64, 256),
+            (3_072_000, 64),
+            (6_144_000, 128),
+            (12_288_000, 256),
+        ] {
+            assert_eq!(fir_bytes_for(dsd_hz), bytes, "{dsd_hz} Hz");
+
+            let kernel = kaiser_sinc(
+                bytes * 8,
+                PASSBAND_HZ / f64::from(dsd_hz),
+                beta_for(STOPBAND_DB),
+            );
+            for hz in [10_000.0, 20_000.0] {
+                let gain = gain_db(&kernel, hz, dsd_hz);
+                assert!(gain.abs() < 0.02, "{dsd_hz} Hz falls {gain} dB by {hz} Hz");
+            }
+        }
+    }
+
     #[test]
     fn every_bit_set_is_positive_full_scale_and_none_is_negative() {
         let high = decimated(0xFF, 400);
@@ -206,7 +256,7 @@ mod tests {
 
     fn shifting_history(plane: &[u8]) -> Vec<f32> {
         let table = partial_sums(DSD64);
-        let mut held = vec![DSD_SILENCE; FIR_BYTES];
+        let mut held = vec![DSD_SILENCE; table.bytes];
         let mut blocked = DcBlock::at(CARRIER);
         let per_frame = DOP_DECIMATION as usize / 8;
 
@@ -218,7 +268,7 @@ mod tests {
             }
             let mut sum = 0.0;
             for (step, byte) in held.iter().enumerate() {
-                sum += table[step][usize::from(*byte)];
+                sum += table.at(step, *byte);
             }
             out.push(blocked.next(sum));
         }

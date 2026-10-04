@@ -160,8 +160,8 @@ RPM when a release is published. A runnable command added above goes into the wo
 crate added to the layering refusals into its `refuse` lines.
 
 **The hand-rolled parsers are fuzzed from outside the workspace.** `fuzz/`'s `[workspace]` table
-detaches it, so the workspace lints do not reach libfuzzer's macros. Six targets (`probe`, `boxes`,
-`cue`, `lrc`, `lyricsfile`, `playlist`); `probe` reaches the container readers through the public
+detaches it, so the workspace lints do not reach libfuzzer's macros. Nine targets (`probe`, `boxes`,
+`cue`, `lrc`, `lyricsfile`, `playlist`, `search`, `uri`, `decoded`); `probe` reaches the container readers through the public
 API over bytes a `MediaProvider` of its own serves. `lrc`, `lyricsfile` and `playlist` use seams
 compiled only under `#[cfg(fuzzing)]`. `fuzz/seeds/<target>` holds the smallest file of each thing a
 target reads and is handed to a run as a second corpus folder; a grown `corpus/` is gitignored. A

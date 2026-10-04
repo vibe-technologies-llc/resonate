@@ -342,9 +342,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 - **DSF bit-reverses and DFF does not.** DSF's `fmt ` chunk declares `1` for LSB-first and `8` for
   MSB-first, DFF is always MSB-first. The wrong way round yields distorted music rather than an obvious
   failure, so both orders decode the same tone in a test.
-- **The decimator is the codec's own, the layering forbidding `resonate-dsp`.** A 512-tap
-  Kaiser-windowed sinc decimating by 16, evaluated as a byte-indexed table of partial sums (no
-  multiplies). A box average is the wrong shape (DSD's shaped noise rises steeply above 30 kHz), so the
+- **The decimator is the codec's own, the layering forbidding `resonate-dsp`.** A Kaiser-windowed sinc
+  decimating by 16, 512 taps at DSD64 and **a kernel growing with the rate** (1 024 at DSD128, 2 048 at
+  DSD256, `fir_bytes_for`), so its transition band stays as narrow in hertz and the audio band as flat
+  (`the_kernel_grows_with_the_rate_so_the_audio_band_stays_flat_at_every_one`); it costs DSD256 stereo a
+  fifth of a core, measured. Evaluated as a byte-indexed table of partial sums (no multiplies). A box average is the wrong shape (DSD's shaped noise rises steeply above 30 kHz), so the
   cutoff is 45 kHz absolute, rebuilt per rate, with ≥90 dB at the output Nyquist proved by a DFT of the
   designed taps. A DC blocker follows. The filter overshoots a step into all-ones, so full scale
   saturates at 8 388 607 rather than 8 388 608, which a 24-bit wire would read as negative full scale.
