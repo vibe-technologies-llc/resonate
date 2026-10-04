@@ -178,6 +178,7 @@ service or a format — and is not worked until that moves; everything else is o
 - **Blocked on gpui:** Nothing is exposed to a screen reader; gpui carries no AccessKit
 
 ## Testing
+- Tests in `resonate-mpris`'s `bus.rs` fail now and then — `set_position_*`, a different one each time — when the whole workspace's tests run at once, and pass alone, so something in them waits on a clock a loaded machine outruns
 - No transport test covers a failed rebind, a setting changed while a row is parked, a seek during
   the sleep fade, a track of unknown length, removing the playing row under repeat, or a
   reconnect at a track boundary
