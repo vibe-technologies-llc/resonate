@@ -11,523 +11,275 @@ paths:
 
 A provider is a crate that turns an identity into media. `resonate-providers` is the seam, crates
 under `crates/providers/` fill it, the binary registers them, and `resonate-library`'s poll does
-everything else. The seam is on `resonate-core`, `thiserror` and `tracing` alone, and
+everything else. The seam is on `resonate-core`, `thiserror` and `tracing` alone, so
 `cargo tree -p resonate-providers` stays free of the library, codec, vault and gpui: a provider
 that depended on the catalog could not be written without it. `Providers` is the registry:
 `Providers::none()` holds the `Unprovided` stub and `and` registers one per name, as
-`Lyricists::and` does. `Providers::only` answers a registry holding the one provider named — the
-stub alone where nothing is registered under the name — for a poll only that provider can answer
-(below).
+`Lyricists::and` does. `Providers::only` answers a registry holding the one provider named, for a
+poll only that provider can answer (below).
 
-## What a provider is handed
+## What a provider is handed and answers
 
 `Want::identity()` builds an `Identity`, everything the catalog knows about the row it wants filled:
-
-- `recording`, `track` and `release` as `Option<Mbid>` and `isrc` as `Option<Isrc>` — the
-  identifiers, most exact first.
-- `title`, `artist`, `album`, `length`, `disc` and `position` — what a service would search on.
-- `links` and `release_links` — the `Link`s MusicBrainz gave the track and its release, each a
-  `Relation`, a `Service` and a URL. `track_on(Service::Tidal)` and `release_on(Service::Tidal)`
-  find a provider's own page; the track's link names the recording on that service and the
-  release's the album, and a provider that can use either asks for the track first.
-
-A want's identifiers come from `release_tracks` and `albums.mbid`, so a row the enrichment has not
-answered carries its titles alone. A provider needing an identifier answers `Nothing` without one
-rather than guessing — **a guess is never written** — which is why `resonate-inbox` never matches
-on a title.
-
-## What a provider answers
+the identifiers (`recording`, `track`, `release` as `Mbid`, `isrc`), what a service would search on
+(title, artist, album, length, disc, position) and the MusicBrainz `Link`s of the track and its
+release (`track_on(Service::Tidal)`, `release_on(..)` find a provider's own page; ask the track's
+first). A provider needing an identifier (a row the enrichment has not answered carries titles alone) answers
+`Nothing` without one rather than guessing: **a guess is never written**, which is why
+`resonate-inbox` never matches on a title.
 
 `Provider::obtain` answers `Obtained::Nothing` or `Obtained::Found(Delivery)`, or an `Err` where it
-could not be asked, which `Providers::first` logs, counts as `refused` and carries on past.
-`Error::is_the_provider_away` says which errors are about the provider rather than the want — an
-`Io` (a connection that failed, a folder that is not there), an `Unwelcome` (the server turned the
-listener away as a whole: a wrong password, an account barred), a `StillQueued` (a server holding
-the request in a queue of its own past the provider's patience), an `Untrusted` (a server whose
-certificate this build does not trust, every want failing alike) and a `Refused` of 500 or over — and
-`TurnedAway` or a 404 are the want's alone, a Subsonic code 70 being one song the server lacks.
-**A file still arriving is neither a miss nor the provider away.** `Error::StillArriving` names the
-file and is not away, so `Providers::first` counts it `refused`: the want is not stamped and stays
-due for the next poll, never counted a miss, and the provider is still asked about every other want
-of the poll (`a_file_still_arriving_is_about_the_want_and_never_the_provider_being_away`).
+could not be asked, which `Providers::first` logs, counts `refused` and carries on past.
+`Error::is_the_provider_away` says which errors are about the provider rather than the want (`Io`,
+`Unwelcome`, `StillQueued`, `Untrusted`, a `Refused` of 500 or over); `TurnedAway` and a 404 are the
+want's alone. **A file still arriving is neither a miss nor the provider away**: `StillArriving` is
+counted `refused`, the want stays unstamped and due, and the provider is still asked about the rest.
 
-- **`Delivery::File(PathBuf)`** is audio already on disk. The vault reads it and copies what it
-  keeps, leaving the file where it stood: a provider's folder, like the library an import reads,
-  is never written to.
-- **`Delivery::Stream { key, extension, reader }`** is bytes from anywhere. `key` is the provider's
-  own name for what it delivered, so the object is recorded as taken from `<provider>:<key>`;
-  `Extension` is one to eight ASCII letters and digits, lowercased, without its dot — the format
-  hint the decoder probes with.
+- **`Delivery::File(PathBuf)`** is audio already on disk, copied by the vault and left where it
+  stood: a provider's folder is never written to.
+- **`Delivery::Stream { key, extension, reader }`** is bytes from anywhere; the object is recorded as
+  taken from `<provider>:<key>`, and `Extension` is the format hint the decoder probes with.
 
 ## What the infrastructure owns
 
-A provider does none of this, so none of it is written twice:
+A provider does none of this, so none of it is written twice.
 
-- **Which wants are due** — `Want::due_at`, below — and asking providers in registration order,
-  the first delivery winning.
-- **A want tried in vain is tried again after longer and longer waits, then given up.**
-  `wants.misses` (a `MIGRATIONS` step) counts the tries in a row that every provider answered with
-  nothing: `note_tried` steps it where nothing was offered and none ever had been, and puts it back
-  to nothing on an offer. `Want::due_at` is when a want is next due — at once where never tried,
-  `RETRY_WAITS` after the last try for the miss it is on (1 min, 5 min, 15 min, 1 h, 6 h), and
-  `POLL_AGAIN_AFTER` (six hours) after an offer the catalog does not hold yet — and `None` once the
-  misses reach `TRIES_BEFORE_GIVING_UP` (six): `Want::gave_up`, never asked again on its own. Asking
-  for it again (`want_in`, `library.md`) puts the count back to nothing, and `ASKING_EVERY_WANT`
-  asks a given-up want too, *Poll now* meaning every want.
-  `a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_for_again` is the
-  claim, and `Library::next_want_due` the soonest any want is due, what the window wakes for.
+- **Due wants, in registration order, the first delivery winning.** `wants.misses` counts the tries
+  in a row that every provider answered with nothing. `Want::due_at` is at once where never tried,
+  `RETRY_WAITS` after the last try for the miss it is on, `POLL_AGAIN_AFTER` after an offer the
+  catalog does not hold yet, and `None` once misses reach `TRIES_BEFORE_GIVING_UP`
+  (`Want::gave_up`). `want_in` (`library.md`) puts the count back and `ASKING_EVERY_WANT` asks a
+  given-up want too (*Poll now*). `Library::next_want_due` is what the window wakes for.
 - **A want is tried only when every provider answered it.** `Answer::heard_from_every_provider` is
-  false where any provider refused, ran late or was passed over, and a want answered so is not
-  stamped and not counted `nothing`: it stays due, so a Subsonic server that was down, or a wrong
-  password, is asked again on the next poll after it is put right rather than a retry's wait
-  later, and is never given up for it. The cost is a failing provider asked once a poll for as long as it fails
-  (`a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll`,
-  `a_want_one_provider_answered_and_another_refused_stays_due`).
+  false where any provider refused, ran late or was passed over; such a want is not stamped and not
+  counted `nothing`, so a server that was down or a wrong password is asked again by the next poll
+  once put right, and is never given up for it.
 - **A poll only one provider can answer asks that one alone, and its silence says nothing of the
-  rest.** `Providers::only` narrows the registry to one provider and marks it narrowed wherever it
-  left another real provider out; `Providers::first` copies the mark onto `Answer::narrowed`, and a
-  narrowed answer is never `heard_from_every_provider`. So a want the narrowed provider has nothing
-  for is neither stamped nor counted a miss — the providers left out were never asked, and a want
-  missed by the inbox alone would otherwise wait out a retry or be given up for what the network
-  might hold — while a delivery it does make lands and is noted as any other. The narrowing is the
-  registry's, not an option beside it, so a caller cannot hand a narrowed registry to a poll that
-  takes its silence for everybody's. A registry that held the one provider anyway is not narrowed.
-  The window's inbox poll (`Prompted::ByTheInbox`) asks through `only` with the inbox's name: a
-  file landing there can only be the inbox's, and asking every network provider about every unheld
-  want again for it was the whole cost of the watch
-  (`a_registry_narrowed_to_one_provider_asks_it_alone_and_never_hears_from_every_provider`,
-  `a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_holds`).
-- **A want dismissed or withdrawn while it is asked about is passed over.** The poll reads the wants
-  once as it starts; stamping one the window or another process took away meanwhile answers
-  `Error::UnknownWant`, which `supply::tried` logs and passes over, so the poll goes on to the wants
-  after it rather than ending
-  (`a_want_withdrawn_while_a_poll_asks_about_it_is_passed_over_and_the_poll_goes_on`).
+  rest.** `Providers::only` marks the registry narrowed wherever it left another real provider out;
+  `Providers::first` copies the mark onto `Answer::narrowed`, which is never
+  `heard_from_every_provider`, so a want the inbox alone has nothing for is neither stamped nor
+  counted a miss. The narrowing is the registry's, not an option beside it, so it cannot reach a poll
+  that takes silence for everybody's. The window's inbox poll (`Prompted::ByTheInbox`) uses it.
 - **A provider that is not there is asked once a poll, not once a want.** The poll holds one `Away`
-  for its run and hands it to every `Providers::first`; a provider whose error
-  `is_the_provider_away`, or that ran late, is noted there and passed over for every want after,
-  counted in `Answer::passed_over` — so an unreachable Subsonic host costs its connect timeout once
-  a poll, and a wrong password one login, not a login a want that a server banning repeated
-  failures would lock the listener out over; the wants it was not asked about stay due
-  (`a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want`,
-  `a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want`).
-- **How long a provider is waited on.** `Providers::first` takes an `Asking` — `within` (the poll's
-  `answers_within`, `ANSWERS_WITHIN` by default), a `cancelled` the poll reads off its progress, a
-  `turning_to` it calls with each real provider's name as it asks it (never the stub's), and a
-  `declined` it weighs every delivery against (below) — and asks each provider on a thread of its
-  own, looking at both every `LOOKED_AT_EVERY`. One that
-  has not answered by the deadline is left behind and counted `late`, not `refused` (it said
-  nothing was wrong), and the next is asked; its thread runs on to whatever end it reaches and its
-  answer is dropped. A cancel ends the wait at once and asks nobody else, and the want is not
-  stamped as tried, because it was not.
+  handed to every `Providers::first`; a provider whose error `is_the_provider_away`, or that ran
+  late, is passed over for every want after (`Answer::passed_over`), so an unreachable host costs its
+  connect timeout once and a wrong password one login, where a server banning repeated failures would
+  lock the listener out. The wants it was not asked about stay due.
+- **How long a provider is waited on.** `Providers::first` takes an `Asking`: `within`
+  (`ANSWERS_WITHIN` by default), a `cancelled` read off the poll's progress, a `turning_to` called with
+  each real provider's name and a `declined` every delivery is weighed against. Each provider is asked
+  on a thread of its own; one not answered by the deadline is left behind and counted `late`, not
+  `refused`, its answer dropped. A cancel ends the wait at once and the want is not stamped.
 - **How long a stream is read.** `Pumped` reads a delivery's reader on a `resonate-delivery` thread,
-  `CHUNK_BYTES` at a time and at most `CHUNKS_AHEAD` ahead, and the keep reads the chunks off a
-  channel, looking at the cancel every `HEEDED_EVERY`. A cancel answers an error on the next read,
-  so the staging is thrown away and the want left untried rather than a cancelled pass copying on
-  to `LARGEST_DELIVERY`; a stream yielding nothing for the poll's `answers_within` is given up the
-  same way and counted `late`, and the want *is* stamped as tried — the provider answered and what
-  it answered stopped — while the provider is noted `Away` for the rest of the poll. The pump thread is left in the `read` that never returned, as a late
-  provider's is, and ends on the first read that does, its channel gone.
-- **Staging, validating, deduping and keeping**, through `Vault::keep` and `Vault::keep_delivered`,
-  so a delivery is held to the import's bit-exact, never-larger promise.
+  `CHUNK_BYTES` at a time and at most `CHUNKS_AHEAD` ahead, the keep looking at the cancel. A cancel
+  throws the staging away and leaves the want untried; a stream yielding nothing for `answers_within`
+  is given up the same way, counted `late`, with the want stamped as tried (the provider answered and
+  what it answered stopped) and the provider noted `Away`. Bytes are bounded by `LARGEST_DELIVERY`.
+- **Keeping** goes through `Vault::keep_delivered`, so a delivery is held to the import's bit-exact,
+  never-larger promise.
 - **A delivery is weighed against the length of the row it was wanted for.** Where the release row
-  names a length, `Want::lasts_as_long_as` takes a delivery only where what it decodes to is within
-  `LENGTHS_AGREE_WITHIN` (5 s, the tolerance a followed link's takes are held to) of it: the vault's
-  `Kept::frames` — the frames the source decoded to, a kept object's included — and, in the music
-  folder, a whole decode of the landing. One further off is counted `unkept` and noted as nothing:
-  no row, no pairing, no offer — the object it landed as is left to `--prune` like any no row
-  names, and the filed landing is removed. It counts a miss, as a vault refusal does, so a provider
-  that keeps offering the wrong song, or a file still being copied into the inbox, is asked after
-  the retry's wait rather than at every poll — and the window's inbox watch asks again once the copy
-  has been quiet. A release row naming no length weighs nothing
-  (`a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_does`,
-  `a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_does`).
-- **A refused delivery waits like a want that found nothing.** `note_tried` steps `misses` for any
-  try that offered nothing — a vault refusal, a failed keep, a length that disagrees — so the want
-  waits `RETRY_WAITS` and is given up as one missed is; only a want still carrying an earlier offer
-  keeps its count at nothing, and forgetting a delivery clears that offer (below)
-  (`a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again`).
+  names a length, `Want::lasts_as_long_as` takes a delivery only within the library's
+  `LENGTHS_AGREE_WITHIN` of it (the vault's `Kept::frames`; in the music folder a whole decode of the
+  landing). One further off is counted `unkept` and noted as nothing; the object is left to
+  `--prune` and the filed landing is removed. A refused delivery waits like a want that found nothing:
+  `note_tried` steps `misses` for any try that offered nothing, so a provider offering the wrong song,
+  or a file still being copied into the inbox, is asked after the retry's wait, not at every poll.
 - **Where no vault is open, a delivery is filed in the music folder instead.** `Library::deliver_into`
-  names a `DeliveryFolder` — the `music-folder` key's path and the `organise-as` layout — which the
-  binary sets as it opens the library and the window sets afresh before every poll from its live
-  globals; with neither a vault nor a folder a stream is `unkept` and a file only offered, as before.
-  `filed.rs` does the rest: the want's album is read (`Library::album_to_file`: its title, its owner,
-  its year and how many discs its release holds), the path is the layout rendered over the want's
-  names under the folder's `Naming`, the bytes are staged as a hidden `.<name>.<pid>-<n>.resonate-delivery`
-  beside it — at most `LARGEST_FILED` — and landed by `hard_link` under the first free name
-  `take_in::candidates` offers (`name (2).ext` and on), so nothing is overwritten. A landing the
-  decoder cannot probe — or, where the want names a length, cannot decode whole to a length within
-  `LENGTHS_AGREE_WITHIN` of it — is removed and counted `unkept`. The file is then tagged through `FileTags` with
-  everything the want and album say — title, artist, album, album artist, track and disc, the year,
-  the recording, release-track and release ids and the ISRC — so a later rescan reads the same row.
-  **It joins the album it was wanted for, not one of its own**: before any scan reads it,
-  `Library::claim_album_keys` names the album by the keys the scan will compute for the file — the
-  release key alone where the release is known, else the album artist's key and the folder's
-  sleeve key — so the scan finds the wanted album rather than founding a new one. At the end of the
-  poll every root a filing landed under (the folder itself, registered as a root, where no root
-  reaches it) is scanned incrementally and `Library::pair_what_landed` pairs each unheld want with
-  the rooted row at the path it was offered, so the want is held and the row is an ordinary library
-  track — moved by `organise`, written by `tag`, pruned by a scan — never a vault object. Pairing also
-  runs as a poll starts, so a filing whose scan was refused (another pass held the walk) is paired by
-  the next poll once anything has read it
-  (`a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_was_wanted_for`).
+  names a `DeliveryFolder` (the `music-folder` path and the `organise-as` layout), set by the binary
+  at open and by the window before every poll; with neither, a stream is `unkept` and a file only
+  offered. `filed.rs` renders the path under the folder's `Naming`, stages the bytes as a hidden
+  `.<name>.<pid>-<n>.resonate-delivery` beside it (at most `LARGEST_FILED`), lands by `hard_link` under
+  the first free name `take_in::candidates` offers so nothing is overwritten, and tags it through
+  `FileTags`. A landing the decoder cannot probe, or whose decode disagrees with the wanted length, is
+  removed and counted `unkept`. **It joins the album it was wanted for, not one of its own**:
+  `Library::claim_album_keys` names the album by the keys the scan will compute, before any scan reads
+  it. After the poll the roots a filing landed under are scanned and `Library::pair_what_landed` pairs
+  each unheld want with the rooted row at the path it was offered, so the row is an ordinary library
+  track, never a vault object (pairing runs as a poll starts too, for a scan another pass refused).
 - **Turning what was kept into a track row.** `Library::note_delivered` writes the `vault_objects`
-  row and a `tracks` row in one transaction and pairs the want's release track with it, so a
-  delivery is playable, searchable and held the moment it lands. The row is named by the object's
-  own path, as a vaulted row whose file has gone is, with `vault_key` and `vault_path` set, so the
-  stand-in answers for it and `--prune` spares it; its names, disc, number and identifiers are the
-  release track's and its album the want's, the object carrying no tags and the release being what
-  the want was identified against. What the release cannot say the delivery can: `Vault::keep`
-  hands back the tags the source declared before the object shed them as `Kept::declared`, and the
-  row takes its genre, ReplayGain and words from there, so it is found by `genre:` and `lyrics:`,
-  levelled by the stand-in and sung by the lyrics pane before any study or lookup reaches it
-  (`a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared`). It belongs to
-  **no root** — `tracks.root_id` is nullable for this — and every pass walking the user's files
-  joins `roots`, so a scan's prune, a forget, `organise`, `tag`, `vault --import` and
-  `vault --release` never reach it: a vault object is not the user's library to move, write into or
-  hand back. One object delivered for two wants pairs the second with the row the first made, and
-  that row keeps the first want's names in the search index as on the row
-  (`one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed`). **A row held
-  meanwhile keeps its pairing.** The poll reads the wants as it starts, so a scan and a rematch can
-  pair the wanted release row with the listener's own file while a provider is still answering;
-  `note_delivered` asks inside its transaction whether the release row is still unheld and, where
-  it is not, writes nothing — no object row, no track row — and answers `None`, which the poll
-  counts `unkept`, leaving the object to `--prune`. The pairing it once took silently stays with the
-  file, and the want is held by it (`a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_file_leaves_it_paired`).
-  A filing in the music folder needs no such guard: `pair_what_landed` pairs only an unheld row, so
-  a filed copy of a song already held is an ordinary scanned file.
-- **Recording what landed on the want** — `offered` is the object's URI — and counting `offered`,
-  `kept`, `unkept`, `nothing`, `refused` and `late`. A want whose release track holds a row has its
-  `held` set and is never due again, so a filled want is the record of where its delivery went and
-  removing it changes nothing about the row. **Forgetting the row is the other way round**:
-  `Library::forget_delivered` removes the rootless row a path names — the object's own, which
-  `resonate wants` prints as `OFFERED` and `resonate forget` reads beside a root, URI or path — and
-  nothing a scan filed, leaving the object to `--prune` and the want standing, so a wrong file
-  dropped in the inbox is replaced by the next poll. The window reaches it too: `Track::delivered`
-  reads `root_id IS NULL` with every other column, and a delivered row's menu offers *Forget this
-  delivery* (`LibraryModel::forget_delivered`). **What was forgotten is remembered, and the want is
-  due at once.** In the same transaction, each want the row held has its offer, `tried` and `misses`
-  put back to nothing — an offer standing would have kept the want six hours off and its misses at
-  nothing for ever — and gains a `forgotten_deliveries` row (a `MIGRATIONS` step, cascading with the
-  want): the `vault_objects.taken_from` the object came from, `<provider>:<key>` or the file's URI,
-  and when it was forgotten. The poll reads them once as it starts and hands each want's to
-  `Providers::first` as `Asking::declined`, which passes a matching delivery over — counted in
-  `Answer::declined`, never `refused` — and asks the next provider, so the same file is not fetched
-  and kept again and another provider's answer lands instead; with nobody else answering, the want
-  was heard from every provider and missed. A stream is declined by its key alone, a provider's key
-  naming what it delivers; a file only where its later modification or status change is no later
-  than the forgetting, so a right file put back in the inbox under the same name is delivered.
-  `land_release` carries a want's forgotten deliveries across the release rows it writes again, as
-  it carries the want (`a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_instead`,
-  `a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_again`,
-  `a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again`).
+  row and a `tracks` row in one transaction and pairs the want's release track with it, so a delivery
+  is playable, searchable and held the moment it lands. The row is named by the object's own path with
+  `vault_key` and `vault_path` set, so the stand-in answers for it and `--prune` spares it; its names
+  and identifiers are the release track's, its genre, ReplayGain and words come from `Kept::declared`.
+  It belongs to **no root** (`tracks.root_id` is nullable for this) and every pass walking the user's
+  files joins `roots`, so a scan's prune, a forget, `organise`, `tag`, `vault --import` and
+  `vault --release` never reach it. **A row held meanwhile keeps its pairing**: a scan can pair the
+  wanted release row with the listener's own file while a provider is answering, so `note_delivered`
+  checks inside its transaction that the row is still unheld and otherwise writes nothing, answers
+  `None`, counted `unkept`.
+- **Forgetting a delivery.** `offered` is the object's URI; a want whose release track holds a row is
+  `held` and never due again. `Library::forget_delivered` removes the rootless row a path names
+  (`resonate forget` and the window's *Forget this delivery*) and nothing a scan filed, leaving the object to `--prune` and the want
+  standing. **What was forgotten is remembered, and the want is due at once**: in the same transaction
+  its offer, `tried` and `misses` are put back to nothing and it gains a `forgotten_deliveries` row
+  (the `vault_objects.taken_from` and when). The poll hands each want's to `Providers::first` as
+  `Asking::declined`, which passes a matching delivery over (counted in `Answer::declined`, never
+  `refused`) and asks the next provider. A stream is declined by its key alone; a file only where its
+  later modification or status change is no later than the forgetting, so a right file put back under
+  the same name is delivered.
 
 ## Writing one
 
 1. A crate under `crates/providers/<name>/`, package `resonate-<name>`, on `resonate-core`,
-   `resonate-providers` and whatever reaches its source. A network provider reaches `ureq` itself,
-   not through `resonate-online`, and paces and identifies itself as `online.md` says — by name
-   and version and nothing else.
+   `resonate-providers` and whatever reaches its source. A network provider reaches `ureq` itself, not
+   through `resonate-online`, and identifies itself as `online.md` says: name and version, nothing
+   else.
 2. A workspace member and a `[workspace.dependencies]` entry.
-3. A dependency of the binary and one `.and(..)` in `providers::registry` (the inbox is
-   registered by `with_inbox`), gated on the settings saying it is wanted: `Accounts` is what the
-   network providers are built from, read off the `Config` by `Accounts::of` for a headless run and
-   off the window's live `resonate_ui::Online` by `Accounts::given`. `providers::registered` is the
-   headless entry and `providers::sourced` the window's — handed over as
-   `resonate_ui::Sourcing::register`, a `Fn(&Supplying)` the window calls with its inbox and its
-   `Online` every time it asks (`LibraryModel::providers`) — and `registry` is the one place any is
-   registered, in code, never loaded at run time. So a folder chosen in *The inbox* group, a
-   Subsonic account or a TIDAL sign-in is asked from the next poll, no restart between. A network
-   provider holds state worth keeping — a signed-in session, cached tokens, its pacing — so
-   `Made` keeps the last one built for each kind beside the settings it was built from (`Kept`),
-   handing the same `Arc` back until those settings change
-   (`the_window_registers_what_its_settings_say_now_and_keeps_a_provider_its_settings_left_alone`).
-   A provider with a setting of its own widens `Online`, `Accounts` and `registry` together.
-   **The window polls on its own** as well as on *Poll now*: when the soonest want is due —
-   `Shelves::next_try`, read off each shelves load, the wake moved earlier by
-   `LibraryModel::ask_when_due` whenever a load brings it closer — never before `FIRST_ASKED_AFTER`
-   a start, never sooner than `RETRIES_ASKED_AT_LEAST` (30 s) apart and never later than
-   `ASKED_EVERY`; and as soon as a want is marked — each only where a provider is
-   registered, nothing else runs and `Library::is_a_want_due` says one is due; a want marked while
-   another pass holds the library is owed (`LibraryModel::poll_owed`, carrying the `PollOptions` it
-   was owed under, the widest owed winning) and asked about the moment `take_up_what_waited` finds
-   the library free, so an idle window with nothing wanted reads the wants and nothing else. A
-   self-started poll raises no notice when it cannot run and clears none when it does, and tells
-   nothing as it joins while the sidebar's downloads list holds anything, the list being where a
-   fetch the listener asked for is told (`ui.md`). **A poll names the want it is asking about**:
-   `PollProgress::asking` is the `WantId` handed to the providers, held through the delivery's
-   landing and `None` between wants and once the walk is done
-   (`a_poll_names_the_want_it_is_asking_about_while_it_asks`), which is what the window draws as
-   *Downloading…*. **It names the provider too, and how far the delivery has got.**
-   `PollProgress::asking_provider` is the provider `Asking::turning_to` last named — the one being
-   asked, then the one that delivered, through the landing — and `None` once a want is answered
-   with nothing, between wants and once the walk is done; `PollProgress::received` is the bytes of
-   the delivery being landed read so far, counted by `Pumped` as each chunk of a stream reaches the
-   keep and by the reader a file is filed through, and put back to nothing at each want. A file the
-   vault keeps by its path is read by the vault, so it counts nothing. Both are read every frame, so
-   the provider sits under a `parking_lot::Mutex` held for a clone and the count is an atomic
-   (`a_poll_names_the_provider_it_is_asking_and_counts_what_it_received`). *Poll now* and `resonate poll --again` poll under
-   `PollOptions::ASKING_EVERY_WANT`, asking every unheld want whenever last tried — somebody who
-   just dropped a file in the inbox means *now*; the timer and a bare `resonate poll` keep to
-   `Want::due_at`, which spares a network service.
-   **The window watches the inbox folder**, through the same `RootsWatch` as the roots: once a
-   write of an audio file or sheet under it has been quiet for `INBOX_QUIET_FOR`, it polls as
-   `Prompted::ByTheInbox` — every unheld want, as a press does, but of the inbox alone, through
-   `Providers::only`, and raising and clearing no notice, as the timer does. A poll that could not start because a pass ran stays owed and is asked again
-   on the next look, `INBOX_LOOKED_AT_EVERY` later, and a folder chosen in the pane is watched from
-   the next look. **What landed while no window was open is asked about when one opens**: the first
-   look weighs the newest file directly in the folder — the later of its modification and change
-   times, since a copy keeping its old time still changed status on landing — against
-   `Library::last_tried` (the latest try of any unheld want), and a newer file is owed a
-   `ByTheInbox` poll at once rather than waiting out a retry's wait for wants tried earlier. `a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about`
-   is the claim on `landed_since`.
-4. An `Error::Io` names the provider and a `ProviderOp`; an error the seam has no variant for is
-   added to the seam, with its op, when that provider lands — never as prose.
+3. A dependency of the binary and one `.and(..)` in `providers::registry` (the inbox by `with_inbox`),
+   gated on the settings saying it is wanted. `Accounts` is what the network providers are built from,
+   read off the `Config` by `Accounts::of` for a headless run (`providers::registered`) and off the
+   window's live `resonate_ui::Online` by `Accounts::given` (`providers::sourced`, handed over as
+   `resonate_ui::Sourcing::register` and called on every `LibraryModel::providers`). `registry` is
+   the one place any is registered, in code, never at run time, so a changed setting is asked from the
+   next poll with no restart. `Made` hands back the same provider (`Kept`) until its settings change,
+   since a network provider holds a session, tokens and pacing worth keeping. A provider with a
+   setting of its own widens `Online`, `Accounts` and `registry` together.
+4. An `Error::Io` names the provider and a `ProviderOp`; an error the seam has no variant for is added
+   to the seam, with its op, when that provider lands, never as prose.
 
-`resonate-inbox` is the reference: `Inbox::at` over the folder the `inbox` key names, read and
-never written to, a file directly inside whose stem is the recording MBID, then the track MBID, then
-the ISRC, ignoring case, never a nested folder or a shared title. Only audio is offered: a file
-counts where `resonate_core::names_audio` says its extension is one of `AUDIO_EXTENSIONS` — the list
-the scan walks by, moved into core so the inbox, which may not see the library, reads the same one —
-so `<mbid>.cue`, `<mbid>.jpg` or a rip log beside the audio is never delivered ahead of it
-(`only_audio_is_delivered_whatever_else_shares_its_name`).
+**The window polls on its own** as well as on *Poll now*: when the soonest want is due
+(`Shelves::next_try`, `LibraryModel::ask_when_due`, bounded by `FIRST_ASKED_AFTER`,
+`RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`) and as soon as a want is marked, each only where a
+provider is registered and `Library::is_a_want_due`. A want marked while another pass holds the
+library is owed (`LibraryModel::poll_owed`) and asked about when `take_up_what_waited` finds it free. *Poll now* and `resonate poll --again` poll
+under `PollOptions::ASKING_EVERY_WANT`, because somebody who just dropped a file in the inbox means
+*now*; the timer and a bare `resonate poll` keep to `Want::due_at`, which spares a network service.
+`PollProgress::{asking, asking_provider, received}` carry the want, provider and bytes landed for the
+window's *Downloading…*; they are read every frame, so the provider sits under a `parking_lot::Mutex`
+held for a clone and the count is an atomic.
 
-- **The folder is read once a poll, not once a want.** The listing — each audio file's path and
-  folded stem, nothing statted — is held between wants with the folder's modification and change
-  times, and read again only where either moved or it is older than `LISTING_TRUSTED_FOR` (30 s), the
-  bound covering a filesystem whose timestamps are too coarse to move within a second; a want costs a
-  stat of the folder and of the file it names. A poll over 500 wants reads the folder once
-  (`a_poll_over_many_wants_reads_the_inbox_once`); a file dropped in moves the folder's times and is
-  seen by the next want (`a_file_dropped_in_after_the_inbox_was_read_is_seen_by_the_next_want`).
-- **The most exact name wins, and among the files one name matches the lossless one.** The listing
-  is sorted by `Fidelity` and then by name: `Lossless` — FLAC, WAVE, RF64, Wave64, AIFF, Monkey's
-  Audio, DSF and DSDIFF — before `LosslessOrLossy` — CAF, M4A, MP4, Matroska, `.oga` and WavPack,
-  each able to hold either and the inbox reading no codec — before `Lossy`. So `<mbid>.flac` is
-  delivered over `<mbid>.mp3` whatever the names sort as
-  (`the_lossless_file_one_name_matches_is_delivered_over_a_lossy_one_whatever_their_names_sort_as`),
-  while a recording's `.mp3` is still taken before an ISRC's `.flac`, an ISRC naming a recording less
-  exactly (`a_more_exact_name_is_delivered_before_a_lossless_file_a_looser_one_matches`).
-- **A file still being copied in is not delivered.** The file the best name matches is statted as
-  the want is asked, and where its modification or change time is within `SETTLES_FOR` (2 s, the
-  window's `INBOX_QUIET_FOR`, so the poll the watch starts finds it settled) of now it answers
-  `Error::StillArriving` rather than a half-written FLAC, and a lesser file is not delivered in its
-  place. The change time is the one a copy cannot keep old, `cp -p` setting the modification time
-  back as it finishes (`a_copy_that_kept_its_old_modification_time_is_still_arriving_by_its_change_time`);
-  a time in the future holds nothing back. A copy stalled longer than `SETTLES_FOR` reads as settled.
+**The window watches the inbox folder** through the same `RootsWatch` as the roots: once a write under
+it has been quiet for `INBOX_QUIET_FOR`, it polls as `Prompted::ByTheInbox`, raising no notice. **What
+landed while no window was open is asked about when one opens**: the first look weighs the newest file
+in the folder (the later of its modification and change times, since a copy keeping its old time still
+changed status on landing) against `Library::last_tried` (`landed_since`).
+
+## The inbox
+
+`resonate-inbox` is the reference provider: `Inbox::at` over the folder the `inbox` key names, read
+and never written to. A file directly inside whose stem is the recording MBID, then the track MBID,
+then the ISRC, ignoring case, is a match; never a nested folder or a shared title. Only audio is
+offered, by `resonate_core::names_audio` over `AUDIO_EXTENSIONS` (in core so the inbox, which may not
+see the library, reads the list the scan walks by), so a `.cue`, `.jpg` or rip log beside the audio
+is never delivered ahead of it.
+
+- **The folder is read once a poll, not once a want**: the listing is held with the folder's
+  modification and change times and read again only where either moved or it is older than
+  `LISTING_TRUSTED_FOR` (coarse-timestamp filesystems).
+- **The most exact name wins, and among the files one name matches the lossless one**: sorted by
+  `Fidelity` (`Lossless`, `LosslessOrLossy` for containers able to hold either, `Lossy`) and then by
+  name, so `<mbid>.flac` beats `<mbid>.mp3`, while a recording's `.mp3` is still taken before an
+  ISRC's `.flac`.
+- **A file still being copied in is not delivered.** Where the best-named file's modification or
+  change time is within `SETTLES_FOR` (the window's `INBOX_QUIET_FOR`) of now it answers
+  `Error::StillArriving`, and a lesser file is not delivered in its place. The change time is the one
+  a copy cannot keep old (`cp -p` sets the modification time back); a time in the future holds
+  nothing back.
 
 ## A Subsonic server
 
-`resonate-subsonic` reaches a network: a server of the listener's — Navidrome, Airsonic, Gonic,
-anything speaking the Subsonic API — named by `subsonic`, `subsonic-user` and `subsonic-password`.
-`providers::registry` registers it after the inbox only where all three are given and `online` is
-on, behind the binary's `online` feature, so a build with no HTTP client carries none of it; the
-window builds its registry through the same function (`Sourcing::register`) from what its settings
-say now, and the Library category's *A Subsonic server* group writes the keys, asked from the next
-poll.
+`resonate-subsonic` reaches a server of the listener's (Navidrome, Airsonic, Gonic, anything speaking
+the Subsonic API) named by `subsonic`, `subsonic-user` and `subsonic-password`; `providers::registry`
+registers it after the inbox only where all three are given and `online` is on.
 
 - **Asked by the identifiers, never by a title.** A want with neither a recording MBID nor an ISRC
-  answers `Nothing` without a request. Otherwise `search3` is asked in words — the title and the
-  artist, then the title alone, a server such as Gonic matching the whole query against the title —
-  `SONGS_A_PAGE` songs at a time, paging by `songOffset` until a page comes back short or
-  `PAGES_AT_MOST` are read, so a title a hundred songs share still reaches the one wanted. A song is
-  taken only where its `musicBrainzId` is the recording or, failing that, its `isrc` (one code or a
-  list, as OpenSubsonic writes it) holds the want's — read through `Isrc::new`, so a code written
-  with dashes or in lowercase is the same code — so a tribute band's *Echoes* is never delivered for
-  Pink Floyd's. `a_song_is_taken_by_its_recording_and_then_by_its_isrc_and_never_by_its_title` is
-  the claim over a captured Navidrome answer; `tests/server.rs` serves the rest from a local socket
-  (`a_song_is_searched_for_by_title_and_artist_and_then_by_title_page_after_page`,
-  `an_isrc_written_with_dashes_is_the_same_code`).
-- **An answer has a deadline, and a download one for silence alone.** API requests go through an
-  agent whose `timeout_global` is `Patience::answered_within` (`ANSWERED_WITHIN`, 20 s), the whole
-  answer, body included, so a server stalling mid-document is given up rather than holding a thread
-  and a socket per want until exit (`an_answer_that_stalls_part_way_is_given_up_within_its_deadline`).
-  A download may run for minutes, so its agent bounds the head alone and `stall.rs` bounds each read:
-  `BrokenOffAfter` is a connector chained after ureq's `DefaultConnector`, wrapping every transport in
-  `Stalling`, whose `await_input` caps the timeout it hands down at `Patience::broken_off_after`
-  (`BROKEN_OFF_AFTER`, 30 s, the poll's `ANSWERS_WITHIN`), so a socket silent that long is closed and the
-  read fails while one still delivering is read however long it takes
-  (`a_download_that_stalls_part_way_is_broken_off_rather_than_held`,
-  `a_download_that_keeps_coming_is_read_however_long_it_takes_in_all`). `Subsonic::waiting` takes
-  another `Patience`, which is how the tests stall in milliseconds. The connector is ureq's
-  `unversioned` transport API, outside its semver promise; a ureq bump is weighed against those tests.
-- **A server behind a private CA is reached.** The listener's server is often signed by a CA of their
-  own, so both agents trust `trust::system_and_built_in`: the Mozilla roots `webpki-root-certs`
-  carries — the same set ureq's default uses — and every certificate `rustls-native-certs` reads out of
-  the system's store (`SSL_CERT_FILE`, `SSL_CERT_DIR` or the distribution's bundle), read once a
-  process. A certificate the handshake still refuses — rustls's `InvalidCertificate`, inside an
-  `io::Error` or as ureq's own `Rustls` — is `Error::Untrusted`, not a refused connection
-  (`a_certificate_the_client_does_not_trust_is_told_apart_from_a_refused_connection`).
-- **It delivers the server's original file, and only a file.** `download` answers the bytes as they
-  sit on the server, as a `Delivery::Stream` keyed by the song's id and hinted by its `suffix`, kept
-  and validated like any other; a suffix that is no `Extension` answers `Nothing` rather than a
-  guess. The API answers a failed download with its error document and a 200, so a download whose
-  `Content-Type` names text, JSON or XML is read as that document — `TurnedAway` with its code, or
-  `Unreadable` — and never streamed as a song
-  (`an_error_document_answering_a_download_is_a_refusal_and_never_a_song`).
-- **It paces itself and waits when asked to.** Requests go out `ASKED_APART` apart, one at a time
-  through `next_asked`; a 429 or 503 is asked again after its `Retry-After` in seconds, or one, two
-  and four seconds where it names none, never more than `LONGEST_RETRY_AFTER`, and after
-  `RETRIES_AT_MOST` is the `Refused` it was — a 503 the seam then reads as the provider away.
-- **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`,
-  the MD5 of password and salt (the API's token scheme), beside `v` and `c=resonate`; the
-  User-Agent is `resonate/<version>` alone, and `Server`'s `Debug` prints `<withheld>` for the
-  password (`a_server_never_prints_its_password`). `status: failed` is `Error::Unwelcome` with the
-  server's code where the code is about the account rather than the song (`ACCOUNT_REFUSALS`: 20 and
-  30 for a protocol too old or new, 40 to 44 for credentials, 50 unauthorised, 60 a trial over) and
-  `Error::TurnedAway` with it otherwise (70, a song the server lacks), an HTTP refusal `Error::Refused`, an answer that is not
-  the document `Error::Unreadable`, a failed connection `Error::Io`, each naming
-  `ProviderOp::Search` or `Download`.
+  answers `Nothing` without a request. Otherwise `search3` is asked in words (title and artist, then
+  the title alone, a server such as Gonic matching the whole query against the title), `SONGS_A_PAGE`
+  at a time up to `PAGES_AT_MOST`. A song is taken only where its `musicBrainzId` is the recording or
+  its `isrc` (one code or a list, as OpenSubsonic writes it, read through `Isrc::new`) holds the
+  want's, so a tribute band's *Echoes* is never delivered for Pink Floyd's.
+- **An answer has a deadline, and a download one for silence alone.** API requests carry
+  `Patience::answered_within` as the whole-answer `timeout_global`. A download may run for minutes, so
+  its agent bounds the head alone and `stall.rs` bounds each read (`BrokenOffAfter`, a connector
+  chained after ureq's `DefaultConnector`, caps each read at `Patience::broken_off_after`): a silent
+  socket is closed while one still delivering is read however long it takes. The connector is ureq's `unversioned` API, outside its semver promise; a ureq bump is weighed
+  against the stall tests.
+- **A server behind a private CA is reached.** Both agents trust `trust::system_and_built_in`: the
+  Mozilla roots plus the system's store. A certificate the handshake still refuses is
+  `Error::Untrusted`, not a refused connection.
+- **It delivers the server's original file, and only a file**, keyed by the song's id and hinted by its
+  `suffix` (one that is no `Extension` answers `Nothing`). The API answers a failed download with its
+  error document and a 200, so a download whose `Content-Type` names text, JSON or XML is read as that
+  document and never streamed as a song.
+- **It paces itself**: requests `ASKED_APART`, a 429 or 503 asked again after `Retry-After` (capped at
+  `LONGEST_RETRY_AFTER`) up to `RETRIES_AT_MOST`, then the `Refused` it was.
+- **The password never leaves as typed.** Every request carries the user, a fresh salt and `t`, the
+  MD5 of password and salt (the API's token scheme); the User-Agent is bare, and `Server`'s `Debug`
+  prints `<withheld>` for the password. `status: failed` is `Error::Unwelcome` where the code is about
+  the account (`ACCOUNT_REFUSALS`) and `Error::TurnedAway` otherwise (70, a song the server lacks).
 
 ## A TIDAL account
 
-`resonate-tidal` is the native form of `tidal-proxy`, the Fastify segment proxy TIDAL-DL leans on
-when a browser is refused TIDAL's CDN: what the proxy did — fetch a signed segment from an allowed
-TIDAL audio host, forward `Range`, stream it without holding it whole — is what the provider does
-for itself, a native client meeting no CORS and needing no proxy in between. It is the listener's
-own subscription, named by `tidal-client-id`, `tidal-client-secret` and `tidal-refresh-token`;
-`providers::registry` registers it after the inbox and the Subsonic server only where the client id
-and the refresh token are given (the secret is sent where given) and `online` is on, behind the
-binary's `online` feature, and the Library category's *A TIDAL account* group writes the keys,
-asked from the next poll, the secret and the token drawn as marks. Nothing is downloaded to play: a delivery
-is fetched whole into the vault — or, with none open, the music folder — and lands as a track row,
-as every provider's does.
+`resonate-tidal` is the listener's own subscription, named by `tidal-client-id`, `tidal-client-secret`
+and `tidal-refresh-token`; `providers::registry` registers it after the inbox and the Subsonic server
+only where the client id and the refresh token are given (the secret is sent where given) and `online`
+is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a track row.
 
-- **Asked by the link and the ISRC, never by a title.** The TIDAL track MusicBrainz links the
-  recording to (`Identity::track_on(Service::Tidal)`, read by `TrackId::linked` out of
-  `tidal.com/track/<id>` and `tidal.com/browse/track/<id>`) is asked first and needs no search;
-  failing that, `openapi.tidal.com/v2/tracks?filter[isrc]=` is asked for the ISRC and a listing is
-  taken only where its own `isrc` attribute is the want's, read through `Isrc::new`, at most
-  `TRACKS_TRIED_AT_MOST` of them in turn. A want with neither answers `Nothing` with no request and
-  no sign-in (`a_track_whose_isrc_is_not_the_wanted_one_is_never_taken`,
-  `a_track_musicbrainz_links_to_tidal_is_taken_without_a_search`).
-- **It signs in with the listener's refresh token and nothing else.** `auth.tidal.com`'s token
-  endpoint is sent the `refresh_token` grant, the client id and, where given, the secret; the access
-  token is held until `RENEWED_BEFORE` its `expires_in` runs out and the country is read off the
-  grant's `user.countryCode` or else `/v1/sessions`. No client id or secret is built in: the
-  listener brings the application the token was issued to. A 400 or 401 at the token endpoint is
-  `Error::Unwelcome` under `ProviderOp::SignIn`, which the seam reads as the provider away, so a
-  revoked token costs one sign-in a poll
-  (`a_refresh_token_turned_away_is_the_account_and_not_the_want`). **A token TIDAL rotates is handed
-  back.** Where the grant answers a `refresh_token` other than the one sent, the provider signs in
-  with it from then on and calls what `Tidal::telling` registered with it as a `RefreshToken`, once
-  per rotation. The binary's `Made::signed_in` registers `Renewed::note`, which writes it to
-  `tidal-refresh-token` in the settings file the run was read from (`--config` or the XDG path,
-  through `config::store`) and remembers it against the token the settings gave, so a provider
-  built again for the same settings — the window's `Kept` dropping it when another field moved —
-  signs in with the rotated token rather than the refused one
-  (`a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_then_on`,
-  `a_refresh_token_tidal_keeps_is_never_handed_back`,
-  `a_refresh_token_tidal_rotated_is_kept_and_signed_in_with_from_then_on`). The window's own
-  field and global keep the token they were given until the next start reads the file. A 401 from the API signs in
-  again once and asks again, and a second is `Unwelcome` with TIDAL's `subStatus`
-  (`a_session_that_lapsed_signs_in_again_once`); a 401 whose `subStatus` is 4005 — the asset not
-  ready for playback — is the want's, `TurnedAway`. A 403 or 404 is the track unavailable to this
-  account or country and answers `Nothing` for that track.
-- **Only the whole track, lossless and in the clear, is taken.** `playbackinfopostpaywall` is asked
-  for `HI_RES_LOSSLESS` as `STREAM` and `FULL`; an `assetPresentation` other than `FULL` — the
-  thirty-second preview a lapsed subscription is given — is `Nothing`, never kept as the track
-  (`a_preview_is_never_delivered_for_the_track`). `manifest.rs` reads both manifests TIDAL answers:
-  `application/vnd.tidal.bts`, base64 JSON naming one URL, and `application/dash+xml`, an MPD whose
-  `SegmentTemplate` and `SegmentTimeline` name an initialisation segment and every media segment.
-  A BTS `encryptionType` other than `NONE` or an MPD carrying `ContentProtection` is
-  `Withheld::Encrypted`; where an MPD lists lossy and FLAC renditions, the reader selects FLAC, and
-  `Withheld::Lossy` means none is present. Both answer `Nothing`: the provider decrypts nothing and
-  keeps no lossy stream. A timeline past `SEGMENTS_AT_MOST` is unread rather than allocated.
+- **Asked by the link and the ISRC, never by a title.** The TIDAL track MusicBrainz links the recording
+  to (`Identity::track_on(Service::Tidal)`) is asked first; failing that, the OpenAPI is asked for the
+  ISRC and a listing is taken only where its own `isrc` is the want's, at most `TRACKS_TRIED_AT_MOST`.
+  A want with neither answers `Nothing` with no request and no sign-in.
+- **It signs in with the listener's refresh token and nothing else.** No client id or secret is built
+  in: the listener brings the application the token was issued to. A 400 or 401 at the token endpoint
+  is `Error::Unwelcome` under `ProviderOp::SignIn`, which the seam reads as the provider away. **A
+  token TIDAL rotates is handed back**: the provider signs in with the new one from then on and calls
+  what `Tidal::telling` registered, once per rotation; the binary's `Renewed::note` writes it to
+  `tidal-refresh-token` in the settings file the run was read from (`config::store`) and remembers it
+  against the token the settings gave, so a provider rebuilt for the same settings uses the rotated
+  token, not the refused one. A 401 from the API signs in again once and asks again; a second is
+  `Unwelcome` with TIDAL's `subStatus`, except 4005 (asset not ready for playback), the want's,
+  `TurnedAway`. A 403 or 404 is the track unavailable to this account or country: `Nothing`.
+- **Only the whole track, lossless and in the clear, is taken.** `HI_RES_LOSSLESS` is asked for; an
+  `assetPresentation` other than `FULL` (the preview a lapsed subscription is given) is `Nothing`.
+  `manifest.rs` reads both manifests TIDAL answers (a base64 BTS JSON naming one URL, and a DASH MPD,
+  selecting its FLAC rendition). Encryption is `Withheld::Encrypted` and no FLAC rendition
+  `Withheld::Lossy`; both answer `Nothing`: the provider decrypts nothing and keeps no lossy stream.
 - **Media is fetched from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over
-  `https` whose host is `audio.tidal.com` or under it — the proxy's `sp-ad-fa` and `sp-ad-cf` and
-  every other CDN node the manifests name — refusing a user-info `@`, a bracketed literal and a host
-  merely ending in the name; one URL off them fails the whole manifest as `Error::OffItsHosts`
-  before a byte is fetched (`media_named_off_the_audio_hosts_is_never_fetched`). The media agent
-  follows no redirect, so a host it was not given cannot be reached through one.
-- **A segment that breaks off is asked for again from where it stopped.** `Fetched` reads the URLs
-  in turn, each through `Piece`; a read that fails mid-body is asked again with
-  `Range: bytes=<read>-`, taken where the answer is a 206 whose `Content-Range` starts there, or a
-  200 read past what was already given, `RESUMES_AT_MOST` times running before the error stands
-  (`a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped`). Each request has
-  `MEDIA_READ_WITHIN` to deliver its body, so a stalled CDN connection is broken and resumed rather
-  than held; the first segment is opened inside `obtain`, so a CDN refusing it is the provider's
-  `Refused` under `ProviderOp::Download`, not a failed keep.
+  `https` whose host is `audio.tidal.com` or under it, refusing a user-info `@`, a bracketed literal
+  and a host merely ending in the name; one URL off them fails the whole manifest as
+  `Error::OffItsHosts` before a byte is fetched. The media agent follows no redirect.
+- **A segment that breaks off is asked for again from where it stopped** with `Range`, up to
+  `RESUMES_AT_MOST` times running. The first segment is opened inside `obtain`, so a CDN refusing it
+  is the provider's `Refused` under `ProviderOp::Download`, not a failed keep.
 - **What lands is a FLAC file, never an MP4.** A DASH stream is FLAC frames in fragmented MP4, and
-  `remux.rs` repacks it on the way through, decoding nothing: `Remuxed` reads the boxes, takes the
-  FLAC metadata blocks out of the `moov`'s `fLaC` sample entry's `dfLa` box, writes `fLaC` and
-  those blocks — the final one alone marked last — and then copies the payload of every `mdat`
-  after it, skipping `styp`, `sidx` and `moof`. STREAMINFO's total sample count, which a fragmented
-  file leaves at zero, is filled in from the timeline where its timescale is the stream's rate. A
-  `mdat` ahead of the `moov` or a file with no FLAC track is `Unreadable`. Every delivery is keyed
-  `track/<id>` with the extension `flac`, so the vault takes a native FLAC and keeps it as one —
-  re-encoded where that is smaller, kept stripped where not. Checked against ffmpeg's fragmented
-  output at 44.1 kHz/16 bit and 96 kHz/24 bit: `flac -t` passes and the decoded audio's MD5 is the
-  source's (`a_fragmented_flac_track_becomes_a_native_stream_of_the_same_frames`).
-- **It is signed in to from the window.** `resonate_providers::SignsIn` is the seam — a `Client`
-  (an id and an optional secret), an `Authorizing` (the code the listener types, the page it is typed
-  at, how long it lasts and how often to ask, and the device code, never printed by `Debug`) and a
-  `RefreshToken` — and `TidalSignIn` the one implementation, handed to the window as
-  `Lookups::signs_in` by `providers::signs_in` under `online`. `authorizing` posts the client id and
-  `r_usr w_usr w_sub` to `oauth2/device_authorization`, a page named without a scheme reached over
-  `https`; `authorized` asks the token endpoint with the device-code grant every `interval` (at least
-  `ASKED_EVERY_AT_LEAST`, five seconds more on `slow_down`) until it answers a refresh token,
-  `expired_token` or the code's `expiresIn` runs out (`Error::AuthorizationLapsed`), `access_denied`
-  (`Error::AuthorizationDenied`), or the cancel it is handed reads true (`Ok(None)`), looking at the
-  cancel every `LOOKED_AT_EVERY`. The *A TIDAL account* group's *Sign in to TIDAL*, greyed until a
-  client id is given and while Online is off, runs both on the background executor, draws the code,
-  *Open the page* and *Stop* while it waits, and writes the token it is handed into the refresh-token
-  field, the global `Online` and `tidal-refresh-token`, the provider asking from the next poll
-  (`a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token`,
-  `a_device_sign_in_turned_down_or_left_to_lapse_says_which`,
-  `a_device_sign_in_cancelled_while_waiting_stops_asking`). No client id is built in.
-- **It paces itself and identifies itself as the Subsonic client does**: API requests `ASKED_APART`,
-  a 429 or 503 retried after its `Retry-After` up to `RETRIES_AT_MOST`, the User-Agent
-  `resonate/<version>` alone, and `Account`'s `Debug` printing neither the secret nor the token.
-  `tests/server.rs` serves a fake TIDAL — token endpoint, OpenAPI, playback and segments cut from
-  `tests/fixtures/tone.mp4` — from a local socket. `asker.rs` is the pacing, retrying and reading
-  both TIDAL providers share, and `played.rs` what follows a playback answer — the presentation and
-  manifest weighed, the hosts held, the segments fetched and remuxed — with `played::obtained`, the
-  link-then-ISRC order, written once over the `Finds` trait each implements.
+  `remux.rs` repacks it decoding nothing: `fLaC` and the metadata blocks from the `dfLa` box, then
+  every `mdat` payload, STREAMINFO's total sample count (zero in a fragmented file) filled in from the
+  timeline. Every delivery is keyed `track/<id>` with the extension `flac`.
+- **It is signed in to from the window.** `resonate_providers::SignsIn` is the seam, `TidalSignIn` its
+  one implementation, handed to the window as `Lookups::signs_in` by `providers::signs_in`. The device
+  flow polls every `interval` (at least `ASKED_EVERY_AT_LEAST`, longer on `slow_down`) until a refresh
+  token, `AuthorizationLapsed`, `AuthorizationDenied` or the cancel (`Ok(None)`); the device code is
+  never printed by `Debug`. The *A TIDAL account* group's *Sign in to TIDAL* writes the token into
+  the field, the global `Online` and `tidal-refresh-token`.
+- **It paces and identifies itself as the Subsonic client does**, and `Account`'s `Debug` prints neither
+  secret nor token. `asker.rs` is the pacing, retrying and reading both TIDAL providers share, and
+  `played.rs` what follows a playback answer, with `played::obtained`, the link-then-ISRC order,
+  written once over the `Finds` trait each implements.
 
 ## A hifi-api server
 
 `HifiApi`, in the same crate, is the second way to a TIDAL subscription. With `online` on,
-`providers::registry` registers it after `Tidal` as `hifi-api`, using the hosted
-[`tidal.odskyler.com`](https://tidal.odskyler.com/) service by default. The `hifi-api` setting and
-the *hifi-api server* field of the *A TIDAL account* group are an optional override for a
-[hifi-api](https://github.com/binimum/hifi-api) server the listener runs; clearing the field restores
-the hosted service. The hosted service holds no listener credential. Its public
-TIDAL token worker is asked for a search token, and the HiFi service for a short-lived playback
-token; each is cached only until shortly before its expiry. Those tokens are sent only to the
-corresponding public service. The TIDAL web API is searched by the wanted title and artist, matching
-the website's search, and results are retained only where their own ISRC is the want's. The HiFi
-service then returns a manifest URL, which must be HTTPS on `manifest.tidal.com` or a subdomain.
-`played.rs` reads that manifest through the same checks as a TIDAL account — only `FULL`, only FLAC
-in the clear, media from TIDAL's audio hosts alone, resumed segments repacked into native FLAC,
-keyed `track/<id>`.
+`providers::registry` registers it after `Tidal` as `hifi-api`, using a hosted service by default; the
+`hifi-api` setting and the *hifi-api server* field override it with a server the listener runs, and
+clearing the field restores the hosted one. The hosted service holds no listener credential: its
+search and playback tokens are cached until shortly before expiry and sent only to their own issuer or
+API. `played.rs` reads the manifest through the same checks as a TIDAL account; the manifest URL the
+service returns must be HTTPS on `manifest.tidal.com` or a subdomain.
 
-- **Asked by the link and the ISRC, never by a title**, through `played::obtained`: the linked
-  track first; otherwise the hosted flow asks `api.tidal.com/v1/search/tracks` by the want's title
-  and artist and takes only listings whose own `isrc` is the want's, up to
-  `TRACKS_TRIED_AT_MOST`. It requests
-  `hifi.odskyler.com/manifests?id=<id>&quality=HI_RES_LOSSLESS`, fetches the returned DASH
-  document and passes it to `played.rs`, whose DASH reader selects the FLAC rendition even when
-  TIDAL lists lossy renditions first. A custom server keeps the hifi-api routes,
-  `GET /search/?i=<isrc>&limit=25` and `GET /track/?id=<id>&quality=HI_RES_LOSSLESS`, with
-  `data.items` checked by ISRC (`a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac`,
-  `a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for`).
-- **A request the server queues is waited for, and withdrawn past the provider's patience.** A
-  server whose accounts are all busy answers `202` with a `requestId`; the provider asks
-  `/playback/requests/<id>` again after its `Retry-After`, held between one and five seconds, until
-  the playback answer comes — a `410` (cancelled there) being nothing for that track — for at most
-  `QUEUED_FOR_AT_MOST` (20 s, inside the poll's `ANSWERS_WITHIN`), then sends `DELETE` to free the
-  slot and answers `Error::StillQueued`, which the seam reads as the provider away, so a saturated
-  server costs one wait a poll. The request id is used only where it is letters, digits and dashes,
-  and the path is the provider's own, never the `statusUrl` the server names
-  (`a_hifi_api_request_held_in_its_queue_is_waited_for`,
-  `a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_counted_away`).
+- **Asked by the link and the ISRC, never by a title**, through `played::obtained`: the linked track
+  first; otherwise the hosted flow searches TIDAL's web API by title and artist and takes only listings
+  whose own `isrc` is the want's, up to `TRACKS_TRIED_AT_MOST`. A custom server keeps the hifi-api
+  routes with `data.items` checked by ISRC.
+- **A request the server queues is waited for, and withdrawn past the provider's patience.** A server
+  whose accounts are all busy answers `202` with a `requestId`; the provider asks
+  `/playback/requests/<id>` again after its `Retry-After` (held between `QUEUE_LOOKED_AT_LEAST_EVERY`
+  and `QUEUE_LOOKED_AT_MOST_EVERY`) for at most `QUEUED_FOR_AT_MOST`, inside the poll's
+  `ANSWERS_WITHIN`, then sends `DELETE` and answers `Error::StillQueued`, which the seam reads as the
+  provider away. The request id is used only where it is letters, digits and dashes, and the path is
+  the provider's own, never the `statusUrl` the server names.
 - **A 401 is the server's account turned away**, `Unwelcome` and away; a 403 or 404 is that track
-  unavailable, `Nothing`; anything else is `Refused`, a 429 or 503 retried as the TIDAL client
-  retries (`a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome`).
-  The custom server sends no `Authorization` header; the hosted service sends each cached bearer
-  token only to its token issuer or API. Every request identifies itself as `resonate/<version>`.
-- **A custom server is trusted as the Subsonic server is.** `HifiApi::at` asks through
+  unavailable, `Nothing`; anything else is `Refused`. A custom server gets no `Authorization` header.
+- **A custom server is trusted as the Subsonic server is**: `HifiApi::at` asks through
   `Asker::of_the_listeners_server`, whose agent trusts the system's store beside the built-in roots
-  (`trust.rs`, the same as the Subsonic crate's); the hosted service, TIDAL's API and its CDN keep the
-  built-in roots alone
-  (`a_server_of_the_listeners_is_trusted_by_the_systems_certificates_and_the_hosted_one_by_the_built_in`).
-  A certificate refused anywhere in the crate is `Error::Untrusted` through `asker::unreached`.
+  (`trust.rs`); the hosted service, TIDAL's API and its CDN keep the built-in roots alone. A
+  certificate refused anywhere in the crate is `Error::Untrusted` through `asker::unreached`.

@@ -6,9 +6,9 @@ says which, when, and what is not negotiable.
 
 ## Read before you touch anything
 
-1. **`CLAUDE.md`** — the project, the twenty-one crates and how they may depend on each other, the
-   invariants the layering protects and every command; `.claude/rules/binary.md` holds every config
-   key. They are the authority on the design; this file does not repeat it.
+1. **`CLAUDE.md`** — the project, the crates and how they may depend on each other, the invariants
+   the layering protects and the commands; `.claude/rules/binary.md` holds the config keys. They are
+   the authority on the design; this file does not repeat it.
 2. **`.claude/rules/rust-style.md`** and **`.claude/rules/errors.md`** — they apply to every Rust
    file.
 3. **Every other `.claude/rules/*.md` whose scope covers a file you are about to change.** Each one
@@ -40,8 +40,8 @@ code has its reason stated there, and "simplifying" it away reintroduces the bug
   variant nothing constructs, and `size_of::<Error>() <= 128`. `errors.md` has the whole of it.
 - **`parking_lot` locks, never `std::sync`'s.** `AHashMap`/`AHashSet` only where keys are our own;
   SipHash wherever they arrive from outside.
-- **The crate layering is enforced.** `cargo tree -p <crate>` is the authority, and the CI refuses
-  the edges `CLAUDE.md` lists as forbidden.
+- **The crate layering is enforced.** `cargo tree -p <crate>` is the authority, and the `layering`
+  job in `.github/workflows/ci.yml` refuses the forbidden edges.
 - **A stored format is migrated, not broken.** A SQLite schema change is a new step appended to
   `MIGRATIONS`; `V1` and existing steps are never edited. Delete-and-rescan is only for data that
   genuinely cannot be carried forward. The same default holds for profiles and the config file.
@@ -64,10 +64,8 @@ code has its reason stated there, and "simplifying" it away reintroduces the bug
 
 ## Checks
 
-Run these before committing; the CI in `.github/workflows/ci.yml` runs them — bar the formatter —
-on every push to `master` and every pull request, in Arch Linux containers because that is what the
-Arch package targets, beside the headless and whole-workspace builds, the DSP bench held to its
-ceilings and the `cargo tree` layering refusals `CLAUDE.md` lists.
+Run these before committing; `.github/workflows/ci.yml` runs them, bar the formatter, on every push
+to `master` and every pull request, beside the layering refusals.
 `.github/workflows/rpm-release.yml` builds the Fedora RPM when a release is published.
 
 ```
@@ -79,15 +77,12 @@ rust-formatter --check                                                # local on
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
 ```
 
-Formatting is checked locally only, because `rust-formatter` is not something a hosted runner can
-install. Tests that need a PipeWire daemon, a session bus, ffmpeg or the network print a skip where
-the thing is missing rather than failing; the CI has no daemon and no bus, so those skip there —
-except the two reconnect tests, `resonate-pipewire`'s and `resonate-listen`'s, which start a daemon
-of their own, and `resonate-mpris`'s notification press, which hosts a bus under `dbus-run-session`.
+Formatting is checked locally only, because a hosted runner cannot install `rust-formatter`. Tests
+that need a PipeWire daemon, a session bus, ffmpeg or the network skip where the thing is missing
+(`CLAUDE.md` lists which host their own).
 
-`.cargo/config.toml` builds for `target-cpu=native`, and so does the Arch package, which is built on
-the machine it is for. The Fedora RPM and the Flatpak build for the architecture's baseline, and the
-CI empties `RUSTFLAGS` over it, a restored cache possibly coming from a runner with another CPU.
+`.cargo/config.toml` builds for `target-cpu=native`; the Fedora RPM, the Flatpak and the CI build
+for the baseline (`packaging.md`).
 
 ## Keeping the rules true
 
@@ -97,14 +92,13 @@ wrong updates it **in the same commit**:
 - A change to shipped behaviour or to a design decision is written into the `.claude/rules/` file
   whose scope covers it, in the same prose register: what the thing is, the rule, and why — the
   failure it prevents, measured where it was measured.
-- A new crate, subcommand or invariant is added to `CLAUDE.md`, and a config key to `binary.md`, and the
-  counts they state — crates, subcommands, config keys — are moved to match. A new crate that carries
-  rules of its own gets a `.claude/rules/<name>.md` with a `paths:` list, and a row in `CLAUDE.md`'s
-  table.
-- `docs/TODO.md` holds **open work only**, as `## Category` headings with `- Item` bullets, the
-  categories ordered by importance and the nice-to-haves under `Later:` headings at the bottom: drop
-  an item as it lands, add what the work uncovers, and write what a landed item became into the
-  rules rather than leaving it in the roadmap.
+- A new crate, subcommand or invariant is added to `CLAUDE.md`, and a config key to `binary.md`; the
+  crate count `CLAUDE.md` states is moved to match. A new crate that carries rules of its own gets a
+  `.claude/rules/<name>.md` with a `paths:` list, and a row in `CLAUDE.md`'s table.
+- `docs/TODO.md` holds **open work only**, as `## Category` headings with `- Item` bullets, ordered
+  by importance, the nice-to-haves under `Later:` headings at the bottom and anything waiting on
+  something outside this tree marked **Blocked on …**: drop an item as it lands, add what the work
+  uncovers, and write what a landed item became into the rules.
 - A new command worth running before a commit goes into `CLAUDE.md`'s commands, this file's
   checks and `.github/workflows/ci.yml` together.
 - This file names the rules and says how to read them; it does not restate the design. Where

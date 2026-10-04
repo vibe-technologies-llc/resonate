@@ -9,94 +9,75 @@ paths:
 # Discord presence
 
 `resonate-discord` tells a running Discord client what is playing, over Discord's local IPC socket,
-as a *Listening* activity. It reaches `resonate-core`, the engine's vocabulary,
-`serde`/`serde_json`, `crossbeam-channel`, `parking_lot` and `rustix`; only the binary reaches it, behind
-the `discord` feature. `cargo tree -p resonate-discord` stays free of gpui, the library and `ureq`.
+as a *Listening* activity. Only the binary reaches it, behind the `discord` feature;
+`cargo tree -p resonate-discord` stays free of gpui, the library and `ureq`.
 
 ## Off means nothing runs
 
 - **The build carries no application id and presence is off.** `discord` defaults to false and
-  `discord-app` to nothing; `Presence::active` — switched on *and* naming an application — is the
-  one gate everything asks. The id is the listener's own, registered in Discord's developer
-  portal, for the reason `contact`, `acoustid-key`, `audd-token` and `listenbrainz-token` are: a
-  request says what this build is and nothing about who runs it.
-- **Inactive is no thread, socket or probe.** `Discord::new` starts nothing; `Discord::follow`
-  spawns the `resonate-discord` thread when presence becomes active and stops it — clearing the
-  activity on the way out — when it stops. A run whose file leaves the keys alone never looks for a
-  socket.
-- **Active and idle is still no socket.** The thread connects only once there is something to
-  show, so a window with nothing playing reaches for Discord no more than one with presence off.
+  `discord-app` to nothing; `Presence::active` (switched on *and* naming an application) is the one
+  gate. The id is the listener's own, for the reason `contact` and the service tokens are: a request
+  says what this build is and nothing about who runs it.
+- **Inactive is no thread, socket or probe, and active but idle is no socket either.**
+  `Discord::follow` spawns the `resonate-discord` thread when presence becomes active and stops it,
+  clearing the activity on the way out, when it stops. The thread connects only once there is
+  something to show.
 
 ## The seam
 
-- `resonate-core::presence` is the vocabulary — `AppId`, `Icon`, `Shown`, `Pictured`, `Presence`
-  — since the config reader, the window and the crate all need it and none may reach the others
-  (the argument `Appearance` makes).
-- `resonate_ui::Present` is how the settings pane reaches the publisher without depending on it
-  (as it reaches the file through `Settings`): the binary's `discord::Presenter` implements it and
-  rides into the window on `Stored`, and every control in the two Desktop groups writes the
-  `ResonateApp::presence` global, stores the setting and calls `follow`, so a change is live.
-  Without the feature the `Presenter` is empty and warns once where the file asks for a presence
-  the build cannot show.
-- `Releases` finds a cover without the crate seeing the library: the binary's `Catalogued` reads
-  `track_at` and `release_of` for the row's release or its release group.
+- `resonate-core::presence` is the vocabulary (`AppId`, `Shown`, `Pictured`, `Presence`), since the
+  config reader, the window and the crate all need it and none may reach the others.
+- `resonate_ui::Present` is how the settings pane reaches the publisher without depending on it: the
+  binary's `discord::Presenter` implements it and rides into the window on `Stored`; every control in
+  the Desktop groups stores the setting and calls `follow`, so a change is live. Without the feature
+  the `Presenter` is empty and warns once where the file asks for a presence the build cannot show.
+- `Releases` finds a cover without the crate seeing the library: the binary's `Catalogued` answers
+  from the library for the row's release or release group.
 
 ## What is sent
 
-- **The frame is Discord's**: a little-endian opcode and length, then JSON, capped at
-  `LARGEST_FRAME`. The handshake waits for `READY`, and an `ERROR` it gets instead is a `Refused`
-  at once rather than a wait to `READY_WITHIN`; a `Close` carrying 4000 is an application
-  Discord does not know, warned about once and waited out until the id changes. A `Ping` is
-  answered with a `Pong`; an `ERROR` reply is a `Refused` warning that keeps the session — the
-  `Sent` counts its `refusals`, so `due` offers the same activity again after
-  `SENT_AGAIN_AFTER_A_REFUSAL` (15 s) doubled for each refusal already met, up to
-  `SENT_AGAIN_AT_MOST` (10 min), and a change is sent on the usual spacing with the count started
-  over (`refusals_carried`). Closing the socket over it would reconnect every fifteen seconds to be
-  refused the same payload, and offering it every fifteen seconds for a whole track would do the
-  same on the one socket.
+- **The frame is Discord's**: little-endian opcode and length, then JSON, capped at `LARGEST_FRAME`.
+  The handshake waits for `READY` (`READY_WITHIN`); an `ERROR` instead is a `Refused` at once. A
+  `Close` carrying 4000 is an application Discord does not know: warned about once and waited out
+  until the id changes. A `Ping` is answered with a `Pong`. An `ERROR` reply to an activity keeps
+  the session and counts a refusal; `due` offers the same activity again after
+  `SENT_AGAIN_AFTER_A_REFUSAL` doubled per refusal up to `SENT_AGAIN_AT_MOST`, and a changed
+  activity is sent on the usual spacing (`refusals_carried`). Closing the socket would reconnect
+  every few seconds to be refused the same payload.
 - **The socket is looked for where every Discord puts it**: `$XDG_RUNTIME_DIR`, `$TMPDIR` and
   `/tmp`, each plain and under the Flatpak, Snap and Vesktop sandboxes, `discord-ipc-0` to `-9`,
-  the path that answered last tried first. `find_among` goes on past a socket that will not take
-  the client — a `Close` of another code, an `ERROR` in the handshake, a frame it cannot read — so
-  a sibling `discord-ipc-N` or Vesktop beside a Discord that refuses is still reached; only 4000
-  ends the search, every Discord answering the same id alike
-  (`a_socket_that_will_not_take_this_client_is_passed_for_the_next`,
-  `an_application_every_discord_refuses_ends_the_search_at_the_first`). A search that finds
-  nothing asks again after `RETRY_AFTER_AT_FIRST` (5 s), doubling to `RETRY_AFTER_AT_MOST`
-  (2 min), and a session reached or lost starts the wait over.
+  the path that answered last first. `find_among` goes on past a socket that will not take the
+  client (a `Close` of another code, an `ERROR` in the handshake, an unreadable frame), so a
+  sibling or Vesktop beside a refusing Discord is still reached; only 4000 ends the search, every
+  Discord answering the same id alike. A search that finds nothing asks again after
+  `RETRY_AFTER_AT_FIRST`, doubling to `RETRY_AFTER_AT_MOST`; a session reached or lost restarts it.
 - **Only a socket of the listener's own is connected to.** `/tmp` is shared, so another user could
-  bind a `discord-ipc-0` there and be told what is playing. `Session::open` takes the path's
-  metadata — followed, since a Flatpak or Vesktop may link one — and refuses with `NotOurs` unless it
-  is a socket whose owner is `rustix::process::getuid`; `find_among` warns and goes on to the next
-  (`a_socket_is_held_by_the_user_that_made_it_and_by_no_other`,
-  `a_file_that_is_no_socket_is_not_connected_to_and_the_search_goes_on`).
+  bind a `discord-ipc-0` and be told what is playing. `Session::open` follows links (Flatpak and
+  Vesktop may link one) and refuses with `NotOurs` unless the target is a socket owned by
+  `rustix::process::getuid`; `find_among` warns and goes on.
 - **`Activity::of` is the whole policy**, pure and tested without a socket.
-  - `Shown::Application` says nothing about the track and draws no cover even where asked; `Track`
-    is the title over the artist; `Album` adds the album as the picture's caption, or after the
-    artist where there is no picture.
-  - `Pictured::Cover` is `coverartarchive.org/release/<mbid>/front-500` — or the release group's —
-    with the icon small beside it, the icon standing in where no release is known. A catalogued
-    release the archive said holds no front (`ReleaseDetail::may_have_a_front`, the album's
-    `front_cover` the cover fetch weighs too) is drawn from its group instead, where asking the
-    release drew a blank picture (`a_release_with_no_front_cover_is_drawn_from_its_group_instead`);
-    `Pictured::Nothing` sends no assets.
-  - The progress bar is `start = now − position`, `end = start + length`, left out where
+  - `Shown::Application` says nothing about the track and draws no cover; `Track` is the title over
+    the artist; `Album` adds the album as the picture's caption, or after the artist with no picture.
+  - `Pictured::Cover` is `coverartarchive.org/release/<mbid>/front-500`, or the release group's,
+    with the icon small beside it, standing in where no release is known. A release the archive
+    said holds no front (`ReleaseDetail::may_have_a_front`) is drawn from its group, since asking
+    the release drew a blank picture. `Pictured::Nothing` sends no assets.
+  - The progress bar is `start = now - position`, `end = start + length`, left out where
     `discord-progress` is off or the track is paused. A pause clears the activity unless
     `discord-paused` keeps it.
-  - Text is cut to 128 characters and padded to Discord's two.
-- **A send is paced.** The thread ticks every second but sends only when the activity changed —
-  text or assets, the bar appearing or going, or a start moving more than `DRIFT_ALLOWED` (a seek)
-  — and never within `SENDS_APART` of the last, Discord's own limit being five in twenty seconds. A
-  change inside the window is sent when it ends.
-- **The release is resolved once per track**: `MUSICBRAINZ_ALBUMID` from the tags, then the
-  release group, then `Releases`, and only where a cover will be drawn. A found cover is held for
-  the track — id, location and span together, since an unscanned row's id is minted again from
-  `TrackId::MAX` by the next load and two cuts of one file share the rest; a miss is asked again
-  after `COVER_REFRESH_AFTER`, since the enrichment may land the release while the track plays.
+  - Text is cut to `LONGEST_TEXT` and padded to Discord's two-character minimum.
+- **A send is paced.** The thread ticks every second but sends only when the activity changed (text,
+  assets, the bar appearing or going, or a start moving more than `DRIFT_ALLOWED`, a seek) and never
+  within `SENDS_APART` of the last, Discord limiting to five in twenty seconds. A change inside the
+  window is sent when it ends.
+- **The release is resolved once per track**: `MUSICBRAINZ_ALBUMID` from the tags, then the release
+  group, then `Releases`, and only where a cover will be drawn. A found cover is held for the track
+  keyed by id, location and span together (an unscanned row's id is minted again by the next load
+  and two cuts of one file share the rest); a miss is asked again after `COVER_REFRESH_AFTER`,
+  since enrichment may land the release while the track plays.
 
 ## What it does not do
 
-- **No local picture is uploaded anywhere.** Discord draws only an asset uploaded to the
-  application or a public URL — a Cover Art Archive address it fetches itself — so a track whose
-  release nobody named shows the icon. Sending covers to an image host would send the listener's
-  library somewhere they did not choose.
+- **No local picture is uploaded anywhere.** Discord draws only an asset uploaded to the application
+  or a public URL, so a track whose release nobody named shows the icon. Sending covers to an image
+  host would send the listener's library somewhere they did not choose.

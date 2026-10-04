@@ -13,454 +13,249 @@ paths:
 `resonate-vault` is the managed archive this build writes itself, beside the catalog that
 describes it. An import decodes a track, throws every tag and picture away, keeps the smallest
 bit-exact copy it can make, validates it by reading it back, and points the catalog row at it.
-**The library it came from is read and never written to** — no source file is moved, renamed,
-retagged or deleted (`the_file_the_vault_read_is_left_exactly_as_it_was`). `tracks.path` keeps
-naming the original, so a rescan reads an untouched source as unchanged and `organise` goes on
-filing it.
+**The library it came from is read and never written to** (`the_file_the_vault_read_is_left_exactly_as_it_was`).
+`tracks.path` keeps naming the original, so a rescan reads an untouched source as unchanged and
+`organise` goes on filing it.
 
-A leaf beside `resonate-codec`: chiefly `resonate-core`, `resonate-codec`, `symphonia`, `flacenc`,
-`zstd`, `zune-core`, `zune-jpegxl`, `jxl-oxide` and `image`, and no SQL — every row belongs to
-`resonate-library`. `cargo tree -p resonate-vault` stays free of gpui, the engine, the library and
-`ureq`.
+A leaf beside `resonate-codec`, with no SQL: every row belongs to `resonate-library`.
+`cargo tree -p resonate-vault` stays free of gpui, the engine, the library and `ureq`.
 
 ## What it promises
 
 - **Bit-exact or nothing.** Every object is read back through the player's decoder and its PCM
   weighed against what went in, by MD5. A mismatch removes the file and answers
-  `Refusal::NotValidated`; nothing half-written is pointed at. An encode of no frames is
-  `Refusal::Empty`.
+  `Refusal::NotValidated`; an encode of no frames is `Refusal::Empty`.
 - **Never larger than what it came from.** A re-encode that does not beat the source is discarded
-  and the source kept, so `Form` is decided twice — by what the stream *is* and by what the encode
-  cost. Unconditional, not a setting: an archive that inflates a library is worse than none. A row
-  a sheet cuts out of a file cannot keep the file (`Form::Kept` for a cut is
-  `Refusal::CutFromAnother`), so it is weighed against its *share* — file size × its frames ÷ the
-  file's frames — and a re-encode no smaller is `Refusal::NoSmaller`. `Kept::was` is that weight,
-  whole or shared (the stored bytes for a dedup hit), and is what the library's `was_bytes`
-  counts, so a single-file rip is not counted once per row. **The weighing happens before anything
-  lands**: `landed_or_standing` weighs the staged object — or the one already under its key —
-  and answers `Landing::NoSmaller` without renaming, so nothing is put in `audio/` and taken away
-  again, and two imports can land one key at once without one deleting what the other's row names.
+  and the source kept; unconditional, not a setting. A row a sheet cuts out of a file cannot keep
+  the file (`Refusal::CutFromAnother`), so it is weighed against its *share* (file size x its
+  frames / the file's frames) and a re-encode no smaller is `Refusal::NoSmaller`. `Kept::was` is
+  that weight and is what the library's `was_bytes` counts, so a single-file rip is not counted
+  once per row. **The weighing happens before anything lands**: `landed_or_standing` weighs the
+  staged object or the one already under its key and answers `Landing::NoSmaller` without renaming,
+  so two imports can land one key at once without one deleting what the other's row names.
 - **A kept object is weighed like an encoded one.** `kept_whole` decodes source and staged copy
-  through the same `pcm_of` and refuses differing digests, so a stripped copy is proved to hold
-  the source's audio, not merely to decode. A stripped copy that fails is copied again whole and
-  weighed again, so a source whose decoder read a tag as a frame is still kept, tags and all.
-  `bare` rewrites a FLAC's metadata only where its walk reached the last block; one stopping at
-  the bound or on a short read hands the file back from its start to be copied as it stands,
-  rather than a STREAMINFO marked last ahead of blocks still in the copy.
+  through the same `pcm_of` and refuses differing digests; a stripped copy that fails is copied
+  again whole, so a source whose decoder read a tag as a frame is still kept. `bare` rewrites a
+  FLAC's metadata only where its walk reached the last block, else hands the file back to be copied
+  as it stands.
 - **One copy of one thing.** The key is the MD5 of the decoded PCM, so one audio in two containers
-  is one object; a cover is keyed by its bytes, so twelve tracks embedding one picture cost one
-  JXL and eleven dedup hits.
-- **Nothing outside the root.** `Vault::inside` guards every read, write and delete; a path not
-  under the root is `Error::OutsideTheVault`. `holds`, which it asks, is `within`: what follows the
-  root must be plain names, as `Vault::at` asks of what it is handed, so `<root>/../x` — which a
-  lexical `starts_with` passed — is outside
-  (`a_path_climbing_out_of_the_vault_is_not_held_by_it`).
+  is one object; a cover is keyed by its bytes.
+- **Nothing outside the root.** `Vault::inside` guards every read, write and delete
+  (`Error::OutsideTheVault`); `within` requires plain names after the root, so `<root>/../x` is
+  outside though a lexical `starts_with` passes it.
 
 ## The three forms
 
 `Form::of` reads codec, spec and declared depth and answers before anything is decoded; the size
 comparison may overrule it.
 
-- **`Form::Flac`** — integer PCM, 8–24 bits, ≤ 8 channels, ≤ 96 kHz. A streaming
-  `flacenc::source::Source` over `resonate_codec::Decoder`, so a track is never held whole, written
-  frame by frame with the header rewritten at the end. It carries STREAMINFO and **nothing else**
-  (no VORBIS_COMMENT, PICTURE or SEEKTABLE): stripping is construction, not a later pass. **It
-  stops paying once it has lost**: `flac::encode` counts what it wrote and, the moment that reaches
-  the source's weight, stops encoding and writing but goes on laying the samples into the MD5 the
-  key is — `Encoded::outgrew` — so a 24-bit rip that will lose costs a decode past that point rather
-  than the rest of an encode and a whole read-back
-  (`an_encode_that_outgrows_its_ceiling_stops_writing_but_still_names_the_samples`). An encode that
-  outgrew, or one whose key already has an object standing where the import is not a renewal, is
-  weighed against that object before any read-back: `Deduped` where it fits, `NoSmaller` where it
-  does not or none stands — a duplicate no longer read back whole before `Deduped` is known.
-  **A FLAC source names its key before the encode does.** A whole 16- or 24-bit native FLAC is
-  stored at its own depth, so its STREAMINFO MD5 is the digest the encode would lay down;
-  `bare::declared_digest` reads it (past any ID3 stacked in front, all zeros naming nothing), and
-  where an object stands under that key and the import is not a renewal, `foretold_flac` decodes
-  the source once into the digest instead of encoding it — `Deduped` or `NoSmaller` on the same
-  weighing — so a second copy of a rip costs a decode, not a flacenc pass at its highest effort.
-  The declaration is only a candidate: a source whose samples hash to anything else is
-  `Foretold::Misdeclared`, opened again and encoded as any other
-  (`a_flac_declaring_the_digest_of_an_object_standing_is_deduped_without_an_encode`). **A source
-  declaring nothing is foretold by the catalog.** `Taking::foretold` is a key the caller has reason
-  to think the samples hash to, weighed the same way where the source itself declares none — a
-  candidate, never trusted (`a_wave_whose_key_the_catalog_foretells_is_deduped_without_an_encode`).
-  The library's `TRACKS_TO_VAULT` hands one over for a whole-file row where exactly one noted object
-  has its sound — the same frame count, rate and channels, read off `vault_objects_by_sound`, a
-  `MIGRATIONS` step — so a second copy of a WAVE, AIFF, WavPack or ALAC rip costs a decode, and a
-  source merely as long as one object costs one decode more than it did
-  (`a_row_whose_sound_one_object_alone_has_is_foretold_that_objects_key`). A sound two objects share
-  foretells nothing, a decode being spent on one candidate at most.
-- **`Form::Wave`** — PCM FLAC cannot hold: `SampleFormat::F32`, > 24 bits or > 96 kHz. A canonical
-  `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, stripped by construction, zstd'd at `ARCHIVED_AT`;
-  refused over `LARGEST_PCM`, the RIFF ceiling — before anything is staged where the source declares
-  its length (`wave::outgrows_a_wave`, frames × channels × four bytes), so 46 minutes of 192 kHz
-  stereo no longer writes 4 GiB of staging on every import, and a whole file refused `TooLarge` is
-  handed to `kept_whole` as a `NoSmaller` one is, rather than never vaulted
-  (`a_source_past_what_a_wave_holds_is_kept_as_it_stands_without_being_staged`). A cut row has no
-  kept form, so it is still weighed by writing it. `wave::compressed` counts what the encoder wrote and
-  gives up — `Packed::NoSmaller` — the moment it reaches the source's weight, before the read-back, so a
-  hi-res source whose WAVE would be thrown away costs a fraction of a level-19 pass; `keep` hands such a
-  whole file to `kept_whole` as it does one whose finished object came out too large. **A pass is
-  foretold before it is paid for**: past `FORETOLD_FROM_BYTES` (32 MiB staged), `wave::hopeless`
-  compresses four `SLICE_BYTES` slices spread through it at the same level and scales them to the whole;
-  landing more than an eighth past the source's weight is `NoSmaller` before the pass starts. Measured
-  on a five-minute 24/192 FLAC of 251 MB: foretold 504.9 MB of a pass that came to 508.3 MB and took 40
-  s on five cores, so a hi-res rip is kept after ~8 MB of zstd; a forecast within the eighth pays the
-  pass, which still decides. **The pass is written as a run of zstd frames**, one per
-  `PACKED_FRAME_BYTES` (8 MiB) of WAVE, each pledged its length so its header carries the content
-  size — any zstd reader reads the run as one stream, and `Unpacking` can find where each frame's
-  bytes begin (below). A frame boundary costs the window its history, a loss too small to see on
-  PCM, which is why objects packed before as one frame were not weighed again for it.
-- **`Form::Kept`** — the source's own bytes, where re-encoding would lose something or cost more
-  than it saves: a lossy codec, DSD, > 8 channels, or a re-encode no smaller. What a container
-  keeps its tags in *around* the audio is left behind, without touching an audio frame.
-  `bare::bare` decides by the container symphonia opened: a FLAC's metadata blocks are rewritten
-  to STREAMINFO alone and the ID3 tags a tagger stacked in front of or behind it shed as an MPEG
-  stream's are; an MPEG, ADTS, WavPack or Monkey's Audio stream sheds every ID3v2 tag
-  stacked before the frames and, from the end inward, ID3v1 with its enhanced `TAG+`, APEv2 with
-  or without header, Lyrics3v2 and an appended ID3v2 read by its footer; a DSF ends where its
-  metadata pointer pointed, header rewritten to that length with a null pointer; an Ogg Vorbis,
-  Opus or FLAC stream gets an empty comment packet (`ogg::bare`). A tag claiming more than the file
-  holds, or tags leaving no frames, leave the file whole.
-  **Chunked containers shed their describing chunks.** `chunks::shed` walks a WAVE, AIFF/AIFC, CAF
-  and DSDIFF chunk by chunk — past an ID3v2 a tagger stacked before the header, which goes too —
-  and leaves out a WAVE's `LIST`, `id3 `, `ID3 `, `bext`, `iXML`, `axml`, `_PMX`; an AIFF's `NAME`,
-  `AUTH`, `(c) `, `ANNO`, `COMT`, ID3; a CAF's `info`; a DSDIFF's `DIIN`, `COMT`, `ID3 `. Every
-  other chunk is copied with its pad byte; anything after the header's declared end (an appended
-  ID3v1) is left behind; the header size is rewritten (a CAF has none). An unreadable walk — a
-  chunk past the end, a header of the wrong kind — copies the file whole. The copy is
-  `chunks::Passing`, a reader seeking over the left-out ranges; a data chunk declaring more than
-  the file holds is read to the end rather than refused, which is how a streamed WAVE is written.
-  `a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample` is the claim.
-  An RF64, BW64 or Wave64 kept this way — past eight channels, or a re-encode no smaller — is kept
-  whole, tags and all: `chunks::shed` walks 32-bit sizes, and its `ds64` table would have to be
-  rewritten for every chunk left out.
-  **An MP4 or Matroska has its tags blanked where they stand**, since they sit inside the
-  structure indexing the audio (MP4 chunk offsets count from file start; a Matroska SeekHead and
-  Cues name positions) and cutting them would mean rewriting every offset behind.
-  `blanks::blanked_movie` walks the boxes into `moov` and each `trak` and turns every `udta` and
-  every top-level or `moov`-level `meta` into an empty `free` box of the same length;
-  `blanks::blanked_segment` lays an EBML `Void` of exactly the same length over every top-level
-  `Tags` and `Attachments` and over the `Title` in `Info` (where ffmpeg writes one). Nothing moves;
-  `Blanked` lays the blanks over the copy as it passes; symphonia reads a SeekHead entry pointing
-  at a Void as an element it does not want. A box or element running past its parent, or an
-  unknown-sized one before the tags, copies the file whole.
-  `a_kept_mp4_blanks_the_tags_its_movie_holds_and_keeps_every_sample_it_decodes_to` and
-  `a_kept_matroska_blanks_its_tags_and_keeps_every_sample_it_decodes_to` are the claims.
+- **`Form::Flac`**: integer PCM, 8-24 bits, <= 8 channels, <= 96 kHz. Streamed through
+  `flacenc` over `resonate_codec::Decoder`, so a track is never held whole. It carries STREAMINFO
+  and **nothing else**: stripping is construction. **It stops paying once it has lost**:
+  `flac::encode` stops encoding and writing the moment the output reaches the source's weight but
+  keeps hashing the samples into the key (`Encoded::outgrew`). An encode that outgrew, or whose key
+  already has an object where the import is not a renewal, is weighed against that object before
+  any read-back (`Deduped` or `NoSmaller`). **A source names its key before the encode does where
+  it can**: a native 16- or 24-bit FLAC's STREAMINFO MD5 is the digest the encode would lay down
+  (`bare::declared_digest`), and where an object stands under it `foretold_flac` decodes the source
+  once into the digest instead of encoding (`Foretold::Misdeclared` when the samples hash to
+  something else, so the declaration is only a candidate). For other sources `Taking::foretold`
+  carries a key from the catalog, where `TRACKS_TO_VAULT` finds exactly one noted object with the
+  row's sound (frame count, rate, channels, from `vault_objects_by_sound`); a sound two objects share
+  foretells nothing. Either way a second copy of a rip costs a decode, not an encode.
+- **`Form::Wave`**: PCM FLAC cannot hold (`SampleFormat::F32`, > 24 bits, > 96 kHz). A canonical
+  `fmt `+`data` WAVE with no `LIST` or `id3 ` chunk, zstd'd at `ARCHIVED_AT`; refused over
+  `LARGEST_PCM`, the RIFF ceiling, before anything is staged where the source declares its length
+  (`wave::outgrows_a_wave`), and such a file goes to `kept_whole` rather than never being vaulted.
+  `wave::compressed` gives up (`Packed::NoSmaller`) the moment its output reaches the source's
+  weight. **A pass is foretold before it is paid for**: past `FORETOLD_FROM_BYTES`,
+  `wave::hopeless` compresses four `SLICE_BYTES` slices at the same level and scales them; landing
+  more than an eighth past the source's weight is `NoSmaller` before the pass starts. **The pass is
+  a run of zstd frames**, one per `PACKED_FRAME_BYTES` of WAVE, each pledged its length so any zstd
+  reader reads the run as one stream and `Unpacking` can find where each frame begins.
+- **`Form::Kept`**: the source's own bytes, where re-encoding would lose something or cost more:
+  a lossy codec, DSD, > 8 channels, or a re-encode no smaller. What a container keeps its tags in
+  *around* the audio is left behind without touching an audio frame. `bare::bare` decides by the
+  container symphonia opened:
+  - FLAC, MPEG, ADTS, WavPack, Monkey's Audio and DSF shed their ID3, APE and Lyrics3 tags (a FLAC's metadata blocks are rewritten to STREAMINFO alone; a DSF ends where its metadata pointer pointed).
+  - **Chunked containers shed their describing chunks.** `chunks::shed` walks a WAVE, AIFF/AIFC, CAF
+    and DSDIFF chunk by chunk, leaving out the tag-bearing ones, copying every other with its pad
+    byte and rewriting the header size. An unreadable walk copies the file whole; a data chunk
+    declaring more than the file holds is read to the end (a streamed WAVE). RF64, BW64 and Wave64
+    are kept whole, since their `ds64` table would need rewriting for every chunk left out.
+  - **An MP4 or Matroska has its tags blanked where they stand**, since they sit inside the
+    structure indexing the audio (MP4 chunk offsets, Matroska SeekHead and Cues): `udta` and `meta`
+    boxes become same-length `free` boxes (`blanks::blanked_movie`), `Tags`, `Attachments` and the
+    `Title` become same-length EBML `Void`s (`blanks::blanked_segment`). Nothing moves.
+  - Ogg Vorbis, Opus and Ogg FLAC are rewritten (below).
+  - A tag claiming more than the file holds, or tags leaving no frames, leave the file whole.
+  `a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample` and its MP4, Matroska and Ogg
+  siblings are the claims.
 
-**Speaker positions are part of what is kept.** `MediaInfo::speakers` is the source's positions
-as symphonia reads them (its `Position` bits = the WAVE channel mask), and `Form::placing` weighs
-them after `Form::of`: FLAC fixes an assignment per channel count and an object with STREAMINFO
-alone has no room for a mask, so a source FLAC would read back differently — a 2.1 whose LFE FLAC
-calls a centre, a 5.1 on the sides FLAC calls rear — goes to `Wave`, which writes
-`WAVE_FORMAT_EXTENSIBLE` with the source's mask wherever it is not the order a plain header
-implies; a mask past the eighteen WAVE names is `Kept`. Validation weighs the positions read back
-beside digest and frame count (`Heard::held_by`), so an object whose speakers moved is refused; a
-source naming none is held by any reading.
+**Speaker positions are part of what is kept.** `Form::placing` weighs `MediaInfo::speakers` after
+`Form::of`: FLAC fixes an assignment per channel count and STREAMINFO has no room for a mask, so a
+source FLAC would read back differently (a 2.1 whose LFE FLAC calls a centre) goes to `Wave`, which
+writes `WAVE_FORMAT_EXTENSIBLE` with the source's mask; a mask past the eighteen WAVE names is
+`Kept`. Validation weighs positions read back beside digest and frame count (`Heard::held_by`).
 
-**Three bounds are flacenc's, not FLAC's.** The format holds 32 bits and 655 kHz; `flacenc` 0.5.1
-verifies `sample_rate <= 96_000` and `bits_per_sample <= 24`, and its Rice parameter stops at 14
-where the second partition method reaches 30. The last shapes a real library: on this material
-flacenc **beats** `flac -8` at 16/44.1 (23,597,708 vs 24,829,499 bytes) and loses by ~15 % at
-24/48, because 24-bit residuals need Rice parameters a 4-bit field cannot name. So 16-bit rips are
-re-encoded and 24-bit ones kept and stripped — the size comparison arrives there with no rule
-naming depths.
+**Three bounds are flacenc's, not FLAC's** (96 kHz, 24 bits, a Rice parameter stopping at 14): 16-bit rips are re-encoded and 24-bit ones generally kept and stripped, with no rule naming depths.
 
 ## Keys and layout
 
 ```
-<root>/audio/ab/abcdef…7f.flac        # or .wav.zst, or .mp3, .dsf, … for a kept object
+<root>/audio/ab/abcdef…7f.flac
 <root>/covers/3c/3cd1…9a.jxl
 <root>/staging/<pid>-<n>.<ext>
 ```
 
 A `VaultKey` is sixteen bytes as thirty-two lowercase hex letters, fanned two deep. For `Flac` and
-`Wave` it is the MD5 of the decoded interleaved PCM — FLAC's STREAMINFO digest, so `metaflac` can
-be asked the same — and for `Kept` and covers the MD5 of the stored bytes. Writes go to `staging`,
-are `sync_all`'d and renamed into place (like `config::write` and `organise`'s staged sheet), and
-`landed` syncs the folder the object now sits in — and the one above where the fanout folder was
-made — so the rename survives the crash the synced bytes did. A crash leaves a staging file,
-never a half-written object. **Every staging file carries the pid that wrote it, and that is how
-it is swept.** `Vault::open` takes away each whose process `/proc` no longer holds
-(`Sweeping::WhatCrashed`), so a crashed import's copies go the next time anything opens the vault
-rather than at the next `--prune`; `Vault::sweep_the_staging` — what `--prune` clears the folder
-with — takes those and any file not named by a pid, and never a living process's, a poll landing
-deliveries outside the `Walk` guard or a window importing beside a `resonate vault --prune`. With
-no `/proc` every pid reads as living and nothing named by one is taken
-(`a_crashed_imports_staging_is_swept_when_the_vault_opens_and_a_living_ones_is_not`).
+`Wave` it is the MD5 of the decoded interleaved PCM (FLAC's STREAMINFO digest, so `metaflac` can be
+asked the same); for `Kept` and covers the MD5 of the stored bytes. Writes go to `staging`, are
+`sync_all`'d and renamed into place, and `landed` syncs the folder the object now sits in (and the
+one above where the fanout folder was made). **Every staging file carries the pid that wrote it, and
+that is how it is swept**: `Vault::open` removes each whose process `/proc` no longer holds
+(`Sweeping::WhatCrashed`); `Vault::sweep_the_staging` (what `--prune` uses) also takes any file not
+named by a pid, never a living process's. With no `/proc` every pid reads as living.
 
-**A staging file is a `Staged`, and dropping one removes the file.** Every write that can fail
-between `File::create` and the rename — a source read, a full disc, `sync_all`, a refused landing —
-returns through `?` leaving nothing, so a thousand failed imports leave no partial copies. `keep`'s
-fallback to `Kept` follows a `NoSmaller` that landed nothing, so no object is orphaned in `audio/`.
+**A staging file is a `Staged`, and dropping one removes the file**, so every failure between
+`File::create` and the rename leaves nothing. `keep`'s fallback to `Kept` follows a `NoSmaller`
+that landed nothing, so no object is orphaned in `audio/`.
 
 **The catalog names an object by where it sits inside the vault, never where the vault sits.**
 `Vault::open` canonicalises a root that is there and makes the three folders inside it, never the
-root itself — `Vault::make` makes the root first, for the callers asked to (`binary.md`);
-`Vault::within` turns an answered path into the relative one
-`vault_path`, `vault_objects.path` and `cover_path` hold (`audio/ab/ab…7f.flac`); `Vault::at` turns
-it back, refusing anything not a run of plain names, so no stored value reaches outside. A vault
-opened as `./vault`, through a symlink or after a move is the same vault to catalog, stand-in and
-prune.
+root itself (`Vault::make` does, for the callers asked to: `binary.md`); `Vault::within` turns an
+answered path into the relative one `vault_path`, `vault_objects.path` and `cover_path` hold;
+`Vault::at` turns it back, refusing anything not a run of plain names.
 
-**Validation happens on the staging file, before the rename**, so a dedup hit is never at risk
-from a failed import of the same audio and a refused object never reaches `audio/`. **It reads the
-form that lands**: a WAVE object is weighed from its staged `.wav.zst` through `VaultFiles` — the
-`Unpacking` stream the player reads it through — not from the uncompressed WAVE it was packed from,
-which is discarded first; so every object, not only FLAC and kept ones, is proved by the path that
-plays it. `Vault::verify` reads a WAVE object the same way, streaming rather than unpacking it into
-one buffer and staging it again
-(`a_packed_wave_that_has_been_meddled_with_is_not_verified`).
+**Validation happens on the staging file, before the rename**, so a dedup hit is never at risk from
+a failed import of the same audio. **It reads the form that lands**: a WAVE object is weighed from
+its staged `.wav.zst` through `VaultFiles`, the path that plays it, not from the WAVE it was packed
+from. `Vault::verify` reads a WAVE object the same way, streaming.
 
 ## An object is weighed again when the encoder moves
 
 `Encoding::OF_THIS_BUILD` names this build's encoders and every `vault_objects` row carries the one
-it was weighed under. **Bump it by hand whenever what an import writes changes** — a new
-`flacenc`, another zstd level, a bound `Form::of` draws differently — since nothing else can tell
-an object was made by a worse encoder.
+it was weighed under. **Bump it by hand whenever what an import writes changes** (a new `flacenc`,
+another zstd level, a bound `Form::of` draws differently, a new kept-form stripping), since nothing
+else can tell an object was made by a worse encoder.
 
-`--import` walks a vaulted row again wherever its stamp is behind, except two it cannot improve: a
-row whose source has gone (the object is the only copy), and a row `Form::of` keeps as it stands
-whatever the encoder — lossy, DSD, > 8 channels — unless MP3, AAC or DSD (whose kept copies
-encoding 2 began stripping) or Vorbis or Opus (encoding 3); an MP4's AAC, a DSDIFF or a Vorbis in
-Matroska is copied again to the same key and stamped. Encoding 4 began stripping Ogg FLAC, which
-`Form::of` never keeps and so is walked regardless. Encoding 5 began shedding WAVE, AIFF, CAF and
-DSDIFF tag chunks, whose kept objects are DSD, AAC (already walked) or integer PCM (never kept by
-`Form::of`), so it needs no rule; nor does encoding 6, blanking kept MP4 and Matroska tags, whose
-audio is AAC, Vorbis or Opus (already walked) or lossless (never kept). The preview marks such a
-row *weighed again*. A renewal is a `Taking` with `renewing` set, and changes the one rule that
-would hide the new encode: an object already under the same key is a rival, not a dedup hit, and
-the new one replaces it — `Kept::replaced` set from `Landing::Replaced`, a rename over the standing
-file — only where smaller. A losing renewal keeps the standing object and stamps it current, having
-now been weighed against this build. `keep` never discards an object it replaced, so rows naming
-the same audio keep their object whatever this row decides; a renewal settling on another form or
-key leaves the old object to `--prune`.
+`--import` walks a vaulted row again wherever its stamp is behind, except a row whose source has
+gone (the object is the only copy) and a row `Form::of` keeps as it stands whatever the encoder,
+unless the bump changed how that kind is kept. The preview marks such a row *weighed again*. A
+renewal is a `Taking` with `renewing` set: an object already under the same key is a rival, not a
+dedup hit, and the new one replaces it (`Kept::replaced`, `Landing::Replaced`) only where smaller.
+A losing renewal keeps the standing object and stamps it current. `keep` never discards an object it
+replaced, so rows naming the same audio keep theirs; a renewal settling on another key leaves the
+old object to `--prune`. A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has
+no row for its object, so it is weighed again next import rather than trusted.
 
-A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row for its object —
-a vault standing from before the catalog was deleted and rescanned — so an unrecorded encoder's
-object is weighed again next import rather than trusted.
-
-**A refusal is stamped against the encoder too.** Every `Keeping::Refused` — a cut no smaller than
-its share, one cut out of a file this build keeps as it stands, a copy that did not read back —
-writes `vault_refused (track_id, under)` with `Encoding::OF_THIS_BUILD` (a `MIGRATIONS` step), and
-`TRACKS_TO_VAULT` passes over a row stamped at or past this build's encoder, so a refused row is
-weighed once per encoder rather than at full cost by every `--import`, the preview included. The
-step's trigger drops the stamp where the row's size, mtime or span moves, as `unstudied`'s does,
-and `note_vaulted` drops it once the row lands. A source that failed to read — `Unreadable`,
-`SourceGone` — is stamped nothing, those being what a later import may find otherwise
+**A refusal is stamped against the encoder too.** Every `Keeping::Refused` writes
+`vault_refused (track_id, under)` with `OF_THIS_BUILD`, and `TRACKS_TO_VAULT` passes over a row
+stamped at or past this build's encoder, so a refused row is weighed once per encoder, not by every
+`--import`. The trigger drops the stamp where size, mtime or span moves, and `note_vaulted` drops
+it once the row lands. A source that failed to read (`Unreadable`, `SourceGone`) is stamped nothing
 (`a_refused_row_is_not_weighed_again_until_its_file_or_the_encoder_moves`).
 
 ## Covers
 
-Decoded with `image`, encoded as lossless JXL by `zune-jpegxl` at its highest effort, read back
-with `jxl-oxide` and compared pixel for pixel before landing — lossless makes an exact compare the
-real check. Opaque pictures are three channels, transparent ones four, so the common case carries
-no alpha plane.
+Decoded with `image`, encoded as lossless JXL by `zune-jpegxl` at its highest effort, read back with
+`jxl-oxide` and compared pixel for pixel before landing. Opaque pictures are three channels,
+transparent four.
 
-**The vault decodes JXL back to PNG, which is why `resonate-ui` did not change.** `Vault::picture`
-answers `CoverArt { format: Png, bytes }`, the type every caller already takes: the window hands
-gpui encoded bytes plus a `gpui::ImageFormat`, and `mpris::art::Pictures` writes a file a
-notification daemon can draw. `dependencies.md` forbids an image crate in `resonate-ui`, and a JXL
-a daemon cannot read would break `mpris:artUrl`; one decode in the crate owning the format answers
-both.
+**The vault decodes JXL back to PNG, so `resonate-ui` does not change.** `Vault::picture` answers
+`CoverArt { format: Png, bytes }`, the type every caller already takes (the window hands gpui
+encoded bytes; `mpris::art::Pictures` writes a file a notification daemon can draw).
+`dependencies.md` forbids an image crate in `resonate-ui`, and one decode in the crate owning the
+format answers both.
 
-A cover already under its key is a dedup hit sized off the JXL's head alone
-(`cover::size_of_jxl`, `jxl-oxide` taken as far as its image header), so twelve tracks embedding
-one picture cost one encode and eleven header reads, not eleven whole decodes
-(`a_jxl_is_sized_by_its_head_alone`).
-
-**A cover is drawn once a run.** `Vault::picture`'s PNG is written at `image`'s fast compression
-(a transient form), and `Drawings` holds it under the cover's key — least lately asked first out
-past `DRAWN_BYTES_AT_MOST` — so the window and `retag` asking again cost a lookup, not a JXL
-decode and PNG encode. `Vault::forget` takes a drawing with the file, so a pruned cover is not
-answered from memory. A drawing is noted under the same lock that weighs and evicts, so two
-threads drawing one cover hold it once; and every `forget` moves a `Forgetting` count, which
-`picture` reads before it opens the file and `note` weighs again under the lock — a drawing made
-while its cover was being pruned is dropped rather than held for a file no longer there
-(`a_drawing_made_before_its_cover_was_forgotten_is_not_held_after`,
-`many_threads_noting_one_key_at_once_hold_it_once`).
+A cover already under its key is a dedup hit sized off the JXL's head alone (`cover::size_of_jxl`). **A cover is drawn once a run**: `Drawings` holds the PNG under the cover's key, evicting past `DRAWN_BYTES_AT_MOST`; `Vault::forget` takes a drawing with the file, and a `Forgetting` count drops a drawing made while its cover was being pruned.
 
 ## What the catalog holds
 
 `tracks.vault_key`, `tracks.vault_path`, `albums.cover_key`, `albums.cover_path`, `cover_source`
-gaining `Vault`, and a `vault_objects` table — laid into `V1` while the schema still broke (so a
-catalog written before was scanned again); a change now is a `MIGRATIONS` step (`library.md`).
+gaining `Vault`, and a `vault_objects` table; a change now is a `MIGRATIONS` step (`library.md`).
 
-- **A vaulted row is still named by its own file; the vault stands in only when bytes are
-  wanted.** `tracks.path` and `span_start` are its identity everywhere — a `Track`'s location, a
-  playlist's `Cut`, a counted play, a share, a resumption — so it counts plays, exports as its
-  file and resumes as its cut. What the player opens is decided at its `Sources`:
-  `Library::stand_in` is a `resonate_codec::StandIn`, registered with `Sources::standing_in`.
-  `Decoder::open`, `Decoder::open_span`, `probe` and `probe_span` ask it first, and where the
-  catalog names a `vault_path` for that `(path, span_start, span_frames)` — the span matched
-  whole, so an open with no span, or one sharing only a cut's start, reads the file rather than
-  the first cut's object — they decode the object *whole* (a cue row's object is that row alone,
-  so the span is not applied twice) under a `TagSet` the catalog fills: names, numbers, MusicBrainz
-  ids, `rg_*` as the ReplayGain the engine resolves gain from, and `tracks.lyrics`, which the scan
-  keeps for exactly this. An object that will not open falls back to the row's file.
-  `resonate info`, the scan and the import open through sources with no stand-in, so they always
-  read the file.
+- **A vaulted row is still named by its own file; the vault stands in only when bytes are wanted.**
+  `tracks.path` and `span_start` are its identity everywhere (location, playlist `Cut`, plays,
+  share, resumption). What the player opens is decided at its `Sources`: `Library::stand_in` is a
+  `resonate_codec::StandIn`, registered with `Sources::standing_in`; `Decoder::open`,
+  `open_span`, `probe` and `probe_span` ask it first, and where the catalog names a `vault_path`
+  for that `(path, span_start, span_frames)` (matched whole) they decode the object *whole* (a cue
+  row's object is that row alone) under a `TagSet` the catalog fills, including `rg_*` and
+  `tracks.lyrics`. An object that will not open falls back to the row's file. `info`, the scan and
+  the import open through sources with no stand-in, so they read the file.
 - **A vault inside a scanned root is not part of the library it holds.** The walk steps past the
-  open vault's root, a link into it included, so an object is never scanned as a track titled by
-  its digest; `store::apply` leaves a rootless row alone wherever a scan reaches one anyway (a
-  catalog opened without its vault), so a delivery keeps its name, pairing and place outside every
-  root. `a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own` and
-  `a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root` are the claims.
+  open vault's root, links into it included; `store::apply` leaves a rootless row alone wherever a
+  scan reaches one anyway, so a delivery keeps its name, pairing and place.
 - **`vault_path` is denormalised beside the key on purpose**: the stand-in reads it by the row's
-  unique key, one indexed read rather than a join through `vault_objects`.
-- **A vaulted row outlives its file, and a changed file forgets its object.** The prune and root
-  tidy beside a scan leave a vaulted row whose file has gone (the vault holds the only copy, and a
-  pruned row would hand `--prune` the object); a vaulted row the walk did not see while its file
-  is still there was superseded — a sheet no longer cuts it — and goes as any row would. The upsert
-  clears `vault_key` and `vault_path` wherever size, mtime or span moved, so a file ripped again in
-  place is weighed again by the next `--import`.
-- **`Library::prune_the_vault` (`--prune`) weighs a cover by its key.** Under the `Walk` guard (so
-  it cannot remove an object an import landed and has not yet noted), it removes audio objects no
-  row names and their `vault_objects` rows, then every JXL under `covers/` whose key no album's
-  `cover_key` holds, then the staging folder. Matching by key, no spelling of the root makes a
-  named cover look loose. **An object's row goes only with its file**: one `Vault::forget` refuses
-  keeps its row for the next prune and is counted in `Pruned::left`, where forgetting the row anyway
-  left the file on the disc with nothing to find it by
-  (`an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next`). **It walks `audio/` as well
-  as the rows** (`Vault::objects`), taking any object whose key neither `vault_objects` nor a
-  `tracks.vault_key` names — one that landed before `note_vaulted` failed. A poll lands deliveries
-  outside the `Walk` guard, so an unnamed object is taken only once its mtime is `LANDING_GRACE` (ten
-  minutes) old, the landing-to-noting gap being milliseconds
-  (`a_prune_takes_away_an_object_no_row_names_once_it_has_stood_a_while`).
-- **`Library::import` takes the `Walk` guard**, reading every source file; a second caller gets
-  `Error::AlreadyWalking`.
-- **An import runs on `ImportOptions::workers` threads** (the machine's parallelism by default),
-  the encode being per track. Workers draw the next row off one shared counter over
-  `costliest_first` — a WAVE-bound row before a FLAC-bound one, kept last, larger files first
-  within each — so the one slow encode starts at once rather than alone at the end; they write
-  their own catalog rows, and an album's cover is kept by whichever worker claims the album first
-  in a shared set. The plan is put back into request order before it is handed out, so preview and
-  apply list alike. `Vault` makes it sound: `landed_or_standing` decides and renames under one
-  lock, so two rows of one audio settle on one object, one `Landed`, one `Deduped`. The first
-  error stops every worker at its next row and is the pass's answer; a panicking worker is
-  `Error::Stopped` naming the import.
-- **A row leaves the vault only where its own file is still there.**
-  `Library::release_from_vault` (`resonate vault --release`, same `--root` narrowing and `Walk`
-  guard) clears `vault_key` and `vault_path` on every vaulted row whose `tracks.path` exists, so
-  the player opens the file again, and counts the rest as `Released::stranded`, left alone because
-  the vault holds their only copy. Objects a release leaves wait for `--prune`, the one deleting
-  gesture; the next `--import` weighs a released row again. Both previews until `--apply`, as every
-  other pass: `Library::vault_release_foretold` counts what `release_from_vault` would clear and
-  `vault_prune_foretold` what `prune_the_vault` would take, through the same `Applying` the two share,
-  `Vault::staging_a_sweep_would_take` counting the staging folder without sweeping it, so what is
-  printed is what `--apply` then does
-  (`a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it`). Covers stay: an album's picture moved
-  into the vault had `cover_art` cleared in the same statement, so there is nothing to point back
-  at.
-- **`retag` passes a vaulted row over** (`Unwritten::Vaulted`) — writing tags nothing reads is work
-  for nothing. **`organise` does not**: `tracks.path` still names the user's file and the vault is
-  keyed by content, so filing it moves nothing the vault depends on.
-- **An album holds a cover where it holds either column.** `ALBUM_COLUMNS` and `asking_albums`
-  read `cover_art IS NOT NULL OR cover_path IS NOT NULL`, so a vaulted cover is warmed by the
-  window and spares the enrichment a fetch `land_archive_cover` would throw away. `gather`'s fill
-  takes the loser's whole cover — art, format, source, key and path — only where the survivor
-  holds neither, so a gathered album never holds both nor names a source without the picture; it
-  keeps the earlier of the two `favourite` stamps likewise.
-- **A cover moves into the vault once per album**: `enriched::vault_the_cover` clears `cover_art`
-  in the statement that writes `cover_path`, so an album never holds both — and only where
-  `cover_art` is still the bytes the import encoded, so a better archive cover landed while the
-  JXL was being written is left standing, named by nothing in the vault until the next import
-  keeps it (`a_cover_is_moved_into_the_vault_only_where_the_album_still_holds_the_picture_encoded`). `land_archive_cover`
-  and the scan's `store::cover` carry `AND cover_path IS NULL`, the latter counting a
-  vault-covered album as covered, so neither an archive cover nor a rescanned file's lands where
-  the vault holds one. The import asks `cover_the_vault_lacks` rather than `cover_art` (which would
-  hand back the vault's own PNG to keep again under another digest), and a cover `image` cannot
-  read — or one whose stored format code names nothing, `UntypedCoverArt` and `UnknownImageFormat`
-  — is a warning and a `covers_passed` count, not the end of the import
-  (`a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carries_on`).
+  unique key, one indexed read.
+- **A vaulted row outlives its file, and a changed file forgets its object.** Prune and root tidy
+  leave a vaulted row whose file has gone (the vault holds the only copy); one the walk did not see
+  while its file is there was superseded and goes. The upsert clears `vault_key` and `vault_path`
+  where size, mtime or span moved, so a re-ripped file is weighed again.
+- **`Library::prune_the_vault` (`--prune`) weighs a cover by its key.** Under the `Walk` guard it
+  removes audio objects no row names and their `vault_objects` rows, then every JXL under
+  `covers/` no album's `cover_key` holds, then the staging folder. **An object's row goes only with
+  its file**: one `Vault::forget` refuses keeps its row and is counted in `Pruned::left`. **It walks
+  `audio/` as well** (`Vault::objects`), taking any object neither `vault_objects` nor a
+  `tracks.vault_key` names, but only once its mtime is `LANDING_GRACE` old, since a poll lands
+  deliveries outside the `Walk` guard.
+- **`Library::import` takes the `Walk` guard** (a second caller gets `Error::AlreadyWalking`) and runs on `ImportOptions::workers` threads drawing rows over `costliest_first` so the slow encode starts at once; workers write their own catalog rows, and the plan is put back into request order so preview and apply list alike. `landed_or_standing` decides and renames under one lock. The first error stops every worker; a panicking one is `Error::Stopped`.
+- **A row leaves the vault only where its own file is still there.** `Library::release_from_vault`
+  (`vault --release`) clears `vault_key` and `vault_path` on every vaulted row whose `tracks.path`
+  exists and counts the rest as `Released::stranded`. Objects wait for `--prune`, the one deleting
+  gesture. Both are previews until `--apply`: `vault_release_foretold` and `vault_prune_foretold`
+  count what the real pass would do through the same `Applying`, `Vault::staging_a_sweep_would_take`
+  counting the staging folder without sweeping it. Covers stay (a moved picture had `cover_art` cleared).
+- **`retag` passes a vaulted row over** (`Unwritten::Vaulted`); **`organise` does not**, the vault being keyed by content.
+- **An album holds a cover where it holds either column.** `ALBUM_COLUMNS` and `asking_albums` read
+  `cover_art IS NOT NULL OR cover_path IS NOT NULL`. `gather`'s fill takes the loser's whole cover
+  only where the survivor holds neither, so an album never holds both nor names a source without
+  the picture.
+- **A cover moves into the vault once per album**: `enriched::vault_the_cover` clears `cover_art` in
+  the statement that writes `cover_path`, and only where `cover_art` is still the bytes the import
+  encoded. `land_archive_cover` and the scan's `store::cover` carry `AND cover_path IS NULL`. The
+  import asks `cover_the_vault_lacks` rather than `cover_art`, and a cover `image` cannot read, or
+  whose format code names nothing (`UntypedCoverArt`, `UnknownImageFormat`), is a warning and a
+  `covers_passed` count, not the end of the import.
 - **A vault that fails ends the import; a source that fails is passed over.** `Vault::failed_itself`
-  tells the two apart: an `Error::Io` on a path under the root, or a full, over-quota or read-only
-  disc wherever it was, and `OutsideTheVault`, are the vault's, and `keep_one` answers them as
-  `Error::Vault`, which stops every worker; anything else — a source that will not decode or encode
-  — is `Passing::Unreadable` and the import goes on. Every failure was once `Unreadable`, so a full
-  vault disc cost most of the work of every row left and billed each as unreadable
-  (`a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row`,
-  `a_failure_on_the_vaults_own_disc_is_told_from_one_of_the_source`).
+  tells them apart: an `Error::Io` on a path under the root, a full, over-quota or read-only disc
+  wherever it was, and `OutsideTheVault` are the vault's, and `keep_one` answers them as
+  `Error::Vault`, stopping every worker; anything else is `Passing::Unreadable` and the import goes
+  on.
 
 ## Reading an object back
 
-`VaultFiles` is a `MediaProvider` registered under `SourceId::local()`, *replacing* `LocalFiles`: a
-path under the vault root ending in `.zst` is an `Unpacking` with the inner extension as its
-`FormatHint`; everything else is the plain file open `LocalFiles` does. `Unpacking` decodes the
-stream as read rather than decompressing the object into a `Cursor`, which held a five-minute
-24/192 object — ~460 MB — resident for every open, each queued row's tag probe included, and two
-for a probe beside a play. It reads its length from the `RIFF` header this build wrote and seeks
-forward by decoding and discarding. **A seek backward, or more than `FAR_AHEAD` (4 MiB) forward,
-starts again at the frame holding the target**: `unpacking::frames_of` walks the object's frame
-headers and block headers once, the first time one is asked, reading each frame's content size
-and where its bytes begin, and the stream is opened again at that frame — so seeking back in a
-five-minute 24/192 track decodes at most one 8 MiB frame, where it once decoded the ~460 MB before
-it (`a_wave_packed_in_frames_is_read_back_from_the_frame_a_seek_lands_in`). An object packed
-before as one frame naming no content size has no index, and a backward seek restarts the stream
-as it always did. It opens the
-object the stand-in names, and the binary registers it wherever it opens a track to play or read
-(`held_over`): the player, `resonate info`, `explain` and `analyse`. The bus, playlists,
-resumption and queue never see an object's path; a row is named by its own file.
+`VaultFiles` is a `MediaProvider` registered under `SourceId::local()`, *replacing* `LocalFiles`: a path under the vault root ending in `.zst` is an `Unpacking` with the inner extension as its `FormatHint`, decoded as read rather than decompressed into memory; everything else is the plain file open. **A seek backward, or more than `FAR_AHEAD` forward, starts again at the frame holding the target** (`unpacking::frames_of` indexes the frame headers once); an object with no content size restarts from the start. The binary registers it wherever it opens a track to play or read (`held_over`). The bus, playlists, resumption and queue never see an object's path.
 
 ## What a provider delivers
 
-`Library::poll` hands a `Delivery::File` to `Vault::keep` as a local location and a
-`Delivery::Stream` to `Vault::keep_delivered`, which copies the reader into
-`staging/<pid>-<n>.<ext>` through a `take` one byte past `LARGEST_DELIVERY` (the RIFF ceiling),
-`sync_all`s, keeps it like any local file and discards the staging file whatever came of it. A
-stream past the cap is `Refusal::TooLarge`, never decoded. The extension is filtered to ASCII
-letters and digits (as `named_extension` filters a location's), so a delivered `../flac` stages as
-`flac` under `staging/` and nowhere else. The poll writes the `vault_objects` row, a rootless
-`tracks` row named by the object's path and paired with the wanted release track — carrying the
-genre, ReplayGain and words `Kept::declared` says the source declared, since the object declares
-nothing — and records `wants.offered` as the *vault* object's URI, where the bytes now are.
-`providers.md` has why the row belongs to no root. A poll cancelled mid-keep stops at that file
-boundary like every pass: a landed object is noted, row and want, before the poll ends, because
-an unnamed object is otherwise left for `--prune` to find on the disc
-(`a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted`).
-`a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went` and
-`a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging` are the claims. Two landed
-objects are deliberately not noted, and so wait for `--prune`: one whose `Kept::frames` disagree
-with the length of the release row it was wanted for, and one landing after that row was paired
-with a file of the listener's (`providers.md`). **`Kept::frames` is what the source decoded to in
-every form** — a re-encode's count, a WAVE's, and for `Form::Kept` the frames `kept_whole` weighed
-the copy by rather than the length the container declared, which a half-written MP3 whose Xing
-header names the whole song would have overstated.
+`Library::poll` hands a `Delivery::File` to `Vault::keep` as a local location and a `Delivery::Stream` to `Vault::keep_delivered`, which copies the reader into `staging/` through a `take` one byte past `LARGEST_DELIVERY` (past it is `Refusal::TooLarge`, never decoded), keeps it like any local file and discards the staging file whatever came of it; the extension is filtered to ASCII letters and digits so a delivered `../flac` stays under `staging/`. The poll writes the `vault_objects` row, a rootless `tracks` row named by the object's path and paired with the wanted release track (carrying what `Kept::declared` says the source declared), and records `wants.offered` as the *vault* object's URI. `providers.md` has why the row belongs to no root. A
+poll cancelled mid-keep still notes a landed object before it ends. Two landed objects are
+deliberately not noted and wait for `--prune`: one whose `Kept::frames` disagree with the length of
+the release row it was wanted for, and one landing after that row was paired with a file of the
+listener's. **`Kept::frames` is what the source decoded to in every form**, for `Form::Kept` the
+frames `kept_whole` weighed rather than the length the container declared.
 
 ## An Ogg stream's comments are rewritten, and every page after renumbered
 
-A Vorbis or Opus stream keeps its tags in a header packet of its own — the comment packet after the
-identification header, and for Vorbis the setup packet after it — so stripping is a rewrite of
-structure, not a cut. `ogg::bare` reads the first page (both specs give it to the identification
-header alone) and names the codec by that packet's magic; walks the pages of that serial in
-sequence until the header packets are whole; and refuses — copying the file as it stands — header
+A Vorbis or Opus stream keeps its tags in a header packet of its own (the comment packet after the
+identification header, and for Vorbis the setup packet after it), so stripping is a rewrite of
+structure. `ogg::bare` names the codec by the first page's magic, walks the pages of that serial in
+sequence until the header packets are whole, and refuses (copying the file as it stands) header
 pages of another serial, a skipped sequence number, headers past `HEADER_BYTES_AT_MOST`, or a last
-header packet ending anywhere but at its page's end (the first audio packet must begin a page).
-The comment packet is rewritten with its vendor string and nothing after — a count of zero, plus
-Vorbis's framing bit; a stream already so is copied as it stands.
+header packet ending anywhere but at its page's end. The comment packet is rewritten with its
+vendor string alone (count zero, plus Vorbis's framing bit).
 
-**Ogg FLAC is the same walk over metadata blocks.** Its first packet is the 51 bytes of `\x7fFLAC`,
-the mapping version, a count of following header packets and STREAMINFO; each header packet after
-is one native metadata block, VORBIS_COMMENT first as the mapping requires. The count may be zero
-(*unknown*), so headers are whole at the block marked last, and one whose STREAMINFO is marked last
-has none to shed. Kept: one VORBIS_COMMENT with its vendor alone, marked last, so PICTURE, PADDING,
-SEEKTABLE and CUESHEET go as in native FLAC; a stream whose first header is not its comment is
-copied as it stands. The first page then says one header follows and is restamped — unless it
-counted none, left saying so.
+**Ogg FLAC is the same walk over metadata blocks.** Its first packet is `\x7fFLAC`, the mapping
+version, a count of following header packets (zero meaning *unknown*, so headers are whole at the
+block marked last) and STREAMINFO. Kept: one VORBIS_COMMENT with its vendor alone, marked last; a
+stream whose first header is not its comment is copied as it stands. The first page then says one
+header follows and is restamped, unless it counted none.
 
-The first page is otherwise kept byte for byte; the new comment and setup packets go on fresh pages
-under the next sequence numbers, granule zero on a page a packet ends on and `NO_PACKET_ENDS` on
-one none does, each stamped with the format's CRC-32 — polynomial `04c11db7`, unreflected, over the
-page with its checksum zeroed, which `a_page_is_stamped_with_the_checksum_libogg_gives_it` holds to
-an ffmpeg-written page. A picture usually made the comments several pages long, so the headers now
-take fewer pages and every later audio page would skip numbers: `Renumbering` is the difference,
-and `Renumbered` wraps the copy that follows, reading a page at a time and rewriting sequence and
-checksum of every page of that serial, passing another serial's pages (a chained stream's next
-link) through, and passing anything that does not parse as a page verbatim from there on.
-Validation makes the last two safe: `kept_whole` decodes the copy against the source, and one not
-holding the same audio is copied again whole.
-`a_kept_ogg_vorbis_sheds_its_comments_and_keeps_every_packet_it_decodes_to`, its Opus twin and
-`a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to` — a 24-bit, 192 kHz stream
-whose zstd'd WAVE does not beat it, which is how a FLAC is ever kept — are the claims, each checking
-sequence numbers and checksums with a bit-by-bit CRC rather than the vault's table.
+New header packets go on fresh pages under the next sequence numbers (granule zero on a page a
+packet ends on, `NO_PACKET_ENDS` on one none does), each stamped with the Ogg CRC-32
+(`a_page_is_stamped_with_the_checksum_libogg_gives_it`). The headers now take fewer pages, so
+`Renumbering` is the difference and `Renumbered` rewrites sequence and checksum of every later page
+of that serial, passing other serials' pages and anything unparseable verbatim. `kept_whole`
+makes this safe: a copy not holding the same audio is copied again whole.
