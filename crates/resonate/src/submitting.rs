@@ -10,7 +10,7 @@ use std::{
 #[cfg(feature = "online")]
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "online")]
-use resonate_core::{FrameSpan, MediaLocation};
+use resonate_core::{FrameSpan, Frames, MediaLocation};
 #[cfg(feature = "online")]
 use resonate_engine::PlaybackState;
 use resonate_engine::Player;
@@ -86,12 +86,12 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                 };
 
                 let playing = playing_row(&player);
-                if playing.is_some() && playing != told_playing {
-                    told_playing.clone_from(&playing);
-                    if let Some(row) = playing {
-                        tell_what_is_playing(&library, &*scrobbler, &row);
-                    }
+                if lapses(told_playing.as_ref(), playing.as_ref())
+                    && let Some(row) = playing.as_ref()
+                {
+                    tell_what_is_playing(&library, &*scrobbler, row);
                 }
+                told_playing = playing;
 
                 let outcomes = [
                     listens.settle(|| told_listens(&library, &*scrobbler)),
@@ -193,6 +193,18 @@ impl Pace {
 struct Row {
     location: MediaLocation,
     span: Option<FrameSpan>,
+    position: Frames,
+}
+
+#[cfg(feature = "online")]
+fn lapses(told: Option<&Row>, now: Option<&Row>) -> bool {
+    match (told, now) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(told), Some(now)) => {
+            told.location != now.location || told.span != now.span || now.position < told.position
+        }
+    }
 }
 
 #[cfg(feature = "online")]
@@ -210,6 +222,7 @@ fn playing_row(player: &Player) -> Option<Row> {
     Some(Row {
         location: item.location.clone(),
         span: item.span,
+        position: current.position,
     })
 }
 
@@ -331,6 +344,29 @@ mod tests {
 
         assert_eq!(outcome, Outcome::TokenRefused);
         assert_eq!(pace.failed, 0);
+    }
+
+    fn row(name: &str, seconds: u64) -> Row {
+        Row {
+            location: MediaLocation::local(name),
+            span: None,
+            position: Frames(seconds * 44_100),
+        }
+    }
+
+    #[test]
+    fn what_is_playing_is_told_again_when_it_resumes_or_comes_round_and_not_while_it_plays() {
+        let begun = row("/music/a.flac", 0);
+        let later = row("/music/a.flac", 30);
+        let again = row("/music/a.flac", 1);
+        let other = row("/music/b.flac", 31);
+
+        assert!(lapses(None, Some(&begun)));
+        assert!(!lapses(Some(&begun), Some(&later)));
+        assert!(lapses(Some(&later), Some(&again)));
+        assert!(lapses(Some(&later), Some(&other)));
+        assert!(!lapses(Some(&later), None));
+        assert!(!lapses(None, None));
     }
 
     #[test]

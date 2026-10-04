@@ -329,8 +329,6 @@ service or a format — and is not worked until that moves; everything else is o
 
 ## Later: Scrobbling
 - Plays from before the token are never sent to ListenBrainz, and Last.fm is not reached at all
-- *Playing now* is told again only when the row changes, so a pause and a resume, or a track on
-  repeat, lets it lapse
 
 ## Later: MPRIS
 - A shuffle is announced as the whole list replaced, because `Tracks` is the play order and

@@ -496,7 +496,10 @@ its group.
   are still submitted every `SUBMITTED_EVERY`.
   Between those it looks at the player every `PLAYING_LOOKED_AT_EVERY` (2 s), and a row begun since
   the last look is read through `Library::billed_as` and told as playing now — once per row, not
-  while paused, never for a file the catalog names nothing for. Its `Token` follows the file as
+  while paused, never for a file the catalog names nothing for. It is told again when the row is
+  playing after a look at which it was not (a resume) and when its position is behind the last
+  look's (a track on repeat coming round, or a seek back), `lapses` being that rule, so the service's
+  *playing now* does not run out under a listener who paused or looped. Its `Token` follows the file as
   `Followed` does: the modification time is weighed and `config::submitting_in` reads `online` and
   `listenbrainz-token` only where it moved, so a token typed into the window's *ListenBrainz* group
   or written by hand is carried by the next submission, and `online` turned off stops it. The
