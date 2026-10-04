@@ -8,7 +8,11 @@ use resonate_providers::{Authorizing, Client, Error, ProviderOp, RefreshToken, R
 use serde::Deserialize;
 use ureq::{Agent, Body, http};
 
-use crate::{Endpoints, asker::api_agent, fetched::as_io, source};
+use crate::{
+    Endpoints,
+    asker::{api_agent, unreached},
+    source,
+};
 
 const SCOPE: &str = "r_usr w_usr w_sub";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -90,11 +94,7 @@ impl TidalSignIn {
 
     fn unreachable(&self, error: ureq::Error) -> Error {
         tracing::debug!(%error, "TIDAL's sign-in could not be reached");
-        Error::Io {
-            provider: self.source.clone(),
-            op: ProviderOp::SignIn,
-            source: as_io(error),
-        }
+        unreached(self.source.clone(), ProviderOp::SignIn, error)
     }
 
     fn unreadable(&self) -> Error {

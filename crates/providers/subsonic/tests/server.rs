@@ -3,22 +3,33 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
+    time::{Duration, Instant},
 };
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid};
 use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp};
-use resonate_subsonic::{Server, Subsonic};
+use resonate_subsonic::{Patience, Server, Subsonic};
 
 const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_ISRC: &str = "GBN9Y1100089";
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
 const A_PAGE: usize = 40;
+const STALLED_FOR: Duration = Duration::from_secs(10);
+const IMPATIENT: Duration = Duration::from_millis(400);
+const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(5);
+
+enum Sent {
+    Whole,
+    StallingAfter(usize),
+    Dripping { bytes: usize, apart: Duration },
+}
 
 struct Canned {
     status: u16,
     headers: Vec<(&'static str, String)>,
     body: Vec<u8>,
+    sent: Sent,
 }
 
 impl Canned {
@@ -27,6 +38,7 @@ impl Canned {
             status: 200,
             headers: vec![("Content-Type", "application/json".to_owned())],
             body: body.into_bytes(),
+            sent: Sent::Whole,
         }
     }
 
@@ -35,6 +47,7 @@ impl Canned {
             status: 200,
             headers: vec![("Content-Type", "audio/flac".to_owned())],
             body: AUDIO.to_vec(),
+            sent: Sent::Whole,
         }
     }
 
@@ -43,7 +56,12 @@ impl Canned {
             status: 503,
             headers: vec![("Retry-After", "0".to_owned())],
             body: Vec::new(),
+            sent: Sent::Whole,
         }
+    }
+
+    fn sent(self, sent: Sent) -> Self {
+        Self { sent, ..self }
     }
 }
 
@@ -104,6 +122,13 @@ impl Fake {
         })
     }
 
+    fn impatient(&self) -> Subsonic {
+        self.subsonic().waiting(Patience {
+            answered_within: IMPATIENT,
+            broken_off_after: IMPATIENT,
+        })
+    }
+
     fn heard(&self) -> Vec<(String, Option<String>, Option<usize>)> {
         self.heard
             .lock()
@@ -144,7 +169,23 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     written.push_str("\r\n");
     let mut stream = reader.into_inner();
     let _ = stream.write_all(written.as_bytes());
-    let _ = stream.write_all(&canned.body);
+    match canned.sent {
+        Sent::Whole => {
+            let _ = stream.write_all(&canned.body);
+        }
+        Sent::StallingAfter(bytes) => {
+            let _ = stream.write_all(&canned.body[..bytes]);
+            let _ = stream.flush();
+            thread::sleep(STALLED_FOR);
+        }
+        Sent::Dripping { bytes, apart } => {
+            for drop in canned.body.chunks(bytes) {
+                let _ = stream.write_all(drop);
+                let _ = stream.flush();
+                thread::sleep(apart);
+            }
+        }
+    }
 }
 
 fn song(id: &str, recording: &str, isrc: &str) -> String {
@@ -295,4 +336,60 @@ fn a_server_that_stays_unavailable_is_a_refusal_after_a_few_tries() {
         })
     ));
     assert_eq!(fake.heard().len(), 4);
+}
+
+#[test]
+fn an_answer_that_stalls_part_way_is_given_up_within_its_deadline() {
+    let fake =
+        Fake::serving(|_, _| found(&[song("floyd", ECHOES, "")]).sent(Sent::StallingAfter(8)));
+    let started = Instant::now();
+
+    let refused = fake.impatient().obtain(&echoes());
+
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert!(matches!(
+        refused,
+        Err(Error::Io {
+            op: ProviderOp::Search,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
+    let fake = Fake::serving(|asked, _| match asked.method.as_str() {
+        "search3" => found(&[song("floyd", ECHOES, "")]),
+        _ => Canned::audio().sent(Sent::StallingAfter(AUDIO.len() / 2)),
+    });
+    let started = Instant::now();
+
+    let Obtained::Found(Delivery::Stream { mut reader, .. }) =
+        fake.impatient().obtain(&echoes()).expect("an answer")
+    else {
+        panic!("no stream was delivered");
+    };
+    let mut bytes = Vec::new();
+    let broken_off = reader.read_to_end(&mut bytes);
+
+    assert!(broken_off.is_err());
+    assert_eq!(bytes, AUDIO[..AUDIO.len() / 2]);
+    assert!(started.elapsed() < GIVEN_UP_WELL_BEFORE);
+}
+
+#[test]
+fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
+    let fake = Fake::serving(|asked, _| match asked.method.as_str() {
+        "search3" => found(&[song("floyd", ECHOES, "")]),
+        _ => Canned::audio().sent(Sent::Dripping {
+            bytes: 4,
+            apart: IMPATIENT / 4,
+        }),
+    });
+    let started = Instant::now();
+
+    let delivered = streamed(fake.impatient().obtain(&echoes()).expect("an answer"));
+
+    assert!(started.elapsed() > IMPATIENT);
+    assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
 }

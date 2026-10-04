@@ -1,5 +1,8 @@
+mod stall;
+mod trust;
+
 use std::{
-    fmt::Write as _,
+    fmt::{self, Write as _},
     io::Read,
     sync::atomic::{AtomicU64, Ordering},
     thread,
@@ -15,8 +18,16 @@ use resonate_providers::{
 use serde::Deserialize;
 use ureq::{
     Agent, Body,
+    config::{Config, ConfigBuilder},
     http::{self, header::RETRY_AFTER},
+    typestate::AgentScope,
+    unversioned::{
+        resolver::DefaultResolver,
+        transport::{Connector as _, DefaultConnector},
+    },
 };
+
+use crate::stall::BrokenOffAfter;
 
 const SUBSONIC: &str = "subsonic";
 const SPOKEN_AS: &str = "1.16.1";
@@ -31,23 +42,84 @@ const TOO_MANY_REQUESTS: u16 = 429;
 const UNAVAILABLE: u16 = 503;
 const DOCUMENT_TYPES: [&str; 3] = ["text/", "json", "xml"];
 const ANSWERED_WITHIN: Duration = Duration::from_secs(20);
+const BROKEN_OFF_AFTER: Duration = Duration::from_secs(30);
+const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
 const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const OK: &str = "ok";
 const REST: &str = "rest";
 const ACCOUNT_REFUSALS: [u16; 9] = [20, 30, 40, 41, 42, 43, 44, 50, 60];
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Server {
     pub url: String,
     pub user: String,
     pub password: String,
 }
 
+struct Withheld;
+
+impl fmt::Debug for Withheld {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<withheld>")
+    }
+}
+
+impl fmt::Debug for Server {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Server")
+            .field("url", &self.url)
+            .field("user", &self.user)
+            .field("password", &Withheld)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Patience {
+    pub answered_within: Duration,
+    pub broken_off_after: Duration,
+}
+
+impl Default for Patience {
+    fn default() -> Self {
+        Self {
+            answered_within: ANSWERED_WITHIN,
+            broken_off_after: BROKEN_OFF_AFTER,
+        }
+    }
+}
+
+fn configured(patience: Patience) -> ConfigBuilder<AgentScope> {
+    Agent::config_builder()
+        .user_agent(USER_AGENT)
+        .tls_config(trust::system_and_built_in())
+        .timeout_connect(Some(CONNECTED_WITHIN))
+        .timeout_recv_response(Some(patience.answered_within))
+        .http_status_as_error(false)
+}
+
+fn asking_agent(patience: Patience) -> Agent {
+    configured(patience)
+        .timeout_global(Some(patience.answered_within))
+        .build()
+        .new_agent()
+}
+
+fn downloading_agent(patience: Patience) -> Agent {
+    let config: Config = configured(patience).build();
+    Agent::with_parts(
+        config,
+        DefaultConnector::new().chain(BrokenOffAfter(patience.broken_off_after)),
+        DefaultResolver::default(),
+    )
+}
+
 pub struct Subsonic {
     source: SourceId,
     server: Server,
-    agent: Agent,
+    asking: Agent,
+    downloading: Agent,
     salted: AtomicU64,
     next_asked: Mutex<Instant>,
 }
@@ -186,18 +258,22 @@ fn token(password: &str, salt: &str) -> String {
 
 impl Subsonic {
     pub fn at(server: Server) -> Self {
-        let config = Agent::config_builder()
-            .user_agent(concat!("resonate/", env!("CARGO_PKG_VERSION")))
-            .timeout_connect(Some(CONNECTED_WITHIN))
-            .timeout_recv_response(Some(ANSWERED_WITHIN))
-            .http_status_as_error(false)
-            .build();
         Self {
             source: SourceId::new(SUBSONIC).unwrap_or_else(|_| SourceId::local()),
             server,
-            agent: config.new_agent(),
+            asking: asking_agent(Patience::default()),
+            downloading: downloading_agent(Patience::default()),
             salted: AtomicU64::new(0),
             next_asked: Mutex::new(Instant::now()),
+        }
+    }
+
+    #[must_use]
+    pub fn waiting(self, patience: Patience) -> Self {
+        Self {
+            asking: asking_agent(patience),
+            downloading: downloading_agent(patience),
+            ..self
         }
     }
 
@@ -210,12 +286,11 @@ impl Subsonic {
         *next = Instant::now() + ASKED_APART;
     }
 
-    fn called(&self, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
+    fn called(&self, agent: &Agent, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
         let mut retried = 0;
         loop {
             self.paced();
-            let response = self
-                .agent
+            let response = agent
                 .get(url)
                 .call()
                 .map_err(|error| self.unreachable(op, error))?;
@@ -278,6 +353,12 @@ impl Subsonic {
 
     fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
         tracing::debug!(%error, ?op, "the Subsonic server could not be reached");
+        if trust::certificate_refused(&error) {
+            return Error::Untrusted {
+                provider: self.source.clone(),
+                op,
+            };
+        }
         let source = match error {
             ureq::Error::Io(source) => source,
             ureq::Error::Timeout(_) => std::io::Error::from(std::io::ErrorKind::TimedOut),
@@ -310,7 +391,7 @@ impl Subsonic {
                 ("albumCount", "0"),
             ],
         );
-        let response = self.called(op, &url)?;
+        let response = self.called(&self.asking, op, &url)?;
         let bytes = self.read_whole(op, response)?;
         self.read(&bytes, op)
     }
@@ -356,7 +437,8 @@ impl Subsonic {
 
     fn downloaded(&self, song: &Song) -> Result<Box<dyn Read + Send>> {
         let op = ProviderOp::Download;
-        let response = self.called(op, &self.url("download", &[("id", &song.id)]))?;
+        let url = self.url("download", &[("id", &song.id)]);
+        let response = self.called(&self.downloading, op, &url)?;
         if is_a_document(response.body().mime_type()) {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
@@ -437,6 +519,38 @@ mod tests {
         assert!(url.contains("&c=resonate&f=json"));
         assert!(url.ends_with("&query=Echoes%20%26%20more"));
         assert!(!url.contains("sesame"));
+    }
+
+    #[test]
+    fn a_server_never_prints_its_password() {
+        let printed = format!("{:?}", subsonic().server);
+
+        assert!(printed.contains("listener"));
+        assert!(printed.contains("music.local"));
+        assert!(!printed.contains("sesame"));
+    }
+
+    #[test]
+    fn a_certificate_the_client_does_not_trust_is_told_apart_from_a_refused_connection() {
+        let refused_certificate = ureq::Error::Rustls(rustls::Error::InvalidCertificate(
+            rustls::CertificateError::UnknownIssuer,
+        ));
+        let refused_connection =
+            ureq::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionRefused));
+        let subsonic = subsonic();
+
+        let untrusted = subsonic.unreachable(ProviderOp::Search, refused_certificate);
+        let unreached = subsonic.unreachable(ProviderOp::Search, refused_connection);
+
+        assert!(matches!(
+            untrusted,
+            Error::Untrusted {
+                op: ProviderOp::Search,
+                ..
+            }
+        ));
+        assert!(untrusted.is_the_provider_away());
+        assert!(matches!(unreached, Error::Io { .. }));
     }
 
     #[test]

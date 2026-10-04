@@ -225,6 +225,13 @@ the seventy-seven have a flag — `sink`, `library`, `vault`, `quality`, `filter
   `discord-icon`, `discord-progress`, `discord-paused` — written by the Desktop category's two
   Discord groups and live at once.
 
+**`Config`'s `Debug` prints no secret.** It is written by hand over an exhaustive destructuring of
+the struct — a key added and left out fails to compile — and prints `<withheld>` for
+`subsonic-password`, `tidal-client-secret`, `tidal-refresh-token`, `audd-token`,
+`listenbrainz-token`, `acoustid-key` and the `contact` wherever one is given, so a log line
+formatting the settings carries none of them
+(`no_key_holding_a_secret_or_the_contact_is_printed_by_debug`).
+
 What some of them mean:
 
 - `listen-from` is `desktop`, `microphone` or a microphone's node name; `listen-for` a whole number
