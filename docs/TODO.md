@@ -48,8 +48,6 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
-- A tag write is refused in a folder the listener cannot create a file in, though writing the file
-  in place would work
 - Writing a tag turns an ID3v2.3 tag into v2.4 without a word, which players reading only v2.3 lose
 - A file's own sort names — `ARTISTSORT`, `ALBUMARTISTSORT`, `TITLESORT`, `TSOP`, `soar` — are never
   read, so an unenriched artist never orders the way its tagger meant

@@ -1637,7 +1637,11 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   and modification time; `landed_through` weighs `Taken::still_stands` before the rename, so an edit
   another program made while the copy was written answers `Error::ChangedWhileWritten` and the copy
   is removed rather than renamed over that edit
-  (`a_file_another_program_changed_meanwhile_no_longer_stands_as_taken`). The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
+  (`a_file_another_program_changed_meanwhile_no_longer_stands_as_taken`). A folder the listener may
+  not create a file in does not refuse a file they may write: a clone or copy refused there falls to
+  the edit in place, and where that will not hold it, `landed_from_elsewhere` stages the copy under
+  the spool's folders (`/var/tmp`, or a `TMPDIR` set) and writes it back over the file through
+  `written_back` (`a_file_in_a_folder_nothing_may_be_created_in_is_written_all_the_same`). The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
   extents — btrfs, XFS — so there it costs the tag's bytes. **Where it cannot clone — ext4, tmpfs —
   an edit the tag's own room holds lands in the file itself** rather than copying gigabytes:
   `landed_in_place` has lofty write into an `Overlay`, the file seen through 4 KiB pages held in

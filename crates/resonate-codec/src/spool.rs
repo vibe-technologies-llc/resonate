@@ -168,7 +168,7 @@ impl Spool {
     }
 }
 
-fn spooled_under() -> Vec<PathBuf> {
+pub(crate) fn spooled_under() -> Vec<PathBuf> {
     let chosen = env::var_os(CHOSEN_TEMPORARY_FOLDER).filter(|dir| !dir.is_empty());
     let on_disc = chosen.is_none().then(|| PathBuf::from(KEPT_ON_DISC));
     on_disc.into_iter().chain([env::temp_dir()]).collect()

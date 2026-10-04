@@ -866,19 +866,46 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         source,
     };
     sweep_what_a_dead_writer_staged(path);
-    if let Some(staged) = cloned_beside(path).map_err(unread)? {
-        return landed_through(&staged, path, location, saving);
+    match cloned_beside(path) {
+        Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
+        Ok(None) => {}
+        Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {}
+        Err(source) => return Err(unread(source)),
     }
     if landed_in_place(path, location, saving)? {
         return Ok(());
     }
 
     let staged = staged_beside(path);
-    if let Err(source) = fs::copy(path, &staged) {
-        let _ = fs::remove_file(&staged);
-        return Err(unread(source));
+    match fs::copy(path, &staged) {
+        Ok(_) => landed_through(&staged, path, location, saving),
+        Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {
+            let _ = fs::remove_file(&staged);
+            landed_from_elsewhere(path, location, saving)
+        }
+        Err(source) => {
+            let _ = fs::remove_file(&staged);
+            Err(unread(source))
+        }
     }
-    landed_through(&staged, path, location, saving)
+}
+
+fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
+    let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
+    for folder in crate::spool::spooled_under() {
+        let staged = staged_in(&folder, path);
+        match fs::copy(path, &staged) {
+            Ok(_) => return landed_by(&staged, path, location, saving, written_back),
+            Err(source) => {
+                let _ = fs::remove_file(&staged);
+                refused = source;
+            }
+        }
+    }
+    Err(Error::Io {
+        location: location.clone(),
+        source: refused,
+    })
 }
 
 fn cloned_beside(path: &Path) -> io::Result<Option<PathBuf>> {
@@ -937,6 +964,16 @@ fn landed_through(
     location: &MediaLocation,
     saving: &Saving<'_>,
 ) -> Result<()> {
+    landed_by(staged, path, location, saving, settled_over)
+}
+
+fn landed_by(
+    staged: &Path,
+    path: &Path,
+    location: &MediaLocation,
+    saving: &Saving<'_>,
+    settle: fn(&Path, &Path) -> io::Result<()>,
+) -> Result<()> {
     let written = OpenOptions::new()
         .read(true)
         .write(true)
@@ -962,7 +999,7 @@ fn landed_through(
             })
         })
         .and_then(|()| {
-            settled_over(staged, path).map_err(|source| Error::Io {
+            settle(staged, path).map_err(|source| Error::Io {
                 location: location.clone(),
                 source,
             })
@@ -979,9 +1016,13 @@ const RUNNING_PROCESSES: &str = "/proc";
 const STAGED_BY_AND_COUNTED: char = '-';
 
 fn staged_beside(path: &Path) -> PathBuf {
+    staged_in(path.parent().unwrap_or(Path::new("")), path)
+}
+
+fn staged_in(folder: &Path, path: &Path) -> PathBuf {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = path.extension().unwrap_or_default().to_string_lossy();
-    path.with_file_name(format!(
+    folder.join(format!(
         ".{stem}.{}{STAGED_BY_AND_COUNTED}{}.{extension}",
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
@@ -1593,6 +1634,41 @@ mod tests {
             "a read-only file was written: {written:?}"
         );
         assert_eq!(fs::read(&path).expect("the file"), before);
+    }
+
+    #[test]
+    fn a_file_in_a_folder_nothing_may_be_created_in_is_written_all_the_same() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let before = fs::metadata(&path).expect("a file").ino();
+        fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o555))
+            .expect("a folder made unwritable");
+        let probe = folder.root.join("probe");
+        if File::create_new(&probe).is_ok() {
+            let _ = fs::remove_file(&probe);
+            let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+            eprintln!("skipped: this user creates files in an unwritable folder regardless");
+            return;
+        }
+        let tags = FileTags::default();
+        let edits = named_and_identified();
+
+        let written = tags.write(&location, just(&edits));
+        let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+
+        written.expect("a file in an unwritable folder written");
+        assert_eq!(fs::metadata(&path).expect("a file").ino(), before);
+        assert_read_back(
+            &tags
+                .read(&location, Picturing::Whether)
+                .expect("a readable FLAC")
+                .tags,
+            &edits,
+            &[],
+        );
     }
 
     #[test]
