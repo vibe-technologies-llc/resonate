@@ -341,7 +341,10 @@ What some of them mean:
 `Config`, so a hand-written file keeps its comments and key order. A value written again is replaced
 in place with its old decor carried over (`replaced_in_place`), so the comment after it on its line and
 one above an `[equaliser-for]` entry stay, where replacing the item whole dropped them
-(`a_value_written_again_keeps_the_comments_around_it`). `settings::File::apply` takes a
+(`a_value_written_again_keeps_the_comments_around_it`). The volume, held as an `f32`, is written as
+the figure it is — `settings::as_typed` parses its shortest spelling as an `f64` — so a slider set to
+70 % writes `volume = 0.7` rather than the widened `0.699999988079071`
+(`a_volume_is_written_as_the_figure_it_is_rather_than_the_float_widened`). `settings::File::apply` takes a
 whole batch of `SettingChange`s through one `config::edit`, whose `Editing` stores and clears keys and
 table entries on the one document and writes only if something moved; a setting the file cannot say
 — a folder not in UTF-8 — is refused as `SettingNotStored` while the rest of its batch lands

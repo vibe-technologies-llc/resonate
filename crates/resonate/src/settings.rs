@@ -145,7 +145,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
             (ConfigKey::BufferMs, Some(millis.into()))
         }
-        Setting::Volume(volume) => (ConfigKey::Volume, Some(f64::from(volume.get()).into())),
+        Setting::Volume(volume) => (ConfigKey::Volume, Some(as_typed(volume.get()).into())),
         Setting::Theme(theme) => (ConfigKey::Theme, Some(theme.as_str().into())),
         Setting::Accent(accent) => (
             ConfigKey::Accent,
@@ -305,6 +305,13 @@ fn given_or_cleared(key: ConfigKey, given: &str) -> (ConfigKey, Option<Value>) {
     (key, (!given.is_empty()).then(|| given.into()))
 }
 
+fn as_typed(single: f32) -> f64 {
+    single
+        .to_string()
+        .parse()
+        .unwrap_or_else(|_| f64::from(single))
+}
+
 fn written_as_a_binding(setting: &Setting, written: crate::Result<()>) -> resonate_ui::Result<()> {
     written.map_err(|error| {
         tracing::error!(%error, "a binding could not be written");
@@ -434,6 +441,14 @@ mod tests {
     use resonate_core::{Accent, AppId, Pictured, Presence, Shown, TextSize, Theme};
 
     use super::*;
+
+    #[test]
+    fn a_volume_is_written_as_the_figure_it_is_rather_than_the_float_widened() {
+        assert_eq!(as_typed(0.7).to_string(), "0.7");
+        assert_eq!(as_typed(0.25), 0.25);
+        assert_eq!(as_typed(1.0), 1.0);
+        assert_ne!(f64::from(0.7_f32).to_string(), "0.7");
+    }
 
     #[test]
     fn every_noise_shaping_the_pane_writes_reads_back_as_itself() {
