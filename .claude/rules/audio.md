@@ -1837,8 +1837,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   and keeps the larger, so a track whose study says it passes full scale between its samples — or on
   them, as a lossy decode often does — is turned down by exactly that even with ReplayGain off, and the
   plan grows a gain stage for it; `true-peak` off leaves the declared peak alone. The per-sample clamp
-  survives only where a *boost* — an amplitude over one — has no peak at all, the one case with nothing
-  better. At unity or below a clamp can only clip overs already in the signal, which is the guard's to
+  survives only where a *boost* — an amplitude over one — has no peak at all and no true-peak guard
+  follows, the one case with nothing better: with `true-peak` on, `gain_of` sets
+  `GainConfig::guarded_after` and the overs reach the guard whole, to be ridden down as a gain rather
+  than squared off while the track is measured
+  (`a_boost_with_no_peak_leaves_its_overs_to_the_guard_wherever_one_follows`). At unity or below a clamp can only clip overs already in the signal, which is the guard's to
   answer, so `GainConfig::limits_every_sample` reads the amplitude as well as the peak, and `GainStage`
   asks it again wherever its target moves (`set_gain`, a ramp handed a start). A boost capped at exactly
   unity — a peak-normalised track declaring 1.0 — changes no sample, so `AppliedGain::adjusts` answers
@@ -1860,7 +1863,7 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   on a `resonate-peak` thread through a `TruePeakMeter`, and each run-loop pass asks whether it landed:
   `Track::heed_what_was_measured` puts the peak into the track's hints, `levelled` runs again and
   `retune` reshapes the chain in place, so the boost is capped at the peak rather than ridden by the
-  per-sample clamp for the rest of the track, and a float file passing full scale grows a gain stage
+  guard for the rest of the track, and a float file passing full scale grows a gain stage
   rather than reaching the device as it is. Dropping the track drops the `Measuring`, telling the thread
   to stop at its next block, so a run of skips leaves no decode behind; `re_level` and `SetTruePeak`
   start one where a changed setting now wants it. `Track::peak` is a `Peak` — `Unasked`, `Measuring`,

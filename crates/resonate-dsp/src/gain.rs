@@ -17,6 +17,7 @@ pub struct GainConfig {
     pub volume: Volume,
     pub replay_gain: AppliedGain,
     pub prevent_clipping: bool,
+    pub guarded_after: bool,
     pub ramp: Duration,
 }
 
@@ -26,6 +27,7 @@ impl Default for GainConfig {
             volume: Volume::MAX,
             replay_gain: AppliedGain::default(),
             prevent_clipping: true,
+            guarded_after: false,
             ramp: Duration::from_millis(20),
         }
     }
@@ -43,6 +45,7 @@ impl GainConfig {
 
     fn limits_every_sample(&self) -> bool {
         self.prevent_clipping
+            && !self.guarded_after
             && self.replay_gain.peak.is_none()
             && self.amplitude() > Gain::UNITY.get()
     }
@@ -366,6 +369,26 @@ mod tests {
         stage.process(&input, &mut output);
 
         assert_eq!(output, [1.0, -1.0]);
+    }
+
+    #[test]
+    fn a_boost_with_no_declared_peak_leaves_its_overs_to_a_guard_that_follows() {
+        let mut stage = prepared(GainConfig {
+            replay_gain: boost(12.0, None),
+            ramp: Duration::ZERO,
+            prevent_clipping: true,
+            guarded_after: true,
+            ..GainConfig::default()
+        });
+
+        let input = [0.9, -0.9];
+        let mut output = [0.0; 2];
+        stage.process(&input, &mut output);
+
+        assert!(
+            output[0] > 3.5 && output[1] < -3.5,
+            "the overs were clipped before the guard could ride them: {output:?}"
+        );
     }
 
     #[test]

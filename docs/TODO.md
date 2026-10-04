@@ -16,8 +16,6 @@ service or a format — and is not worked until that moves; everything else is o
   answer freezes the transport and the window's close
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
-- A boost on a track with no declared peak is clipped sample by sample in the gain stage ahead of
-  the true-peak guard, so the guard never sees those overs while the track is being measured
 - The stream's exclusive flag, the latency requests other than *Auto* and the underrun hook are
   never set or reached outside tests
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so

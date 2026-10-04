@@ -577,6 +577,7 @@ fn gain_of(config: &EngineConfig, attenuator: Attenuator, replay_gain: AppliedGa
         volume: attenuator.leaves(config.volume),
         replay_gain,
         prevent_clipping: true,
+        guarded_after: config.true_peak,
         ..GainConfig::default()
     }
 }
@@ -1009,6 +1010,29 @@ mod tests {
             ..EngineConfig::default()
         };
         assert!(!plan(spec(SampleRate::HZ_44100, SampleFormat::S16), &sink, &off).true_peak);
+    }
+
+    #[test]
+    fn a_boost_with_no_peak_leaves_its_overs_to_the_guard_wherever_one_follows() {
+        let sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S16]);
+        let source = spec(SampleRate::HZ_48000, SampleFormat::S16);
+        let off = EngineConfig {
+            true_peak: false,
+            ..EngineConfig::default()
+        };
+
+        let guarded = plan_output(
+            Decoded::samples(source),
+            &sink,
+            &EngineConfig::default(),
+            boost(6.0),
+        );
+        let unguarded = plan_output(Decoded::samples(source), &sink, &off, boost(6.0));
+
+        assert!(guarded.true_peak);
+        assert!(guarded.gain.is_some_and(|gain| gain.guarded_after));
+        assert!(!unguarded.true_peak);
+        assert!(unguarded.gain.is_some_and(|gain| !gain.guarded_after));
     }
 
     #[test]
