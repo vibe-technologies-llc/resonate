@@ -44,8 +44,6 @@ service or a format — and is not worked until that moves; everything else is o
   and a gain written with a decimal comma is dropped
 - A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek is refused as an unrecognised
   container rather than played as it arrives or named as needing a seek
-- A CAF packet table is walked as far as its declared count rather than its chunk, reading audio as
-  packet sizes
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio — integers or floats — is refused,
   because `ape-decoder` narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is

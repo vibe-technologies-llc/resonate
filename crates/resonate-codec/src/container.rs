@@ -357,6 +357,11 @@ fn refuse_what_the_caf_reader_would_overflow_on(
             location,
             frames_per_packet,
         }),
+        Some(caf::Overflow::TableCut { declared, held }) => Err(Error::PacketTableCut {
+            location,
+            declared,
+            held,
+        }),
     }
 }
 

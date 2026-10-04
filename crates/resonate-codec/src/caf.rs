@@ -36,6 +36,10 @@ pub(crate) enum Overflow {
     PacketFrames {
         frames_per_packet: u32,
     },
+    TableCut {
+        declared: u64,
+        held: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,14 +161,23 @@ fn packet_table<S: Read + ?Sized>(
         return None;
     }
 
+    let mut entries = (&mut *source).take(u64::try_from(size - PAKT_HEADER_BYTES).ok()?);
+    let cut = |held: u64| Overflow::TableCut {
+        declared: total,
+        held,
+    };
     let mut offset = 0_u64;
     for packets in 1..=total {
         let bytes = match desc.bytes_per_packet {
-            0 => variable_length(source)?,
+            0 => match variable_length(&mut entries) {
+                Some(bytes) => bytes,
+                None if entries.limit() == 0 => return Some(cut(packets - 1)),
+                None => return None,
+            },
             fixed => u64::from(fixed),
         };
-        if desc.frames_per_packet == 0 {
-            variable_length(source)?;
+        if desc.frames_per_packet == 0 && variable_length(&mut entries).is_none() {
+            return (entries.limit() == 0).then(|| cut(packets - 1));
         }
         let Some(next) = offset.checked_add(bytes) else {
             return Some(Overflow::PacketOffset { packets });
@@ -306,6 +319,27 @@ mod tests {
         assert_eq!(
             read(&mut Cursor::new(file)),
             Some(Overflow::PacketOffset { packets: 3 })
+        );
+    }
+
+    #[test]
+    fn a_packet_table_declaring_more_packets_than_its_chunk_holds_is_named() {
+        let huge = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+        let mut after = pakt(1_000, &[0x81, 0x00, 0x7f]);
+        chunk(
+            &mut after,
+            DATA,
+            4 + huge.len() as i64 * 2,
+            &[[0; 4].as_slice(), &huge, &huge].concat(),
+        );
+        let file = caf(0, 1_024, &after);
+
+        assert_eq!(
+            read(&mut Cursor::new(file)),
+            Some(Overflow::TableCut {
+                declared: 1_000,
+                held: 2
+            })
         );
     }
 

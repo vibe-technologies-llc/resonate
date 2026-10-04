@@ -104,6 +104,13 @@ pub enum Error {
         packets: u64,
     },
 
+    #[error("{location} declares {declared} packets in a packet table holding {held}")]
+    PacketTableCut {
+        location: MediaLocation,
+        declared: u64,
+        held: u64,
+    },
+
     #[error("{location} track {track} uses codec {codec}, for which no decoder is registered")]
     NoDecoder {
         location: MediaLocation,
@@ -234,6 +241,7 @@ impl Error {
             | Self::PacketTooLong { location, .. }
             | Self::FrameCountNotRepresentable { location, .. }
             | Self::PacketOffsetNotRepresentable { location, .. }
+            | Self::PacketTableCut { location, .. }
             | Self::NoDecoder { location, .. }
             | Self::TrackPropertyMissing { location, .. }
             | Self::RateNotRepresentable { location, .. }

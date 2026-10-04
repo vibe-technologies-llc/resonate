@@ -504,6 +504,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `Error::PacketOffsetNotRepresentable`. A `desc` naming more than `MOST_FRAMES_A_PACKET` frames a
   packet is `Error::PacketTooLong`, since symphonia's PCM decoder allocates a buffer that long before
   reading a byte, and a declared four billion is an out-of-memory abort in a release build.
+  symphonia walks a packet table as far as its declared count, whatever its chunk holds, so a count
+  past the entries reads the audio after it as packet sizes; `caf.rs` reads the entries through a
+  `take` of the chunk's own bytes and a count they run out before is `Error::PacketTableCut`
+  (`a_packet_table_declaring_more_packets_than_its_chunk_holds_is_named`).
 - **A cue sheet's track is a window on a file, and the window lives in the decoder.**
   `Decoder::open_span` seeks to the span's first frame, stops at its last and rewrites
   `MediaInfo::duration` to the span's length, so everything upstream sees a short file with no notion

@@ -168,6 +168,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::PacketTooLong { .. }
         | Read::FrameCountNotRepresentable { .. }
         | Read::PacketOffsetNotRepresentable { .. }
+        | Read::PacketTableCut { .. }
         | Read::SheetTooLarge { .. }
         | Read::TagsUnread { .. }
         | Read::TagsUnwritten { .. }
