@@ -65,7 +65,9 @@ fn turned_away(error: &Error) -> &'static str {
         Error::Unwelcome { .. } => "TIDAL refused the client id",
         Error::Io { .. } => "TIDAL could not be reached",
         Error::Refused { .. } => "TIDAL refused the sign-in",
-        Error::Unreadable { .. }
+        Error::Untrusted { .. } => "TIDAL's certificate is not one this build trusts",
+        Error::StillArriving { .. }
+        | Error::Unreadable { .. }
         | Error::TurnedAway { .. }
         | Error::OffItsHosts { .. }
         | Error::StillQueued { .. }

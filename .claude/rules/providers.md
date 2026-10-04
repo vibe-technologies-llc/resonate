@@ -409,9 +409,15 @@ as every provider's does.
   (`a_refresh_token_turned_away_is_the_account_and_not_the_want`). **A token TIDAL rotates is handed
   back.** Where the grant answers a `refresh_token` other than the one sent, the provider signs in
   with it from then on and calls what `Tidal::telling` registered with it as a `RefreshToken`, once
-  per rotation, so the binary can write it to `tidal-refresh-token` before the old one is refused
+  per rotation. The binary's `Made::signed_in` registers `Renewed::note`, which writes it to
+  `tidal-refresh-token` in the settings file the run was read from (`--config` or the XDG path,
+  through `config::store`) and remembers it against the token the settings gave, so a provider
+  built again for the same settings — the window's `Kept` dropping it when another field moved —
+  signs in with the rotated token rather than the refused one
   (`a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_then_on`,
-  `a_refresh_token_tidal_keeps_is_never_handed_back`). A 401 from the API signs in
+  `a_refresh_token_tidal_keeps_is_never_handed_back`,
+  `a_refresh_token_tidal_rotated_is_kept_and_signed_in_with_from_then_on`). The window's own
+  field and global keep the token they were given until the next start reads the file. A 401 from the API signs in
   again once and asks again, and a second is `Unwelcome` with TIDAL's `subStatus`
   (`a_session_that_lapsed_signs_in_again_once`); a 401 whose `subStatus` is 4005 — the asset not
   ready for playback — is the want's, `TurnedAway`. A 403 or 404 is the track unavailable to this

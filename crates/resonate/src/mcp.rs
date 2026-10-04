@@ -25,7 +25,10 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
                 Arc::new(sources),
                 &crate::online::by_sound(config),
             )),
-            providers: Arc::new(crate::providers::registered(config)),
+            providers: Arc::new(crate::providers::registered(
+                config,
+                crate::settings_path(cli).ok(),
+            )),
             studies: config.studies(),
             lyrics: config.fetches_lyrics(),
         });

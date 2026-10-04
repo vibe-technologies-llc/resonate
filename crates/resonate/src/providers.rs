@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use resonate_inbox::Inbox;
 use resonate_providers::{Provider as _, Providers};
@@ -9,13 +12,17 @@ use resonate_tidal::{Account, HifiApi, Tidal};
 
 use crate::config::Config;
 
-pub fn registered(config: &Config) -> Providers {
-    registry(config.inbox.as_deref(), &Accounts::of(config), &Made::new())
+pub fn registered(config: &Config, settings: Option<PathBuf>) -> Providers {
+    registry(
+        config.inbox.as_deref(),
+        &Accounts::of(config),
+        &Made::new(settings),
+    )
 }
 
 #[cfg(feature = "ui")]
-pub fn sourced() -> resonate_ui::Registering {
-    let made = Made::new();
+pub fn sourced(settings: Option<PathBuf>) -> resonate_ui::Registering {
+    let made = Made::new(settings);
     Arc::new(move |supplying: &resonate_ui::Supplying<'_>| {
         let every = registry(supplying.inbox, &Accounts::given(supplying.online), &made);
         match (supplying.asking, supplying.inbox) {
@@ -137,11 +144,11 @@ fn hifi_api(server: Option<&str>) -> HifiServer {
 }
 
 #[cfg(feature = "online")]
-#[derive(Default)]
 struct Made {
     subsonic: Kept<Server, Subsonic>,
     tidal: Kept<Account, Tidal>,
     hifi: Kept<HifiServer, HifiApi>,
+    renewed: Arc<Renewed>,
 }
 
 #[cfg(not(feature = "online"))]
@@ -149,15 +156,75 @@ struct Made;
 
 #[cfg(not(feature = "online"))]
 impl Made {
-    const fn new() -> Self {
+    const fn new(_settings: Option<PathBuf>) -> Self {
         Self
     }
 }
 
 #[cfg(feature = "online")]
 impl Made {
-    fn new() -> Self {
-        Self::default()
+    fn new(settings: Option<PathBuf>) -> Self {
+        Self {
+            subsonic: Kept::default(),
+            tidal: Kept::default(),
+            hifi: Kept::default(),
+            renewed: Arc::new(Renewed {
+                settings,
+                rotated: parking_lot::Mutex::new(None),
+            }),
+        }
+    }
+
+    fn signed_in(&self, account: &Account) -> Tidal {
+        let renewed = Arc::clone(&self.renewed);
+        let given = account.refresh_token.clone();
+        Tidal::signed_in(self.renewed.standing_for(account))
+            .telling(move |token| renewed.note(given.clone(), token))
+    }
+}
+
+#[cfg(feature = "online")]
+struct Renewed {
+    settings: Option<PathBuf>,
+    rotated: parking_lot::Mutex<Option<Rotation>>,
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Rotation {
+    given: String,
+    standing: String,
+}
+
+#[cfg(feature = "online")]
+impl Renewed {
+    fn standing_for(&self, account: &Account) -> Account {
+        let rotated = self.rotated.lock();
+        match rotated.as_ref() {
+            Some(rotation) if rotation.given == account.refresh_token => Account {
+                refresh_token: rotation.standing.clone(),
+                ..account.clone()
+            },
+            Some(_) | None => account.clone(),
+        }
+    }
+
+    fn note(&self, given: String, token: resonate_providers::RefreshToken) {
+        let standing = token.into_string();
+        *self.rotated.lock() = Some(Rotation {
+            given,
+            standing: standing.clone(),
+        });
+        let Some(settings) = &self.settings else {
+            return;
+        };
+        if let Err(error) = crate::config::store(
+            settings,
+            crate::error::ConfigKey::TidalRefreshToken,
+            standing,
+        ) {
+            tracing::warn!(%error, "the refresh token TIDAL rotated could not be kept");
+        }
     }
 }
 
@@ -202,7 +269,7 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
     if let Some(account) = &accounts.tidal {
         providers = providers.and(
             made.tidal
-                .made_for(account, |account| Tidal::signed_in(account.clone())),
+                .made_for(account, |account| made.signed_in(account)),
         );
     }
     if let Some(hifi) = &accounts.hifi {
@@ -244,7 +311,7 @@ mod tests {
     use super::*;
 
     fn named(config: &Config) -> Vec<String> {
-        registered(config)
+        registered(config, None)
             .names()
             .iter()
             .map(|name| name.as_str().to_owned())
@@ -257,13 +324,13 @@ mod tests {
             online: Some(false),
             ..Config::default()
         };
-        assert!(!registered(&offline).has_a_source());
+        assert!(!registered(&offline, None).has_a_source());
 
         let config = Config {
             inbox: Some(PathBuf::from("/music/inbox")),
             ..offline
         };
-        let providers = registered(&config);
+        let providers = registered(&config, None);
         assert!(providers.has_a_source());
         assert!(named(&config).contains(&"inbox".to_owned()));
     }
@@ -343,11 +410,45 @@ mod tests {
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
     }
 
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_refresh_token_tidal_rotated_is_kept_and_signed_in_with_from_then_on() {
+        let folder = std::env::temp_dir().join(format!("resonate-renewed-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let settings = folder.join("config.toml");
+        std::fs::write(&settings, "tidal-refresh-token = \"first\"\n")
+            .expect("a writable temporary directory");
+        let made = Made::new(Some(settings.clone()));
+        let given = Account {
+            client_id: "client".to_owned(),
+            client_secret: None,
+            refresh_token: "first".to_owned(),
+        };
+
+        let before = made.renewed.standing_for(&given);
+        made.renewed.note(
+            "first".to_owned(),
+            resonate_providers::RefreshToken::new("second".to_owned()),
+        );
+        let after = made.renewed.standing_for(&given);
+        let elsewhere = made.renewed.standing_for(&Account {
+            refresh_token: "another".to_owned(),
+            ..given.clone()
+        });
+        let kept = std::fs::read_to_string(&settings).expect("the settings read back");
+        std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
+
+        assert_eq!(before.refresh_token, "first");
+        assert_eq!(after.refresh_token, "second");
+        assert_eq!(elsewhere.refresh_token, "another");
+        assert!(kept.contains("tidal-refresh-token = \"second\""), "{kept}");
+    }
+
     #[cfg(all(feature = "online", feature = "ui"))]
     #[test]
     fn the_window_registers_what_its_settings_say_now_and_keeps_a_provider_its_settings_left_alone()
     {
-        let register = sourced();
+        let register = sourced(None);
         let named = |online: &resonate_ui::Online| -> Vec<String> {
             register(&resonate_ui::Supplying {
                 inbox: None,
@@ -385,7 +486,7 @@ mod tests {
             ["unprovided", "inbox"]
         );
 
-        let made = Made::new();
+        let made = Made::new(None);
         let accounts = Accounts::given(&signed_in);
         let tidal = |accounts: &Accounts| {
             made.tidal

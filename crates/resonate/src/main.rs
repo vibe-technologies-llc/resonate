@@ -244,7 +244,7 @@ fn run() -> Result<()> {
             let held = vault_already_kept(&cli, &config);
             poll(
                 &open_library_with(&cli, &config, held.as_ref())?,
-                providers::registered(&config),
+                providers::registered(&config, settings_path(&cli).ok()),
                 *again,
             )
         }
@@ -2469,7 +2469,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),
-                register: providers::sourced(),
+                register: providers::sourced(settings_path(&cli).ok()),
             },
             listens,
         },
