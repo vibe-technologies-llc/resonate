@@ -3,9 +3,10 @@ use std::sync::Arc;
 use resonate_codec::CoverArt;
 use resonate_core::SourceId;
 use resonate_library::{
-    ArtistMatch, ArtistProfile, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames,
-    LyricText, LyricsAsked, Mbid, Recording, RecordingAsked, RecordingMatch, Reference, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
+    AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, Discography,
+    GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText, LyricsAsked, Mbid, Recording,
+    RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    SongLink, SongsAsked, StreamAsked,
 };
 
 use crate::{
@@ -48,6 +49,13 @@ impl Reference for Online {
 
     fn find_release(&self, asked: &ReleaseAsked) -> resonate_library::Result<Vec<ReleaseMatch>> {
         Ok(musicbrainz::find_release(&self.client, asked)?)
+    }
+
+    fn releases_by_barcode(
+        &self,
+        barcode: &Barcode,
+    ) -> resonate_library::Result<Vec<BarcodeMatch>> {
+        Ok(musicbrainz::releases_by_barcode(&self.client, barcode)?)
     }
 
     fn recording(&self, id: &Mbid) -> resonate_library::Result<Option<Recording>> {
@@ -115,6 +123,10 @@ impl Reference for Online {
 
     fn song_linked(&self, link: &SongLink) -> resonate_library::Result<Option<LinkNames>> {
         Ok(linked::named_at(&self.client, link)?)
+    }
+
+    fn album_linked(&self, link: &AlbumLink) -> resonate_library::Result<Option<AlbumNames>> {
+        Ok(linked::album_named_at(&self.client, link)?)
     }
 
     fn portrait(&self, links: &[Link]) -> resonate_library::Result<Option<CoverArt>> {

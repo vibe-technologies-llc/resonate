@@ -46,7 +46,7 @@ use crate::{
     filed::{AlbumToFile, DeliveryFolder},
     hinted::Hinted,
     history, import, likeness,
-    linked::{self, HeldBy, Linked, SongLink},
+    linked::{self, AlbumLink, HeldBy, Linked, SongLink},
     meant::{ByArtist, Meant},
     model::CoverWanted,
     organise::{self, Filing, TrackToFile},
@@ -3029,7 +3029,7 @@ impl Library {
                 }
                 match taken {
                     Some(take) => reference.recording(&take.id)?.or(Some(take)),
-                    None => None,
+                    None => linked::the_song_searched_for(reference, &song)?,
                 }
             }
         };
@@ -3049,6 +3049,20 @@ impl Library {
                 .next()
                 .map_or(Linked::Unnamed, |found| Linked::Found(Box::new(found))),
         )
+    }
+
+    pub fn follow_album_link(&self, reference: &dyn Reference, link: &AlbumLink) -> Result<Linked> {
+        let Some(named) = linked::album_named(reference, link)? else {
+            return Ok(Linked::Unnamed);
+        };
+        if let Some(held) = self
+            .inner
+            .read(|connection| linked::album_held(connection, &named))?
+        {
+            return Ok(held);
+        }
+
+        Ok(named.linked())
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {

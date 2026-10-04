@@ -132,10 +132,12 @@ service or a format — and is not worked until that moves; everything else is o
   for a region
 
 ## Search
-- A pasted link to an album, an artist or a playlist is taken as words to search, not followed to
-  what it names; only a link to a song is downloaded
-- A song link whose page names no ISRC and no Deezer twin — most YouTube uploads — is said to name
-  nothing, though its title and artist would find it by a search
+- A pasted link to an artist or a playlist is taken as words to search, not followed to what it
+  names; only a link to a song or an album is downloaded
+- A pasted album link is wanted from the pressing most of its release group's pressings share, not
+  the one whose barcode the link named, so a deluxe edition linked downloads the standard track list
+- An official music video longer than its song by more than five seconds names nothing when its
+  page carries no ISRC, the title search holding a recording to the length the video ran
 - The songs of an artist's releases not held are read only when the lookup pass reaches them, so an
   artist page opened before then lists the albums and none of their songs, and a large library's
   first pass runs on for an hour or more reading them, one release group a second

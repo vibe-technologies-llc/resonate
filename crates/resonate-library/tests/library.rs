@@ -24,21 +24,21 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Aged, Album, AlbumQuery, Artist, ArtistMatch, ArtistProfile, ArtistQuery, ArtistRelease,
-    BETTERED_AFTER, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted,
-    DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error,
-    Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
-    HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout,
-    Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold,
-    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
-    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
-    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
-    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought,
-    Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink,
-    TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits,
-    Window, Wording, Written,
+    Aged, Album, AlbumLink, AlbumNames, AlbumQuery, Artist, ArtistMatch, ArtistProfile,
+    ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec,
+    CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
+    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
+    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
+    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked,
+    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
+    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
+    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
+    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -8786,6 +8786,8 @@ enum Called {
     Portrait(String),
     StreamedAt(StreamAsked),
     SongLinked(SongLink),
+    AlbumLinked(AlbumLink),
+    ByBarcode(Barcode),
 }
 
 impl Called {
@@ -8806,7 +8808,8 @@ impl Called {
             Self::GroupCover(_) => LookupOp::Cover,
             Self::Portrait(_) => LookupOp::Portrait,
             Self::StreamedAt(_) => LookupOp::StreamLink,
-            Self::SongLinked(_) => LookupOp::FollowLink,
+            Self::SongLinked(_) | Self::AlbumLinked(_) => LookupOp::FollowLink,
+            Self::ByBarcode(_) => LookupOp::FindRelease,
         }
     }
 }
@@ -8842,6 +8845,8 @@ struct Canned {
     streamed: Option<Link>,
     lyrics: Vec<(&'static str, LyricText)>,
     linked: Option<LinkNames>,
+    album_linked: Option<AlbumNames>,
+    barcoded: Vec<BarcodeMatch>,
 }
 
 struct Gate {
@@ -9117,6 +9122,27 @@ impl Reference for Fake {
     fn song_linked(&self, link: &SongLink) -> Result<Option<LinkNames>> {
         self.note(Called::SongLinked(link.clone()))?;
         Ok(self.canned.linked.clone())
+    }
+
+    fn album_linked(&self, link: &AlbumLink) -> Result<Option<AlbumNames>> {
+        self.note(Called::AlbumLinked(link.clone()))?;
+        Ok(self.canned.album_linked.clone())
+    }
+
+    fn releases_by_barcode(&self, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
+        self.note(Called::ByBarcode(barcode.clone()))?;
+        Ok(self
+            .canned
+            .barcoded
+            .iter()
+            .filter(|found| {
+                found
+                    .barcode
+                    .as_deref()
+                    .is_some_and(|held| barcode.names(held))
+            })
+            .cloned()
+            .collect())
     }
 
     fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>> {
@@ -19964,6 +19990,8 @@ fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_wa
         linked: Some(LinkNames {
             isrcs: vec![code.clone()],
             length: Some(Duration::from_secs(1_410)),
+            title: None,
+            artist: None,
         }),
         isrcs: vec![(code.clone(), short), (code.clone(), take)],
         recordings: vec![whole],
@@ -20012,6 +20040,8 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
         linked: Some(LinkNames {
             isrcs: vec![isrc(CODE)],
             length: None,
+            title: None,
+            artist: None,
         }),
         ..Canned::default()
     });
@@ -20041,6 +20071,8 @@ fn a_link_no_service_can_name_names_nothing() -> Result<()> {
         linked: Some(LinkNames {
             isrcs: vec![isrc(ANOTHER_CODE)],
             length: None,
+            title: None,
+            artist: None,
         }),
         ..Canned::default()
     });
@@ -20052,6 +20084,254 @@ fn a_link_no_service_can_name_names_nothing() -> Result<()> {
     assert_eq!(
         library.follow_link(&unknown, &linked_to_spotify())?,
         Linked::Unnamed
+    );
+    Ok(())
+}
+
+const A_YOUTUBE_LINK: &str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+
+fn linked_to_youtube() -> SongLink {
+    SongLink::read(A_YOUTUBE_LINK).expect("a song link")
+}
+
+fn titled_on_the_page(title: &str, artist: &str, seconds: u64) -> LinkNames {
+    LinkNames {
+        isrcs: Vec::new(),
+        length: Some(Duration::from_secs(seconds)),
+        title: Some(title.to_owned()),
+        artist: Some(artist.to_owned()),
+    }
+}
+
+fn echoes_asked(wording: Wording) -> RecordingAsked {
+    RecordingAsked {
+        title: "Echoes".to_owned(),
+        artist: Some("Pink Floyd".to_owned()),
+        artist_mbid: None,
+        release: None,
+        length: Some(Duration::from_secs(1_410)),
+        wording,
+    }
+}
+
+#[test]
+fn a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_strict_rule()
+-> Result<()> {
+    let library = Library::open_in_memory()?;
+    let fake = Fake::new(Canned {
+        linked: Some(titled_on_the_page(
+            "Pink Floyd - Echoes (Official Audio)",
+            "Pink Floyd - Topic",
+            1_410,
+        )),
+        found_recordings: vec![echoes_found()],
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    });
+
+    let Linked::Found(found) = library.follow_link(&fake, &linked_to_youtube())? else {
+        panic!("the link's title and artist named no song to want");
+    };
+
+    assert_eq!(found.recording, mbid(ECHOES));
+    assert_eq!(
+        found.release.as_ref().map(|release| release.id.clone()),
+        Some(mbid(MEDDLE))
+    );
+    assert_eq!(
+        fake.calls(),
+        vec![
+            Called::SongLinked(linked_to_youtube()),
+            Called::FindRecording(echoes_asked(Wording::Phrase)),
+            Called::Recording(mbid(ECHOES)),
+        ],
+        "the upload's billing was read as the song by the artist and the video's words left out"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let mut by_another = echoes_found();
+    by_another.credit = credited(Some("The Orbiters"), None);
+    let longer = Fake::new(Canned {
+        linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
+        found_recordings: vec![RecordingMatch {
+            length: Some(Duration::from_secs(1_500)),
+            ..echoes_found()
+        }],
+        found_recordings_in_words: vec![by_another],
+        ..Canned::default()
+    });
+    let nameless = Fake::new(Canned {
+        linked: Some(LinkNames {
+            artist: None,
+            ..titled_on_the_page("Echoes", "Pink Floyd", 1_410)
+        }),
+        found_recordings: vec![echoes_found()],
+        ..Canned::default()
+    });
+
+    assert_eq!(
+        library.follow_link(&longer, &linked_to_youtube())?,
+        Linked::Unnamed
+    );
+    assert_eq!(
+        longer.calls(),
+        vec![
+            Called::SongLinked(linked_to_youtube()),
+            Called::FindRecording(echoes_asked(Wording::Phrase)),
+            Called::FindRecording(echoes_asked(Wording::Words)),
+        ]
+    );
+    assert_eq!(
+        library.follow_link(&nameless, &linked_to_youtube())?,
+        Linked::Unnamed
+    );
+    assert_eq!(
+        nameless.called(LookupOp::FindRecording),
+        0,
+        "a bare title was searched for"
+    );
+    Ok(())
+}
+
+const A_SPOTIFY_ALBUM: &str = "https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4";
+const ON_THE_PAGE: &str = "035627515026";
+const ON_DEEZER: &str = "859381157694";
+
+fn linked_to_an_album() -> AlbumLink {
+    AlbumLink::read(A_SPOTIFY_ALBUM).expect("an album link")
+}
+
+fn barcode(code: &str) -> Barcode {
+    Barcode::new(code).expect("a well-formed barcode")
+}
+
+fn hours_barcoded(code: &str) -> BarcodeMatch {
+    BarcodeMatch {
+        release: mbid(HOURS),
+        group: Some(mbid(HOURS_GROUP)),
+        barcode: Some(code.to_owned()),
+        title: "Hours".to_owned(),
+        credit: credited(Some("The Orbiters"), Some(ORBITERS)),
+    }
+}
+
+#[test]
+fn a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let fake = Fake::new(Canned {
+        album_linked: Some(AlbumNames {
+            barcodes: vec![barcode(ON_THE_PAGE), barcode(ON_DEEZER)],
+        }),
+        barcoded: vec![hours_barcoded("0859381157694")],
+        ..learnt_canned()
+    });
+
+    let followed = library.follow_album_link(&fake, &linked_to_an_album())?;
+
+    assert_eq!(
+        followed,
+        Linked::Album {
+            group: mbid(HOURS_GROUP),
+            title: "Hours".to_owned(),
+            artist: Some("The Orbiters".to_owned()),
+        }
+    );
+    assert_eq!(
+        fake.calls(),
+        vec![
+            Called::AlbumLinked(linked_to_an_album()),
+            Called::ByBarcode(barcode(ON_THE_PAGE)),
+            Called::ByBarcode(barcode(ON_DEEZER)),
+        ],
+        "each code was asked in turn until one named a release, a leading zero apart"
+    );
+
+    let wanted = library.want_album(&fake, &mbid(HOURS_GROUP))?;
+    assert_eq!(wanted.len(), 2);
+    assert_eq!(library.wants()?.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let unnamed = Fake::new(Canned::default());
+    let unknown = Fake::new(Canned {
+        album_linked: Some(AlbumNames {
+            barcodes: vec![barcode(ON_THE_PAGE)],
+        }),
+        barcoded: vec![hours_barcoded(ON_DEEZER)],
+        ..Canned::default()
+    });
+    let shared = Fake::new(Canned {
+        album_linked: Some(AlbumNames {
+            barcodes: vec![barcode(ON_THE_PAGE)],
+        }),
+        barcoded: vec![
+            hours_barcoded(ON_THE_PAGE),
+            BarcodeMatch {
+                group: Some(mbid(RELEASE_GROUP)),
+                ..hours_barcoded(ON_THE_PAGE)
+            },
+        ],
+        ..Canned::default()
+    });
+
+    for fake in [&unnamed, &unknown, &shared] {
+        assert_eq!(
+            library.follow_album_link(fake, &linked_to_an_album())?,
+            Linked::Unnamed
+        );
+    }
+    assert_eq!(
+        unnamed.calls(),
+        vec![Called::AlbumLinked(linked_to_an_album())]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_lacks() -> Result<()>
+{
+    let (_tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "Daybreak", Vec::new()));
+    let mut release = orbits(rows, Vec::new());
+    release.credit = credited(Some("The Orbiters"), None);
+    let identifying = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![release.clone()],
+        ..Canned::default()
+    }));
+    enrich(&library, &identifying, false)?;
+    let album = library.albums(&AlbumQuery::default())?.remove(0);
+    let fake = Fake::new(Canned {
+        groups: vec![orbits_group(Vec::new(), Vec::new())],
+        releases: vec![release],
+        ..Canned::default()
+    });
+
+    let by_group = library.follow_album_link(&fake, &AlbumLink::Group(mbid(RELEASE_GROUP)))?;
+    let by_release = library.follow_album_link(&fake, &AlbumLink::Release(mbid(RELEASE)))?;
+
+    let held = Linked::HeldAlbum {
+        album: album.id,
+        title: "Orbits".to_owned(),
+        artist: Some("The Orbiters".to_owned()),
+        missing: 1,
+    };
+    assert_eq!(by_group, held);
+    assert_eq!(by_release, held);
+    assert_eq!(
+        fake.calls(),
+        vec![
+            Called::ReleaseGroup(mbid(RELEASE_GROUP)),
+            Called::Release(mbid(RELEASE)),
+        ]
     );
     Ok(())
 }

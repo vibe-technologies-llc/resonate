@@ -21,7 +21,7 @@ use resonate_engine::{
 };
 use resonate_library::{
     Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry, RowOrder, SavedQuery,
-    SortOrder, TokenHeld, Track, is_a_song_link,
+    SortOrder, TokenHeld, Track, is_a_followed_link,
 };
 
 use crate::{
@@ -757,7 +757,7 @@ impl RootView {
         window.focus(&focus);
 
         let search =
-            cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx).catching(is_a_song_link));
+            cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx).catching(is_a_followed_link));
         cx.observe(&search, |this, search, cx| {
             let typed_anew = {
                 let typed = search.read(cx).text();

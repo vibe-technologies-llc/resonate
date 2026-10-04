@@ -3,7 +3,8 @@ use std::time::Duration;
 use resonate_core::SourceId;
 
 use crate::{
-    CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result, Service, SongLink, SongsAsked,
+    AlbumLink, AlbumNames, Barcode, CoverArt, Isrc, Link, LinkNames, Mbid, Relation, Result,
+    Service, SongLink, SongsAsked,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +101,21 @@ pub struct ReleaseMatch {
 }
 
 impl ReleaseMatch {
+    pub fn credited_as(&self) -> String {
+        credited_as(&self.credit)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BarcodeMatch {
+    pub release: Mbid,
+    pub group: Option<Mbid>,
+    pub barcode: Option<String>,
+    pub title: String,
+    pub credit: Vec<Credit>,
+}
+
+impl BarcodeMatch {
     pub fn credited_as(&self) -> String {
         credited_as(&self.credit)
     }
@@ -423,6 +439,8 @@ pub trait Reference: Send + Sync {
 
     fn find_release(&self, asked: &ReleaseAsked) -> Result<Vec<ReleaseMatch>>;
 
+    fn releases_by_barcode(&self, barcode: &Barcode) -> Result<Vec<BarcodeMatch>>;
+
     fn recording(&self, id: &Mbid) -> Result<Option<Recording>>;
 
     fn recordings_of_isrc(&self, isrc: &Isrc) -> Result<Vec<Recording>>;
@@ -454,6 +472,8 @@ pub trait Reference: Send + Sync {
     fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>>;
 
     fn song_linked(&self, link: &SongLink) -> Result<Option<LinkNames>>;
+
+    fn album_linked(&self, link: &AlbumLink) -> Result<Option<AlbumNames>>;
 }
 
 #[cfg(test)]

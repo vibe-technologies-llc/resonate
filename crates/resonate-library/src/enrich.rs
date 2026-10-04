@@ -886,7 +886,10 @@ fn a_version_qualifier(inside: &str) -> bool {
     VERSION_QUALIFIERS.contains(&folded.as_str()) || a_dated_qualifier(&folded)
 }
 
-fn without_a_qualifier(title: &str) -> Option<&str> {
+fn without_a_bracket_that<'a>(
+    title: &'a str,
+    qualifies: &impl Fn(&str) -> bool,
+) -> Option<&'a str> {
     for (opening, closing) in BRACKETS {
         let Some(inside) = title.strip_suffix(*closing) else {
             continue;
@@ -894,7 +897,7 @@ fn without_a_qualifier(title: &str) -> Option<&str> {
         let Some(opened) = inside.rfind(*opening) else {
             continue;
         };
-        if !a_version_qualifier(&inside[opened + opening.len_utf8()..]) {
+        if !qualifies(&inside[opened + opening.len_utf8()..]) {
             continue;
         }
         let kept = inside[..opened].trim_end();
@@ -906,12 +909,16 @@ fn without_a_qualifier(title: &str) -> Option<&str> {
     None
 }
 
-fn dequalified(title: &str) -> &str {
+pub(crate) fn without_brackets_that(title: &str, qualifies: impl Fn(&str) -> bool) -> &str {
     let mut kept = title.trim_end();
-    while let Some(shorter) = without_a_qualifier(kept) {
+    while let Some(shorter) = without_a_bracket_that(kept, &qualifies) {
         kept = shorter;
     }
     kept
+}
+
+fn dequalified(title: &str) -> &str {
+    without_brackets_that(title, a_version_qualifier)
 }
 
 fn same_name(found: Option<&str>, named: &str) -> Option<Spelling> {
@@ -1189,17 +1196,60 @@ fn asked_with(track: &TrackToAsk) -> Option<(&str, Option<&Mbid>)> {
         })
 }
 
+pub(crate) struct NamedAs<'a> {
+    pub(crate) title: &'a str,
+    pub(crate) artist: Option<(&'a str, Option<&'a Mbid>)>,
+    pub(crate) length: Option<Duration>,
+}
+
 fn matches_a_recording(found: &RecordingMatch, track: &TrackToAsk) -> Option<Spelling> {
-    if !Accepted::Strict.scored(found.score) || !lengths_agree(found.length, track.length) {
+    matches_a_recording_named(
+        found,
+        &NamedAs {
+            title: &track.title,
+            artist: asked_with(track),
+            length: track.length,
+        },
+    )
+}
+
+fn matches_a_recording_named(found: &RecordingMatch, named: &NamedAs<'_>) -> Option<Spelling> {
+    if !Accepted::Strict.scored(found.score) || !lengths_agree(found.length, named.length) {
         return None;
     }
-    let titled = same_name(Some(&found.title), &track.title)?;
-    let Some((artist, artist_mbid)) = asked_with(track) else {
+    let titled = same_name(Some(&found.title), named.title)?;
+    let Some((artist, artist_mbid)) = named.artist else {
         return Some(titled);
     };
     let credited = same_credit(&found.credit, artist, artist_mbid)?;
 
     Some(titled.min(credited))
+}
+
+pub(crate) fn the_recording_named(
+    found: Vec<RecordingMatch>,
+    named: &NamedAs<'_>,
+) -> Option<RecordingMatch> {
+    let top = top_of(found, |found| {
+        (matches_a_recording_named(found, named), found.score)
+    })?;
+    if matches_a_recording_named(&top, named).is_none() {
+        tracing::debug!(
+            title = named.title,
+            matched = %top.title,
+            score = top.score,
+            artist = ?billed(&top.credit),
+            length = ?top.length,
+            "the nearest recording is not taken under the strict rule"
+        );
+        return None;
+    }
+
+    Some(top)
+}
+
+pub(crate) fn names_agree(found: &str, named: &str) -> bool {
+    same_name(Some(found), named).is_some()
 }
 
 fn the_only_take(only: &Recording, track: &TrackToAsk) -> Option<Certainty> {

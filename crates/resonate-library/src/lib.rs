@@ -89,7 +89,10 @@ pub use crate::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
     },
-    linked::{LinkNames, Linked, SongLink, is_a_song_link},
+    linked::{
+        AlbumLink, AlbumNames, Barcode, FollowedLink, LinkNames, Linked, SongLink,
+        is_a_followed_link,
+    },
     meant::{ByArtist, Meant},
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
@@ -111,11 +114,11 @@ pub use crate::{
         SavedQuery, SearchResults, SortOrder, TrackQuery,
     },
     reference::{
-        ArtistMatch, ArtistProfile, ArtistRelease, Credit, Discography, Genre, GroupAsked,
-        GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText, LyricsAsked,
-        Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
-        ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked, Wording,
-        apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
+        ArtistMatch, ArtistProfile, ArtistRelease, BarcodeMatch, Credit, Discography, Genre,
+        GroupAsked, GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText,
+        LyricsAsked, Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+        Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked,
+        Wording, apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
         spotify_urls, wikidata_urls, wikipedia_urls,
     },
     retag::{

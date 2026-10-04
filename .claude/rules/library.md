@@ -868,12 +868,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `ReleaseAsked` and `ReleaseMatch` (the latter with the hit's `group` and whole `credit`);
   `Recording`, `RecordingRelease`, `RecordingAsked` and `RecordingMatch`; `ReleaseGroup`,
   `GroupRelease`, `GroupAsked` and `GroupMatch`; `ArtistProfile`, `LifeSpan`, `Genre`, `ArtistRelease`
-  and `ArtistMatch`; core's re-exported `Link`, `Relation` and `Service`; `SongLink` and `LinkNames`
-  (below); and `LookupOp`, the twenty-two things a service can be asked for — thirteen a reference's,
+  and `ArtistMatch`; core's re-exported `Link`, `Relation` and `Service`; `SongLink`, `LinkNames`,
+  `AlbumLink`, `AlbumNames`, `Barcode` and `BarcodeMatch` (below); and `LookupOp`, the twenty-two things a service can be asked for — thirteen a reference's,
   the rest the lyric provider's (`Lyrics`), the AutoEq catalogue's (`Devices`), the correction
   source's (`Correction`), a recogniser's (`Recognise`), a scrobbler's (`Submit`, `Love`, `Token`),
   the stream lookup's (`StreamLink`) and the link follower's (`FollowLink`) — and the `Reference`
-  trait, whose eighteen methods (beside `source`) answer `Option`s and `Vec`s in that vocabulary and
+  trait, whose twenty methods (beside `source`) answer `Option`s and `Vec`s in that vocabulary and
   nothing about how they were reached. `resonate-online`'s `Online` is the one implementation, only the
   binary reaching it behind `online`, so `cargo tree -p resonate-library` stays free of `ureq` and
   `serde`. `enrich.rs` is the pass: a `resonate-enrich` thread behind an `EnrichHandle`, with
@@ -2257,29 +2257,69 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `want_found` with `Found::from` that release, so a song wanted for its single or compilation lands
   there rather than on the album the rule would choose.
   `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first` is the claim.
-- **A link to a song is followed to the recording it names, by its ISRC, never by its title.**
-  `linked.rs` is the whole of it. `SongLink::read` takes one whitespace-free token and answers
-  `MusicBrainz` for a `musicbrainz.org/recording/<mbid>` link, `Deezer` for a `deezer.com/[lang/]track/<n>`
-  one, and `Elsewhere` for a song page on Spotify (or a `spotify:track:` URI), TIDAL, Apple Music (an
-  album URL's `i=`, or a `song` path), YouTube and YouTube Music, SoundCloud (an account and a track,
-  not a set), Amazon Music, Anghami, Boomplay, Audiomack, Yandex Music or song.link itself — and nothing
-  for an album, an artist, a playlist, a page of any other host or text with a space in it, so words
-  typed are never taken for a link (`is_a_song_link` is the window's test). `Library::follow_link`
-  answers a `Linked`: `Held` with the title and artist of a track a file already is — a recording link
-  weighed against `tracks.mbid` before anything is asked, a link elsewhere against `tracks.isrc` for
-  every code `Reference::song_linked` names and, once a recording is settled, against `tracks.mbid`
-  again — `Found` with the `Found` to want, or `Unnamed`. Each code is asked of
-  `recordings_of_isrc` in turn until one names a take; `the_take_linked` keeps the takes whose length
-  is within `LENGTHS_AGREE_WITHIN` (5 s) of what the link said, the closest, and the first where the
-  link gave no length, so a video edit filed under the same code is not the song. The take is then
-  asked for whole through `Reference::recording`, its releases arriving with their kinds, and placed by
-  `elsewhere::found_among`, `meant_release` choosing the album as for a search. A recording only a
-  release row names — wanted, or missing from a held album — is `Found`, `want_found` landing it as
-  it would anything else. `RecordingMatch: From<Recording>` scores such a match whole, the reading
-  `by_ear.rs` shares.
+- **A link to a song is followed to the recording it names, by its ISRC, and by its title and
+  artist only under the strict rule.** `linked.rs` is the whole of it. `SongLink::read` takes one
+  whitespace-free token and answers `MusicBrainz` for a `musicbrainz.org/recording/<mbid>` link,
+  `Deezer` for a `deezer.com/[lang/]track/<n>` one, and `Elsewhere` for a song page on Spotify (or a
+  `spotify:track:` URI), TIDAL, Apple Music (an album URL's `i=`, or a `song` path), YouTube and
+  YouTube Music, SoundCloud (an account and a track, not a set), Amazon Music, Anghami, Boomplay,
+  Audiomack, Yandex Music or song.link itself — and nothing for an album, an artist, a playlist, a
+  page of any other host or text with a space in it, so words typed are never taken for a link.
+  `Library::follow_link` answers a `Linked`: `Held` with the title and artist of a track a file
+  already is — a recording link weighed against `tracks.mbid` before anything is asked, a link
+  elsewhere against `tracks.isrc` for every code `Reference::song_linked` names and, once a recording
+  is settled, against `tracks.mbid` again — `Found` with the `Found` to want, or `Unnamed`. Each code
+  is asked of `recordings_of_isrc` in turn until one names a take; `the_take_linked` keeps the takes
+  whose length is within `LENGTHS_AGREE_WITHIN` (5 s) of what the link said, the closest, and the
+  first where the link gave no length, so a video edit filed under the same code is not the song.
+  **Where no code names a take** — a YouTube upload, whose page names no ISRC and often no Deezer
+  twin — `LinkNames` carries the title and artist the page bills it under, and
+  `the_song_searched_for` asks `find_recording` with them and the link's length, as a phrase and then
+  in words, taking an answer only under `enrich::the_recording_named`: the track identification's
+  own `matches_a_recording` weighing (`STRICT_SCORE`, a title and a credit agreeing by some
+  `Spelling`, lengths within `RECORDING_MAY_DIFFER_BY`) over a `NamedAs` rather than a catalog row,
+  no rule of its own. A title with no artist is never searched. **An upload's title is read the way
+  uploads are billed**: `readings_of` reads *Artist - Song* as that song by that artist where the
+  part before the dash agrees with the channel, the channel's `- Topic` taken off; where it does not
+  — a `…VEVO` channel — the upload's own billing is asked first and the title under the channel
+  second, each a search of its own. `VIDEO_QUALIFIERS` is a closed list as `VERSION_QUALIFIERS` is —
+  *Official Video*, *Official Music Video*, *Official Audio*, *Lyric Video*, *Visualizer*, *HD*, *4K*
+  and the rest — taken off a title's end in brackets through `enrich::without_brackets_that`, the
+  same stripper `dequalified` runs, so *(Live)*, *(Remix)* or *(4K Remaster)* stay and stop the
+  stripping, naming another recording or nothing on the list. A strict answer is asked for whole
+  through `Reference::recording`, as an ISRC's take is; nothing strict names nothing. The take is
+  placed by `elsewhere::found_among`, `meant_release` choosing the album as for a search. A recording
+  only a release row names — wanted, or missing from a held album — is `Found`, `want_found` landing
+  it as it would anything else. `RecordingMatch: From<Recording>` scores such a match whole, the
+  reading `by_ear.rs` shares.
   `a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_want`,
-  `a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_nothing` and
-  `a_link_no_service_can_name_names_nothing` are the claims.
+  `a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_nothing`,
+  `a_link_no_service_can_name_names_nothing`,
+  `a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_strict_rule` and
+  `a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing` are the claims.
+- **A link to an album is followed to the release group it names, by an identifier, never by its
+  title.** `AlbumLink::read` answers `Release` and `Group` for a `musicbrainz.org/release/<mbid>` or
+  `/release-group/<mbid>` link, `Deezer` for `deezer.com/[lang/]album/<n>`, and `Elsewhere` for an
+  album page on Spotify (or `spotify:album:`), TIDAL, Apple Music (an `album` path with no `i=`),
+  YouTube Music (a `playlist?list=OLAK5uy_…`, its album playlists), Amazon Music (`albums/<asin>` with
+  no `trackAsin`) or album.link itself; `FollowedLink::read` tries a song first and an album second,
+  and `is_a_followed_link` is the window's test. `Library::follow_album_link` settles a `NamedAlbum`
+  — the group, the release where one was named, title and credit — through `linked::album_named`: a
+  group link asks `Reference::release_group`, a release link `Reference::release` and takes its group;
+  anything else asks `Reference::album_linked` for the `Barcode`s the album is sold under — the
+  service's own UPC, then its Deezer twin's — and each in turn of `Reference::releases_by_barcode`,
+  `the_release_barcoded` taking a release only where its barcode is that code (`Barcode::names`:
+  digits alike once leading zeros are off, a UPC-A and its EAN-13 being one GTIN) and only where every
+  release so barcoded sits in one group — a code two groups share names neither. A `Barcode` is eight
+  to fourteen digits and nothing else. Where an album the catalog holds a track of carries that group
+  or release (`album_held`), the answer is `Linked::HeldAlbum` with the album, its billed title and
+  owner, and how many of its release rows have no file (`missing`); otherwise `Linked::Album` with
+  the group, which the window hands to `want_album` (above) — the songs read off the pressing most of
+  the group's pressings share, not necessarily the one the barcode named. An artist or a playlist
+  link is still words to search.
+  `a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want`,
+  `an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing` and
+  `a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_lacks` are the claims.
 - **A lone word is ranked; a denied or alternated one is looked up.** The unnegated, unalternated words
   are what `indexed` folds into the single FTS5 `MATCH` the index is joined for, so `rank` and
   `SortOrder::Relevance` mean what they always did. Any other word reaches the `WHERE` as

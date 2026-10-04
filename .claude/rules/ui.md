@@ -2040,17 +2040,22 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   search it ran, the matched runs light by it, *Save this search* saves it, and *Search the words as
   typed* is `search_as_typed`, which reads them literally until the box changes
   (`a_title_by_an_artist_is_searched_as_that_title_by_that_artist`).
-- **A link to a song pasted anywhere is the song, downloaded, not words to search.** The search
-  field is built `catching(is_a_song_link)`: a paste the predicate takes is emitted as `Caught` rather
-  than inserted, and `ctrl-v` away from any field is `PasteAway`, a paste into the search box, so the
-  same catch answers both. `RootView::follow_link` reads the `SongLink`, asks
-  `Library::follow_link` on the background executor through `LibraryModel::follows_links` — the
-  reference while Online is on, else a toast saying to turn it on — and `followed` answers: a song a
-  file already holds says so in a toast; a song found is `want_found`, the downloads list in the
-  sidebar following it as a pressed found row would be. The box is left as it was — the link never
-  lands in it and nothing is searched for — so a paste starts the download and nothing else. A link
-  nothing names is a toast.
-  `a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was` and
+- **A link to a song or an album pasted anywhere is downloaded, not words to search.** The search
+  field is built `catching(is_a_followed_link)`: a paste the predicate takes is emitted as `Caught`
+  rather than inserted, and `ctrl-v` away from any field is `PasteAway`, a paste into the search box,
+  so the same catch answers both. `RootView::follow_link` reads the `FollowedLink` and asks
+  `Library::follow_link` for a song or `Library::follow_album_link` for an album on the background
+  executor through `LibraryModel::follows_links` — the reference while Online is on, else a toast
+  saying to turn it on — the looking-up toast naming which (`Told`), and `followed` answers: a song
+  or an album a file already holds whole says so in a toast; a song found is `want_found`; an album
+  not held is `want_album`, as pressing it on an artist's page is; an album held short of songs is
+  `want_missing_tracks`, the album page's *Get the rest* — each followed by the downloads list in
+  the sidebar as a press would be. The box is left as it was — the link never lands in it and
+  nothing is searched for — so a paste starts the download and nothing else. A link nothing names is
+  a toast saying whether it was a song or an album nothing could name. An artist or playlist link is
+  not caught and is typed as words.
+  `a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was`,
+  `an_album_link_pasted_into_the_search_wants_every_song_of_the_album_it_names` and
   `pasting_at_the_window_puts_the_words_in_the_search` are the claims; `library.md` has which links are
   read and `online.md` how a service is asked.
 - **The search box narrows the Missing pane, the two halves answering differently, one being in the
