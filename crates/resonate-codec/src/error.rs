@@ -226,6 +226,9 @@ pub enum Error {
         source: FileParseError,
     },
 
+    #[error("{location} changed while its tags were being written, so they were not")]
+    ChangedWhileWritten { location: MediaLocation },
+
     #[error("the tags in {location} could not be written")]
     TagsUnwritten {
         location: MediaLocation,
@@ -270,6 +273,7 @@ impl Error {
             | Self::LocatorNotUsable { location }
             | Self::Unwritable { location }
             | Self::TagsUnread { location, .. }
+            | Self::ChangedWhileWritten { location }
             | Self::TagsUnwritten { location, .. } => Some(location),
             Self::SeekOutOfRange { .. } | Self::Domain(_) => None,
         }

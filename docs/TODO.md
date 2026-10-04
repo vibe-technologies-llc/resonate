@@ -51,8 +51,6 @@ service or a format — and is not worked until that moves; everything else is o
 - A tag write is refused in a folder the listener cannot create a file in, though writing the file
   in place would work
 - Writing a tag turns an ID3v2.3 tag into v2.4 without a word, which players reading only v2.3 lose
-- The staged copy is renamed over the file without checking it is unchanged since it was taken, so
-  an edit another program made meanwhile is lost and a read-only file is replaced
 - A file's own sort names — `ARTISTSORT`, `ALBUMARTISTSORT`, `TITLESORT`, `TSOP`, `soar` — are never
   read, so an unenriched artist never orders the way its tagger meant
 - On a filesystem that cannot clone a file — ext4 — a tag write that grows past the tag's room, and

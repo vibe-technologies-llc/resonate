@@ -173,6 +173,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::SheetTooLarge { .. }
         | Read::TagsUnread { .. }
         | Read::TagsUnwritten { .. }
+        | Read::ChangedWhileWritten { .. }
         | Read::Domain(_) => Cause::Damaged,
     }
 }

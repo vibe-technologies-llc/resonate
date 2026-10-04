@@ -392,6 +392,10 @@ impl TagSink for FileTags {
             false => named.to_path_buf(),
         };
         let path = resolved.as_path();
+        let taken = Taken::of(path).map_err(|source| Error::Io {
+            location: location.clone(),
+            source,
+        })?;
         let rechunked = match tag_in_front_of_a_riff(path) {
             Ok(Some(riff_at)) => {
                 let staged = staged_beside(path);
@@ -412,7 +416,7 @@ impl TagSink for FileTags {
                 });
             }
         };
-        let written = self.written(path, rechunked.as_deref(), location, writing);
+        let written = self.written(path, rechunked.as_deref(), location, writing, taken);
         if written.is_err()
             && let Some(staged) = rechunked
         {
@@ -485,6 +489,7 @@ impl FileTags {
         rechunked: Option<&Path>,
         location: &MediaLocation,
         writing: Writing<'_>,
+        taken: Taken,
     ) -> Result<()> {
         let mut tagged = opened(rechunked.unwrap_or(path), location)?;
         let kind = tagged.file_type();
@@ -533,6 +538,7 @@ impl FileTags {
             counting,
             unkeyed: &unkeyed,
             others: &others,
+            taken,
         };
         match rechunked {
             Some(staged) => landed_through(staged, path, location, &saving),
@@ -764,6 +770,39 @@ struct Saving<'a> {
     counting: Option<Popularity>,
     unkeyed: &'a [(TagField, Option<&'a str>)],
     others: &'a [Tag],
+    taken: Taken,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Taken {
+    device: u64,
+    inode: u64,
+    length: u64,
+    modified: (i64, i64),
+}
+
+impl Taken {
+    fn of(path: &Path) -> io::Result<Self> {
+        rustix::fs::access(path, rustix::fs::Access::WRITE_OK)?;
+        let held = fs::metadata(path)?;
+        Ok(Self {
+            device: held.dev(),
+            inode: held.ino(),
+            length: held.len(),
+            modified: (held.mtime(), held.mtime_nsec()),
+        })
+    }
+
+    fn still_stands(self, path: &Path) -> bool {
+        fs::metadata(path).is_ok_and(|held| {
+            Self {
+                device: held.dev(),
+                inode: held.ino(),
+                length: held.len(),
+                modified: (held.mtime(), held.mtime_nsec()),
+            } == self
+        })
+    }
 }
 
 impl Saving<'_> {
@@ -913,6 +952,14 @@ fn landed_through(
                     location: location.clone(),
                     source,
                 })
+        })
+        .and_then(|()| {
+            if saving.taken.still_stands(path) {
+                return Ok(());
+            }
+            Err(Error::ChangedWhileWritten {
+                location: location.clone(),
+            })
         })
         .and_then(|()| {
             settled_over(staged, path).map_err(|source| Error::Io {
@@ -1520,8 +1567,51 @@ mod tests {
                 counting: None,
                 unkeyed: &[],
                 others: &[],
+                taken: Taken::of(path).expect("a writable file"),
             },
         )
+    }
+
+    #[test]
+    fn a_file_nobody_may_write_is_refused_rather_than_replaced() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let mut permissions = fs::metadata(&path).expect("a file").permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).expect("a file made read-only");
+        if OpenOptions::new().write(true).open(&path).is_ok() {
+            eprintln!("skipped: this user writes a read-only file regardless");
+            return;
+        }
+        let before = fs::read(&path).expect("the file");
+
+        let written = FileTags::default().write(&location, just(&named_and_identified()));
+
+        assert!(
+            matches!(&written, Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::PermissionDenied),
+            "a read-only file was written: {written:?}"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), before);
+    }
+
+    #[test]
+    fn a_file_another_program_changed_meanwhile_no_longer_stands_as_taken() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let taken = Taken::of(&path).expect("a writable file");
+
+        assert!(taken.still_stands(&path));
+
+        let mut grown = fs::read(&path).expect("the file");
+        grown.push(0);
+        fs::write(&path, &grown).expect("a writable file");
+
+        assert!(
+            !taken.still_stands(&path),
+            "an edit made meanwhile went unseen"
+        );
     }
 
     #[test]

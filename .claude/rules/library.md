@@ -1630,7 +1630,14 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   `sweep_what_a_dead_writer_staged` removes a sibling `staged_by` reads as this track's, staged by a
   pid that is neither ours nor under `/proc`
   (`a_copy_a_dead_writer_staged_beside_the_track_is_swept_and_no_other`); the scan never catalogs it
-  meanwhile, a dot-name being passed over (below). The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
+  meanwhile, a dot-name being passed over (below). **The copy lands only over the file it was taken
+  from.** `Taken::of` asks `access(W_OK)` first, so a file the listener may not write is refused
+  `PermissionDenied` where the copy and rename would have replaced it in a folder they can write
+  (`a_file_nobody_may_write_is_refused_rather_than_replaced`), and holds the device, inode, length
+  and modification time; `landed_through` weighs `Taken::still_stands` before the rename, so an edit
+  another program made while the copy was written answers `Error::ChangedWhileWritten` and the copy
+  is removed rather than renamed over that edit
+  (`a_file_another_program_changed_meanwhile_no_longer_stands_as_taken`). The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
   extents — btrfs, XFS — so there it costs the tag's bytes. **Where it cannot clone — ext4, tmpfs —
   an edit the tag's own room holds lands in the file itself** rather than copying gigabytes:
   `landed_in_place` has lofty write into an `Overlay`, the file seen through 4 KiB pages held in
