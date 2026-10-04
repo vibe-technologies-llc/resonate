@@ -76,12 +76,11 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
             &StreamRequest {
                 target: Some(sink.id),
                 spec,
-                latency: LatencyRequest::Frames(1_024),
+                latency: LatencyRequest::Auto,
                 role: MediaRole::Music,
                 media_name: "resonate listen test".to_owned(),
                 force_graph_rate: false,
                 no_convert: false,
-                exclusive: false,
                 realtime: true,
             },
             Box::new(Tone { at: 0 }),

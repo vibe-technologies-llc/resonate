@@ -1123,7 +1123,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   outgrew `LARGEST_TAP`
   (`a_convolver_leaves_the_ring_as_deep_as_the_buffer_asks_whatever_its_tail`). `Frames::from_duration` and `StreamSpec::frames_to_bytes` saturate for the
   same reason. **The ring's depth is the engine's, never the graph's.** Every stream asks
-  `LatencyRequest::Auto`, leaving `node.latency` to the daemon: a quantum is a few milliseconds shared by
+  `LatencyRequest::Auto`, leaving `node.latency` to the daemon (`LatencyRequest::Duration` is there for
+  `tests/stream.rs` to ask a known quantum and weigh the latency reported against it; the `Frames`
+  request, the `exclusive` flag and `AudioSource::on_underrun` were taken out, nothing but tests
+  reaching them, the ring counting its own underruns as `RtFault::Underrun`): a quantum is a few milliseconds shared by
   every client on the device, and a ring of 100 ms to a second written into it would drag the whole
   graph to PipeWire's largest quantum. The depth decides how long a volume, ReplayGain or equaliser
   change waits to be heard (the gain runs before the ring) and how much an opening stream primes; a seek

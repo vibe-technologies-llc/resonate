@@ -83,7 +83,7 @@ impl Cycle {
         let filled = match data.data() {
             Some(slice) => match slice.get_mut(..self.asked_for(asked, slice.len())) {
                 Some(quantum) => {
-                    let written = Self::fill(source, quantum);
+                    let written = source.fill(quantum);
                     if packed {
                         pack(quantum, written)
                     } else {
@@ -111,15 +111,6 @@ impl Cycle {
             return room;
         }
         quantum.min(room)
-    }
-
-    fn fill(source: &mut dyn AudioSource, slice: &mut [u8]) -> usize {
-        let wanted = slice.len();
-        let written = source.fill(slice);
-        if written < wanted {
-            source.on_underrun(wanted - written);
-        }
-        written
     }
 
     fn note_latency(&self, stream: &Stream) {

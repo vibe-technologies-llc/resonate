@@ -2492,7 +2492,6 @@ impl Engine {
                 .unwrap_or_else(|| self.config.app_name.clone()),
             force_graph_rate: self.config.force_graph_rate,
             no_convert: output.plan.mode != OutputMode::Converted,
-            exclusive: false,
             realtime: true,
         };
 

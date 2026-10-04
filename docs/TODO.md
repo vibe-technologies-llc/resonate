@@ -16,8 +16,6 @@ service or a format — and is not worked until that moves; everything else is o
   answer freezes the transport and the window's close
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
-- The stream's exclusive flag, the latency requests other than *Auto* and the underrun hook are
-  never set or reached outside tests
 - **Blocked on hardware:** A device with no volume of its own is still turned by the stream, so
   anything under 100 % leaves bit-perfect there
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so

@@ -22,7 +22,6 @@ struct Pulled {
     frames: AtomicU64,
     calls: AtomicU64,
     ragged: AtomicBool,
-    underruns: AtomicU64,
 }
 
 struct Silence {
@@ -42,10 +41,6 @@ impl AudioSource for Silence {
             .frames
             .fetch_add((dst.len() / self.bytes_per_frame) as u64, Ordering::Relaxed);
         dst.len()
-    }
-
-    fn on_underrun(&mut self, _missing_bytes: usize) {
-        self.pulled.underruns.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -72,12 +67,11 @@ fn request(sink: &SinkInfo, spec: StreamSpec) -> StreamRequest {
     StreamRequest {
         target: Some(sink.id),
         spec,
-        latency: LatencyRequest::Frames(1_024),
+        latency: LatencyRequest::Auto,
         role: MediaRole::Music,
         media_name: "resonate stream test".to_owned(),
         force_graph_rate: false,
         no_convert: false,
-        exclusive: false,
         realtime: true,
     }
 }
@@ -136,11 +130,6 @@ fn a_source_with_no_engine_behind_it_is_pulled_whole_frames_at_a_time() {
         negotiated.map(|spec| spec.channels),
         Some(ChannelLayout::Stereo),
         "the negotiated format was never announced"
-    );
-    assert_eq!(
-        pulled.underruns.load(Ordering::Relaxed),
-        0,
-        "a source that filled every buffer was told it had underrun"
     );
 }
 

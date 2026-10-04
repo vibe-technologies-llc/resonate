@@ -1290,9 +1290,6 @@ fn build_stream(
     }
     match request.latency {
         LatencyRequest::Auto => {}
-        LatencyRequest::Frames(frames) => {
-            properties.insert(*keys::NODE_LATENCY, format!("{frames}/{}", spec.rate.hz()));
-        }
         LatencyRequest::Duration(duration) => {
             let frames = (duration.as_secs_f64() * f64::from(spec.rate.hz())).round() as u64;
             properties.insert(*keys::NODE_LATENCY, format!("{frames}/{}", spec.rate.hz()));
@@ -1357,9 +1354,6 @@ fn build_stream(
     }
     if request.no_convert {
         flags |= StreamFlags::NO_CONVERT;
-    }
-    if request.exclusive {
-        flags |= StreamFlags::EXCLUSIVE;
     }
 
     stream

@@ -66,8 +66,6 @@ impl AudioSource for Silence {
         dst.fill(0);
         dst.len()
     }
-
-    fn on_underrun(&mut self, _missing_bytes: usize) {}
 }
 
 struct Hosted {
@@ -147,7 +145,6 @@ fn request(sink: &SinkInfo) -> StreamRequest {
         media_name: "resonate reconnect test".to_owned(),
         force_graph_rate: false,
         no_convert: false,
-        exclusive: false,
         realtime: false,
     }
 }

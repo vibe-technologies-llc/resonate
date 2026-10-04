@@ -59,7 +59,6 @@ impl From<&pipewire::stream::StreamState> for StreamState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LatencyRequest {
     Auto,
-    Frames(u32),
     Duration(Duration),
 }
 
@@ -78,7 +77,6 @@ pub struct StreamRequest {
     pub media_name: String,
     pub force_graph_rate: bool,
     pub no_convert: bool,
-    pub exclusive: bool,
     pub realtime: bool,
 }
 
