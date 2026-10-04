@@ -1059,6 +1059,37 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_way_back_and_forward_crosses_from_one_category_to_another(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        folder.tagged("01.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.click("tab-albums");
+        driven.click("tab-artists");
+        let root = driven.root.clone();
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Tracks);
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.go_forward(cx)));
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+    }
+
+    #[gpui::test]
     fn the_way_back_lands_on_the_pixel_the_list_was_left_at(cx: &mut TestAppContext) {
         let folder = Folder::new();
         for nth in 0..80 {

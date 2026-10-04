@@ -2377,9 +2377,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   scope is left — the album's title, the artist's name or the pane's label — because by the time the way
   back is drawn the library has moved to the new scope. `goes_forward` keeps the bounded forward stack;
   going back saves the current page there, going forward saves it back to `came_from`, and opening a new
-  scope or `show_everything` clears the forward stack. When Appearance's *Mouse navigation* is on
+  scope, choosing another category or `show_everything` clears the forward stack. When Appearance's *Mouse navigation* is on
   (`mouse-navigation`, default true), the root handles the mouse's back and forward buttons through
-  these same stacks. The way back is `kit::way_back` at the page's top
+  these same stacks. **A category is a place in them too.** `choose_pane` — a sidebar press, a tab
+  stepped by key — keeps the page it left in `came_from` wherever the pane or the selection moved, and
+  holds the stack through the `show_everything` an unscoping landing runs, so the mouse's back button
+  returns from Albums to the Tracks it came from as well as from an album to its list
+  (`the_way_back_and_forward_crosses_from_one_category_to_another`). Escape on an unscoped page steps
+  back only where the way back leads to a scope (`goes_back_to_a_scope`), so it never flips tabs. The way back is `kit::way_back` at the page's top
   left, a chevron and that name — *‹ Tracks*, *‹ Hypnotize* — and where nothing was left behind it reads
   the category the page stands under and goes there, clearing the scope. It replaced a ghost *Show all*
   among the right-hand actions, which cleared the scope rather than returning and was the one control not

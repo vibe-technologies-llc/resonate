@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     hash::{Hash as _, Hasher as _},
+    mem,
     rc::Rc,
     slice,
     sync::Arc,
@@ -1722,6 +1723,7 @@ impl RootView {
     }
 
     pub(crate) fn choose_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
+        let leaving = self.here_now(cx);
         let library = self.library.read(cx);
         let landing = landing(
             pane,
@@ -1733,7 +1735,9 @@ impl RootView {
         match landing {
             Landing::On(pane) => self.set_pane(pane, cx),
             Landing::Unscoped(pane) => {
+                let came_from = mem::take(&mut self.came_from);
                 self.show_everything(cx);
+                self.came_from = came_from;
                 self.set_pane(pane, cx);
             }
             Landing::Scoped => self.set_pane(Pane::Tracks, cx),
@@ -1741,6 +1745,12 @@ impl RootView {
                 self.show_playlist(None, cx);
                 self.set_pane(Pane::Playlists, cx);
             }
+        }
+
+        let arrived = (self.pane, self.library.read(cx).selection());
+        if arrived != (leaving.pane, leaving.selection) {
+            Self::keep_wayback(&mut self.came_from, leaving);
+            self.goes_forward.clear();
         }
     }
 
@@ -2649,6 +2659,12 @@ impl RootView {
         !self.came_from.is_empty()
     }
 
+    fn goes_back_to_a_scope(&self) -> bool {
+        self.came_from
+            .last()
+            .is_some_and(|back| back.selection != Selection::Everything)
+    }
+
     pub(crate) fn go_back(&mut self, cx: &mut Context<Self>) {
         let Some(back) = self.came_from.pop() else {
             return;
@@ -3138,7 +3154,7 @@ impl RootView {
         window.focus(&self.focus);
         if self.search.read(cx).text().is_empty() {
             let scoped = self.library.read(cx).selection() != Selection::Everything;
-            if self.goes_back() || scoped {
+            if scoped || self.goes_back_to_a_scope() {
                 self.step_back(cx);
             }
         } else {
