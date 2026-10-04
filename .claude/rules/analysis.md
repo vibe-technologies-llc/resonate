@@ -79,7 +79,10 @@ object; the library reaches `study` for the enrichment's studies.
   on a stereo master and on a 5.1 mix whose LFE carries a whole channel. DR is the second-loudest
   3 s block's peak over the RMS of the loudest fifth, averaged over channels and rounded. The true
   peak is `resonate-dsp`'s `TruePeakMeter` over the same blocks: every channel at eight times its
-  rate through a 96-tap windowed-sinc interpolator, all eight phases in one pass, the loudest kept —
+  rate through a 96-tap windowed-sinc interpolator, all eight phases in one pass, the loudest kept,
+  and a stretch whose samples cannot reach the loudest so far, the interpolator's gain taken at its
+  worst, never interpolated
+  (`the_meter_skipping_what_cannot_pass_reads_what_one_reading_every_sample_does`) —
   the reading the engine's guard is built on, so study and playback cannot disagree about an over.
   A study taken under the earlier 48-tap interpolator kept its stamp: `JUDGED_UNDER` names the
   verdict, and what it read low is only content above 90 % of Nyquist, which the guard reads again

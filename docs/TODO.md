@@ -124,8 +124,6 @@ service or a format — and is not worked until that moves; everything else is o
   properties included
 - Every lookup pass re-pairs and rewrites each album short of a track though nothing moved, which
   also takes down an open tag or organise preview
-- The study's true-peak meter interpolates every sample eight times over where the playback guard
-  skips stretches that cannot pass
 - The Analysis pane decodes a vaulted track whose file has gone on every visit, since a kept
   analysis is keyed on the file's size and time
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is
@@ -158,8 +156,6 @@ service or a format — and is not worked until that moves; everything else is o
   once, and a session's passes are cancelled and joined one after another
 
 ## Keyboard and accessibility
-- Keys, tokens, the contact, the Subsonic account and the organise layout typed in Settings and left
-  without Enter look saved and are not
 - `End`, select-all and the scrollbar act on the 2 000 rows loaded so far, so `End` in a
   50 000-track library lands on row 2 000
 - Word motions in a field split a decomposed accent from its letter, and take a whole CJK sentence

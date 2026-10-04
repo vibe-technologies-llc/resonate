@@ -1011,6 +1011,45 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        let contact = |driven: &mut Driven| {
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.contact.clone())
+        };
+        let typed = |driven: &mut Driven, text: &str| {
+            let root = driven.root.clone();
+            driven.cx.update(|_, cx| {
+                let field = root.read(cx).contact.clone();
+                field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
+            });
+        };
+
+        driven.focus(|root| &root.contact);
+        typed(&mut driven, "me@example.test");
+        driven.cx.update(|window, cx| {
+            let root = driven.root.clone();
+            root.update(cx, |root, cx| root.leave_contact(window, cx));
+        });
+        driven.settle();
+        assert_eq!(contact(&mut driven), "me@example.test");
+
+        driven.focus(|root| &root.contact);
+        typed(&mut driven, "someone@else.test");
+        driven.cx.update(|window, cx| {
+            let root = driven.root.clone();
+            root.update(cx, |root, cx| root.put_back_contact(window, cx));
+        });
+        driven.settle();
+        assert_eq!(contact(&mut driven), "me@example.test");
+        assert_eq!(
+            driven.read(|root, cx| root.contact.read(cx).text().to_owned()),
+            "me@example.test"
+        );
+    }
+
+    #[gpui::test]
     fn pasting_at_the_window_puts_the_words_in_the_search(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
 

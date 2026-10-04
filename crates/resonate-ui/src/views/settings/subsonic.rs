@@ -170,8 +170,40 @@ impl RootView {
         if !self.an_account_field_is_focused(window, cx) {
             return;
         }
+        if self.give_what_is_typed_of_the_account(window, cx) {
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_the_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for account in Account::ALL {
+            let stored = account.held(&cx.global::<ResonateApp>().online);
+            let field = self.account_field(account).clone();
+            if field.read(cx).is_focused(window) {
+                field.update(cx, |field, cx| field.hold(stored, cx));
+            }
+        }
+        self.put_back_the_tidal_account(window, cx);
+        self.leave_the_account(window, cx);
+    }
+
+    fn give_what_is_typed_of_the_account(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        for account in Account::ALL {
+            let field = self.account_field(account).read(cx);
+            let typed_apart = field.is_focused(window)
+                && field.text().trim() != account.held(&cx.global::<ResonateApp>().online);
+            if typed_apart {
+                self.account_given(account, window, cx);
+                return true;
+            }
+        }
+        self.give_what_is_typed_of_the_tidal_account(window, cx)
     }
 
     pub(crate) fn an_account_field_is_focused(&self, window: &Window, cx: &App) -> bool {

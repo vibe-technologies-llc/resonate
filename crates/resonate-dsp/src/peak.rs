@@ -198,7 +198,10 @@ impl TruePeakMeter {
             for (slot, sample) in self.frame.iter_mut().zip(frame) {
                 *slot = f64::from(*sample);
             }
-            let loudest = self.oversampler.loudest_after(&self.frame);
+            let quiet_below = self.oversampler.quiet_below(self.loudest);
+            let loudest = self
+                .oversampler
+                .loudest_that_could_pass(&self.frame, quiet_below);
             self.loudest = self.loudest.max(loudest);
         }
     }
@@ -518,6 +521,35 @@ mod tests {
         let drained = stage.flush(&mut tail);
         output.extend_from_slice(&tail[..drained * 2]);
         (output, stage)
+    }
+
+    #[test]
+    fn the_meter_skipping_what_cannot_pass_reads_what_one_reading_every_sample_does() {
+        let mut state = 0x9e37_79b9_u32;
+        let mut music = Vec::new();
+        for frame in 0..48_000 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let hiss = f64::from(state) / f64::from(u32::MAX) - 0.5;
+            let swell = 0.1 + 0.8 * (frame as f64 / 48_000.0);
+            let tone = (TAU * 3_000.0 * frame as f64 / 48_000.0).sin();
+            let left = swell * (0.8 * tone + 0.2 * hiss);
+            music.extend([left, -left * 0.9]);
+        }
+        let narrow: Vec<f32> = music.iter().map(|sample| *sample as f32).collect();
+
+        let mut everywhere = Oversampler::new(2);
+        let mut every_read = 0.0_f64;
+        for frame in narrow.as_chunks::<2>().0 {
+            let widened = [f64::from(frame[0]), f64::from(frame[1])];
+            every_read = every_read.max(everywhere.loudest_after(&widened));
+        }
+        for _ in 0..TAPS {
+            every_read = every_read.max(everywhere.loudest_after(&[0.0, 0.0]));
+        }
+
+        assert_eq!(metered(&music), every_read);
     }
 
     #[test]

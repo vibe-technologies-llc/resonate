@@ -1578,8 +1578,18 @@ impl RootView {
         if !self.acoustid.read(cx).is_focused(window) {
             return;
         }
+        if self.acoustid.read(cx).text().trim() != cx.global::<ResonateApp>().online.acoustid_key {
+            self.acoustid_key_given(window, cx);
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_acoustid(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let stored = cx.global::<ResonateApp>().online.acoustid_key.to_owned();
+        self.acoustid.update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_acoustid_key(window, cx);
     }
 
     fn audd_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1603,8 +1613,18 @@ impl RootView {
         if !self.audd.read(cx).is_focused(window) {
             return;
         }
+        if self.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
+            self.audd_token_given(window, cx);
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_audd(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let stored = cx.global::<ResonateApp>().online.audd_token.to_owned();
+        self.audd.update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_audd_token(window, cx);
     }
 
     fn listenbrainz_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1651,8 +1671,25 @@ impl RootView {
         if !self.listenbrainz.read(cx).is_focused(window) {
             return;
         }
+        if self.listenbrainz.read(cx).text().trim()
+            != cx.global::<ResonateApp>().online.listenbrainz_token
+        {
+            self.listenbrainz_token_given(window, cx);
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_listenbrainz(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let stored = cx
+            .global::<ResonateApp>()
+            .online
+            .listenbrainz_token
+            .to_owned();
+        self.listenbrainz
+            .update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_listenbrainz_token(window, cx);
     }
 
     pub(crate) fn clear_listenbrainz_token(&self, cx: &mut Context<Self>) {
@@ -1679,8 +1716,18 @@ impl RootView {
         if !self.contact.read(cx).is_focused(window) {
             return;
         }
+        if self.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
+            self.contact_given(window, cx);
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let stored = cx.global::<ResonateApp>().online.contact.to_owned();
+        self.contact.update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_contact(window, cx);
     }
 
     pub(crate) fn leave_typed_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1695,8 +1742,19 @@ impl RootView {
         if !self.organising.read(cx).is_focused(window) {
             return;
         }
+        if self.organising.read(cx).text().trim() != cx.global::<ResonateApp>().organise_as {
+            self.layout_given(window, cx);
+            return;
+        }
         window.focus(&self.focus);
         cx.notify();
+    }
+
+    pub(crate) fn put_back_organising(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let stored = cx.global::<ResonateApp>().organise_as.clone();
+        self.organising
+            .update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_organising(window, cx);
     }
 
     pub(crate) fn clear_contact(&self, cx: &mut Context<Self>) {
@@ -3100,23 +3158,23 @@ impl RootView {
             return;
         }
         if self.contact.read(cx).is_focused(window) {
-            self.leave_contact(window, cx);
+            self.put_back_contact(window, cx);
             return;
         }
         if self.acoustid.read(cx).is_focused(window) {
-            self.leave_acoustid_key(window, cx);
+            self.put_back_acoustid(window, cx);
             return;
         }
         if self.audd.read(cx).is_focused(window) {
-            self.leave_audd_token(window, cx);
+            self.put_back_audd(window, cx);
             return;
         }
         if self.listenbrainz.read(cx).is_focused(window) {
-            self.leave_listenbrainz_token(window, cx);
+            self.put_back_listenbrainz(window, cx);
             return;
         }
         if self.an_account_field_is_focused(window, cx) {
-            self.leave_the_account(window, cx);
+            self.put_back_the_account(window, cx);
             return;
         }
         if self.discord_app.read(cx).is_focused(window) {
@@ -3128,7 +3186,7 @@ impl RootView {
             return;
         }
         if self.organising.read(cx).is_focused(window) {
-            self.leave_organising(window, cx);
+            self.put_back_organising(window, cx);
             return;
         }
         if self.typed_root.read(cx).is_focused(window) {

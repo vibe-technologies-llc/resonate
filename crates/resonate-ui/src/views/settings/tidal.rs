@@ -221,6 +221,37 @@ impl RootView {
         cx.notify();
     }
 
+    pub(super) fn give_what_is_typed_of_the_tidal_account(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        for account in TidalAccount::ALL {
+            let field = self.tidal_field(account).read(cx);
+            let typed_apart = field.is_focused(window)
+                && field.text().trim() != account.held(&cx.global::<ResonateApp>().online);
+            if typed_apart {
+                self.tidal_given(account, window, cx);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn put_back_the_tidal_account(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for account in TidalAccount::ALL {
+            let stored = account.held(&cx.global::<ResonateApp>().online);
+            let field = self.tidal_field(account).clone();
+            if field.read(cx).is_focused(window) {
+                field.update(cx, |field, cx| field.hold(stored, cx));
+            }
+        }
+    }
+
     pub(crate) fn forget_the_tidal_account(&mut self, cx: &mut Context<Self>) {
         for account in TidalAccount::ALL {
             self.tidal_field(account)
