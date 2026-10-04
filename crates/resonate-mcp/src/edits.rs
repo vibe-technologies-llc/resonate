@@ -1,5 +1,7 @@
 use resonate_core::{ReleaseTrackId, Span};
-use resonate_library::{Cut, Favoured, Library, PlaylistName, SavedQuery, SortOrder};
+use resonate_library::{
+    Cut, Edit, Favoured, Library, PlaylistName, SavedQuery, SortOrder, Undoable,
+};
 use serde_json::{Value, json};
 
 use crate::{
@@ -128,4 +130,41 @@ fn cuts(library: &Library, wanted: &Wanted) -> Result<Vec<Cut>> {
         .into_iter()
         .map(|(location, span)| Cut { location, span })
         .collect())
+}
+
+pub(crate) fn undo_edit(library: &Library, again: bool) -> Result<Value> {
+    let walked = if again {
+        library.redo()?
+    } else {
+        library.undo()?
+    };
+
+    Ok(match walked {
+        Some(walked) => json!({
+            "walked": if again { "redone" } else { "undone" },
+            "edit": edit_called(&walked),
+            "playlist": walked.name,
+            "more_to_undo": walked.behind,
+        }),
+        None => json!({ "walked": null }),
+    })
+}
+
+fn edit_called(walked: &Undoable) -> &'static str {
+    match walked.edit {
+        Edit::Started => "started",
+        Edit::Renamed => "renamed",
+        Edit::Revised => "revised",
+        Edit::Discarded => "discarded",
+        Edit::Added => "added",
+        Edit::Copied => "copied",
+        Edit::Imported => "imported",
+        Edit::Removed => "removed",
+        Edit::Dropped => "dropped",
+        Edit::Tidied => "tidied",
+        Edit::Folded => "folded",
+        Edit::Moved => "moved",
+        Edit::Ordered => "ordered",
+        Edit::Kept => "kept",
+    }
 }

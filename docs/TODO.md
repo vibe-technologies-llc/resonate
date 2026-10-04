@@ -13,25 +13,19 @@ else is open to be done.
   kill mid-write can leave a damaged file
 - A steady writer under a root defers its rescan indefinitely, and a root the watch could not cover
   (the inotify limit reached) is never tried again
-- A tidy drops the rows of an unplugged drive never scanned whose mount point's parent still holds
-  another drive, and keeps the rows of a deleted file until its emptied folder goes
+- A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
+  unplugged drive never scanned that is mounted anywhere but `/run/media`, `/media` and `/mnt`
+  whenever its mount point's parent holds anything else
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
 - Queue edits from the window name rows by position, so an edit another client makes between the
   gesture and the click moves or removes the wrong rows; `Queued::revision` exists to guard on
-- A lookup still running when its row leaves the queue lands the last track's words over *none*
-- Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
-  and two picks landing out of order keep the first
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
-- A lyric in a dropped album's `lyrics/` folder keeps its name when the track it is named after
-  lands as `name (2).ext`, so it is matched to nothing
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
   stand stale until new ones overwrite them
-- During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
-  once, and a session's passes are cancelled and joined one after another
 - Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
   and the providers
 
@@ -87,10 +81,6 @@ else is open to be done.
 - **Blocked on `lofty`:** `.caf`, `.mka` and the DSD containers have no writer, lofty 0.25.4 having
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
-## Library
-- A playlist sheet from another machine or drive layout cannot be reconnected by its trailing path
-  components, so every row of a Windows-written sheet imports as missing
-
 ## Search
 - A pasted album link is wanted from the pressing most of its release group's pressings share, not
   the one whose barcode the link named, so a deluxe edition linked downloads the standard track list
@@ -115,9 +105,8 @@ else is open to be done.
 
 ## Performance and scale
 - Every process opening the catalog rebuilds the collaboration credits and sweeps orphans under the
-  write lock, each credit scanning the tracks by an artist index a plain `=` cannot use, so a
-  read-only `resonate stats` also makes the window reload its vocabulary; an index on `tracks(artist)`
-  through a migration comes first and the next two items reuse the same sweep
+  write lock, so a read-only `resonate stats` also makes the window reload its vocabulary; the next
+  two items reuse the same sweep
 - A scan that changed nothing still regroups alternatives, gathers loose files and prunes over the
   whole catalog, so one watched file added pays for the library
 - An incremental scan writes every unchanged row only to stamp it seen, and a change under one root
@@ -171,8 +160,6 @@ else is open to be done.
   *Favourite* have no key. After the focus item
 - A selection is a contiguous run reached by Shift, and Tracks and Albums act on its first row
   alone; nothing adds a row with Control. After the `End` item
-- Word motions in a field split a decomposed accent from its letter, and take a whole CJK sentence
-  as one word; `unicode-segmentation` is already a dependency
 - **Blocked on gpui:** Nothing is exposed to a screen reader; the published gpui 0.2.2 carries no
   AccessKit, which only Zed's `main` has
 
@@ -209,8 +196,6 @@ else is open to be done.
   again or reordered
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
-- A file the inbox delivers into the vault counts nothing in `PollProgress::received`, the vault
-  reading it by its path
 - TIDAL's device sign-in is the window's alone, with no command-line way in
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
@@ -308,10 +293,8 @@ else is open to be done.
   read, and `AddTrack` and `RemoveTrack` would then map back to play-order positions
 
 ## Later: MCP
-- A model has no tool to undo its own edits, so a discarded playlist or removed rows cannot be taken
-  back by the session that made them; a thin wrapper over `Library::undo`
 - An edit a model makes is not on the window's *Undo*, since undo stacks live in the process that
-  made the edit. After the item above
+  made the edit
 
 ## Later: Packaging
 - **Blocked on gpui:** gpui 0.2.2 pulls `stacksafe` 0.1 and with it `proc-macro-error2`, whose

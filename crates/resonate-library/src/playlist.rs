@@ -1,9 +1,9 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::OsStr,
     fs,
     io::ErrorKind,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     time::{Duration, SystemTime},
 };
 
@@ -1066,18 +1066,22 @@ fn cuts_of(inner: &Inner, listed: Vec<Listed>) -> Result<Vec<Cut>> {
             .collect::<Result<Vec<_>>>()
     })?;
 
+    let reconnected = reconnected_by_trailing_components(inner, &asked, &answered)?;
+
     let mut rates = HashMap::new();
     Ok(listed
         .into_iter()
         .zip(asked)
         .zip(answered)
-        .map(|((listed, asked), answered)| {
+        .zip(reconnected)
+        .map(|(((listed, asked), answered), reconnected)| {
             let Some(asked) = asked else {
                 return Cut::whole(listed.location);
             };
-            let (path, catalogued_rate) = match answered {
-                Some(Catalogued { at, rate }) => (asked.named[at].clone(), rate),
-                None => (asked.otherwise, None),
+            let (path, catalogued_rate) = match (answered, reconnected) {
+                (Some(Catalogued { at, rate }), _) => (asked.named[at].clone(), rate),
+                (None, Some(Reconnected { path, rate })) => (path, rate),
+                (None, None) => (asked.otherwise, None),
             };
             let location = MediaLocation::local(path);
             if listed.timed.is_whole() {
@@ -1142,6 +1146,112 @@ impl Settling {
 struct Catalogued {
     at: usize,
     rate: Option<SampleRate>,
+}
+
+struct Reconnected {
+    path: PathBuf,
+    rate: Option<SampleRate>,
+}
+
+const FEWEST_TRAILING_COMPONENTS: usize = 2;
+
+fn trailing_components(path: &Path) -> Vec<String> {
+    let mut components: Vec<String> = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name.to_string_lossy().to_lowercase()),
+            _ => None,
+        })
+        .collect();
+    components.reverse();
+    components
+}
+
+fn reconnected_by_trailing_components(
+    inner: &Inner,
+    asked: &[Option<Candidates>],
+    answered: &[Option<Catalogued>],
+) -> Result<Vec<Option<Reconnected>>> {
+    let lost: Vec<Option<Vec<String>>> = asked
+        .iter()
+        .zip(answered)
+        .map(|(asked, answered)| {
+            let asked = asked.as_ref()?;
+            if answered.is_some() || asked.otherwise.exists() {
+                return None;
+            }
+            let trailing = trailing_components(&asked.otherwise);
+            (trailing.len() >= FEWEST_TRAILING_COMPONENTS).then_some(trailing)
+        })
+        .collect();
+    let file_names: HashSet<&str> = lost
+        .iter()
+        .flatten()
+        .map(|trailing| trailing[0].as_str())
+        .collect();
+    if file_names.is_empty() {
+        return Ok(lost.iter().map(|_| None).collect());
+    }
+
+    let mut held: HashMap<String, Vec<(Vec<String>, PathBuf, u32)>> = HashMap::new();
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare("SELECT path, min(sample_rate) FROM tracks GROUP BY path")
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let mut rows = statement
+            .query([])
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|source| Error::store(StoreOp::Query, source))?
+        {
+            let path = PathBuf::from(
+                row.get::<_, String>(0)
+                    .map_err(|source| Error::store(StoreOp::Query, source))?,
+            );
+            let trailing = trailing_components(&path);
+            let Some(name) = trailing
+                .first()
+                .filter(|name| file_names.contains(name.as_str()))
+            else {
+                continue;
+            };
+            let rate = row
+                .get::<_, u32>(1)
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            held.entry(name.clone())
+                .or_default()
+                .push((trailing, path, rate));
+        }
+        Ok(())
+    })?;
+
+    Ok(lost
+        .into_iter()
+        .map(|trailing| {
+            let trailing = trailing?;
+            let alike = held.get(&trailing[0])?;
+            (FEWEST_TRAILING_COMPONENTS..=trailing.len())
+                .rev()
+                .find_map(|depth| {
+                    let matching: Vec<_> = alike
+                        .iter()
+                        .filter(|(held, ..)| {
+                            held.len() >= depth && held[..depth] == trailing[..depth]
+                        })
+                        .collect();
+                    match matching.as_slice() {
+                        [] => None,
+                        [(_, path, rate)] => Some(Some(Reconnected {
+                            path: path.clone(),
+                            rate: SampleRate::new(*rate).ok(),
+                        })),
+                        _ => Some(None),
+                    }
+                })
+                .flatten()
+        })
+        .collect())
 }
 
 fn first_catalogued(connection: &Connection, named: &[PathBuf]) -> Result<Option<Catalogued>> {
@@ -1356,6 +1466,7 @@ fn has_gone(path: &Path, out_of_reach: &[PathBuf], folders: &mut AHashMap<PathBu
         Ok(metadata) => !metadata.is_file(),
         Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
             !volumes::is_on_an_absent_one(path, out_of_reach)
+                && !volumes::is_under_a_mount_point_not_there(path)
                 && path.parent().is_some_and(|folder| {
                     the_nearest_standing_folder_holds_something(folder, folders)
                 })

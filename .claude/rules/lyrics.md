@@ -72,6 +72,8 @@ takes no dependency on gpui, the engine or the library, so all of it is tested w
   walk continues; a refusal is reported only where nothing else answered. **The walk hands over the
   most finely timed set, not the first**: an answer replaces the one held only where its `Detail` is
   higher, so order breaks a tie; a word-timed set ends the walk.
+  **The pane's lookup is `LyricsModel::_find`, one task**: a row leaving the queue (no `Wanted`) drops
+  it, so a lookup still running cannot land the last track's words over *none*.
 - **A sidecar is checked against its track; an embedded set never is.** `lrc::read` answers a `Sheet`
   with a `Declared` of what its `[ti:]`, `[ar:]` and `[length:]` say it is about, and `Sidecar` passes
   over a sheet declaring another track. Names are folded through core's `folded_letters` and agree

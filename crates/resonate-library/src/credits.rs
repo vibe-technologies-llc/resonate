@@ -127,6 +127,8 @@ fn credit_each(tx: &Transaction<'_>, credit: &str, artists: &[i64]) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::Connection;
+
     use super::*;
 
     #[test]
@@ -147,6 +149,30 @@ mod tests {
             members_of("Kanye West Feat. Jay-Z"),
             vec!["Kanye West", "Jay-Z"]
         );
+    }
+
+    #[test]
+    fn the_tracks_of_a_credit_are_found_by_an_index_and_not_by_a_scan() {
+        let connection = Connection::open_in_memory().expect("an in-memory catalog");
+        crate::schema::lay_out(&connection).expect("the schema applies");
+
+        for statement in [
+            "SELECT id, 1 FROM tracks WHERE artist = 'A & B'",
+            "UPDATE tracks SET artist_id = 1 WHERE artist = 'A & B'",
+        ] {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {statement}"))
+                .and_then(|mut plan| {
+                    plan.query_map([], |row| row.get::<_, String>(3))
+                        .and_then(Iterator::collect)
+                })
+                .expect("a plan");
+
+            assert!(
+                plan.iter().any(|step| step.contains("tracks_by_credit")),
+                "{statement} reads every track: {plan:?}"
+            );
+        }
     }
 
     #[test]

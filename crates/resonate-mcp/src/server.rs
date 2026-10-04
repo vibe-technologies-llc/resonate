@@ -2,7 +2,11 @@ use std::{
     cell::{Cell, RefCell},
     collections::BTreeMap,
     io::{self, BufRead, Read as _, Write},
-    sync::mpsc::{self, Receiver, SyncSender},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+    },
     thread,
     time::Duration,
 };
@@ -91,12 +95,19 @@ enum Heard {
 }
 
 #[derive(Clone)]
-pub struct Stop(SyncSender<Heard>);
+pub struct Stop {
+    sender: SyncSender<Heard>,
+    asked: Arc<AtomicBool>,
+}
 
 impl Stop {
     pub fn stop(&self) {
-        if self.0.send(Heard::Stop).is_err() {
-            tracing::debug!("the session had already ended when it was told to stop");
+        self.asked.store(true, Ordering::Release);
+        match self.sender.try_send(Heard::Stop) {
+            Ok(()) | Err(TrySendError::Full(_)) => {}
+            Err(TrySendError::Disconnected(_)) => {
+                tracing::debug!("the session had already ended when it was told to stop");
+            }
         }
     }
 }
@@ -104,11 +115,24 @@ impl Stop {
 pub struct Stoppable {
     sender: SyncSender<Heard>,
     heard: Receiver<Heard>,
+    asked: Arc<AtomicBool>,
 }
 
 pub fn stoppable() -> (Stop, Stoppable) {
     let (sender, heard) = mpsc::sync_channel(1);
-    (Stop(sender.clone()), Stoppable { sender, heard })
+    let asked = Arc::new(AtomicBool::new(false));
+    let stop = Stop {
+        sender: sender.clone(),
+        asked: Arc::clone(&asked),
+    };
+    (
+        stop,
+        Stoppable {
+            sender,
+            heard,
+            asked,
+        },
+    )
 }
 
 enum Message {
@@ -214,7 +238,11 @@ impl Server {
         mut output: impl Write,
         stoppable: Stoppable,
     ) -> Result<()> {
-        let Stoppable { sender, heard } = stoppable;
+        let Stoppable {
+            sender,
+            heard,
+            asked,
+        } = stoppable;
         let ticking = sender.clone();
         thread::Builder::new()
             .name("resonate-mcp-read".to_owned())
@@ -231,6 +259,9 @@ impl Server {
         self.pushing.set(true);
 
         for told in heard {
+            if asked.load(Ordering::Acquire) {
+                break;
+            }
             match told {
                 Heard::Stop => break,
                 Heard::Tick => {

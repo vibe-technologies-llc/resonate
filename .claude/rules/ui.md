@@ -87,7 +87,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   without one is unclickable, not merely unstyled.
 - **The search field is a real text input, not a keystroke accumulator.** `views/field.rs` owns the
   `Field` entity and `edit.rs` the `Edit` behind it — content, caret and selection, with no gpui, so the
-  caret, word motions and grapheme steps are tested without a window. The view half is a custom
+  caret, word motions and grapheme steps are tested without a window. **A word is a run of graphemes
+  of one class** (space, letters and digits, symbol), classed by the grapheme's first character so a
+  decomposed accent stays with its letter, and a run of letters further breaks wherever UAX #29 puts a
+  word boundary (`Edit::runs`), so an unspaced Han or Hiragana sentence moves a character at a time
+  and a katakana run stays one word. The view half is a custom
   `Element`: it shapes the line, paints selection and caret, and registers an `ElementInputHandler`,
   giving IME preediting, a `bounds_for_range` the candidate window is placed against, and a caret
   mapping to and from a pointer position. The line scrolls under the field to keep the caret in view

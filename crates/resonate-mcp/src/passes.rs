@@ -227,11 +227,6 @@ impl<Progress: Watched, Summary: Ended> Slot<Progress, Summary> {
             handle.cancel();
         }
     }
-
-    fn drained(&mut self) {
-        self.stop();
-        self.joined();
-    }
 }
 
 struct Running {
@@ -418,9 +413,12 @@ impl Passes {
 
     pub fn drain(&self) {
         let mut running = self.running.borrow_mut();
-        running.scan.drained();
-        running.lookup.drained();
-        running.poll.drained();
+        running.scan.stop();
+        running.lookup.stop();
+        running.poll.stop();
+        running.scan.joined();
+        running.lookup.joined();
+        running.poll.joined();
     }
 }
 

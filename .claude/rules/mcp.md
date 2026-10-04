@@ -107,9 +107,14 @@ keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features)
 - **A missing track is named by its `release_track_id`.** `want_tracks` is
   `Library::want_release_tracks` over the whole list in one transaction, so a list naming one unknown
   row wants none of it.
-- **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint` (the removals, `forget_folder`,
-  and `play_playlist`, which replaces a queue); `Tool::reaches_the_network` is `openWorldHint`
+- **What a tool may destroy is said.** `Tool::destroys` is `destructiveHint` (the removals, `forget_folder`, `undo_edit`,
+  which may discard a playlist it made, and `play_playlist`, which replaces a queue); `Tool::reaches_the_network` is `openWorldHint`
   (`start_lookup` and `start_poll` alone).
+- **A session undoes only its own edits.** `undo_edit` is `Library::undo`, or `Library::redo` with
+  `redo`, over the stack of the process serving the session, so it reaches the playlist edits the
+  session's tools made and nothing the window or another process did; a playlist changed by anything
+  else since is the library's `Error::PlaylistChanged`, a failure of that tool. It answers what was
+  walked (`edit`, `playlist`, `more_to_undo`) or `walked: null` where nothing is left.
 - **An unreadable combination is a refusal**: `OneOf`, `AtLeastOneOf`, `AtMostOneOf`, and `BlankField`
   for a blank `query` or `fills_from`, which the grammar reads as no condition and would take the
   first rows of the whole library (`a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library`).
@@ -137,4 +142,8 @@ keeps the subcommand in the grammar (`build.rs` reads `cli.rs` with no features)
   every other way out. **A signal ends it the same way**: `resonate mcp` serves through
   `serve_until_stopped`, stdin is read on a thread of its own, and the binary hands `Stop::stop` to
   `signals::cancel_when_told`, so `SIGTERM` stops a scan at a file boundary rather than killing it
-  mid-file, with its input still open; a second signal leaves at once.
+  mid-file, with its input still open; a second signal leaves at once. **`Stop::stop` never waits**: it
+  sets a flag the session loop reads before each message and only `try_send`s the wake-up, the channel
+  holding one message and a busy session leaving it full, so the signal thread is free for the second
+  signal however long a call runs (`a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it`).
+  A drain cancels every running pass before it joins any, so the passes wind down together.

@@ -1136,6 +1136,41 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
 }
 
 #[test]
+fn a_session_takes_back_its_own_playlist_edit_and_makes_it_again() {
+    let server = nothing_running();
+
+    called(&server, "create_playlist", json!({ "name": "Evening" }));
+    called(
+        &server,
+        "rename_playlist",
+        json!({ "playlist": "Evening", "to": "Night" }),
+    );
+
+    let undone = called(&server, "undo_edit", json!({}));
+    assert_eq!(undone["walked"], "undone");
+    assert_eq!(undone["edit"], "renamed");
+    assert_eq!(undone["playlist"], "Evening");
+    assert_eq!(undone["more_to_undo"], 1);
+    let names = called(&server, "list_playlists", json!({}));
+    assert_eq!(names["playlists"][0]["name"], "Evening");
+
+    let again = called(&server, "undo_edit", json!({ "redo": true }));
+    assert_eq!(again["walked"], "redone");
+    assert_eq!(again["edit"], "renamed");
+    let names = called(&server, "list_playlists", json!({}));
+    assert_eq!(names["playlists"][0]["name"], "Night");
+
+    called(&server, "undo_edit", json!({}));
+    called(&server, "undo_edit", json!({}));
+    let nothing = called(&server, "undo_edit", json!({}));
+    assert_eq!(nothing["walked"], Value::Null);
+    assert_eq!(
+        called(&server, "list_playlists", json!({}))["playlists"],
+        json!([])
+    );
+}
+
+#[test]
 fn a_track_an_album_is_short_of_is_listed_and_wanted() {
     let tree = Tree::new();
     tree.wav("a.wav", "Night Signal", "Hours", "1");
@@ -1336,6 +1371,27 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
     assert!(answered.contains("\"result\":{}"), "{answered}");
     assert_ne!(scan["state"], "running", "{scan}");
     drop(writing);
+}
+
+#[test]
+fn a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it() {
+    let (stop, stoppable) = resonate_mcp::stoppable();
+    let telling = std::thread::spawn(move || {
+        for _ in 0..8 {
+            stop.stop();
+        }
+    });
+
+    let started = std::time::Instant::now();
+    while !telling.is_finished() {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a second stop waited for the session to be free"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    telling.join().expect("the telling thread");
+    drop(stoppable);
 }
 
 fn once_settled(server: &Server, pass: &str) -> Value {

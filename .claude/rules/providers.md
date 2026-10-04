@@ -146,7 +146,8 @@ under `PollOptions::ASKING_EVERY_WANT`, because somebody who just dropped a file
 *now*; the timer and a bare `resonate poll` keep to `Want::due_at`, which spares a network service.
 `PollProgress::{asking, asking_provider, received}` carry the want, provider and bytes landed for the
 window's *Downloading…*; they are read every frame, so the provider sits under a `parking_lot::Mutex`
-held for a clone and the count is an atomic.
+held for a clone and the count is an atomic. A `Delivery::File` counts its whole length when the vault takes it up, so an inbox
+delivery shows as received as a stream does (`a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received`).
 
 **The window watches the inbox folder** through the same `RootsWatch` as the roots: once a write under
 it has been quiet for `INBOX_QUIET_FOR`, it polls as `Prompted::ByTheInbox`, raising no notice. **What

@@ -47,6 +47,7 @@ pub enum Tool {
     RemoveFromPlaylist,
     RenamePlaylist,
     DiscardPlaylist,
+    UndoEdit,
     WantTracks,
     NowPlaying,
     Control,
@@ -66,7 +67,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
@@ -80,6 +81,7 @@ impl Tool {
         Self::RemoveFromPlaylist,
         Self::RenamePlaylist,
         Self::DiscardPlaylist,
+        Self::UndoEdit,
         Self::WantTracks,
         Self::NowPlaying,
         Self::Control,
@@ -113,6 +115,7 @@ impl Tool {
             Self::RemoveFromPlaylist => "remove_from_playlist",
             Self::RenamePlaylist => "rename_playlist",
             Self::DiscardPlaylist => "discard_playlist",
+            Self::UndoEdit => "undo_edit",
             Self::WantTracks => "want_tracks",
             Self::NowPlaying => "now_playing",
             Self::Control => "control_playback",
@@ -157,6 +160,7 @@ impl Tool {
             self,
             Self::RemoveFromPlaylist
                 | Self::DiscardPlaylist
+                | Self::UndoEdit
                 | Self::RemoveFromQueue
                 | Self::PlayPlaylist
                 | Self::ForgetFolder
@@ -218,6 +222,12 @@ impl Tool {
             Self::DiscardPlaylist => "Take a playlist and its rows away for good, or the search \
                                       one that fills itself fills from. The files it named stay \
                                       where they are. Needs no player."
+                .to_owned(),
+            Self::UndoEdit => "Put back the playlist edit this session made last, or with redo \
+                               make again what undo put back. Reaches only this session's own \
+                               edits, and is refused for a playlist something else changed since. \
+                               Answers what it walked, or null where nothing is left. Needs no \
+                               player."
                 .to_owned(),
             Self::WantTracks => "Mark missing tracks as wanted, by the release_track_id \
                                  list_missing gives them, so the library's providers look for \
@@ -384,6 +394,13 @@ impl Tool {
                 "playlist": { "type": "string", "description": "The playlist's name." },
                 "to": { "type": "string", "description": "Its new name." },
             }),
+            Self::UndoEdit => json!({
+                "redo": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Make again what an undo put back, instead of undoing.",
+                },
+            }),
             Self::WantTracks => json!({
                 "release_track_ids": ids("Release track ids, as list_missing gives them."),
             }),
@@ -524,6 +541,7 @@ impl Tool {
             | Self::Queue
             | Self::AddToQueue
             | Self::SleepTimer
+            | Self::UndoEdit
             | Self::StartScan
             | Self::StartLookup
             | Self::StartPoll
@@ -621,6 +639,10 @@ impl Tool {
             Self::DiscardPlaylist => {
                 let asked: Choosing = self.taken(arguments)?;
                 edits::discard_playlist(library, &asked.playlist)
+            }
+            Self::UndoEdit => {
+                let asked: Undoing = self.taken(arguments)?;
+                edits::undo_edit(library, asked.redo)
             }
             Self::WantTracks => {
                 let asked: WantingTracks = self.taken(arguments)?;
@@ -1121,6 +1143,12 @@ struct Sleeping {
 struct Scanning {
     #[serde(default)]
     roots: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct Undoing {
+    #[serde(default)]
+    redo: bool,
 }
 
 #[derive(Deserialize)]

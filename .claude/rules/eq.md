@@ -131,7 +131,8 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   `OutputPlan::convolution` makes the plan `Converted`, and a change rebinds at the position
   rather than retuning. The binary reads the file at start and `resonate explain` names it; the
   pane's *Room correction* group picks one, reads it on a background thread, sends it and writes the
-  key. One response for every device, not a binding: a room is measured once.
+  key. The read is `RootView::reading_the_room`, one task: a second pick replaces it and *Stop
+  correcting* drops it, so the last gesture wins whichever read lands first. One response for every device, not a binding: a room is measured once.
 
 ## The binding
 

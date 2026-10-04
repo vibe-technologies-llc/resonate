@@ -1068,6 +1068,7 @@ impl LyricsModel {
         self.asked_about = asked;
 
         let Some(wanted) = wanted else {
+            self._find = Task::ready(());
             self.looked_for = None;
             self.look = Look::Nothing;
             self.rewind();

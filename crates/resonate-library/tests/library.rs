@@ -10,7 +10,7 @@ use std::{
     slice,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     thread,
@@ -3204,6 +3204,54 @@ fn a_sheet_written_on_windows_resolves_its_backslashed_rows() -> Result<()> {
         "a backslashed row read as a missing file"
     );
     assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["a", "b"]);
+    Ok(())
+}
+
+#[test]
+fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing_folders_name()
+-> Result<()> {
+    let tree = Tree::new();
+    for relative in [
+        "Artist/Album/one.wav",
+        "Artist/Album/two.wav",
+        "Other/Album/one.wav",
+    ] {
+        tree.write(relative, &Wav::new().frames(4_410).build());
+    }
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let sheet = tree.path().join("windows.m3u");
+    fs::write(
+        &sheet,
+        "#EXTM3U\r\nD:\\Music\\Artist\\Album\\two.wav\r\n\
+         D:\\Music\\Album\\one.wav\r\n\
+         D:\\Music\\Other\\Album\\ONE.WAV\r\n\
+         D:\\Music\\Nothing\\gone.wav\r\n",
+    )
+    .expect("a writable temporary file");
+
+    let imported = library.import_playlist(&sheet, None)?;
+
+    assert_eq!(imported.added, 4);
+    assert_eq!(
+        imported.missing, 2,
+        "the row two files answered to, and the one nothing answered to, are the missing"
+    );
+    let cuts = library.playlist_cuts(imported.id)?;
+    assert_eq!(
+        cuts[0].location.as_path(),
+        Some(tree.path().join("Artist/Album/two.wav").as_path())
+    );
+    assert_eq!(
+        cuts[2].location.as_path(),
+        Some(tree.path().join("Other/Album/one.wav").as_path()),
+        "a name differing only in case was not the file"
+    );
+    assert_ne!(
+        cuts[1].location.as_path(),
+        Some(tree.path().join("Artist/Album/one.wav").as_path()),
+        "a row two files could be was taken for one of them"
+    );
     Ok(())
 }
 
@@ -19671,6 +19719,46 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
     );
     assert_eq!(progress.asking_provider(), None);
     assert_eq!(progress.received(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let bytes = Wav::new()
+        .text(TITLE, "San Tropez")
+        .frames(4_000_000)
+        .build();
+    let size = bytes.len() as u64;
+    let delivered = tree.write("delivered.wav", &bytes);
+
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, None)?;
+
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    let handle = library.poll(inbox.registered(), PollOptions::default())?;
+    let progress = Arc::clone(handle.progress());
+    let sampled = Arc::new(AtomicBool::new(false));
+    let counted = thread::spawn({
+        let sampled = Arc::clone(&sampled);
+        move || {
+            let mut most = 0;
+            while !sampled.load(Ordering::Relaxed) {
+                most = most.max(progress.received());
+                thread::sleep(Duration::from_micros(200));
+            }
+            most
+        }
+    });
+    let summary = handle.join()?;
+    sampled.store(true, Ordering::Relaxed);
+    let most = counted.join().expect("the sampling thread");
+
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(most, size, "a file delivered was never counted as received");
     Ok(())
 }
 

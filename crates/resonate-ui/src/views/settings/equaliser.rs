@@ -2,8 +2,9 @@ use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     App, BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
-    PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Window, canvas,
-    div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
+    PathPromptOptions, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Task, Window,
+    canvas, div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb,
+    size,
 };
 use resonate_core::{
     MediaLocation, SampleRate,
@@ -1474,6 +1475,7 @@ impl RootView {
 
     pub(crate) fn correct_the_room(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
         let Some(file) = file else {
+            self.reading_the_room = Task::ready(());
             cx.update_global::<ResonateApp, _>(|global, _| global.convolution = None);
             self.send(Command::SetConvolution(None), cx);
             self.store(&Setting::Convolution(None), cx);
@@ -1484,7 +1486,7 @@ impl RootView {
         let read = cx
             .background_executor()
             .spawn(async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading)) });
-        cx.spawn(async move |this, cx| {
+        self.reading_the_room = cx.spawn(async move |this, cx| {
             let read = read.await;
             let _ = this.update(cx, |this, cx| match read {
                 Ok(Some(impulse)) => {
@@ -1502,8 +1504,7 @@ impl RootView {
                     this.report(Notice::Trouble(UNREAD.to_owned()), cx);
                 }
             });
-        })
-        .detach();
+        });
     }
 }
 

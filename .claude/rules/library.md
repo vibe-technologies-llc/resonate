@@ -1312,7 +1312,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   file worth fingerprinting exactly one whose name is not.
 - **A collaboration is listed under every artist it credits, never as an artist of its own.**
   `track_credits` — a migration step — holds each member of a track's credit, and
-  `credits::credit_the_members` rebuilds it from `tracks.artist` whenever the orphans are swept:
+  `credits::credit_the_members` rebuilds it from `tracks.artist` whenever the orphans are swept, each credit's
+  tracks found through `tracks_by_credit` (a plain index on `tracks(artist)`, which the `COLLATE NOCASE` one
+  cannot serve for a binary `=`):
   `members_of` splits on the joins a credit is written with (`JOINS`: `&`, `and`, a comma, a semicolon,
   `/`, `+`, `x`, `×`, `with`, `feat.`, `ft.`, `featuring`, `vs.` and the dotless `feat`, `ft`, `vs`,
   each space-delimited) and takes the split **only where every part names an artist the catalog
@@ -2088,7 +2090,7 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `Renames` notes each whose name moved — copied as `name (2).ext`, or found already held byte for
   byte under such a name (`Stood::Held` carries where) — by the folder it came from. A sheet or
   companion from that folder is then aimed after it: one named after the track takes the new stem
-  (`following_its_audio`, the longest stem winning), and a sheet whose `FILE` line names a renamed
+  (`following_its_audio`, the longest stem winning; a lyric sheet in a `lyrics`, `lyric` or `lrc` folder also follows the renames of the folder above, where the sidecar reader looks for it), and a sheet whose `FILE` line names a renamed
   track is rewritten through `resonate_codec::renamed_cue` — the rule organise follows a sheet by,
   encoding and bytes kept — and landed as `Content::Rewritten` bytes rather than a copy, read back
   and weighed against a standing file the same way. The source is never touched.
@@ -2859,7 +2861,13 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   lexical one where the file is not there to resolve, so a sheet imported while a mount is down still
   names what a later scan will store. Canonicalising every row once lost a file a scan under
   `follow_symlinks` stored through its link
-  (`a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_row`). A row holding a
+  (`a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_row`). **A row naming a file nowhere on this machine is
+  reconnected by its trailing components** (`reconnected_by_trailing_components`): where none of the three
+  readings is catalogued and nothing stands at the path, the catalog's paths are read once for the
+  file names asked about, and the row takes the one catalogued path whose last components, compared
+  lowercased, agree with the most of the row's — at least two, the file's name and its folder's — a tie
+  at that depth leaving the row as written
+  (`a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing_folders_name`). A row holding a
   backslash and no forward
   slash is a path a Windows player wrote, and `forward_separated` reads it with its separators turned,
   so `..\Music\01.mp3` resolves beside the sheet rather than as one oddly named file. The reverse is
@@ -2888,9 +2896,12 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   **A tidy drops only what is surely gone.** `gone_from` weighs a row's file gone only where the stat
   answers `NotFound` or `NotADirectory` — any other failure, a permission or an `EIO`, keeping the row —
   and the path is on no volume `volumes::is_mounted` finds unmounted and under no root whose directory
-  is missing, and the nearest folder above it that stands holds something: an unmounted mount point
+  is missing, and not under a mount point the desktops make that nothing stands at
+  (`volumes::is_under_a_mount_point_not_there`: `/run/media/<user>/<label>`, `/media/<user>/<label>` and
+  `/mnt/<label>`, the first component below the base that is missing, not a mount point itself), and the
+  nearest folder above it that stands holds something: an unmounted mount point
   reads as an empty folder or none, so a stick's rows are kept whether the catalog ever noted its volume
-  or not. The price is a file deleted with the last of its folder's contents staying until the folder
+  or not, even where its parent holds another drive. The price is a file deleted with the last of its folder's contents staying until the folder
   goes (`a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
   `a_prune_keeps_the_rows_under_a_root_that_is_not_there`).
 - **A cue row leaves as its file and the times VLC reads, and comes back as the cut.** M3U, PLS and

@@ -23,6 +23,7 @@ use crate::{
 const SHEET_EXTENSION: &str = "cue";
 
 const LYRIC_ENDINGS: [&str; 3] = [".lrc", ".lyricsfile.yaml", ".lyricsfile.yml"];
+const LYRIC_FOLDERS: [&str; 3] = ["lyrics", "lyric", "lrc"];
 
 const LARGEST_SHEET_REWRITTEN: u64 = 1 << 20;
 
@@ -71,6 +72,17 @@ fn is_a_lyric_sheet(path: &Path) -> bool {
         .is_some_and(|name| {
             let name = name.to_ascii_lowercase();
             LYRIC_ENDINGS.iter().any(|ending| name.ends_with(ending))
+        })
+}
+
+fn is_a_lyric_folder(folder: &Path) -> bool {
+    folder
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            LYRIC_FOLDERS
+                .iter()
+                .any(|folder| name.eq_ignore_ascii_case(folder))
         })
 }
 
@@ -270,6 +282,7 @@ struct Item {
     role: Role,
 }
 
+#[derive(Clone)]
 struct Renamed {
     from: OsString,
     to: OsString,
@@ -295,11 +308,23 @@ impl Renames {
         }
     }
 
-    fn beside(&self, item: &Item) -> &[Renamed] {
-        item.from
-            .parent()
+    fn in_folder(&self, folder: Option<&Path>) -> impl Iterator<Item = &Renamed> {
+        folder
             .and_then(|folder| self.0.get(folder))
-            .map_or(&[], Vec::as_slice)
+            .into_iter()
+            .flatten()
+    }
+
+    fn beside(&self, item: &Item) -> Vec<Renamed> {
+        let folder = item.from.parent();
+        let above = folder
+            .filter(|folder| is_a_lyric_folder(folder) && is_a_lyric_sheet(&item.from))
+            .and_then(Path::parent);
+
+        self.in_folder(folder)
+            .chain(self.in_folder(above))
+            .cloned()
+            .collect()
     }
 }
 
@@ -372,7 +397,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
             break;
         }
 
-        let (relative, content) = aimed(&item, renames.beside(&item));
+        let (relative, content) = aimed(&item, &renames.beside(&item));
         match land(&item, &relative, &content, &into) {
             Ok(Stood::Landed(landed)) => {
                 if item.role == Role::Audio {
@@ -986,6 +1011,30 @@ mod tests {
             fs::read(from.join("Album/Album.cue")).expect("untouched"),
             b"FILE \"Album.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n"
         );
+    }
+
+    #[test]
+    fn a_lyric_in_a_lyrics_folder_follows_the_name_its_track_landed_under() {
+        let scratch = Scratch::new("lyrics-folder");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        written(&from, "Album/01 Song.flac", b"this song");
+        written(&from, "Album/lyrics/01 Song.lrc", b"[00:01.00]words");
+        written(&from, "Album/other/01 Song.lrc", b"[00:01.00]elsewhere");
+        written(&into, "Album/01 Song.flac", b"another song");
+
+        let summary = taken_in(vec![from.join("Album")], &into);
+
+        assert_eq!(
+            fs::read(into.join("Album/01 Song (2).flac")).expect("copied beside"),
+            b"this song"
+        );
+        assert!(into.join("Album/lyrics/01 Song (2).lrc").is_file());
+        assert!(!into.join("Album/lyrics/01 Song.lrc").exists());
+        assert!(
+            into.join("Album/other/01 Song.lrc").is_file(),
+            "a folder not named for lyrics was followed all the same"
+        );
+        assert_eq!(summary.stats.copied, 3);
     }
 
     #[test]

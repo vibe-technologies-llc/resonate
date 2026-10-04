@@ -247,13 +247,18 @@ fn landed(
     };
 
     let keeping = match delivered.delivery {
-        Delivery::File(path) => vault.keep(&Taking {
-            sources: &Sources::local(),
-            location: &MediaLocation::local(path),
-            span: None,
-            renewing: false,
-            foretold: None,
-        }),
+        Delivery::File(path) => {
+            if let Ok(metadata) = fs::metadata(&path) {
+                progress.received_more(usize::try_from(metadata.len()).unwrap_or(usize::MAX));
+            }
+            vault.keep(&Taking {
+                sources: &Sources::local(),
+                location: &MediaLocation::local(path),
+                span: None,
+                renewing: false,
+                foretold: None,
+            })
+        }
         Delivery::Stream {
             extension, reader, ..
         } => {

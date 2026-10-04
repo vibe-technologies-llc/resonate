@@ -36,6 +36,32 @@ pub fn absent(connection: &Connection) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+const WHERE_DESKTOPS_MOUNT: [(&str, usize); 3] = [("/run/media", 2), ("/media", 2), ("/mnt", 1)];
+
+pub fn is_under_a_mount_point_not_there(path: &Path) -> bool {
+    WHERE_DESKTOPS_MOUNT
+        .iter()
+        .any(|(base, deepest)| under_a_mount_point_not_there_below(path, Path::new(base), *deepest))
+}
+
+fn under_a_mount_point_not_there_below(path: &Path, base: &Path, deepest: usize) -> bool {
+    let Ok(below) = path.strip_prefix(base) else {
+        return false;
+    };
+    let mut candidate = base.to_path_buf();
+
+    for component in below.components().take(deepest) {
+        candidate.push(component);
+        if !candidate.exists() {
+            return true;
+        }
+        if is_mounted(&candidate) {
+            return false;
+        }
+    }
+    false
+}
+
 pub fn is_on_an_absent_one(path: &Path, absent: &[PathBuf]) -> bool {
     absent.iter().any(|volume| path.starts_with(volume))
 }
@@ -87,4 +113,36 @@ fn forget(tx: &Transaction<'_>, volume: &Path) -> Result<()> {
     )
     .map(drop)
     .map_err(|source| Error::store(StoreOp::Delete, source))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, process};
+
+    use super::*;
+
+    #[test]
+    fn a_path_under_a_mount_point_nothing_is_mounted_at_is_out_of_reach_though_its_siblings_stand()
+    {
+        let base = env::temp_dir().join(format!("resonate-volumes-{}", process::id()));
+        fs::create_dir_all(base.join("me/Other")).expect("a writable temporary folder");
+
+        let music = base.join("me/Stick/Music/a.flac");
+        let kept = base.join("me/Other/a.flac");
+
+        assert!(under_a_mount_point_not_there_below(&music, &base, 2));
+        assert!(!under_a_mount_point_not_there_below(&kept, &base, 2));
+        assert!(!under_a_mount_point_not_there_below(
+            Path::new("/elsewhere/me/Stick/a.flac"),
+            &base,
+            2
+        ));
+        assert!(under_a_mount_point_not_there_below(
+            &base.join("Stick/a.flac"),
+            &base,
+            1
+        ));
+
+        fs::remove_dir_all(&base).expect("the temporary folder goes");
+    }
 }

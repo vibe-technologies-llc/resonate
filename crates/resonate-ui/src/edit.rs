@@ -48,6 +48,11 @@ impl Class {
     }
 }
 
+struct Run {
+    range: Range<usize>,
+    class: Class,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Span {
     Typing,
@@ -295,33 +300,12 @@ impl Edit {
 
     pub(crate) fn word_at(&self, offset: usize) -> Range<usize> {
         let at = self.boundary(offset);
-        let after = self.slice(at..self.content.len());
-        let before = self.slice(0..at);
+        let runs = self.runs();
 
-        let Some(class) = after
-            .chars()
-            .next()
-            .or_else(|| before.chars().next_back())
-            .map(Class::of)
-        else {
-            return 0..0;
-        };
-
-        let start = before
-            .char_indices()
-            .rev()
-            .take_while(|(_, character)| Class::of(*character) == class)
-            .map(|(index, _)| index)
-            .last()
-            .unwrap_or(at);
-        let end = after
-            .char_indices()
-            .take_while(|(_, character)| Class::of(*character) == class)
-            .map(|(index, character)| at + index + character.len_utf8())
-            .last()
-            .unwrap_or(at);
-
-        start..end
+        runs.iter()
+            .find(|run| run.range.start <= at && at < run.range.end)
+            .or(runs.last())
+            .map_or(0..0, |run| run.range.clone())
     }
 
     fn landing(&self, motion: Motion) -> usize {
@@ -351,38 +335,47 @@ impl Edit {
     }
 
     fn previous_word(&self, offset: usize) -> usize {
-        let mut walk = self
-            .slice(0..offset)
-            .char_indices()
+        self.runs()
+            .iter()
             .rev()
-            .skip_while(|(_, character)| Class::of(*character) == Class::Space)
-            .peekable();
-
-        let Some(class) = walk.peek().map(|(_, character)| Class::of(*character)) else {
-            return 0;
-        };
-
-        walk.take_while(|(_, character)| Class::of(*character) == class)
-            .map(|(index, _)| index)
-            .last()
-            .unwrap_or(0)
+            .filter(|run| run.range.start < offset)
+            .find(|run| run.class != Class::Space)
+            .map_or(0, |run| run.range.start)
     }
 
     fn next_word(&self, offset: usize) -> usize {
-        let after = self.slice(offset..self.content.len());
-        let mut walk = after
-            .char_indices()
-            .skip_while(|(_, character)| Class::of(*character) == Class::Space)
-            .peekable();
+        self.runs()
+            .iter()
+            .filter(|run| run.range.end > offset)
+            .find(|run| run.class != Class::Space)
+            .map_or(self.content.len(), |run| run.range.end)
+    }
 
-        let Some(class) = walk.peek().map(|(_, character)| Class::of(*character)) else {
-            return self.content.len();
-        };
+    fn runs(&self) -> Vec<Run> {
+        let word_breaks: Vec<usize> = self
+            .content
+            .split_word_bound_indices()
+            .map(|(at, _)| at)
+            .collect();
+        let mut runs: Vec<Run> = Vec::new();
 
-        walk.take_while(|(_, character)| Class::of(*character) == class)
-            .map(|(index, character)| offset + index + character.len_utf8())
-            .last()
-            .unwrap_or(self.content.len())
+        for (at, grapheme) in self.content.grapheme_indices(true) {
+            let class = grapheme.chars().next().map_or(Class::Space, Class::of);
+            let end = at + grapheme.len();
+            match runs.last_mut() {
+                Some(run)
+                    if run.class == class
+                        && (class != Class::Word || word_breaks.binary_search(&at).is_err()) =>
+                {
+                    run.range.end = end;
+                }
+                _ => runs.push(Run {
+                    range: at..end,
+                    class,
+                }),
+            }
+        }
+        runs
     }
 
     fn clamped(&self, range: Range<usize>) -> Range<usize> {
@@ -615,6 +608,40 @@ mod tests {
         assert_eq!(edit.word_at(4), 4..5);
         assert_eq!(edit.word_at(7), 5..9);
         assert_eq!(edit.word_at(12), 10..12);
+    }
+
+    #[test]
+    fn a_decomposed_accent_stays_with_its_letter_in_a_word_motion() {
+        let mut edit = at("cafe\u{301} noir", 0);
+
+        edit.go(Motion::WordRight, Anchor::Collapse);
+        assert_eq!(edit.cursor(), "cafe\u{301}".len());
+
+        edit.go(Motion::WordLeft, Anchor::Collapse);
+        assert_eq!(edit.cursor(), 0);
+        assert_eq!(edit.word_at(3), 0.."cafe\u{301}".len());
+    }
+
+    #[test]
+    fn a_sentence_without_spaces_is_not_one_word() {
+        let mut edit = at("\u{79c1}\u{306f}\u{732b}\u{304c}\u{597d}\u{304d}", 0);
+
+        edit.go(Motion::WordRight, Anchor::Collapse);
+
+        assert_eq!(edit.cursor(), "\u{79c1}".len());
+        assert_eq!(edit.word_at(0), 0.."\u{79c1}".len());
+    }
+
+    #[test]
+    fn a_run_of_katakana_is_one_word() {
+        let mut edit = at("\u{30df}\u{30e5}\u{30fc}\u{30b8}\u{30c3}\u{30af} x", 0);
+
+        edit.go(Motion::WordRight, Anchor::Collapse);
+
+        assert_eq!(
+            edit.cursor(),
+            "\u{30df}\u{30e5}\u{30fc}\u{30b8}\u{30c3}\u{30af}".len()
+        );
     }
 
     #[test]

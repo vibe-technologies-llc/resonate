@@ -246,6 +246,7 @@ const MIGRATIONS: &[&str] = &[
      INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
           SELECT id, title, artist, album, genre, lyrics FROM tracks_fts_held;
      DROP TABLE tracks_fts_held;",
+    "CREATE INDEX tracks_by_credit ON tracks(artist);",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
