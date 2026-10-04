@@ -8776,6 +8776,59 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
 }
 
 #[test]
+fn kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_alone() -> Result<()>
+{
+    let (tree, library, database) = scanned_orbits_on_disk()?;
+    let first = orbits_file(&tree, "1.wav");
+    let second = orbits_file(&tree, "2.wav");
+    let third = orbits_file(&tree, "3.wav");
+    for location in [&first, &second, &third] {
+        library.keep_lyrics(location, None, Some(&words("Overhead the albatross")))?;
+    }
+    let refusals = |database: &Path| -> i64 {
+        beside(database)
+            .query_row("SELECT count(*) FROM lyrics_refused", [], |row| row.get(0))
+            .expect("the refusals count")
+    };
+    for location in [&first, &second, &third] {
+        beside(&database)
+            .execute(
+                "INSERT INTO lyrics_refused (path, span_start, refused, refusals) VALUES (?1, 0, 1, 1)",
+                [location.as_path().expect("a local file").to_str().expect("a path")],
+            )
+            .expect("a refusal is written");
+    }
+    let is_kept = |location: &MediaLocation| -> Result<bool> {
+        Ok(library.kept_lyrics(location, None)?.is_some())
+    };
+
+    scan(&library, &options(&tree))?;
+    assert!(is_kept(&first)? && is_kept(&second)? && is_kept(&third)?);
+    assert_eq!(refusals(&database), 3);
+
+    tree.write(
+        "1.wav",
+        &Wav::new()
+            .text(TITLE, "A Different Song")
+            .text(ARTIST, "The Orbiters")
+            .text(ALBUM, "Orbits")
+            .text(TRACK, "1")
+            .build(),
+    );
+    fs::remove_file(tree.path().join("2.wav")).expect("a removable file");
+    scan(&library, &options(&tree))?;
+
+    assert!(
+        !is_kept(&first)?,
+        "a file replaced at the same path kept the old song's words"
+    );
+    assert!(!is_kept(&second)?, "a file that went kept its lyrics");
+    assert!(is_kept(&third)?, "a file left alone lost its lyrics");
+    assert_eq!(refusals(&database), 1);
+    Ok(())
+}
+
+#[test]
 fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;

@@ -3944,7 +3944,13 @@ mod tests {
             let mut driven = Driven::opened_in(cx, library, &folder);
             let search = driven.read(|root, _| root.search.clone());
 
-            for sidebar in ["queue", "tab-albums", "tab-artists", "tab-tracks", "tab-settings"] {
+            for sidebar in [
+                "queue",
+                "tab-albums",
+                "tab-artists",
+                "tab-tracks",
+                "tab-settings",
+            ] {
                 driven.click(sidebar);
                 driven.cx.update(|_, cx| {
                     search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));

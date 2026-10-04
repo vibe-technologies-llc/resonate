@@ -1500,7 +1500,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `providers.md` has the rest.
 - **A lyric fetched once is kept, and so is a miss; what is kept only gets better.** `lyrics_kept` is
   keyed by `(path, span_start)` as `tracks` is, so a cue row keeps its words apart from the file's;
-  `text` is `NULL` for a remembered miss and `taken` says when last asked. A kept row is a `KeptLyrics`
+  `text` is `NULL` for a remembered miss and `taken` says when last asked. A kept row, and a
+  `lyrics_refused` one, goes with its track: `store::ORPHANS` deletes those no `tracks` row names, and
+  the `lyrics_forget_a_changed_file` trigger deletes a path's when its `file_size`, `modified` or
+  `span_frames` moves — as `track_studies` is forgotten — so a file replaced at the same path asks again
+  rather than showing the old song's words
+  (`kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_alone`). A kept row is a `KeptLyrics`
   holding an `Option<LyricText>` — the text, `synced`, and the `lyricsfile` a migration step added, the
   Lyricsfile document kept only where it says more than its lines (a set timed word by word or sung by
   two overlapping voices). Its `LyricDetail` is `Plain`, `Lines` or `Lyricsfile` in that order, and
