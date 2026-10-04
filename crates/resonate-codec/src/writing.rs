@@ -826,6 +826,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         location: location.clone(),
         source,
     };
+    sweep_what_a_dead_writer_staged(path);
     if let Some(staged) = cloned_beside(path).map_err(unread)? {
         return landed_through(&staged, path, location, saving);
     }
@@ -927,15 +928,61 @@ fn landed_through(
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
 const ATTRIBUTE_READS_AT_MOST: usize = 4;
+const RUNNING_PROCESSES: &str = "/proc";
+const STAGED_BY_AND_COUNTED: char = '-';
 
 fn staged_beside(path: &Path) -> PathBuf {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = path.extension().unwrap_or_default().to_string_lossy();
     path.with_file_name(format!(
-        ".{stem}.{}-{}.{extension}",
+        ".{stem}.{}{STAGED_BY_AND_COUNTED}{}.{extension}",
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
     ))
+}
+
+fn staged_by(path: &Path, staged: &OsStr) -> Option<u32> {
+    let stem = path.file_stem()?.to_str()?;
+    let extension = path.extension().and_then(OsStr::to_str).unwrap_or_default();
+    let (writer, counted) = staged
+        .to_str()?
+        .strip_prefix('.')?
+        .strip_prefix(stem)?
+        .strip_prefix('.')?
+        .strip_suffix(extension)?
+        .strip_suffix('.')?
+        .split_once(STAGED_BY_AND_COUNTED)?;
+    counted.parse::<u64>().ok()?;
+    writer.parse().ok()
+}
+
+fn sweep_what_a_dead_writer_staged(path: &Path) {
+    let Some(folder) = path.parent() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Some(writer) = staged_by(path, &entry.file_name()) else {
+            continue;
+        };
+        let alive = Path::new(RUNNING_PROCESSES)
+            .join(writer.to_string())
+            .exists();
+        if writer == process::id() || alive {
+            continue;
+        }
+        let left = entry.path();
+        match fs::remove_file(&left) {
+            Ok(()) => {
+                tracing::info!(path = %left.display(), "swept a copy a tag write cut short left behind")
+            }
+            Err(error) => {
+                tracing::debug!(%error, path = %left.display(), "a copy a tag write cut short left behind could not be swept")
+            }
+        }
+    }
 }
 
 fn settled_over(staged: &Path, path: &Path) -> io::Result<()> {
@@ -1123,6 +1170,32 @@ mod tests {
     impl Drop for Folder {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn a_copy_a_dead_writer_staged_beside_the_track_is_swept_and_no_other() {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+
+        let folder = Folder::new();
+        let track = folder.root.join("Echoes.flac");
+        let left = folder
+            .root
+            .join(format!(".Echoes.{NEVER_A_PROCESS}-3.flac"));
+        let ours = folder
+            .root
+            .join(format!(".Echoes.{}-0.flac", process::id()));
+        let another = folder.root.join(format!(".Time.{NEVER_A_PROCESS}-0.flac"));
+        let hidden = folder.root.join(".Echoes.live.flac");
+        for path in [&track, &left, &ours, &another, &hidden] {
+            fs::write(path, b"fLaC").expect("a writable temporary file");
+        }
+
+        sweep_what_a_dead_writer_staged(&track);
+
+        assert!(!left.exists(), "a dead writer's copy was left");
+        for kept in [&track, &ours, &another, &hidden] {
+            assert!(kept.exists(), "{} was swept", kept.display());
         }
     }
 

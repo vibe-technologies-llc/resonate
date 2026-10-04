@@ -48,8 +48,6 @@ service or a format — and is not worked until that moves; everything else is o
   reader
 
 ## Tagging
-- A tag write killed part way, by a second interrupt or a kill, leaves a hidden full copy beside the
-  track that nothing sweeps and the next scan catalogs as a second track
 - A tag write is refused in a folder the listener cannot create a file in, though writing the file
   in place would work
 - Writing a tag turns an ID3v2.3 tag into v2.4 without a word, which players reading only v2.3 lose
@@ -62,8 +60,6 @@ service or a format — and is not worked until that moves; everything else is o
   copies the whole file, and one with a second name twice
 
 ## Library
-- Hidden and trash folders are walked like any other, so `.Trash-1000`, Syncthing's `.stversions`
-  and AppleDouble `._` files come back as tracks or failures on every scan
 - Kept lyrics and lyric refusals are keyed by path and never swept, so a file replaced at the same
   path shows the old song's words and the tables only grow
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move

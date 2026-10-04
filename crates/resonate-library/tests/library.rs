@@ -568,6 +568,48 @@ fn a_second_scan_of_an_untouched_tree_changes_nothing() -> Result<()> {
 }
 
 #[test]
+fn hidden_trash_and_system_folders_and_dot_files_are_passed_over() -> Result<()> {
+    let tree = Tree::new();
+    tree.write("album/one.wav", &Wav::new().text(TITLE, "one").build());
+    tree.write("album/._one.wav", b"Mac OS X        AppleDouble");
+    tree.write(
+        "album/.one.4242-0.wav",
+        &Wav::new().text(TITLE, "staged").build(),
+    );
+    tree.write(
+        ".Trash-1000/files/old.wav",
+        &Wav::new().text(TITLE, "trashed").build(),
+    );
+    tree.write(
+        ".stversions/album/one~1.wav",
+        &Wav::new().text(TITLE, "versioned").build(),
+    );
+    tree.write(
+        "$RECYCLE.BIN/S-1-5/gone.wav",
+        &Wav::new().text(TITLE, "recycled").build(),
+    );
+    tree.write(
+        "lost+found/#123.wav",
+        &Wav::new().text(TITLE, "found").build(),
+    );
+
+    let library = Library::open_in_memory()?;
+    let stats = scan(&library, &options(&tree))?;
+
+    let titles: Vec<String> = all(&library)?
+        .into_iter()
+        .map(|track| track.title)
+        .collect();
+    assert_eq!(titles, ["one"]);
+    assert_eq!(
+        stats.failed.total(),
+        0,
+        "a passed-over file was read and failed"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_rewritten_file_is_probed_again() -> Result<()> {
     let tree = Tree::new();
     tree.write("one.wav", &Wav::new().text(TITLE, "before").build());

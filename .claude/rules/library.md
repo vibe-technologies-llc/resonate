@@ -409,6 +409,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   that `AUDIO_EXTENSIONS` advertises nothing undecodable: what reaches the tally is a file whose
   extension promised a container its bytes are not — a retagging or bad rip, not a declined format.
   Both presenters print the total and append only the non-zero counts, so a clean scan reads as always.
+- **What is hidden is not music.** `scan::is_passed_over` takes every name beginning with a dot —
+  `.Trash-1000`, Syncthing's `.stversions`, an AppleDouble `._` file, a tag write's staged copy —
+  and the system folders `$RECYCLE.BIN`, `System Volume Information` and `lost+found` out of the walk
+  and out of `audio_below`, so none is cataloged as a track or counted as a failure on every scan; a
+  root named with a dot is still walked, the rule reading what is inside it
+  (`hidden_trash_and_system_folders_and_dot_files_are_passed_over`).
 - **A root may not be inside a root, and a wider one takes in what it covers.**
   `store::register_root` is the one way a root is written, so `Library::add_root` and the scan's own
   `roots` refuse and absorb alike: a path inside a registered root is `Error::RootInsideRoot`, and a
@@ -1620,7 +1626,11 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   file. `FileTags::write` copies the file to a staged sibling — `.<stem>.<pid>-<n>.<ext>`
   (`staged_beside`), the extension kept since lofty reads the kind off it — writes the tags into the
   copy, `sync_all`s it, renames it over the file and syncs the folder, removing the copy wherever any
-  of that failed. The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
+  of that failed. A copy a killed writer left is swept by the next write to that track:
+  `sweep_what_a_dead_writer_staged` removes a sibling `staged_by` reads as this track's, staged by a
+  pid that is neither ours nor under `/proc`
+  (`a_copy_a_dead_writer_staged_beside_the_track_is_swept_and_no_other`); the scan never catalogs it
+  meanwhile, a dot-name being passed over (below). The copy is a clone (`cloned_beside`, `FICLONE`) wherever the filesystem shares
   extents — btrfs, XFS — so there it costs the tag's bytes. **Where it cannot clone — ext4, tmpfs —
   an edit the tag's own room holds lands in the file itself** rather than copying gigabytes:
   `landed_in_place` has lofty write into an `Overlay`, the file seen through 4 KiB pages held in

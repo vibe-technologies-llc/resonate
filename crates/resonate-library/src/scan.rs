@@ -50,6 +50,8 @@ const BATCH: usize = 1_000;
 const QUEUE: usize = 1_024;
 
 const SHEET_EXTENSION: &str = "cue";
+const HIDDEN_BEGINS: char = '.';
+const SYSTEM_FOLDERS: [&str; 3] = ["$RECYCLE.BIN", "System Volume Information", "lost+found"];
 
 const LARGEST_SHEET_ON_DISC: u64 = 1 << 20;
 
@@ -833,6 +835,9 @@ fn walk(
                 return Ok(false);
             }
             let path = entry.path();
+            if is_passed_over(&path) {
+                continue;
+            }
             let kind = match entry.file_type() {
                 Ok(kind) => kind,
                 Err(error) => {
@@ -1040,7 +1045,7 @@ fn audio_below(walking: &Walking<'_>, folder: &Path) -> Vec<(PathBuf, Metadata)>
             })
         })
         .map(|entry| entry.path())
-        .filter(|path| is_audio(path))
+        .filter(|path| is_audio(path) && !is_passed_over(path))
         .filter_map(|path| {
             let metadata = fs::metadata(&path).ok()?;
             metadata.is_file().then_some((path, metadata))
@@ -1394,6 +1399,17 @@ pub(crate) fn claimed_beside<'a>(named: &str, files: &'a [PathBuf]) -> Option<&'
             .filter(|naming| *naming != CueNaming::ByStem || is_audio(file));
         (file, naming)
     }))
+}
+
+pub(crate) fn is_passed_over(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.starts_with(HIDDEN_BEGINS)
+                || SYSTEM_FOLDERS
+                    .iter()
+                    .any(|folder| name.eq_ignore_ascii_case(folder))
+        })
 }
 
 pub(crate) fn is_audio(path: &Path) -> bool {
