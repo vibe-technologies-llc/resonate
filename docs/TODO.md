@@ -88,9 +88,6 @@ service or a format — and is not worked until that moves; everything else is o
 - The songs of an artist's releases not held are read only when the lookup pass reaches them, so an
   artist page opened before then lists the albums and none of their songs, and a large library's
   first pass runs on for an hour or more reading them, one release group a second
-- A suggested artist or genre with no letter or digit in its name — `!!!`, `?` — reads as no
-  condition and is offered as a playlist of the whole library, and `--matching '???'` plays or
-  copies everything
 - **Blocked on a service:** A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text
 

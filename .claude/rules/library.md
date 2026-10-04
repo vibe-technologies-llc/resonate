@@ -172,7 +172,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
 - **A suggestion is a saved query with a name on it, which is why it costs almost nothing.**
   `suggest.rs` answers `Suggestion { name, reason, query, rows, length, pictured_by }`, the query
   written through `Display for Search` rather than as a literal, so a suggestion and what the search
-  box would parse cannot drift (`every_suggestion_reads_back_through_the_grammar_it_was_written_in`).
+  box would parse cannot drift (`every_suggestion_reads_back_through_the_grammar_it_was_written_in`). A genre or artist with no letter or digit in its name — `!!!`, `?` — is not offered, its phrase
+  reading as no condition and the playlist as the whole library (`fits_in_a_phrase`,
+  `a_name_with_no_letter_or_digit_is_no_phrase_a_search_can_hold`).
   Saving one is `Library::save_query` and no new code, a saved-query playlist already filling itself.
   Nothing is persisted until saved, and nothing is offered whose count does not clear
   `ENOUGH_TO_OFFER`, so a thin catalog offers few rather than a screen of empty ones. Two rules came
@@ -2615,7 +2617,11 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `NotAList`; a kept list takes it, dropping placing none. It asks for the text, not an `Option<&str>` as
   `copy_playlist` does, so no call empties a list: an emptied one is one to discard. The window draws
   *Drop shown* beside *Copy* only under `Rows::Narrowed`, and `resonate playlist <NAME> --matching <TEXT>
-  --drop` is the command line's gesture, hence `--drop` requires `--matching`.
+  --drop` is the command line's gesture, hence `--drop` requires `--matching`. A narrowing a search
+  reads nothing in — `???`, `!!!`, punctuation the fold drops — matches nothing rather than standing
+  for no condition (`db::asks_for_nothing_it_can_read`), so `--matching '???'` plays, copies and drops
+  no row where it once took the whole list; a blank one is still no narrowing
+  (`a_narrowing_with_nothing_a_search_reads_matches_nothing_rather_than_everything`).
 - **A doubled row is folded away, the first of each staying.** `Library::fold_doubles` reads the cuts
   a list holds and drops every row naming a cut (path and span) an earlier row already named, through
   the same `dropped_where` pass. It is the companion of `copy_playlist`, which reconciles nothing and so

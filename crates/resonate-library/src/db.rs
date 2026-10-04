@@ -4580,6 +4580,9 @@ fn narrowed_onto(text: Option<&str>, column: &str, onto: &str) -> Option<Scoped>
 }
 
 fn scoped(query: &TrackQuery, narrowing: Option<&str>) -> Option<Scoped> {
+    if narrowing.is_some_and(asks_for_nothing_it_can_read) {
+        return None;
+    }
     let mut matching = matching(&[query.text.as_deref(), narrowing])?;
     matching.filters.push(THE_BEST_COPY.to_owned());
     if !matching.insists_on_hidden {
@@ -4659,7 +4662,14 @@ pub(crate) enum Narrowed {
     Nothing,
 }
 
+pub(crate) fn asks_for_nothing_it_can_read(text: &str) -> bool {
+    !text.trim().is_empty() && Search::read(text).is_empty()
+}
+
 pub(crate) fn cuts_matching(text: &str, row: &str) -> Narrowed {
+    if asks_for_nothing_it_can_read(text) {
+        return Narrowed::Nothing;
+    }
     let Some(matching) = matching(&[Some(text)]) else {
         return Narrowed::Nothing;
     };
@@ -6797,6 +6807,16 @@ mod tests {
             narrowed_to(&library, "plays:>0@2y"),
             vec!["Both", "Lately", "Once"]
         );
+    }
+
+    #[test]
+    fn a_narrowing_with_nothing_a_search_reads_matches_nothing_rather_than_everything() {
+        assert!(matches!(cuts_matching("???", "e"), Narrowed::Nothing));
+        assert!(matches!(cuts_matching("!!!", "e"), Narrowed::Nothing));
+        assert!(matches!(cuts_matching("", "e"), Narrowed::Unasked));
+        assert!(matches!(cuts_matching("echoes", "e"), Narrowed::To(_)));
+        assert!(scoped(&TrackQuery::default(), Some("???")).is_none());
+        assert!(scoped(&TrackQuery::default(), None).is_some());
     }
 
     #[test]

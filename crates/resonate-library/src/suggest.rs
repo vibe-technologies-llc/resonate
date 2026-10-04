@@ -475,7 +475,7 @@ fn the_whole_name(column: Column, text: &str) -> Word {
 }
 
 fn fits_in_a_phrase(text: &str) -> bool {
-    !text.contains('"')
+    !text.contains('"') && text.chars().any(char::is_alphanumeric)
 }
 
 fn named_and_counted(
@@ -525,6 +525,15 @@ mod tests {
         assert_eq!(spelled(2000), "the 2000s");
         assert_eq!(beginning_in_capitals(&spelled(1970)), "The seventies");
         assert_eq!(beginning_in_capitals(""), "");
+    }
+
+    #[test]
+    fn a_name_with_no_letter_or_digit_is_no_phrase_a_search_can_hold() {
+        assert!(!fits_in_a_phrase("!!!"));
+        assert!(!fits_in_a_phrase("?"));
+        assert!(!fits_in_a_phrase("say \"hi\""));
+        assert!(fits_in_a_phrase("!!! (Chk Chk Chk)"));
+        assert!(fits_in_a_phrase("Sigur Rós"));
     }
 
     #[test]
