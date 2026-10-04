@@ -482,6 +482,14 @@ pub struct Online {
 pub struct Supplying<'a> {
     pub inbox: Option<&'a Path>,
     pub online: &'a Online,
+    pub asking: Asking,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Asking {
+    #[default]
+    EveryProvider,
+    TheInboxAlone,
 }
 
 pub type Registering = Arc<dyn Fn(&Supplying<'_>) -> Providers + Send + Sync>;
@@ -493,10 +501,11 @@ pub struct Sourcing {
 }
 
 impl Sourcing {
-    pub fn providers(&self, online: &Online) -> Providers {
+    pub fn providers(&self, online: &Online, asking: Asking) -> Providers {
         (self.register)(&Supplying {
             inbox: self.inbox.as_deref(),
             online,
+            asking,
         })
     }
 }

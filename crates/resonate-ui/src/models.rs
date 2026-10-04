@@ -40,7 +40,7 @@ use crate::{
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
-    settings::{Online, Sourcing},
+    settings::{Asking, Online, Sourcing},
     theme, toast,
     views::statistics::{BARS_AT_MOST, Chart},
 };
@@ -4232,9 +4232,13 @@ impl LibraryModel {
     }
 
     fn providers(&self, cx: &App) -> Providers {
+        self.providers_asking(Asking::EveryProvider, cx)
+    }
+
+    fn providers_asking(&self, asking: Asking, cx: &App) -> Providers {
         match cx.try_global::<ResonateApp>() {
-            Some(global) => self.sourcing.providers(&global.online),
-            None => self.sourcing.providers(&Online::default()),
+            Some(global) => self.sourcing.providers(&global.online, asking),
+            None => self.sourcing.providers(&Online::default(), asking),
         }
     }
 
@@ -4302,7 +4306,11 @@ impl LibraryModel {
             }
             return false;
         }
-        let providers = Arc::new(self.providers(cx));
+        let asking = match prompted {
+            Prompted::ByTheInbox => Asking::TheInboxAlone,
+            Prompted::ByHand | Prompted::OnItsOwn => Asking::EveryProvider,
+        };
+        let providers = Arc::new(self.providers_asking(asking, cx));
         if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
             return true;
         }

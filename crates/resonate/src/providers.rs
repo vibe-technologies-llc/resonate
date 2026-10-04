@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use resonate_inbox::Inbox;
-use resonate_providers::Providers;
+use resonate_providers::{Provider as _, Providers};
 #[cfg(feature = "online")]
 use resonate_subsonic::{Server, Subsonic};
 #[cfg(feature = "online")]
@@ -17,7 +17,14 @@ pub fn registered(config: &Config) -> Providers {
 pub fn sourced() -> resonate_ui::Registering {
     let made = Made::new();
     Arc::new(move |supplying: &resonate_ui::Supplying<'_>| {
-        registry(supplying.inbox, &Accounts::given(supplying.online), &made)
+        let every = registry(supplying.inbox, &Accounts::given(supplying.online), &made);
+        match (supplying.asking, supplying.inbox) {
+            (resonate_ui::Asking::TheInboxAlone, Some(folder)) => {
+                every.only(Inbox::at(folder).source())
+            }
+            (resonate_ui::Asking::TheInboxAlone, None) => Providers::none(),
+            (resonate_ui::Asking::EveryProvider, _) => every,
+        }
     })
 }
 
@@ -345,6 +352,7 @@ mod tests {
             register(&resonate_ui::Supplying {
                 inbox: None,
                 online,
+                asking: resonate_ui::Asking::EveryProvider,
             })
             .names()
             .iter()
@@ -362,6 +370,20 @@ mod tests {
         };
         assert!(named(&signed_in).contains(&"tidal".to_owned()));
         assert!(named(&signed_in).contains(&"hifi-api".to_owned()));
+
+        let alone = register(&resonate_ui::Supplying {
+            inbox: Some(Path::new("/music/inbox")),
+            online: &signed_in,
+            asking: resonate_ui::Asking::TheInboxAlone,
+        });
+        assert_eq!(
+            alone
+                .names()
+                .iter()
+                .map(|name| name.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            ["unprovided", "inbox"]
+        );
 
         let made = Made::new();
         let accounts = Accounts::given(&signed_in);
