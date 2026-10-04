@@ -1,10 +1,14 @@
 use std::{path::PathBuf, sync::Arc};
 
 use resonate_library::{
-    Form, ImportOptions, ImportSummary, Library, PassKind, Sources, Vault, VaultObject, Wanted,
+    Form, ImportOptions, ImportSummary, Library, PassKind, Passing, Sources, Vault, VaultObject,
+    Wanted,
 };
 
-use crate::{Result, cli::VaultArgs, finished, info::bytes_text, table::Table, until_told};
+use crate::{
+    Error, Result, cli::VaultArgs, finished, info::bytes_text, none_failed, table::Table,
+    until_told,
+};
 
 const WRITES_SHOWN: usize = 20;
 
@@ -99,7 +103,14 @@ fn import(library: &Library, args: &VaultArgs) -> Result<()> {
     )?)?;
 
     said_on!("{}", imported(&summary, args.apply));
-    finished(PassKind::Import, summary.cancelled)
+    finished(PassKind::Import, summary.cancelled)?;
+    let unread = summary
+        .plan
+        .passed
+        .iter()
+        .filter(|passed| passed.why == Passing::Unreadable)
+        .count();
+    none_failed(PassKind::Import, if args.apply { unread as u64 } else { 0 })
 }
 
 fn kept_as(wanted: &Wanted) -> String {
@@ -217,7 +228,10 @@ fn verify(library: &Library, vault: &Arc<Vault>) -> Result<()> {
         objects.len(),
         moved.len()
     );
-    Ok(())
+    match moved.len() as u64 {
+        0 => Ok(()),
+        objects => Err(Error::ObjectsUnverified { objects }),
+    }
 }
 
 fn prune(library: &Library) -> Result<()> {

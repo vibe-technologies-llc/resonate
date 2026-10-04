@@ -608,6 +608,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
         said!("cancelled");
     }
     finished(PassKind::Scan, summary.cancelled)?;
+    let scanned = none_failed(PassKind::Scan, stats.failed.total());
 
     if config.enriches_after_scan()
         && let Some(reference) = online::reference(config)
@@ -631,7 +632,7 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
         said_on!("{}", enriched(&summary));
         finished(PassKind::Enrich, summary.cancelled)?;
     }
-    Ok(())
+    scanned
 }
 
 fn scan_options(wanted: &ScanArgs, workers: NonZeroUsize) -> ScanOptions {
@@ -1080,7 +1081,14 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
     )?)?;
 
     said_on!("{}", tagged(&summary, &library.roots()?, apply));
-    finished(PassKind::Retag, summary.cancelled)
+    finished(PassKind::Retag, summary.cancelled)?;
+    let failed = summary
+        .retagging
+        .passed_over
+        .iter()
+        .filter(|passed| passed.why.is_a_failure())
+        .count();
+    none_failed(PassKind::Retag, if apply { failed as u64 } else { 0 })
 }
 
 fn pictured(picture: &CoverArt) -> String {
@@ -1235,7 +1243,11 @@ fn organise(
     if how.apply {
         tell_the_players_where_files_went(&summary);
     }
-    finished(PassKind::Organise, summary.cancelled)
+    finished(PassKind::Organise, summary.cancelled)?;
+    none_failed(
+        PassKind::Organise,
+        if how.apply { summary.stats.failed } else { 0 },
+    )
 }
 
 fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
@@ -1275,6 +1287,14 @@ where
     let progress = Arc::clone(handle.progress());
     let _interrupting = signals::cancel_when_told(move || progress.cancel());
     Ok(handle.join()?)
+}
+
+const fn none_failed(pass: PassKind, failed: u64) -> Result<()> {
+    if failed > 0 {
+        Err(Error::FilesFailed { pass, failed })
+    } else {
+        Ok(())
+    }
 }
 
 const fn finished(pass: PassKind, cancelled: bool) -> Result<()> {
@@ -3393,6 +3413,18 @@ mod tests {
             "a present file or one outside the folder lost its row"
         );
         assert_eq!(the_root, Forgotten::Root);
+    }
+
+    #[test]
+    fn a_pass_whose_files_failed_answers_an_error_so_the_command_exits_1() {
+        assert!(none_failed(PassKind::Organise, 0).is_ok());
+        assert!(matches!(
+            none_failed(PassKind::Retag, 3),
+            Err(Error::FilesFailed {
+                pass: PassKind::Retag,
+                failed: 3
+            })
+        ));
     }
 
     #[test]

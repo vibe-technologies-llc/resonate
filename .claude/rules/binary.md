@@ -163,7 +163,14 @@ by `opus-rs` through the codec crate's own registry. `audio.md` has the rest.
   `cancel`, so the file being written is finished, the catalog follows and the summary says
   `cancelled`; a second leaves at once. A cancelled pass then answers `Error::Cancelled { pass }`
   through `finished`, so the command exits 1 and a script can tell a pass cut short from one that
-  ran out (`a_cancelled_pass_answers_an_error_so_the_command_exits_1`); a scan cancelled asks the
+  ran out (`a_cancelled_pass_answers_an_error_so_the_command_exits_1`). A pass that ran out with files
+  failed answers `Error::FilesFailed { pass, failed }` through `none_failed` and exits 1 too — a scan's
+  `ScanStats::failed`, and under `--apply` the organise's failed moves, the writes `tag` passed over
+  for a failure (`Unwritten::is_a_failure`: unreadable, refused, unconfirmed, not the cut, vaulted or
+  unwritable kinds it passes over by design) and the rows `vault --import` could not read — after the
+  summary is printed and, for a scan, after the lookup it carries on to; `vault --verify` answers
+  `ObjectsUnverified` where any object did not read back
+  (`a_pass_whose_files_failed_answers_an_error_so_the_command_exits_1`); a scan cancelled asks the
   reference nothing after it. The six handles are one `resonate_library::PassHandle` over
   each pass's progress and summary (`ScanHandle` and the rest are aliases) whose progress is
   `Cancelling`, and a thread that dies answers `Error::Stopped { pass }` naming its `PassKind`;

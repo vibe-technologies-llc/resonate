@@ -438,6 +438,12 @@ pub enum Error {
     #[error("the {} was cancelled; what it finished before is kept", pass_named(*pass))]
     Cancelled { pass: PassKind },
 
+    #[error("the {} finished, but {failed} of its files failed", pass_named(*pass))]
+    FilesFailed { pass: PassKind, failed: u64 },
+
+    #[error("{objects} vault objects did not read back as what went in")]
+    ObjectsUnverified { objects: u64 },
+
     #[error("a tracing subscriber was already installed")]
     LoggingAlreadyInstalled,
 

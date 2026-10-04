@@ -37,6 +37,10 @@ pub enum Unwritten {
 }
 
 impl Unwritten {
+    pub const fn is_a_failure(self) -> bool {
+        matches!(self, Self::Unreadable | Self::Refused | Self::Unconfirmed)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Cut => "cut out of a file it shares",

@@ -189,8 +189,6 @@ service or a format — and is not worked until that moves; everything else is o
 - During a long MCP call the first interrupt blocks the signal thread, so a second cannot leave at
   once, and a session's passes are cancelled and joined one after another
 - A pass thread that panics is reported as stopped, the panic lost
-- `organise --apply`, `tag --apply`, `vault --import --apply`, `scan` and `vault --verify` exit 0
-  when files failed
 - A configured `vault` that is not there, an unmounted drive, is skipped in silence by every command
   but `vault`
 - A text field takes any length, shaped again on every caret blink and kept whole in its undo
