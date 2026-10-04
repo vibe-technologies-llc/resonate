@@ -1581,6 +1581,14 @@ impl Pass<'_> {
                 self.note_a_refusal(op)?;
                 Ok(Heard::Refused)
             }
+            Err(Error::TooLarge { op, limit }) => {
+                tracing::warn!(
+                    ?op,
+                    limit,
+                    "the reference answered with a document too large to read, which asking again would not change"
+                );
+                Ok(Heard::Refused)
+            }
             Err(other) => Err(other),
         }
     }

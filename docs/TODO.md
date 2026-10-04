@@ -92,8 +92,6 @@ service or a format — and is not worked until that moves; everything else is o
   lyric text
 
 ## Identification
-- A release too large for the 4 MiB document cap, a box set with per-recording relations, is never
-  enriched and nothing says why
 - An album whose tracks name no album artist is taken by a release search on its title and track
   count alone
 - An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps

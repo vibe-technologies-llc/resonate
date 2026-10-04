@@ -8969,6 +8969,7 @@ impl Called {
 enum Fault {
     Refused,
     Unreachable,
+    TooLarge,
 }
 
 #[derive(Default)]
@@ -9090,6 +9091,10 @@ impl Fake {
             .find(|(faulted, at, _)| *faulted == op && *at == nth)
         {
             Some((_, _, Fault::Refused)) => Err(Error::Refused { op, status: 503 }),
+            Some((_, _, Fault::TooLarge)) => Err(Error::TooLarge {
+                op,
+                limit: 4 * 1024 * 1024,
+            }),
             Some((_, _, Fault::Unreachable)) => Err(Error::Unreachable {
                 op,
                 source: io::Error::from(io::ErrorKind::ConnectionRefused),
@@ -11648,6 +11653,31 @@ fn a_refusal_counts_and_stamps_asked_and_the_pass_carries_on() -> Result<()> {
     let album = only_album(&library)?;
     assert_eq!(album.mbid, None);
     let release = library.release_of(album.id)?.expect("the album is known");
+    assert!(release.asked.is_some());
+    assert_eq!(release.answered, None);
+    Ok(())
+}
+
+#[test]
+fn a_release_too_large_to_read_is_stamped_asked_and_counts_as_no_refusal() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(
+        Fake::new(Canned {
+            found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+            releases: vec![orbits(orbits_rows(), Vec::new())],
+            ..Canned::default()
+        })
+        .faulting(LookupOp::Release, 0, Fault::TooLarge),
+    );
+    let summary = enrich(&library, &fake, false)?;
+
+    assert_eq!(summary.stopped_by, None);
+    assert_eq!(summary.stats.refused, 0);
+    assert_eq!(summary.stats.releases, 0);
+
+    let release = library
+        .release_of(only_album(&library)?.id)?
+        .expect("the album is known");
     assert!(release.asked.is_some());
     assert_eq!(release.answered, None);
     Ok(())

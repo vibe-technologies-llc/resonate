@@ -141,10 +141,12 @@ listener, every counted play, and only under a token.
   vocabulary.** `Error::from_ureq`: `StatusCode` is `Refused`; `Io` is `Unreachable` carrying that
   error; a timeout, a host not found and every connect, proxy and TLS failure are `Unreachable`
   carrying an `io::Error` synthesised from the kind naming it; `BodyExceedsLimit` is `TooLarge`;
-  anything else `Unreadable`. `From<Error> for resonate_library::Error` drops the host and folds
-  `TooLarge` into `Unreadable`, so the library sees `Unreachable { op, source }`,
-  `Refused { op, status }` and `Unreadable { op }` and can end a pass on the first and carry on past
-  the others; `Error::into_lyric_error` maps the same four onto
+  anything else `Unreadable`. `From<Error> for resonate_library::Error` drops the host, so the library sees `Unreachable { op, source }`,
+  `Refused { op, status }`, `Unreadable { op }` and `TooLarge { op, limit }` and can end a pass on the
+  first and carry on past the others — the last warned of with its limit, stamped asked like a miss and
+  counted in no refusal, a document asking again would not shrink, so a box set's release too large for
+  `LARGEST_DOCUMENT` neither counts against `REFUSALS_THAT_END_A_PASS` nor goes unexplained
+  (`a_release_too_large_to_read_is_stamped_asked_and_counts_as_no_refusal`); `Error::into_lyric_error` maps the same four onto
   `resonate_lyrics::Error::Unreachable { provider, cause }` and `Unreadable { provider, op }`.
   `size_of::<Error>()` is held under 128 bytes by the usual guard test.
 - **A query is escaped once, in `query.rs`.** `escape_query` percent-escapes every byte outside the

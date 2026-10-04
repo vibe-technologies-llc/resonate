@@ -173,7 +173,8 @@ impl From<Error> for resonate_library::Error {
                 source: switched_off(),
             },
             Error::Refused { op, status, .. } => Self::Refused { op, status },
-            Error::Unreadable { op, .. } | Error::TooLarge { op, .. } => Self::Unreadable { op },
+            Error::Unreadable { op, .. } => Self::Unreadable { op },
+            Error::TooLarge { op, limit, .. } => Self::TooLarge { op, limit },
         }
     }
 }

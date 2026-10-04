@@ -221,6 +221,11 @@ pub enum Error {
     #[error("the reference answered {op:?} with something this build cannot read")]
     Unreadable { op: LookupOp },
 
+    #[error(
+        "the reference answered {op:?} with a document past the {limit} bytes this build reads"
+    )]
+    TooLarge { op: LookupOp, limit: usize },
+
     #[error("the reference refused {refusals} lookups in a row, the last of them {op:?}")]
     RefusedInARow { op: LookupOp, refusals: u32 },
 
