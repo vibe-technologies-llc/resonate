@@ -106,7 +106,11 @@ listener, every counted play, and only under a token.
   words — costs a request a rung against a service that is down rather than fourteen seconds a rung,
   and the refusal reaches the library as `Refused` at once
   (`a_host_busy_through_every_retry_is_asked_once_until_it_answers`). The first answer that is not
-  busy clears the mark. Proved against a scripted loopback `TcpListener` — `serving` answers each
+  busy clears the mark. **A `Retry-After` on the answer that is returned is still waited on**:
+  `Pacing::heard` notes it, capped like any other, in `cooling` beside the mark, and `reserve` takes
+  the host's next slot no earlier than that, so a service that said ten seconds is left alone for ten
+  even when no request is owed it a retry
+  (`a_host_busy_through_every_retry_is_still_waited_on_as_long_as_it_asked`). Proved against a scripted loopback `TcpListener` — `serving` answers each
   connection with the next status in its script and counts connections — on the same fake clock,
   asserting how often the socket was reached and each sleep:
   `a_busy_service_is_asked_three_more_times_with_the_wait_doubling_between`,

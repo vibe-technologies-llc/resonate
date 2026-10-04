@@ -283,6 +283,7 @@ impl Host {
 struct Turns {
     next: BTreeMap<Host, Instant>,
     stayed_busy: BTreeSet<Host>,
+    cooling: BTreeMap<Host, Instant>,
 }
 
 #[derive(Clone, Default)]
@@ -297,6 +298,10 @@ impl Pacing {
             .next
             .get(&host)
             .map_or(now, |last| (*last + host.interval()).max(now));
+        let slot = turns
+            .cooling
+            .get(&host)
+            .map_or(slot, |until| slot.max(*until));
         turns.next.insert(host, slot);
         slot
     }
@@ -309,12 +314,16 @@ impl Pacing {
         }
     }
 
-    fn heard(&self, host: Host, status: StatusCode) {
+    fn heard(&self, host: Host, status: StatusCode, asked_for: Option<Duration>, now: Instant) {
         let mut turns = self.0.lock();
         if busy(status) {
             turns.stayed_busy.insert(host);
+            if let Some(wait) = asked_for {
+                turns.cooling.insert(host, now + wait);
+            }
         } else {
             turns.stayed_busy.remove(&host);
+            turns.cooling.remove(&host);
         }
     }
 }
@@ -541,7 +550,12 @@ impl Client {
             let response = sent.map_err(|error| Error::from_ureq(host, op, error))?;
 
             if !busy(response.status()) || retried == owed {
-                self.pacing.heard(host, response.status());
+                self.pacing.heard(
+                    host,
+                    response.status(),
+                    named_cooling_off(response.headers()),
+                    self.clock.now(),
+                );
                 return Ok(response);
             }
 
@@ -580,13 +594,16 @@ fn busy(status: StatusCode) -> bool {
     )
 }
 
-fn cooling_off(headers: &HeaderMap, by_default: Duration) -> Duration {
+fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
     headers
         .get(RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok())
-        .map_or(by_default, Duration::from_secs)
-        .min(RETRY_AFTER_AT_MOST)
+        .map(|seconds| Duration::from_secs(seconds).min(RETRY_AFTER_AT_MOST))
+}
+
+fn cooling_off(headers: &HeaderMap, by_default: Duration) -> Duration {
+    named_cooling_off(headers).unwrap_or_else(|| by_default.min(RETRY_AFTER_AT_MOST))
 }
 
 #[cfg(test)]
@@ -1151,6 +1168,32 @@ mod tests {
         assert_eq!((status, served), (200, 1));
         let (status, served) = fetched_by(&client, vec![BUSY, FINE]);
         assert_eq!((status, served), (200, 2));
+    }
+
+    #[test]
+    fn a_host_busy_through_every_retry_is_still_waited_on_as_long_as_it_asked() {
+        let clock = Faked::new();
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
+
+        let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, busy_for(7)]);
+        assert_eq!((status, served), (503, 4));
+
+        let (status, served) = fetched_by(&client, vec![BUSY]);
+        assert_eq!((status, served), (503, 1));
+        assert_eq!(clock.slept()[3..], [Duration::from_secs(7)]);
+
+        let (status, served) = fetched_by(&client, vec![FINE]);
+        assert_eq!((status, served), (200, 1));
+        let (status, served) = fetched_by(&client, vec![FINE]);
+        assert_eq!((status, served), (200, 1));
+        assert_eq!(
+            clock.slept()[4..],
+            [MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
+        );
     }
 
     #[test]

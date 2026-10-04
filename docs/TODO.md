@@ -163,7 +163,6 @@ service or a format — and is not worked until that moves; everything else is o
   dropped file's copy neither cancels the pass nor waits for it
 - Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
   and the providers
-- A host that stays busy is no longer waited on, so a `Retry-After` on a 429 is never read
 - A daemon connection that dies with a reset rather than a broken pipe, or hangs, is never taken as
   lost, so the client stays disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
