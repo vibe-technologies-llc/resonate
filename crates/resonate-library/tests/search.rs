@@ -222,7 +222,7 @@ fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<
 }
 
 #[test]
-fn a_list_narrowed_by_a_text_asking_nothing_holds_every_row_and_drops_none() -> Result<()> {
+fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_none() -> Result<()> {
     let tree = Tree::new();
     tree.write(
         "a.wav",
@@ -239,7 +239,8 @@ fn a_list_narrowed_by_a_text_asking_nothing_holds_every_row_and_drops_none() -> 
         .collect();
     library.add_to_playlist(list, &cuts)?;
 
-    assert_eq!(library.playlist_entries(list, Some("!!!"))?.len(), 2);
+    assert_eq!(library.playlist_entries(list, Some("!!!"))?.len(), 0);
+    assert_eq!(library.playlist_entries(list, Some(""))?.len(), 2);
     assert_eq!(library.playlist_entries(list, Some("echoes !!!"))?.len(), 1);
     assert_eq!(library.playlist_entries(list, Some("nowhere"))?.len(), 0);
     assert_eq!(library.remove_matching(list, "!!!")?, 0);
