@@ -593,6 +593,14 @@ impl MediaStream for Trickle {
     }
 }
 
+struct ArrivesOnDrop(Arc<AtomicBool>);
+
+impl Drop for ArrivesOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
 impl MediaProvider for Trickling {
     fn source(&self) -> &SourceId {
         &self.source
@@ -2017,6 +2025,76 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         |_| graph.lock().opens == 2,
         "the stream owed a rebuild to be rebuilt once it could seek",
     );
+    Ok(())
+}
+
+#[test]
+fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> Result<()> {
+    const ANSWERED_WITHIN: Duration = Duration::from_millis(400);
+    const STARVED_FOR: Duration = Duration::from_millis(300);
+
+    let source = pcm(16, FRAMES);
+    let header = source.file.len() - source.stream.len();
+    let arriving = source.stream.len() / 2;
+    let named = SourceId::new("trickling").expect("a lowercase name");
+    let arrived = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Trickling {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        held_back_from: header + arriving,
+        arrived: Arc::clone(&arrived),
+        served: Arc::default(),
+    }));
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![QueueItem {
+            id: TrackId::new(1).expect("a non-zero track id"),
+            location: MediaLocation::new(named, "stalled.wav"),
+            span: None,
+        }],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    let _arrives_whatever_happens = ArrivesOnDrop(Arc::clone(&arrived));
+    wait_for(&player, playing, "the stream to open");
+
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    let short_of_what_arrived = arriving - 2 * block;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= short_of_what_arrived,
+        "what arrived to reach the graph",
+    );
+    let starved_until = Instant::now() + STARVED_FOR;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, _| Instant::now() >= starved_until,
+        "the decode to reach where the pipe stopped",
+    );
+
+    let asked = Instant::now();
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    let paused_after = asked.elapsed();
+    let asked = Instant::now();
+    player.request(Command::Stop)?.wait_for(PATIENCE)?;
+    let stopped_after = asked.elapsed();
+
+    assert!(
+        paused_after < ANSWERED_WITHIN,
+        "a pause waited {paused_after:?} on a pipe that stopped"
+    );
+    assert!(
+        stopped_after < ANSWERED_WITHIN,
+        "a stop waited {stopped_after:?} on a pipe that stopped"
+    );
+    assert_eq!(player.state().playback, PlaybackState::Stopped);
     Ok(())
 }
 

@@ -5,12 +5,6 @@ that no listener is waiting on, and is worked only once the categories above it 
 marked **Blocked on …** waits on something outside this tree — hardware, an upstream crate, a
 service or a format — and is not worked until that moves; everything else is open to be done.
 
-## Defects
-- A pipe or process substitution that stops producing holds the engine thread inside a read with no
-  deadline, so Pause, Stop and quitting go unanswered until bytes arrive; a bounded read cannot fix
-  it, symphonia taking a short read for the end and an error for damage, so the decode has to move
-  off the engine thread
-
 ## Playback and output
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
   depth later, half a second by default, because gain and filters run ahead of a ring kept full
@@ -18,9 +12,8 @@ service or a format — and is not worked until that moves; everything else is o
   sample, and the step rings through the cascade as a click
 - A source too long to hold in memory is spooled under the temporary folder, which is tmpfs on
   Arch, Fedora and Flatpak, so up to 8 GiB lands in RAM and what was read is never let go
-- A local row is opened on the engine thread with no deadline, and the PipeWire open and sink
-  enumeration wait there for seconds, so a stalled mount freezes the transport and the window's
-  close
+- The PipeWire open and sink enumeration wait on the engine thread for seconds, so a daemon slow to
+  answer freezes the transport and the window's close
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
 - A boost on a track with no declared peak is clipped sample by sample in the gain stage ahead of
@@ -29,10 +22,10 @@ service or a format — and is not worked until that moves; everything else is o
   never set or reached outside tests
 - A launch made while another is still starting opens a second window, because the bus name is
   claimed only after the engine starts
-- `bluetooth-lead-ms` and `bluetooth-awake-s` take any integer, so a typo plays hours of silence
-  before the first track after the link slept
 - Closing the terminal sends `play` and the headless passes a hang-up nothing catches, so the last
   listen is lost and a tag, organise or import is cut without the drain an interrupt gets
+- `bluetooth-lead-ms` and `bluetooth-awake-s` take any integer, so a typo plays hours of silence
+  before the first track after the link slept
 - After a load or *Next* that found no device, the first play/pause press pauses nothing and only
   the second plays
 - Removing the playing last row under *repeat queue* stops the queue rather than wrapping as a skip

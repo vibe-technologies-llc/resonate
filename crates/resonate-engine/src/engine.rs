@@ -8,8 +8,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_codec::{
-    BoxLayout, DecodeStatus, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources,
-    probe_boxes,
+    BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources, probe_boxes,
 };
 use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault, Span,
@@ -28,6 +27,7 @@ use crate::{
     ReplayGainMode, Reply, Request, Result, Seeks, SkipUnderRepeat, Sleeping, StreamDigest, Tapped,
     Tapping, TrackState, TransportState,
     backend::Surveyor,
+    lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{self, Queue, QueueItem, Queued, Removal},
@@ -60,18 +60,20 @@ const QUIET_WITHIN_AT_LEAST: Duration = Duration::from_millis(40);
 const QUIET_WITHIN_AT_MOST: Duration = Duration::from_millis(400);
 const SLEEP_FADES_OVER: Duration = Duration::from_secs(10);
 const PULLED_WITHIN: Duration = Duration::from_millis(250);
+const OPENING_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filled {
     AsFarAsItGoes,
     ForNow,
+    WhenTheSourceAnswers,
 }
 
 struct Track {
     id: TrackId,
     location: MediaLocation,
     span: Option<FrameSpan>,
-    decoder: Decoder,
+    decoding: Decoding,
     info: Arc<MediaInfo>,
     layout: Option<Arc<BoxLayout>>,
     hints: TrackHints,
@@ -168,7 +170,7 @@ impl Track {
             decoded: AudioBuffer::empty(info.spec),
             layout: layout.map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
-            decoder,
+            decoding: Decoding::new(decoder),
             info: Arc::new(info),
             replay_gain,
             decoded_at: 0,
@@ -228,8 +230,35 @@ impl Track {
         self.decoded_at = 0;
     }
 
+    fn seek(&mut self, to: Frames) -> Result<Frames> {
+        let track = self.id;
+        let Some(decoder) = self.decoding.home() else {
+            let location = self.location.clone();
+            return Err(Error::Decode {
+                track,
+                source: resonate_codec::Error::NotSeekable { location },
+            });
+        };
+        decoder
+            .seek(to)
+            .map_err(|source| Error::Decode { track, source })
+    }
+
+    fn next_block(&mut self) -> Result<Block> {
+        let may_stall = !self.info.is_seekable;
+        self.decoding
+            .next_block(&mut self.decoded, may_stall)
+            .map_err(|lost| match lost {
+                Lost::Decode(source) => Error::Decode {
+                    track: self.id,
+                    source,
+                },
+                Lost::WorkerStopped => Error::DecoderStopped { track: self.id },
+            })
+    }
+
     fn sample_packet(&mut self) {
-        let Some(packet) = self.decoder.last_packet() else {
+        let Some(packet) = self.decoding.last_packet() else {
             return;
         };
         if self.sampled == Some(packet.at) {
@@ -241,7 +270,7 @@ impl Track {
 
     fn restart_profile(&mut self) {
         self.profile = ProfileBuilder::new(self.info.spec.rate);
-        self.profiled_from = self.decoder.position();
+        self.profiled_from = self.decoding.position();
         self.sampled = None;
         self.published = None;
     }
@@ -256,8 +285,8 @@ impl Track {
             replay_gain_mode: mode,
             replay_gain: self.replay_gain,
             profiled_from: self.profiled_from,
-            decoded: self.decoder.position(),
-            packet: self.decoder.last_packet(),
+            decoded: self.decoding.position(),
+            packet: self.decoding.last_packet(),
             profile: self.profile.finish(),
         }
     }
@@ -632,11 +661,19 @@ pub struct Engine {
     sounded: Option<(SinkId, Instant)>,
     turned: VecDeque<Gain>,
     answers: Vec<Answer>,
+    openings_begun: u64,
+    deferred: Vec<Deferred>,
 }
 
 struct Answer {
     kind: CommandKind,
     reply: Answering,
+}
+
+struct Deferred {
+    kind: CommandKind,
+    reply: Reply,
+    since: Instant,
 }
 
 enum Answering {
@@ -649,6 +686,7 @@ struct Heard {
     surveyed: Option<Receiver<Surveyed>>,
     events: Option<Receiver<StreamEvent>>,
     opened: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
+    decoded: Option<Receiver<Returned>>,
 }
 
 impl Heard {
@@ -667,6 +705,9 @@ impl Heard {
         if let Some(opened) = self.opened.as_ref() {
             select.recv(opened);
         }
+        if let Some(decoded) = self.decoded.as_ref() {
+            select.recv(decoded);
+        }
 
         select
     }
@@ -680,6 +721,13 @@ impl Heard {
             && is_one_channel(
                 self.opened.as_ref(),
                 engine.opening.as_ref().map(|opening| &opening.landed),
+            )
+            && is_one_channel(
+                self.decoded.as_ref(),
+                engine
+                    .track
+                    .as_ref()
+                    .and_then(|track| track.decoding.awaited()),
             )
     }
 }
@@ -748,6 +796,8 @@ impl Engine {
             sounded: None,
             turned: VecDeque::with_capacity(TURNS_REMEMBERED),
             answers: Vec::new(),
+            openings_begun: 0,
+            deferred: Vec::new(),
         }
     }
 
@@ -767,6 +817,7 @@ impl Engine {
                 self.rediscover();
                 self.land_the_opening();
                 self.watch_discard();
+                self.take_what_was_decoded();
                 self.pump();
                 self.finish_reshaping();
                 self.finish_fading();
@@ -780,6 +831,7 @@ impl Engine {
                 self.settle_what_was_spooled();
                 self.doze();
                 self.hand_over_what_is_owed();
+                self.answer_what_waited_on_the_opening_too_long();
                 self.publish();
                 self.answer();
 
@@ -810,6 +862,11 @@ impl Engine {
                 .map(|surveying| surveying.answers().clone()),
             events: self.listening().map(|stream| stream.events().clone()),
             opened: self.opening.as_ref().map(|opening| opening.landed.clone()),
+            decoded: self
+                .track
+                .as_ref()
+                .and_then(|track| track.decoding.awaited())
+                .cloned(),
         }
     }
 
@@ -844,6 +901,10 @@ impl Engine {
         };
         let budget = match self.sleep.and_then(Sleeping::left) {
             Some(left) if left > SLEEP_FADES_OVER => budget.min(left - SLEEP_FADES_OVER),
+            Some(left) => budget.min(left),
+            None => budget,
+        };
+        let budget = match self.deferred_answer_due_in() {
             Some(left) => budget.min(left),
             None => budget,
         };
@@ -994,9 +1055,46 @@ impl Engine {
     fn dispatch(&mut self, request: Request) {
         let Request { command, reply } = request;
         let kind = command.kind();
+        let begun = self.openings_begun;
         let outcome = self.apply(command);
         let outcome = self.carried_on_past_a_stranded_row(outcome);
 
+        if outcome.is_ok() && self.opening.is_some() && self.openings_begun != begun {
+            self.deferred.push(Deferred {
+                kind,
+                reply,
+                since: Instant::now(),
+            });
+            return;
+        }
+        self.reply(kind, reply, outcome);
+    }
+
+    fn answer_the_deferred(&mut self, outcome: Result<()>) {
+        let mut outcome = Some(outcome);
+        for Deferred { kind, reply, .. } in mem::take(&mut self.deferred) {
+            let outcome = outcome.take().unwrap_or(Ok(()));
+            self.reply(kind, reply, outcome);
+        }
+    }
+
+    fn answer_what_waited_on_the_opening_too_long(&mut self) {
+        if self
+            .deferred
+            .first()
+            .is_some_and(|deferred| deferred.since.elapsed() >= OPENING_ANSWERED_WITHIN)
+        {
+            self.answer_the_deferred(Ok(()));
+        }
+    }
+
+    fn deferred_answer_due_in(&self) -> Option<Duration> {
+        self.deferred
+            .first()
+            .map(|deferred| OPENING_ANSWERED_WITHIN.saturating_sub(deferred.since.elapsed()))
+    }
+
+    fn reply(&mut self, kind: CommandKind, reply: Reply, outcome: Result<()>) {
         if let Err(error) = outcome.as_ref() {
             tracing::warn!(%error, ?kind, "command rejected");
         }
@@ -1346,7 +1444,7 @@ impl Engine {
         if track.info.is_seekable {
             return;
         }
-        let Some(settled) = track.decoder.settle_the_spool() else {
+        let Some(settled) = track.decoding.home().and_then(Decoder::settle_the_spool) else {
             return;
         };
         let seekable = settled.is_seekable;
@@ -1523,6 +1621,7 @@ impl Engine {
         self.retire_the_output();
         self.track = None;
         self.opening = None;
+        self.answer_the_deferred(Ok(()));
         self.unbound = None;
         self.heard_at_least = None;
         self.transport = TransportState::Stopped;
@@ -1690,10 +1789,7 @@ impl Engine {
 
     fn seek_in_place(&mut self, to: Frames) -> Result<()> {
         if let Some(track) = self.track.as_mut() {
-            if let Err(source) = track.decoder.seek(to) {
-                let track = track.id;
-                return Err(Error::Decode { track, source });
-            }
+            track.seek(to)?;
             track.rewind_carry();
             track.restart_profile();
         }
@@ -1748,20 +1844,16 @@ impl Engine {
 
         self.retire_the_output();
         self.track = None;
-        self.opening = None;
+        if self.opening.take().is_some() {
+            self.answer_the_deferred(Ok(()));
+        }
         self.heard_at_least = None;
         self.rebind_owed = false;
 
-        if !item.location.is_local() {
-            self.opening = Some(Opening::begin(item, at, &self.sources));
-            self.transport = TransportState::Loading;
-            return Ok(());
-        }
-        let unwrapped = Unwrapped::open(&item, &self.sources).map_err(|source| Error::Decode {
-            track: item.id,
-            source,
-        })?;
-        self.started(&item, unwrapped, at)
+        self.opening = Some(Opening::begin(item, at, &self.sources));
+        self.openings_begun = self.openings_begun.wrapping_add(1);
+        self.transport = TransportState::Loading;
+        Ok(())
     }
 
     fn land_the_opening(&mut self) {
@@ -1772,6 +1864,10 @@ impl Engine {
             return;
         };
         let started = landed.and_then(|unwrapped| self.started(&item, unwrapped, at));
+        if !self.deferred.is_empty() {
+            self.answer_for_the_opening(started);
+            return;
+        }
         let Err(error) = started else {
             return;
         };
@@ -1784,6 +1880,18 @@ impl Engine {
             track: item.id,
             error,
         });
+    }
+
+    fn answer_for_the_opening(&mut self, started: Result<()>) {
+        let outcome = self.past_what_will_not_open(started);
+        let outcome = self.carried_on_past_a_stranded_row(outcome);
+        if outcome.is_ok() && self.opening.is_some() {
+            return;
+        }
+        if outcome.is_err() && self.track.is_none() && self.transport == TransportState::Loading {
+            self.transport = TransportState::Stopped;
+        }
+        self.answer_the_deferred(outcome);
     }
 
     fn started(&mut self, item: &QueueItem, unwrapped: Unwrapped, at: Frames) -> Result<()> {
@@ -1847,12 +1955,10 @@ impl Engine {
     fn bind(&mut self, at: Option<Frames>, target: Option<StreamSpec>) -> Result<()> {
         if let Some(track) = self.track.as_mut()
             && let Some(at) = at
-            && track.decoder.position() != at
+            && track.decoding.position() != at
             && track.info.is_seekable
-            && let Err(source) = track.decoder.seek(at)
         {
-            let id = track.id;
-            return Err(Error::Decode { track: id, source });
+            track.seek(at)?;
         }
 
         if !self.playing && self.unbound.is_some() {
@@ -1866,7 +1972,7 @@ impl Engine {
         let Some(track) = self.track.as_ref() else {
             return Ok(());
         };
-        let entering = if at.unwrap_or_else(|| track.decoder.position()) > Frames::ZERO {
+        let entering = if at.unwrap_or_else(|| track.decoding.position()) > Frames::ZERO {
             Entering::FadedIn
         } else {
             Entering::Whole
@@ -1882,7 +1988,7 @@ impl Engine {
 
         let delivery = output.plan.delivery();
         if let Some(track) = self.track.as_mut() {
-            track.decoder.deliver(delivery);
+            track.decoding.deliver(delivery);
             track.rewind_carry();
             track.restart_profile();
         }
@@ -2018,7 +2124,7 @@ impl Engine {
         }
 
         let delivery = wanted.delivery();
-        track.decoder.deliver(delivery);
+        track.decoding.deliver(delivery);
         track.decoded.retype(delivery.format);
 
         let status = output.take_chain(chain, wanted);
@@ -2218,6 +2324,12 @@ impl Engine {
         self.stale_sinks || self.changes.is_none() || self.published.sinks.read().is_empty()
     }
 
+    fn take_what_was_decoded(&mut self) {
+        if let Some(track) = self.track.as_mut() {
+            track.decoding.take_what_came_back();
+        }
+    }
+
     fn pump(&mut self) {
         self.fill_owed = false;
         let outcome = {
@@ -2227,10 +2339,7 @@ impl Engine {
             if output.ended {
                 return;
             }
-            Self::fill(track, output).map_err(|source| Error::Decode {
-                track: track.id,
-                source,
-            })
+            Self::fill(track, output)
         };
         match outcome {
             Ok(filled) => self.fill_owed = filled == Filled::ForNow,
@@ -2238,7 +2347,7 @@ impl Engine {
         }
     }
 
-    fn fill(track: &mut Track, output: &mut Output) -> resonate_codec::Result<Filled> {
+    fn fill(track: &mut Track, output: &mut Output) -> Result<Filled> {
         if output.producer.is_discarding() {
             return Ok(Filled::AsFarAsItGoes);
         }
@@ -2254,9 +2363,13 @@ impl Engine {
             }
             if track.undecoded() == 0 {
                 track.decoded_at = 0;
-                if track.decoder.next_block(&mut track.decoded)? == DecodeStatus::EndOfStream {
-                    Self::flush(output);
-                    return Ok(Filled::AsFarAsItGoes);
+                match track.next_block()? {
+                    Block::Decoded => {}
+                    Block::Ended => {
+                        Self::flush(output);
+                        return Ok(Filled::AsFarAsItGoes);
+                    }
+                    Block::Awaited => return Ok(Filled::WhenTheSourceAnswers),
                 }
                 track.sample_packet();
                 if track.decoded.frames() == 0 {
@@ -2449,6 +2562,9 @@ impl Engine {
     }
 
     fn wait_for_the_graph(&mut self, since: Instant) {
+        if self.opening.is_some() {
+            return;
+        }
         let Some(at) = self.row_the_graph_let_go() else {
             self.graph_lost = None;
             self.graph_still_away = None;
@@ -2812,7 +2928,7 @@ impl Engine {
             return Frames::ZERO;
         };
         let decoded = track
-            .decoder
+            .decoding
             .position()
             .saturating_sub(Frames(track.undecoded() as u64));
 
@@ -3064,6 +3180,7 @@ mod tests {
             surveyed: Some(surveyed.clone()),
             events: Some(events.clone()),
             opened: None,
+            decoded: None,
         };
         let mut parked = heard.registered(&commands);
 
@@ -3099,6 +3216,7 @@ mod tests {
             surveyed: None,
             events: None,
             opened: None,
+            decoded: None,
         };
         let mut parked = heard.registered(&commands);
 

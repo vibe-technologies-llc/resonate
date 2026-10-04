@@ -6,6 +6,7 @@ mod error;
 mod heard;
 mod impulse;
 mod kept;
+mod lending;
 mod measure;
 mod pipeline;
 mod player;

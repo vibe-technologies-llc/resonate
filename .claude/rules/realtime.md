@@ -12,7 +12,8 @@ PipeWire's data thread, not the loop thread (playback sets the flag from `Stream
 which the engine sets; capture always sets it). Its only job is to move bytes from the ring into
 the graph buffer. Decode, resample and dither run on the engine thread — a sinc resampler as long
 as the top quality level builds cannot fit a 256-frame callback budget, so the split is forced by
-the quality goal, not hygiene.
+the quality goal, not hygiene. The one exception is the decode of a track that cannot seek, lent a
+block at a time to a worker because its reads can wait on a pipe without end (`audio.md`).
 
 The engine thread is where the music is kept up with, with no slack to give away: a 96 kHz 24-bit
 source reaching a 48 kHz sink took a whole core at `opt-level = 0` and starved the ring, which is

@@ -819,16 +819,43 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   fails at once, the answer still owed being bound to land out of order — so the engine fails the
   track and passes on rather than hanging on a network gone quiet.
   `a_read_that_does_not_answer_in_time_fails_and_leaves_the_stream_stalled` is the claim.
-- **A non-filesystem track is opened off the engine thread.** `Engine::start` opens a local row in
-  line and hands any other to an `Opening`: a `resonate-track-open` thread runs the whole
-  `Unwrapped::open` — decoder, hints and box layout — and the engine parks on its answer beside its
-  commands, publishing `Loading` meanwhile. Every command is answered while it waits: play or pause
-  change only whether the track plays once it lands, a seek moves where it will start, and a stop, a
-  load or a skip drop the opening, whose answer nobody reads. A failed landing is passed over while
-  playing — `Engine::fail`, as for a local row that will not open — and is an `Event::Failed` with the
-  transport stopped otherwise; a thread stopping without answering is `Error::OpenerStopped`.
-  `a_source_slow_to_open_leaves_the_engine_answering_while_it_waits` and
-  `a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row` are the claims.
+- **Every track is opened off the engine thread.** `Engine::start` hands the row to an `Opening`: a
+  `resonate-track-open` thread runs the whole `Unwrapped::open` — decoder, hints and box layout — and
+  the engine parks on its answer beside its commands, publishing `Loading` meanwhile, so a pipe that
+  never produces its first byte, or a mount gone quiet, holds that thread and not the transport. Every
+  command is answered while it waits: play or pause change only whether the track plays once it
+  lands, a seek moves where it will start, and a stop, a load or a skip drop the opening, whose answer
+  nobody reads. **The command that began an opening is answered by its landing**, so a load that finds
+  no sink, or a row that will not open while paused, still answers `Err` as it did when a local row
+  opened in line: `Engine::dispatch` defers the reply of a command that left a new opening in flight
+  (`openings_begun` moved under it), `answer_for_the_opening` runs the landing's outcome through the
+  same `past_what_will_not_open` and stranded-row handling a command's outcome takes, keeps waiting
+  where a failure skipped on to another opening, and answers. A deferred reply is answered `Ok` once
+  `OPENING_ANSWERED_WITHIN` (250 ms) passes, and whenever its opening is dropped, so a source slow to
+  open still answers at once and a later failure arrives as `Event::Failed`, as it always did for a
+  remote row. The graph's absence is waited out across an opening — `wait_for_the_graph` does not let
+  go while a row is still opening — so a skip while the daemon is away parks the next row rather than
+  failing it (`a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row`). A failed
+  landing nothing waited on is passed over while playing — `Engine::fail` — and is an `Event::Failed`
+  with the transport stopped otherwise; a thread stopping without answering is
+  `Error::OpenerStopped`. `a_source_slow_to_open_leaves_the_engine_answering_while_it_waits`,
+  `a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row` and
+  `a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence` are the claims.
+- **A track that cannot seek is decoded off the engine thread.** Its source is a spool still
+  arriving or a replayed pipe, and a read of either waits for bytes with no deadline — a bounded read
+  cannot help, symphonia taking a short read for the end and an error for damage. So
+  `lending::Decoding` holds the decoder, and for such a track `Track::next_block` *lends* it, with the
+  block it decodes into, to a `resonate-decode` worker started with the track: the engine answers
+  `Block::Awaited`, `fill` returns `Filled::WhenTheSourceAnswers`, and the engine parks on the
+  worker's answer beside its commands, taking it (`take_what_was_decoded`) at the next pass. While the
+  decoder is away its position and last packet are the ones it left with, a delivery set meanwhile is
+  owed and applied — the block retyped — as it comes home, `settle_the_spool` waits for it to be
+  home, and a seek cannot be asked for, the track not being seekable. Stop, a load or a skip drop the
+  track and the worker with it; a worker still waiting on the pipe ends once its read returns and its
+  answer has nowhere to go. A seekable track is decoded in line, as the realtime budget wants, and a
+  worker that could not be started decodes in line too. A worker that stopped without answering is
+  `Error::DecoderStopped`. `a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits`
+  is the claim.
 
 ## Transport
 

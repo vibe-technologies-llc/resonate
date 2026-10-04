@@ -66,6 +66,9 @@ pub enum Error {
 
     #[error("the thread opening track {track} stopped without an answer")]
     OpenerStopped { track: TrackId },
+
+    #[error("the thread decoding track {track} stopped without an answer")]
+    DecoderStopped { track: TrackId },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,7 +96,7 @@ impl Error {
             Self::QueueEmpty | Self::InvalidTransition { .. } => Cause::NothingPlaying,
             Self::SeekOutOfRange { .. } => Cause::CannotSeek,
             Self::CommandPending { .. } | Self::EngineStopped => Cause::PlayerStopped,
-            Self::OpenerStopped { .. } => Cause::Unreadable,
+            Self::OpenerStopped { .. } | Self::DecoderStopped { .. } => Cause::Unreadable,
         }
     }
 
@@ -110,7 +113,8 @@ impl Error {
             | Self::Renegotiation { .. }
             | Self::CommandPending { .. }
             | Self::EngineStopped
-            | Self::OpenerStopped { .. } => None,
+            | Self::OpenerStopped { .. }
+            | Self::DecoderStopped { .. } => None,
         }
     }
 
@@ -120,7 +124,8 @@ impl Error {
             | Self::Convert { track, .. }
             | Self::SeekOutOfRange { track, .. }
             | Self::Renegotiation { track, .. }
-            | Self::OpenerStopped { track } => Some(*track),
+            | Self::OpenerStopped { track }
+            | Self::DecoderStopped { track } => Some(*track),
             Self::Sink(_)
             | Self::NoSuchRow { .. }
             | Self::NotAnOrder { .. }
