@@ -1854,8 +1854,14 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (`format::time_of_day`, the listener's zone) rather than a countdown so an idle window does not
   draw a stale one — and one the catalog gave up on `GaveUp`, *No match after 6 attempts*. A queued
   download says *Queued · attempt 1 of 6*; while the poll asks, `Downloading { attempt }` says
-  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries. Both count
-  as underway. A want the
+  *Attempt N of 6 · asking providers…*, retaining the next attempt number across retries. A poll that
+  ended with a provider refusing or running late (`PollStats::refused` or `late`) sets
+  `LibraryModel::providers_unheard`, and while it holds a queued download, or a retrying one whose
+  clock time has passed, reads `Unreached { attempt }` — *Attempt N of 6 · a provider didn't answer,
+  asking again shortly* — since such a want is never stamped (`providers.md`) and would otherwise
+  alternate between *Downloading* while asked and a stale *No match* between polls; a poll that
+  hears every provider clears it, a cancelled one leaves it (`Fetching::while_polling` is the one
+  reading, shared by the song list and the album's cells). All of them count as underway. A want the
   load does not hold is left as it stood, a stale load being no evidence it went. The sidebar draws
   `RootView::download_status` above the enrichment line while the list holds anything — the
   `Icon::Download` in the accent while anything is underway; the label shows the active attempt
@@ -1869,7 +1875,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   or retrying) and its artist, an `Icon::Redo` asking again where `can_be_asked_again` — a retry,
   which it tries at once, or a song given up, which it starts again from the first try — a ✕ on a
   finished one, and
-  *Clear finished* and a close mark in its heading. A second press on the row, the close mark or
+  *Clear finished* and a close mark in its heading. A song that can be cancelled
+  (`Fetching::can_be_cancelled`: queued, downloading, unreached or retrying — not landing, which has
+  no want yet) has an `Icon::Stop` beside the redo: `LibraryModel::cancel_download` takes it off the
+  list, withdraws its want (`Library::unwant`) and, where the poll is asking for that very want,
+  cancels the poll, whose other wants stay due and are asked again by the next one
+  (`pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it` presses it). A second press on the row, the close mark or
   escape — after a menu, before a toast — puts it away; it is not modal and holds no key back. Asking again is `want_found` once more, which makes the want due at once in the catalog
   (`library.md`), so the ordinary poll asks for it whatever the list remembers — once relied on the
   list holding the earlier failure, a song asked for again after *Clear finished* or a restart sat

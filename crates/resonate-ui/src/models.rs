@@ -36,7 +36,7 @@ use resonate_providers::Providers;
 
 use crate::{
     ResonateApp, clipboard,
-    downloads::{Download, Downloads, Fetcher, Fetching, WantStanding},
+    downloads::{Download, Downloads, Fetcher, Fetching, Polling, WantStanding},
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
@@ -624,6 +624,7 @@ pub struct LibraryModel {
     reaching_out: Option<SongsAsked>,
     owed: Option<String>,
     unreached_for: Option<String>,
+    providers_unheard: bool,
     wanting: AHashMap<Mbid, Task<()>>,
     release_tracks: Arc<[HeldReleaseTrack]>,
     release: Option<ReleaseDetail>,
@@ -803,6 +804,7 @@ impl LibraryModel {
             reaching_out: None,
             owed: None,
             unreached_for: None,
+            providers_unheard: false,
             wanting: AHashMap::new(),
             release_tracks: Arc::default(),
             release: None,
@@ -1499,7 +1501,15 @@ impl LibraryModel {
     }
 
     pub fn fetching(&self, download: &Download) -> Fetching {
-        download.fetching_while(self.asking_for())
+        download.fetching_while(self.polling())
+    }
+
+    fn polling(&self) -> Polling {
+        Polling {
+            asking: self.asking_for(),
+            unheard: self.providers_unheard,
+            now: SystemTime::now(),
+        }
     }
 
     pub fn fetching_found(&self, found: &Found) -> Option<Fetching> {
@@ -1517,6 +1527,18 @@ impl LibraryModel {
 
     pub fn dismiss_download(&mut self, recording: &Mbid, cx: &mut Context<Self>) {
         self.downloads.dismiss(recording);
+        cx.notify();
+    }
+
+    pub fn cancel_download(&mut self, recording: &Mbid, cx: &mut Context<Self>) {
+        let Some(want) = self.downloads.of(recording).and_then(Download::want) else {
+            return;
+        };
+        if self.asking_for() == Some(want) {
+            self.stop_poll(cx);
+        }
+        self.downloads.dismiss(recording);
+        self.unwant(want, cx);
         cx.notify();
     }
 
@@ -1640,15 +1662,8 @@ impl LibraryModel {
     pub fn fetching_want(&self, release_track: ReleaseTrackId) -> Option<Fetching> {
         let want = self.wanted(release_track)?;
         let fetching = self.standings.get(&want)?.fetching();
-        let asked = self.asking_for() == Some(want);
 
-        Some(match fetching {
-            Fetching::Queued if asked => Fetching::Downloading { attempt: 1 },
-            Fetching::Retrying { tries, .. } if asked => Fetching::Downloading {
-                attempt: tries.saturating_add(1),
-            },
-            other => other,
-        })
+        Some(fetching.while_polling(Some(want), self.polling()))
     }
 
     pub fn missing_track_rows(&self) -> Arc<[MissingRow]> {
@@ -4264,6 +4279,10 @@ impl LibraryModel {
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
+                        if !summary.cancelled {
+                            this.providers_unheard =
+                                summary.stats.refused > 0 || summary.stats.late > 0;
+                        }
                         let told_by_the_downloads =
                             prompted == Prompted::OnItsOwn && !this.downloads.is_empty();
                         if let Some(notice) =

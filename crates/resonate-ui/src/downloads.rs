@@ -12,6 +12,7 @@ pub enum Fetching {
     Landing,
     Queued,
     Downloading { attempt: u32 },
+    Unreached { attempt: u32 },
     Downloaded,
     Retrying { tries: u32, at: SystemTime },
     GaveUp,
@@ -23,15 +24,50 @@ impl Fetching {
     pub const fn is_underway(self) -> bool {
         matches!(
             self,
-            Self::Landing | Self::Queued | Self::Downloading { .. } | Self::Retrying { .. }
+            Self::Landing
+                | Self::Queued
+                | Self::Downloading { .. }
+                | Self::Unreached { .. }
+                | Self::Retrying { .. }
         )
     }
 
     pub const fn can_be_asked_again(self) -> bool {
         matches!(
             self,
-            Self::Retrying { .. } | Self::GaveUp | Self::NoProvider | Self::Unwanted
+            Self::Unreached { .. }
+                | Self::Retrying { .. }
+                | Self::GaveUp
+                | Self::NoProvider
+                | Self::Unwanted
         )
+    }
+
+    pub const fn can_be_cancelled(self) -> bool {
+        matches!(
+            self,
+            Self::Queued
+                | Self::Downloading { .. }
+                | Self::Unreached { .. }
+                | Self::Retrying { .. }
+        )
+    }
+
+    pub(crate) fn while_polling(self, want: Option<WantId>, polling: Polling) -> Self {
+        let asked = want.is_some() && polling.asking == want;
+        match self {
+            Self::Queued if asked => Self::Downloading { attempt: 1 },
+            Self::Retrying { tries, .. } if asked => Self::Downloading {
+                attempt: tries.saturating_add(1),
+            },
+            Self::Queued if polling.unheard => Self::Unreached { attempt: 1 },
+            Self::Retrying { tries, at } if polling.unheard && at <= polling.now => {
+                Self::Unreached {
+                    attempt: tries.saturating_add(1),
+                }
+            }
+            held => held,
+        }
     }
 
     pub fn saying(self) -> SharedString {
@@ -42,6 +78,9 @@ impl Fetching {
             }
             Self::Downloading { attempt } => SharedString::from(format!(
                 "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · asking providers…"
+            )),
+            Self::Unreached { attempt } => SharedString::from(format!(
+                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · a provider didn't answer, asking again shortly"
             )),
             Self::Downloaded => SharedString::new_static("Downloaded"),
             Self::Retrying { tries, at } => SharedString::from(format!(
@@ -55,6 +94,13 @@ impl Fetching {
             Self::Unwanted => SharedString::new_static("Couldn't add it"),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Polling {
+    pub asking: Option<WantId>,
+    pub unheard: bool,
+    pub now: SystemTime,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,18 +163,12 @@ pub struct Download {
 }
 
 impl Download {
-    pub fn fetching_while(&self, asking: Option<WantId>) -> Fetching {
-        match self.fetching {
-            Fetching::Queued if asking.is_some() && asking == self.want => {
-                Fetching::Downloading { attempt: 1 }
-            }
-            Fetching::Retrying { tries, .. } if asking.is_some() && asking == self.want => {
-                Fetching::Downloading {
-                    attempt: tries.saturating_add(1),
-                }
-            }
-            held => held,
-        }
+    pub const fn want(&self) -> Option<WantId> {
+        self.want
+    }
+
+    pub(crate) fn fetching_while(&self, polling: Polling) -> Fetching {
+        self.fetching.while_polling(self.want, polling)
     }
 }
 
@@ -259,11 +299,19 @@ mod tests {
         downloads
     }
 
+    fn polling(asking: Option<WantId>, unheard: bool, now: SystemTime) -> Polling {
+        Polling {
+            asking,
+            unheard,
+            now,
+        }
+    }
+
     fn fetching(downloads: &Downloads, asking: Option<WantId>) -> Vec<Fetching> {
         downloads
             .all()
             .iter()
-            .map(|download| download.fetching_while(asking))
+            .map(|download| download.fetching_while(polling(asking, false, SystemTime::now())))
             .collect()
     }
 
@@ -333,6 +381,45 @@ mod tests {
         assert_eq!(fetching(&given_up, None), vec![Fetching::GaveUp]);
         assert!(Fetching::GaveUp.can_be_asked_again());
         assert!(!Fetching::GaveUp.is_underway());
+    }
+
+    #[test]
+    fn a_want_no_provider_answered_is_unreached_rather_than_a_stale_no_match() {
+        let now = SystemTime::now();
+        let later = now + Duration::from_secs(60);
+        let due = Fetching::Retrying { tries: 1, at: now };
+        let waiting = Fetching::Retrying {
+            tries: 1,
+            at: later,
+        };
+
+        assert_eq!(
+            due.while_polling(Some(want(1)), polling(None, true, later)),
+            Fetching::Unreached { attempt: 2 }
+        );
+        assert_eq!(
+            Fetching::Queued.while_polling(Some(want(1)), polling(None, true, now)),
+            Fetching::Unreached { attempt: 1 }
+        );
+        assert_eq!(
+            waiting.while_polling(Some(want(1)), polling(None, true, now)),
+            waiting
+        );
+        assert_eq!(
+            due.while_polling(Some(want(1)), polling(None, false, later)),
+            due
+        );
+        assert_eq!(
+            due.while_polling(Some(want(1)), polling(Some(want(1)), true, later)),
+            Fetching::Downloading { attempt: 2 }
+        );
+        assert!(Fetching::Unreached { attempt: 2 }.is_underway());
+        assert!(Fetching::Unreached { attempt: 2 }.can_be_asked_again());
+        assert!(Fetching::Queued.can_be_cancelled());
+        assert!(due.can_be_cancelled());
+        assert!(!Fetching::Landing.can_be_cancelled());
+        assert!(!Fetching::Downloaded.can_be_cancelled());
+        assert!(!Fetching::GaveUp.can_be_cancelled());
     }
 
     #[test]

@@ -2769,7 +2769,10 @@ pub(crate) fn fetching_colour(fetching: Fetching) -> u32 {
         Fetching::Downloading { .. } => theme::accent(),
         Fetching::Downloaded => theme::done(),
         Fetching::GaveUp | Fetching::NoProvider | Fetching::Unwanted => theme::failure(),
-        Fetching::Landing | Fetching::Queued | Fetching::Retrying { .. } => theme::muted(),
+        Fetching::Landing
+        | Fetching::Queued
+        | Fetching::Unreached { .. }
+        | Fetching::Retrying { .. } => theme::muted(),
     }
 }
 
@@ -3841,6 +3844,13 @@ mod tests {
                     artist: Some("Janji & Johnning".to_owned()),
                 }]
             );
+
+            let recording = mbid(HEROES_TONIGHT);
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.cancel_download(&recording, cx));
+            });
+            driven.until(|root, cx| root.library.read(cx).downloads().is_empty());
+            assert!(library.wants().expect("the wants read").is_empty());
         }
 
         #[gpui::test]

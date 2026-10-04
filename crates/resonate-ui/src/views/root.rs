@@ -142,6 +142,8 @@ const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
 
 const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
 
+const CANCEL_DOWNLOAD_HINT: &str = "Stop downloading this song";
+
 const KEEP_THE_TRACK_HINT: &str = keyed!("Keep the song", key!(leave));
 
 const DELETE_THE_TRACK_HINT: &str =
@@ -3637,12 +3639,20 @@ impl RootView {
             Fetching::Retrying { tries, .. } => Some(*tries),
             _ => None,
         });
+        let unreached = fetching.iter().find_map(|each| match each {
+            Fetching::Unreached { attempt } => Some(*attempt),
+            _ => None,
+        });
         let landing = fetching
             .iter()
             .any(|each| matches!(each, Fetching::Landing));
         let open = self.downloads_open;
         let said = if let Some(attempt) = active {
             SharedString::from(format!("Attempt {attempt} of {TRIES_BEFORE_GIVING_UP}"))
+        } else if let Some(attempt) = unreached {
+            SharedString::from(format!(
+                "Attempt {attempt} of {TRIES_BEFORE_GIVING_UP} · provider didn't answer"
+            ))
         } else if queued {
             SharedString::from(format!("Queued · attempt 1 of {TRIES_BEFORE_GIVING_UP}"))
         } else if let Some(tries) = retrying {
@@ -3873,6 +3883,21 @@ impl RootView {
                         let wanted = again.clone();
                         this.library
                             .update(cx, |library, cx| library.want_found(wanted, cx));
+                    })),
+                )
+            })
+            .when(fetching.can_be_cancelled(), |row| {
+                let cancelled = recording.clone();
+                row.child(
+                    kit::icon_button(
+                        listing::keyed_by("cancel-download", &recording),
+                        Icon::Stop,
+                        CANCEL_DOWNLOAD_HINT,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.library.update(cx, |library, cx| {
+                            library.cancel_download(&cancelled, cx);
+                        });
                     })),
                 )
             })
