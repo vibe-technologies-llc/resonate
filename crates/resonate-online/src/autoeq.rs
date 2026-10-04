@@ -232,7 +232,7 @@ mod tests {
         let profile = read_profile(PARAMETRIC_TEXT).expect("a well formed profile");
 
         assert_eq!(profile.bands().len(), 10);
-        assert_eq!(profile.preamp().millibels(), -6_100);
+        assert_eq!(profile.preamp().milli_decibels(), -6_100);
     }
 
     #[test]

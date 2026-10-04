@@ -613,7 +613,7 @@ mod tests {
 
         let (_, kept) = scratch.store.import(&from, None).expect("it imports");
 
-        assert_eq!(kept.profile.preamp().millibels(), -4_500);
+        assert_eq!(kept.profile.preamp().milli_decibels(), -4_500);
         assert!(kept.profile.target().is_some());
     }
 

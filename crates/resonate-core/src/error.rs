@@ -33,13 +33,13 @@ pub enum Error {
     #[error("{0} centihertz is outside the band range {min}..={max}", min = Frequency::LOWEST_CENTIHERTZ, max = Frequency::HIGHEST_CENTIHERTZ)]
     BandFrequencyOutOfRange(u32),
 
-    #[error("{0} millibels is outside the band gain range -{max}..={max}", max = BandGain::WIDEST_MILLIBELS)]
+    #[error("{0} millidecibels is outside the band gain range -{max}..={max}", max = BandGain::WIDEST_MILLI_DECIBELS)]
     BandGainOutOfRange(i32),
 
     #[error("a Q of {0} milli-units is outside {min}..={max}", min = Q::WIDEST_MILLI, max = Q::NARROWEST_MILLI)]
     BandQOutOfRange(u32),
 
-    #[error("a preamp of {0} millibels is outside -{max}..={max}", max = BandGain::WIDEST_MILLIBELS)]
+    #[error("a preamp of {0} millidecibels is outside -{max}..={max}", max = BandGain::WIDEST_MILLI_DECIBELS)]
     PreampOutOfRange(i32),
 
     #[error("a profile of {0} bands is more than the {MAX_BANDS} a chain carries")]

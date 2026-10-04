@@ -299,7 +299,7 @@ mod tests {
                     vec![Band::new(
                         BandKind::Peaking,
                         Frequency::from_centihertz(100_000).expect("a valid frequency"),
-                        BandGain::from_millibels(300).expect("a valid gain"),
+                        BandGain::from_milli_decibels(300).expect("a valid gain"),
                         Q::BUTTERWORTH,
                     )],
                 )

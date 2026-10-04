@@ -140,9 +140,11 @@ pub fn nudged(band: Band, nudge: Nudge) -> Band {
         Frequency::from_hertz(hertz).unwrap_or(band.frequency)
     };
     let louder = |by: i32| {
-        let millibels = (band.gain.millibels() + by)
-            .clamp(-BandGain::WIDEST_MILLIBELS, BandGain::WIDEST_MILLIBELS);
-        BandGain::from_millibels(millibels).unwrap_or(band.gain)
+        let milli_decibels = (band.gain.milli_decibels() + by).clamp(
+            -BandGain::WIDEST_MILLI_DECIBELS,
+            BandGain::WIDEST_MILLI_DECIBELS,
+        );
+        BandGain::from_milli_decibels(milli_decibels).unwrap_or(band.gain)
     };
 
     match nudge {
@@ -1205,8 +1207,8 @@ mod tests {
         let back = nudged(higher, Nudge::Lower);
         assert!((back.frequency.hertz() - 1_000.0).abs() < 0.02);
 
-        assert_eq!(nudged(band, Nudge::Louder).gain.millibels(), 3_500);
-        assert_eq!(nudged(band, Nudge::Quieter).gain.millibels(), 2_500);
+        assert_eq!(nudged(band, Nudge::Louder).gain.milli_decibels(), 3_500);
+        assert_eq!(nudged(band, Nudge::Quieter).gain.milli_decibels(), 2_500);
         assert!(nudged(band, Nudge::Narrower).q > band.q);
         assert!(nudged(band, Nudge::Wider).q < band.q);
         assert_eq!(nudged(band, Nudge::Narrower).frequency, band.frequency);
@@ -1216,14 +1218,15 @@ mod tests {
     fn a_nudge_past_the_ends_of_a_band_stays_at_the_end() {
         let top = Band {
             frequency: Frequency::HIGHEST,
-            gain: BandGain::from_millibels(BandGain::WIDEST_MILLIBELS).expect("the widest gain"),
+            gain: BandGain::from_milli_decibels(BandGain::WIDEST_MILLI_DECIBELS)
+                .expect("the widest gain"),
             ..a_band()
         };
 
         assert_eq!(nudged(top, Nudge::Higher).frequency, Frequency::HIGHEST);
         assert_eq!(
-            nudged(top, Nudge::Louder).gain.millibels(),
-            BandGain::WIDEST_MILLIBELS
+            nudged(top, Nudge::Louder).gain.milli_decibels(),
+            BandGain::WIDEST_MILLI_DECIBELS
         );
     }
 

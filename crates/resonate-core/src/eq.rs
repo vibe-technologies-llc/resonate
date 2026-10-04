@@ -9,7 +9,7 @@ use crate::{Error, Result, SampleRate};
 pub const MAX_BANDS: usize = 32;
 
 const CENTIHERTZ_PER_HERTZ: f64 = 100.0;
-const MILLIBELS_PER_DECIBEL: f64 = 1_000.0;
+const MILLI_DECIBELS_PER_DECIBEL: f64 = 1_000.0;
 const MILLI_PER_UNIT: f64 = 1_000.0;
 
 pub const RESPONSE_FROM_HZ: f64 = 20.0;
@@ -75,32 +75,34 @@ pub struct BandGain(i32);
 
 impl BandGain {
     pub const FLAT: Self = Self(0);
-    pub const WIDEST_MILLIBELS: i32 = 40_000;
+    pub const WIDEST_MILLI_DECIBELS: i32 = 40_000;
 
-    pub const fn from_millibels(millibels: i32) -> Result<Self> {
-        if millibels < -Self::WIDEST_MILLIBELS || millibels > Self::WIDEST_MILLIBELS {
-            return Err(Error::BandGainOutOfRange(millibels));
+    pub const fn from_milli_decibels(milli_decibels: i32) -> Result<Self> {
+        if milli_decibels < -Self::WIDEST_MILLI_DECIBELS
+            || milli_decibels > Self::WIDEST_MILLI_DECIBELS
+        {
+            return Err(Error::BandGainOutOfRange(milli_decibels));
         }
-        Ok(Self(millibels))
+        Ok(Self(milli_decibels))
     }
 
     pub fn from_decibels(decibels: f64) -> Result<Self> {
         if !decibels.is_finite() {
-            return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLIBELS + 1));
+            return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLI_DECIBELS + 1));
         }
-        let millibels = (decibels * MILLIBELS_PER_DECIBEL).round();
-        if millibels.abs() > f64::from(Self::WIDEST_MILLIBELS) {
-            return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLIBELS + 1));
+        let milli_decibels = (decibels * MILLI_DECIBELS_PER_DECIBEL).round();
+        if milli_decibels.abs() > f64::from(Self::WIDEST_MILLI_DECIBELS) {
+            return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLI_DECIBELS + 1));
         }
-        Self::from_millibels(millibels as i32)
+        Self::from_milli_decibels(milli_decibels as i32)
     }
 
-    pub const fn millibels(self) -> i32 {
+    pub const fn milli_decibels(self) -> i32 {
         self.0
     }
 
     pub fn decibels(self) -> f64 {
-        f64::from(self.0) / MILLIBELS_PER_DECIBEL
+        f64::from(self.0) / MILLI_DECIBELS_PER_DECIBEL
     }
 
     pub const fn is_flat(self) -> bool {
@@ -169,23 +171,25 @@ pub struct Preamp(i32);
 impl Preamp {
     pub const NONE: Self = Self(0);
 
-    pub const fn from_millibels(millibels: i32) -> Result<Self> {
-        if millibels < -BandGain::WIDEST_MILLIBELS || millibels > BandGain::WIDEST_MILLIBELS {
-            return Err(Error::PreampOutOfRange(millibels));
+    pub const fn from_milli_decibels(milli_decibels: i32) -> Result<Self> {
+        if milli_decibels < -BandGain::WIDEST_MILLI_DECIBELS
+            || milli_decibels > BandGain::WIDEST_MILLI_DECIBELS
+        {
+            return Err(Error::PreampOutOfRange(milli_decibels));
         }
-        Ok(Self(millibels))
+        Ok(Self(milli_decibels))
     }
 
     pub fn from_decibels(decibels: f64) -> Result<Self> {
-        Self::from_millibels(BandGain::from_decibels(decibels)?.millibels())
+        Self::from_milli_decibels(BandGain::from_decibels(decibels)?.milli_decibels())
     }
 
-    pub const fn millibels(self) -> i32 {
+    pub const fn milli_decibels(self) -> i32 {
         self.0
     }
 
     pub fn decibels(self) -> f64 {
-        f64::from(self.0) / MILLIBELS_PER_DECIBEL
+        f64::from(self.0) / MILLI_DECIBELS_PER_DECIBEL
     }
 
     pub const fn is_none(self) -> bool {
@@ -619,10 +623,11 @@ impl Profile {
             return Arc::clone(self);
         }
 
-        let beyond_the_fit = self.preamp.millibels() - target.fit_at(FITTED_AT).preamp.millibels();
+        let beyond_the_fit =
+            self.preamp.milli_decibels() - target.fit_at(FITTED_AT).preamp.milli_decibels();
         let fit = target.fit_at(rate);
         Arc::new(Self {
-            preamp: Preamp::from_millibels(fit.preamp.millibels() + beyond_the_fit)
+            preamp: Preamp::from_milli_decibels(fit.preamp.milli_decibels() + beyond_the_fit)
                 .unwrap_or(fit.preamp),
             bands: fit.bands.to_vec(),
             target: Some(Arc::clone(target)),
@@ -825,7 +830,7 @@ pub const TARGET_POINTS_AT_LEAST: usize = 2;
 pub const TARGET_POINTS_AT_MOST: usize = 1_024;
 
 const FITTING_PASSES: usize = 12;
-const WORTH_A_BAND_MILLIBELS: i32 = 200;
+const WORTH_A_BAND_MILLI_DECIBELS: i32 = 200;
 
 pub const THIRD_OCTAVE_CENTRES: [u32; 31] = [
     2_000, 2_500, 3_150, 4_000, 5_000, 6_300, 8_000, 10_000, 12_500, 16_000, 20_000, 25_000,
@@ -958,7 +963,7 @@ impl Target {
             .iter()
             .map(|gain| {
                 BandGain::from_decibels(*gain)
-                    .is_ok_and(|held| held.millibels().abs() >= WORTH_A_BAND_MILLIBELS)
+                    .is_ok_and(|held| held.milli_decibels().abs() >= WORTH_A_BAND_MILLI_DECIBELS)
             })
             .collect();
         if worth_it.contains(&false) {
@@ -1146,7 +1151,7 @@ mod tests {
         assert!(carried.shapes());
 
         let peaking = band(BandKind::Peaking, 1_000.0, 9.0, 4.0);
-        assert_eq!(peaking.gain.millibels(), 9_000);
+        assert_eq!(peaking.gain.milli_decibels(), 9_000);
     }
 
     #[test]

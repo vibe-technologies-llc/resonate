@@ -267,7 +267,6 @@ service or a format — and is not worked until that moves; everything else is o
   and two picks landing out of order keep the first
 - Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the
   filter tail falls to −600 dB, the dither muting only on exact zeros
-- *Millibels* means hundredths of a dB for the trim and thousandths for a band gain and the preamp
 - A binding for a device not plugged in cannot be seen or taken away alone
 - *Fit the preamp* models the curve rather than measuring what the music peaks at
 - AutoEq is the only correction source, fetched one device at a time

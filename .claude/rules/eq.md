@@ -29,7 +29,8 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   It mirrors `resonate-lyrics`, with the same guard: `cargo tree -p resonate-eq` stays free of gpui,
   the engine, the library and `ureq`.
 - **Every field of a `Band` is a quantised integer in a newtype, load-bearing three times.**
-  `Frequency` is centihertz, `BandGain` and `Preamp` millibels, `Q` milli-units. `OutputSettings`
+  `Frequency` is centihertz, `BandGain` and `Preamp` milli-decibels — thousandths of a dB, where `Trim`'s *millibels* are the
+  hundredths a millibel is — `Q` milli-units. `OutputSettings`
   derives `Eq` and `publish_settings` compares it every 16 ms to decide whether to republish, so a
   float band would cost that derive — change one to `f32` and `Profile`, `Equalisation` and
   `OutputSettings` lose `Eq` and the workspace stops building, the structural enforcement
@@ -353,7 +354,7 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   would be a cycle through its own `Arc`. A preamp moved by hand is carried as its distance from the
   fitted one, so every rate keeps it. The file keeps the curve: a profile holding a `Target` is
   written as its `Preamp:` and the `GraphicEQ:` line EqualizerAPO itself reads, and read back into
-  the same `Target`, gains trimmed to the millibel so the round trip is exact. A `Preamp:` beside a
+  the same `Target`, gains trimmed to the milli-decibel so the round trip is exact. A `Preamp:` beside a
   curve is the one it plays at, as EqualizerAPO applies both; filter lines beside one are passed
   over. Shaping a band in the pane or pressing one onto it — `band_mut`, `push`, `remove` — lets go
   of the curve, the bands then being the listener's own. A GraphicEQ file imported before the curve

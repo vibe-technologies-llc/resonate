@@ -107,7 +107,7 @@ impl Plot {
 
     pub(crate) fn placed(self, x: f32, y: f32) -> Placed {
         let hertz = stepped_hertz(self.hertz_at(x)).clamp(RESPONSE_FROM_HZ, RESPONSE_TO_HZ);
-        let reach = f64::from(BandGain::WIDEST_MILLIBELS) / MILLIBELS_PER_DECIBEL;
+        let reach = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / MILLIBELS_PER_DECIBEL;
         let decibels = ((self.decibels_at(y) - self.lift).clamp(-reach, reach) * DECIBEL_STEPS)
             .round()
             / DECIBEL_STEPS;
@@ -305,9 +305,12 @@ mod tests {
     fn a_range_drawn_wider_than_a_band_holds_is_held_to_what_a_band_holds() {
         let plot = Plot::spanning(0.0, 0.0, WIDE, TALL, 60.0);
         let top = plot.placed(WIDE / 2.0, 0.0);
-        assert_eq!(top.gain.millibels(), BandGain::WIDEST_MILLIBELS);
+        assert_eq!(top.gain.milli_decibels(), BandGain::WIDEST_MILLI_DECIBELS);
         let bottom = plot.placed(WIDE / 2.0, TALL);
-        assert_eq!(bottom.gain.millibels(), -BandGain::WIDEST_MILLIBELS);
+        assert_eq!(
+            bottom.gain.milli_decibels(),
+            -BandGain::WIDEST_MILLI_DECIBELS
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ pub const LEADER: &str = "graphiceq:";
 
 fn clamped_point(hertz: f64, decibels: f64) -> Option<TargetPoint> {
     let frequency = Frequency::from_hertz(hertz).ok()?;
-    let widest = f64::from(BandGain::WIDEST_MILLIBELS) / 1_000.0;
+    let widest = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / 1_000.0;
     let gain = BandGain::from_decibels(decibels.clamp(-widest, widest)).ok()?;
     Some(TargetPoint { frequency, gain })
 }
@@ -202,7 +202,7 @@ mod tests {
         let mut moved = Profile::fitted_to(target(AUTOEQ));
         let fitted = moved.preamp();
         moved.set_preamp(
-            resonate_core::eq::Preamp::from_millibels(fitted.millibels() - 3_000)
+            resonate_core::eq::Preamp::from_milli_decibels(fitted.milli_decibels() - 3_000)
                 .expect("in range"),
         );
         let moved = std::sync::Arc::new(moved);
@@ -210,8 +210,8 @@ mod tests {
         for rate in EVERY_RATE_PLAYED {
             let played = moved.at_rate(rate);
             assert_eq!(
-                played.preamp().millibels(),
-                played.fitted_preamp(rate).millibels() - 3_000,
+                played.preamp().milli_decibels(),
+                played.fitted_preamp(rate).milli_decibels() - 3_000,
                 "{rate}"
             );
             assert!(played.target().is_some());

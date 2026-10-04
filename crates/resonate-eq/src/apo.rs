@@ -117,7 +117,7 @@ fn clamped_frequency(hertz: f64) -> Frequency {
 }
 
 fn clamped_gain(decibels: f64) -> BandGain {
-    let widest = f64::from(BandGain::WIDEST_MILLIBELS) / 1_000.0;
+    let widest = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / 1_000.0;
     BandGain::from_decibels(decibels.clamp(-widest, widest)).unwrap_or(BandGain::FLAT)
 }
 
@@ -130,7 +130,7 @@ fn clamped_q(units: f64) -> Q {
 }
 
 fn clamped_preamp(decibels: f64) -> Preamp {
-    let widest = f64::from(BandGain::WIDEST_MILLIBELS) / 1_000.0;
+    let widest = f64::from(BandGain::WIDEST_MILLI_DECIBELS) / 1_000.0;
     Preamp::from_decibels(decibels.clamp(-widest, widest)).unwrap_or(Preamp::NONE)
 }
 
@@ -457,12 +457,12 @@ mod tests {
 
         assert_eq!(reading.passed_over, 0);
         assert_eq!(reading.profile.bands().len(), 10);
-        assert_eq!(reading.profile.preamp().millibels(), -6_100);
+        assert_eq!(reading.profile.preamp().milli_decibels(), -6_100);
 
         let first = reading.profile.bands().first().copied().expect("ten bands");
         assert_eq!(first.kind, BandKind::LowShelf);
         assert_eq!(first.frequency.centihertz(), 10_500);
-        assert_eq!(first.gain.millibels(), 6_400);
+        assert_eq!(first.gain.milli_decibels(), 6_400);
         assert_eq!(first.q.milli(), 700);
         assert!(first.on);
 
@@ -569,13 +569,13 @@ mod tests {
 
         let reading = read(text).expect("a file of rubbish still reads");
 
-        assert_eq!(reading.profile.preamp().millibels(), -3_500);
+        assert_eq!(reading.profile.preamp().milli_decibels(), -3_500);
         assert_eq!(reading.profile.bands().len(), 2);
         assert_eq!(reading.passed_over, 3);
 
         let shelf = reading.profile.bands().get(1).copied().expect("two bands");
         assert_eq!(shelf.kind, BandKind::HighShelf);
-        assert_eq!(shelf.gain.millibels(), -2_500);
+        assert_eq!(shelf.gain.milli_decibels(), -2_500);
         assert_eq!(shelf.q, Q::BUTTERWORTH);
     }
 
@@ -594,7 +594,7 @@ mod tests {
         let band = reading.profile.bands().first().copied().expect("one band");
 
         assert_eq!(band.frequency, Frequency::HIGHEST);
-        assert_eq!(band.gain.millibels(), BandGain::WIDEST_MILLIBELS);
+        assert_eq!(band.gain.milli_decibels(), BandGain::WIDEST_MILLI_DECIBELS);
         assert_eq!(band.q.milli(), Q::NARROWEST_MILLI);
     }
 
@@ -648,7 +648,7 @@ mod tests {
         let band = ordered.profile.bands().first().copied().expect("one band");
 
         assert_eq!(band.frequency.centihertz(), 315_000);
-        assert_eq!(band.gain.millibels(), -4_000);
+        assert_eq!(band.gain.milli_decibels(), -4_000);
         assert_eq!(band.q.milli(), 2_500);
     }
 
