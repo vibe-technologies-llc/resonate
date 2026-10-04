@@ -850,6 +850,17 @@ pub const FITS_KEPT_FOR: [SampleRate; 8] = [
     SampleRate::HZ_384000,
 ];
 
+fn thinned(points: Vec<TargetPoint>) -> Vec<TargetPoint> {
+    let held = points.len();
+    if held <= TARGET_POINTS_AT_MOST {
+        return points;
+    }
+
+    (0..TARGET_POINTS_AT_MOST)
+        .map(|slot| points[slot * (held - 1) / (TARGET_POINTS_AT_MOST - 1)])
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 struct Fit {
     preamp: Preamp,
@@ -880,7 +891,7 @@ impl Target {
     pub fn new(mut points: Vec<TargetPoint>) -> Option<Self> {
         points.sort();
         points.dedup_by_key(|point| point.frequency);
-        points.truncate(TARGET_POINTS_AT_MOST);
+        let points = thinned(points);
         (points.len() >= TARGET_POINTS_AT_LEAST).then(|| Self {
             points: points.into_boxed_slice(),
             fits: Default::default(),
@@ -1021,6 +1032,25 @@ mod tests {
 
     fn band(kind: BandKind, at: f64, gain: f64, q: f64) -> Band {
         Band::new(kind, hertz(at), decibels(gain), quality(q))
+    }
+
+    #[test]
+    fn a_curve_of_more_points_than_a_target_holds_is_thinned_across_its_whole_range() {
+        let points: Vec<TargetPoint> = (0..3_000)
+            .map(|step| TargetPoint {
+                frequency: hertz(20.0 + f64::from(step) * 6.0),
+                gain: decibels(f64::from(step % 7)),
+            })
+            .collect();
+        let first = points[0];
+        let last = points[2_999];
+
+        let target = Target::new(points).expect("a curve");
+
+        assert_eq!(target.points().len(), TARGET_POINTS_AT_MOST);
+        assert_eq!(target.points().first(), Some(&first));
+        assert_eq!(target.points().last(), Some(&last));
+        assert!(target.points().windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]

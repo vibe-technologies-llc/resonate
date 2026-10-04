@@ -265,8 +265,6 @@ service or a format — and is not worked until that moves; everything else is o
 ## Later: Equaliser and DSP extras
 - An unsupported EqualizerAPO filter or a `Device:` scope is dropped without a word, and a
   `6dB`/`12dB` slope word on a pass or shelf filter is ignored
-- A GraphicEQ line or measurement of more than 1 024 points loses its top frequencies rather than
-  being thinned
 - Choosing a room-correction file and then *Stop correcting* while it is read leaves correction on,
   and two picks landing out of order keep the first
 - Mid-track digital silence through the equaliser reaches a 16-bit device as shaped hiss until the

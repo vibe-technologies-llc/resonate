@@ -32,9 +32,6 @@ pub fn target_of(line: &str) -> Option<Target> {
             Some(point) => points.push(point),
             None => tracing::debug!(spelled, "a graphic point this build could not read"),
         }
-        if points.len() >= resonate_core::eq::TARGET_POINTS_AT_MOST {
-            break;
-        }
     }
 
     Target::new(points)
@@ -105,6 +102,23 @@ mod tests {
                 (realised - target.at(centre)).abs()
             })
             .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn a_line_of_more_points_than_a_target_holds_keeps_its_top_frequencies() {
+        let points: Vec<String> = (0..2_000)
+            .map(|step| format!("{} {}", 20.0 + f64::from(step) * 10.0, step % 5))
+            .collect();
+        let line = format!("GraphicEQ: {}", points.join("; "));
+
+        let thinned = target_of(&line).expect("a curve");
+
+        assert_eq!(
+            thinned.points().len(),
+            resonate_core::eq::TARGET_POINTS_AT_MOST
+        );
+        let top = thinned.points().last().expect("a last point");
+        assert!(top.frequency.hertz() > 19_000.0);
     }
 
     #[test]

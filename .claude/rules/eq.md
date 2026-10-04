@@ -336,7 +336,9 @@ the run, with AutoEq's measurements behind it. `audio.md` has the chain it sits 
   so the same bands elsewhere miss: over the fixture curve the worst centre was 0.14 dB off at
   48 kHz and 0.34 at 44.1, but 2.5 dB at 88.2, 2.8 at 96, 3.7 at 176.4 and 192 and 4.0 at 384, all at
   16 kHz — no one rate fits them all. The fit is arithmetic, so in `resonate-core::eq`: a `Target`
-  is the curve's points as quantised `TargetPoint`s, `Profile::fitted_to` fits one at `FITTED_AT`
+  is the curve's points as quantised `TargetPoint`s — sorted, de-duplicated on frequency and, past
+  `TARGET_POINTS_AT_MOST` (1 024), thinned to evenly spaced ones with both ends kept, never cut at the
+  top (`a_curve_of_more_points_than_a_target_holds_is_thinned_across_its_whole_range`) — `Profile::fitted_to` fits one at `FITTED_AT`
   (48 kHz) and holds it, and `Profile::at_rate` answers the fit at another rate — the same `Arc`
   where there is no curve or the rate is `FITTED_AT`. `eq_config` asks it for the stream's rate
   before weighing transparency, so the stage gets bands designed for what it plays and `resonate
