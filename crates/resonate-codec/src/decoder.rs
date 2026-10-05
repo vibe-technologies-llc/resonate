@@ -10,10 +10,10 @@ use resonate_core::{
 use symphonia::core::{
     audio::GenericAudioSlice,
     codecs::audio::{AudioDecoder, AudioDecoderOptions},
-    errors,
-    formats::{FormatReader, SeekMode, SeekTo},
+    errors::{self, SeekErrorKind},
+    formats::{FormatReader, SeekMode, SeekTo, SeekedTo},
     packet::Packet,
-    units::Timestamp,
+    units::{Duration as Ticks, Timestamp},
 };
 
 use crate::{
@@ -951,7 +951,8 @@ impl Decoder {
         };
         let to = to.saturating_sub(crate::opus::pre_roll(info.codec));
 
-        let seek_to = match timeline.timestamp(to) {
+        let asked = timeline.timestamp(to);
+        let seek_to = match asked {
             Some(ts) => SeekTo::Timestamp {
                 ts,
                 track_id: coded.track.0,
@@ -962,10 +963,13 @@ impl Decoder {
             },
         };
 
-        let landed = coded
-            .reader
-            .seek(SeekMode::Accurate, seek_to)
-            .map_err(|source| Error::from_symphonia(source, CodecOp::Seek, location))?;
+        let landed = match coded.reader.seek(SeekMode::Accurate, seek_to) {
+            Err(errors::Error::SeekError(SeekErrorKind::OutOfRange)) if let Some(ts) = asked => {
+                past_the_readers_own_end(coded.reader.as_mut(), ts, coded.track.0)
+            }
+            landed => landed,
+        }
+        .map_err(|source| Error::from_symphonia(source, CodecOp::Seek, location))?;
 
         let on_the_first_packet = coded.first_ts == Some(landed.actual_ts);
         let short_of_the_music = if on_the_first_packet && !timeline.is_sample_accurate() {
@@ -977,6 +981,29 @@ impl Decoder {
             at: timeline.frames(landed.actual_ts),
             short_of_the_music,
         })
+    }
+}
+
+fn past_the_readers_own_end(
+    reader: &mut dyn FormatReader,
+    ts: Timestamp,
+    track_id: u32,
+) -> symphonia::core::errors::Result<SeekedTo> {
+    let out_of_range = Err(errors::Error::SeekError(SeekErrorKind::OutOfRange));
+    let last = reader
+        .tracks()
+        .iter()
+        .find(|track| track.id == track_id)
+        .and_then(|track| track.num_frames)
+        .and_then(|frames| Timestamp::ZERO.checked_add(Ticks::new(frames.checked_sub(1)?)));
+    match last {
+        Some(last) if ts > last => {
+            tracing::debug!(
+                "a seek past where the reader reckons the stream ends lands there and decodes on"
+            );
+            reader.seek(SeekMode::Accurate, SeekTo::Timestamp { ts: last, track_id })
+        }
+        Some(_) | None => out_of_range,
     }
 }
 

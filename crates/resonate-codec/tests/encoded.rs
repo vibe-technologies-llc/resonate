@@ -1223,6 +1223,57 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_count
     );
 }
 
+#[test]
+fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_its_end() {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build a VBR fixture");
+        return;
+    }
+    let tree = Tree::new();
+    let silence = vec![0; CD.frames() * usize::from(CD.channels) * 3];
+    let quiet_then_loud = [silence.clone(), tone(CD)].concat();
+    let loud_then_quiet = [tone(CD), silence].concat();
+
+    for (named, samples) in [
+        ("quiet then loud", quiet_then_loud),
+        ("loud then quiet", loud_then_quiet),
+    ] {
+        let source = tree.at(&format!("{named}.wav"));
+        wav(&source, CD, &samples);
+        let target = tree.at(&format!("{named}.mp3"));
+        let vbr = [
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "0",
+            "-write_xing",
+            "0",
+            "-id3v2_version",
+            "0",
+        ];
+        if !encode(&source, &target, &vbr) {
+            eprintln!("skipped: ffmpeg would not encode a VBR MP3");
+            return;
+        }
+
+        let decoded = frames_decoded(&target);
+        let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
+            .expect("the file opens");
+
+        assert_eq!(
+            info.duration,
+            Some(Frames(decoded as u64)),
+            "{named}: the length was guessed from the opening frames' bitrate"
+        );
+        let near_the_end = Frames(decoded as u64 - 4_410);
+        assert_eq!(
+            decoder.seek(near_the_end).expect("a seek near the end"),
+            near_the_end,
+            "{named}: a seek near the end did not land there"
+        );
+    }
+}
+
 const MP3_DECODER_DELAY: u32 = 529;
 
 fn id3v2_3_comment(description: &str, text: &str) -> Vec<u8> {

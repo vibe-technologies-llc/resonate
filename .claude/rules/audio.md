@@ -134,6 +134,19 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `duration` is the playable count: what the seek bar, `mpris:length` and `heard.rs` read. `Priming`
   holds the count as an `Option`, since a reader can name a delay and not a length (an ogg over a pipe,
   a Xing header with a LAME delay and no frame count), and the priming must still go.
+- **An MP3 naming no length is counted, not guessed, where its bitrate moves.** symphonia reckons a
+  stream with no Xing/Info frame count and no VBRI header from the bitrate of its first sixteen frames,
+  which for a variable-rate file can be off by half. `mpa::counted_frames`, run by `Prescan::buffered`
+  over a whole source only (a spooled head is never counted), leaves a stream whose header names its
+  frames to the reader; weighs the first 32 frames and eight frames resynced at even steps through the
+  file, leaving a constant-rate one to the reader's arithmetic; and otherwise walks every frame header
+  of the stream's own version, layer and rate, stepping over junk by resyncing on two chained headers
+  within 64 KiB and stopping at an ID3v1, APEv2 or Lyrics3 trailer. `coded_info` takes the count before
+  the reader's. A seek past the reader's own shorter reckoning, which symphonia refuses as `OutOfRange`,
+  lands on the last frame it reckons and decodes on to the frame asked for
+  (`past_the_readers_own_end`). `mpa::FrameHeader` is the one MPEG audio header parser, the prescan's
+  junk search reading it too
+  (`a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_its_end`).
 - **`Timeline` is told where the music starts, not how long the priming is.** It holds one
   `music_at: Timestamp` and maps a playable frame to a container timestamp by adding to it: zero for a
   reader that named the delay (symphonia's negative PTS), otherwise `Track::start_ts` plus the scanned

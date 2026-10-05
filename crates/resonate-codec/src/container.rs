@@ -492,6 +492,7 @@ pub(crate) fn coded_info(
             prescan
                 .segment
                 .counted_frames_of(track.id)
+                .or(prescan.mpeg_frames)
                 .or_else(|| duration(track, spec.rate))
                 .filter(|declared| *declared != Frames::ZERO)
                 .or_else(|| prescan.boxes.fragmented_length(spec.rate))

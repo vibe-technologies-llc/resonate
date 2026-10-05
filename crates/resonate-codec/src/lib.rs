@@ -12,6 +12,7 @@ mod error;
 mod flac;
 mod journal;
 mod matroska;
+mod mpa;
 mod opus;
 mod overlay;
 mod padded;
