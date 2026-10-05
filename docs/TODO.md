@@ -11,8 +11,8 @@ else is open to be done.
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
   ring's depth
-- Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
-  depth later, half a second by default, because gain and filters run ahead of a ring kept full
+- Changing the equaliser is heard up to the buffer's depth later, half a second by default, because
+  the filters run ahead of a ring kept full; only a level can be trimmed where the graph pulls
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
 - **Blocked on hardware:** Nothing has proved a forced graph rate change against hardware (the only
@@ -208,6 +208,8 @@ else is open to be done.
 - The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
 - The plot opens empty for up to a buffer's depth, because the tap runs only while the pane is in
   front
+- The tap records frames as rendered, before the ring trims them, so a muted stream still draws and
+  a turned volume shows a buffer late
 
 ## Later: The window
 - A track or album cannot be dragged from a listing into the queue or a playlist; only files from a

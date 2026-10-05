@@ -19,6 +19,7 @@ use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, Silence, StreamS
 use resonate_pipewire::AudioSource;
 
 const FAULT_SLOTS: usize = 64;
+const RENDERED_SLOTS: usize = 1024;
 
 pub const FADED_OVER: Duration = Duration::from_millis(10);
 
@@ -28,17 +29,40 @@ pub enum Entering {
     FadedIn,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Level {
+    pub rendered: f32,
+    pub heard: f32,
+}
+
+impl Level {
+    pub const WHOLE: Self = Self {
+        rendered: 1.0,
+        heard: 1.0,
+    };
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Rendered {
+    epoch: u64,
+    from: u64,
+    amplitude: f32,
+}
+
 pub fn ring(
     spec: StreamSpec,
     capacity: Frames,
     silence: Silence,
     fade: Frames,
     entering: Entering,
+    level: Level,
 ) -> (RingProducer, RingConsumer, RingMonitor) {
     let bytes_per_frame = spec.bytes_per_frame();
     let bytes = spec.frames_to_bytes(capacity) as usize;
     let (producer, consumer) = rtrb::RingBuffer::new(bytes);
     let (faults, drained) = rtrb::RingBuffer::new(FAULT_SLOTS);
+    let (announcing, announced) = rtrb::RingBuffer::new(RENDERED_SLOTS);
+    let heard = Arc::new(AtomicU32::new(level.heard.to_bits()));
     let dropped = Arc::new(AtomicU32::new(0));
     let starved = Arc::new(AtomicU64::new(0));
     let discard = Discard::default();
@@ -47,7 +71,7 @@ pub fn ring(
     fader.over.store(fade.get().max(1), Ordering::Release);
     let prime = bytes / bytes_per_frame.get() as usize / 2;
     let fades = matches!(silence, Silence::Unmarked) && fade > Frames::ZERO;
-    let level = match entering {
+    let faded = match entering {
         Entering::FadedIn if fades => SILENT,
         Entering::Whole | Entering::FadedIn => WHOLE,
     };
@@ -60,6 +84,11 @@ pub fn ring(
             hold: hold.clone(),
             fader: fader.clone(),
             requested: 0,
+            written: 0,
+            announcing,
+            owed: None,
+            rendering: level.rendered,
+            heard: Arc::clone(&heard),
         },
         RingConsumer {
             inner: consumer,
@@ -69,7 +98,13 @@ pub fn ring(
             fader,
             format: spec.format,
             fades,
-            level,
+            level: faded,
+            announced,
+            heard,
+            read: 0,
+            rendered_at: f64::from(level.rendered),
+            heard_now: f64::from(level.heard),
+            trim_step: WHOLE / fade.get().max(1) as f64,
             seen: 0,
             silent: false,
             silence,
@@ -119,6 +154,11 @@ pub struct RingProducer {
     hold: Hold,
     fader: Fader,
     requested: u64,
+    written: u64,
+    announcing: rtrb::Producer<Rendered>,
+    owed: Option<Rendered>,
+    rendering: f32,
+    heard: Arc<AtomicU32>,
 }
 
 impl RingProducer {
@@ -155,6 +195,39 @@ impl RingProducer {
             .requested
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1);
+        self.written = 0;
+        self.owed = Some(Rendered {
+            epoch: self.requested,
+            from: 0,
+            amplitude: self.rendering,
+        });
+        self.hand_over_what_is_owed();
+    }
+
+    pub fn hear_at(&self, amplitude: f32) {
+        self.heard.store(amplitude.to_bits(), Ordering::Release);
+    }
+
+    pub fn render_at(&mut self, amplitude: f32, ahead: usize) {
+        if amplitude.to_bits() == self.rendering.to_bits() {
+            return;
+        }
+        self.rendering = amplitude;
+        self.owed = Some(Rendered {
+            epoch: self.requested,
+            from: self.written.saturating_add(ahead as u64),
+            amplitude,
+        });
+        self.hand_over_what_is_owed();
+    }
+
+    fn hand_over_what_is_owed(&mut self) {
+        let Some(owed) = self.owed else {
+            return;
+        };
+        if self.announcing.push(owed).is_ok() {
+            self.owed = None;
+        }
     }
 
     pub fn is_discarding(&self) -> bool {
@@ -170,6 +243,7 @@ impl RingProducer {
     }
 
     pub fn write_from(&mut self, buffer: &AudioBuffer, start: usize) -> usize {
+        self.hand_over_what_is_owed();
         if self.is_discarding() {
             return 0;
         }
@@ -182,7 +256,9 @@ impl RingProducer {
             return 0;
         };
         let (pushed, _) = self.inner.push_partial_slice(whole);
-        pushed.len() / stride
+        let frames = pushed.len() / stride;
+        self.written = self.written.saturating_add(frames as u64);
+        frames
     }
 
     pub fn free_frames(&self) -> usize {
@@ -203,6 +279,12 @@ pub struct RingConsumer {
     format: SampleFormat,
     fades: bool,
     level: f64,
+    announced: rtrb::Consumer<Rendered>,
+    heard: Arc<AtomicU32>,
+    read: u64,
+    rendered_at: f64,
+    heard_now: f64,
+    trim_step: f64,
     seen: u64,
     silent: bool,
     silence: Silence,
@@ -239,6 +321,8 @@ impl RingConsumer {
         if let Ok(stale) = self.inner.read_chunk(self.inner.slots()) {
             stale.commit_all();
         }
+        self.read = 0;
+        self.heard_now = self.wanted();
         self.discard.applied.store(requested, Ordering::Release);
     }
 
@@ -353,7 +437,7 @@ impl AudioSource for RingConsumer {
 
         let (popped, _) = self.inner.pop_partial_slice(whole);
         let target = if silenced { SILENT } else { WHOLE };
-        self.ramp(popped, target);
+        self.shape(popped, target);
         let taken = popped.len() / stride;
         let filled = spliced.saturating_add(popped.len());
         if let Some(last) = popped
@@ -406,7 +490,7 @@ impl RingConsumer {
         let faded = match dst.get_mut(..frames.saturating_mul(stride)) {
             Some(whole) => {
                 let (popped, _) = self.inner.pop_partial_slice(whole);
-                self.ramp(popped, SILENT);
+                self.shape(popped, SILENT);
                 popped.len()
             }
             None => 0,
@@ -420,23 +504,82 @@ impl RingConsumer {
         }
     }
 
-    fn ramp(&mut self, frames: &mut [u8], target: f64) {
+    fn wanted(&self) -> f64 {
+        f64::from(f32::from_bits(self.heard.load(Ordering::Acquire)))
+    }
+
+    fn trim(&self) -> f64 {
+        if self.rendered_at > SILENT {
+            self.heard_now / self.rendered_at
+        } else {
+            WHOLE
+        }
+    }
+
+    fn take_what_was_rendered(&mut self) {
+        while let Ok(next) = self.announced.peek() {
+            let reached =
+                next.epoch < self.seen || (next.epoch == self.seen && next.from <= self.read);
+            if !reached {
+                return;
+            }
+            self.rendered_at = f64::from(next.amplitude);
+            let _ = self.announced.pop();
+        }
+    }
+
+    fn renders_nothing_new_within(&self, frames: usize) -> bool {
+        let until = self.read.saturating_add(frames as u64);
+        self.announced.peek().map_or(true, |next| {
+            next.epoch > self.seen || (next.epoch == self.seen && next.from >= until)
+        })
+    }
+
+    fn is_steady(&self, target: f64, wanted: f64, frames: usize) -> bool {
+        self.level >= WHOLE
+            && target >= WHOLE
+            && self.heard_now == wanted
+            && self.heard_now == self.rendered_at
+            && self.renders_nothing_new_within(frames)
+    }
+
+    fn shape(&mut self, frames: &mut [u8], target: f64) {
+        let stride = self.stride();
+        let count = frames.len() / stride;
+        let wanted = self.wanted();
         if !self.fades {
+            self.read = self.read.saturating_add(count as u64);
+            self.take_what_was_rendered();
+            if wanted <= SILENT {
+                self.pad(frames);
+            }
+            return;
+        }
+        if self.is_steady(target, wanted, count) {
+            self.read = self.read.saturating_add(count as u64);
             return;
         }
         let step = self.step();
-        let stride = self.stride();
         for frame in frames.chunks_exact_mut(stride) {
-            if self.level >= WHOLE && target >= WHOLE {
-                return;
+            self.take_what_was_rendered();
+            self.read = self.read.saturating_add(1);
+            self.heard_now = toward(self.heard_now, wanted, self.trim_step);
+            if self.level < WHOLE || target < WHOLE {
+                self.level = toward(self.level, target, step);
             }
-            self.level = if target > self.level {
-                (self.level + step).min(target)
-            } else {
-                (self.level - step).max(target)
-            };
-            scale(frame, self.format, self.level);
+            let factor = self.level * self.trim();
+            if factor != WHOLE {
+                scale(frame, self.format, factor);
+            }
         }
+    }
+}
+
+fn toward(from: f64, to: f64, step: f64) -> f64 {
+    if to > from {
+        (from + step).min(to)
+    } else {
+        (from - step).max(to)
     }
 }
 
@@ -511,9 +654,13 @@ mod tests {
     const FADED_OVER: Frames = Frames(4);
 
     fn steady(frames: usize) -> AudioBuffer {
+        steady_at(1_000, frames)
+    }
+
+    fn steady_at(level: i16, frames: usize) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), frames);
         if let SampleData::S16(store) = buffer.data_mut() {
-            store.fill(1_000);
+            store.fill(level);
         }
         buffer
     }
@@ -564,6 +711,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
 
         assert_eq!(producer.free_frames(), 1024);
@@ -584,6 +732,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         drop(consumer);
         assert!(producer.is_abandoned());
@@ -604,6 +753,7 @@ mod tests {
                 Silence::Unmarked,
                 UNFADED,
                 Entering::Whole,
+                Level::WHOLE,
             );
 
             assert_eq!(producer.write(&source), 128);
@@ -623,6 +773,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
 
         let written = producer.write(&source);
@@ -643,6 +794,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
 
         let mut written = 0;
@@ -665,6 +817,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 10));
 
@@ -684,6 +837,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 32));
 
@@ -701,6 +855,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
 
         let mut sunk = vec![0_u8; 4];
@@ -734,6 +889,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 10));
 
@@ -764,6 +920,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 128));
 
@@ -790,6 +947,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 200));
         producer.discard_buffered();
@@ -817,6 +975,7 @@ mod tests {
             Silence::Unmarked,
             FADED_OVER,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&steady(64));
         producer.fade_out(FADED_OVER);
@@ -849,6 +1008,7 @@ mod tests {
             Silence::Unmarked,
             FADED_OVER,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&steady(128));
         producer.discard_buffered();
@@ -875,6 +1035,7 @@ mod tests {
                 Silence::Unmarked,
                 FADED_OVER,
                 entering,
+                Level::WHOLE,
             );
             producer.write(&steady(16));
 
@@ -892,6 +1053,7 @@ mod tests {
             marked(),
             FADED_OVER,
             Entering::FadedIn,
+            Level::WHOLE,
         );
         let carried = dop(16, 0);
         producer.write(&carried);
@@ -923,6 +1085,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 64));
         producer.lead_in(Frames(48));
@@ -950,6 +1113,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.discard_buffered();
 
@@ -970,6 +1134,7 @@ mod tests {
             marked(),
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S24, 200));
         producer.discard_buffered();
@@ -1014,6 +1179,7 @@ mod tests {
             marked(),
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.discard_buffered();
 
@@ -1079,6 +1245,7 @@ mod tests {
             marked(),
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&dop(8, 0));
 
@@ -1105,6 +1272,7 @@ mod tests {
             marked(),
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&dop(8, 0));
         producer.finish();
@@ -1125,6 +1293,7 @@ mod tests {
             marked(),
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&dop(8, 0));
 
@@ -1158,6 +1327,7 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.write(&ramp(SampleFormat::S16, 8));
 
@@ -1177,11 +1347,166 @@ mod tests {
             Silence::Unmarked,
             UNFADED,
             Entering::Whole,
+            Level::WHOLE,
         );
         producer.discard_buffered();
 
         let mut sunk = vec![0xAA_u8; 32 * 8];
         assert_eq!(consumer.fill(&mut sunk), 0);
         assert!(sunk.iter().all(|byte| *byte == 0xAA));
+    }
+
+    fn faded() -> (RingProducer, RingConsumer) {
+        let (producer, consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
+            Level::WHOLE,
+        );
+        (producer, consumer)
+    }
+
+    #[test]
+    fn a_level_turned_down_is_heard_on_what_the_ring_already_holds() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(8));
+        producer.hear_at(0.5);
+
+        let mut sunk = vec![0_u8; 8 * 4];
+        consumer.fill(&mut sunk);
+
+        assert_eq!(left_of(&sunk), vec![750, 500, 500, 500, 500, 500, 500, 500]);
+    }
+
+    #[test]
+    fn frames_rendered_at_the_level_heard_pass_through_untouched_once_the_held_ones_are_out() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(4));
+        producer.hear_at(0.5);
+        producer.render_at(0.5, 2);
+        producer.write(&steady(2));
+        let rendered = steady_at(500, 4);
+        producer.write(&rendered);
+
+        let mut sunk = vec![0_u8; 10 * 4];
+        consumer.fill(&mut sunk);
+
+        assert_eq!(
+            left_of(&sunk),
+            vec![750, 500, 500, 500, 500, 500, 500, 500, 500, 500]
+        );
+        assert_eq!(sunk[6 * 4..], rendered.as_bytes()[..]);
+    }
+
+    #[test]
+    fn a_level_turned_back_up_raises_what_was_rendered_quieter() {
+        let (mut producer, mut consumer) = faded();
+        producer.hear_at(0.5);
+        producer.render_at(0.5, 0);
+        producer.write(&steady_at(500, 12));
+        let mut settling = vec![0_u8; 4 * 4];
+        consumer.fill(&mut settling);
+        assert_eq!(left_of(&settling), vec![750, 500, 500, 500]);
+        producer.hear_at(1.0);
+
+        let mut sunk = vec![0_u8; 8 * 4];
+        consumer.fill(&mut sunk);
+
+        assert_eq!(
+            left_of(&sunk),
+            vec![750, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000]
+        );
+    }
+
+    #[test]
+    fn a_ring_opened_muted_is_silent_from_its_first_frame_and_still_plays_on() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
+            Level {
+                rendered: 1.0,
+                heard: 0.0,
+            },
+        );
+        producer.write(&steady(16));
+
+        let mut sunk = vec![0xAA_u8; 8 * 4];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+
+        assert!(sunk.iter().all(|byte| *byte == 0));
+        assert_eq!(consumer.available_frames(), 8);
+    }
+
+    #[test]
+    fn a_discard_counts_the_frames_again_from_the_level_rendered_last() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(8));
+        producer.hear_at(0.5);
+        producer.render_at(0.25, 30);
+        producer.discard_buffered();
+
+        let mut fading = vec![0_u8; 8 * 4];
+        consumer.fill(&mut fading);
+        assert!(!producer.is_discarding());
+        producer.write(&steady_at(250, 40));
+
+        let mut sunk = vec![0_u8; 40 * 4];
+        consumer.fill(&mut sunk);
+
+        let left = left_of(&sunk);
+        assert_eq!(left[..4], [125, 250, 375, 500]);
+        assert!(left[4..].iter().all(|sample| *sample == 500), "{left:?}");
+    }
+
+    #[test]
+    fn a_muted_marked_ring_feeds_its_silence_and_still_takes_the_frames() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S24),
+            Frames(256),
+            marked(),
+            UNFADED,
+            Entering::Whole,
+            Level::WHOLE,
+        );
+        let carried = dop(16, 0);
+        producer.write(&carried);
+        producer.hear_at(0.0);
+
+        let mut sunk = vec![0_u8; 8 * 8];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+
+        assert_eq!(
+            consumer.available_frames(),
+            8,
+            "a muted marked ring stopped playing"
+        );
+        for frame in sunk.as_chunks::<8>().0 {
+            assert_eq!(
+                frame[..2],
+                DOP_SILENT_PAIR,
+                "a muted marked ring let its music through"
+            );
+        }
+        assert!(
+            markers(&sunk).windows(2).all(|pair| pair[0] != pair[1]),
+            "the silence broke the markers' alternation"
+        );
+
+        producer.hear_at(1.0);
+        let mut heard = vec![0_u8; 8 * 8];
+        consumer.fill(&mut heard);
+        assert!(
+            heard
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .any(|frame| frame[..] == carried.as_bytes()[8 * 15..]),
+            "unmuting a marked ring did not bring its music back"
+        );
     }
 }

@@ -31,7 +31,7 @@ use crate::{
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{self, Queue, QueueItem, Queued, Removal},
-    ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
+    ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
     streaming::{Asked, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
 };
@@ -348,6 +348,14 @@ struct Retiring {
     since: Instant,
 }
 
+fn heard_amplitude(plan: &OutputPlan, muted: bool) -> f32 {
+    if muted {
+        Gain::SILENT.get()
+    } else {
+        plan.amplitude()
+    }
+}
+
 fn chosen_sink<'s>(sinks: &'s [SinkInfo], named: Option<&NodeName>) -> Option<&'s SinkInfo> {
     sinks
         .iter()
@@ -364,6 +372,7 @@ impl Output {
         target: Option<StreamSpec>,
         listening: &Arc<AtomicBool>,
         entering: Entering,
+        muted: bool,
     ) -> Result<Self> {
         let source = track.source();
         let decoded = track.decoded();
@@ -391,8 +400,12 @@ impl Output {
 
         let capacity = ring_capacity(config.buffer, plan.stream, chain.max_process_frames());
         let fade = Frames::from_duration(FADED_OVER, plan.stream.rate);
+        let level = Level {
+            rendered: plan.amplitude(),
+            heard: heard_amplitude(&plan, muted),
+        };
         let (producer, consumer, monitor) =
-            ring(plan.stream, capacity, plan.silence(), fade, entering);
+            ring(plan.stream, capacity, plan.silence(), fade, entering, level);
 
         let widened = vec![0.0; CHAIN_BLOCK * source.channel_count().get() as usize];
         let carrier = vec![0.0; carried_samples(&chain, plan.stream)];
@@ -509,6 +522,21 @@ impl Output {
             self.chain.max_flush_frames()
         };
         self.producer.free_frames() >= held
+    }
+
+    fn frames_rendered_ahead_of_the_ring(&self) -> usize {
+        let staged_unwritten = self
+            .draining
+            .map_or(0, |written| self.staged.frames().saturating_sub(written));
+        self.chain
+            .frames_held_after_the_gain()
+            .saturating_add(staged_unwritten)
+    }
+
+    fn note_the_rendered_level(&mut self) {
+        let rendered = self.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
+        let ahead = self.frames_rendered_ahead_of_the_ring();
+        self.producer.render_at(rendered, ahead);
     }
 
     fn waits_for_room_to_reshape(&self) -> bool {
@@ -667,6 +695,7 @@ pub struct Engine {
     renegotiations: u8,
     sounded: Option<(SinkId, Instant)>,
     turned: VecDeque<Gain>,
+    muted: bool,
     answers: Vec<Answer>,
     openings_begun: u64,
     deferred: Vec<Deferred>,
@@ -814,6 +843,7 @@ impl Engine {
             renegotiations: 0,
             sounded: None,
             turned: VecDeque::with_capacity(TURNS_REMEMBERED),
+            muted: false,
             answers: Vec::new(),
             openings_begun: 0,
             deferred: Vec::new(),
@@ -1267,7 +1297,7 @@ impl Engine {
             }
             Command::JumpTo(item) => self.hear(item),
             Command::SetVolume(volume) => {
-                self.config.volume = volume;
+                self.hear_the_volume(volume);
                 self.turn_the_device();
                 self.retune()
             }
@@ -2032,6 +2062,7 @@ impl Engine {
             target,
             &self.published.listening,
             entering,
+            self.muted,
         )?;
 
         let delivery = output.plan.delivery();
@@ -2088,11 +2119,15 @@ impl Engine {
             replay_gain,
             output.attenuator,
         );
+        output
+            .producer
+            .hear_at(heard_amplitude(&wanted, self.muted));
 
         if wanted.same_shape_as(&output.plan) {
             output
                 .chain
                 .set_gain(output.attenuator.leaves(self.config.volume), replay_gain);
+            output.note_the_rendered_level();
             if let Some(profile) = wanted.equalisation.as_ref() {
                 output.chain.set_equalisation(profile);
                 output.chain.ease_equalisation(Easing::Returning);
@@ -2107,22 +2142,15 @@ impl Engine {
     }
 
     fn reshape(&mut self, wanted: OutputPlan) -> Result<()> {
-        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_mut()) else {
+        let Some(output) = self.output.as_mut() else {
             return Ok(());
         };
-        let drops_a_gain_stage = wanted.gain.is_none() && output.chain.gain_amplitude().is_some();
-        if drops_a_gain_stage {
-            output.chain.set_gain(
-                output.attenuator.leaves(self.config.volume),
-                track.replay_gain,
-            );
-        }
         let drops_the_equaliser =
             wanted.equalisation.is_none() && output.plan.equalisation.is_some();
         if drops_the_equaliser && self.playing {
             output.chain.ease_equalisation(Easing::Leaving);
         }
-        if (drops_a_gain_stage || drops_the_equaliser) && output.chain.is_ramping() {
+        if drops_the_equaliser && output.chain.is_ramping() {
             output.settles_into = Some(wanted);
             return Ok(());
         }
@@ -2168,7 +2196,6 @@ impl Engine {
             sink_spec: wanted.stream,
             source: error,
         })?;
-        chain.ramp_gain_from(output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get()));
         let brings_the_equaliser =
             wanted.equalisation.is_some() && output.plan.equalisation.is_none();
         if brings_the_equaliser && self.playing {
@@ -2180,6 +2207,7 @@ impl Engine {
         track.decoded.retype(delivery.format);
 
         let status = output.take_chain(chain, wanted);
+        output.note_the_rendered_level();
         self.emit(Event::OutputChanged(status));
         Ok(())
     }
@@ -2273,6 +2301,22 @@ impl Engine {
             return;
         };
         self.config.volume = Volume::heard_at(heard);
+        self.muted = false;
+    }
+
+    fn hear_the_volume(&mut self, volume: Volume) {
+        self.muted = volume == Volume::MUTE && self.config.volume != Volume::MUTE;
+        if !self.muted {
+            self.config.volume = volume;
+        }
+    }
+
+    fn heard_volume(&self) -> Volume {
+        if self.muted {
+            Volume::MUTE
+        } else {
+            self.config.volume
+        }
     }
 
     fn follow_the_devices_volume(&mut self) {
@@ -2292,7 +2336,7 @@ impl Engine {
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };
-        let ours = self.config.volume.to_gain();
+        let ours = self.heard_volume().to_gain();
         let echoed = iter::once(&ours)
             .chain(&self.turned)
             .any(|turned| (turned.get() - heard.get()).abs() < ONE_LEVEL_WITHIN);
@@ -2301,6 +2345,7 @@ impl Engine {
         }
         tracing::debug!(%heard, "the device's volume was turned from elsewhere; the slider follows it");
         self.config.volume = Volume::heard_at(heard);
+        self.muted = false;
     }
 
     fn turn_the_device(&mut self) {
@@ -2311,7 +2356,7 @@ impl Engine {
         else {
             return;
         };
-        let gain = self.config.volume.to_gain();
+        let gain = self.heard_volume().to_gain();
         if let Err(error) = self.backend.set_device_volume(output.sink, gain) {
             tracing::warn!(%error, "the device's volume could not be turned");
             return;
@@ -3111,7 +3156,7 @@ impl Engine {
         *self.published.state.write() = PlayerState {
             playback,
             current,
-            volume: self.config.volume,
+            volume: self.heard_volume(),
             repeat: self.queue.repeat(),
             skip_under_repeat: self.config.skip_under_repeat,
             previous_restarts: self.config.previous_restarts,

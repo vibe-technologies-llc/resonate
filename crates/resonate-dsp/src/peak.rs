@@ -400,6 +400,10 @@ impl Processor for TruePeak {
         self.delay as f64
     }
 
+    fn frames_held(&self) -> usize {
+        self.taken.min(self.delay as u64) as usize
+    }
+
     fn is_transparent(&self) -> bool {
         false
     }

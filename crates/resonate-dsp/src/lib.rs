@@ -50,6 +50,10 @@ pub trait Processor: Send {
 
     fn latency_frames(&self) -> f64;
 
+    fn frames_held(&self) -> usize {
+        0
+    }
+
     fn is_transparent(&self) -> bool;
 
     fn is_carried_across_a_reshape(&self) -> bool {
@@ -68,8 +72,6 @@ pub trait Processor: Send {
     fn gain_amplitude(&self) -> Option<f32> {
         None
     }
-
-    fn ramp_gain_from(&mut self, _amplitude: f32) {}
 
     fn is_ramping(&self) -> bool {
         false

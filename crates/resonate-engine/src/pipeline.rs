@@ -231,6 +231,12 @@ impl OutputPlan {
             && !self.true_peak
     }
 
+    pub fn amplitude(&self) -> f32 {
+        self.gain
+            .as_ref()
+            .map_or(Gain::UNITY.get(), GainConfig::amplitude)
+    }
+
     pub fn delivery(&self) -> Delivery {
         match self.packing {
             Packing::DopMarked(rate) => Delivery {
@@ -578,7 +584,6 @@ fn gain_of(config: &EngineConfig, attenuator: Attenuator, replay_gain: AppliedGa
         replay_gain,
         prevent_clipping: true,
         guarded_after: config.true_peak,
-        ..GainConfig::default()
     }
 }
 

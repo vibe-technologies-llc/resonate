@@ -333,7 +333,6 @@ fn profile(bands: usize) -> Arc<Profile> {
 fn half_volume() -> GainConfig {
     GainConfig {
         volume: Volume::new(0.5).expect("half volume is in range"),
-        ramp: Duration::ZERO,
         ..GainConfig::default()
     }
 }

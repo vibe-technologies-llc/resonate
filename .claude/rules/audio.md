@@ -450,6 +450,26 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   opened mid-track** opens `Entering::FadedIn`; one opened at a track's start opens whole, so a
   bit-perfect first frame is untouched. Only a stream the graph is pulling fades
   (`Output::is_sounding`, `PULLED_WITHIN`).
+- **A volume or ReplayGain change is heard at once, on what the ring already holds.** The consumer
+  trims each frame by the level to be heard over the level it was rendered at. `RingProducer::hear_at`
+  stores the amplitude to be heard (an atomic, f32 bits); `render_at(amplitude, ahead)` announces the
+  frame, counted from the last discard, from which the chain renders at a new amplitude, through an SPSC
+  queue of `RENDERED_SLOTS` carrying the discard epoch. `ahead` is what was rendered but has not reached
+  the ring (`Output::frames_rendered_ahead_of_the_ring`: `Chain::frames_held_after_the_gain`, the
+  true-peak guard's delay, and what a drain has not yet written), so the boundary lands on the exact frame
+  and the level never steps (`turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing`
+  checks frame to frame). The heard level walks toward the wanted one over `FADED_OVER`; a frame rendered
+  at the level heard is not touched, so a bit-perfect stream stays bit-perfect, and one rendered at
+  nothing is left as it is. The gain stage therefore steps; the ring is the only ramp. A discard restarts
+  the count at the last level announced. A DoP ring is never trimmed. A track that cannot seek and waits
+  for its rebind is trimmed until its stream is rebuilt.
+- **A mute is the ring's, not the chain's.** `Command::SetVolume(Volume::MUTE)` over a volume above it
+  sets `Engine::muted` and leaves `EngineConfig::volume` where it was, so the chain goes on rendering at
+  the volume that comes back; the ring hears nothing (`Output::open` takes `muted` into the ring's first
+  `Level`). A PCM ring ramps to zeros, a DoP ring feeds its marked silence while still taking the frames,
+  and the stream keeps its plan. Unmuting is heard at once and bit-exact
+  (`muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream`). `PlayerState::volume`
+  and the device's turn read `Engine::heard_volume`; a device's own reading clears the mute.
 - **A seek does not reopen the stream.** rtrb gives the producer no way to drop what the consumer has
   not read, so the ring carries a discard epoch: the engine bumps it and stops writing, the graph thread
   drains every slot on its next callback and acknowledges, and only then does the engine refill; one not
@@ -465,11 +485,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   retunes the chain; where not but `OutputPlan::becomes_on_the_same_stream` does (same `stream`,
   `packing`, `remix`, `resample`, convolution by `Arc<Impulse>` pointer, and under a resampler or
   convolver the same `restoration`) it builds the new chain with `build_chain` on the engine thread and
-  swaps it in under the ring, stream and consumer, so nothing reaches the realtime thread. The new gain
-  stage is handed what the old applied (`Chain::ramp_gain_from`), so the level never steps, and decoded
-  but unconverted samples are retyped with `AudioBuffer::retype`. Going back to a plan with no gain stage
-  first ramps the running chain's gain to unity, holds the wanted plan in `Output::settles_into` and
-  swaps once `Chain::is_ramping` says so (`finish_reshaping`); the equaliser eases likewise (`eq.md`). A
+  swaps it in under the ring, stream and consumer, so nothing reaches the realtime thread. The new chain
+  renders at its own gain from its first frame and announces it (`Output::note_the_rendered_level`), the
+  ring trimming what the old one rendered, and decoded but unconverted samples are retyped with
+  `AudioBuffer::retype`. Dropping the equaliser first eases it out, holds the wanted plan in
+  `Output::settles_into` and swaps once `Chain::is_ramping` says so (`finish_reshaping`, `eq.md`). A
   newer command drops what was waiting. **A resampler and a convolver are carried across, not
   rebuilt:** a fresh resampler starts from silence and steps a steady level, and flushing a convolver put
   its whole decay (up to `LONGEST_IMPULSE`) into the ring ahead of the music. Where
@@ -586,8 +606,9 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   block (a convolver's tail is handed on from `staged` a ring's room at a time, `drain`). **The ring's
   depth is the engine's, never the graph's.** Every stream asks `LatencyRequest::Auto`: a quantum is a
   few milliseconds shared by every client on the device, and a ring of 100 ms to a second written into
-  it would drag the whole graph to PipeWire's largest quantum. The depth decides how long a volume,
-  ReplayGain or equaliser change waits to be heard and how much an opening stream primes.
+  it would drag the whole graph to PipeWire's largest quantum. The depth decides how long an equaliser
+  change waits to be heard (a volume or ReplayGain change is trimmed in the ring) and how much an
+  opening stream primes.
 - **A track change does not start the transport; a command does.** `Engine::start` opens the row the
   queue is on at whatever the transport was doing, so `Next`, `Previous` and removing the playing row
   leave a pause in place (what MPRIS says). `Load { autoplay }`, `Play`, `Command::JumpTo` and an
@@ -783,9 +804,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   window's background executor and only while the analysis pane is in front (`analysis.md`).
 - **What is heard is tapped where it is written, and read back by where the graph has got to.**
   `Tapping` sits on `Output` beside the ring and `Engine::fill`, `convert` and `drain` hand it exactly
-  the frames `RingProducer` took (after equaliser, gain and dither), as f32 left and right at the sink's
-  rate. A `Tap` is a power-of-two ring of `AtomicU32` whose slots are a `OnceLock` laid down by the first
-  frame recorded while somebody listens, so a run never opening the visualiser allocates none. Nothing
+  the frames `RingProducer` took (after equaliser, gain and dither, before the ring's trim), as f32
+  left and right at the sink's rate. A `Tap` is a power-of-two ring of `AtomicU32` whose slots are a
+  `OnceLock` laid down by the first frame recorded while somebody listens, so a run never opening the
+  visualiser allocates none. Nothing
   locks and the engine never waits on the window: a write claims its frames behind a release fence and
   publishes the count with release; a read acquires, reads, rereads the claim and silences any frame
   the writer may have gone round onto. Where the graph has got to is an anchor `Engine::publish` fixes

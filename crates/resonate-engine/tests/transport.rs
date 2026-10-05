@@ -4774,7 +4774,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     );
     let turned_down = graph.lock().played.len();
 
-    let attenuated = turned_down + ring + ramp;
+    let attenuated = turned_down + ramp;
     play_until(
         &player,
         &graph,
@@ -4866,7 +4866,6 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     let rate = SampleRate::HZ_48000;
     let stride = frame_bytes(SampleFormat::S32);
     let block = BLOCK_FRAMES * stride;
-    let ring = frames_in(RING_DEPTH, rate) * stride;
     let ramp = frames_in(A_RAMP_AT_MOST, rate) * stride;
     let half = Volume::new(0.5).expect("in range");
 
@@ -4902,7 +4901,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     player
         .request(Command::SetVolume(half))?
         .wait_for(PATIENCE)?;
-    let settled = turned_down + ring + ramp + block;
+    let settled = turned_down + ramp + block;
     play_until(
         &player,
         &graph,
@@ -4926,6 +4925,112 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     assert!(
         (after / before - asked).abs() < 0.01,
         "the level went from {before} to {after} where the slider asks for {asked} of it"
+    );
+
+    let lefts: Vec<f64> = graph.played[turned_down - block..settled]
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|frame| f64::from(i32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]])))
+        .collect();
+    let steepest = lefts
+        .windows(2)
+        .map(|pair| ((pair[1] - pair[0]) / pair[0]).abs())
+        .fold(0.0, f64::max);
+    assert!(
+        steepest < A_LEVEL_STEP,
+        "the level stepped by {steepest} between one frame and the next"
+    );
+    Ok(())
+}
+
+#[test]
+fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, 4 * FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let rate = SampleRate::HZ_44100;
+    let stride = frame_bytes(SampleFormat::S16);
+    let block = BLOCK_FRAMES * stride;
+    let ramp = frames_in(A_RAMP_AT_MOST, rate) * stride;
+    let window = 8 * block;
+
+    let (player, graph) = settled_over(
+        vec![sink(&[rate], &[SampleFormat::S16])],
+        Arc::new(Sources::local()),
+        ring_deep(),
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= 4 * block,
+        "the first blocks to play",
+    );
+
+    player
+        .request(Command::SetVolume(Volume::MUTE))?
+        .wait_for(PATIENCE)?;
+    assert_eq!(player.state().volume, Volume::MUTE);
+    let muted = graph.lock().played.len() + ramp;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= muted + window,
+        "the muted audio to reach the graph",
+    );
+    assert_eq!(
+        player.state().output.map(|output| output.mode),
+        Some(OutputMode::BitPerfect),
+        "muting took a bit-perfect stream off its path"
+    );
+    {
+        let held = graph.lock();
+        assert!(
+            held.played[muted..muted + window]
+                .iter()
+                .all(|byte| *byte == 0),
+            "muting left sound reaching the graph a ramp after it was asked for"
+        );
+    }
+
+    player
+        .request(Command::SetVolume(Volume::MAX))?
+        .wait_for(PATIENCE)?;
+    let unmuted = graph.lock().played.len() + ramp;
+    let wanted = source.stream.len();
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= wanted,
+        "the whole track to reach the graph",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        (graph.opens, graph.closes),
+        (1, 0),
+        "muting and unmuting reopened the stream"
+    );
+    assert_eq!(
+        graph.played.len(),
+        wanted,
+        "frames were dropped, doubled or padded across the mute"
+    );
+    assert!(
+        unmuted + window <= wanted,
+        "the track ended before anything after the unmute could be compared"
+    );
+    assert!(
+        graph.played.get(unmuted..) == source.stream.get(unmuted..),
+        "the audio a ramp after unmuting is not the file's own at the same offsets"
     );
     Ok(())
 }

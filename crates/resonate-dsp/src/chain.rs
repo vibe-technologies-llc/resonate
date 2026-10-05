@@ -123,10 +123,19 @@ impl Chain {
         self.stages.iter().find_map(|stage| stage.gain_amplitude())
     }
 
-    pub fn ramp_gain_from(&mut self, amplitude: f32) {
-        for stage in &mut self.stages {
-            stage.ramp_gain_from(amplitude);
-        }
+    pub fn frames_held_after_the_gain(&self) -> usize {
+        let Some(gain) = self
+            .stages
+            .iter()
+            .position(|stage| stage.gain_amplitude().is_some())
+        else {
+            return 0;
+        };
+        self.stages
+            .iter()
+            .skip(gain + 1)
+            .map(|stage| stage.frames_held())
+            .sum()
     }
 
     pub fn ease_equalisation(&mut self, easing: Easing) {
@@ -352,8 +361,6 @@ impl ChainBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use resonate_core::{
         BitDepth, ChannelLayout, Decibels, Gain, SampleFormat, SampleRate, Volume,
     };
@@ -361,7 +368,8 @@ mod tests {
     use super::*;
     use crate::{
         Convolver, Dither, DitherKind, FilterPhase, GainConfig, GainStage, Impulse, NoiseShaping,
-        Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, Tuning,
+        Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, TruePeak,
+        Tuning,
     };
 
     const BLOCK: usize = 512;
@@ -387,7 +395,6 @@ mod tests {
     fn attenuator() -> Box<dyn Processor> {
         Box::new(GainStage::new(GainConfig {
             volume: Volume::new(0.5).expect("in range"),
-            ramp: Duration::ZERO,
             ..GainConfig::default()
         }))
     }
@@ -830,5 +837,34 @@ mod tests {
             })
         );
         assert!(chain.max_output_frames() >= bound);
+    }
+
+    #[test]
+    fn only_what_a_stage_behind_the_gain_holds_back_was_rendered_ahead_of_the_output() {
+        let build = |stages: Vec<Box<dyn Processor>>| {
+            stages
+                .into_iter()
+                .fold(
+                    Chain::builder(spec(SampleRate::HZ_48000)).max_frames_in(BLOCK),
+                    ChainBuilder::push,
+                )
+                .build()
+                .expect("a gain and a guard always build")
+        };
+        let mut guarded = build(vec![attenuator(), Box::new(TruePeak::new())]);
+        let mut unattenuated = build(vec![Box::new(TruePeak::new())]);
+        let delay = guarded.latency_frames() as usize;
+        let few = (delay / 2).max(1);
+        let mut output = vec![0.0; 2 * BLOCK];
+
+        assert_eq!(guarded.frames_held_after_the_gain(), 0);
+
+        guarded.process(&vec![0.25; 2 * few], &mut output);
+        unattenuated.process(&vec![0.25; 2 * few], &mut output);
+        assert_eq!(guarded.frames_held_after_the_gain(), few);
+        assert_eq!(unattenuated.frames_held_after_the_gain(), 0);
+
+        guarded.process(&vec![0.25; 2 * BLOCK], &mut output);
+        assert_eq!(guarded.frames_held_after_the_gain(), delay);
     }
 }
