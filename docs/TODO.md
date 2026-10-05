@@ -19,8 +19,6 @@ else is open to be done.
   card here offers 48 kHz alone) nor DoP against a DAC that decodes it
 
 ## Formats
-- A DSF, DSDIFF or Monkey's Audio file on a source that cannot seek and is over the 256 MiB memory
-  spool is refused as wanting a seek, though the disc spool could hold it whole
 - A headerless VBR MP3's length is symphonia's bitrate guess held as exact, so its end can be
   unseekable and the bar fills early
 - The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read

@@ -51,7 +51,7 @@ impl Spool {
         Self::beginning_with_at_most(head, rest, hint, SPOOLED_ON_DISC_AT_MOST)
     }
 
-    fn beginning_with_at_most(
+    pub(crate) fn beginning_with_at_most(
         head: &[u8],
         rest: Box<dyn MediaStream>,
         hint: Option<FormatHint>,
@@ -124,6 +124,16 @@ impl Spool {
         };
         self.filled.lock().ended = Some(ending);
         self.grown.notify_all();
+    }
+
+    pub(crate) fn ended_whole(self: &Arc<Self>) -> Option<Media> {
+        {
+            let mut filled = self.filled.lock();
+            while filled.ended.is_none() {
+                self.grown.wait(&mut filled);
+            }
+        }
+        self.whole()
     }
 
     pub(crate) fn is_whole(&self) -> bool {

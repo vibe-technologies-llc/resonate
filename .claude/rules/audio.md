@@ -189,7 +189,12 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   engine asks every pass (`Engine::settle_what_was_spooled`) and republishes the digest so MPRIS's
   `CanSeek` follows. A spool that could not be made falls back to the `Replaying` head; one cut short
   never claims to be whole. A DSF, DSDIFF or Monkey's Audio stream is read by seeking, so one too long
-  to hold is refused at once as `Error::ReadBySeeking`.
+  to hold in memory is spooled on disc and the open waits for all of it (`spooled_whole_on_disc`,
+  `Spool::ended_whole`, on the `resonate-track-open` worker), opening the spooled file as a seekable
+  `Unspooled` with no spool left to settle; only one the disc spool cannot be made for, or cuts short
+  at `SPOOLED_ON_DISC_AT_MOST`, is refused as `Error::ReadBySeeking`
+  (`a_dsd_pipe_too_long_to_hold_in_memory_is_spooled_whole_on_disc_and_seeks`,
+  `a_dsd_or_monkeys_audio_pipe_too_long_even_for_the_disc_is_named_as_wanting_a_seek`).
 - **Until it can seek, a track keeps its stream.** A rebuild throws the ring and carry away and seeks
   the decoder back, which a track that cannot seek cannot do. So `Engine::seek` on such a track
   refuses with `codec::Error::NotSeekable` (`Cause::CannotSeek`), except a seek to its start (a

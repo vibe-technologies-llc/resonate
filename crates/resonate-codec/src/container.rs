@@ -40,7 +40,7 @@ use crate::{
     prescan::Prescan,
     riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
-    spool::Spool,
+    spool::{SPOOLED_ON_DISC_AT_MOST, Spool},
     tags::{self, Revisions, TagSet},
     timeline::Timeline,
 };
@@ -213,14 +213,28 @@ pub(crate) fn open_spooling(
     location: &MediaLocation,
     spooled_at_most: u64,
 ) -> Result<Opened> {
-    open_spooling_within(media, location, spooled_at_most, SPOOLED_WITHIN)
+    open_spooling_within(
+        media,
+        location,
+        Spooling {
+            in_memory: spooled_at_most,
+            on_disc: SPOOLED_ON_DISC_AT_MOST,
+            within: SPOOLED_WITHIN,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+struct Spooling {
+    in_memory: u64,
+    on_disc: u64,
+    within: Duration,
 }
 
 fn open_spooling_within(
     media: Media,
     location: &MediaLocation,
-    spooled_at_most: u64,
-    spooled_within: Duration,
+    at_most: Spooling,
 ) -> Result<Opened> {
     let Media {
         stream: mut bytes,
@@ -231,19 +245,22 @@ fn open_spooling_within(
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut())
     } else {
-        match spooled(bytes.as_mut(), spooled_at_most, spooled_within) {
+        match spooled(bytes.as_mut(), at_most.in_memory, at_most.within) {
             Spooled::Whole(held) => {
                 bytes = Box::new(Reading::new(Cursor::new(held)));
                 seekable = true;
                 Prescan::buffered(bytes.as_mut())
             }
-            Spooled::Head(head) => {
-                if let Some(container) = read_by_seeking(&head) {
-                    return Err(Error::ReadBySeeking {
+            Spooled::Head(head) if let Some(container) = read_by_seeking(&head) => {
+                bytes = spooled_whole_on_disc(&head, bytes, named.clone(), at_most.on_disc)
+                    .ok_or_else(|| Error::ReadBySeeking {
                         location: location.clone(),
                         container,
-                    });
-                }
+                    })?;
+                seekable = true;
+                Prescan::buffered(bytes.as_mut())
+            }
+            Spooled::Head(head) => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
                 bytes = match Spool::beginning_with(&head, bytes, named.clone()) {
                     Ok(held) => {
@@ -317,6 +334,20 @@ fn open_spooling_within(
         chunk_pictures: chunk.map(|held| held.media.visuals).unwrap_or_default(),
         spool,
     })))
+}
+
+fn spooled_whole_on_disc(
+    head: &[u8],
+    rest: Box<dyn MediaStream>,
+    hint: Option<FormatHint>,
+    at_most: u64,
+) -> Option<Box<dyn MediaStream>> {
+    let spool = Spool::beginning_with_at_most(head, rest, hint, at_most)
+        .inspect_err(|(source, _)| {
+            tracing::debug!(%source, "a source read by seeking could not be spooled on disc");
+        })
+        .ok()?;
+    spool.ended_whole().map(|whole| whole.stream)
 }
 
 fn read_by_seeking(head: &[u8]) -> Option<Container> {
@@ -910,14 +941,71 @@ mod tests {
         assert!(short.seekable, "a pipe under the spool was not read whole");
     }
 
+    fn silent_dsf(blocks: usize) -> Vec<u8> {
+        const BLOCK: usize = 4_096;
+        const CHANNELS: u32 = 2;
+
+        let data = vec![0x69_u8; blocks * BLOCK * CHANNELS as usize];
+        let mut fmt = b"fmt ".to_vec();
+        fmt.extend_from_slice(&52_u64.to_le_bytes());
+        fmt.extend_from_slice(&1_u32.to_le_bytes());
+        fmt.extend_from_slice(&0_u32.to_le_bytes());
+        fmt.extend_from_slice(&CHANNELS.to_le_bytes());
+        fmt.extend_from_slice(&CHANNELS.to_le_bytes());
+        fmt.extend_from_slice(&2_822_400_u32.to_le_bytes());
+        fmt.extend_from_slice(&1_u32.to_le_bytes());
+        fmt.extend_from_slice(&((blocks * BLOCK * 8) as u64).to_le_bytes());
+        fmt.extend_from_slice(&(BLOCK as u32).to_le_bytes());
+        fmt.extend_from_slice(&0_u32.to_le_bytes());
+
+        let mut chunk = b"data".to_vec();
+        chunk.extend_from_slice(&((data.len() + 12) as u64).to_le_bytes());
+        chunk.extend_from_slice(&data);
+
+        let total = (28 + fmt.len() + chunk.len()) as u64;
+        let mut file = b"DSD ".to_vec();
+        file.extend_from_slice(&28_u64.to_le_bytes());
+        file.extend_from_slice(&total.to_le_bytes());
+        file.extend_from_slice(&0_u64.to_le_bytes());
+        file.extend_from_slice(&fmt);
+        file.extend_from_slice(&chunk);
+        file
+    }
+
+    fn spooled_at_most(on_disc: u64) -> Spooling {
+        Spooling {
+            in_memory: 1_024,
+            on_disc,
+            within: SPOOLED_WITHIN,
+        }
+    }
+
     #[test]
-    fn a_dsd_or_monkeys_audio_pipe_too_long_to_hold_is_named_as_wanting_a_seek() {
+    fn a_dsd_pipe_too_long_to_hold_in_memory_is_spooled_whole_on_disc_and_seeks() {
+        let location = MediaLocation::local("long.dsf");
+
+        let opened = open_spooling_within(
+            piped(silent_dsf(4)),
+            &location,
+            spooled_at_most(SPOOLED_ON_DISC_AT_MOST),
+        )
+        .expect("a DSF over a pipe opens");
+
+        let Opened::Dsd(dsd) = opened else {
+            panic!("a DSF was not opened as DSD");
+        };
+        assert!(dsd.seekable, "a DSF spooled whole cannot seek");
+        assert!(dsd.spool.is_none(), "a spool held whole was left to settle");
+    }
+
+    #[test]
+    fn a_dsd_or_monkeys_audio_pipe_too_long_even_for_the_disc_is_named_as_wanting_a_seek() {
         let location = MediaLocation::local("long.dsf");
         for (magic, container) in READ_BY_SEEKING {
             let mut bytes = magic.to_vec();
             bytes.extend(std::iter::repeat_n(0, 4_096));
 
-            let opened = open_spooling(piped(bytes), &location, 1_024);
+            let opened = open_spooling_within(piped(bytes), &location, spooled_at_most(2_048));
 
             assert!(
                 matches!(
@@ -972,10 +1060,18 @@ mod tests {
         };
 
         let began = Instant::now();
-        let opened = open_spooling_within(trickling, &location, SPOOLED_AT_MOST, WAITED_AT_MOST)
-            .expect("a slow stream opens")
-            .into_coded()
-            .expect("a coded stream");
+        let opened = open_spooling_within(
+            trickling,
+            &location,
+            Spooling {
+                in_memory: SPOOLED_AT_MOST,
+                on_disc: SPOOLED_ON_DISC_AT_MOST,
+                within: WAITED_AT_MOST,
+            },
+        )
+        .expect("a slow stream opens")
+        .into_coded()
+        .expect("a coded stream");
 
         assert!(
             began.elapsed() < Duration::from_millis(400),
