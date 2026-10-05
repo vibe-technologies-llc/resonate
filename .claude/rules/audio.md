@@ -52,6 +52,20 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   a decimal comma where it is the only separator. The newest revision wins a retagged date; ID3v2.3's
   `TDAT`/`TIME` are read by their own key (`Id3DatePart`), the clock never a date. A `COMM` frame whose
   description begins `iTun` is iTunes' private note (`is_an_itunes_note`).
+- **The gain heard is the declared ReplayGain moved to our reference, else Sound Check, else the
+  encoder's.** `TagSet::replay_gain` stays as the file writes it (tag writing spells it back);
+  `TagSet::heard_gain` is what the engine, `info`, the inspector and the catalog's `rg_*` columns read.
+  A declared track or album gain is raised by 89 dB less `REPLAYGAIN_REFERENCE_LOUDNESS`
+  (`reference_loudness`: `dB`, or `LUFS`/`LKFS` read 107 dB lower, so −18 LUFS is no change; a value
+  outside 60–120 dB is passed over). Where neither gain is declared, iTunes Sound Check (`iTunNORM`, a
+  `COMM` note in ID3 and a free-form item the box scan reads in MP4: the louder of the first two fields
+  as `−10·log10(v/1000)` dB, the louder of fields seven and eight over 32 768 as the peak) is taken,
+  then the LAME header's radio and audiophile gains (`mpa::encoder_gain`, set ones only, its peak in
+  8.23 fixed point). Peaks the tags declare stand beside a fallback's gain
+  (`a_gain_aimed_at_another_reference_is_heard_against_ours_and_kept_as_written`,
+  `sound_check_levels_a_track_naming_no_replay_gain_and_never_one_that_does`,
+  `the_encoders_gain_comes_after_sound_check_and_the_tags`,
+  `the_gains_a_lame_header_names_are_read_and_an_unset_one_is_not`).
 - **An ID3 recording id arrives as a `UFID` frame nobody standardised into a tag.**
   `musicbrainz_identifier` reads it: key, owner against `MUSICBRAINZ_OWNER` (the whole check, since
   CDDB and others use `UFID` too), then the bytes as UTF-8. Tried only where `Naming::standard`

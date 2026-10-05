@@ -23,6 +23,17 @@ const IDENTIFIER_OWNER: &str = "OWNER";
 const COMMENT_DESCRIPTION: &str = "SHORT_DESCRIPTION";
 const ITUNES_DESCRIPTIONS_BEGIN: &str = "itun";
 const ITUNES_GAPLESS_NOTE: &str = "iTunSMPB";
+pub(crate) const ITUNES_SOUND_CHECK: &str = "iTunNORM";
+const SOUND_CHECK_FIELDS: usize = 10;
+const SOUND_CHECK_UNITY: f32 = 1_000.0;
+const SOUND_CHECK_PEAK_FULL_SCALE: f32 = 32_768.0;
+const LEFT_GAIN: usize = 0;
+const RIGHT_GAIN: usize = 1;
+const LEFT_PEAK: usize = 6;
+const RIGHT_PEAK: usize = 7;
+const REPLAY_GAIN_REFERENCE_DB: f32 = 89.0;
+const LUFS_BELOW_THE_REFERENCE_DB: f32 = 107.0;
+const PLAUSIBLE_REFERENCE_DB: std::ops::RangeInclusive<f32> = 60.0..=120.0;
 const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
 const R128_TRACK_GAIN: &str = "R128_TRACK_GAIN";
 const R128_ALBUM_GAIN: &str = "R128_ALBUM_GAIN";
@@ -133,6 +144,32 @@ pub struct ReplayGain {
     pub album_peak: Option<f32>,
 }
 
+impl ReplayGain {
+    pub const fn names_a_gain(&self) -> bool {
+        self.track_gain.is_some() || self.album_gain.is_some()
+    }
+
+    fn raised_by(self, by: f32) -> Self {
+        let raised = |gain: Option<Decibels>| {
+            gain.and_then(|gain| Decibels::new(gain.get() + by).ok())
+                .or(gain)
+        };
+        Self {
+            track_gain: raised(self.track_gain),
+            album_gain: raised(self.album_gain),
+            ..self
+        }
+    }
+
+    fn beneath(self, declared: Self) -> Self {
+        Self {
+            track_peak: self.track_peak.or(declared.track_peak),
+            album_peak: self.album_peak.or(declared.album_peak),
+            ..self
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Credits {
     pub composer: Option<String>,
@@ -177,6 +214,25 @@ pub struct TagSet {
     pub lyrics: Option<String>,
     pub credits: Credits,
     pub replay_gain: ReplayGain,
+    pub replay_gain_reference: Option<Decibels>,
+    pub sound_check: ReplayGain,
+    pub encoder_gain: ReplayGain,
+}
+
+impl TagSet {
+    pub fn heard_gain(&self) -> ReplayGain {
+        let declared = self.replay_gain;
+        if declared.names_a_gain() {
+            let toward_ours = self
+                .replay_gain_reference
+                .map_or(0.0, |reference| REPLAY_GAIN_REFERENCE_DB - reference.get());
+            return declared.raised_by(toward_ours);
+        }
+        [self.sound_check, self.encoder_gain]
+            .into_iter()
+            .find(ReplayGain::names_a_gain)
+            .map_or(declared, |fallback| fallback.beneath(declared))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -394,6 +450,12 @@ pub(crate) fn read(
     if segment_title_names_the_track {
         tags.title = tags.title.or_else(|| prescan.segment.title.clone());
     }
+    if !tags.sound_check.names_a_gain()
+        && let Some(checked) = prescan.boxes.sound_check.as_deref().and_then(sound_check)
+    {
+        tags.sound_check = checked;
+    }
+    tags.encoder_gain = prescan.encoder_gain;
     tags
 }
 
@@ -511,6 +573,12 @@ impl Builder {
                 None => {}
             }
             if is_an_itunes_note(tag) {
+                if described_as(tag, ITUNES_SOUND_CHECK)
+                    && let RawValue::String(text) = &tag.raw.value
+                    && let Some(checked) = sound_check(text)
+                {
+                    self.tags.sound_check = checked;
+                }
                 continue;
             }
             for std in id3_list(tag) {
@@ -611,6 +679,12 @@ impl Builder {
             }
             T::ReplayGainAlbumPeak(value) => {
                 parsed(&mut self.tags.replay_gain.album_peak, peak(value));
+            }
+            T::ReplayGainReferenceLoudness(value) => {
+                parsed(
+                    &mut self.tags.replay_gain_reference,
+                    reference_loudness(value),
+                );
             }
 
             _ => {}
@@ -930,6 +1004,7 @@ fn vorbis_comment(name: &str, value: &RawValue) -> Option<StandardTag> {
         "REPLAYGAIN_TRACK_PEAK" => StandardTag::ReplayGainTrackPeak(text()),
         "REPLAYGAIN_ALBUM_GAIN" => StandardTag::ReplayGainAlbumGain(text()),
         "REPLAYGAIN_ALBUM_PEAK" => StandardTag::ReplayGainAlbumPeak(text()),
+        "REPLAYGAIN_REFERENCE_LOUDNESS" => StandardTag::ReplayGainReferenceLoudness(text()),
         _ => return None,
     };
     Some(std)
@@ -1010,6 +1085,51 @@ pub(crate) fn decibels(value: &str) -> Option<Decibels> {
         return None;
     };
     Decibels::new(db).ok()
+}
+
+fn reference_loudness(value: &str) -> Option<Decibels> {
+    let value = value.trim();
+    let (number, below) = match value
+        .get(value.len().saturating_sub(4)..)
+        .filter(|unit| unit.eq_ignore_ascii_case("LUFS") || unit.eq_ignore_ascii_case("LKFS"))
+    {
+        Some(_) => (
+            value.get(..value.len() - 4).unwrap_or_default(),
+            LUFS_BELOW_THE_REFERENCE_DB,
+        ),
+        None => (strip_db(value), 0.0),
+    };
+    let db = gain_number(number.trim())? + below;
+    if !PLAUSIBLE_REFERENCE_DB.contains(&db) {
+        tracing::debug!(
+            value,
+            "discarding a ReplayGain reference loudness no tagger would write"
+        );
+        return None;
+    }
+    Decibels::new(db).ok()
+}
+
+pub(crate) fn sound_check(value: &str) -> Option<ReplayGain> {
+    let fields: Vec<u32> = value
+        .split_ascii_whitespace()
+        .map(|field| u32::from_str_radix(field, 16).ok())
+        .collect::<Option<_>>()?;
+    if fields.len() < SOUND_CHECK_FIELDS {
+        return None;
+    }
+    let loudest = (*fields.get(LEFT_GAIN)?).max(*fields.get(RIGHT_GAIN)?);
+    if loudest == 0 {
+        return None;
+    }
+    let gain = -10.0 * (loudest as f32 / SOUND_CHECK_UNITY).log10();
+    let peak = (*fields.get(LEFT_PEAK)?).max(*fields.get(RIGHT_PEAK)?);
+
+    Some(ReplayGain {
+        track_gain: Decibels::new(gain).ok(),
+        track_peak: (peak > 0).then(|| peak as f32 / SOUND_CHECK_PEAK_FULL_SCALE),
+        ..ReplayGain::default()
+    })
 }
 
 pub(crate) fn peak(value: &str) -> Option<f32> {
@@ -1160,6 +1280,97 @@ mod tests {
             ),
             StandardTag::Comment(text(value)),
         )
+    }
+
+    fn heard_track_gain(set: &TagSet) -> Option<f32> {
+        set.heard_gain()
+            .track_gain
+            .map(|gain| (gain.get() * 100.0).round() / 100.0)
+    }
+
+    #[test]
+    fn a_gain_aimed_at_another_reference_is_heard_against_ours_and_kept_as_written() {
+        let older = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
+            tag(StandardTag::ReplayGainReferenceLoudness(text("83.0 dB"))),
+        ]);
+        assert_eq!(
+            older.replay_gain.track_gain.map(Decibels::get),
+            Some(-7.0),
+            "the gain as written was rewritten"
+        );
+        assert_eq!(heard_track_gain(&older), Some(-1.0));
+
+        let louder = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
+            tag(StandardTag::ReplayGainReferenceLoudness(text(
+                "-14.00 LUFS",
+            ))),
+        ]);
+        assert_eq!(heard_track_gain(&louder), Some(-11.0));
+
+        let ours = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
+            tag(StandardTag::ReplayGainReferenceLoudness(text("-18 LUFS"))),
+        ]);
+        assert_eq!(heard_track_gain(&ours), Some(-7.0));
+
+        let nonsense = absorb(&[
+            tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
+            tag(StandardTag::ReplayGainReferenceLoudness(text("3 dB"))),
+        ]);
+        assert_eq!(nonsense.replay_gain_reference, None);
+        assert_eq!(heard_track_gain(&nonsense), Some(-7.0));
+    }
+
+    const SOUND_CHECK_AT_2500: &str = " 000009C4 000009C4 00002710 00002710 00024CA8 00024CA8 \
+                                      00004000 00002000 00024CA8 00024CA8";
+
+    #[test]
+    fn sound_check_levels_a_track_naming_no_replay_gain_and_never_one_that_does() {
+        let checked = absorb(&[described(ITUNES_SOUND_CHECK, SOUND_CHECK_AT_2500)]);
+
+        assert_eq!(heard_track_gain(&checked), Some(-3.98));
+        assert_eq!(checked.heard_gain().track_peak, Some(0.5));
+        assert_eq!(
+            checked.comment, None,
+            "the Sound Check note was taken for a comment"
+        );
+        assert_eq!(
+            checked.replay_gain,
+            ReplayGain::default(),
+            "Sound Check was written into the ReplayGain the file declares"
+        );
+
+        let tagged = absorb(&[
+            described(ITUNES_SOUND_CHECK, SOUND_CHECK_AT_2500),
+            tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
+        ]);
+        assert_eq!(heard_track_gain(&tagged), Some(-7.0));
+
+        assert_eq!(sound_check("00000000 00000000"), None);
+        assert_eq!(
+            sound_check(&SOUND_CHECK_AT_2500.replace("000009C4", "00000000")),
+            None
+        );
+    }
+
+    #[test]
+    fn the_encoders_gain_comes_after_sound_check_and_the_tags() {
+        let set = TagSet {
+            encoder_gain: ReplayGain {
+                track_gain: Decibels::new(-2.0).ok(),
+                ..ReplayGain::default()
+            },
+            ..TagSet::default()
+        };
+        assert_eq!(heard_track_gain(&set), Some(-2.0));
+
+        let checked = TagSet {
+            sound_check: sound_check(SOUND_CHECK_AT_2500).expect("a Sound Check note"),
+            ..set
+        };
+        assert_eq!(heard_track_gain(&checked), Some(-3.98));
     }
 
     #[test]

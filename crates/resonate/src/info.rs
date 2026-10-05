@@ -180,7 +180,7 @@ fn stream(report: &StreamReport) {
 }
 
 fn replay_gain(report: &StreamReport, config: &EngineConfig) {
-    let gain = &report.info.tags.replay_gain;
+    let gain = &report.info.tags.heard_gain();
     let applied = resolve_replay_gain(config.replay_gain, config.levelling, gain);
 
     let rows = vec![

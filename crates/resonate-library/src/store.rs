@@ -1864,7 +1864,7 @@ fn track(
         track_peak,
         album_gain,
         album_peak,
-    } = record.tags.replay_gain;
+    } = record.tags.heard_gain();
     let now = to_nanos(SystemTime::now());
     let path = path_text(&record.path)?;
     let (span_start, span_frames) = span_columns(record.span);

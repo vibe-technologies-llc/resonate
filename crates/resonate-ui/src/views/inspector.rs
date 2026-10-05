@@ -112,7 +112,7 @@ impl RootView {
                 replay_gain(
                     digest.replay_gain_mode,
                     digest.replay_gain,
-                    &digest.info.tags.replay_gain,
+                    &digest.info.tags.heard_gain(),
                 )
                 .into_any_element(),
             ]));

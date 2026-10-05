@@ -40,6 +40,7 @@ const INDEX_REFERENCE_BYTES: usize = 12;
 
 const SOUND_HANDLER: [u8; 4] = *b"soun";
 const GAPLESS_ITEM: &str = "iTunSMPB";
+const SOUND_CHECK_ITEM: &str = crate::tags::ITUNES_SOUND_CHECK;
 
 const FTYP: BoxKind = BoxKind(*b"ftyp");
 const MOOV: BoxKind = BoxKind(*b"moov");
@@ -214,6 +215,7 @@ pub(crate) struct Movie {
     priming: Option<Priming>,
     fragmented: Option<Ticks>,
     pub(crate) chapters: Vec<Marked>,
+    pub(crate) sound_check: Option<String>,
 }
 
 impl Movie {
@@ -331,9 +333,12 @@ fn scan_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Movie> {
 
     Some(Movie {
         timescale: Some(media.timescale),
-        priming: itunes_priming(source, moov)
+        priming: free_form(source, moov, GAPLESS_ITEM)
+            .as_deref()
+            .and_then(gapless_fields)
             .or_else(|| edit_priming(source, moov, trak, media, decoded))
             .filter(|held| held.fits_within(decoded)),
+        sound_check: free_form(source, moov, SOUND_CHECK_ITEM),
         fragmented: extended_length(source, moov).or_else(|| indexed_length(source, &top)),
         chapters: chapter_track(source, moov, trak)
             .filter(|marked| !marked.is_empty())
@@ -572,7 +577,7 @@ fn carries_sound<S: Read + Seek + ?Sized>(source: &mut S, trak: Extent) -> bool 
         })
 }
 
-fn itunes_priming<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Option<Priming> {
+fn free_form<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent, name: &str) -> Option<String> {
     let meta = descend(source, moov, &[UDTA, META])?;
     let ilst = item_list(source, meta)?;
     let items = children(source, ilst)
@@ -584,12 +589,12 @@ fn itunes_priming<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Opti
     for item in items {
         let named =
             child(source, item, ITEM_NAME).and_then(|name| text(source, name, VERSION_AND_FLAGS));
-        if named.as_deref() != Some(GAPLESS_ITEM) {
+        if named.as_deref() != Some(name) {
             continue;
         }
 
         let data = child(source, item, ITEM_DATA)?;
-        return gapless_fields(&text(source, data, ITEM_DATA_HEAD)?);
+        return text(source, data, ITEM_DATA_HEAD);
     }
 
     None
@@ -1017,6 +1022,10 @@ mod tests {
     }
 
     fn gapless_item(value: &str) -> Vec<u8> {
+        free_form_item(GAPLESS_ITEM, value)
+    }
+
+    fn free_form_item(name: &str, value: &str) -> Vec<u8> {
         let mut data = vec![0, 0, 0, 1, 0, 0, 0, 0];
         data.extend_from_slice(value.as_bytes());
 
@@ -1024,7 +1033,7 @@ mod tests {
             b"----",
             &[
                 full_atom(b"mean", 0, b"com.apple.iTunes"),
-                full_atom(b"name", 0, GAPLESS_ITEM.as_bytes()),
+                full_atom(b"name", 0, name.as_bytes()),
                 atom(b"data", &data),
             ]
             .concat(),
@@ -1115,6 +1124,24 @@ mod tests {
         assert_eq!(
             held.window().and_then(FrameSpan::frames),
             Some(Frames(u64::from(MUSIC - 2)))
+        );
+    }
+
+    #[test]
+    fn an_itunes_sound_check_item_is_read_beside_the_gapless_one() {
+        const CHECKED: &str = " 000009C4 000009C4 00002710 00002710 00024CA8 00024CA8 00004000 \
+                               00002000 00024CA8 00024CA8";
+        let bytes = movie(
+            &[sound(&[])],
+            &[user_data(&[
+                gapless_item(" 00000000 00000840 00000000 0000000000000000"),
+                free_form_item(SOUND_CHECK_ITEM, CHECKED),
+            ])],
+        );
+
+        assert_eq!(
+            read_movie(&mut Cursor::new(bytes)).sound_check.as_deref(),
+            Some(CHECKED.trim())
         );
     }
 

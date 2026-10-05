@@ -946,6 +946,7 @@ fn the_albums_of(file: &TagSet) -> TagSet {
             album_peak: file.replay_gain.album_peak,
             ..ReplayGain::default()
         },
+        replay_gain_reference: file.replay_gain_reference,
         ..TagSet::default()
     }
 }

@@ -10,6 +10,7 @@ use crate::{
     matroska::{self, Segment},
     mpa::{self, FrameHeader},
     riff::{self, Riff},
+    tags::ReplayGain,
     wavpack::{self, Coding},
     wide::Wide,
 };
@@ -49,6 +50,7 @@ pub(crate) struct Prescan {
     pub(crate) caf: Option<Overflow>,
     pub(crate) wavpack: Coding,
     pub(crate) mpeg_frames: Option<Frames>,
+    pub(crate) encoder_gain: ReplayGain,
 }
 
 impl Prescan {
@@ -63,6 +65,7 @@ impl Prescan {
             wavpack: wavpack::read_coding(source).or(segment.wavpack),
             segment,
             mpeg_frames: None,
+            encoder_gain: mpa::encoder_gain(source),
         }
     }
 

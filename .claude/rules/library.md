@@ -46,7 +46,9 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   the vault link and what a lookup wrote are kept on the unchanged size and mtime, so a marked row is
   re-read, not re-imported or asked about again
   (`a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved`). A later probe change
-  is another step setting the mark on the rows it concerns, never a rescan of the whole catalog.
+  is another step setting the mark on the rows it concerns, never a rescan of the whole catalog: the
+  last marks every ALAC, AAC and MP3 row under a root, for the counted MP3 length and the Sound Check
+  and LAME gains the `rg_*` columns now hold.
 - **What the transport was doing is three tables, the rows, their order and the place each moving at
   a rate of their own.** `resume` is a singleton row — the row the queue was on, the frame into it,
   whether it was shuffled, when it was taken, and `next_first`/`next_last`, the span of the queued

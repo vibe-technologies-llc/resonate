@@ -2622,7 +2622,7 @@ impl Library {
             .and_then(|metadata| metadata.modified())
             .unwrap_or(now);
         let declared = &kept.declared;
-        let gain = declared.replay_gain;
+        let gain = declared.heard_gain();
 
         let id = self.inner.write(|transaction| {
             if !still_unheld(transaction, want.release_track)? {

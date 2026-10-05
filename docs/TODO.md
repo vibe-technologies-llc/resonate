@@ -19,7 +19,6 @@ else is open to be done.
   card here offers 48 kHz alone) nor DoP against a DAC that decodes it
 
 ## Formats
-- The ReplayGain reference loudness, iTunes Sound Check and the LAME header's gain are never read
 - **Blocked on `ape-decoder`:** A 32-bit stereo Monkey's Audio, integers or floats, is refused,
   because `ape-decoder` 0.3.2 narrows the side channel to 32 bits before undoing it
 - **Blocked on `symphonia-codec-wavpack`:** A `.wvc` correction file beside a hybrid WavPack is

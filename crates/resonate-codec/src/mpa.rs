@@ -1,8 +1,11 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use resonate_core::Frames;
+use resonate_core::{Decibels, Frames};
 
-use crate::prescan::{past_id3, read_exact};
+use crate::{
+    prescan::{past_id3, read_exact},
+    tags::ReplayGain,
+};
 
 const MPEG_SYNC: u8 = 0xff;
 const MPEG_SYNC_HIGH: u8 = 0xe0;
@@ -33,7 +36,23 @@ const XING: &[u8; 4] = b"Xing";
 const INFO: &[u8; 4] = b"Info";
 const VBRI: &[u8; 4] = b"VBRI";
 const VBRI_AT: u64 = HEADER_BYTES + 32;
-const XING_NAMES_ITS_FRAMES: u8 = 0b1;
+const XING_NAMES_ITS_FRAMES: u8 = 0b0001;
+const XING_NOTE_BYTES: u64 = 8;
+const XING_FIELDS: [(u8, u64); 4] = [
+    (XING_NAMES_ITS_FRAMES, 4),
+    (0b0010, 4),
+    (0b0100, 100),
+    (0b1000, 4),
+];
+const LAME_TAG_BYTES: usize = 19;
+const LAME_PEAK_AT: usize = 11;
+const LAME_GAINS_AT: [usize; 2] = [15, 17];
+const LAME_PEAK_FULL_SCALE: f32 = 8_388_608.0;
+const LAME_TRACK_GAIN: u16 = 0b001;
+const LAME_ALBUM_GAIN: u16 = 0b010;
+const LAME_GAIN_NEGATIVE: u16 = 0x200;
+const LAME_GAIN_TENTHS: u16 = 0x1ff;
+const TENTHS_A_DECIBEL: f32 = 10.0;
 const TRAILERS: [&[u8]; 3] = [b"TAG", b"APETAGEX", b"LYRICSBEGIN"];
 const LONGEST_TRAILER: usize = 11;
 
@@ -191,6 +210,65 @@ enum Opening {
     Counted,
     Uncounted,
     Music,
+}
+
+pub(crate) fn encoder_gain<S: Read + Seek + ?Sized>(source: &mut S) -> ReplayGain {
+    let Ok(origin) = source.stream_position() else {
+        return ReplayGain::default();
+    };
+    let found = lame_gain(source).unwrap_or_default();
+    if source.seek(SeekFrom::Start(origin)).is_err() {
+        tracing::debug!("a LAME header read could not restore the stream position");
+    }
+    found
+}
+
+fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
+    let start = past_id3(source)?;
+    let first = header_at(source, start)?;
+    let xing_at = start + first.xing_at()?;
+    let note = bytes_at::<8, S>(source, xing_at)?;
+    let (named, flags) = note.split_at(4);
+    if named != XING && named != INFO {
+        return None;
+    }
+    let flags = *flags.last()?;
+    let fields: u64 = XING_FIELDS
+        .iter()
+        .filter(|(flag, _)| flags & flag != 0)
+        .map(|(_, bytes)| bytes)
+        .sum();
+    let lame = bytes_at::<LAME_TAG_BYTES, S>(source, xing_at + XING_NOTE_BYTES + fields)?;
+
+    let peak = u32::from_be_bytes(lame.get(LAME_PEAK_AT..LAME_PEAK_AT + 4)?.try_into().ok()?);
+    let mut gain = ReplayGain {
+        track_peak: (peak > 0).then(|| peak as f32 / LAME_PEAK_FULL_SCALE),
+        ..ReplayGain::default()
+    };
+    for at in LAME_GAINS_AT {
+        let field = u16::from_be_bytes(lame.get(at..at + 2)?.try_into().ok()?);
+        match lame_gain_field(field) {
+            Some((LAME_TRACK_GAIN, db)) => gain.track_gain = Some(db),
+            Some((LAME_ALBUM_GAIN, db)) => gain.album_gain = Some(db),
+            Some(_) | None => {}
+        }
+    }
+    Some(gain)
+}
+
+fn lame_gain_field(field: u16) -> Option<(u16, Decibels)> {
+    let name = field >> 13;
+    let originator = (field >> 10) & 0b111;
+    if name == 0 || originator == 0 {
+        return None;
+    }
+    let tenths = f32::from(field & LAME_GAIN_TENTHS);
+    let signed = if field & LAME_GAIN_NEGATIVE != 0 {
+        -tenths
+    } else {
+        tenths
+    };
+    Some((name, Decibels::new(signed / TENTHS_A_DECIBEL).ok()?))
 }
 
 fn opening_note<S: Read + Seek + ?Sized>(
@@ -372,6 +450,26 @@ mod tests {
             Some(Frames(90 * 1_152)),
             "the note's own frame was counted as music"
         );
+    }
+
+    #[test]
+    fn the_gains_a_lame_header_names_are_read_and_an_unset_one_is_not() {
+        let mut file = frames(AT_128, AT_128_LENGTH, 3);
+        file[36..40].copy_from_slice(INFO);
+        file[43] = XING_NAMES_ITS_FRAMES;
+        let lame = 36 + 8 + 4;
+        file[lame..lame + 9].copy_from_slice(b"LAME3.100");
+        file[lame + 11..lame + 15].copy_from_slice(&4_194_304_u32.to_be_bytes());
+        let radio_by_the_model_minus_6_5_db: u16 = (0b001 << 13) | (0b011 << 10) | 0x200 | 65;
+        file[lame + 15..lame + 17].copy_from_slice(&radio_by_the_model_minus_6_5_db.to_be_bytes());
+
+        let gain = encoder_gain(&mut Cursor::new(file.clone()));
+        assert_eq!(gain.track_gain.map(Decibels::get), Some(-6.5));
+        assert_eq!(gain.track_peak, Some(0.5));
+        assert_eq!(gain.album_gain, None, "an unset audiophile gain was read");
+
+        file[lame + 15..lame + 17].copy_from_slice(&0_u16.to_be_bytes());
+        assert_eq!(encoder_gain(&mut Cursor::new(file)).track_gain, None);
     }
 
     #[test]

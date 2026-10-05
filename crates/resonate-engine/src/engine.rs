@@ -3186,7 +3186,7 @@ fn levelled(config: &EngineConfig, info: &MediaInfo, hints: TrackHints) -> Appli
     let resolved = resolve_replay_gain(
         config.replay_gain,
         config.levelling,
-        &tagged_or_measured(info.tags.replay_gain, hints.measured),
+        &tagged_or_measured(info.tags.heard_gain(), hints.measured),
     );
     if config.true_peak {
         resolved.heeding(hints.true_peak)

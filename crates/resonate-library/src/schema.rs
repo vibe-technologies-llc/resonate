@@ -269,6 +269,7 @@ const MIGRATIONS: &[&str] = &[
      CREATE TRIGGER albums_owe_a_settle_when_gone AFTER DELETE ON albums
      BEGIN UPDATE settle_owed SET owed = 1; END;",
     "UPDATE settle_owed SET owed = 1;",
+    "UPDATE tracks SET probe_again = 1 WHERE codec IN (2, 6, 7) AND root_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

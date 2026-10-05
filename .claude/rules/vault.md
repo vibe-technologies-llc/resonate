@@ -181,7 +181,8 @@ gaining `Vault`, and a `vault_objects` table; a change now is a `MIGRATIONS` ste
   `resonate_codec::StandIn`, registered with `Sources::standing_in`; `Decoder::open`,
   `open_span`, `probe` and `probe_span` ask it first, and where the catalog names a `vault_path`
   for that `(path, span_start, span_frames)` (matched whole) they decode the object *whole* (a cue
-  row's object is that row alone) under a `TagSet` the catalog fills, including `rg_*` and
+  row's object is that row alone) under a `TagSet` the catalog fills, including `rg_*` (the gain heard,
+  `TagSet::heard_gain`, not only what the tags declared) and
   `tracks.lyrics`. An object that will not open falls back to the row's file. `info`, the scan and
   the import open through sources with no stand-in, so they read the file.
 - **A vault inside a scanned root is not part of the library it holds.** The walk steps past the
