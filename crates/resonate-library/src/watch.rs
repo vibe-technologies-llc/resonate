@@ -236,6 +236,7 @@ mod tests {
     const QUIET: Duration = Duration::from_millis(100);
     const HEARD_WITHIN: Duration = Duration::from_secs(5);
     const LOOKED_EVERY: Duration = Duration::from_millis(25);
+    const EVERY_EVENT_OF_ONE_WRITE_LANDS_WITHIN: Duration = Duration::from_millis(250);
 
     struct Scratch {
         path: PathBuf,
@@ -284,6 +285,7 @@ mod tests {
             );
             thread::sleep(LOOKED_EVERY);
         }
+        thread::sleep(EVERY_EVENT_OF_ONE_WRITE_LANDS_WITHIN);
 
         assert!(
             watch
