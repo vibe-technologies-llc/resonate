@@ -1835,11 +1835,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   release-group id as its fallback and as the lookup where no pressing is known, or `unheld_cover` at
   the grid's side where neither answers, the title in `theme::faint()` and kind and year under it.
   Pressing
-  one is `LibraryModel::want_album`, which runs `Library::want_album` on the background executor, hands
-  every song wanted to `Downloads` as a found song pressed would be and sends the providers for them;
+  one is `LibraryModel::land_album_not_held`, which runs `Library::open_album_uncovered` on the
+  background executor — the release read whole and landed as an album with its release rows and no want,
+  its cover asked afterwards — and opens the album it answers, where each missing song is pressed to be
+  wanted as any short album's are; a link to an album not held is what `want_album` still serves.
   `fetching_album` reads the album's songs back out of `Downloads` — the active attempt where any is,
   otherwise the first still underway, otherwise the first not downloaded — and the caption says it in
-  `fetching_colour` while the cell takes no press. An album landed with nothing on disk yet stays in the
+  `fetching_colour`. An album landed with nothing on disk yet stays in the
   grid, so it does not vanish the moment it is pressed. *Tracks* follows the held rows with
   `ListedRow::NotHeld`, *Not in your library · N songs · press one to download it*, and a found row
   per song — the same `found_row` a search draws, pressing it `want_found` — `restate_the_listing`
@@ -1940,7 +1942,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   all is finished how many were downloaded and how many not, the attempt counts being each row's to
   say (`the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left`) — and a press opens
   `downloads_over_the_app`, a panel floating
-  `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
+  `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, wide enough for a state and its percentage on one line, its list
   `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
   room for one song and a half: each song's title, its artist and its state in
   `browser::fetching_colour` (accent downloading, `done` downloaded, `failure` given up, unprovided or

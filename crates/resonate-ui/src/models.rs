@@ -621,6 +621,7 @@ pub struct LibraryModel {
     songs_not_held: Arc<[Found]>,
     albums_not_held: Arc<[AlbumNotHeld]>,
     albums_wanted: AHashMap<Mbid, Task<()>>,
+    albums_opening: AHashSet<Mbid>,
     albums_missing_tracks_wanted: AHashSet<AlbumId>,
     album_songs: AHashMap<Mbid, Vec<Mbid>>,
     shown: Arc<[Found]>,
@@ -826,6 +827,7 @@ impl LibraryModel {
             songs_not_held: Arc::default(),
             albums_not_held: Arc::default(),
             albums_wanted: AHashMap::new(),
+            albums_opening: AHashSet::new(),
             albums_missing_tracks_wanted: AHashSet::new(),
             album_songs: AHashMap::new(),
             shown: Arc::default(),
@@ -1489,6 +1491,56 @@ impl LibraryModel {
         });
         self.albums_wanted.insert(held_under, wanting);
         cx.notify();
+    }
+
+    pub fn land_album_not_held(
+        &mut self,
+        group: Mbid,
+        cx: &mut Context<Self>,
+    ) -> Task<Option<AlbumId>> {
+        let Some(reference) = self.reference.clone() else {
+            return Task::ready(None);
+        };
+        if !self.albums_opening.insert(group.clone()) {
+            return Task::ready(None);
+        }
+        let library = Arc::clone(&self.library);
+        let asked = group.clone();
+
+        cx.spawn(async move |this, cx| {
+            let covered_by = Arc::clone(&library);
+            let covering_with = Arc::clone(&reference);
+            let landed = cx
+                .background_executor()
+                .spawn(async move { library.open_album_uncovered(reference.as_ref(), &asked) })
+                .await;
+
+            let opened = this
+                .update(cx, |this, cx| {
+                    this.albums_opening.remove(&group);
+                    match landed {
+                        Ok(landed) => {
+                            this.read(Wanted::Everything, cx);
+                            Some(landed)
+                        }
+                        Err(error) => {
+                            tracing::error!(%error, "an album not held could not be opened");
+                            toast::tell(toast::could_not("open the album", &error), cx);
+                            None
+                        }
+                    }
+                })
+                .ok()
+                .flatten()?;
+
+            if let Some(covering) = opened.covering {
+                cx.spawn(async move |cx| {
+                    cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
+                })
+                .detach();
+            }
+            Some(opened.wanted)
+        })
     }
 
     pub fn want_missing_tracks(&mut self, album: AlbumId, cx: &mut Context<Self>) {

@@ -11453,6 +11453,22 @@ fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off()
 }
 
 #[test]
+fn an_album_not_held_is_opened_as_an_album_with_its_songs_listed_and_none_wanted() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(learnt_canned()));
+    enrich(&library, &fake, false)?;
+
+    let opened = library.open_album_uncovered(fake.as_ref(), &mbid(HOURS_GROUP))?;
+
+    assert!(library.wants()?.is_empty());
+    assert!(
+        !library.release_tracks(opened.wanted)?.is_empty(),
+        "an album opened carried no songs to press"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_album_whose_songs_were_never_read_has_them_asked_for_when_it_is_wanted() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));

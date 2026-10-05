@@ -3300,20 +3300,8 @@ impl Library {
         reference: &dyn Reference,
         group: &Mbid,
     ) -> Result<Uncovered<Vec<(Found, WantId)>>> {
-        let mut songs = self.songs_of_group(group)?;
-        if songs.is_empty() {
-            self.learn_the_songs_of(reference, group)?;
-            songs = self.songs_of_group(group)?;
-        }
-        let Some(release) = songs
-            .first()
-            .and_then(|song| song.release.as_ref())
-            .map(|release| release.id.clone())
-        else {
-            return Err(Error::UnknownRelease {
-                release: group.clone(),
-            });
-        };
+        let songs = self.songs_read_for(reference, group)?;
+        let release = Self::pressing_of_songs(&songs, group)?;
         let recordings: Vec<Mbid> = songs.iter().map(|song| song.recording.clone()).collect();
 
         let Uncovered { wanted, covering } =
@@ -3329,6 +3317,66 @@ impl Library {
                 .collect(),
             covering,
         })
+    }
+
+    pub fn open_album_uncovered(
+        &self,
+        reference: &dyn Reference,
+        group: &Mbid,
+    ) -> Result<Uncovered<AlbumId>> {
+        let songs = self.songs_read_for(reference, group)?;
+        let release = Self::pressing_of_songs(&songs, group)?;
+        self.land_release_of(reference, &release)
+    }
+
+    fn songs_read_for(&self, reference: &dyn Reference, group: &Mbid) -> Result<Vec<Found>> {
+        let songs = self.songs_of_group(group)?;
+        if !songs.is_empty() {
+            return Ok(songs);
+        }
+        self.learn_the_songs_of(reference, group)?;
+        self.songs_of_group(group)
+    }
+
+    fn pressing_of_songs(songs: &[Found], group: &Mbid) -> Result<Mbid> {
+        songs
+            .first()
+            .and_then(|song| song.release.as_ref())
+            .map(|release| release.id.clone())
+            .ok_or_else(|| Error::UnknownRelease {
+                release: group.clone(),
+            })
+    }
+
+    fn land_release_of(
+        &self,
+        reference: &dyn Reference,
+        release: &Mbid,
+    ) -> Result<Uncovered<AlbumId>> {
+        let landed = reference
+            .release(release)?
+            .ok_or_else(|| Error::UnknownRelease {
+                release: release.clone(),
+            })?;
+        let now = SystemTime::now();
+
+        let album = self
+            .inner
+            .write(|transaction| elsewhere::album_of_release(transaction, &landed, now))?;
+        Ok(Uncovered {
+            wanted: album,
+            covering: self.covering_of(album, &landed)?,
+        })
+    }
+
+    fn covering_of(&self, album: AlbumId, landed: &Release) -> Result<Option<Covering>> {
+        let wants_a_cover =
+            (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none();
+        Ok(wants_a_cover.then(|| Covering {
+            album,
+            release: landed.id.clone(),
+            group: landed.group.clone(),
+        }))
     }
 
     pub fn cover_what_was_wanted(&self, reference: &dyn Reference, covering: &Covering) {
@@ -3384,13 +3432,7 @@ impl Library {
             Ok((wanted, album))
         })?;
 
-        let wants_a_cover =
-            (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none();
-        let covering = wants_a_cover.then(|| Covering {
-            album,
-            release: landed.id.clone(),
-            group: landed.group.clone(),
-        });
+        let covering = self.covering_of(album, &landed)?;
 
         Ok(Uncovered { wanted, covering })
     }

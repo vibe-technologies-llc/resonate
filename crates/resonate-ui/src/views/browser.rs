@@ -96,8 +96,8 @@ const WANT_FOUND_HINT: &str = "Download this song: its release is added to the c
 const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                 providers are asked for it now, the sidebar following how it goes";
 
-const WANT_ALBUM_HINT: &str = "Download this album: it is added to the catalog and the providers \
-                               are asked for every song on it, the sidebar following how it goes";
+const OPEN_ALBUM_NOT_HELD_HINT: &str = "Open this album to see its songs and download the ones you \
+                                        want";
 
 const GET_ALBUM_REST_HINT: &str = "Ask the providers for every missing track on this album";
 
@@ -2291,7 +2291,7 @@ impl RootView {
                 .text_color(rgb(theme::faint()))
                 .child(SharedString::from(described(&album.release))),
         };
-        let pressable = can_ask && fetching.is_none_or(Fetching::can_be_asked_again);
+        let pressable = can_ask;
 
         let cell = div()
             .id(listing::keyed_by("album-not-held", &group))
@@ -2343,11 +2343,19 @@ impl RootView {
         }
 
         cell.cursor_pointer()
-            .names(WANT_ALBUM_HINT)
+            .names(OPEN_ALBUM_NOT_HELD_HINT)
             .on_click(cx.listener(move |this, _, _, cx| {
-                let wanted = group.clone();
-                this.library
-                    .update(cx, |library, cx| library.want_album(wanted, cx));
+                let landing = group.clone();
+                let landed = this
+                    .library
+                    .update(cx, |library, cx| library.land_album_not_held(landing, cx));
+                cx.spawn(async move |this, cx| {
+                    let Some(album) = landed.await else {
+                        return;
+                    };
+                    let _ = this.update(cx, |this, cx| this.opened(Selection::Album(album), cx));
+                })
+                .detach();
             }))
     }
 
@@ -2775,7 +2783,7 @@ fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::muted()))
         .child(SharedString::from(format!(
-            "{NOT_HELD_HEADING} · {} · press one to download it",
+            "{NOT_HELD_HEADING} · {} · press one to open it",
             format::counted(albums, "release", "releases")
         )))
 }
