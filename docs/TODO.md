@@ -103,8 +103,6 @@ else is open to be done.
   whole catalog, so one watched file added pays for the library
 - An incremental scan writes every unchanged row only to stamp it seen, and a change under one root
   stats every file of every other
-- One thread reads the tags of every queued row, so a remote source that does not answer holds back
-  the local rows behind it five seconds a row
 - Scrolling a large library to the end reads the whole prefix of tracks, albums and artists again at
   every page, quadratic in its length; design it with the `End` item under Keyboard
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is

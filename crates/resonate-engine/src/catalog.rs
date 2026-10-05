@@ -29,6 +29,8 @@ const PICTURES_ASKED: usize = 32;
 
 const LOOKS_ASKED: usize = 64;
 
+const READERS: usize = 4;
+
 const READ_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
 const LOOKED_AT_THE_FILE_EVERY: Duration = Duration::from_secs(5);
@@ -152,6 +154,7 @@ fn sent<T>(asked: Result<(), TrySendError<T>>) -> Sent {
     }
 }
 
+#[derive(Clone)]
 struct Asked {
     tags: Receiver<Row>,
     art: Receiver<MediaLocation>,
@@ -606,7 +609,7 @@ impl Shelf {
 pub(crate) struct Catalog {
     shelf: Arc<Shelf>,
     wanted: Option<Asking>,
-    reader: Option<JoinHandle<()>>,
+    readers: Vec<JoinHandle<()>>,
 }
 
 impl Catalog {
@@ -620,27 +623,35 @@ impl Catalog {
             art: art_asked,
             look: look_asked,
         };
-        let reader = thread::Builder::new()
-            .name("resonate-tags".to_owned())
-            .spawn({
-                let shelf = Arc::clone(&shelf);
-                move || read_each(&shelf, &sources, &asked)
-            });
+        let readers: Vec<JoinHandle<()>> = (0..READERS)
+            .filter_map(|nth| {
+                thread::Builder::new()
+                    .name(format!("resonate-tags-{nth}"))
+                    .spawn({
+                        let shelf = Arc::clone(&shelf);
+                        let sources = Arc::clone(&sources);
+                        let asked = asked.clone();
+                        move || read_each(&shelf, &sources, &asked)
+                    })
+                    .map_err(|error| {
+                        tracing::warn!(%error, "a tag reader did not start");
+                    })
+                    .ok()
+            })
+            .collect();
 
-        match reader {
-            Ok(reader) => Self {
+        if readers.is_empty() {
+            tracing::warn!("no tag reader started; a queued row keeps its file name");
+            return Self {
                 shelf,
-                wanted: Some(Asking { tags, art, look }),
-                reader: Some(reader),
-            },
-            Err(error) => {
-                tracing::warn!(%error, "no tag reader started; a queued row keeps its file name");
-                Self {
-                    shelf,
-                    wanted: None,
-                    reader: None,
-                }
-            }
+                wanted: None,
+                readers,
+            };
+        }
+        Self {
+            shelf,
+            wanted: Some(Asking { tags, art, look }),
+            readers,
         }
     }
 
@@ -747,7 +758,7 @@ impl Catalog {
 impl Drop for Catalog {
     fn drop(&mut self) {
         drop(self.wanted.take());
-        if let Some(reader) = self.reader.take() {
+        for reader in self.readers.drain(..) {
             let _ = reader.join();
         }
     }
@@ -1385,6 +1396,60 @@ mod tests {
         );
     }
 
+    struct StallsOneRow {
+        source: SourceId,
+        bytes: Vec<u8>,
+        gate: Arc<Mutex<()>>,
+    }
+
+    impl MediaProvider for StallsOneRow {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
+            if location.locator().as_key() == Some("tracks/stalled.wav") {
+                drop(self.gate.lock());
+            }
+            Ok(Media {
+                stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+                hint: None,
+            })
+        }
+    }
+
+    #[test]
+    fn a_source_that_does_not_answer_holds_back_no_more_than_the_reader_it_holds() {
+        let gate = Arc::new(Mutex::new(()));
+        let named = SourceId::new("stalls-one").expect("a lowercase name");
+        let sources = Sources::local().and(Arc::new(StallsOneRow {
+            source: named.clone(),
+            bytes: wav("Echoes", "Pink Floyd"),
+            gate: Arc::clone(&gate),
+        }));
+        let catalog = Catalog::new(Arc::new(sources));
+        let stalled = MediaLocation::new(named.clone(), "tracks/stalled.wav");
+        let healthy: Vec<MediaLocation> = (0..READERS - 1)
+            .map(|row| MediaLocation::new(named.clone(), format!("tracks/{row}.wav")))
+            .collect();
+
+        let held = gate.lock();
+        let _ = catalog.media(&stalled, None);
+        for row in &healthy {
+            let _ = catalog.media(row, None);
+        }
+
+        for row in &healthy {
+            assert!(
+                catalog.media_within(row, None, PATIENCE).is_some(),
+                "a row behind a stalled one was held back with it"
+            );
+        }
+        assert!(catalog.media(&stalled, None).is_none());
+        drop(held);
+        assert!(catalog.media_within(&stalled, None, PATIENCE).is_some());
+    }
+
     #[test]
     fn a_reader_that_is_behind_leaves_a_row_to_be_asked_for_again() {
         let gate = Arc::new(Mutex::new(()));
@@ -1396,7 +1461,7 @@ mod tests {
         let catalog = Catalog::new(Arc::new(sources));
         let stalled = gate.lock();
 
-        let asked = rows(&named, ROWS_ASKED + 2);
+        let asked = rows(&named, ROWS_ASKED + READERS + 2);
         for row in &asked {
             assert!(catalog.media(row, None).is_none());
         }

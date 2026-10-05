@@ -741,7 +741,8 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   packet's declared duration, so an absurd `dur` would ask for billions; once full, the open window is
   abandoned, bounding the `Vec` and the walk on the engine thread as in `probe_stream`.
 - **A queued row nothing plays is read once, off the audio path.** `Player::media` answers from a bounded
-  catalog a reader thread fills with `probe`; a miss requests the read and answers nothing rather than
+  catalog `READERS` (four) `resonate-tags-<n>` threads fill with `probe`, so a source that does not answer holds back
+  no more than the reader it holds (`a_source_that_does_not_answer_holds_back_no_more_than_the_reader_it_holds`); a miss requests the read and answers nothing rather than
   blocking on a disc, and `Player::media_revision` moves when one lands. It lets `resonate-ui` draw a
   title, artist, length and cover for an unscanned file without depending on `resonate-codec`, and is
   what `resonate-mpris` answers `GetTracksMetadata` from, under one deadline for the whole call.
