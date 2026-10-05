@@ -16,7 +16,7 @@ use std::{
 use lofty::{
     TextEncoding,
     ape::{ApeItem, ApeTag},
-    config::WriteOptions,
+    config::{ParseOptions, WriteOptions},
     error::FileEncodingError,
     file::{FileType, TaggedFileExt as _},
     id3::v2::{Frame, FrameId, Id3v2Tag, KeyValueFrame},
@@ -551,7 +551,7 @@ impl FileTags {
 
     fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
         let path = self.writable(location)?;
-        let tagged = opened(path, location)?;
+        let tagged = opened_for_its_tags(path, location)?;
         let kind = tagged.primary_tag_type();
         if !rates(kind) {
             return Ok(Rated::Unrateable);
@@ -1194,10 +1194,30 @@ const fn read_back_here(kind: FileType) -> bool {
 }
 
 fn opened(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
-    let opened = Probe::open(path).map_err(|source| Error::TagsUnread {
-        location: location.clone(),
-        source,
-    })?;
+    opened_as(path, location, ParseOptions::new())
+}
+
+fn opened_for_its_tags(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
+    opened_as(
+        path,
+        location,
+        ParseOptions::new()
+            .read_properties(false)
+            .read_cover_art(false),
+    )
+}
+
+fn opened_as(
+    path: &Path,
+    location: &MediaLocation,
+    options: ParseOptions,
+) -> Result<lofty::file::TaggedFile> {
+    let opened = Probe::open(path)
+        .map(|probe| probe.options(options))
+        .map_err(|source| Error::TagsUnread {
+            location: location.clone(),
+            source,
+        })?;
     let probed = opened.guess_file_type().map_err(|source| Error::Io {
         location: location.clone(),
         source,

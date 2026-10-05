@@ -113,12 +113,11 @@ else is open to be done.
   open, and each type-ahead key folds every row's name on the UI thread
 - The Analysis pane decodes a vaulted track whose file has gone on every visit, since a kept
   analysis is keyed on the file's size and time
-- Dragging files from a file manager stats every path on entering and on dropping, and copies the
-  paths on every pointer move
+- Dragging files from a file manager stats every path on entering and on dropping
 - Every lookup pass re-pairs each album short of a track in a write transaction of its own, and the
   identify update it runs per matched row counts as a catalog write though nothing moved
-- Planning a tag run parses every file with lofty twice more than it needs, covers and audio
-  properties included
+- Planning a tag run parses every file with lofty twice, the generic tag and the format's own for
+  the play count, neither reading covers or audio properties now
 - A picture's identity is taken from the length and first 256 bytes of each embedded cover, which
   SQLite reads whole, in every orphan sweep and for each suggestion candidate
 - The Missing pane's counts, listing and due lookups fold every track title of an artist for each

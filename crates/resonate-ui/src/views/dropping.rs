@@ -190,12 +190,14 @@ fn what_becomes_of(looks: Looks) -> (Icon, &'static str, bool) {
 }
 
 impl RootView {
-    pub(crate) fn dragged_over(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
-        if self
-            .incoming
+    pub(crate) fn is_already_weighing(&self, paths: &[PathBuf]) -> bool {
+        self.incoming
             .as_ref()
             .is_some_and(|incoming| incoming.paths == paths)
-        {
+    }
+
+    pub(crate) fn dragged_over(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
+        if self.is_already_weighing(paths) {
             return;
         }
 

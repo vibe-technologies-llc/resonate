@@ -4526,6 +4526,9 @@ impl Render for RootView {
             }))
             .on_drag_move::<ExternalPaths>(cx.listener(
                 |this, event: &DragMoveEvent<ExternalPaths>, _, cx| {
+                    if this.is_already_weighing(event.drag(cx).paths()) {
+                        return;
+                    }
                     let paths = event.drag(cx).paths().to_vec();
                     this.dragged_over(&paths, cx);
                 },

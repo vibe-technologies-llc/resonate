@@ -51,7 +51,9 @@ impl Counted {
 
     pub(crate) fn read(path: &Path, kind: FileType) -> Result<Option<Self>, FileParseError> {
         let mut file = File::open(path)?;
-        let options = ParseOptions::new().read_properties(false);
+        let options = ParseOptions::new()
+            .read_properties(false)
+            .read_cover_art(false);
         Ok(match kind {
             FileType::Flac => FlacFile::read_from(&mut file, options)?
                 .vorbis_comments()
