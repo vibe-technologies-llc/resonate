@@ -40,6 +40,27 @@ setsid env WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
 dies when the call returns. Give it a second to map. The stderr warning that radv is not a conformant
 Vulkan implementation is normal.
 
+## With no desktop session
+
+When `pgrep -x plasmashell` finds nothing (only the login greeter's `kwin_wayland`, owned by another
+user, is up) there is no session to recover. Host one: a private bus and a virtual `kwin_wayland`,
+the app and `spectacle` inside it, all under `dbus-run-session`. The user's PipeWire daemon in
+`/run/user/1000` still serves the engine.
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/1000
+kwin_wayland --virtual --socket=zz --width 1600 --height 900 --no-lockscreen &
+sleep 5
+WAYLAND_DISPLAY=zz ./target/debug/resonate --library <scratch db> &
+sleep 20
+WAYLAND_DISPLAY=zz spectacle -b -n -f -o /path/to/shot.png
+pkill -x resonate
+```
+
+Run that as a script through `dbus-run-session -- script.sh` and read the shot as below. Its
+`pkill -x kwin_wayland` is refused for the greeter's, which is harmless; kill your own by pid. Then
+check `pgrep -x resonate` is empty.
+
 ## The taskbar icon
 
 The compositor matches the window's `app_id` (`resonate`) against a desktop entry of that name and

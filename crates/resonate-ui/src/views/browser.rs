@@ -96,6 +96,8 @@ const WANT_FOUND_HINT: &str = "Download this song: its release is added to the c
 const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
                                 providers are asked for it now, the sidebar following how it goes";
 
+const ARTIST_FOUND_CELL_WIDENING: f32 = 1.8;
+
 const OPEN_ARTIST_FOUND_HINT: &str =
     "Open this artist to see their releases and download the songs you want";
 
@@ -2498,7 +2500,7 @@ impl RootView {
             .flex_col()
             .items_center()
             .gap_2p5()
-            .w(px(side))
+            .w(px(side * ARTIST_FOUND_CELL_WIDENING))
             .cursor_pointer()
             .names(OPEN_ARTIST_FOUND_HINT)
             .child(
