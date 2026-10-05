@@ -10,7 +10,12 @@ use resonate_subsonic::{Server, Subsonic};
 #[cfg(feature = "online")]
 use resonate_tidal::{Account, HifiApi, Tidal};
 
-use crate::config::Config;
+#[cfg(feature = "online")]
+use crate::{config, error::ConfigKey, signals};
+use crate::{
+    config::Config,
+    error::{Error, Result},
+};
 
 pub fn registered(config: &Config, settings: Option<PathBuf>) -> Providers {
     registry(
@@ -296,6 +301,56 @@ pub fn signs_in() -> Option<Arc<dyn resonate_providers::SignsIn>> {
     None
 }
 
+#[cfg(feature = "online")]
+pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use resonate_providers::{Client, SignsIn as _};
+
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
+    }
+    let kept = |held: &Option<String>| {
+        held.as_deref()
+            .map(str::trim)
+            .filter(|held| !held.is_empty())
+            .map(str::to_owned)
+    };
+    let client = Client {
+        id: kept(&config.tidal_client_id).ok_or(Error::NoTidalClient)?,
+        secret: kept(&config.tidal_client_secret),
+    };
+
+    let signs_in = resonate_tidal::TidalSignIn::default();
+    let authorizing = signs_in.authorizing(&client)?;
+    said!(
+        "open {} and enter {} to sign in to TIDAL",
+        authorizing.verify_at,
+        authorizing.user_code
+    );
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let stopping = Arc::clone(&cancelled);
+    let _interrupting = signals::cancel_when_told(move || stopping.store(true, Ordering::Relaxed));
+    let token =
+        signs_in.authorized(&client, &authorizing, &|| cancelled.load(Ordering::Relaxed))?;
+
+    let Some(token) = token else {
+        return Err(Error::SignInCancelled);
+    };
+    config::store(settings, ConfigKey::TidalRefreshToken, token.into_string())?;
+    said!(
+        "signed in; the refresh token is kept in {}",
+        settings.display()
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "online"))]
+pub fn sign_in_to_tidal(_: &Config, _: &Path) -> Result<()> {
+    Err(Error::NoSignIn)
+}
+
 fn with_inbox(inbox: Option<&Path>) -> Providers {
     let mut providers = Providers::none();
     if let Some(folder) = inbox {
@@ -316,6 +371,33 @@ mod tests {
             .iter()
             .map(|name| name.as_str().to_owned())
             .collect()
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked() {
+        let nowhere = PathBuf::from("/nowhere/resonate/config.toml");
+
+        let offline = Config {
+            online: Some(false),
+            tidal_client_id: Some("client".to_owned()),
+            ..Config::default()
+        };
+        assert!(matches!(
+            sign_in_to_tidal(&offline, &nowhere),
+            Err(Error::OnlineOff)
+        ));
+
+        for blank in [None, Some("  ".to_owned())] {
+            let unregistered = Config {
+                tidal_client_id: blank,
+                ..Config::default()
+            };
+            assert!(matches!(
+                sign_in_to_tidal(&unregistered, &nowhere),
+                Err(Error::NoTidalClient)
+            ));
+        }
     }
 
     #[test]

@@ -732,6 +732,13 @@ pub enum Sub {
         bring_back: bool,
     },
 
+    #[command(
+        about = "Sign in to TIDAL: print the link and the code to approve it with, wait for the \
+                 approval and keep the refresh token in the settings file. Needs tidal-client-id \
+                 set"
+    )]
+    Tidal,
+
     #[command(about = "Ask every registered provider for each wanted track not tried lately")]
     Poll {
         #[arg(long, help = "Ask about the wanted tracks tried lately as well")]

@@ -187,7 +187,7 @@ grammar (`binary.md`); by area:
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`.
 - **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`.
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (the device sign-in).
 - `cargo run -- <files>` opens the window with those queued (`Exec=resonate %U`); a bare
   `cargo run` opens it on the queue the last run left, unless `resume` is off.
 

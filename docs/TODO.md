@@ -168,7 +168,6 @@ else is open to be done.
   again or reordered
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
-- TIDAL's device sign-in is the window's alone, with no command-line way in
 - Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either

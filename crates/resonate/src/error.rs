@@ -455,6 +455,20 @@ pub enum Error {
     #[error("online is off in the settings, so there is no reference to ask")]
     OnlineOff,
 
+    #[cfg(not(feature = "online"))]
+    #[error("this build has no TIDAL sign-in; it was built without the online feature")]
+    NoSignIn,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "tidal-client-id is not set in the settings, and TIDAL's sign-in needs the client it names"
+    )]
+    NoTidalClient,
+
+    #[cfg(feature = "online")]
+    #[error("the TIDAL sign-in was cancelled before it was approved")]
+    SignInCancelled,
+
     #[cfg(not(feature = "mcp"))]
     #[error(
         "this build cannot serve the Model Context Protocol; it was built without the mcp feature"
@@ -473,6 +487,9 @@ pub enum Error {
 
     #[error(transparent)]
     Library(#[from] resonate_library::Error),
+
+    #[error(transparent)]
+    Providers(#[from] resonate_providers::Error),
 
     #[error(transparent)]
     Vault(#[from] resonate_vault::Error),

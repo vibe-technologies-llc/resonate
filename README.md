@@ -107,6 +107,7 @@ resonate enrich                   # ask MusicBrainz about what has not been aske
 resonate missing                  # the release tracks the library holds no file for
 resonate wants                    # the tracks marked wanted, and where a delivery landed
 resonate poll                     # ask the registered providers for what is wanted
+resonate tidal                    # sign in to TIDAL: approve a code, keep the refresh token
 resonate tag                      # the tags that would be written back to say what the lookup
                                   #   learned; --apply writes them
 resonate organise                 # the moves that would file every track under a layout;

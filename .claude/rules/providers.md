@@ -246,12 +246,16 @@ is on. Nothing is downloaded to play: a delivery is fetched whole and lands as a
   `remux.rs` repacks it decoding nothing: `fLaC` and the metadata blocks from the `dfLa` box, then
   every `mdat` payload, STREAMINFO's total sample count (zero in a fragmented file) filled in from the
   timeline. Every delivery is keyed `track/<id>` with the extension `flac`.
-- **It is signed in to from the window.** `resonate_providers::SignsIn` is the seam, `TidalSignIn` its
+- **It is signed in to from the window or `resonate tidal`.** `resonate_providers::SignsIn` is the seam, `TidalSignIn` its
   one implementation, handed to the window as `Lookups::signs_in` by `providers::signs_in`. The device
   flow polls every `interval` (at least `ASKED_EVERY_AT_LEAST`, longer on `slow_down`) until a refresh
   token, `AuthorizationLapsed`, `AuthorizationDenied` or the cancel (`Ok(None)`); the device code is
   never printed by `Debug`. The *A TIDAL account* group's *Sign in to TIDAL* writes the token into
   the field, the global `Online` and `tidal-refresh-token`.
+  `resonate tidal` is the same flow without a window (`providers::sign_in_to_tidal`): it refuses with
+  `OnlineOff` or `NoTidalClient` before asking, prints the link and the code, waits with the first
+  interrupt as the cancel (`SignInCancelled`) and writes the token to the settings file with `config::store`
+  (`a_tidal_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked`).
 - **It paces and identifies itself as the Subsonic client does**, and `Account`'s `Debug` prints neither
   secret nor token. `asker.rs` is the pacing, retrying and reading both TIDAL providers share, and
   `played.rs` what follows a playback answer, with `played::obtained`, the link-then-ISRC order,
