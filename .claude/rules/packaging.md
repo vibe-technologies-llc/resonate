@@ -24,6 +24,10 @@ The desktop entry and the metainfo's `<provides>` are held to the binary's `MIME
   the release on a release run, so a listener can install a build before a release is published.
   The archive command trusts `GITHUB_WORKSPACE` for that invocation alone, because the Fedora
   container can see a checkout owned by the runner's user and refuse it as dubious ownership.
+  Dependencies are installed as root, but `rpmbuild` runs as `rpm-builder` under its own home,
+  with the archive and RPMs in its `rpmbuild` tree. The tests exercise refused writes to read-only
+  fixtures; root bypasses those permissions and writes both files in a walk meant to leave one
+  for the next pass, so the build and `%check` run as an ordinary user.
   Cargo fetches crates while building: a source RPM recipe, not an offline distribution build.
 - **The Flatpak builds the checkout it sits in** (a `dir` source, no release tarball, so the
   metainfo names no `<release>`) with the Freedesktop 25.08 SDK and `rust-stable`, shares the

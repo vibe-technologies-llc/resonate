@@ -14,12 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:44
     timeout-minutes: 90
+    env:
+      RPMBUILD_ROOT: /home/rpm-builder/rpmbuild
     steps:
       - name: Install the build dependencies
         run: >-
           dnf install -y git gh rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel
           wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel
-          freetype-devel vulkan-headers vulkan-loader-devel
+          freetype-devel vulkan-headers vulkan-loader-devel shadow-utils util-linux
+      - name: Create the build user
+        run: useradd --create-home rpm-builder
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
@@ -32,14 +36,16 @@ jobs:
           if [ -n "$RELEASE_TAG" ]; then
             test "$RELEASE_TAG" = "$version" || test "$RELEASE_TAG" = "v$version"
           fi
-          mkdir -p "$HOME/rpmbuild/SOURCES"
-          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$HOME/rpmbuild/SOURCES/resonate-$version.tar.gz"
+          mkdir -p "$RPMBUILD_ROOT/SOURCES"
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$RPMBUILD_ROOT/SOURCES/resonate-$version.tar.gz"
       - name: Build the RPM
-        run: rpmbuild -ba packaging/resonate.spec
+        run: |
+          chown -R rpm-builder:rpm-builder "$RPMBUILD_ROOT"
+          runuser -u rpm-builder -- rpmbuild -ba packaging/resonate.spec
       - name: Collect the RPMs
         run: |
           mkdir -p rpm-artifacts
-          cp "$HOME"/rpmbuild/RPMS/x86_64/*.rpm "$HOME"/rpmbuild/SRPMS/*.src.rpm rpm-artifacts/
+          cp "$RPMBUILD_ROOT"/RPMS/x86_64/*.rpm "$RPMBUILD_ROOT"/SRPMS/*.src.rpm rpm-artifacts/
       - uses: actions/upload-artifact@v4
         with:
           name: resonate-fedora-44-rpm
@@ -52,4 +58,4 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)
-          gh release upload "$RELEASE_TAG" "$HOME"/rpmbuild/RPMS/x86_64/resonate-"$version"-*.rpm "$HOME"/rpmbuild/SRPMS/resonate-"$version"-*.src.rpm
+          gh release upload "$RELEASE_TAG" "$RPMBUILD_ROOT"/RPMS/x86_64/resonate-"$version"-*.rpm "$RPMBUILD_ROOT"/SRPMS/resonate-"$version"-*.src.rpm
