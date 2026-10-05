@@ -18,15 +18,15 @@ use resonate_core::{
 };
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
-    Album, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistFound, ArtistOrder,
-    ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut, Day, Deleted, DeliveryFolder,
-    Direction, Drawing, Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags,
-    Fingerprinters, Found, GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions,
-    ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept, Layout, Library, Listen,
-    LookupOp, Mbid, Meant, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
-    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
-    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
-    Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail,
+    Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail,
+    ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
+    Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
+    EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
+    HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept,
+    Layout, Library, Listen, LookupOp, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
+    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing,
+    Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary,
+    Raster, Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail,
     ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
     SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
     SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery,
@@ -188,6 +188,12 @@ struct Shelves {
     unheld_releases: Vec<UnheldRelease>,
     missing: Missing,
     dismissed: Missing,
+}
+
+#[derive(Clone)]
+struct Answer {
+    songs: Arc<[RecordingMatch]>,
+    albums: Arc<[AlbumMatch]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -623,12 +629,13 @@ pub struct LibraryModel {
     albums_wanted: AHashMap<Mbid, Task<()>>,
     albums_opening: AHashSet<Mbid>,
     artists_found: Arc<[ArtistFound]>,
+    albums_found: Arc<[AlbumFound]>,
     artists_opening: AHashSet<Mbid>,
     albums_missing_tracks_wanted: AHashSet<AlbumId>,
     album_songs: AHashMap<Mbid, Vec<Mbid>>,
     shown: Arc<[Found]>,
     asking: Option<String>,
-    answers: Recent<SongsAsked, Arc<[RecordingMatch]>>,
+    answers: Recent<SongsAsked, Answer>,
     meant: Option<Meant>,
     as_typed: bool,
     reaching_out: Option<SongsAsked>,
@@ -831,6 +838,7 @@ impl LibraryModel {
             albums_wanted: AHashMap::new(),
             albums_opening: AHashSet::new(),
             artists_found: Arc::default(),
+            albums_found: Arc::default(),
             artists_opening: AHashSet::new(),
             albums_missing_tracks_wanted: AHashSet::new(),
             album_songs: AHashMap::new(),
@@ -1160,8 +1168,20 @@ impl LibraryModel {
                 found: self.shown.len(),
             })
             .into(),
-            Selection::Everything => Arc::default(),
+            Selection::Everything => beyond_the_listing(Reaching {
+                held: listing.len(),
+                whole: listing.len() as u64 >= u64::from(self.tracks_measured.rows),
+                found: self.searched_found(),
+            })
+            .into(),
         };
+    }
+
+    fn searched_found(&self) -> usize {
+        match self.query.is_empty() {
+            true => 0,
+            false => self.shown.len(),
+        }
     }
 
     pub fn elsewhere(&self) -> Option<Beyond> {
@@ -1235,6 +1255,29 @@ impl LibraryModel {
         }
     }
 
+    pub fn albums_found(&self) -> Arc<[AlbumFound]> {
+        match self.found_for.as_deref() {
+            Some(asked)
+                if self.selection == Selection::Everything
+                    && !self.query.is_empty()
+                    && asked == self.query =>
+            {
+                Arc::clone(&self.albums_found)
+            }
+            Some(_) | None => Arc::default(),
+        }
+    }
+
+    pub fn found_at(&self, row: usize) -> Option<Found> {
+        match self.rows.get(row)? {
+            ListedRow::Found(at) => self.shown.get(*at).cloned(),
+            ListedRow::Disc(_)
+            | ListedRow::Held(_)
+            | ListedRow::Missing(_)
+            | ListedRow::NotHeld(_) => None,
+        }
+    }
+
     pub const fn sung(&self) -> Option<&Sung> {
         self.sung.as_ref()
     }
@@ -1301,7 +1344,14 @@ impl LibraryModel {
             let asked = words.clone();
             let answered = cx
                 .background_executor()
-                .spawn(async move { reference.find_songs(&asked) })
+                .spawn(async move {
+                    let songs = reference.find_songs(&asked)?;
+                    let albums = reference.find_albums(&asked.words).unwrap_or_else(|error| {
+                        tracing::debug!(%error, "albums could not be asked elsewhere");
+                        Vec::new()
+                    });
+                    Ok((songs, albums))
+                })
                 .await;
             let _ = this.update(cx, |this, cx| this.reached(words, answered, cx));
         });
@@ -1310,7 +1360,7 @@ impl LibraryModel {
     fn reached(
         &mut self,
         words: SongsAsked,
-        answered: resonate_library::Result<Vec<RecordingMatch>>,
+        answered: resonate_library::Result<(Vec<RecordingMatch>, Vec<AlbumMatch>)>,
         cx: &mut Context<Self>,
     ) {
         self.reaching_out = None;
@@ -1321,9 +1371,15 @@ impl LibraryModel {
             .and_then(songs_asked)
             .is_some_and(|asked| asked == words);
         match answered {
-            Ok(matches) => {
-                let weighed = weighed_for(&words, matches);
-                self.answers.insert(words, weighed.into());
+            Ok((songs, albums)) => {
+                let songs = weighed_for(&words, songs);
+                self.answers.insert(
+                    words,
+                    Answer {
+                        songs: songs.into(),
+                        albums: albums.into(),
+                    },
+                );
             }
             Err(error) if current => {
                 tracing::warn!(%error, "a search could not be asked elsewhere");
@@ -1344,7 +1400,7 @@ impl LibraryModel {
         }
     }
 
-    fn show_answer(&mut self, answered: Arc<[RecordingMatch]>, cx: &mut Context<Self>) {
+    fn show_answer(&mut self, answered: Answer, cx: &mut Context<Self>) {
         let Some(text) = self.asking.clone() else {
             return;
         };
@@ -1352,11 +1408,12 @@ impl LibraryModel {
 
         self._showing = cx.spawn(async move |this, cx| {
             let asked = text.clone();
-            let (found, artists) = cx
+            let (found, artists, albums) = cx
                 .background_executor()
                 .spawn(async move {
-                    let artists = library.unheld_artists_among(&answered, &asked);
-                    (library.unheld_among(answered.to_vec()), artists)
+                    let artists = library.unheld_artists_among(&answered.songs, &asked);
+                    let albums = library.unheld_albums_among(&answered.albums, &asked);
+                    (library.unheld_among(answered.songs.to_vec()), artists, albums)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
@@ -1370,6 +1427,13 @@ impl LibraryModel {
                     Ok(artists) => artists.into(),
                     Err(error) => {
                         tracing::warn!(%error, "artists found elsewhere could not be weighed against the catalog");
+                        Arc::default()
+                    }
+                };
+                this.albums_found = match albums {
+                    Ok(albums) => albums.into(),
+                    Err(error) => {
+                        tracing::warn!(%error, "albums found elsewhere could not be weighed against the catalog");
                         Arc::default()
                     }
                 };

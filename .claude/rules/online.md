@@ -115,7 +115,9 @@ the loose `dismax` shape; the `a_*_query_names_only_what_was_asked` tests pin ea
   artist is credited under (`songs_credited_search`), whose answer leads, and as the loose dismax
   words. Dismax alone ranks a recording *titled* with the words (a cover, a mashup, *Twenty One
   Pilots* by someone else) above the band's own songs, so searching an artist's name found none
-  of them.
+  of them. **`find_albums` asks the same two ways of `/release-group/`** (`albums_credited_search`,
+  then `albums_search`, each `ALBUMS_FOUND_AT_MOST`), reading `primary-type`, `secondary-types` and
+  `first-release-date` into an `AlbumMatch`; the library decides which are albums.
 - **A search answer is read for where each recording sits.** The index spells a medium's track list
   `track` where a lookup spells `tracks` (one `alias`) and gives no `position`, so `placed` falls
   back to `track-offset` plus one; its `isrcs` are read through the same filter, so a

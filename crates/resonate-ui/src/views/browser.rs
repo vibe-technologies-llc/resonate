@@ -13,10 +13,10 @@ use gpui::{
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
-    Album, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut, Favoured,
-    Found, Genre, GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured,
+    Album, AlbumFound, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut,
+    Favoured, Found, Genre, GroupRelease, HeldMedium, HeldReleaseTrack, Link, Lit, Mbid, Measured,
     MissingTrack, PlaylistEntry, Recording, RecordingRelease, ReleaseDetail, Service, Track,
-    UnheldRelease, in_the_order_worth_offering,
+    in_the_order_worth_offering,
 };
 use smallvec::smallvec;
 
@@ -198,17 +198,20 @@ impl RootView {
         let reads = library.search().reads();
         let nothing = albums.is_empty();
         let counted = library.albums_counted() as usize;
-        let found_nothing = nothing.then(|| {
-            self.nothing_matched(
-                Icon::Albums,
-                if narrowed {
-                    "No albums match."
-                } else {
-                    "No albums yet."
-                },
-                (!narrowed).then_some("Add a music folder from Settings to scan one in."),
-                cx,
-            )
+        let beyond = self.albums_found_beyond(cx);
+        let found_nothing = (nothing && beyond.is_none()).then(|| {
+            self.nothing_beyond(cx).unwrap_or_else(|| {
+                self.nothing_matched(
+                    Icon::Albums,
+                    if narrowed {
+                        "No albums match."
+                    } else {
+                        "No albums yet."
+                    },
+                    (!narrowed).then_some("Add a music folder from Settings to scan one in."),
+                    cx,
+                )
+            })
         });
         let columns = self.grid_columns();
         let held = albums.len();
@@ -304,7 +307,20 @@ impl RootView {
                         ),
                 )
             })
+            .when_some(beyond, Div::child)
             .into_any_element()
+    }
+
+    fn albums_found_beyond(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let found = self.library.read(cx).albums_found();
+        (self.search_in_front(cx).is_some() && !found.is_empty())
+            .then(|| self.albums_found_strip(&found, cx))
+    }
+
+    fn artists_found_beyond(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let found = self.library.read(cx).artists_found();
+        (self.search_in_front(cx).is_some() && !found.is_empty())
+            .then(|| self.artists_found_strip(&found, cx))
     }
 
     pub(crate) fn grid_columns(&self) -> usize {
@@ -537,17 +553,20 @@ impl RootView {
             self.land_where_it_was_left(held);
         }
 
-        let found_nothing = nothing.then(|| {
-            self.nothing_matched(
-                Icon::Artists,
-                if narrowed {
-                    "No artists match."
-                } else {
-                    "No artists yet."
-                },
-                (!narrowed).then_some("Add a music folder from Settings to scan one in."),
-                cx,
-            )
+        let beyond = self.artists_found_beyond(cx);
+        let found_nothing = (nothing && beyond.is_none()).then(|| {
+            self.nothing_beyond(cx).unwrap_or_else(|| {
+                self.nothing_matched(
+                    Icon::Artists,
+                    if narrowed {
+                        "No artists match."
+                    } else {
+                        "No artists yet."
+                    },
+                    (!narrowed).then_some("Add a music folder from Settings to scan one in."),
+                    cx,
+                )
+            })
         });
 
         let heading = self.search_heading(cx).unwrap_or_else(|| {
@@ -679,6 +698,7 @@ impl RootView {
                     ),
                 )
             })
+            .when_some(beyond, Div::child)
             .into_any_element()
     }
 
@@ -696,8 +716,10 @@ impl RootView {
         let playing = self.playing_now(cx).track;
         let rows = self.library.read(cx).rows();
         let nothing = tracks.is_empty() && rows.is_empty();
-        let found_nothing =
-            nothing.then(|| self.nothing_matched(Icon::Tracks, "No tracks match.", None, cx));
+        let found_nothing = nothing.then(|| {
+            self.nothing_beyond(cx)
+                .unwrap_or_else(|| self.nothing_matched(Icon::Tracks, "No tracks match.", None, cx))
+        });
         let heading = self.heading(cx);
         let in_an_album = matches!(self.library.read(cx).selection(), Selection::Album(_));
         let rowed = !rows.is_empty();
@@ -2273,12 +2295,58 @@ impl RootView {
         side: f32,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let group = album.release.mbid.clone();
+        self.unheld_album_cell(
+            UnheldAlbum {
+                group: &album.release.mbid,
+                pressing: album.pressing.as_ref(),
+                title: &album.release.title,
+                caption: described(&album.release.kind, album.release.first_released.as_deref()),
+            },
+            side,
+            cx,
+        )
+    }
+
+    pub(crate) fn album_found_cell(
+        &self,
+        album: &AlbumFound,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let by = SharedString::from(album.artist.clone());
+        let described = described(&album.kind, album.first_released.as_deref());
+        let caption = match described.is_empty() {
+            true => by.to_string(),
+            false => format!("{by} · {described}"),
+        };
+
+        let selector = format!("album-found-{}", album.group);
+
+        self.unheld_album_cell(
+            UnheldAlbum {
+                group: &album.group,
+                pressing: None,
+                title: &album.title,
+                caption,
+            },
+            side,
+            cx,
+        )
+        .debug_selector(move || selector.clone())
+    }
+
+    fn unheld_album_cell(
+        &self,
+        album: UnheldAlbum<'_>,
+        side: f32,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let group = album.group.clone();
         let fetching = self.library.read(cx).fetching_album(&group);
         let can_ask = self.library.read(cx).can_enrich();
         let art = self.library.update(cx, |library, cx| {
             library.released_cover_with_group(
-                album.pressing.as_ref().unwrap_or(&group),
+                album.pressing.unwrap_or(&group),
                 Some(&group),
                 Drawn::InAGrid,
                 cx,
@@ -2294,7 +2362,7 @@ impl RootView {
                 .child(fetching.saying()),
             None => div()
                 .text_color(rgb(theme::faint()))
-                .child(SharedString::from(described(&album.release))),
+                .child(SharedString::from(album.caption)),
         };
         let pressable = can_ask;
 
@@ -2334,7 +2402,7 @@ impl RootView {
                             .text_color(rgb(theme::faint()))
                             .truncate()
                             .ends_in_an_ellipsis()
-                            .child(SharedString::from(album.release.title.clone())),
+                            .child(SharedString::from(album.title.to_owned())),
                     )
                     .child(
                         under
@@ -2850,12 +2918,17 @@ fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
         )))
 }
 
-fn described(release: &UnheldRelease) -> String {
+struct UnheldAlbum<'a> {
+    group: &'a Mbid,
+    pressing: Option<&'a Mbid>,
+    title: &'a str,
+    caption: String,
+}
+
+fn described(kind: &Option<String>, first_released: Option<&str>) -> String {
     [
-        release.kind.clone(),
-        release
-            .first_released
-            .as_deref()
+        kind.clone(),
+        first_released
             .and_then(|date| date.get(..4))
             .map(str::to_owned),
     ]
@@ -3593,12 +3666,12 @@ mod tests {
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
-            AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, CoverArt,
-            Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked, GroupMatch, Issued,
-            Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Recording,
-            RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
-            ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked,
-            Track, TrackQuery,
+            AlbumLink, AlbumMatch, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch,
+            CoverArt, Credit, Discography, EnrichOptions, Fingerprinters, GroupAsked, GroupMatch,
+            Issued, Library, Link, LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
+            Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release,
+            ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked,
+            StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -3730,6 +3803,18 @@ mod tests {
 
             fn find_release_group(&self, _: &GroupAsked) -> Result<Vec<GroupMatch>> {
                 Ok(Vec::new())
+            }
+
+            fn find_albums(&self, _: &str) -> Result<Vec<AlbumMatch>> {
+                Ok(vec![AlbumMatch {
+                    group: mbid(HEROES_TONIGHT_GROUP),
+                    score: 100,
+                    title: "Heroes Tonight".to_owned(),
+                    credit: janji(),
+                    kind: Some("Album".to_owned()),
+                    secondary: Vec::new(),
+                    first_released: Some("2015-12-22".to_owned()),
+                }])
             }
 
             fn group_cover(&self, _: &Mbid) -> Result<Option<CoverArt>> {
@@ -4079,13 +4164,74 @@ mod tests {
                 driven.read(|root, cx| (root.pane, root.search_in_front(cx))),
                 (Pane::Tracks, Some(SearchShows::Songs))
             );
-            assert!(driven.read(|root, cx| root.library.read(cx).rows().is_empty()));
+            let (held, found) = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                (library.listing().len(), library.found().len())
+            });
+            let rows = driven.read(|root, cx| root.library.read(cx).rows());
+            assert_eq!(rows.len(), held + 1 + found);
+            assert_eq!(rows[held], crate::ListedRow::NotHeld(found));
+            assert!(
+                rows.iter()
+                    .skip(held + 1)
+                    .enumerate()
+                    .all(|(at, row)| *row == crate::ListedRow::Found(at)),
+                "the songs found follow the songs held, under their own heading"
+            );
+            assert!(driven.read(|root, cx| root.library.read(cx).found_at(held + 1).is_some()));
 
-            driven.click("search-elsewhere");
+            driven.click("search-top");
             driven.bounds_of("found-0");
 
             driven.click("found-0");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
+        }
+
+        #[gpui::test]
+        fn an_album_found_elsewhere_stands_under_the_albums_held_and_in_the_top_results(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tagged(
+                "heroes.wav",
+                1,
+                &[
+                    (b"IART", "Janji"),
+                    (b"INAM", "Heroes Again"),
+                    (b"IPRD", "Heroes"),
+                ],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let mut driven = Driven::reaching(cx, library, &folder, reaching);
+            let cell: &'static str =
+                Box::leak(format!("album-found-{HEROES_TONIGHT_GROUP}").into_boxed_str());
+
+            let search = driven.read(|root, _| root.search.clone());
+            driven.cx.update(|_, cx| {
+                search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
+            });
+            driven.until(|root, cx| !root.library.read(cx).albums_found().is_empty());
+            let seen = driven.cx.update(|window, _| window.viewport_size());
+
+            assert!(driven.bounds_of(cell).bottom() <= seen.height);
+
+            driven.click("search-albums");
+
+            assert_eq!(
+                driven.read(|root, cx| (root.pane, root.search_in_front(cx))),
+                (Pane::Albums, Some(SearchShows::Albums))
+            );
+            assert!(driven.bounds_of(cell).bottom() <= seen.height);
+            assert_eq!(
+                driven.read(|root, cx| root.library.read(cx).albums().len()),
+                1,
+                "the album held is still the grid"
+            );
         }
 
         #[gpui::test]

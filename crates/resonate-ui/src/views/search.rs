@@ -1,10 +1,8 @@
-use std::ops::Range;
-
 use gpui::{
     AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
-    rgb, transparent_black, uniform_list,
+    rgb, transparent_black,
 };
-use resonate_library::{ArtistFound, FollowedLink, Linked};
+use resonate_library::{AlbumFound, ArtistFound, FollowedLink, Linked};
 
 use crate::{
     Beyond, Notice, Selection, format,
@@ -18,7 +16,7 @@ use crate::{
         playlists::{Naming, SAVE_SEARCH_HINT},
         pointed::LitUnderThePointer,
         reorder::{self, Listed, Shift},
-        root::{Pane, RootView, empty},
+        root::{Pane, RootView},
         scrollbar::{SHELF_INSET, Scrollbars},
     },
 };
@@ -33,11 +31,9 @@ const ARTIST_AT_THE_TOP: f32 = 72.0;
 
 const ARTISTS_NOT_HELD: &str = "Artists not in your library";
 
+const ALBUMS_NOT_HELD: &str = "Albums not in your library";
+
 const NOTHING_MATCHES: &str = "Nothing in your library matches.";
-
-const NOTHING_ELSEWHERE: &str = "Nothing found beyond your library.";
-
-const ONLINE_IS_OFF: &str = "Turn Online on in Settings to look for songs on MusicBrainz too.";
 
 const ASKING: &str = "Asking MusicBrainz…";
 
@@ -92,17 +88,10 @@ pub(crate) enum SearchShows {
     Songs,
     Albums,
     Artists,
-    Elsewhere,
 }
 
 impl SearchShows {
-    const ALL: [Self; 5] = [
-        Self::Top,
-        Self::Songs,
-        Self::Albums,
-        Self::Artists,
-        Self::Elsewhere,
-    ];
+    const ALL: [Self; 4] = [Self::Top, Self::Songs, Self::Albums, Self::Artists];
 
     pub(crate) const fn in_place_of(pane: Pane) -> Option<Self> {
         match pane {
@@ -118,7 +107,7 @@ impl SearchShows {
             Self::Songs => Some(Pane::Tracks),
             Self::Albums => Some(Pane::Albums),
             Self::Artists => Some(Pane::Artists),
-            Self::Top | Self::Elsewhere => None,
+            Self::Top => None,
         }
     }
 
@@ -128,7 +117,6 @@ impl SearchShows {
             Self::Songs => "search-songs",
             Self::Albums => "search-albums",
             Self::Artists => "search-artists",
-            Self::Elsewhere => "search-elsewhere",
         }
     }
 
@@ -138,29 +126,15 @@ impl SearchShows {
             Self::Songs => "Songs",
             Self::Albums => "Albums",
             Self::Artists => "Artists",
-            Self::Elsewhere => "Not in your library",
         }
     }
 
     const fn saying(self) -> &'static str {
         match self {
             Self::Top => "The best of each kind of match, on one page",
-            Self::Songs => "Every song in your library that matches",
-            Self::Albums => "Every album in your library that matches",
-            Self::Artists => "Every artist in your library that matches",
-            Self::Elsewhere => {
-                "Songs that match but are not in your library, to download with a press"
-            }
-        }
-    }
-
-    const fn see_all(self) -> &'static str {
-        match self {
-            Self::Top => "",
-            Self::Songs => "See every matching song",
-            Self::Albums => "See every matching album",
-            Self::Artists => "See every matching artist",
-            Self::Elsewhere => "See every matching song not in your library",
+            Self::Songs => "Every song that matches, in your library and beyond it",
+            Self::Albums => "Every album that matches, in your library and beyond it",
+            Self::Artists => "Every artist that matches, in your library and beyond it",
         }
     }
 
@@ -169,7 +143,60 @@ impl SearchShows {
             Self::Songs => Some("order-tracks"),
             Self::Albums => Some("order-albums"),
             Self::Artists => Some("order-artists"),
-            Self::Top | Self::Elsewhere => None,
+            Self::Top => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Section {
+    Songs,
+    Found,
+    Albums,
+    Artists,
+}
+
+impl Section {
+    const fn shows(self) -> SearchShows {
+        match self {
+            Self::Songs | Self::Found => SearchShows::Songs,
+            Self::Albums => SearchShows::Albums,
+            Self::Artists => SearchShows::Artists,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Songs => "Songs",
+            Self::Found => "Not in your library",
+            Self::Albums => "Albums",
+            Self::Artists => "Artists",
+        }
+    }
+
+    const fn id(self) -> &'static str {
+        match self {
+            Self::Songs => "search-songs",
+            Self::Found => "search-found",
+            Self::Albums => "search-albums",
+            Self::Artists => "search-artists",
+        }
+    }
+
+    const fn shown(self) -> usize {
+        match self {
+            Self::Songs => SONGS_AT_THE_TOP,
+            Self::Found => FOUND_AT_THE_TOP,
+            Self::Albums | Self::Artists => STRIP_AT_MOST,
+        }
+    }
+
+    const fn see_all(self) -> &'static str {
+        match self {
+            Self::Songs => "See every matching song",
+            Self::Found => "See every matching song, in your library and beyond it",
+            Self::Albums => "See every matching album",
+            Self::Artists => "See every matching artist",
         }
     }
 }
@@ -179,8 +206,9 @@ struct Matched {
     songs: usize,
     albums: usize,
     artists: usize,
+    albums_found: usize,
+    artists_found: usize,
     elsewhere: Option<Beyond>,
-    asks_elsewhere: bool,
 }
 
 impl Matched {
@@ -191,8 +219,9 @@ impl Matched {
             songs: library.tracks_counted() as usize,
             albums: library.albums_counted() as usize,
             artists: library.artists_counted() as usize,
+            albums_found: library.albums_found().len(),
+            artists_found: library.artists_found().len(),
             elsewhere: library.elsewhere(),
-            asks_elsewhere: library.can_enrich(),
         }
     }
 
@@ -218,46 +247,51 @@ impl Matched {
             + " in your library"
     }
 
+    fn songs_found(self) -> usize {
+        match self.elsewhere {
+            Some(Beyond::Elsewhere(found) | Beyond::Refining(found)) => found,
+            Some(Beyond::Asking | Beyond::Unreached) | None => 0,
+        }
+    }
+
     fn beyond(self) -> Option<String> {
+        let found = [
+            (self.songs_found(), "song", "songs"),
+            (self.albums_found, "album", "albums"),
+            (self.artists_found, "artist", "artists"),
+        ]
+        .into_iter()
+        .filter(|(count, _, _)| *count > 0)
+        .map(|(count, one, many)| format::counted(count, one, many))
+        .collect::<Vec<_>>()
+        .join(" · ");
+
         Some(match self.elsewhere? {
-            Beyond::Elsewhere(found) => {
-                format!("{} not in it", format::counted(found, "song", "songs"))
+            Beyond::Elsewhere(_) => format!("{found} not in it"),
+            Beyond::Refining(_) => {
+                format!("{found} not in it so far, asking MusicBrainz for the rest…")
             }
-            Beyond::Refining(found) => format!(
-                "{} not in it so far, asking MusicBrainz for the rest…",
-                format::counted(found, "song", "songs")
-            ),
-            Beyond::Asking => "asking MusicBrainz for more…".to_owned(),
+            Beyond::Asking if found.is_empty() => "asking MusicBrainz for more…".to_owned(),
+            Beyond::Asking => format!("{found} not in it so far, asking MusicBrainz for more…"),
             Beyond::Unreached => "MusicBrainz could not be reached".to_owned(),
         })
     }
 
     fn counted(self, shows: SearchShows) -> Option<SharedString> {
-        let count = match shows {
+        let (held, found) = match shows {
             SearchShows::Top => return None,
-            SearchShows::Songs => self.songs,
-            SearchShows::Albums => self.albums,
-            SearchShows::Artists => self.artists,
-            SearchShows::Elsewhere => match self.elsewhere {
-                Some(Beyond::Asking) => return Some(SharedString::new_static("…")),
-                Some(Beyond::Refining(found)) => {
-                    return Some(SharedString::from(format!("{found}…")));
-                }
-                Some(Beyond::Elsewhere(found)) => found,
-                Some(Beyond::Unreached) | None => 0,
-            },
+            SearchShows::Songs => (self.songs, self.songs_found()),
+            SearchShows::Albums => (self.albums, self.albums_found),
+            SearchShows::Artists => (self.artists, self.artists_found),
         };
+        let asking = matches!(self.elsewhere, Some(Beyond::Asking | Beyond::Refining(_)));
+        let count = held + found;
 
-        Some(SharedString::from(count.to_string()))
-    }
-
-    fn offers(self, shows: SearchShows) -> bool {
-        match shows {
-            SearchShows::Elsewhere => self.asks_elsewhere || self.elsewhere.is_some(),
-            SearchShows::Top | SearchShows::Songs | SearchShows::Albums | SearchShows::Artists => {
-                true
-            }
-        }
+        Some(SharedString::from(if asking {
+            format!("{count}…")
+        } else {
+            count.to_string()
+        }))
     }
 }
 
@@ -348,7 +382,6 @@ impl RootView {
             SearchShows::Songs => self.tracks(cx),
             SearchShows::Albums => self.albums(cx),
             SearchShows::Artists => self.artists(cx),
-            SearchShows::Elsewhere => self.not_in_the_library(cx),
         }
     }
 
@@ -381,6 +414,7 @@ impl RootView {
             }))
         });
         let sung = self.sung_offer(Tone::Ghost, cx);
+        let again = (matched.elsewhere == Some(Beyond::Unreached)).then(|| self.ask_again(cx));
         let saves = naming.is_none().then(|| {
             kit::button(
                 "save-search",
@@ -408,6 +442,7 @@ impl RootView {
 
         let actions = kit::actions()
             .children(as_typed)
+            .children(again)
             .children(sung)
             .children(saves)
             .children(orders)
@@ -454,10 +489,7 @@ impl RootView {
 
     fn search_tabs(&self, shows: SearchShows, matched: Matched, cx: &mut Context<Self>) -> Div {
         let mut tabs = div().flex().flex_wrap().items_end().gap_5();
-        for tab in SearchShows::ALL
-            .into_iter()
-            .filter(|tab| matched.offers(*tab))
-        {
+        for tab in SearchShows::ALL {
             tabs = tabs.child(self.search_tab(tab, tab == shows, matched.counted(tab), cx));
         }
 
@@ -530,6 +562,7 @@ impl RootView {
         let artists = library.artists();
         let found = library.found();
         let artists_found = library.artists_found();
+        let albums_found = library.albums_found();
         let shared_with_a_lookup = library.is_enriching();
         let playing = self.playing_now(cx).track;
         let pane = div()
@@ -544,12 +577,13 @@ impl RootView {
             && artists.is_empty()
             && found.is_empty()
             && artists_found.is_empty()
+            && albums_found.is_empty()
         {
             let nothing = match matched.elsewhere {
                 Some(Beyond::Asking | Beyond::Refining(_)) => {
                     kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES))
                 }
-                Some(Beyond::Unreached) => self.unreached(cx),
+                Some(Beyond::Unreached) => Self::unreached(),
                 Some(Beyond::Elsewhere(_)) | None => {
                     self.nothing_matched(Icon::Search, NOTHING_MATCHES, None, cx)
                 }
@@ -577,7 +611,7 @@ impl RootView {
                 })
                 .collect();
             sections = sections
-                .child(self.section_heading(SearchShows::Artists, matched.artists, None, cx))
+                .child(self.section_heading(Section::Artists, matched.artists, None, cx))
                 .child(self.strip("search-artist-strip", cells, cx));
         }
 
@@ -602,7 +636,7 @@ impl RootView {
                 ));
             }
             sections = sections
-                .child(self.section_heading(SearchShows::Songs, matched.songs, None, cx))
+                .child(self.section_heading(Section::Songs, matched.songs, None, cx))
                 .child(rows);
         }
 
@@ -620,12 +654,8 @@ impl RootView {
                 let reached = self.reaches(Shift::Listing(Listed::Found), index);
                 rows = rows.child(reorder::marked(self.found_row(index, song, cx), reached));
             }
-            let again = (beyond == Beyond::Unreached).then(|| self.ask_again(cx));
             sections = sections
-                .child(
-                    self.section_heading(SearchShows::Elsewhere, found.len(), Some(said), cx)
-                        .children(again),
-                )
+                .child(self.section_heading(Section::Found, found.len(), Some(said), cx))
                 .child(rows);
         }
 
@@ -639,8 +669,12 @@ impl RootView {
                 })
                 .collect();
             sections = sections
-                .child(self.section_heading(SearchShows::Albums, matched.albums, None, cx))
+                .child(self.section_heading(Section::Albums, matched.albums, None, cx))
                 .child(self.strip("search-album-strip", cells, cx));
+        }
+
+        if !albums_found.is_empty() {
+            sections = sections.child(self.albums_found_strip(&albums_found, cx));
         }
 
         pane.child(Scrollbars::of(cx).around(
@@ -653,25 +687,22 @@ impl RootView {
 
     fn section_heading(
         &self,
-        shows: SearchShows,
+        section: Section,
         held: usize,
         said: Option<&'static str>,
         cx: &mut Context<Self>,
     ) -> Div {
-        let shown = match shows {
-            SearchShows::Songs => SONGS_AT_THE_TOP,
-            SearchShows::Elsewhere => FOUND_AT_THE_TOP,
-            SearchShows::Top | SearchShows::Albums | SearchShows::Artists => STRIP_AT_MOST,
-        };
-        let more = (held > shown).then(|| {
+        let more = (held > section.shown()).then(|| {
             kit::button(
-                gpui::ElementId::from(SharedString::from(format!("see-all-{}", shows.id()))),
+                gpui::ElementId::from(SharedString::from(format!("see-all-{}", section.id()))),
                 None,
                 format!("See all {held}"),
-                shows.see_all(),
+                section.see_all(),
                 Tone::Ghost,
             )
-            .on_click(cx.listener(move |this, _, _, cx| this.show_in_the_search(shows, cx)))
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.show_in_the_search(section.shows(), cx)),
+            )
         });
 
         div()
@@ -688,7 +719,7 @@ impl RootView {
                     .text_size(px(theme::text_base()))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
-                    .child(shows.label()),
+                    .child(section.label()),
             )
             .child(
                 div()
@@ -702,7 +733,7 @@ impl RootView {
             .children(more)
     }
 
-    fn artists_found_strip(&self, found: &[ArtistFound], cx: &mut Context<Self>) -> Div {
+    pub(crate) fn artists_found_strip(&self, found: &[ArtistFound], cx: &mut Context<Self>) -> Div {
         let cells = found
             .iter()
             .map(|artist| {
@@ -711,6 +742,28 @@ impl RootView {
             })
             .collect();
 
+        self.found_strip(ARTISTS_NOT_HELD, "search-artists-found-strip", cells, cx)
+    }
+
+    pub(crate) fn albums_found_strip(&self, found: &[AlbumFound], cx: &mut Context<Self>) -> Div {
+        let cells = found
+            .iter()
+            .map(|album| {
+                self.album_found_cell(album, theme::shelf_cover(), cx)
+                    .into_any_element()
+            })
+            .collect();
+
+        self.found_strip(ALBUMS_NOT_HELD, "search-albums-found-strip", cells, cx)
+    }
+
+    fn found_strip(
+        &self,
+        named: &'static str,
+        id: &'static str,
+        cells: Vec<AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> Div {
         div()
             .flex()
             .flex_col()
@@ -724,9 +777,9 @@ impl RootView {
                     .text_size(px(theme::text_base()))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
-                    .child(ARTISTS_NOT_HELD),
+                    .child(named),
             )
-            .child(self.strip("search-artists-found-strip", cells, cx))
+            .child(self.strip(id, cells, cx))
     }
 
     fn strip(&self, id: &'static str, cells: Vec<AnyElement>, cx: &mut Context<Self>) -> Div {
@@ -769,78 +822,18 @@ impl RootView {
         }))
     }
 
-    fn unreached(&self, cx: &mut Context<Self>) -> AnyElement {
-        kit::empty_offering(Icon::Search, UNREACHED, None, self.ask_again(cx))
+    pub(crate) fn nothing_beyond(&self, cx: &App) -> Option<AnyElement> {
+        self.search_in_front(cx)?;
+        match self.library.read(cx).elsewhere()? {
+            Beyond::Asking | Beyond::Refining(_) => {
+                Some(kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES)))
+            }
+            Beyond::Unreached => Some(Self::unreached()),
+            Beyond::Elsewhere(_) => None,
+        }
     }
 
-    fn not_in_the_library(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let heading = self.search_heading(cx);
-        let library = self.library.read(cx);
-        let found = library.found();
-        let artists_found = library.artists_found();
-        let elsewhere = library.elsewhere();
-        let can_enrich = library.can_enrich();
-        let held = found.len();
-        let pane = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .children(heading);
-
-        if found.is_empty() && artists_found.is_empty() {
-            let nothing = match elsewhere {
-                Some(Beyond::Asking | Beyond::Refining(_)) => empty(Icon::Search, ASKING, None),
-                Some(Beyond::Unreached) => self.unreached(cx),
-                Some(Beyond::Elsewhere(_)) | None => empty(
-                    Icon::Search,
-                    NOTHING_ELSEWHERE,
-                    (!can_enrich).then_some(ONLINE_IS_OFF),
-                ),
-            };
-            return pane.child(nothing).into_any_element();
-        }
-
-        let artists_strip =
-            (!artists_found.is_empty()).then(|| self.artists_found_strip(&artists_found, cx));
-
-        pane.children(artists_strip)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .pt_2()
-                    .child(
-                        Scrollbars::of(cx).around(
-                            "found-scrollbar",
-                            self.found_rows.clone(),
-                            uniform_list(
-                                "found-songs",
-                                held,
-                                cx.processor(move |this, range: Range<usize>, _, cx| {
-                                    let mut drawn = Vec::new();
-                                    for index in range {
-                                        let Some(song) = found.get(index) else {
-                                            continue;
-                                        };
-                                        let reached =
-                                            this.reaches(Shift::Listing(Listed::Found), index);
-                                        drawn.push(reorder::marked(
-                                            this.found_row(index, song, cx),
-                                            reached,
-                                        ));
-                                    }
-                                    drawn
-                                }),
-                            )
-                            .track_scroll(self.found_rows.clone())
-                            .h_full()
-                            .w_full(),
-                        ),
-                    ),
-            )
-            .into_any_element()
+    pub(crate) fn unreached() -> AnyElement {
+        kit::empty(Icon::Search, UNREACHED, None)
     }
 }

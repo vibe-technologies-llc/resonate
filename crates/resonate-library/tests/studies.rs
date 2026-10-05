@@ -12,13 +12,13 @@ use std::{
 
 use resonate_core::{MediaLocation, SourceId, TrackHints};
 use resonate_library::{
-    Agreement, AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, CoverArt,
-    Credit, Discography, EnrichOptions, EnrichSummary, Error, Fingerprinters, Fingerprints,
-    GroupAsked, GroupMatch, ImportOptions, Isrc, Library, Link, LinkNames, LookupOp, LyricText,
-    LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked, RecordingMatch, Reference,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink,
-    SongsAsked, SortOrder, Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault,
-    Verdict, WAITS,
+    Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistMatch, ArtistProfile, Barcode,
+    BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions, EnrichSummary, Error,
+    Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions, Isrc, Library, Link,
+    LinkNames, LookupOp, LyricText, LyricsAsked, Mbid, Medium, Printed, Recording, RecordingAsked,
+    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources, StreamAsked,
+    StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -250,6 +250,10 @@ impl Reference for Silent {
     }
 
     fn find_release_group(&self, _asked: &GroupAsked) -> Result<Vec<GroupMatch>> {
+        Ok(Vec::new())
+    }
+
+    fn find_albums(&self, _words: &str) -> Result<Vec<AlbumMatch>> {
         Ok(Vec::new())
     }
 

@@ -5,11 +5,15 @@ use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, WantId};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
-    ByArtist, Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release, Result,
-    Search, StoreOp, enriched, store,
+    AlbumMatch, ByArtist, Column, Error, Issued, Mbid, RecordingMatch, RecordingRelease, Release,
+    Result, Search, StoreOp, enrich::SOUNDTRACK, enriched, store,
 };
 
 pub const FOUND_ELSEWHERE_AT_MOST: usize = 12;
+
+pub const ALBUMS_FOUND_ELSEWHERE_AT_MOST: usize = 12;
+
+const ALBUM_KINDS: [&str; 2] = [AN_ALBUM, AN_EP];
 
 pub const ARTISTS_FOUND_ELSEWHERE_AT_MOST: usize = 4;
 
@@ -76,13 +80,85 @@ pub struct ArtistFound {
     pub name: String,
 }
 
-pub(crate) fn artists_named_by(matches: &[RecordingMatch], text: &str) -> Vec<ArtistFound> {
-    let words: Vec<String> = words_asked(text)
+fn folded_words_asked(text: &str) -> Vec<String> {
+    words_asked(text)
         .iter()
         .flat_map(|word| word.split_whitespace())
         .map(store::folded_letters)
         .filter(|word| !word.is_empty())
-        .collect();
+        .collect()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlbumFound {
+    pub group: Mbid,
+    pub title: String,
+    pub artist: String,
+    pub kind: Option<String>,
+    pub first_released: Option<String>,
+}
+
+impl AlbumMatch {
+    fn is_an_album(&self) -> bool {
+        self.kind
+            .as_deref()
+            .is_some_and(|kind| ALBUM_KINDS.contains(&kind))
+            && self
+                .secondary
+                .iter()
+                .all(|secondary| secondary == SOUNDTRACK)
+    }
+
+    fn answers(&self, words: &[String]) -> bool {
+        let named: Vec<String> = std::iter::once(self.title.clone())
+            .chain(std::iter::once(self.credited_as()))
+            .flat_map(|text| {
+                text.split_whitespace()
+                    .map(store::folded_letters)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        words
+            .iter()
+            .all(|word| named.iter().any(|name| name.starts_with(word.as_str())))
+    }
+}
+
+pub(crate) fn albums_named_by(matches: &[AlbumMatch], text: &str) -> Vec<AlbumFound> {
+    let words = folded_words_asked(text);
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    let mut seen = AHashSet::new();
+    let mut named = Vec::new();
+    for matched in matches {
+        if !matched.is_an_album() || !matched.answers(&words) {
+            continue;
+        }
+        let artist = matched.credited_as();
+        let key = (
+            store::folded_letters(&matched.title),
+            store::folded_letters(&artist),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        named.push(AlbumFound {
+            group: matched.group.clone(),
+            title: matched.title.clone(),
+            artist,
+            kind: matched.kind.clone(),
+            first_released: matched.first_released.clone(),
+        });
+    }
+
+    named
+}
+
+pub(crate) fn artists_named_by(matches: &[RecordingMatch], text: &str) -> Vec<ArtistFound> {
+    let words = folded_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }
@@ -257,12 +333,7 @@ pub fn weighed_for(asked: &SongsAsked, matches: Vec<RecordingMatch>) -> Vec<Reco
 }
 
 pub fn still_answering(found: &[Found], text: &str) -> Vec<Found> {
-    let words: Vec<String> = words_asked(text)
-        .iter()
-        .flat_map(|word| word.split_whitespace())
-        .map(store::folded_letters)
-        .filter(|word| !word.is_empty())
-        .collect();
+    let words = folded_words_asked(text);
     if words.is_empty() {
         return Vec::new();
     }

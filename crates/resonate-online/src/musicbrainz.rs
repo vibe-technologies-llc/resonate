@@ -1,7 +1,7 @@
 use std::{fmt::Write, time::Duration};
 
 use resonate_library::{
-    ArtistMatch, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch, ByArtist, Credit,
+    AlbumMatch, ArtistMatch, ArtistProfile, ArtistRelease, Barcode, BarcodeMatch, ByArtist, Credit,
     Discography, Genre, GroupAsked, GroupMatch, GroupRelease, Isrc, Issued, LifeSpan, Link,
     LookupOp, Mbid, Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Release,
     ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, SongsAsked, Wording,
@@ -16,6 +16,7 @@ use crate::{
 
 const FOUND_AT_MOST: u32 = 5;
 const SONGS_FOUND_AT_MOST: u32 = 25;
+const ALBUMS_FOUND_AT_MOST: u32 = 25;
 const SPELT_LOOSELY_FROM: usize = 4;
 const RELEASES_FOUND_AT_MOST: u32 = 10;
 const BROWSE_PAGE: u32 = 100;
@@ -318,6 +319,12 @@ struct GroupFoundDoc {
     title: String,
     #[serde(default, rename = "artist-credit")]
     artist_credit: Vec<CreditDoc>,
+    #[serde(default, rename = "primary-type")]
+    primary_type: Option<String>,
+    #[serde(default, rename = "secondary-types")]
+    secondary_types: Vec<String>,
+    #[serde(default, rename = "first-release-date")]
+    first_release_date: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -717,6 +724,38 @@ pub(crate) fn find_release_group(client: &Client, asked: &GroupAsked) -> Result<
         .into_iter()
         .filter_map(GroupFoundDoc::into_match)
         .collect())
+}
+
+pub(crate) fn find_albums(client: &Client, words: &str) -> Result<Vec<AlbumMatch>> {
+    let mut found = albums_found(client, &albums_credited_search(words))?;
+    found.extend(albums_found(client, &albums_search(words))?);
+
+    Ok(found)
+}
+
+fn albums_found(client: &Client, path: &str) -> Result<Vec<AlbumMatch>> {
+    let op = LookupOp::FindReleaseGroup;
+    let found = client
+        .json::<GroupSearchDoc>(Host::MusicBrainz, op, path)?
+        .map(|document| document.release_groups)
+        .unwrap_or_default();
+
+    Ok(found
+        .into_iter()
+        .filter_map(GroupFoundDoc::into_album_match)
+        .collect())
+}
+
+fn albums_credited_search(words: &str) -> String {
+    searched(
+        "/release-group/",
+        &format!("artist:{}", lucene_quoted(words)),
+        ALBUMS_FOUND_AT_MOST,
+    )
+}
+
+fn albums_search(words: &str) -> String {
+    searched_in_words("/release-group/", words, None, ALBUMS_FOUND_AT_MOST)
 }
 
 fn release_search(asked: &ReleaseAsked) -> String {
@@ -1196,6 +1235,20 @@ impl BrowsedGroupDoc {
 }
 
 impl GroupFoundDoc {
+    fn into_album_match(self) -> Option<AlbumMatch> {
+        let group = mbid(Some(&self.id))?;
+
+        Some(AlbumMatch {
+            group,
+            score: self.score,
+            title: self.title,
+            credit: credits(self.artist_credit),
+            kind: present(self.primary_type),
+            secondary: self.secondary_types,
+            first_released: present(self.first_release_date),
+        })
+    }
+
     fn into_match(self) -> Option<GroupMatch> {
         let group = mbid(Some(&self.id))?;
 
@@ -1992,6 +2045,34 @@ mod tests {
 
         assert_eq!(found[1].score, 79);
         assert_eq!(found[1].title, "Meddle: Limited Edition Trance Remix");
+    }
+
+    #[test]
+    fn the_release_group_search_keeps_the_kind_and_date_an_album_is_listed_by() {
+        let found: Vec<AlbumMatch> = serde_json::from_str::<GroupSearchDoc>(RELEASE_GROUP_SEARCH)
+            .expect("the fixture parses")
+            .release_groups
+            .into_iter()
+            .filter_map(GroupFoundDoc::into_album_match)
+            .collect();
+
+        assert_eq!(found[0].group.as_str(), MEDDLE_GROUP);
+        assert_eq!(found[0].title, "Meddle");
+        assert_eq!(found[0].credited_as(), "Pink Floyd");
+        assert_eq!(found[0].kind.as_deref(), Some("Album"));
+        assert_eq!(found[0].first_released.as_deref(), Some("1971-10-30"));
+    }
+
+    #[test]
+    fn albums_are_searched_by_their_credit_and_then_by_the_words_alone() {
+        assert_eq!(
+            albums_credited_search("pink floyd"),
+            "/release-group/?query=artist%3A%22pink%20floyd%22&fmt=json&limit=25"
+        );
+        assert_eq!(
+            albums_search("pink floyd"),
+            "/release-group/?query=pink%20floyd&dismax=true&fmt=json&limit=25"
+        );
     }
 
     #[test]

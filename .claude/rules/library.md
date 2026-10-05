@@ -2408,6 +2408,17 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `want_found` with `Found::from` that release, so a song wanted for its single or compilation lands
   there rather than on the album the rule would choose.
   `a_found_song_offers_every_release_it_is_on_the_one_it_would_be_placed_on_first` is the claim.
+  **An album the words name is found beside the songs.** `Reference::find_albums` is a
+  release-group search by the words (`AlbumMatch`: group, title, credit, kind, secondary types, first
+  release date), asked after `find_songs` and failing without failing it; `Library::unheld_albums_among`
+  keeps an `AlbumFound` per album or EP (a soundtrack counts, nothing else with a secondary type does)
+  every folded word of which begins a word of its title or credit, once per folded title and credit, up to
+  `ALBUMS_FOUND_ELSEWHERE_AT_MOST` (12), dropping one the catalog holds by `albums.release_group` or by
+  folded title under an artist of the same key (an album found elsewhere and landed is not held)
+  (`an_album_the_words_name_is_offered_unless_the_catalog_holds_it`). Opening or wanting one is
+  `open_album_uncovered` and `want_album`, which read the group's songs themselves. Nothing offline
+  answers it: the lookup pass learns the songs of a library artist's unheld releases, not a search for
+  their albums.
   **An artist the words name is found the same way, off the answer already in hand.**
   `elsewhere::artists_named_by` reads the credits of the matches `find_songs` returned: a credit
   carrying a MusicBrainz id whose folded name has a word begun by every word typed

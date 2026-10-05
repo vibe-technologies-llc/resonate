@@ -3,10 +3,10 @@ use std::sync::Arc;
 use resonate_codec::CoverArt;
 use resonate_core::SourceId;
 use resonate_library::{
-    AlbumLink, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch, Discography,
-    GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText, LyricsAsked, Mbid, Recording,
-    RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    SongLink, SongsAsked, StreamAsked,
+    AlbumLink, AlbumMatch, AlbumNames, ArtistMatch, ArtistProfile, Barcode, BarcodeMatch,
+    Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames, LyricText, LyricsAsked, Mbid,
+    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, SongLink, SongsAsked, StreamAsked,
 };
 
 use crate::{
@@ -83,6 +83,10 @@ impl Reference for Online {
 
     fn find_release_group(&self, asked: &GroupAsked) -> resonate_library::Result<Vec<GroupMatch>> {
         Ok(musicbrainz::find_release_group(&self.client, asked)?)
+    }
+
+    fn find_albums(&self, words: &str) -> resonate_library::Result<Vec<AlbumMatch>> {
+        Ok(musicbrainz::find_albums(&self.client, words)?)
     }
 
     fn artist(&self, id: &Mbid) -> resonate_library::Result<Option<ArtistProfile>> {

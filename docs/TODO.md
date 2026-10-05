@@ -47,6 +47,9 @@ else is open to be done.
   no such file type; `.oga` alone could be mapped to Vorbis by hand
 
 ## Search
+- The albums a search finds beyond the library come from MusicBrainz alone: a library artist's
+  releases not held, learnt in the lookup pass, answer a search for their songs offline and none for
+  their albums
 - A pasted album link is wanted from the pressing most of its release group's pressings share, not
   the one whose barcode the link named, so a deluxe edition linked downloads the standard track list
 - An official music video longer than its song by more than five seconds names nothing when its

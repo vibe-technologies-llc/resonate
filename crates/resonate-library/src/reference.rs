@@ -292,6 +292,23 @@ impl GroupMatch {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlbumMatch {
+    pub group: Mbid,
+    pub score: u8,
+    pub title: String,
+    pub credit: Vec<Credit>,
+    pub kind: Option<String>,
+    pub secondary: Vec<String>,
+    pub first_released: Option<String>,
+}
+
+impl AlbumMatch {
+    pub fn credited_as(&self) -> String {
+        credited_as(&self.credit)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LifeSpan {
     pub begin: Option<String>,
@@ -452,6 +469,8 @@ pub trait Reference: Send + Sync {
     fn release_group(&self, id: &Mbid) -> Result<Option<ReleaseGroup>>;
 
     fn find_release_group(&self, asked: &GroupAsked) -> Result<Vec<GroupMatch>>;
+
+    fn find_albums(&self, words: &str) -> Result<Vec<AlbumMatch>>;
 
     fn group_cover(&self, group: &Mbid) -> Result<Option<CoverArt>>;
 

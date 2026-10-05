@@ -26,20 +26,21 @@ use rusqlite::{
 };
 
 use crate::{
-    ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk,
-    Artist, ArtistDetail, ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease,
-    ArtistToAsk, ArtistTotals, Asked, Billed, Cancelling, Certainty, Clause, Codec, Column,
-    Compare, Condition, Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle,
-    EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium,
-    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
-    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, Listen,
-    LovesTold, LyricText, Mbid, Measured, Missing, MissingTrack, MostListened, Move, NamedPlaylist,
-    OrganiseHandle, OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder,
-    PollHandle, PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
-    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
-    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
-    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
-    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
+    ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumFound,
+    AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
+    ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals,
+    Asked, Billed, Cancelling, Certainty, Clause, Codec, Column, Compare, Condition, Counted,
+    CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
+    Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
+    Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
+    KeptCover, KeptIndex, KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured,
+    Missing, MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions,
+    PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
+    PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch,
+    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
+    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
+    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
+    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
     Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
@@ -3159,6 +3160,42 @@ impl Library {
                                          WHERE found_elsewhere IS NULL
                                            AND (mbid = ?1 OR key = ?2))",
                         params![named.mbid.as_str(), store::folded_letters(&named.name)],
+                        |row| row.get(0),
+                    )
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })?;
+            if !held {
+                unheld.push(named);
+            }
+        }
+
+        Ok(unheld)
+    }
+
+    pub fn unheld_albums_among(
+        &self,
+        matches: &[AlbumMatch],
+        text: &str,
+    ) -> Result<Vec<AlbumFound>> {
+        let mut unheld = Vec::new();
+        for named in elsewhere::albums_named_by(matches, text) {
+            if unheld.len() == ALBUMS_FOUND_ELSEWHERE_AT_MOST {
+                break;
+            }
+            let held: bool = self.inner.read(|connection| {
+                connection
+                    .query_row(
+                        "SELECT EXISTS (SELECT 1 FROM albums a
+                                         WHERE a.found_elsewhere IS NULL
+                                           AND (a.release_group = ?1
+                                                OR (words_of(a.title) = ?2
+                                                    AND a.artist_id IN
+                                                        (SELECT id FROM artists WHERE key = ?3))))",
+                        params![
+                            named.group.as_str(),
+                            store::words_of(&named.title),
+                            store::folded_letters(&named.artist)
+                        ],
                         |row| row.get(0),
                     )
                     .map_err(|source| Error::store(StoreOp::Query, source))

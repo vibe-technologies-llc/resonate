@@ -2263,7 +2263,7 @@ impl Pass<'_> {
 
 const KEPT_KINDS: [&str; 3] = ["Album", "EP", "Single"];
 
-const SOUNDTRACK: &str = "Soundtrack";
+pub(crate) const SOUNDTRACK: &str = "Soundtrack";
 
 pub(crate) fn worth_keeping(release: &ArtistRelease) -> bool {
     release

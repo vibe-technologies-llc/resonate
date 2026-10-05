@@ -2007,21 +2007,34 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (`search_heading`) is *SEARCH* over the words in quotes, a summary — *12 songs · 3 albums · 1 artist
   in your library · 18 songs not in it* — the *Sung in*, *Save this search*, sort, *Shuffle* and
   *Play* actions, the *Reads* chips, and a row of tabs, each its count in a pill: *Top results*,
-  *Songs*, *Albums*, *Artists* and *Not in your library*, the last only where the build `can_enrich`
-  or something was found, counting *…* while MusicBrainz is asked. *Songs*, *Albums* and *Artists*
+  *Songs*, *Albums* and *Artists*. **A tab counts what the library holds and what was found beyond it
+  together**, *…* after the figure while MusicBrainz is asked, and the summary says each half
+  (*12 songs · 3 albums in your library · 18 songs · 4 albums · 2 artists not in it*); *Try again* stands in
+  the heading's actions where MusicBrainz could not be reached. *Songs*, *Albums* and *Artists*
   are the three panes themselves — `tracks`, `albums` and `artists` take `search_heading` in place of
   their own — so choosing one is `show_in_the_search`, which sets the pane under it and keeps every
   reach, sort and scroll the pane already had; a sidebar press on one of the three while searching is
   that tab (`SearchShows::in_place_of`). *Top results* (`top_results`) is one scrolling page: the
   matching artists as a strip of `ARTIST_AT_THE_TOP` portraits, the first `SONGS_AT_THE_TOP` (5) songs,
   the first `FOUND_AT_THE_TOP` (6) songs not in the library with what MusicBrainz is doing beside the
-  heading, then the albums as a strip — each section headed by its name and, where more matched than
-  it shows, *See all N*, which opens its tab. *Not in your library* (`not_in_the_library`) is every
-  found row in a `uniform_list` of its own. **An artist the search names that the catalog does not
+  heading, then the albums as a strip, then *Albums not in your library* — each section headed by its
+  name (`Section`) and, where more matched than it shows, *See all N*, which opens its tab (the songs
+  not in the library open *Songs*). **A tab lists what was found beyond the library
+  under what the library holds, never in a tab of its own.** *Songs* is one list, `LibraryModel::rows`
+  holding the held rows, a `ListedRow::NotHeld` heading (*Not in your library · N songs · press one to
+  download it*) and a `ListedRow::Found` row per song, once the whole held listing is loaded
+  (`beyond_the_listing`, as an artist's page lists the songs of releases not held); enter on a found
+  row is `want_found` (`LibraryModel::found_at`). *Albums* and *Artists* keep their grid or list and
+  end in a strip, *Albums not in your library* (`album_found_cell`, `AlbumFound`) and *Artists not in
+  your library* (`artist_found_cell`), `flex_none` under the pane so the held rows take what is left;
+  with nothing held the strip stands alone, and where nothing at all matched the pane says *Asking
+  MusicBrainz…* or *MusicBrainz could not be reached* (`nothing_beyond`). A found album's cell is the
+  one an artist's page draws for a release not held (`unheld_album_cell`), its press
+  `land_album_not_held`, which opens the album as it does there. **An artist the search names that the catalog does not
   hold is a cell of its own.** `LibraryModel::artists_found` is the `ArtistFound`s `show_answer`
   weighed beside the songs (`Library::unheld_artists_among`, off the credits MusicBrainz answered
   with, so no request of its own), read only while `found_for` is the query; *Artists not in your
-  library* is a strip of `artist_found_cell`s above *Not in your library*'s rows and between the
+  library* is a strip of `artist_found_cell`s under the *Artists* tab's held artists and between the
   artists and the songs of *Top results*, and either page is empty only where this is too. A press is
   `LibraryModel::land_artist_found`, which runs `Library::open_artist_found` on the background
   executor and opens the artist it answers, its releases listed as an artist's page lists a held one's
@@ -2033,13 +2046,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (`a_search_begun_on_any_pane_opens_the_top_results`). It replaced the tracks pane listing every held row and only then, once the
   whole listing had been paged in, the songs MusicBrainz found — searching an artist with a hundred
   songs held put the found ones a hundred rows down, out of sight. So under *All tracks*
-  `LibraryModel::rows` is empty — one row per track, what `played_from` and `listed_rows` read — and
-  `LibraryModel::elsewhere` answers the MusicBrainz half on its own as a `Beyond`: `Elsewhere(n)`,
+  `LibraryModel::rows` is empty until a search finds songs — one row per track, what `played_from` and
+  `listed_rows` read — and `LibraryModel::elsewhere` answers the MusicBrainz half on its own as a `Beyond`: `Elsewhere(n)`,
   `Refining(n)` while asked again, `Asking` and `Unreached`, through `elsewhere_standing`. The keyboard
   follows: `reachable` reaches the top songs under *Top results* (or the found rows where none is
-  held) and `Listed::Found` under *Not in your library*, enter on a found row being `want_found`.
+  held), and the rows of the *Songs* tab as any tracks listing's.
   `songs_not_in_the_library_stand_on_the_first_page_however_many_it_holds` scans forty held songs and
-  asserts the found row is drawn inside the window. A search does not list the rows a held album is
+  asserts the found row is drawn inside the window on *Top results* and follows the forty in the *Songs*
+  tab's rows; `an_album_found_elsewhere_stands_under_the_albums_held_and_in_the_top_results` holds the
+  albums. A search does not list the rows a held album is
   short of — those stay in the Missing pane and on the artist's page — only the songs of releases not
   held at all, which `songs_kept_for` answers. A found song's
   `unheld_row` has a `Beside::ASearch` cover column for its release's front, `Sleeve::Released`, which

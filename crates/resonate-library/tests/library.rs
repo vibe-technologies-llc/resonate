@@ -24,22 +24,22 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Aged, Album, AlbumLink, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound, ArtistMatch,
-    ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch,
-    Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder,
-    Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured,
-    FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium,
-    HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library,
-    LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold, LyricText,
-    LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing,
-    Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned,
-    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
-    Wording, Written,
+    Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
+    ArtistMatch, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode,
+    BarcodeMatch, Billed, Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted,
+    DeliveryFolder, Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error,
+    Favoured, FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease,
+    HeldMedium, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout,
+    Library, LifeSpan, Link, LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold,
+    LyricText, LyricsAsked, Mbid, Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary,
+    Picturing, Playing, PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity,
+    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Result, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats,
+    Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought,
+    Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink,
+    TagSource, TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits,
+    Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -9312,6 +9312,7 @@ enum Called {
     FindSongs(String),
     ReleaseGroup(Mbid),
     FindReleaseGroup(GroupAsked),
+    FindAlbums(String),
     Artist(Mbid),
     FindArtist(String),
     ReleaseGroupsOf(Mbid),
@@ -9334,7 +9335,7 @@ impl Called {
             Self::Isrc(_) => LookupOp::Isrc,
             Self::FindRecording(_) | Self::FindSongs(_) => LookupOp::FindRecording,
             Self::ReleaseGroup(_) => LookupOp::ReleaseGroup,
-            Self::FindReleaseGroup(_) => LookupOp::FindReleaseGroup,
+            Self::FindReleaseGroup(_) | Self::FindAlbums(_) => LookupOp::FindReleaseGroup,
             Self::Artist(_) => LookupOp::Artist,
             Self::FindArtist(_) => LookupOp::FindArtist,
             Self::ReleaseGroupsOf(_) => LookupOp::ReleaseGroupsOfArtist,
@@ -9368,6 +9369,7 @@ struct Canned {
     isrcs: Vec<(Isrc, Recording)>,
     groups: Vec<ReleaseGroup>,
     found_groups: Vec<GroupMatch>,
+    found_albums: Vec<AlbumMatch>,
     found_groups_in_words: Vec<GroupMatch>,
     artists: Vec<ArtistProfile>,
     found_artists: Vec<ArtistMatch>,
@@ -9561,6 +9563,11 @@ impl Reference for Fake {
             Wording::Phrase => self.canned.found_groups.clone(),
             Wording::Words => self.canned.found_groups_in_words.clone(),
         })
+    }
+
+    fn find_albums(&self, words: &str) -> Result<Vec<AlbumMatch>> {
+        self.note(Called::FindAlbums(words.to_owned()))?;
+        Ok(self.canned.found_albums.clone())
     }
 
     fn artist(&self, id: &Mbid) -> Result<Option<ArtistProfile>> {
@@ -20727,6 +20734,77 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
         library.unheld_artists_among(&matches, "ada")?,
         offered,
         "and is offered again until something of its own is held"
+    );
+
+    Ok(())
+}
+
+fn album_match(group: &str, title: &str, artist: &str, kind: &str) -> AlbumMatch {
+    AlbumMatch {
+        group: mbid(group),
+        score: 100,
+        title: title.to_owned(),
+        credit: credited(Some(artist), None),
+        kind: Some(kind.to_owned()),
+        secondary: Vec::new(),
+        first_released: Some("1973".to_owned()),
+    }
+}
+
+#[test]
+fn an_album_the_words_name_is_offered_unless_the_catalog_holds_it() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let ada_group = "bbbbbbbb-1111-2222-3333-444444444444";
+    let live_group = "cccccccc-1111-2222-3333-444444444444";
+    let live = AlbumMatch {
+        secondary: vec!["Live".to_owned()],
+        ..album_match(live_group, "Orbits Live", "Ada", "Album")
+    };
+    let matches = vec![
+        album_match(ada_group, "Orbits Again", "Ada", "Album"),
+        album_match(ada_group, "Orbits Again", "Ada", "Album"),
+        album_match(RELEASE_GROUP, "Orbits", "The Orbiters", "Album"),
+        album_match(
+            "dddddddd-1111-2222-3333-444444444444",
+            "Orbits",
+            "The Orbiters",
+            "Album",
+        ),
+        album_match(
+            "eeeeeeee-1111-2222-3333-444444444444",
+            "Orbits (single)",
+            "Ada",
+            "Single",
+        ),
+        live,
+        album_match(
+            "ffffffff-1111-2222-3333-444444444444",
+            "Meddle",
+            "Pink Floyd",
+            "Album",
+        ),
+    ];
+
+    let offered = library.unheld_albums_among(&matches, "orbits")?;
+
+    assert_eq!(
+        offered
+            .iter()
+            .map(|found| found.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Orbits Again"],
+        "an album held by group or by title and artist, a single, a live album, a repeat and \
+         one the words never named are all left out"
+    );
+    assert_eq!(offered[0].artist, "Ada");
+    assert_eq!(offered[0].group, mbid(ada_group));
+    assert_eq!(offered[0].kind.as_deref(), Some("Album"));
+    assert_eq!(offered[0].first_released.as_deref(), Some("1973"));
+    assert!(
+        library
+            .unheld_albums_among(&matches, "year:1971")?
+            .is_empty(),
+        "a search naming no words names no album"
     );
 
     Ok(())

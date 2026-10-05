@@ -71,9 +71,9 @@ pub use crate::{
     db::{CatalogStamp, Library, WrittenElsewhere},
     deleted::Deleted,
     elsewhere::{
-        ARTISTS_FOUND_ELSEWHERE_AT_MOST, ArtistFound, Covering, FOUND_ELSEWHERE_AT_MOST, Found,
-        SongsAsked, Sung, Uncovered, asks_elsewhere, in_the_order_worth_offering, songs_asked,
-        still_answering, weighed_for,
+        ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, ArtistFound,
+        Covering, FOUND_ELSEWHERE_AT_MOST, Found, SongsAsked, Sung, Uncovered, asks_elsewhere,
+        in_the_order_worth_offering, songs_asked, still_answering, weighed_for,
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fruitless,
@@ -115,12 +115,12 @@ pub use crate::{
         SavedQuery, SearchResults, SortOrder, TrackQuery,
     },
     reference::{
-        ArtistMatch, ArtistProfile, ArtistRelease, BarcodeMatch, Credit, Discography, Genre,
-        GroupAsked, GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail, LyricText,
-        LyricsAsked, Medium, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-        Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, StreamAsked,
-        Wording, apple_music_urls, deezer_urls, may_be_pictured, portrait_urls, soundcloud_urls,
-        spotify_urls, wikidata_urls, wikipedia_urls,
+        AlbumMatch, ArtistMatch, ArtistProfile, ArtistRelease, BarcodeMatch, Credit, Discography,
+        Genre, GroupAsked, GroupMatch, GroupRelease, Issued, LifeSpan, LookupOp, LyricDetail,
+        LyricText, LyricsAsked, Medium, Recording, RecordingAsked, RecordingMatch,
+        RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+        ReleaseTrack, StreamAsked, Wording, apple_music_urls, deezer_urls, may_be_pictured,
+        portrait_urls, soundcloud_urls, spotify_urls, wikidata_urls, wikipedia_urls,
     },
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,

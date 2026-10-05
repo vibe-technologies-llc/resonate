@@ -2145,6 +2145,11 @@ impl RootView {
                 self.play_playlist(playlist, &entries, row, true, cx);
             }
             Shift::Listing(Listed::Tracks) => {
+                if let Some(found) = self.library.read(cx).found_at(row) {
+                    self.library
+                        .update(cx, |library, cx| library.want_found(found, cx));
+                    return;
+                }
                 let Some((played, start)) = self.library.read(cx).played_from(row) else {
                     return;
                 };
@@ -2372,10 +2377,6 @@ impl RootView {
                     (0, found) => Some((Shift::Listing(Listed::Found), found)),
                     (songs, _) => Some((Shift::Listing(Listed::Tracks), songs)),
                 };
-            }
-            Some(SearchShows::Elsewhere) => {
-                let found = self.library.read(cx).found().len();
-                return (found > 0).then_some((Shift::Listing(Listed::Found), found));
             }
             Some(SearchShows::Songs | SearchShows::Albums | SearchShows::Artists) | None => {}
         }
