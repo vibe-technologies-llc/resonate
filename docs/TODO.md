@@ -8,15 +8,15 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Defects
-- A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
-  unplugged drive never scanned that is mounted anywhere but `/run/media`, `/media` and `/mnt`
-  whenever its mount point's parent holds anything else
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
+- A tidy drops the rows of an unplugged drive never scanned, mounted by hand where no table lists it
+  and outside `/run/media`, `/media` and `/mnt`, whose songs sat at its root or whose mount point was
+  taken away from a folder holding anything else; noting a row's volume as it is added would cover it
 
 ## Playback and output
 - The PipeWire stream open waits on the engine thread up to five seconds, and a bind with an empty or

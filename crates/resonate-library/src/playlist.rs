@@ -1504,6 +1504,7 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
         .filter(|volume| !volumes::is_mounted(volume))
         .collect();
     out_of_reach.extend(roots.into_iter().filter(|root| !root.is_dir()));
+    out_of_reach.extend(volumes::listed_and_not_mounted());
     let mut folders = AHashMap::new();
 
     Ok(paths
@@ -1519,7 +1520,7 @@ fn has_gone(path: &Path, out_of_reach: &[PathBuf], folders: &mut AHashMap<PathBu
             !volumes::is_on_an_absent_one(path, out_of_reach)
                 && !volumes::is_under_a_mount_point_not_there(path)
                 && path.parent().is_some_and(|folder| {
-                    the_nearest_standing_folder_holds_something(folder, folders)
+                    folder.is_dir() || the_nearest_standing_folder_holds_something(folder, folders)
                 })
         }
         Err(error) => {

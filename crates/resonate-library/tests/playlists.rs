@@ -242,6 +242,7 @@ fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_n
     let deleted = tree.write("home/gone.wav", &wav(4_410));
     let staying = tree.write("home/stays.wav", &wav(4_410));
     let never_scanned = tree.write("usb/Artist/Album/far.wav", &wav(4_410));
+    let alone = tree.write("home/emptied/alone.wav", &wav(4_410));
     let database = tree.path().join("library.db");
 
     let library = Library::open(&database)?;
@@ -257,15 +258,16 @@ fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_n
         .expect("the catalog takes a volume");
     let id = library.start_playlist(
         "Evening",
-        &[&on_the_drive, &deleted, &staying, &never_scanned].map(whole),
+        &[&on_the_drive, &deleted, &staying, &never_scanned, &alone].map(whole),
     )?;
 
     fs::remove_dir_all(tree.path().join("drive")).expect("the fixture drive can be emptied");
     fs::create_dir(tree.path().join("drive")).expect("the fixture mount point can be made");
     fs::remove_dir_all(tree.path().join("usb/Artist")).expect("the fixture stick can be emptied");
     fs::remove_file(&deleted).expect("the fixture file can be deleted");
+    fs::remove_file(&alone).expect("the last file of a folder can be deleted");
 
-    assert_eq!(library.tidy_playlist(id)?, 1);
+    assert_eq!(library.tidy_playlist(id)?, 2);
     assert_eq!(
         paths(&library, id)?,
         vec![on_the_drive, staying, never_scanned],

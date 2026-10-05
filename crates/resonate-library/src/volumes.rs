@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use ahash::AHashSet;
 use rusqlite::{Connection, Transaction, params};
 
 use crate::{Error, Result, StoreOp, scan::walked_from, store};
@@ -34,6 +35,64 @@ pub fn absent(connection: &Connection) -> Result<Vec<PathBuf>> {
         .into_iter()
         .filter(|volume| !is_mounted(volume))
         .collect())
+}
+
+pub(crate) const MOUNT_TABLE: &str = "/proc/self/mounts";
+const FILESYSTEM_TABLE: &str = "/etc/fstab";
+const OCTAL_ESCAPE: char = '\\';
+const COMMENT: char = '#';
+const THE_ROOT: &str = "/";
+
+pub(crate) fn mount_points_in(table: &str) -> impl Iterator<Item = (PathBuf, &str)> {
+    table.lines().filter_map(|line| {
+        if line.trim_start().starts_with(COMMENT) {
+            return None;
+        }
+        let mut fields = line.split_whitespace();
+        let _device = fields.next()?;
+        let point = PathBuf::from(unescaped_mount(fields.next()?));
+        let kind = fields.next()?;
+        Some((point, kind))
+    })
+}
+
+fn unescaped_mount(field: &str) -> String {
+    let mut written = String::with_capacity(field.len());
+    let mut characters = field.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != OCTAL_ESCAPE {
+            written.push(character);
+            continue;
+        }
+        let digits: String = (0..3).filter_map(|_| characters.next()).collect();
+        match u8::from_str_radix(&digits, 8) {
+            Ok(byte) => written.push(char::from(byte)),
+            Err(_) => {
+                written.push(character);
+                written.push_str(&digits);
+            }
+        }
+    }
+    written
+}
+
+pub fn listed_and_not_mounted() -> Vec<PathBuf> {
+    let (Ok(listed), Ok(mounted)) = (
+        fs::read_to_string(FILESYSTEM_TABLE),
+        fs::read_to_string(MOUNT_TABLE),
+    ) else {
+        return Vec::new();
+    };
+    not_mounted_of(&listed, &mounted)
+}
+
+fn not_mounted_of(listed: &str, mounted: &str) -> Vec<PathBuf> {
+    let mounted: AHashSet<PathBuf> = mount_points_in(mounted).map(|(point, _)| point).collect();
+    mount_points_in(listed)
+        .map(|(point, _)| point)
+        .filter(|point| point.is_absolute() && point != Path::new(THE_ROOT))
+        .filter(|point| !mounted.contains(point))
+        .collect()
 }
 
 const WHERE_DESKTOPS_MOUNT: [(&str, usize); 3] = [("/run/media", 2), ("/media", 2), ("/mnt", 1)];
@@ -144,5 +203,24 @@ mod tests {
         ));
 
         fs::remove_dir_all(&base).expect("the temporary folder goes");
+    }
+
+    #[test]
+    fn a_mount_point_the_filesystem_table_lists_and_nothing_is_mounted_at_is_out_of_reach() {
+        let listed = "# /etc/fstab\n\
+                      UUID=1 / btrfs subvol=@ 0 0\n\
+                      UUID=1 /home btrfs subvol=@home 0 0\n\
+                      UUID=2 /data/Music\\040Drive ext4 noauto 0 2\n\
+                      UUID=3 none swap sw 0 0\n\
+                      \n\
+                      //nas/media /srv/nas cifs noauto 0 0\n";
+        let mounted = "/dev/nvme0n1p2 / btrfs rw 0 0\n\
+                       /dev/nvme0n1p2 /home btrfs rw 0 0\n\
+                       //nas/media /srv/nas cifs rw 0 0\n";
+
+        assert_eq!(
+            not_mounted_of(listed, mounted),
+            vec![PathBuf::from("/data/Music Drive")]
+        );
     }
 }

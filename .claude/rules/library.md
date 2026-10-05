@@ -2931,12 +2931,17 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   and the path is on no volume `volumes::is_mounted` finds unmounted and under no root whose directory
   is missing, and not under a mount point the desktops make that nothing stands at
   (`volumes::is_under_a_mount_point_not_there`: `/run/media/<user>/<label>`, `/media/<user>/<label>` and
-  `/mnt/<label>`, the first component below the base that is missing, not a mount point itself), and the
-  nearest folder above it that stands holds something: an unmounted mount point
-  reads as an empty folder or none, so a stick's rows are kept whether the catalog ever noted its volume
-  or not, even where its parent holds another drive. The price is a file deleted with the last of its folder's contents staying until the folder
-  goes (`a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
-  `a_prune_keeps_the_rows_under_a_root_that_is_not_there`).
+  `/mnt/<label>`, the first component below the base that is missing, not a mount point itself) or
+  under one `/etc/fstab` lists that `/proc/self/mounts` does not (`volumes::listed_and_not_mounted`,
+  `/` and swap aside), and either the file's own folder stands — the file is gone from a folder that is
+  there, though the folder be emptied — or, its folder gone too, the nearest folder above that stands
+  holds something: an unmounted mount point reads as an empty folder or none, so a stick's album
+  folders are kept whether the catalog ever noted its volume or not. What is still dropped is a drive
+  never noted, mounted by hand where no table lists it, whose songs sat at its root or whose mount point
+  was taken away from a folder holding anything else
+  (`a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
+  `a_prune_keeps_the_rows_under_a_root_that_is_not_there`,
+  `a_mount_point_the_filesystem_table_lists_and_nothing_is_mounted_at_is_out_of_reach`).
 - **A cue row leaves as its file and the times VLC reads, and comes back as the cut.** M3U, PLS and
   XSPF name files, so a cut row is written as its file and, where the format can say it, the start and
   stop VLC honours: `#EXTVLCOPT:start-time=` and `stop-time=` lines before an M3U row, and the same two

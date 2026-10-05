@@ -29,7 +29,7 @@ use crate::{
     error::{Error, FieldName, LayoutFault, MoveOp, Result},
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
-    scan, store,
+    scan, store, volumes,
 };
 
 pub const DEFAULT_LAYOUT: &str = "{albumartist}/{album}/{disc}{track} {title}";
@@ -48,8 +48,6 @@ const REFUSED_BY_A_PORTABLE_VOLUME: [char; 8] = ['\\', ':', '*', '?', '"', '<', 
 const PORTABLE_VOLUMES: [&str; 10] = [
     "vfat", "msdos", "exfat", "ntfs", "ntfs3", "fuseblk", "fat", "cifs", "smb3", "smbfs",
 ];
-const MOUNT_TABLE: &str = "/proc/self/mounts";
-const OCTAL_ESCAPE: char = '\\';
 const EXTENSION_SEPARATOR: char = '.';
 const FIRST_PRINTABLE: char = ' ';
 const DELETED_CHARACTER: char = '\u{7f}';
@@ -407,7 +405,7 @@ pub(crate) enum Naming {
 
 impl Naming {
     pub(crate) fn of(root: &Path) -> Self {
-        match fs::read_to_string(MOUNT_TABLE) {
+        match fs::read_to_string(volumes::MOUNT_TABLE) {
             Ok(table) => Self::in_table(&table, root),
             Err(error) => {
                 tracing::debug!(%error, "no mount table to say what a root's volume will take");
@@ -417,15 +415,8 @@ impl Naming {
     }
 
     fn in_table(table: &str, root: &Path) -> Self {
-        let mounted = table
-            .lines()
-            .filter_map(|line| {
-                let mut fields = line.split_whitespace();
-                let _device = fields.next()?;
-                let point = PathBuf::from(unescaped_mount(fields.next()?));
-                let kind = fields.next()?;
-                root.starts_with(&point).then_some((point, kind))
-            })
+        let mounted = volumes::mount_points_in(table)
+            .filter(|(point, _)| root.starts_with(point))
             .max_by_key(|(point, _)| point.components().count());
 
         match mounted {
@@ -437,26 +428,6 @@ impl Naming {
     fn refuses(self, character: char) -> bool {
         self == Self::Portable && REFUSED_BY_A_PORTABLE_VOLUME.contains(&character)
     }
-}
-
-fn unescaped_mount(field: &str) -> String {
-    let mut written = String::with_capacity(field.len());
-    let mut characters = field.chars().peekable();
-    while let Some(character) = characters.next() {
-        if character != OCTAL_ESCAPE {
-            written.push(character);
-            continue;
-        }
-        let digits: String = (0..3).filter_map(|_| characters.next()).collect();
-        match u8::from_str_radix(&digits, 8) {
-            Ok(byte) => written.push(char::from(byte)),
-            Err(_) => {
-                written.push(character);
-                written.push_str(&digits);
-            }
-        }
-    }
-    written
 }
 
 fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
