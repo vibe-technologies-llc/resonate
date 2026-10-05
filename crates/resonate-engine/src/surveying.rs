@@ -59,6 +59,10 @@ impl Surveying {
         self.asked
     }
 
+    pub(crate) const fn is_asked(&self) -> bool {
+        self.asked
+    }
+
     pub(crate) fn answered(&mut self) -> Option<Surveyed> {
         match self.answers.try_recv() {
             Ok(found) => {

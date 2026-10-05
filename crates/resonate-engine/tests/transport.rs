@@ -163,6 +163,7 @@ struct Graph {
     muted: Vec<(SinkId, bool)>,
     away: bool,
     clock: Option<Arc<StreamClock>>,
+    survey_gate: Option<Receiver<()>>,
 }
 
 impl Graph {
@@ -230,8 +231,16 @@ struct Surveyed(Arc<Mutex<Graph>>);
 
 impl Surveyor for Surveyed {
     fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        let mut graph = self.0.lock();
-        graph.enumerations += 1;
+        let gate = {
+            let mut graph = self.0.lock();
+            graph.enumerations += 1;
+            graph.survey_gate.clone()
+        };
+        if let Some(gate) = gate {
+            let _ = gate.recv();
+        }
+
+        let graph = self.0.lock();
         if graph.away {
             return Err(SinkError::Disconnected);
         }
@@ -3893,6 +3902,71 @@ fn a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence() -> R
 
     assert!(outcome.is_err(), "a queue with no sink started playing");
     assert_eq!(graph.lock().opens, 0);
+    Ok(())
+}
+
+#[test]
+fn a_load_onto_a_list_with_no_devices_is_refused_without_asking_the_graph_again() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, 4_000);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(Vec::new())?;
+    let asked = graph.lock().enumerations;
+    let outcome = player
+        .request(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(PATIENCE);
+
+    assert!(outcome.is_err(), "a queue with no sink started playing");
+    assert_eq!(
+        graph.lock().enumerations,
+        asked,
+        "a list nothing had announced a change to was asked about again"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_back() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(Vec::new())?;
+    let (open_the_gate, gate) = unbounded::<()>();
+    graph.lock().survey_gate = Some(gate);
+    let asked = graph.lock().enumerations;
+
+    announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > asked,
+        "the survey to be asked about the device that appeared",
+    );
+    player
+        .request(Command::Load {
+            items: vec![track(&path, 1)],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(PATIENCE)?;
+    assert_eq!(
+        graph.lock().opens,
+        0,
+        "a stream opened before the survey answered"
+    );
+
+    drop(open_the_gate);
+    wait_for(
+        &player,
+        playing,
+        "the row to bind once the survey brought the device",
+    );
+    assert_eq!(graph.lock().opens, 1);
     Ok(())
 }
 

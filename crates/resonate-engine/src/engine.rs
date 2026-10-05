@@ -766,10 +766,9 @@ impl Engine {
     ) -> Self {
         let changes = Some(backend.subscribe_sinks());
         let surveyor = backend.surveyor();
-        *published.sinks.write() = surveyor
-            .enumerate_sinks(SINK_TIMEOUT)
-            .unwrap_or_default()
-            .into();
+        let found = surveyor.enumerate_sinks(SINK_TIMEOUT);
+        let stale_sinks = found.is_err();
+        *published.sinks.write() = found.unwrap_or_default().into();
         let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
         let opener = backend.opener();
         let streaming = Streaming::start(Arc::clone(&opener));
@@ -791,7 +790,7 @@ impl Engine {
             queue: Queue::new(),
             opening: None,
             announced: None,
-            stale_sinks: false,
+            stale_sinks,
             transport: TransportState::Idle,
             track: None,
             output: None,
@@ -2012,6 +2011,11 @@ impl Engine {
             return Ok(());
         }
 
+        self.note_sink_changes();
+        if self.the_survey_will_answer_for_a_list_known_wrong() {
+            self.wait_for_the_survey(at);
+            return Ok(());
+        }
         let sink = self.select_sink()?;
         let Some(track) = self.track.as_ref() else {
             return Ok(());
@@ -2351,8 +2355,7 @@ impl Engine {
     }
 
     fn select_sink(&mut self) -> Result<SinkInfo> {
-        self.note_sink_changes();
-        if self.sinks_are_stale() && !self.the_survey_will_answer_for_what_is_published() {
+        if self.sinks_are_stale() && !self.the_survey_answers_for_the_list() {
             self.stale_sinks = false;
             match self.surveyor.enumerate_sinks(SINK_TIMEOUT) {
                 Ok(found) => *self.published.sinks.write() = found.into(),
@@ -2368,12 +2371,31 @@ impl Engine {
             .ok_or(Error::Sink(resonate_pipewire::Error::NoSink))
     }
 
-    fn the_survey_will_answer_for_what_is_published(&self) -> bool {
-        self.surveying.is_some()
-            && self.changes.is_some()
-            && !self.waiting_for_a_device
-            && self.graph_lost.is_none()
-            && !self.published.sinks.read().is_empty()
+    fn the_survey_answers_for_the_list(&self) -> bool {
+        self.surveying.is_some() && self.changes.is_some()
+    }
+
+    fn the_survey_will_answer_for_a_list_known_wrong(&self) -> bool {
+        let asked = self.surveying.as_ref().is_some_and(Surveying::is_asked);
+        (self.stale_sinks || asked)
+            && self.the_survey_answers_for_the_list()
+            && (self.waiting_for_a_device
+                || self.graph_lost.is_some()
+                || self.published.sinks.read().is_empty())
+    }
+
+    fn wait_for_the_survey(&mut self, at: Option<Frames>) {
+        tracing::debug!("the sink list is known wrong; the row is bound once the survey answers");
+        let at = at.unwrap_or_else(|| self.position());
+        self.unbound = Some(at);
+        self.transport = if self.playing {
+            TransportState::Loading
+        } else {
+            TransportState::Paused
+        };
+        if self.graph_lost.is_none() {
+            self.waiting_for_a_device = true;
+        }
     }
 
     fn sinks_are_stale(&self) -> bool {
@@ -2689,7 +2711,9 @@ impl Engine {
             self.fail(away);
             return;
         }
-        self.stale_sinks = true;
+        if !self.surveying.as_ref().is_some_and(Surveying::is_asked) {
+            self.stale_sinks = true;
+        }
         self.transport = TransportState::Loading;
     }
 

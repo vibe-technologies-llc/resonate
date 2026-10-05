@@ -8,8 +8,6 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Playback and output
-- A bind with an empty sink list, or one made while a row waits for a device or the graph, still
-  asks the graph on the engine thread for up to two seconds
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
   ring's depth

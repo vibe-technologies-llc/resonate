@@ -480,11 +480,20 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   would put a `SINK_TIMEOUT` before each against a daemon that stopped answering. `note_sink_changes`
   is read before the bind as well as on the tick; the standing reasons to ask the graph again are a
   stale flag, an empty list and a change stream gone, and where the ask fails with a list still
-  published the bind takes it. **A stale list is not asked about in line where the survey will
-  answer for it** (`the_survey_will_answer_for_what_is_published`: a survey thread, a change stream, a
-  list held, no row waiting for a device and the graph not lost): the bind takes what is published and
-  the survey's answer moves the stream through `follow_the_sink_it_would_choose`. A row waiting for a
-  device or the graph still asks in line, the list it would bind from being the one known wrong.
+  published the bind takes it. **No bind asks in line where the survey answers for the list**
+  (`the_survey_answers_for_the_list`: a survey thread and a change stream). A list nothing announced a
+  change to since the survey last answered is current, an empty one included, so a bind takes it and
+  an empty one is `NoSink` at once; a stale list still holding devices is bound from as published and
+  the survey's answer moves the stream through `follow_the_sink_it_would_choose`. A list known wrong —
+  stale or with a survey out, and empty, or with a row waiting for a device or the graph
+  (`the_survey_will_answer_for_a_list_known_wrong`) — is not bound from at all: `wait_for_the_survey`
+  keeps the row at its frame in `unbound`, publishes `Loading`, marks it waiting for a device unless the
+  graph is lost, and the command answers `Ok`; the answer binds it through
+  `bind_the_row_waiting_for_a_device` or `bind_the_row_the_graph_let_go`. `wait_for_the_graph` marks the
+  list stale only while no survey is out, so the answer it waits on is not made stale by the wait
+  itself. A first survey at startup that failed leaves the list stale
+  (`a_load_onto_a_list_with_no_devices_is_refused_without_asking_the_graph_again`,
+  `a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_back`).
 - **Every stream is opened off the engine thread.** `Backend::opener` hands out an `Opener` (for
   PipeWire the cloneable `Survey`, whose `open` waits up to `STREAM_OPENED_WITHIN` for the loop), and
   `Streaming` is a `resonate-stream-open` worker taking one `Asked` at a time. `promote` hands it the
