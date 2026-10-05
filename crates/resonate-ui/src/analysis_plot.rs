@@ -10,10 +10,13 @@ pub(crate) const SPECTRUM_MARKED_EVERY_DB: f32 = 20.0;
 
 const FREQUENCY_STEPS_HZ: [u32; 6] = [2_000, 5_000, 10_000, 20_000, 50_000, 100_000];
 const FREQUENCY_MARKS_AT_MOST: u32 = 6;
-const TIME_STEPS_SECONDS: [u64; 9] = [5, 10, 15, 30, 60, 120, 300, 600, 1_800];
+const TIME_STEPS_SECONDS: [u64; 13] = [
+    5, 10, 15, 30, 60, 120, 300, 600, 1_800, 3_600, 7_200, 14_400, 28_800,
+];
 const TIME_MARKS_AT_MOST: u64 = 8;
 const HZ_A_KILOHERTZ: u32 = 1_000;
 const SECONDS_A_MINUTE: u64 = 60;
+const SECONDS_AN_HOUR: u64 = 3_600;
 const CHANNEL_BITS: u32 = 8;
 const CHANNEL_MASK: u32 = 0xff;
 
@@ -73,15 +76,37 @@ pub(crate) fn time_marks(length: Duration) -> Vec<Mark> {
     let step = TIME_STEPS_SECONDS
         .into_iter()
         .find(|step| seconds / step <= TIME_MARKS_AT_MOST)
-        .unwrap_or(seconds);
+        .unwrap_or_else(|| {
+            longest_time_step() * (seconds / (longest_time_step() * TIME_MARKS_AT_MOST) + 1)
+        });
     (1..)
         .map(|nth| nth * step)
         .take_while(|at| *at < seconds)
         .map(|at| Mark {
             share: at as f32 / length.as_secs_f32(),
-            label: format!("{}:{:02}", at / SECONDS_A_MINUTE, at % SECONDS_A_MINUTE),
+            label: clock_label(at),
         })
         .collect()
+}
+
+fn longest_time_step() -> u64 {
+    TIME_STEPS_SECONDS[TIME_STEPS_SECONDS.len() - 1]
+}
+
+fn clock_label(seconds: u64) -> String {
+    if seconds >= SECONDS_AN_HOUR {
+        return format!(
+            "{}:{:02}:{:02}",
+            seconds / SECONDS_AN_HOUR,
+            seconds % SECONDS_AN_HOUR / SECONDS_A_MINUTE,
+            seconds % SECONDS_A_MINUTE
+        );
+    }
+    format!(
+        "{}:{:02}",
+        seconds / SECONDS_A_MINUTE,
+        seconds % SECONDS_A_MINUTE
+    )
 }
 
 pub(crate) const fn rgb_of(colour: u32) -> [u8; 3] {
@@ -140,5 +165,19 @@ mod tests {
         assert!(marks.iter().all(|mark| mark.share < 1.0));
         assert!(time_marks(Duration::ZERO).is_empty());
         assert!(time_marks(Duration::from_secs(3_600)).len() <= TIME_MARKS_AT_MOST as usize);
+    }
+
+    #[test]
+    fn a_track_of_many_hours_is_marked_in_hours() {
+        for hours in [5_u64, 12, 30, 200] {
+            let marks = time_marks(Duration::from_secs(hours * SECONDS_AN_HOUR));
+            assert!(!marks.is_empty(), "{hours} hours");
+            assert!(marks.len() <= TIME_MARKS_AT_MOST as usize, "{hours} hours");
+            assert!(marks.iter().all(|mark| mark.share < 1.0));
+        }
+        let marks = time_marks(Duration::from_secs(5 * SECONDS_AN_HOUR));
+        assert_eq!(marks[0].label, "1:00:00");
+        assert_eq!(clock_label(3_599), "59:59");
+        assert_eq!(clock_label(3_725), "1:02:05");
     }
 }

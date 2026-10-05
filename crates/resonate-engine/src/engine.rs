@@ -2551,10 +2551,7 @@ impl Engine {
         if output.stream.is_none() || !output.producer.is_abandoned() {
             return;
         }
-        let again = self
-            .graph_last_lost
-            .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
-        self.graph_last_lost = Some(Instant::now());
+        let again = self.graph_lost_again();
         if again {
             self.fail(Error::Sink(resonate_pipewire::Error::LoopStopped));
             return;
@@ -2569,6 +2566,14 @@ impl Engine {
         self.unbound = Some(at);
         self.transport = TransportState::Loading;
         self.graph_lost = Some(Instant::now());
+    }
+
+    fn graph_lost_again(&mut self) -> bool {
+        let again = self
+            .graph_last_lost
+            .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
+        self.graph_last_lost = Some(Instant::now());
+        again
     }
 
     fn row_the_graph_let_go(&self) -> Option<Frames> {
@@ -2814,6 +2819,14 @@ impl Engine {
 
     fn parked_for_a_device(&mut self, error: Error) -> Result<()> {
         use resonate_pipewire::Error as Sink;
+
+        if matches!(error, Error::Sink(Sink::Disconnected))
+            && self.graph_lost.is_none()
+            && self.track.is_some()
+            && !self.graph_lost_again()
+        {
+            self.graph_lost = Some(Instant::now());
+        }
 
         let the_graph_is_away = self.graph_lost.is_some()
             && matches!(

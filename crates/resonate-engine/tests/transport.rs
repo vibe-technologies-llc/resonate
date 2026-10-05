@@ -1660,6 +1660,44 @@ fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -
 }
 
 #[test]
+fn a_skip_the_graph_refuses_before_the_engine_has_noticed_it_gone_waits_for_it_too() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    graph.lock().away = true;
+    let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+    thread::sleep(A_SHORT_DOZE);
+    neither_failed_nor_finished(&player);
+    assert!(plays(&player, 2), "{}", transport(&player));
+
+    graph.lock().away = false;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the second row to play once the graph is back",
+    );
+    neither_failed_nor_finished(&player);
+    Ok(())
+}
+
+#[test]
 fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_keep_the_track()
 -> Result<()> {
     let tree = Tree::new();

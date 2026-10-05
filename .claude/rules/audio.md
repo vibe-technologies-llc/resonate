@@ -500,9 +500,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `wait_for_the_graph_in_line` only where no survey thread could start). It waits `GRAPH_BACK_WITHIN`
   before failing the row; a pause or stop ends the wait, another row does not: a track change or *Play*
   landing while the graph is away fails its bind with `Disconnected`, `LoopStopped` or a `Daemon` error,
-  which `parked_for_a_device` reads, while `graph_lost` stands, as the graph's and not the row's. A graph
-  letting go again within that window raises `Error::LoopStopped` rather than looping for ever
-  (`graph_last_lost`). Asking the sinks first matters: a bind succeeds against the stale list and fails
+  which `parked_for_a_device` reads, while `graph_lost` stands, as the graph's and not the row's. A bind
+  refused with `Disconnected` before `watch_graph` has seen the ring abandoned starts the wait itself
+  (`graph_lost_again` is the one guard both share). A graph letting go again within that window raises
+  `Error::LoopStopped` rather than looping for ever (`graph_last_lost`). Asking the sinks first matters: a bind succeeds against the stale list and fails
   only when the stream opens. A disconnected *event* channel stays `Output::deaf`, since a graph can
   stop reporting and go on pulling. A failing `backend.open` takes the whole `Output` with it (the
   consumer went into the call and cannot come back).

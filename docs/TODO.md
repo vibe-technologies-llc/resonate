@@ -18,9 +18,6 @@ else is open to be done.
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
-- A rebind refused with `Disconnected` before the engine has noticed the graph is gone (no
-  `graph_lost` yet) is billed to the row, `Failed` then `QueueFinished`, where a row changed after the
-  loss waits for the graph
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
 
@@ -141,6 +138,9 @@ else is open to be done.
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once
   when the whole workspace's tests ran at once and passed alone eight times after; its frame counts
   assume the engine thread keeps pace with the test's pulls
+- `transport.rs`'s `a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup` failed once
+  when the headless workspace's tests ran at once (the last assertion, on the sink of the request) and
+  passed alone five times after
 - No transport test covers a track of unknown length or a reconnect at a track boundary
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
@@ -235,7 +235,6 @@ else is open to be done.
   change on its side stops recognition
 
 ## Later: Visualiser
-- A track of four and a half hours or more gets no time marks on the analysis waveform
 - The live spectrum's tilt, floor, band width and fall rates are constants, and its axis stops at
   20 kHz at every rate
 - The scope has no level meters, correlation or goniometer, and triggers on the mid's rising edge
