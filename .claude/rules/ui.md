@@ -1932,9 +1932,12 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `downloads_over_the_app`, a panel floating
   `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, its list
   `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
-  room for one song and a half: each song's title, its state in `browser::fetching_colour` (accent
-  downloading, `done` downloaded, `failure` given up, unprovided or unwanted, `muted` landing, queued
-  or retrying) and its artist — the title and state a press opening the album the want is on
+  room for one song and a half: each song's title, its artist and its state in
+  `browser::fetching_colour` (accent downloading, `done` downloaded, `failure` given up, unprovided or
+  unwanted, `muted` landing, queued or retrying), three lines of one clipped column, each cut to its
+  room by `truncate().ends_in_an_ellipsis()`, beside a `flex_none` group holding the row's marks, so a
+  long state (*Attempt 2 of 5 · asking …*) ends in an ellipsis rather than running under the marks
+  as it did when it sat `flex_none` beside the artist — the text a press opening the album the want is on
   (`LibraryModel::downloaded_album`, read off its standing) and putting the panel away, and a
   downloaded song carrying an `Icon::Play` that reads the row it landed as
   (`LibraryModel::downloaded_track`) and plays it — an `Icon::Redo` asking again where

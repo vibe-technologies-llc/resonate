@@ -3896,62 +3896,53 @@ impl RootView {
             .downloaded_track(download)
             .filter(|_| fetching == Fetching::Downloaded);
 
-        div()
-            .id(listing::keyed_by("download", &recording))
-            .debug_selector(move || format!("download-{at}"))
+        let text = div()
+            .id(listing::keyed_by("open-download", &recording))
             .flex()
-            .items_center()
-            .gap_1()
-            .pl_3()
-            .pr_1()
-            .py_1()
-            .rounded_md()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .when_some(album, |text, album| {
+                text.cursor_pointer()
+                    .names(OPEN_DOWNLOAD_HINT)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.close_the_downloads(cx);
+                        this.opened(Selection::Album(album), cx);
+                    }))
+            })
             .child(
                 div()
-                    .id(listing::keyed_by("open-download", &recording))
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .when_some(album, |text, album| {
-                        text.cursor_pointer()
-                            .names(OPEN_DOWNLOAD_HINT)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.close_the_downloads(cx);
-                                this.opened(Selection::Album(album), cx);
-                            }))
-                    })
-                    .child(
-                        div()
-                            .text_size(px(theme::text_sm()))
-                            .text_color(rgb(theme::text()))
-                            .truncate()
-                            .ends_in_an_ellipsis()
-                            .child(SharedString::from(download.found.title.clone())),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .min_w_0()
-                            .gap_1()
-                            .text_size(px(theme::text_xs()))
-                            .child(div().flex_none().text_color(rgb(state)).child(saying))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_color(rgb(theme::faint()))
-                                    .truncate()
-                                    .ends_in_an_ellipsis()
-                                    .child(SharedString::from(format!(
-                                        "· {}",
-                                        download.found.artist
-                                    ))),
-                            ),
-                    ),
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::text()))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(SharedString::from(download.found.title.clone())),
             )
-            .when_some(track, |row, track| {
-                row.child(
+            .child(
+                div()
+                    .text_size(px(theme::text_xs()))
+                    .text_color(rgb(theme::faint()))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(SharedString::from(download.found.artist.clone())),
+            )
+            .child(
+                div()
+                    .text_size(px(theme::text_xs()))
+                    .text_color(rgb(state))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(saying),
+            );
+
+        let actions = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_0p5()
+            .when_some(track, |actions, track| {
+                actions.child(
                     kit::icon_button(
                         listing::keyed_by("play-download", &recording),
                         Icon::Play,
@@ -3962,8 +3953,8 @@ impl RootView {
                     })),
                 )
             })
-            .when(fetching.can_be_asked_again(), |row| {
-                row.child(
+            .when(fetching.can_be_asked_again(), |actions| {
+                actions.child(
                     kit::icon_button(
                         listing::keyed_by("ask-again", &recording),
                         Icon::Redo,
@@ -3976,9 +3967,9 @@ impl RootView {
                     })),
                 )
             })
-            .when(fetching.can_be_cancelled(), |row| {
+            .when(fetching.can_be_cancelled(), |actions| {
                 let cancelled = recording.clone();
-                row.child(
+                actions.child(
                     kit::icon_button(
                         listing::keyed_by("cancel-download", &recording),
                         Icon::Stop,
@@ -3991,9 +3982,9 @@ impl RootView {
                     })),
                 )
             })
-            .when(!fetching.is_underway(), |row| {
+            .when(!fetching.is_underway(), |actions| {
                 let dismissed = recording.clone();
-                row.child(
+                actions.child(
                     kit::icon_button(
                         listing::keyed_by("dismiss-download", &recording),
                         Icon::Close,
@@ -4005,7 +3996,20 @@ impl RootView {
                         });
                     })),
                 )
-            })
+            });
+
+        div()
+            .id(listing::keyed_by("download", &recording))
+            .debug_selector(move || format!("download-{at}"))
+            .flex()
+            .items_center()
+            .gap_2()
+            .pl_3()
+            .pr_1()
+            .py_1p5()
+            .rounded_md()
+            .child(text)
+            .child(actions)
     }
 
     fn play_what_was_downloaded(&mut self, track: TrackId, cx: &mut Context<Self>) {
