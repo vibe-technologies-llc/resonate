@@ -1943,7 +1943,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   say (`the_sidebar_says_what_is_happening_first_and_how_many_songs_are_left`) — and a press opens
   `downloads_over_the_app`, a panel floating
   `DOWNLOADS_PANEL_GAP` beside the sidebar and above the playback bar (`theme::downloads_width`, wide enough for a state and its percentage on one line, its list
-  `theme::downloads_height` at most and scrolled past that), since the sidebar of a short window had
+  `theme::downloads_height` at most and scrolled past that; a press anywhere outside it closes it, and the sidebar row's own click right after such a press is ignored for `DOWNLOADS_TOGGLE_PRESS` so pressing the row to hide it does not open it again), since the sidebar of a short window had
   room for one song and a half: each song's title, its artist and its state in
   `browser::fetching_colour` (accent downloading, `done` downloaded, `failure` given up, unprovided or
   unwanted, `muted` landing, queued or retrying), three lines of one clipped column, each cut to its

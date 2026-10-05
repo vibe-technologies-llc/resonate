@@ -143,6 +143,8 @@ const DISMISS_DOWNLOAD_HINT: &str = "Take this song off the list";
 
 const DOWNLOADS_PANEL_GAP: f32 = 8.0;
 
+const DOWNLOADS_TOGGLE_PRESS: Duration = Duration::from_millis(600);
+
 const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
 
 const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
@@ -498,6 +500,7 @@ pub struct RootView {
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
+    downloads_pressed_off: Option<Instant>,
     deleting: Option<Deleting>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
@@ -947,6 +950,7 @@ impl RootView {
             listen,
             listening_open: false,
             downloads_open: false,
+            downloads_pressed_off: None,
             deleting: None,
             incoming: None,
             taking_in: None,
@@ -3776,6 +3780,13 @@ impl RootView {
                 SHOW_DOWNLOADS_HINT
             })
             .on_click(cx.listener(|this, _, _, cx| {
+                let closed_by_this_press = this
+                    .downloads_pressed_off
+                    .take()
+                    .is_some_and(|pressed| pressed.elapsed() < DOWNLOADS_TOGGLE_PRESS);
+                if closed_by_this_press {
+                    return;
+                }
                 this.downloads_open = !this.downloads_open;
                 cx.notify();
             }))
@@ -3851,6 +3862,10 @@ impl RootView {
                     spread_radius: px(0.0),
                 }])
                 .occlude()
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.downloads_pressed_off = Some(Instant::now());
+                    this.close_the_downloads(cx);
+                }))
                 .child(
                     div()
                         .flex()

@@ -2783,7 +2783,7 @@ fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::muted()))
         .child(SharedString::from(format!(
-            "{NOT_HELD_HEADING} · {} · press one to open it",
+            "{NOT_HELD_HEADING} · {}",
             format::counted(albums, "release", "releases")
         )))
 }
