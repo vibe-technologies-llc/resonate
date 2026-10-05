@@ -15,7 +15,7 @@ use crate::{
     clipboard,
     icons::Icon,
     lyrics::{Asked, Heard, Look, Measures, Reading, rising},
-    theme,
+    motion, theme,
     views::{
         hint::{self, Names},
         kit::{self, Tone},
@@ -480,11 +480,12 @@ impl RootView {
                         } else {
                             theme::text()
                         };
-                        let sung = mixed(theme::muted(), lit, line.lead);
+                        let sung = motion::blended(theme::muted(), lit, line.lead);
                         match line.sweep {
                             Some(sweep) => {
-                                let waiting = mixed(theme::background(), lit, UNSUNG_SHARE);
-                                let unsung = mixed(theme::muted(), waiting, line.lead);
+                                let waiting =
+                                    motion::blended(theme::background(), lit, UNSUNG_SHARE);
+                                let unsung = motion::blended(theme::muted(), waiting, line.lead);
                                 words
                                     .text_color(rgb(unsung))
                                     .child(swept(line.text, &sweep, unsung, sung))
@@ -610,7 +611,7 @@ fn swept(text: SharedString, sweep: &Sweep, unsung: u32, sung: u32) -> StyledTex
         runs.push((0..wiped.sung_to, coloured(sung)));
     }
     if let Some((letter, share)) = wiped.blending {
-        runs.push((letter, coloured(mixed(unsung, sung, share))));
+        runs.push((letter, coloured(motion::blended(unsung, sung, share))));
     }
 
     StyledText::new(text).with_highlights(runs)
@@ -658,17 +659,6 @@ fn wiped(text: &str, sweep: &Sweep) -> Wiped {
         sung_to: letter.start,
         blending: (share > 0.0).then_some((letter, share)),
     }
-}
-
-fn mixed(from: u32, to: u32, share: f32) -> u32 {
-    let channel = |shift: u32| {
-        let one = ((from >> shift) & 0xff) as f32;
-        let other = ((to >> shift) & 0xff) as f32;
-
-        ((other - one).mul_add(share, one).round() as u32) << shift
-    };
-
-    channel(16) | channel(8) | channel(0)
 }
 
 fn attribution(look: &Look) -> Option<Attributed> {

@@ -5,8 +5,8 @@ use std::{
 };
 
 use gpui::{
-    BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla, point, prelude::*,
-    px, relative, rgb, rgba,
+    AnimationElement, BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla,
+    point, prelude::*, px, relative, rgb, rgba,
 };
 use parking_lot::Mutex;
 use resonate_core::names_audio;
@@ -18,7 +18,7 @@ use resonate_library::{
 use crate::{
     Notice, ResonateApp, format,
     icons::{self, Icon},
-    theme, toast,
+    motion, theme, toast,
     views::{
         kit::{self, EndsInAnEllipsis as _},
         root::RootView,
@@ -494,11 +494,11 @@ impl RootView {
                 .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                     this.dropped(paths.paths().to_vec(), cx);
                 }))
-                .child(card),
+                .child(motion::lifted_in(card, "drop-arrives")),
         )
     }
 
-    pub(crate) fn copying_pill(&self, cx: &mut Context<Self>) -> Option<Div> {
+    pub(crate) fn copying_pill(&self, cx: &mut Context<Self>) -> Option<AnimationElement<Div>> {
         let taking = self.taking_in.as_ref()?;
         let stats = taking.progress.snapshot();
         let stopping = taking.progress.is_cancelled();
@@ -519,14 +519,14 @@ impl RootView {
         };
         let into = name_of(&taking.into);
 
-        Some(
+        let resting = px(theme::transport_height() + theme::type_ahead_lift() + ABOVE_A_TOAST);
+
+        Some(motion::risen_in(
             div()
                 .absolute()
                 .left_0()
                 .right_0()
-                .bottom(px(theme::transport_height()
-                    + theme::type_ahead_lift()
-                    + ABOVE_A_TOAST))
+                .bottom(resting)
                 .flex()
                 .justify_center()
                 .child(
@@ -567,7 +567,9 @@ impl RootView {
                         )
                         .child(bar(share)),
                 ),
-        )
+            "copying-arrives",
+            resting,
+        ))
     }
 
     fn stop_button(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {

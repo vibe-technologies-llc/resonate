@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::{
     icons::{self, Icon},
-    theme,
+    motion, theme,
 };
 
 const HINT_GROUP: &str = "hint";
@@ -48,7 +48,7 @@ pub(crate) struct Hint {
 
 impl Render for Hint {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        let drawn = div()
             .max_w(px(theme::hint_width()))
             .px_3()
             .py_2()
@@ -66,7 +66,9 @@ impl Render for Hint {
             .text_size(px(theme::text_sm()))
             .line_height(px(theme::text_sm() * 1.45))
             .text_color(rgb(theme::text()))
-            .child(self.text.clone())
+            .child(self.text.clone());
+
+        motion::faded_in(drawn, "hint", motion::HINT_ARRIVES_OVER)
     }
 }
 

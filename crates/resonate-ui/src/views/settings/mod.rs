@@ -33,7 +33,7 @@ use crate::{
     AppIcon, ResonateApp, Setting,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
-    theme,
+    motion, theme,
     views::{
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
@@ -279,10 +279,20 @@ impl RootView {
                         .text_size(px(theme::text_xs()))
                         .whitespace_nowrap()
                         .cursor_pointer()
+                        .relative()
                         .text_color(rgb(ink))
+                        .child(motion::shown_while(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .rounded_lg()
+                                .bg(rgb(theme::hover())),
+                            "chosen",
+                            selected,
+                        ))
                         .when_else(
                             selected,
-                            |row| row.bg(rgb(theme::hover())).font_weight(FontWeight::MEDIUM),
+                            |row| row.font_weight(FontWeight::MEDIUM),
                             |row| row.hover(|row| row.bg(rgb(theme::hover()))),
                         )
                         .names(category.about())
@@ -369,7 +379,7 @@ impl RootView {
             .py_4()
             .overflow_y_scroll()
             .track_scroll(&self.settings_scroll)
-            .child(
+            .child(motion::faded_in(
                 div()
                     .flex()
                     .flex_col()
@@ -377,7 +387,12 @@ impl RootView {
                     .w(theme::width(theme::settings_column()))
                     .max_w_full()
                     .child(column),
-            )
+                SharedString::from(match narrowing.narrows() {
+                    true => "settings-found".to_owned(),
+                    false => format!("settings-{}", category.label()),
+                }),
+                motion::ARRIVES_OVER,
+            ))
     }
 
     fn group(&mut self, group: Group, standing: &Standing, cx: &mut Context<Self>) -> Div {

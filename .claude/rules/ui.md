@@ -986,7 +986,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   above the bar and lifted clear of the type-ahead pill when showing; it rises `RISE` (10 px) and fades in
   over `ARRIVAL` (220 ms), lingers `LINGER` (6 s) — `LINGER_IN_A_BURST` (2 s) where more wait, at most
   `WAITING_AT_MOST` (4) waiting and never the same words twice — and fades out over `WITHDRAWAL` rising
-  the same 10 px, a click or escape taking it early. A `Notice` is `Trouble`, `Done` or `Noted`, and the
+  the same 10 px, a click or escape taking it early. It is the one surface with an exit; everything
+  else that arrives follows `motion.md`. A `Notice` is `Trouble`, `Done` or `Noted`, and the
   tone is the pill's icon — the alert in the failure colour, the tick in green, the info mark in the
   accent — the words staying the body text colour. `EqualiserModel` sets its notice where it holds no
   `cx`, so the notice is an outbox `RootView` drains into the toaster (`take_notice`) whenever the model
@@ -1074,9 +1075,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `RootView::playing` answers the song last resolved and `name_the_window` keeps the title it set,
   rather than flashing *Nothing playing*; and the next cover being read off the catalog,
   `held_through_a_change` draws the last cover drawn (`RootView::shown_cover`) for up to
-  `COVER_HELD_FOR` where a cover is expected, rather than the disc. What changes fades in
-  (`faded_in`, `CHANGE_FADES_IN_OVER`, from `CHANGE_FADES_IN_FROM`), the cover keyed by what it pictures
-  and the title and by-line by their text, so the same song drawn again does not fade. Title, artist and album are three elements, not one
+  `COVER_HELD_FOR` where a cover is expected, rather than the disc. The signal path is held between
+  songs too (`held_signal`), so the text column above it never moves, and what changes is handed over
+  rather than redrawn: `motion.md` has the crossfade. Title, artist and album are three elements, not one
   truncated line: each opens the page behind it through `RootView::opens`, the title and album scoping
   the tracks pane to `Selection::Album` and the artist to `Selection::Artist`. A scope whose album or
   artist the catalog no longer holds (`Browsed::gone`) is left for `Selection::Everything` when the

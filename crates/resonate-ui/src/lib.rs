@@ -18,6 +18,7 @@ mod launcher;
 mod listening;
 mod lyrics;
 mod models;
+mod motion;
 mod recent;
 mod settings;
 mod spectrum;

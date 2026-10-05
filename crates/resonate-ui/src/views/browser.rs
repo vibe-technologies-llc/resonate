@@ -26,7 +26,7 @@ use crate::{
     format,
     icons::{self, Icon},
     models::{Notice, Picture},
-    theme, toast,
+    motion, theme, toast,
     views::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
@@ -158,10 +158,11 @@ impl RootView {
         already: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let mark = match already {
-            true => kit::lit_mark(id, Icon::Favourited, UNFAVOUR_HINT),
-            false => kit::icon_button(id, Icon::Favourite, FAVOUR_HINT),
+        let saying = match already {
+            true => UNFAVOUR_HINT,
+            false => FAVOUR_HINT,
         };
+        let mark = kit::star(id, already, SharedString::from(format!("{what:?}")), saying);
 
         mark.on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
@@ -2178,7 +2179,7 @@ impl RootView {
                     anchored()
                         .position(at)
                         .snap_to_window_with_margin(px(8.0))
-                        .child(card),
+                        .child(motion::lifted_in(card, "record-arrives")),
                 )
                 .with_priority(1),
             )

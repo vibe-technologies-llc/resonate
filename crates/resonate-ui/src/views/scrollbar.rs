@@ -18,6 +18,8 @@ const TRACK_BREADTH: f32 = 12.0;
 const THUMB_BREADTH: f32 = 6.0;
 const SHORTEST_THUMB: f32 = 48.0;
 const SCROLLED_LINGERS: Duration = Duration::from_millis(1_200);
+const THUMB_ARRIVES_OVER: Duration = Duration::from_millis(100);
+const THUMB_LEAVES_OVER: Duration = Duration::from_millis(180);
 const LAST_SCROLLED: &str = "last-scrolled";
 
 #[derive(Clone)]
@@ -221,11 +223,13 @@ enum Shown {
 }
 
 impl Shown {
-    const fn now(self, pointed: bool, held: bool, scrolled: bool) -> bool {
+    fn presence(self, pointed: bool, held: bool, scrolled: f32) -> f32 {
+        let whole = |shown: bool| if shown { 1.0 } else { 0.0 };
         match self {
-            Self::Always => true,
-            Self::WhileMoved(moved) => moved || pointed || held,
-            Self::WhileScrolled => scrolled || pointed || held,
+            Self::Always => 1.0,
+            Self::WhileMoved(moved) => whole(moved || pointed || held),
+            Self::WhileScrolled if pointed || held => 1.0,
+            Self::WhileScrolled => scrolled,
         }
     }
 
@@ -238,17 +242,26 @@ impl Shown {
 struct Scrolled {
     offset: Point<Pixels>,
     at: Option<Instant>,
+    since: Option<Instant>,
 }
 
 impl Scrolled {
     fn seen(held: Option<Self>, offset: Point<Pixels>, now: Instant) -> Self {
         match held {
             Some(held) if held.offset == offset => held,
-            Some(_) => Self {
+            Some(held) => Self {
                 offset,
                 at: Some(now),
+                since: Some(match held.since {
+                    Some(since) if held.lately(now) => since,
+                    _ => now,
+                }),
             },
-            None => Self { offset, at: None },
+            None => Self {
+                offset,
+                at: None,
+                since: None,
+            },
         }
     }
 
@@ -256,30 +269,49 @@ impl Scrolled {
         self.at
             .is_some_and(|at| now.saturating_duration_since(at) < SCROLLED_LINGERS)
     }
+
+    fn presence(self, now: Instant) -> f32 {
+        let (Some(at), Some(since)) = (self.at, self.since) else {
+            return 0.0;
+        };
+        let arrived =
+            now.saturating_duration_since(since).as_secs_f32() / THUMB_ARRIVES_OVER.as_secs_f32();
+        let left = SCROLLED_LINGERS
+            .saturating_sub(now.saturating_duration_since(at))
+            .as_secs_f32()
+            / THUMB_LEAVES_OVER.as_secs_f32();
+
+        arrived.min(left).clamp(0.0, 1.0)
+    }
 }
 
-fn scrolled_lately(target: &Target, window: &mut Window, cx: &App) -> bool {
+fn scrolled_presence(target: &Target, window: &mut Window, cx: &App) -> f32 {
     let offset = target.handle().offset();
     let now = Instant::now();
 
-    let (lately, fresh) = window.with_global_id(LAST_SCROLLED.into(), |global, window| {
+    let (presence, fresh) = window.with_global_id(LAST_SCROLLED.into(), |global, window| {
         window.with_element_state(global, |held: Option<Scrolled>, _| {
             let scrolled = Scrolled::seen(held, offset, now);
             let fresh = scrolled.at == Some(now);
-            ((scrolled.lately(now), fresh), scrolled)
+            ((scrolled.presence(now), fresh), scrolled)
         })
     });
     if fresh {
         hide_once_it_settles(window, cx);
     }
+    if presence > 0.0 && presence < 1.0 {
+        window.request_animation_frame();
+    }
 
-    lately
+    presence
 }
 
 fn hide_once_it_settles(window: &Window, cx: &App) {
     window
         .spawn(cx, async move |cx| {
-            cx.background_executor().timer(SCROLLED_LINGERS).await;
+            cx.background_executor()
+                .timer(SCROLLED_LINGERS - THUMB_LEAVES_OVER)
+                .await;
             if cx.update(|window, _| window.refresh()).is_err() {
                 tracing::debug!("the window a scrollbar was waiting to hide has gone");
             }
@@ -358,9 +390,13 @@ fn bar(
                 move |bounds, _, window, cx| {
                     track.set(bounds);
                     let lit = bounds.contains(&window.mouse_position());
-                    let scrolled =
-                        shown.follows_the_offset() && scrolled_lately(&target, window, cx);
-                    if !shown.now(lit, cx.has_active_drag(), scrolled) {
+                    let scrolled = if shown.follows_the_offset() {
+                        scrolled_presence(&target, window, cx)
+                    } else {
+                        0.0
+                    };
+                    let presence = shown.presence(lit, cx.has_active_drag(), scrolled);
+                    if presence <= 0.0 {
                         return;
                     }
                     let Some(thumb) = target.thumb(axis, axis.length(bounds.size)) else {
@@ -377,14 +413,46 @@ fn bar(
                             size(px(thumb.length), px(THUMB_BREADTH)),
                         ),
                     };
-                    let mut quad = fill(
-                        Bounds::new(origin, extent),
-                        rgb(if lit { theme::text() } else { theme::muted() }),
-                    );
+                    let mut colour = rgb(if lit { theme::text() } else { theme::muted() });
+                    colour.a = presence;
+                    let mut quad = fill(Bounds::new(origin, extent), colour);
                     quad.corner_radii = px(THUMB_BREADTH / 2.0).into();
                     window.paint_quad(quad);
                 },
             )
             .size_full(),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_scrolled_thumb_fades_in_stays_and_fades_out() {
+        let start = Instant::now();
+        let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+        let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
+
+        assert!(still.presence(start).abs() < 1e-6);
+        assert!(moved.presence(start).abs() < 1e-6);
+        assert!((moved.presence(start + THUMB_ARRIVES_OVER) - 1.0).abs() < 1e-6);
+        assert!((moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER) - 1.0).abs() < 1e-6);
+
+        let leaving = moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER / 2);
+
+        assert!(leaving > 0.0 && leaving < 1.0);
+        assert!(moved.presence(start + SCROLLED_LINGERS).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scrolling_on_while_the_thumb_shows_does_not_fade_it_in_again() {
+        let start = Instant::now();
+        let later = start + THUMB_ARRIVES_OVER * 3;
+        let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+        let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
+        let moved_on = Scrolled::seen(Some(moved), point(px(0.0), px(-80.0)), later);
+
+        assert!((moved_on.presence(later) - 1.0).abs() < 1e-6);
+    }
 }

@@ -11,7 +11,7 @@ use crate::{
     Pane, ResonateApp, Setting,
     icons::{self, Icon},
     listening::{Found, Stage},
-    theme,
+    motion, theme,
     views::{
         hint::Names,
         kit::{self, Tone},
@@ -119,7 +119,7 @@ impl RootView {
             .justify_center()
             .bg(rgba(theme::scrim()))
             .occlude()
-            .child(card)
+            .child(motion::lifted_in(card, "listen-sheet-arrives"))
     }
 
     fn listen_heading(&self, listening: bool, cx: &mut Context<Self>) -> Div {

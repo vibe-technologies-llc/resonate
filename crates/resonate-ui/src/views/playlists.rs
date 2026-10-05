@@ -14,7 +14,7 @@ use crate::{
     Drawn, Notice, Selection, format,
     icons::{self, Icon},
     models::Picture,
-    theme,
+    motion, theme,
     views::{
         browser::{self, OPEN_ARTIST_HINT, row_controls},
         hint::{self, Names},
@@ -1359,7 +1359,7 @@ impl RootView {
             .justify_center()
             .bg(rgba(theme::scrim()))
             .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))
-            .child(
+            .child(motion::lifted_in(
                 div()
                     .id("playlist-picker-panel")
                     .flex()
@@ -1419,7 +1419,8 @@ impl RootView {
                             .child(kit::eyebrow("OR A NEW ONE"))
                             .child(self.name_field(cx)),
                     ),
-            )
+                "playlist-picker-arrives",
+            ))
             .into_any_element()
     }
 

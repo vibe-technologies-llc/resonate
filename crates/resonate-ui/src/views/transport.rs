@@ -4,13 +4,16 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, App, Context, Corners, Div, FontWeight, MouseButton,
-    MouseDownEvent, ObjectFit, Pixels, Point, ScrollWheelEvent, SharedString, Stateful, Svg,
-    Window, div, ease_out_quint, img, prelude::*, px, rgb,
+    Animation, AnimationElement, AnimationExt as _, AnyElement, App, Context, Corners, Div,
+    ElementId, FontWeight, MouseButton, MouseDownEvent, ObjectFit, Pixels, Point, ScrollWheelEvent,
+    SharedString, Stateful, Svg, Window, div, img, prelude::*, px, rgb,
 };
-use resonate_core::{AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, TrackId};
+use resonate_core::{
+    AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
+};
 use resonate_engine::{
-    Asleep, Command, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest, Until,
+    Asleep, Command, OutputStatus, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest,
+    Until,
 };
 use resonate_library::{Codec, Favoured};
 
@@ -20,6 +23,7 @@ use crate::{
     clipboard, format,
     icons::{self, Icon},
     models::{Notice, Picture},
+    motion::{self, HANDS_OVER, Handover},
     theme, toast,
     views::{
         Pane,
@@ -162,23 +166,69 @@ pub(crate) struct ShownCover {
 }
 
 const COVER_HELD_FOR: Duration = Duration::from_millis(400);
-const CHANGE_FADES_IN_OVER: Duration = Duration::from_millis(160);
-const CHANGE_FADES_IN_FROM: f32 = 0.2;
 
 fn between_songs(state: &PlayerState) -> bool {
     state.current.is_none() && state.playback == PlaybackState::Buffering
 }
 
-fn faded_in<E: IntoElement + Styled + 'static>(element: E, key: SharedString) -> AnyElement {
-    element
-        .with_animation(
-            key,
-            Animation::new(CHANGE_FADES_IN_OVER).with_easing(ease_out_quint()),
-            |faded, delta| {
-                faded.opacity(CHANGE_FADES_IN_FROM + (1.0 - CHANGE_FADES_IN_FROM) * delta)
-            },
-        )
-        .into_any_element()
+#[derive(Clone, Copy)]
+pub(crate) struct Signal {
+    source: Option<StreamSpec>,
+    output: Option<OutputStatus>,
+}
+
+#[derive(PartialEq)]
+struct ShownSong {
+    title: SharedString,
+    artist: SharedString,
+    album: Option<SharedString>,
+}
+
+impl ShownSong {
+    fn of(playing: &Playing) -> Self {
+        Self {
+            title: playing.title.clone(),
+            artist: playing.artist.clone(),
+            album: playing.album.clone(),
+        }
+    }
+}
+
+type Face = Option<(Picture, Magnified)>;
+
+#[derive(Default)]
+pub(crate) struct Handovers {
+    song: Handover<ShownSong, (Rc<Playing>, bool)>,
+    cover: Handover<Option<Magnified>, Face>,
+    signal: Option<Signal>,
+}
+
+fn handed_over<E: IntoElement + Styled + 'static>(
+    element: E,
+    key: (&'static str, u64),
+    handing: bool,
+    opacity: fn(f32) -> f32,
+) -> AnimationElement<E> {
+    element.with_animation(
+        ElementId::NamedInteger(key.0.into(), key.1),
+        Animation::new(HANDS_OVER),
+        move |faded, share| faded.opacity(if handing { opacity(share) } else { 1.0 }),
+    )
+}
+
+fn face(face: Face) -> Div {
+    let drawn = div().size_full().flex().items_center().justify_center();
+    match face {
+        Some((art, _)) => drawn.child(
+            img(art)
+                .size(px(theme::now_playing_cover()))
+                .object_fit(ObjectFit::Cover)
+                .rounded_md(),
+        ),
+        None => drawn
+            .bg(rgb(theme::raised()))
+            .child(icons::icon(Icon::Disc, 24.0, theme::faint())),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -452,9 +502,50 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let playing = self.playing(state, digest, cx);
-        let cover = self.now_playing_cover(&playing.cover, cx);
+        let now = Instant::now();
+        let cover = self.now_playing_cover(&playing.cover, now, cx);
         let idle = state.current.is_none() && !between_songs(state);
-        let shown = SharedString::from(format!("now-playing-{}-{}", playing.title, playing.artist));
+        let signal = self.held_signal(state);
+        let (serial, leaving) = {
+            let mut handovers = self.handovers.borrow_mut();
+            handovers
+                .song
+                .show(ShownSong::of(&playing), (Rc::clone(&playing), idle), now);
+            (
+                handovers.song.serial(),
+                handovers
+                    .song
+                    .leaving()
+                    .map(|leaving| (Rc::clone(&leaving.what.0), leaving.what.1)),
+            )
+        };
+        let handing = leaving.is_some();
+
+        let words = div()
+            .relative()
+            .flex()
+            .flex_col()
+            .min_w(px(0.0))
+            .when_some(leaving, |words, (left, was_idle)| {
+                words.child(handed_over(
+                    div()
+                        .id("now-playing-leaving")
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .child(self.now_playing_words(&left, was_idle, cx)),
+                    ("now-playing-leaving", serial),
+                    true,
+                    motion::leaving_opacity,
+                ))
+            })
+            .child(handed_over(
+                self.now_playing_words(&playing, idle, cx),
+                ("now-playing-arriving", serial),
+                handing,
+                motion::arriving_opacity,
+            ));
 
         div()
             .flex()
@@ -474,26 +565,43 @@ impl RootView {
                     .min_w(px(0.0))
                     .gap_0p5()
                     .child(kit::measures_its_width(self.playing_room.clone()))
-                    .child(faded_in(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .min_w(px(0.0))
-                            .gap_0p5()
-                            .child(self.played_title(&playing, idle, cx))
-                            .child(self.by_line(
-                                "playing-artist",
-                                "playing-album",
-                                &playing,
-                                self.playing_room.get(),
-                                cx,
-                            )),
-                        shown,
-                    ))
-                    .when(state.current.is_some(), |panel| {
-                        panel.child(self.signal_path(state, &playing, sink, cx))
+                    .child(words)
+                    .when_some(signal, |panel, signal| {
+                        panel.child(self.signal_path(signal, &playing, sink, cx))
                     }),
             )
+    }
+
+    fn now_playing_words(&self, playing: &Playing, idle: bool, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_col()
+            .min_w(px(0.0))
+            .gap_0p5()
+            .child(self.played_title(playing, idle, cx))
+            .child(self.by_line(
+                "playing-artist",
+                "playing-album",
+                playing,
+                self.playing_room.get(),
+                cx,
+            ))
+    }
+
+    fn held_signal(&self, state: &PlayerState) -> Option<Signal> {
+        let mut handovers = self.handovers.borrow_mut();
+        match state.current {
+            Some(track) => {
+                handovers.signal = Some(Signal {
+                    source: Some(track.source),
+                    output: state.output,
+                });
+            }
+            None if between_songs(state) => {}
+            None => handovers.signal = None,
+        }
+
+        handovers.signal
     }
 
     fn played_title(&self, playing: &Playing, idle: bool, cx: &mut Context<Self>) -> Div {
@@ -644,12 +752,12 @@ impl RootView {
 
     fn signal_path(
         &self,
-        state: &PlayerState,
+        signal: Signal,
         playing: &Playing,
         sink: Option<SharedString>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let source = state.current.map(|track| track.source);
+        let source = signal.source;
         let mut path = div()
             .id("signal-path")
             .flex()
@@ -665,7 +773,7 @@ impl RootView {
             .on_click(cx.listener(|this, _, _, cx| this.set_pane(Pane::Inspector, cx)));
 
         let quality = source.map(format::quality);
-        let output = state.output.map(|output| format::mode(output.mode));
+        let output = signal.output.map(|output| format::mode(output.mode));
         let size = px(theme::text_xs());
         let measured = |text: &str, weight: FontWeight| {
             f32::from(kit::width_of(text, &theme::mono(weight), size, cx))
@@ -709,12 +817,11 @@ impl RootView {
             })
     }
 
-    fn now_playing_cover(&self, cover: &Cover, cx: &mut Context<Self>) -> AnyElement {
+    fn now_playing_cover(&self, cover: &Cover, now: Instant, cx: &mut Context<Self>) -> AnyElement {
         let frame = div()
+            .relative()
             .flex()
             .flex_none()
-            .items_center()
-            .justify_center()
             .size(px(theme::now_playing_cover()))
             .rounded_md()
             .overflow_hidden()
@@ -726,25 +833,42 @@ impl RootView {
             .pictured()
             .and_then(|pictured| self.drawn_cover(pictured, Drawn::NowPlaying, cx));
         let drawn = self.held_through_a_change(drawn, cover.pictured().is_some());
-        let Some((art, magnified)) = drawn else {
-            return frame
-                .child(icons::icon(Icon::Disc, 24.0, theme::faint()))
-                .into_any_element();
+        let (serial, leaving) = {
+            let mut handovers = self.handovers.borrow_mut();
+            handovers.cover.show(
+                drawn.as_ref().map(|(_, magnified)| magnified.clone()),
+                drawn.clone(),
+                now,
+            );
+            (
+                handovers.cover.serial(),
+                handovers
+                    .cover
+                    .leaving()
+                    .map(|leaving| leaving.what.clone()),
+            )
+        };
+        let handing = leaving.is_some();
+        let faces = |frame: Div| {
+            frame
+                .when_some(leaving, |frame, left| {
+                    frame.child(face(left).absolute().top_0().left_0())
+                })
+                .child(face(drawn.clone()).with_animation(
+                    ElementId::NamedInteger("now-playing-cover".into(), serial),
+                    Animation::new(HANDS_OVER).with_easing(motion::smooth),
+                    move |arriving, share| arriving.opacity(if handing { share } else { 1.0 }),
+                ))
+        };
+        let Some((_, magnified)) = drawn.clone() else {
+            return faces(frame).into_any_element();
         };
 
         let opened = magnified.clone();
-        let drawn_as = SharedString::from(format!("now-playing-cover-{magnified:?}"));
-        let cover = frame
+        let cover = faces(frame)
             .id("magnify-cover")
             .cursor_pointer()
             .hover(|cover| cover.opacity(kit::LIT))
-            .child(faded_in(
-                img(art)
-                    .size(px(theme::now_playing_cover()))
-                    .object_fit(ObjectFit::Cover)
-                    .rounded_md(),
-                drawn_as,
-            ))
             .names(COVER_HINT)
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.magnify(magnified.clone(), cx);
@@ -979,17 +1103,21 @@ impl RootView {
                     .items_center()
                     .cursor_pointer()
                     .group(VOLUME_ICON_GROUP)
-                    .child(icons::lit_on_hover(
-                        icons::icon(
-                            if muted { Icon::Muted } else { Icon::Volume },
-                            theme::toggle_icon(),
-                            if muted {
-                                theme::accent()
-                            } else {
-                                theme::muted()
-                            },
+                    .child(motion::popped(
+                        icons::lit_on_hover(
+                            icons::icon(
+                                if muted { Icon::Muted } else { Icon::Volume },
+                                theme::toggle_icon(),
+                                if muted {
+                                    theme::accent()
+                                } else {
+                                    theme::muted()
+                                },
+                            ),
+                            VOLUME_ICON_GROUP,
                         ),
-                        VOLUME_ICON_GROUP,
+                        "glyph",
+                        muted,
                     ))
                     .names(if muted { UNMUTE_HINT } else { hint })
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -1098,10 +1226,10 @@ impl RootView {
             .bg(rgb(theme::text()))
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::accent())))
-            .child(icons::icon(
-                glyph,
-                theme::transport_play_icon(),
-                theme::background(),
+            .child(motion::popped(
+                icons::icon(glyph, theme::transport_play_icon(), theme::background()),
+                "glyph",
+                playing,
             ))
             .names(if playing { PAUSE_HINT } else { PLAY_HINT })
             .on_click(cx.listener(|this, _, _, cx| this.send(Command::TogglePlayPause, cx)))
@@ -1141,13 +1269,24 @@ impl RootView {
             .items_center()
             .justify_center()
             .size(px(theme::toggle_control()))
+            .relative()
             .rounded_md()
             .cursor_pointer()
-            .when(active, |button| {
-                button.bg(theme::tinted(theme::accent(), 0x1c))
-            })
             .hover(|button| button.bg(rgb(theme::hover())))
-            .child(lit(glyph, colour, active))
+            .child(motion::shown_while(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded_md()
+                    .bg(theme::tinted(theme::accent(), 0x1c)),
+                "tint",
+                active,
+            ))
+            .child(motion::popped(
+                lit(glyph, colour, active),
+                "glyph",
+                (glyph, active),
+            ))
             .names(saying)
     }
 }

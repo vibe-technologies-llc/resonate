@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, ScrollHandle, SharedString,
-    Stateful, Svg, canvas, div, point, prelude::*, px, rgb,
+    Stateful, canvas, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -10,7 +10,7 @@ use resonate_library::Codec;
 use crate::{
     format,
     icons::{self, Icon},
-    theme,
+    motion, theme,
     views::{hint::Names, listing, pointed::LitUnderThePointer},
 };
 
@@ -287,10 +287,32 @@ pub(crate) fn mark_when(
     marked(press, id, drawn, saying)
 }
 
+pub(crate) fn star(
+    id: impl Into<ElementId>,
+    favoured: bool,
+    which: SharedString,
+    saying: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let drawn = match favoured {
+        true => icons::icon(Icon::Favourited, theme::row_control_icon(), theme::accent()),
+        false => icons::lit_on_hover(
+            icons::icon(Icon::Favourite, theme::row_control_icon(), theme::muted()),
+            BUTTON_GROUP,
+        ),
+    };
+
+    marked(
+        Press::Takes,
+        id,
+        motion::starred(drawn, which, favoured),
+        saying,
+    )
+}
+
 fn marked(
     press: Press,
     id: impl Into<ElementId>,
-    drawn: Svg,
+    drawn: impl IntoElement,
     saying: impl Into<SharedString>,
 ) -> Stateful<Div> {
     let id = id.into();
@@ -505,11 +527,20 @@ pub(crate) fn segment(
         .text_size(px(theme::text_xs()))
         .whitespace_nowrap()
         .cursor_pointer()
+        .relative()
+        .child(motion::shown_while(
+            div()
+                .absolute()
+                .inset_0()
+                .rounded_md()
+                .bg(rgb(theme::hover())),
+            "chosen",
+            chosen,
+        ))
         .when_else(
             chosen,
             |option| {
                 option
-                    .bg(rgb(theme::hover()))
                     .text_color(rgb(theme::text()))
                     .font_weight(FontWeight::MEDIUM)
             },
@@ -524,32 +555,52 @@ pub(crate) fn segment(
 
 pub(crate) fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
     let id = id.into();
+
     div()
         .id(id.clone())
         .found_as(&id)
-        .flex()
+        .relative()
         .flex_none()
-        .items_center()
         .w(theme::width(theme::switch_track()))
         .h(theme::width(theme::switch_height()))
-        .p_0p5()
         .rounded_full()
         .cursor_pointer()
-        .when_else(
-            on,
-            |track| track.bg(rgb(theme::accent())).justify_end(),
-            |track| track.bg(rgb(theme::outline())),
-        )
-        .child(
+        .child(motion::flips(
             div()
-                .size(theme::width(theme::switch_knob()))
-                .rounded_full()
-                .bg(rgb(if on {
-                    theme::accent_ink()
-                } else {
-                    theme::faint()
-                })),
-        )
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .p_0p5()
+                .rounded_full(),
+            "thrown",
+            on,
+            |track, from, to, share| {
+                let at = motion::turned(from, to, share);
+
+                track
+                    .bg(rgb(motion::blended(theme::outline(), theme::accent(), at)))
+                    .child(grown(div(), at))
+                    .child(
+                        div()
+                            .size(theme::width(theme::switch_knob()))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(rgb(motion::blended(
+                                theme::faint(),
+                                theme::accent_ink(),
+                                at,
+                            ))),
+                    )
+                    .child(grown(div(), 1.0 - at))
+            },
+        ))
+}
+
+fn grown(spacer: Div, by: f32) -> Div {
+    let mut spacer = spacer.flex_basis(px(0.0)).h_full();
+    spacer.style().flex_grow = Some(by);
+    spacer
 }
 
 pub(crate) fn preview(dressed: Appearance) -> Div {
@@ -637,27 +688,32 @@ pub(crate) fn choice_row(id: impl Into<ElementId>, chosen: bool) -> Stateful<Div
         )
 }
 
-pub(crate) fn radio(chosen: bool) -> Div {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(RADIO))
-        .rounded_full()
-        .border_1()
-        .when_else(
-            chosen,
-            |mark| {
-                mark.border_color(rgb(theme::accent())).child(
-                    div()
-                        .size(px(RADIO_DOT))
-                        .rounded_full()
-                        .bg(rgb(theme::accent())),
-                )
-            },
-            |mark| mark.border_color(rgb(theme::outline())),
-        )
+pub(crate) fn radio(chosen: bool) -> impl IntoElement {
+    motion::flips(
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(RADIO))
+            .rounded_full()
+            .border_1(),
+        "radio",
+        chosen,
+        |mark, from, to, share| {
+            let at = motion::turned(from, to, share);
+
+            mark.border_color(rgb(motion::blended(theme::outline(), theme::accent(), at)))
+                .when(at > 0.0, |mark| {
+                    mark.child(
+                        div()
+                            .size(px(RADIO_DOT * at))
+                            .rounded_full()
+                            .bg(rgb(theme::accent())),
+                    )
+                })
+        },
+    )
 }
 
 pub(crate) fn level_with_the_choice(mark: impl IntoElement) -> Div {

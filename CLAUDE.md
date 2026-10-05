@@ -16,6 +16,7 @@ automatically where their `paths:` match:
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage, the equaliser pane | the vocabulary, the biquads, the per-sink binding, the formats, AutoEq |
 | `ui.md` | resonate-ui | chrome, input, drawing, the palettes, panes |
+| `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
 | `providers.md` | resonate-providers, providers/*, `Library::poll` | the seam, the registry, the inbox, Subsonic, TIDAL, what a delivery is and where it lands |

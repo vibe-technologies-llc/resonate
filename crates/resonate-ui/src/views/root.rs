@@ -10,8 +10,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet, AHasher};
 use gpui::{
-    AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId, Entity,
-    ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
+    AnimationElement, AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId,
+    Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point, Render,
     ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle, Window,
     canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
@@ -46,6 +46,7 @@ use crate::{
     icons::{self, Icon},
     listening::ListenModel,
     models::{Picture, Scale},
+    motion,
     settings::SettingsWriter,
     theme,
     toast::{self, Toaster},
@@ -70,7 +71,7 @@ use crate::{
             Account, Category, FILTER_PLACEHOLDER, HeldBand, Plotted, SigningIn, TidalAccount,
         },
         slider::{Grab, Rail},
-        transport::{Resolved, ShownCover},
+        transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
     },
@@ -622,6 +623,7 @@ pub struct RootView {
     scale: Scale,
     pub(crate) resolved: RefCell<Option<Resolved>>,
     pub(crate) shown_cover: RefCell<Option<ShownCover>>,
+    pub(crate) handovers: RefCell<Handovers>,
     pub(crate) focus: FocusHandle,
     pub(crate) search: Entity<Field>,
     pub(crate) remember_tab: bool,
@@ -1070,6 +1072,7 @@ impl RootView {
             scale: Scale::ONE,
             resolved: RefCell::new(None),
             shown_cover: RefCell::new(None),
+            handovers: RefCell::default(),
             focus,
             search,
             remember_tab,
@@ -2851,7 +2854,7 @@ impl RootView {
             .occlude()
             .cursor_pointer()
             .when_some(art, |overlay, art| {
-                overlay.child(
+                overlay.child(motion::lifted_in(
                     div()
                         .size(side)
                         .rounded_xl()
@@ -2864,7 +2867,8 @@ impl RootView {
                             spread_radius: px(0.0),
                         }])
                         .child(img(art).size(side).object_fit(ObjectFit::Contain)),
-                )
+                    "magnified-cover-arrives",
+                ))
             })
             .when_some(title, |overlay, title| {
                 overlay.child(
@@ -3085,7 +3089,7 @@ impl RootView {
                 .bottom(px(theme::transport_height() + theme::type_ahead_lift()))
                 .flex()
                 .justify_center()
-                .child(
+                .child(motion::lifted_in(
                     div()
                         .flex()
                         .items_center()
@@ -3110,7 +3114,8 @@ impl RootView {
                                 .whitespace_nowrap()
                                 .child(typed),
                         ),
-                ),
+                    "type-ahead-arrives",
+                )),
         )
     }
 
@@ -3796,7 +3801,10 @@ impl RootView {
             ))
     }
 
-    fn downloads_over_the_app(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+    fn downloads_over_the_app(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnimationElement<Stateful<Div>>> {
         let library = self.library.read(cx);
         if !self.downloads_open || library.downloads().is_empty() {
             return None;
@@ -3819,12 +3827,14 @@ impl RootView {
             list = list.child(self.download_row(at, &download, fetching, cx));
         }
 
-        Some(
+        let resting = px(theme::transport_height() + DOWNLOADS_PANEL_GAP);
+
+        Some(motion::risen_in(
             div()
                 .id("downloads-panel")
                 .absolute()
                 .left(px(theme::sidebar_width() + DOWNLOADS_PANEL_GAP))
-                .bottom(px(theme::transport_height() + DOWNLOADS_PANEL_GAP))
+                .bottom(resting)
                 .w(px(theme::downloads_width()))
                 .flex()
                 .flex_col()
@@ -3887,7 +3897,9 @@ impl RootView {
                         ),
                 )
                 .child(list),
-        )
+            "downloads-arrives",
+            resting,
+        ))
     }
 
     fn close_the_downloads(&mut self, cx: &mut Context<Self>) {
@@ -4151,7 +4163,7 @@ impl RootView {
             .justify_center()
             .bg(rgba(theme::scrim()))
             .occlude()
-            .child(card)
+            .child(motion::lifted_in(card, "delete-sheet-arrives"))
     }
 
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -4209,24 +4221,10 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .text_size(px(theme::text_sm()))
-            .when(chosen, |row| {
-                row.bg(rgb(theme::raised()))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-            })
+            .when(chosen, |row| row.font_weight(gpui::FontWeight::MEDIUM))
             .hover(|row| row.bg(rgb(theme::hover())))
             .text_color(rgb(colour))
-            .when(chosen, |row| {
-                row.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top(px(9.0))
-                        .w(px(2.0))
-                        .h(px(14.0))
-                        .rounded_full()
-                        .bg(rgb(theme::accent())),
-                )
-            })
+            .child(chosen_ground(chosen))
             .child(icons::lit_on_hover(
                 icons::icon(pane.icon(), theme::pane_icon(), mark),
                 PANE_GROUP,
@@ -4337,10 +4335,32 @@ impl RootView {
             Region::Sidebar => self.sidebar(cx).into_any_element(),
             Region::Pane => {
                 self.grid_width.seen_in(window.viewport_size().width);
-                self.content(cx)
+                let shown = self.pane_shown(cx);
+                motion::faded_in(
+                    div()
+                        .size_full()
+                        .grid()
+                        .grid_cols(1)
+                        .grid_rows(1)
+                        .child(self.content(cx)),
+                    shown,
+                    motion::ARRIVES_OVER,
+                )
+                .into_any_element()
             }
             Region::Transport => self.transport(chrome::rounded_within_the_frame(window), cx),
         }
+    }
+
+    fn pane_shown(&self, cx: &mut Context<Self>) -> SharedString {
+        let searching = self.search_in_front(cx).is_some();
+        let selection = self.library.read(cx).selection();
+
+        SharedString::from(match (searching, self.pane) {
+            (true, _) => "pane-search".to_owned(),
+            (false, Pane::Tracks) => format!("pane-tracks-{selection:?}"),
+            (false, pane) => format!("pane-{pane:?}"),
+        })
     }
 
     fn content(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -4577,14 +4597,32 @@ impl Render for RootView {
                 app.child(self.playlist_picker(&holding, cx))
             })
             .when_some(self.magnified.clone(), |app, magnified| {
-                app.child(self.magnifier(&magnified, window, cx))
+                app.child(motion::faded_in(
+                    self.magnifier(&magnified, window, cx),
+                    "magnifier-scrim",
+                    motion::ARRIVES_OVER,
+                ))
             })
-            .when(self.listening_open, |app| app.child(self.listen_sheet(cx)))
+            .when(self.listening_open, |app| {
+                app.child(motion::faded_in(
+                    self.listen_sheet(cx),
+                    "listen-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
             .when_some(self.deleting.clone(), |app, deleting| {
-                app.child(self.deletion_sheet(&deleting, cx))
+                app.child(motion::faded_in(
+                    self.deletion_sheet(&deleting, cx),
+                    "delete-scrim",
+                    motion::ARRIVES_OVER,
+                ))
             })
             .when_some(self.copying_pill(cx), ParentElement::child)
-            .when_some(self.drop_overlay(cx), ParentElement::child);
+            .when_some(
+                self.drop_overlay(cx)
+                    .map(|overlay| motion::faded_in(overlay, "drop-scrim", motion::ARRIVES_OVER)),
+                ParentElement::child,
+            );
 
         chrome::frame(window, app)
     }
@@ -4711,6 +4749,36 @@ pub(crate) fn tall_row(selected: bool) -> Div {
 
 pub(crate) fn empty(icon: Icon, message: &'static str, more: Option<&'static str>) -> AnyElement {
     kit::empty(icon, message, more)
+}
+
+const CHOSEN_MARK: f32 = 14.0;
+
+const CHOSEN_MARK_FROM_THE_TOP: f32 = 9.0;
+
+fn chosen_ground(chosen: bool) -> impl IntoElement {
+    motion::flips(
+        div()
+            .absolute()
+            .inset_0()
+            .rounded_md()
+            .bg(rgb(theme::raised())),
+        "chosen",
+        chosen,
+        |ground, from, to, share| {
+            let at = motion::turned(from, to, share);
+
+            ground.opacity(at).child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top(px(CHOSEN_MARK_FROM_THE_TOP + CHOSEN_MARK * (1.0 - at) / 2.0))
+                    .w(px(2.0))
+                    .h(px(CHOSEN_MARK * at))
+                    .rounded_full()
+                    .bg(rgb(theme::accent())),
+            )
+        },
+    )
 }
 
 #[cfg(test)]

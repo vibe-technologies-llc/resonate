@@ -12,7 +12,7 @@ use resonate_library::{Favoured, PlaylistEntry, Track};
 use crate::{
     Selection, clipboard, format,
     icons::{self, Icon},
-    theme,
+    motion, theme,
     views::{
         kit::{self, EndsInAnEllipsis as _},
         playlists::Held,
@@ -255,7 +255,7 @@ impl RootView {
                         anchored()
                             .position(menu.at)
                             .snap_to_window_with_margin(px(8.0))
-                            .child(panel),
+                            .child(motion::lifted_in(panel, "menu-arrives")),
                     )
                     .with_priority(1),
                 )
