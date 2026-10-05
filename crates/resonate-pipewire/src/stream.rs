@@ -15,6 +15,7 @@ use crate::{Result, SinkId, Words};
 pub struct GraphTime {
     pub delay: i64,
     pub buffered: u64,
+    pub queued: u64,
     pub tick: Ratio,
 }
 
@@ -22,7 +23,8 @@ impl GraphTime {
     pub const fn downstream(self, stream: SampleRate) -> Frames {
         Frames(
             self.ahead_of_the_device(stream)
-                .saturating_add(self.buffered),
+                .saturating_add(self.buffered)
+                .saturating_add(self.queued),
         )
     }
 
@@ -189,6 +191,7 @@ mod tests {
         GraphTime {
             delay,
             buffered: 0,
+            queued: 0,
             tick: Ratio {
                 numer: NonZeroU32::new(1).expect("a tick numerator"),
                 denom: NonZeroU32::new(hz).expect("a graph rate"),
@@ -247,6 +250,21 @@ mod tests {
             .downstream(SampleRate::HZ_48000),
             Frames(64),
             "a stream ahead of the device still holds what it holds"
+        );
+    }
+
+    #[test]
+    fn the_buffers_queued_for_the_graph_are_counted_beside_what_the_stream_holds() {
+        let queued = GraphTime {
+            buffered: 128,
+            queued: 1_024,
+            ..ticking(48_000, 480)
+        };
+
+        assert_eq!(
+            queued.downstream(SampleRate::HZ_48000),
+            Frames(1_632),
+            "the buffers filled and not yet taken by the graph were left out of the reading"
         );
     }
 

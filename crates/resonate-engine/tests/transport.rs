@@ -2973,6 +2973,7 @@ fn ticking_at(hz: u32) -> GraphTime {
     GraphTime {
         delay: 0,
         buffered: 0,
+        queued: 0,
         tick: Ratio {
             numer: NonZeroU32::MIN,
             denom: NonZeroU32::new(hz).expect("a graph rate"),

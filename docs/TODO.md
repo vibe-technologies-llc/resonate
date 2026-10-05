@@ -15,9 +15,6 @@ else is open to be done.
   depth later, half a second by default, because gain and filters run ahead of a ring kept full
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
-- The queued buffers' frames are not counted in the stream's delay, so the position and the
-  visualiser's frame are short by up to one cycle. `pw_time.queued` has no setter in pipewire-rs
-  0.10, but queued buffers times the frames last filled would estimate it without `unsafe`
 - **Blocked on hardware:** Nothing has proved a forced graph rate change against hardware (the only
   card here offers 48 kHz alone) nor DoP against a DAC that decodes it
 

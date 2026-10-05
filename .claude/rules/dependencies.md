@@ -72,8 +72,8 @@ here is added to both.
   before undoing it, so `Ape` refuses that one shape rather than decode it wrong.
 - **`pipewire`** needs `v0_3_50`: `PW_KEY_NODE_RATE` (`v0_3_33`) and `PW_KEY_TARGET_OBJECT`
   (`v0_3_44`) serve the bit-perfect path, `pw_buffer.requested` (`v0_3_49`) lets the callback fill
-  the quantum asked for, and `pw_time.buffered` (`v0_3_50`) reports the frames the stream still
-  holds. The feature is a *minimum daemon* version, and `packaging/PKGBUILD` and the spec say so.
+  the quantum asked for, and `pw_time.buffered` and `queued_buffers` (`v0_3_50`) report the frames
+  the stream still holds and the buffers queued ahead of the graph. The feature is a *minimum daemon* version, and `packaging/PKGBUILD` and the spec say so.
 - **`ahash`** needs `std` for the `AHashMap` / `AHashSet` aliases and `runtime-rng` for the
   `Default` impl `AHashMap::new()` requires.
 - **`tracing-subscriber`** needs `env-filter` (not default) and `tracing-log` (default, keep it):

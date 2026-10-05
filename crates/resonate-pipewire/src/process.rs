@@ -7,10 +7,10 @@
 )]
 
 use std::{
-    num::NonZeroU32,
+    num::{NonZeroU32, NonZeroUsize},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -52,19 +52,28 @@ pub(crate) struct Cycle {
     stride: i32,
     packed_stride: i32,
     bytes_per_frame: usize,
+    padded_frame: NonZeroUsize,
+    packed_frame: NonZeroUsize,
     packed: Arc<AtomicBool>,
     clock: Arc<StreamClock>,
+    last_filled: AtomicU64,
 }
 
 impl Cycle {
     pub(crate) fn new(spec: StreamSpec, packed: Arc<AtomicBool>, clock: Arc<StreamClock>) -> Self {
+        let bytes_per_frame = spec.bytes_per_frame().get() as usize;
+        let packed_stride = packed_stride(spec);
+
         Self {
             rate: spec.rate,
-            stride: spec.bytes_per_frame().get() as i32,
-            packed_stride: packed_stride(spec),
-            bytes_per_frame: spec.bytes_per_frame().get() as usize,
+            stride: bytes_per_frame as i32,
+            packed_stride,
+            bytes_per_frame,
+            padded_frame: NonZeroUsize::new(bytes_per_frame).unwrap_or(NonZeroUsize::MIN),
+            packed_frame: NonZeroUsize::new(packed_stride as usize).unwrap_or(NonZeroUsize::MIN),
             packed,
             clock,
+            last_filled: AtomicU64::new(0),
         }
     }
 
@@ -95,6 +104,7 @@ impl Cycle {
             None => 0,
         };
 
+        self.note_filled(filled, packed);
         let chunk = data.chunk_mut();
         *chunk.offset_mut() = 0;
         *chunk.stride_mut() = if packed {
@@ -113,6 +123,20 @@ impl Cycle {
         quantum.min(room)
     }
 
+    fn note_filled(&self, filled: usize, packed: bool) {
+        let frame = if packed {
+            self.packed_frame
+        } else {
+            self.padded_frame
+        };
+        self.last_filled
+            .store((filled / frame) as u64, Ordering::Relaxed);
+    }
+
+    fn queued_frames(&self, buffers: u32) -> u64 {
+        u64::from(buffers).saturating_mul(self.last_filled.load(Ordering::Relaxed))
+    }
+
     fn note_latency(&self, stream: &Stream) {
         let Ok(time) = stream.time() else {
             return;
@@ -123,6 +147,7 @@ impl Cycle {
         let ahead = GraphTime {
             delay: time.delay(),
             buffered: time.buffered(),
+            queued: self.queued_frames(time.queued_buffers()),
             tick,
         };
         self.clock.note(ahead, self.rate);
@@ -197,6 +222,27 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(StreamClock::default()),
         )
+    }
+
+    #[test]
+    fn each_queued_buffer_is_reckoned_to_hold_what_the_last_cycle_filled() {
+        let cycle = cycling(SampleFormat::S24);
+
+        assert_eq!(
+            cycle.queued_frames(2),
+            0,
+            "nothing filled was reckoned queued"
+        );
+
+        cycle.note_filled(1_024 * 8, false);
+        assert_eq!(cycle.queued_frames(2), 2_048);
+
+        cycle.note_filled(1_024 * 6, true);
+        assert_eq!(
+            cycle.queued_frames(1),
+            1_024,
+            "a packed buffer was counted in padded frames"
+        );
     }
 
     #[test]

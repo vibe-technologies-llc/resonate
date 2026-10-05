@@ -1060,7 +1060,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   callback holds the only consistent snapshot of delay and rate, so it builds a `GraphTime` and
   publishes `downstream(spec.rate)` as one `AtomicU64` of stream frames (two atomics would tear and
   converting later takes a lock the RT thread may not). `SinkStream::latency` is `Frames`.
-  `GraphTime::buffered` is already at the stream's rate and so added, not converted.
+  `GraphTime::buffered` is already at the stream's rate and so added, not converted, and so is
+  `GraphTime::queued`: the buffers filled and not yet taken by the graph, `pw_time.queued_buffers` times
+  the frames the last cycle filled (`Cycle::note_filled`, in packed frames where the stream is packed),
+  `pw_time.queued` staying zero because pipewire-rs sets no `pw_buffer.size`
+  (`each_queued_buffer_is_reckoned_to_hold_what_the_last_cycle_filled`).
 - **Bit-perfect is what the graph runs at, read every cycle, not only what the stream was opened at.**
   Another client can hold the graph at a second rate after the stream opened, and the graph then
   converts the stream however the plan reads. `StreamClock` is what the callback writes each cycle
