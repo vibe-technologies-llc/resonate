@@ -111,7 +111,11 @@ the loose `dismax` shape; the `a_*_query_names_only_what_was_asked` tests pin ea
   first**: `songs_by_search` requires the artist (each word of `SPELT_LOOSELY_FROM` letters or more
   spelt loosely) and lets the title only rank, falling back to the loose words on an empty answer.
   The title is not required because MusicBrainz tokenises it as entered, so a phrase misses *You F O*
-  under `"you fo"`.
+  under `"you fo"`. **Words that read as no title by an artist are asked twice**: as the phrase an
+  artist is credited under (`songs_credited_search`), whose answer leads, and as the loose dismax
+  words. Dismax alone ranks a recording *titled* with the words (a cover, a mashup, *Twenty One
+  Pilots* by someone else) above the band's own songs, so searching an artist's name found none
+  of them.
 - **A search answer is read for where each recording sits.** The index spells a medium's track list
   `track` where a lookup spells `tracks` (one `alias`) and gives no `position`, so `placed` falls
   back to `track-offset` plus one; its `isrcs` are read through the same filter, so a

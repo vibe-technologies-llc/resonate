@@ -636,7 +636,10 @@ pub(crate) fn find_songs(client: &Client, asked: &SongsAsked) -> Result<Vec<Reco
         }
     }
 
-    songs_found(client, &songs_search(&asked.words))
+    let mut found = songs_found(client, &songs_credited_search(&asked.words))?;
+    found.extend(songs_found(client, &songs_search(&asked.words))?);
+
+    Ok(found)
 }
 
 fn songs_found(client: &Client, path: &str) -> Result<Vec<RecordingMatch>> {
@@ -650,6 +653,14 @@ fn songs_found(client: &Client, path: &str) -> Result<Vec<RecordingMatch>> {
         .into_iter()
         .filter_map(RecordingFoundDoc::into_match)
         .collect())
+}
+
+fn songs_credited_search(words: &str) -> String {
+    searched(
+        "/recording/",
+        &format!("artist:{}", lucene_quoted(words)),
+        SONGS_FOUND_AT_MOST,
+    )
 }
 
 fn songs_search(words: &str) -> String {
@@ -1790,6 +1801,25 @@ mod tests {
             "{path}"
         );
         assert!(!path.contains("dismax"), "{path}");
+    }
+
+    #[test]
+    fn words_are_also_asked_as_the_name_an_artist_is_credited_under() {
+        let path = songs_credited_search("twenty one pilots");
+
+        assert!(path.starts_with("/recording/?"), "{path}");
+        assert!(
+            path.contains(&format!(
+                "query={}",
+                crate::query::escape_query(r#"artist:"twenty one pilots""#)
+            )),
+            "{path}"
+        );
+        assert!(!path.contains("dismax"), "{path}");
+        assert!(
+            path.contains(&format!("limit={SONGS_FOUND_AT_MOST}")),
+            "{path}"
+        );
     }
 
     #[test]

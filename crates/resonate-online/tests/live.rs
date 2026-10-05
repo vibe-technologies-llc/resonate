@@ -100,6 +100,29 @@ fn a_title_by_an_artist_is_found_however_the_title_is_spelt() {
 }
 
 #[test]
+fn an_artists_name_alone_finds_the_songs_credited_to_it() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+
+    let asked = songs_asked("twenty one pilots").expect("words worth asking");
+    let found = online.find_songs(&asked).expect("musicbrainz answered");
+
+    assert!(
+        found
+            .iter()
+            .take(5)
+            .all(|matched| matched.credited_as() == "twenty one pilots"),
+        "{:?}",
+        found
+            .iter()
+            .map(|matched| &matched.title)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn a_link_to_a_song_on_spotify_tidal_and_apple_music_names_its_isrc() {
     let Some(client) = reached() else {
         return;
