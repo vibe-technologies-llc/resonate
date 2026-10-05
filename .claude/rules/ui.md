@@ -104,16 +104,16 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   `SignsIn` seam's two calls on the background executor, the code drawn as a `kit::figure` beside
   *Open the page* (`cx.open_url`) and *Stop*, which sets the flag the waiting call reads. The token
   it is handed is held in the refresh-token field, the global and the settings file at once; a
-  refusal is a toast naming which (`providers.md` has the seam). The group's hifi-api address is
-  an optional custom-server override: blank selects the hosted service, and submitting a blank
-  field says so. **An account given is asked at once.** Every field of the *A Subsonic server* and
+  refusal is a toast naming which (`providers.md` has the seam). The group's hifi-api and
+  Monochrome addresses are optional custom-server overrides: blank selects the hosted service, and
+  submitting a blank field says so. **An account given is asked at once.** Every field of the *A Subsonic server* and
   *A TIDAL account* groups writes the global `Online` as it writes the file, and the registry is
   built from that global (`Sourcing::providers`, below), so a sign-in, a server or a password takes
   effect on the next poll; `the_sources_moved` then hands the model `LibraryModel::sources_moved`,
   which — wherever a provider is now registered — turns every *No provider is set up* download back
   to *Queued* and asks every unheld want, as *Poll now* does
   (`a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is`); turning Online on
-  does the same. A server address — the Subsonic server and a custom hifi-api server — must begin
+  does the same. A server address — the Subsonic server and a custom hifi-api or Monochrome server — must begin
   `http://` or `https://` with a host after it (`reads_as_a_server`); anything else is a toast
   saying so and nothing stored, where a bare `music.local:4533` once failed every poll in
   silence.

@@ -208,6 +208,7 @@ pub enum SettingKey {
     TidalClientSecret,
     TidalRefreshToken,
     HifiApi,
+    Monochrome,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -218,7 +219,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 76] = [
+    pub const ALL: [Self; 77] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -288,6 +289,7 @@ impl SettingKey {
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
         Self::HifiApi,
+        Self::Monochrome,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -372,6 +374,7 @@ pub enum Setting {
     TidalClientSecret(String),
     TidalRefreshToken(String),
     HifiApi(String),
+    Monochrome(String),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -453,6 +456,7 @@ impl Setting {
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
             Self::HifiApi(_) => SettingKey::HifiApi,
+            Self::Monochrome(_) => SettingKey::Monochrome,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -481,6 +485,7 @@ pub struct Online {
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
     pub hifi_api: String,
+    pub monochrome: String,
 }
 
 #[derive(Clone, Copy, Debug)]

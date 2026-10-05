@@ -109,6 +109,7 @@ impl Fetched {
             "subsonic" => "your Subsonic server".to_owned(),
             "tidal" => "TIDAL".to_owned(),
             "hifi-api" => "TIDAL through hifi-api".to_owned(),
+            "monochrome" => "Monochrome".to_owned(),
             other => other.to_owned(),
         }
     }

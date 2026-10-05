@@ -170,6 +170,7 @@ pub struct Config {
     pub tidal_client_secret: Option<String>,
     pub tidal_refresh_token: Option<String>,
     pub hifi_api: Option<String>,
+    pub monochrome: Option<String>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -265,6 +266,7 @@ impl fmt::Debug for Config {
             tidal_client_secret,
             tidal_refresh_token,
             hifi_api,
+            monochrome,
             discord,
             discord_app,
             discord_shows,
@@ -352,6 +354,7 @@ impl fmt::Debug for Config {
                 &withheld(tidal_refresh_token.as_ref()),
             )
             .field("hifi_api", hifi_api)
+            .field("monochrome", monochrome)
             .field("discord", discord)
             .field("discord_app", discord_app)
             .field("discord_shows", discord_shows)
@@ -739,6 +742,7 @@ impl Config {
                 config.tidal_refresh_token = given(at.string(value)?);
             }
             ConfigKey::HifiApi => config.hifi_api = given(at.string(value)?),
+            ConfigKey::Monochrome => config.monochrome = given(at.string(value)?),
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::HistoryKept => {

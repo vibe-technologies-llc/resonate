@@ -5149,6 +5149,7 @@ dependencies = [
  "resonate-listen",
  "resonate-lyrics",
  "resonate-mcp",
+ "resonate-monochrome",
  "resonate-mpris",
  "resonate-online",
  "resonate-pipewire",
@@ -5330,6 +5331,22 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "resonate-monochrome"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "resonate-core",
+ "resonate-providers",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
+ "webpki-root-certs",
 ]
 
 [[package]]

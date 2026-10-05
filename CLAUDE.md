@@ -47,7 +47,7 @@ standing rule of how work is done moves, in the same commit.
 
 ## Architecture
 
-Twenty-one crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
+Twenty-two crates. `resonate-core` is the only universal dependency; `resonate-codec`, `resonate-dsp`
 and `resonate-pipewire` never depend on each other, and `resonate-engine` joins them.
 
 ```
@@ -69,6 +69,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-eq         profile formats, the profile store, the AutoEq catalogue and its seam
   ├── resonate-providers  the provider seam: an identity in, media out  (filled by providers/*)
   ├── providers/inbox     resonate-inbox, a folder of the listener's
+  ├── providers/monochrome resonate-monochrome, a Monochrome track streamer  [`online`]
   ├── providers/subsonic  resonate-subsonic, a Subsonic server  [`online`]
   ├── providers/tidal     resonate-tidal, the listener's TIDAL subscription  [`online`]
   └── resonate-core       domain vocabulary
@@ -149,7 +150,7 @@ Invariants the layering protects; the rules files have the rest of each:
   `resonate-codec --test encoded` and `resonate-library --test library` (ffmpeg, `metaflac`,
   `wavpack`, `mac`), `resonate-online --test live` (`RESONATE_ONLINE_TESTS`). The two reconnect tests
   host a daemon of their own and the mpris notification press a bus under `dbus-run-session`.
-  `resonate-subsonic` and `resonate-tidal` serve fake servers on loopback.
+  `resonate-subsonic`, `resonate-tidal` and `resonate-monochrome` serve fake servers on loopback.
 - `cd fuzz && cargo +nightly fuzz build`, and `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15`.
 

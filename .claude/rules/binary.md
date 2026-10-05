@@ -180,6 +180,8 @@ password, key and the `contact` (`no_key_holding_a_secret_or_the_contact_is_prin
   (`unusable_as_the_music_folder`), and adds it to the roots unless a root already reaches it.
 - `hifi-api` is an optional custom TIDAL server; blank or absent the hosted HiFi service is used
   while `online` is on (`providers.md`).
+- `monochrome` is an optional custom Monochrome track streamer; blank or absent
+  `tracks.monochrome.st` is used while `online` is on (`providers.md`).
 - `history-kept` is `forever` or a whole number of days; every command opening the catalog first
   forgets listens and skipped time older than that.
 - `enrich-after-scan` off leaves the reference to `enrich`, the Library card's *Enrich* and the

@@ -288,3 +288,33 @@ service returns must be HTTPS on `manifest.tidal.com` or a subdomain.
   `Asker::of_the_listeners_server`, whose agent trusts the system's store beside the built-in roots
   (`trust.rs`); the hosted service, TIDAL's API and its CDN keep the built-in roots alone. A
   certificate refused anywhere in the crate is `Error::Untrusted` through `asker::unreached`.
+
+## A Monochrome server
+
+`resonate-monochrome` asks the track streamer behind [Monochrome](https://monochrome.st). With
+`online` on, `providers::registry` registers it after `hifi-api` as `monochrome`, asking
+`tracks.monochrome.st` by default; the `monochrome` setting and the *Monochrome server* field (in
+the *A TIDAL account* group, beside the hifi-api override) name another server, and clearing the
+field restores the hosted one. The binary's `Hosting` (`Hosted` or `Custom`) is what both
+overridable services are built from. Two routes are all it uses: `/search/tracks?q=<words>&limit=`
+answers `tracks` listings (`trackId`, `isrc`, `playable`), and `/track/<trackId>` the whole FLAC.
+
+- **Asked by the ISRC alone, never by a title.** The listings carry no MusicBrainz id and the
+  search does not read an ISRC as its query, so a want with no ISRC answers `Nothing` with no
+  request; otherwise it is searched in words (title and artist, then the title alone,
+  `LISTED_AT_MOST` listings) and a listing is taken only where its own `isrc`, read through
+  `Isrc::new`, is the want's and it is not `playable: false`. A `trackId` is used only where it is
+  all digits, since it goes into the path.
+- **What lands is the server's FLAC**, keyed `track/<trackId>` with the extension `flac`, opened
+  inside `obtain` so a refused download is the provider's `Refused` under `ProviderOp::Download`. A
+  404 or 410 there is the track gone, `Nothing`; a download whose `Content-Type` names text, JSON or
+  XML is `Unreadable`, never streamed as a song.
+- **A download that breaks off is asked for again from where it stopped** (`fetched.rs`) with
+  `Range: bytes=<read>-`, up to `RESUMES_AT_MOST` times running: a `206` whose `Content-Range`
+  starts there is read on, a `200` is read past what was already held. A file runs to hundreds of
+  megabytes, so each read, not the whole, is bounded: `stall.rs`'s `BrokenOffAfter` as Subsonic's.
+- **It paces itself as Subsonic does**: requests `ASKED_APART`, a 429, 502, 503 or 504 asked again
+  after `Retry-After` up to `RETRIES_AT_MOST`, then the `Refused` it was. The User-Agent is bare.
+- **A custom server is trusted as the Subsonic server is** (`trust.rs`, the system's store beside the
+  built-in roots); the hosted service keeps the built-in roots alone. A refused certificate is
+  `Error::Untrusted`.

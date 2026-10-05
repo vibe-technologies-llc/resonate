@@ -129,6 +129,7 @@ jobs:
           refuse resonate-pipewire resonate-codec resonate-dsp
           refuse resonate-providers resonate-library resonate-codec resonate-vault gpui
           refuse resonate-tidal resonate-library resonate-codec resonate-vault resonate-engine gpui
+          refuse resonate-monochrome resonate-library resonate-codec resonate-vault resonate-engine gpui
           refuse resonate-analysis gpui resonate-engine resonate-library ureq
           refuse resonate-discord gpui resonate-library ureq
           refuse resonate-listen gpui resonate-engine resonate-library ureq

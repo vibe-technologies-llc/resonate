@@ -1,0 +1,66 @@
+{
+  "tracks": [
+    {
+      "id": "154140652551016448",
+      "trackId": "154140652551016448",
+      "title": "Echoes",
+      "artistIds": [
+        "153548316771094528"
+      ],
+      "artistNames": [
+        "Pink Floyd"
+      ],
+      "releaseId": "154070748510556160",
+      "artwork": "https://tracks.monochrome.st/proxy/mi/154070748510556160-1A01.jpg",
+      "explicit": false,
+      "playable": true,
+      "duration": 1412451,
+      "isrc": "GBN9Y1100065",
+      "recordingId": "169867028516048896",
+      "searchPriority": 0
+    },
+    {
+      "id": "173257718600040448",
+      "trackId": "173257718600040448",
+      "title": "Echoes - Live In Gdansk",
+      "artistIds": [
+        "153548543301259264"
+      ],
+      "artistNames": [
+        "David Gilmour"
+      ],
+      "releaseId": "169109378962579456",
+      "artwork": "https://tracks.monochrome.st/proxy/mi/169109378962579456-1A01.jpg",
+      "explicit": false,
+      "playable": true,
+      "duration": 1525533,
+      "isrc": "GBLTP0800019",
+      "recordingId": "177131316272173056",
+      "searchPriority": 0
+    },
+    {
+      "id": "176742690942394368",
+      "trackId": "176742690942394368",
+      "title": "Echoes - Part 1 - Live at Pompeii - MCMLXXII - 2025 Mix",
+      "artistIds": [
+        "153548316771094528"
+      ],
+      "artistNames": [
+        "Pink Floyd"
+      ],
+      "releaseId": "176742656889069568",
+      "artwork": "https://tracks.monochrome.st/proxy/mi/176742656889069568-1A01.jpg",
+      "explicit": false,
+      "playable": true,
+      "duration": 715080,
+      "isrc": "USSM12409270",
+      "recordingId": "186095558752997376",
+      "searchPriority": 0
+    }
+  ],
+  "releases": [],
+  "artists": [],
+  "topResults": [],
+  "users": [],
+  "playlists": []
+}

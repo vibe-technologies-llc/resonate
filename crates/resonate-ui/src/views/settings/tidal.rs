@@ -85,7 +85,9 @@ const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, you
                           application the refresh token was issued to. The hosted hifi-api \
                           service is used where no custom server is given; a hifi-api server \
                           you run can replace it. Both use the same ISRC and whole-track checks. \
-                          Asked as soon as they are given, and only while Online is on.";
+                          Monochrome's hosted service is asked too, by ISRC alone, for the whole \
+                          FLAC; a Monochrome server you name can replace it. Asked as soon as \
+                          they are given, and only while Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
@@ -93,14 +95,16 @@ pub(crate) enum TidalAccount {
     ClientSecret,
     RefreshToken,
     HifiApi,
+    Monochrome,
 }
 
 impl TidalAccount {
-    pub(crate) const ALL: [Self; 4] = [
+    pub(crate) const ALL: [Self; 5] = [
         Self::ClientId,
         Self::ClientSecret,
         Self::RefreshToken,
         Self::HifiApi,
+        Self::Monochrome,
     ];
 
     const fn placeholder(self) -> &'static str {
@@ -109,6 +113,7 @@ impl TidalAccount {
             Self::ClientSecret => "Its client secret, if it has one, then press enter",
             Self::RefreshToken => "A refresh token for your account, then press enter",
             Self::HifiApi => "Custom hifi-api server address; blank uses the hosted service",
+            Self::Monochrome => "Custom Monochrome server address; blank uses tracks.monochrome.st",
         }
     }
 
@@ -118,6 +123,7 @@ impl TidalAccount {
             Self::ClientSecret => "Client secret",
             Self::RefreshToken => "Refresh token",
             Self::HifiApi => "hifi-api server",
+            Self::Monochrome => "Monochrome server",
         }
     }
 
@@ -127,6 +133,7 @@ impl TidalAccount {
             Self::ClientSecret => "tidal-client-secret",
             Self::RefreshToken => "tidal-refresh-token",
             Self::HifiApi => "hifi-api",
+            Self::Monochrome => "monochrome",
         }
     }
 
@@ -136,6 +143,7 @@ impl TidalAccount {
             Self::ClientSecret => 1,
             Self::RefreshToken => 2,
             Self::HifiApi => 3,
+            Self::Monochrome => 4,
         }
     }
 
@@ -145,6 +153,7 @@ impl TidalAccount {
             Self::ClientSecret => online.tidal_client_secret.clone(),
             Self::RefreshToken => online.tidal_refresh_token.clone(),
             Self::HifiApi => online.hifi_api.clone(),
+            Self::Monochrome => online.monochrome.clone(),
         }
     }
 
@@ -154,6 +163,7 @@ impl TidalAccount {
             Self::ClientSecret => online.tidal_client_secret = given,
             Self::RefreshToken => online.tidal_refresh_token = given,
             Self::HifiApi => online.hifi_api = given,
+            Self::Monochrome => online.monochrome = given,
         }
     }
 
@@ -163,6 +173,7 @@ impl TidalAccount {
             Self::ClientSecret => Setting::TidalClientSecret(given),
             Self::RefreshToken => Setting::TidalRefreshToken(given),
             Self::HifiApi => Setting::HifiApi(given),
+            Self::Monochrome => Setting::Monochrome(given),
         }
     }
 
@@ -170,13 +181,13 @@ impl TidalAccount {
         online: &Online,
         window: &mut Window,
         cx: &mut Context<RootView>,
-    ) -> [Entity<Field>; 4] {
+    ) -> [Entity<Field>; 5] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
                 let field = Field::new(account.placeholder(), window, cx);
                 let mut field = match account {
                     Self::ClientSecret | Self::RefreshToken => field.masked(),
-                    Self::ClientId | Self::HifiApi => field,
+                    Self::ClientId | Self::HifiApi | Self::Monochrome => field,
                 };
                 field.hold(account.held(online), cx);
                 field
@@ -197,7 +208,8 @@ impl RootView {
 
     fn tidal_given(&mut self, account: TidalAccount, window: &mut Window, cx: &mut Context<Self>) {
         let given = self.tidal_field(account).read(cx).text().trim().to_owned();
-        if account == TidalAccount::HifiApi && !given.is_empty() && !reads_as_a_server(&given) {
+        let names_a_server = matches!(account, TidalAccount::HifiApi | TidalAccount::Monochrome);
+        if names_a_server && !given.is_empty() && !reads_as_a_server(&given) {
             self.report(not_a_server(), cx);
             return;
         }
@@ -211,6 +223,12 @@ impl RootView {
         let said = match (account, given.is_empty()) {
             (TidalAccount::HifiApi, true) => "The hosted hifi-api service is asked from now on",
             (TidalAccount::HifiApi, false) => "The custom hifi-api server is asked from now on",
+            (TidalAccount::Monochrome, true) => {
+                "The hosted Monochrome service is asked from now on"
+            }
+            (TidalAccount::Monochrome, false) => {
+                "The custom Monochrome server is asked from now on"
+            }
             (_, true) => "TIDAL is no longer asked",
             (_, false) => "TIDAL is asked from now on",
         };

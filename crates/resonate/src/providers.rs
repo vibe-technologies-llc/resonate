@@ -4,6 +4,8 @@ use std::{
 };
 
 use resonate_inbox::Inbox;
+#[cfg(feature = "online")]
+use resonate_monochrome::Monochrome;
 use resonate_providers::Providers;
 #[cfg(feature = "online")]
 use resonate_subsonic::{Server, Subsonic};
@@ -45,7 +47,8 @@ pub fn sourced(settings: Option<PathBuf>) -> resonate_ui::Registering {
 struct Accounts {
     subsonic: Option<Server>,
     tidal: Option<Account>,
-    hifi: Option<HifiServer>,
+    hifi: Option<Hosting>,
+    monochrome: Option<Hosting>,
 }
 
 #[cfg(not(feature = "online"))]
@@ -69,7 +72,8 @@ impl Accounts {
                 config.tidal_client_secret.as_deref(),
                 config.tidal_refresh_token.as_deref(),
             ),
-            hifi: Some(hifi_api(config.hifi_api.as_deref())),
+            hifi: Some(hosting(config.hifi_api.as_deref())),
+            monochrome: Some(hosting(config.monochrome.as_deref())),
         }
     }
 
@@ -89,7 +93,8 @@ impl Accounts {
                 Some(&online.tidal_client_secret),
                 Some(&online.tidal_refresh_token),
             ),
-            hifi: Some(hifi_api(Some(&online.hifi_api))),
+            hifi: Some(hosting(Some(&online.hifi_api))),
+            monochrome: Some(hosting(Some(&online.monochrome))),
         }
     }
 }
@@ -138,21 +143,22 @@ fn tidal(
 
 #[cfg(feature = "online")]
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum HifiServer {
+enum Hosting {
     Hosted,
     Custom(String),
 }
 
 #[cfg(feature = "online")]
-fn hifi_api(server: Option<&str>) -> HifiServer {
-    given(server).map_or(HifiServer::Hosted, HifiServer::Custom)
+fn hosting(server: Option<&str>) -> Hosting {
+    given(server).map_or(Hosting::Hosted, Hosting::Custom)
 }
 
 #[cfg(feature = "online")]
 struct Made {
     subsonic: Kept<Server, Subsonic>,
     tidal: Kept<Account, Tidal>,
-    hifi: Kept<HifiServer, HifiApi>,
+    hifi: Kept<Hosting, HifiApi>,
+    monochrome: Kept<Hosting, Monochrome>,
     renewed: Arc<Renewed>,
 }
 
@@ -173,6 +179,7 @@ impl Made {
             subsonic: Kept::default(),
             tidal: Kept::default(),
             hifi: Kept::default(),
+            monochrome: Kept::default(),
             renewed: Arc::new(Renewed {
                 settings,
                 rotated: parking_lot::Mutex::new(None),
@@ -279,9 +286,18 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
     }
     if let Some(hifi) = &accounts.hifi {
         providers = providers.and(made.hifi.made_for(hifi, |hifi| match hifi {
-            HifiServer::Hosted => HifiApi::hosted(),
-            HifiServer::Custom(server) => HifiApi::at(server),
+            Hosting::Hosted => HifiApi::hosted(),
+            Hosting::Custom(server) => HifiApi::at(server),
         }));
+    }
+    if let Some(monochrome) = &accounts.monochrome {
+        providers = providers.and(made.monochrome.made_for(
+            monochrome,
+            |monochrome| match monochrome {
+                Hosting::Hosted => Monochrome::hosted(),
+                Hosting::Custom(server) => Monochrome::at(server),
+            },
+        ));
     }
     providers
 }
@@ -472,7 +488,7 @@ mod tests {
     #[test]
     fn the_hosted_hifi_api_is_registered_without_an_override_and_while_online() {
         assert!(named(&Config::default()).contains(&"hifi-api".to_owned()));
-        assert_eq!(hifi_api(None), HifiServer::Hosted);
+        assert_eq!(hosting(None), Hosting::Hosted);
 
         let whole = Config {
             hifi_api: Some("http://hifi.home.arpa:8000".to_owned()),
@@ -481,15 +497,49 @@ mod tests {
         assert!(named(&whole).contains(&"hifi-api".to_owned()));
         assert!(matches!(
             Accounts::of(&whole).hifi,
-            Some(HifiServer::Custom(_))
+            Some(Hosting::Custom(_))
         ));
-        assert_eq!(hifi_api(Some("  ")), HifiServer::Hosted);
+        assert_eq!(hosting(Some("  ")), Hosting::Hosted);
 
         let offline = Config {
             online: Some(false),
             ..whole
         };
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn the_hosted_monochrome_is_registered_after_hifi_api_without_an_override_and_while_online() {
+        let hosted = named(&Config::default());
+        assert!(hosted.contains(&"monochrome".to_owned()));
+        assert_eq!(
+            hosted.iter().position(|name| name == "monochrome"),
+            hosted
+                .iter()
+                .position(|name| name == "hifi-api")
+                .map(|hifi| hifi + 1)
+        );
+        assert_eq!(
+            Accounts::of(&Config::default()).monochrome,
+            Some(Hosting::Hosted)
+        );
+
+        let whole = Config {
+            monochrome: Some("https://tracks.home.arpa".to_owned()),
+            ..Config::default()
+        };
+        assert!(named(&whole).contains(&"monochrome".to_owned()));
+        assert_eq!(
+            Accounts::of(&whole).monochrome,
+            Some(Hosting::Custom("https://tracks.home.arpa".to_owned()))
+        );
+
+        let offline = Config {
+            online: Some(false),
+            ..whole
+        };
+        assert!(!named(&offline).contains(&"monochrome".to_owned()));
     }
 
     #[cfg(feature = "online")]
@@ -553,6 +603,7 @@ mod tests {
         };
         assert!(named(&signed_in).contains(&"tidal".to_owned()));
         assert!(named(&signed_in).contains(&"hifi-api".to_owned()));
+        assert!(named(&signed_in).contains(&"monochrome".to_owned()));
 
         let alone = register(&resonate_ui::Supplying {
             inbox: Some(Path::new("/music/inbox")),

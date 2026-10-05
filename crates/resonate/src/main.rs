@@ -2516,6 +2516,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 tidal_client_secret: config.tidal_client_secret.clone().unwrap_or_default(),
                 tidal_refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),
                 hifi_api: config.hifi_api.clone().unwrap_or_default(),
+                monochrome: config.monochrome.clone().unwrap_or_default(),
             },
             sourcing: resonate_ui::Sourcing {
                 inbox: config.inbox.clone(),

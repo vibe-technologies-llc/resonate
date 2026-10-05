@@ -177,7 +177,9 @@ yours, and TIDAL only where `tidal-client-id` and `tidal-refresh-token` name a s
 yours — the window's *Sign in to TIDAL* fetches the token with a client id you give — or where
 `hifi-api` names a [hifi-api](https://github.com/binimum/hifi-api) server you run on your own
 subscription, and a wanted track found there is downloaded whole, as lossless FLAC, into the vault, or into your music folder
-where no vault is open, never a preview, a lossy stream or an encrypted one; `online = false` stops
+where no vault is open, never a preview, a lossy stream or an encrypted one. While online is on,
+[Monochrome](https://monochrome.st)'s track streamer, or the one `monochrome` names, is asked for
+wanted tracks too, matched by ISRC alone and taken only as the whole FLAC. `online = false` stops
 all of them.
 
 Discord is told nothing unless `discord` is on and names an application of yours. What it is

@@ -277,6 +277,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::TidalClientSecret(given) => given_or_cleared(ConfigKey::TidalClientSecret, given),
         Setting::TidalRefreshToken(given) => given_or_cleared(ConfigKey::TidalRefreshToken, given),
         Setting::HifiApi(given) => given_or_cleared(ConfigKey::HifiApi, given),
+        Setting::Monochrome(given) => given_or_cleared(ConfigKey::Monochrome, given),
     };
 
     written(editing, key, value);
@@ -391,6 +392,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::TidalClientSecret => ConfigKey::TidalClientSecret,
         SettingKey::TidalRefreshToken => ConfigKey::TidalRefreshToken,
         SettingKey::HifiApi => ConfigKey::HifiApi,
+        SettingKey::Monochrome => ConfigKey::Monochrome,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,
         SettingKey::DiscordShows => ConfigKey::DiscordShows,

@@ -435,7 +435,7 @@ impl Group {
             }
             Self::Tidal => {
                 "tidal streaming service subscription provider download wants missing fill \
-                 obtain account token client lossless hi-res flac hifi-api hifi homelab"
+                 obtain account token client lossless hi-res flac hifi-api hifi homelab monochrome"
             }
             Self::Resuming => "queue restart restore carry on position where left off",
             Self::History => {
@@ -541,6 +541,7 @@ impl Group {
                 SettingKey::TidalClientSecret,
                 SettingKey::TidalRefreshToken,
                 SettingKey::HifiApi,
+                SettingKey::Monochrome,
             ],
             Self::Resuming => &[SettingKey::Resume],
             Self::History => &[SettingKey::HistoryKept],
@@ -874,7 +875,8 @@ pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked w
 pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in to here or \
                                      reached through a hifi-api server you run, the tracks \
                                      marked wanted are also filled from, as lossless FLAC, \
-                                     matched by the TIDAL track MusicBrainz names or the ISRC.";
+                                     matched by the TIDAL track MusicBrainz names or the ISRC. \
+                                     Monochrome is asked too, by the ISRC alone.";
 
 pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
                                     FLAC as REW or DRC writes it — convolved with everything \
