@@ -84,8 +84,6 @@ else is open to be done.
   SQLite reads whole, in every orphan sweep and for each suggestion candidate
 - The Missing pane's counts, listing and due lookups fold every track title of an artist for each
   release, on each narrowing key
-- Opening a DST DSDIFF reads one header per compressed frame through the whole file on every open
-  and rebind
 - Every backward seek in an MP3 or ADTS stream walks the frames from the first, and the Xing table
   of contents is never used
 - **Blocked on gpui:** Every frame the visualiser or the lyrics pane asks for is a whole-window

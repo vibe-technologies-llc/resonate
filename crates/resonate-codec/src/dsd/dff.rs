@@ -21,7 +21,6 @@ const MAX_PROP_BYTES: u64 = 1 << 16;
 const MAX_EDITED_TEXT_BYTES: u32 = 1 << 12;
 const EDITED_COUNT_BYTES: u64 = 4;
 const FRAME_INFO_BYTES: u64 = 6;
-const MOST_FRAMES_RESERVED: u64 = 1 << 20;
 const DST: &[u8; 4] = b"DST ";
 const CHANNEL_ID_BYTES: usize = 4;
 
@@ -167,26 +166,25 @@ fn frame_count(bytes: &mut dyn MediaStream, body: u64, size: u64) -> Option<u64>
         .filter(|_| size > held)
 }
 
-pub(crate) fn packed_frames(bytes: &mut dyn MediaStream, packed: Compressed) -> Vec<dst::Packed> {
-    let end = packed.at.saturating_add(packed.bytes);
-    let end = bytes.byte_len().map_or(end, |len| end.min(len));
-    let mut frames =
-        Vec::with_capacity(packed.frames.unwrap_or(0).min(MOST_FRAMES_RESERVED) as usize);
-    let mut at = packed.at;
-    while at < end {
-        let Some((id, held)) = header(bytes, at) else {
-            break;
+pub(crate) fn next_packed(
+    bytes: &mut dyn MediaStream,
+    walk: &mut dst::Walk,
+) -> Option<dst::Packed> {
+    while walk.at < walk.end {
+        let Some((id, held)) = header(bytes, walk.at) else {
+            walk.at = walk.end;
+            return None;
         };
-        let body = at + CHUNK_HEADER_BYTES;
+        let body = walk.at + CHUNK_HEADER_BYTES;
+        walk.at = body.saturating_add(held).saturating_add(held % 2);
         if &id == b"DSTF" {
-            frames.push(dst::Packed {
+            return Some(dst::Packed {
                 at: body,
-                bytes: held.min(end.saturating_sub(body)),
+                bytes: held.min(walk.end.saturating_sub(body)),
             });
         }
-        at = body.saturating_add(held).saturating_add(held % 2);
     }
-    frames
+    None
 }
 
 #[derive(Default)]

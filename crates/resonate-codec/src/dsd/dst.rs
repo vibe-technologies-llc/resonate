@@ -1,6 +1,9 @@
 use std::io::{self, Read, Seek, SeekFrom};
 
-use crate::{dsd::DSD_SILENCE, source::MediaStream};
+use crate::{
+    dsd::{Compressed, DSD_SILENCE, dff},
+    source::MediaStream,
+};
 
 pub(crate) const MOST_CHANNELS: usize = 6;
 pub(crate) const FRAMES_A_SECOND: u64 = 75;
@@ -385,9 +388,23 @@ pub(crate) struct Packed {
     pub(crate) bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Walk {
+    pub(crate) at: u64,
+    pub(crate) end: u64,
+}
+
+impl Walk {
+    const fn ended(self) -> bool {
+        self.at >= self.end
+    }
+}
+
 pub(crate) struct Unpacked {
     source: Box<dyn MediaStream>,
     frames: Vec<Packed>,
+    walk: Walk,
+    declared: Option<u64>,
     unpacker: Unpacker,
     position: u64,
     held: Vec<u8>,
@@ -398,32 +415,65 @@ pub(crate) struct Unpacked {
 impl Unpacked {
     pub(crate) fn over(
         source: Box<dyn MediaStream>,
-        frames: Vec<Packed>,
+        packed: Compressed,
         channels: usize,
         samples_a_frame: usize,
     ) -> Self {
         let unpacker = Unpacker::new(channels, samples_a_frame);
         let held = vec![DSD_SILENCE; unpacker.frame_bytes()];
-        Self {
+        let end = packed.at.saturating_add(packed.bytes);
+        let end = source.byte_len().map_or(end, |len| end.min(len));
+        let mut unpacked = Self {
             source,
-            frames,
+            frames: Vec::new(),
+            walk: Walk { at: packed.at, end },
+            declared: packed.frames,
             unpacker,
             position: 0,
             held,
             held_frame: None,
             packed: Vec::new(),
+        };
+        if unpacked.declared.is_none() {
+            while unpacked.discover() {}
         }
+        unpacked
+    }
+
+    fn discover(&mut self) -> bool {
+        match dff::next_packed(self.source.as_mut(), &mut self.walk) {
+            Some(found) => {
+                self.frames.push(found);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn known(&mut self, frame: usize) -> Option<Packed> {
+        while self.frames.len() <= frame {
+            if !self.discover() {
+                return None;
+            }
+        }
+        Some(self.frames[frame])
     }
 
     fn length(&self) -> u64 {
-        self.frames.len() as u64 * self.unpacker.frame_bytes() as u64
+        let frames = match self.declared {
+            Some(declared) if !self.walk.ended() => declared,
+            _ => self.frames.len() as u64,
+        };
+        frames * self.unpacker.frame_bytes() as u64
     }
 
-    fn hold(&mut self, frame: usize) -> io::Result<()> {
+    fn hold(&mut self, frame: usize) -> io::Result<bool> {
         if self.held_frame == Some(frame) {
-            return Ok(());
+            return Ok(true);
         }
-        let packed = self.frames[frame];
+        let Some(packed) = self.known(frame) else {
+            return Ok(false);
+        };
         self.source.seek(SeekFrom::Start(packed.at))?;
         self.packed.clear();
         (&mut self.source)
@@ -438,7 +488,7 @@ impl Unpacked {
             ));
         }
         self.held_frame = Some(frame);
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -450,7 +500,9 @@ impl Read for Unpacked {
         }
         let frame = (self.position / frame_bytes) as usize;
         let within = (self.position % frame_bytes) as usize;
-        self.hold(frame)?;
+        if !self.hold(frame)? {
+            return Ok(0);
+        }
         let from = &self.held[within..];
         let taken = from.len().min(buf.len());
         buf[..taken].copy_from_slice(&from[..taken]);
@@ -490,7 +542,13 @@ impl MediaStream for Unpacked {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{
+        io::Cursor,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     use resonate_core::{AudioBuffer, MediaLocation, SampleData};
 
@@ -796,5 +854,121 @@ mod tests {
         let plain = drained(dsdiff(2, b"DSD ", &chunk(b"DSD ", &dsd)), "plain.dff");
         assert!(!plain.is_empty());
         assert_eq!(compressed, plain, "a DST stream decoded to other samples");
+    }
+
+    struct Counting {
+        inner: Cursor<Vec<u8>>,
+        seeks: Arc<AtomicUsize>,
+    }
+
+    impl Read for Counting {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.inner.read(buf)
+        }
+    }
+
+    impl Seek for Counting {
+        fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+            self.seeks.fetch_add(1, Ordering::Relaxed);
+            self.inner.seek(to)
+        }
+    }
+
+    impl MediaStream for Counting {
+        fn is_seekable(&self) -> bool {
+            true
+        }
+
+        fn byte_len(&self) -> Option<u64> {
+            Some(self.inner.get_ref().len() as u64)
+        }
+    }
+
+    const CHANNELS: usize = 2;
+    const FRAME_BYTES: usize = SAMPLES_A_FRAME / 8 * CHANNELS;
+
+    fn frames_chunk(dsd: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        let mut info = ((dsd.len() / FRAME_BYTES) as u32).to_be_bytes().to_vec();
+        info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
+        body.extend(chunk(b"FRTE", &info));
+        for frame in dsd.chunks(FRAME_BYTES) {
+            body.extend(chunk(b"DSTF", &packed(frame, CHANNELS)));
+            body.extend(chunk(b"DSTC", &[0; 4]));
+        }
+        body
+    }
+
+    fn counted(body: Vec<u8>, declared: u64) -> (Unpacked, Arc<AtomicUsize>) {
+        let seeks = Arc::new(AtomicUsize::new(0));
+        let packed = Compressed {
+            at: 0,
+            bytes: body.len() as u64,
+            frames: Some(declared),
+        };
+        let source = Counting {
+            inner: Cursor::new(body),
+            seeks: seeks.clone(),
+        };
+        (
+            Unpacked::over(Box::new(source), packed, CHANNELS, SAMPLES_A_FRAME),
+            seeks,
+        )
+    }
+
+    fn read_frame(unpacked: &mut Unpacked, frame: usize) -> Vec<u8> {
+        unpacked
+            .seek(SeekFrom::Start((frame * FRAME_BYTES) as u64))
+            .expect("a seek inside the stream");
+        let mut bytes = vec![0; FRAME_BYTES];
+        unpacked.read_exact(&mut bytes).expect("a whole frame");
+        bytes
+    }
+
+    #[test]
+    fn an_open_walks_no_frame_header_before_the_frame_that_is_read() {
+        let frames = 40;
+        let dsd = signal(CHANNELS, frames, 0xBEEF_0001);
+        let (mut unpacked, seeks) = counted(frames_chunk(&dsd), frames as u64);
+
+        assert_eq!(seeks.load(Ordering::Relaxed), 0);
+        assert_eq!(read_frame(&mut unpacked, 0), dsd[..FRAME_BYTES]);
+        assert!(
+            seeks.load(Ordering::Relaxed) <= 4,
+            "the first frame cost {} seeks",
+            seeks.load(Ordering::Relaxed)
+        );
+    }
+
+    #[test]
+    fn a_frame_far_ahead_and_the_frames_behind_it_read_as_they_were_packed() {
+        let frames = 40;
+        let dsd = signal(CHANNELS, frames, 0xBEEF_0002);
+        let (mut unpacked, seeks) = counted(frames_chunk(&dsd), frames as u64);
+        let frame = |at: usize| &dsd[at * FRAME_BYTES..(at + 1) * FRAME_BYTES];
+
+        assert_eq!(read_frame(&mut unpacked, 37), frame(37));
+        let walked = seeks.load(Ordering::Relaxed);
+
+        assert_eq!(read_frame(&mut unpacked, 3), frame(3));
+        assert_eq!(read_frame(&mut unpacked, 36), frame(36));
+        assert_eq!(
+            seeks.load(Ordering::Relaxed),
+            walked + 2,
+            "a frame behind the walk was found again by walking"
+        );
+    }
+
+    #[test]
+    fn a_stream_with_fewer_frames_than_declared_ends_where_its_frames_do() {
+        let present = 5;
+        let dsd = signal(CHANNELS, present, 0xBEEF_0003);
+        let (mut unpacked, _) = counted(frames_chunk(&dsd), 9);
+
+        let mut all = Vec::new();
+        unpacked.read_to_end(&mut all).expect("what is there reads");
+
+        assert_eq!(all, dsd);
+        assert_eq!(unpacked.byte_len(), Some(dsd.len() as u64));
     }
 }

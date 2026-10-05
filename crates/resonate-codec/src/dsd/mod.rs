@@ -71,15 +71,14 @@ pub(crate) struct Compressed {
     pub(crate) frames: Option<u64>,
 }
 
-pub(crate) fn unpacked(mut bytes: Box<dyn MediaStream>, layout: &Layout) -> Box<dyn MediaStream> {
+pub(crate) fn unpacked(bytes: Box<dyn MediaStream>, layout: &Layout) -> Box<dyn MediaStream> {
     let Some(packed) = layout.packed else {
         return bytes;
     };
-    let frames = dff::packed_frames(bytes.as_mut(), packed);
     let samples_a_frame = (u64::from(layout.rate.hz()) / dst::FRAMES_A_SECOND) as usize;
     Box::new(dst::Unpacked::over(
         bytes,
-        frames,
+        packed,
         layout.lanes(),
         samples_a_frame,
     ))

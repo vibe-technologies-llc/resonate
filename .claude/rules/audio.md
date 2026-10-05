@@ -350,9 +350,13 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   rebinds into the marked plan where it holds.
 - **A DST-compressed DSDIFF is unpacked into the stream an uncompressed one would be.** The `DST `
   chunk's `FRTE` gives the frame count, so the layout is known from the header. Only a decode walks the
-  chunk: `dsd::unpacked` collects every `DSTF` and hands the DSD path `dst::Unpacked`, a `MediaStream`
-  decoding whichever frame a read lands in, so the reader, DoP, the decimator and a seek see an
-  uncompressed DSDIFF. A frame decodes alone, so a seek costs one frame. `dst.rs` is ISO/IEC 14496-3
+  chunk: `dsd::unpacked` hands the DSD path `dst::Unpacked`, a `MediaStream` decoding whichever frame a
+  read lands in, so the reader, DoP, the decimator and a seek see an uncompressed DSDIFF. **The frame
+  index is found as it is reached, never up front:** a `dst::Walk` resumes over the chunk's `DSTF` headers
+  (`dff::next_packed`) only as far as a read or seek asks, so an open costs no header and a rebind costs
+  the walk to where it lands, and a frame behind the walk is never walked to again. The length is the
+  `FRTE` count until the walk ends, then the frames found (a chunk with no count is walked whole at
+  open). A frame decodes alone, so a seek costs one frame beyond the walk. `dst.rs` is ISO/IEC 14496-3
   subpart 10 as FFmpeg's decoder reads it (at most `MOST_CHANNELS`; a frame whose segmentation is not
   the reference encoder's is refused as FFmpeg refuses it); the tests carry their own encoder.
 - **A packet that will not decode is played as the silence it would have lasted.** A `DecodeError` on
