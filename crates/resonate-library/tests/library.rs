@@ -1804,6 +1804,36 @@ fn a_failed_file_is_counted_as_what_went_wrong_with_it() -> Result<()> {
 }
 
 #[test]
+fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -> Result<()> {
+    let tree = Tree::new();
+    for number in 0..200 {
+        tree.write(
+            &format!("album/{number:03}.wav"),
+            &Wav::new().text(TITLE, "a track").build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    assert!(
+        library.wind_down(Duration::from_millis(1)),
+        "nothing was running and it waited for something"
+    );
+
+    let scanning = library.scan(options(&tree))?;
+    assert!(
+        library.wind_down(Duration::from_secs(20)),
+        "the scan was never let go of"
+    );
+
+    assert!(
+        library.scan(options(&tree)).is_ok(),
+        "the tree was still held after winding down"
+    );
+    let summary = scanning.join()?;
+    assert!(summary.cancelled || summary.stats.added == 200);
+    Ok(())
+}
+
+#[test]
 fn a_file_with_a_name_that_is_not_text_is_counted_unnamed_and_the_rest_are_scanned() -> Result<()> {
     let tree = Tree::new();
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());

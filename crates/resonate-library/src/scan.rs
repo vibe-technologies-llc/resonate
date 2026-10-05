@@ -252,6 +252,7 @@ pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandl
     let walking = inner.walk_the_tree()?;
     let progress = Arc::new(ScanProgress::default());
     let owned = Arc::clone(&progress);
+    walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
@@ -277,6 +278,7 @@ pub(crate) fn start_over_held(
     }
     let progress = Arc::new(ScanProgress::default());
     let owned = Arc::clone(&progress);
+    walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())

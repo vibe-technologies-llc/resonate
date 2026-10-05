@@ -7,7 +7,7 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -28,9 +28,9 @@ use rusqlite::{
 use crate::{
     Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
     ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked,
-    Billed, Certainty, Clause, Codec, Column, Compare, Condition, Counted, CoverArt, Cut, Day,
-    Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found,
-    Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat,
+    Billed, Cancelling, Certainty, Clause, Codec, Column, Compare, Condition, Counted, CoverArt,
+    Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters,
+    Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat,
     ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex,
     KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
     MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
@@ -531,6 +531,8 @@ pub(crate) struct Inner {
     readers: Mutex<Pool>,
     freed: Condvar,
     walking: AtomicBool,
+    walking_pass: Mutex<Option<Arc<dyn Cancelling>>>,
+    walk_ended: Condvar,
     vault: Option<Arc<Vault>>,
     playlists: AtomicU64,
     named: Arc<AtomicU64>,
@@ -579,9 +581,19 @@ pub(crate) struct Walk {
     _across_processes: Option<File>,
 }
 
+impl Walk {
+    pub(crate) fn cancelled_by(&self, pass: Arc<dyn Cancelling>) {
+        *self.inner.walking_pass.lock() = Some(pass);
+    }
+}
+
 impl Drop for Walk {
     fn drop(&mut self) {
+        let mut held = self.inner.walking_pass.lock();
+        *held = None;
         self.inner.walking.store(false, Ordering::Release);
+        drop(held);
+        self.inner.walk_ended.notify_all();
     }
 }
 
@@ -1242,6 +1254,8 @@ impl Library {
                 readers: Mutex::new(Pool::default()),
                 freed: Condvar::new(),
                 walking: AtomicBool::new(false),
+                walking_pass: Mutex::new(None),
+                walk_ended: Condvar::new(),
                 vault,
                 playlists: AtomicU64::new(0),
                 named,
@@ -2113,6 +2127,25 @@ impl Library {
 
     pub fn set_playing_playlist(&self, playing: Option<Playing>) {
         self.inner.set_playing(playing);
+    }
+
+    pub fn wind_down(&self, patience: Duration) -> bool {
+        let deadline = Instant::now() + patience;
+        let mut held = self.inner.walking_pass.lock();
+        if let Some(pass) = held.as_ref() {
+            pass.cancel();
+        }
+        while self.inner.walking.load(Ordering::Acquire) {
+            if self
+                .inner
+                .walk_ended
+                .wait_until(&mut held, deadline)
+                .timed_out()
+            {
+                return !self.inner.walking.load(Ordering::Acquire);
+            }
+        }
+        true
     }
 
     pub(crate) fn asking_alone(&self, pass: PassKind) -> Result<Asking> {

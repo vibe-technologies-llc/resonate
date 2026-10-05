@@ -657,6 +657,7 @@ pub(crate) fn start(library: Library, options: OrganiseOptions) -> Result<Organi
     let walking = library.walk_the_tree()?;
     let progress = Arc::new(OrganiseProgress::default());
     let owned = Arc::clone(&progress);
+    walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-organise".to_owned())

@@ -53,6 +53,8 @@ const QUIET_POLLS_BEFORE_RESTING: u32 = 30;
 
 const QUIT_POLL: Duration = Duration::from_millis(100);
 
+const WIND_DOWN_WITHIN: Duration = Duration::from_secs(10);
+
 const CLOCK_STEP: Duration = Duration::from_secs(1);
 
 const STEPS_PER_PIXEL: f32 = 4.0;
@@ -866,6 +868,7 @@ pub fn run(
     bus: Bus,
 ) -> Result<()> {
     let first_read = FirstRead::start(&library);
+    let winding_down = Arc::clone(&library);
     theme::wear(appearance);
     stored.launcher.show(AppIcon::of(appearance));
 
@@ -958,6 +961,10 @@ pub fn run(
             cx.quit();
         }
     });
+
+    if !winding_down.wind_down(WIND_DOWN_WITHIN) {
+        tracing::warn!("a library pass was still running when the window left");
+    }
 
     match failure.borrow_mut().take() {
         Some(error) => Err(error),

@@ -372,6 +372,11 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `Error::AlreadyWalking`. The lock file stays where it is: removing it would race a process that has
   opened it and not yet locked it. An in-memory catalog has no file and no second process, so takes
   the flag alone (`a_walk_in_one_process_refuses_a_walk_in_another_on_the_same_catalog`).
+  **The walking pass can be wound down.** `Walk::cancelled_by` hands the guard the pass's progress and
+  `Library::wind_down(patience)` cancels it and waits for the guard to be dropped, answering whether it was;
+  the window calls it with `WIND_DOWN_WITHIN` (ten seconds) once its event loop has ended, so a tag run,
+  an organise, a vault import or a scan stops at its next file and a close no longer kills it mid-write
+  (`winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go`).
   **A lookup and a poll are alone the same way, each with a lock of its own** (`<catalog>.enrich`,
   `<catalog>.poll`, `Library::asking_alone`), held by the pass thread and refused as
   `Error::AlreadyAsking`, so two processes never ask MusicBrainz or a provider about the same rows at

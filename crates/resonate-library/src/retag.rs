@@ -196,6 +196,7 @@ pub(crate) fn start(
     let walking = library.walk_the_tree()?;
     let progress = Arc::new(RetagProgress::default());
     let owned = Arc::clone(&progress);
+    walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-retag".to_owned())
