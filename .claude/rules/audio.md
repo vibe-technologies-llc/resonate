@@ -973,6 +973,15 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   `PARAMS`: the `EnumFormat` entry's `SERIAL` flag flips on every change, `SinkRecord::formats_moved`
   compares it with the last seen, drops every index held and asks for `EnumFormat` again, and
   `SinkChange::Reformatted` has the engine survey the graph afresh, issued after the enumeration.
+- **A running device says its own rate.** `SinkInfo::current_rate` is the rate of the sink node's
+  `Format` param where it has one, else `clock.force-rate`, else `clock.rate` from the settings
+  metadata. A node has a `Format` only while it runs, a suspended one answering none; the `Format`
+  entry's `SERIAL` flag is watched as `EnumFormat`'s is (`SinkRecord::running_moved` drops the rate held
+  and asks again, announced as `Reformatted`), and `format::running_rate` reads the rate alone whatever
+  sample format the device runs in, planar included
+  (`a_running_device_reports_its_own_rate_and_the_graphs_once_it_stops`,
+  `a_running_device_names_its_rate_whatever_sample_format_it_runs_in`). A Profiler global would say the
+  same of a driver and is not subscribed to.
 - **A global leaving the registry takes its proxy with it, whatever it was told first**, so a card
   unplugged before its routes were enumerated does not keep a proxy and listener until the client
   reconnects.

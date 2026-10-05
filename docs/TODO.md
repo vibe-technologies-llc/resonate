@@ -13,10 +13,6 @@ else is open to be done.
   ring's depth
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
   depth later, half a second by default, because gain and filters run ahead of a ring kept full
-- `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
-  the same one. Sink nodes publish a `Format` param and the registry a Profiler global that
-  `client.rs` does not subscribe to; reading `ParamType::Format` of a running sink may give a
-  per-device rate
 - The playback loop holds one playback stream and one capture stream; more than one concurrent
   playback stream is not supported
 - The queued buffers' frames are not counted in the stream's delay, so the position and the

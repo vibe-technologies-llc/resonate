@@ -307,6 +307,17 @@ pub(crate) fn negotiated(param: &Pod) -> Option<Negotiated> {
     })
 }
 
+pub(crate) fn running_rate(param: &Pod) -> Option<SampleRate> {
+    let (media_type, media_subtype) = format_utils::parse_format(param).ok()?;
+    if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+        return None;
+    }
+
+    let mut info = AudioInfoRaw::default();
+    info.parse(param).ok()?;
+    SampleRate::new(info.rate()).ok()
+}
+
 pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
     let Value::Object(object) = value else {
         return None;
@@ -680,6 +691,33 @@ mod tests {
             ),
             Property::new(sys::SPA_PARAM_ROUTE_available, Value::Id(Id(available))),
         ]
+    }
+
+    fn running(format: AudioFormat, hz: u32) -> Vec<u8> {
+        let mut info = AudioInfoRaw::new();
+        info.set_format(format);
+        info.set_rate(hz);
+        info.set_channels(2);
+        let object = Value::Object(Object {
+            type_: sys::SPA_TYPE_OBJECT_Format,
+            id: sys::SPA_PARAM_Format,
+            properties: info.into(),
+        });
+
+        libspa::pod::serialize::PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &object)
+            .expect("a format pod serialises")
+            .0
+            .into_inner()
+    }
+
+    #[test]
+    fn a_running_device_names_its_rate_whatever_sample_format_it_runs_in() {
+        for format in [AudioFormat::F32P, AudioFormat::S32LE, AudioFormat::S24_32LE] {
+            let bytes = running(format, 44_100);
+            let pod = Pod::from_bytes(&bytes).expect("a pod");
+
+            assert_eq!(running_rate(pod), Some(SampleRate::HZ_44100));
+        }
     }
 
     #[test]

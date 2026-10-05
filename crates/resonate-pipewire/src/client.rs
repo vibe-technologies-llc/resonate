@@ -45,7 +45,7 @@ use crate::{
     format::{
         AdvertisedFormat, AdvertisedRoute, RouteChange, RouteSetting, WireWord, negotiated,
         packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
-        parse_rate, parse_route, route_change, spa_format, spa_position,
+        parse_rate, parse_route, route_change, running_rate, spa_format, spa_position,
     },
     process::{Cycle, Hearing},
 };
@@ -170,6 +170,8 @@ struct SinkRecord {
     seat: Option<i32>,
     formats: BTreeMap<u32, Vec<SinkFormats>>,
     format_serial: Option<bool>,
+    running_at: Option<SampleRate>,
+    running_serial: Option<bool>,
 }
 
 impl SinkRecord {
@@ -179,6 +181,15 @@ impl SinkRecord {
             return false;
         }
         self.formats.clear();
+        true
+    }
+
+    fn running_moved(&mut self, serial: bool) -> bool {
+        let was = self.running_serial.replace(serial);
+        if was.is_none_or(|was| was == serial) {
+            return false;
+        }
+        self.running_at = None;
         true
     }
 
@@ -298,7 +309,7 @@ impl Discovered {
                     profile: self.profile_of(record),
                     formats,
                     allowed_rates: allowed,
-                    current_rate: self.forced_rate.or(self.clock_rate),
+                    current_rate: record.running_at.or(self.forced_rate).or(self.clock_rate),
                 }
             })
             .collect()
@@ -1052,6 +1063,8 @@ fn watch_the_registry(
                         seat: None,
                         formats: BTreeMap::new(),
                         format_serial: None,
+                        running_at: None,
+                        running_serial: None,
                     };
                     shared.lock().sinks.insert(global.id, record);
 
@@ -1067,29 +1080,42 @@ fn watch_the_registry(
                             let id = global.id;
                             move |info| {
                                 if info.change_mask().contains(NodeChangeMask::PARAMS) {
-                                    let serial = info
-                                        .params()
-                                        .iter()
-                                        .find(|param| param.id() == ParamType::EnumFormat)
-                                        .map(|param| {
-                                            param.flags().contains(ParamInfoFlags::SERIAL)
-                                        });
-                                    let moved = serial.is_some_and(|serial| {
-                                        shared
-                                            .lock()
-                                            .sinks
-                                            .get_mut(&id)
-                                            .is_some_and(|record| record.formats_moved(serial))
-                                    });
-                                    if moved {
-                                        if let Some((node, _)) = nodes.borrow().get(&id) {
-                                            node.enum_params(
-                                                0,
-                                                Some(ParamType::EnumFormat),
-                                                0,
-                                                u32::MAX,
-                                            );
+                                    let serial_of = |wanted: ParamType| {
+                                        info.params().iter().find(|param| param.id() == wanted).map(
+                                            |param| param.flags().contains(ParamInfoFlags::SERIAL),
+                                        )
+                                    };
+                                    let (offered, running) = (
+                                        serial_of(ParamType::EnumFormat),
+                                        serial_of(ParamType::Format),
+                                    );
+                                    let (offered_moved, running_moved) = {
+                                        let mut state = shared.lock();
+                                        let record = state.sinks.get_mut(&id);
+                                        record.map_or((false, false), |record| {
+                                            (
+                                                offered.is_some_and(|serial| {
+                                                    record.formats_moved(serial)
+                                                }),
+                                                running.is_some_and(|serial| {
+                                                    record.running_moved(serial)
+                                                }),
+                                            )
+                                        })
+                                    };
+                                    let asked_again = [
+                                        (offered_moved, ParamType::EnumFormat),
+                                        (running_moved, ParamType::Format),
+                                    ];
+                                    for (moved, param) in asked_again {
+                                        if !moved {
+                                            continue;
                                         }
+                                        if let Some((node, _)) = nodes.borrow().get(&id) {
+                                            node.enum_params(0, Some(param), 0, u32::MAX);
+                                        }
+                                    }
+                                    if offered_moved || running_moved {
                                         let _ = announce
                                             .try_send(SinkChange::Reformatted(SinkId::new(id)));
                                     }
@@ -1110,10 +1136,16 @@ fn watch_the_registry(
                             let shared = Arc::clone(&shared);
                             let id = global.id;
                             move |_seq, param_type, index, _next, param| {
+                                let Some(param) = param else { return };
+                                if param_type == ParamType::Format {
+                                    if let Some(record) = shared.lock().sinks.get_mut(&id) {
+                                        record.running_at = running_rate(param);
+                                    }
+                                    return;
+                                }
                                 if param_type != ParamType::EnumFormat {
                                     return;
                                 }
-                                let Some(param) = param else { return };
                                 let Ok((_, value)) =
                                     PodDeserializer::deserialize_any_from(param.as_bytes())
                                 else {
@@ -1149,6 +1181,7 @@ fn watch_the_registry(
                         })
                         .register();
                     node.enum_params(0, Some(ParamType::EnumFormat), 0, u32::MAX);
+                    node.enum_params(0, Some(ParamType::Format), 0, u32::MAX);
                     nodes.borrow_mut().insert(global.id, (node, listener));
 
                     let _ = announce.try_send(SinkChange::Added(SinkId::new(global.id)));
@@ -1578,6 +1611,8 @@ mod tests {
             seat: Some(1),
             formats: BTreeMap::new(),
             format_serial: None,
+            running_at: None,
+            running_serial: None,
         }
     }
 
@@ -1600,6 +1635,26 @@ mod tests {
         );
         assert!(!record.formats_moved(true));
         assert!(record.formats_moved(false));
+    }
+
+    #[test]
+    fn a_running_device_reports_its_own_rate_and_the_graphs_once_it_stops() {
+        let mut graph = Discovered::default();
+        graph.heard(HeldIn::Settings, CORE_ID, Some(CLOCK_RATE), Some("48000"));
+        let mut record = sink(true, Some(49));
+        record.running_at = Some(SampleRate::HZ_44100);
+        graph.sinks.insert(50, record);
+
+        assert_eq!(graph.snapshot()[0].current_rate, Some(SampleRate::HZ_44100));
+
+        let record = graph.sinks.get_mut(&50).expect("the sink held");
+        assert!(!record.running_moved(false), "the first sighting moved");
+        assert!(record.running_moved(true));
+        assert_eq!(
+            graph.snapshot()[0].current_rate,
+            Some(SampleRate::HZ_48000),
+            "a stopped device kept the rate it last ran at"
+        );
     }
 
     fn headphones(plugged: Plugged) -> SinkPort {
