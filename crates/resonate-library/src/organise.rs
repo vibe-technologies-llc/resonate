@@ -966,7 +966,7 @@ impl<'a> Planner<'a> {
             return;
         };
 
-        let destination = first.root.join(&rendered);
+        let destination = as_the_volume_names_it(&first.path, first.root.join(&rendered));
         if destination == first.path {
             self.plan.unchanged += 1;
             self.progress.unchanged.fetch_add(1, Ordering::Relaxed);
@@ -1087,7 +1087,7 @@ impl<'a> Planner<'a> {
                 return;
             }
 
-            let destination = first.root.join(&rendered);
+            let destination = as_the_volume_names_it(&first.path, first.root.join(&rendered));
             let folder = destination.parent().map(Path::to_path_buf);
             if landing.is_some() && landing != folder {
                 self.refuse_the_sheets(group, tied, None);
@@ -1950,7 +1950,10 @@ fn standing(planned: &Move) -> Option<Refusal> {
             return Some(Refusal::SourceGone);
         }
 
-        (fs::symlink_metadata(to).is_ok() && !already_copied(from, to)).then(|| Refusal::Collided {
+        (fs::symlink_metadata(to).is_ok()
+            && !is_the_same_file(from, to)
+            && !already_copied(from, to))
+        .then(|| Refusal::Collided {
             with: to.to_path_buf(),
         })
     })
@@ -2234,6 +2237,23 @@ pub(crate) fn staged_writes(connection: &Connection) -> Result<Vec<StagedWrite>>
         })
         .and_then(Iterator::collect)
         .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn is_the_same_file(one: &Path, other: &Path) -> bool {
+    let (Ok(one), Ok(other)) = (fs::symlink_metadata(one), fs::symlink_metadata(other)) else {
+        return false;
+    };
+    one.dev() == other.dev() && one.ino() == other.ino()
+}
+
+fn as_the_volume_names_it(from: &Path, to: PathBuf) -> PathBuf {
+    if to == from || !is_the_same_file(from, &to) {
+        return to;
+    }
+    match (from.parent(), to.file_name()) {
+        (Some(folder), Some(name)) => folder.join(name),
+        _ => to,
+    }
 }
 
 fn already_copied(from: &Path, to: &Path) -> bool {
@@ -3592,6 +3612,59 @@ mod tests {
             }]
         );
         assert_eq!(stats.collided, 1);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_destination_that_is_the_track_itself_under_another_case_is_never_a_collision() {
+        let folder = a_folder_of_its_own();
+        fs::create_dir_all(folder.join("meddle")).expect("a writable temporary directory");
+        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
+        fs::write(folder.join("meddle/echoes.wav"), b"held").expect("a writable temporary file");
+        fs::write(folder.join("meddle/Time.wav"), b"held").expect("a writable temporary file");
+        for (spelled, as_the_layout_spells_it) in [
+            ("meddle/echoes.wav", "Meddle/Echoes.wav"),
+            ("meddle/Time.wav", "Meddle/Time.wav"),
+        ] {
+            fs::hard_link(folder.join(spelled), folder.join(as_the_layout_spells_it))
+                .expect("a second name for a temporary file");
+        }
+
+        let mut echoes = row(1, "");
+        echoes.root = folder.clone();
+        echoes.path = folder.join("meddle/echoes.wav");
+        let mut time = row(2, "");
+        time.root = folder.clone();
+        time.path = folder.join("meddle/Time.wav");
+        time.title = "Time".to_owned();
+        time.album_id = AlbumId::new(2).ok();
+
+        let (plan, stats) = preview(&[echoes.clone(), time], "{album}/{title}");
+
+        assert!(plan.refused.is_empty(), "{:?}", plan.refused);
+        assert_eq!(stats.collided, 0);
+        assert_eq!(
+            plan.unchanged, 1,
+            "a track named as the layout names it was moved"
+        );
+        assert_eq!(
+            plan.moves
+                .iter()
+                .map(|planned| (planned.from.clone(), planned.to.clone()))
+                .collect::<Vec<_>>(),
+            vec![(echoes.path.clone(), folder.join("meddle/Echoes.wav"))],
+            "a folder differing only in case was moved into rather than kept"
+        );
+
+        let onto_itself = Move {
+            from: echoes.path.clone(),
+            to: folder.join("Meddle/Echoes.wav"),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        };
+        assert_eq!(standing(&onto_itself), None);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

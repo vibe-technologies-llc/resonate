@@ -8,8 +8,6 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Defects
-- On a case-insensitive volume a name differing from the layout only in case is offered as a move
-  and refused on apply as colliding with itself, every run
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
 - A tidy drops the rows of an unplugged drive never scanned, mounted by hand where no table lists it

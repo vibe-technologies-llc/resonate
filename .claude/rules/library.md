@@ -1951,7 +1951,13 @@ ways in. It takes `Library::scan`'s `Walk` guard and re-keys a sleeve-keyed albu
 - **A chain is ordered and only a cycle refused.** `Planner::in_the_way` answers `InTheWay::Stands` for
   a destination another planned move claimed and for one the filesystem holds that no scanned row names
   — except a file moved onto itself (same device and inode) — and `InTheWay::MayGo` for one that *is* a
-  scanned row, whether it is itself going being unknowable until every row is read.
+  scanned row, whether it is itself going being unknowable until every row is read. **A destination
+  that is the track itself is reduced to its own name in its own folder** (`as_the_volume_names_it`):
+  on a case-insensitive volume a layout differing only in case resolves to the file it would move, so
+  only the file name's case is changed, a folder spelled otherwise is left as the volume spells it and
+  a name already right is unchanged; `standing` lets a move onto the same inode land rather than refuse
+  it at apply as colliding with itself, every run
+  (`a_destination_that_is_the_track_itself_under_another_case_is_never_a_collision`).
   `Planner::order_the_chains` decides: a planned move waits on at most one other, so the graph is
   functional and `walked` follows each chain to its end and emits the deepest first, putting `B → C`
   before `A → B` and landing both in one run. **A chain closing on itself is broken through a parked
