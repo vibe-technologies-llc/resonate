@@ -2632,6 +2632,69 @@ fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
 }
 
 #[test]
+fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_nothing() -> Result<()>
+{
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let rows: Vec<QueueItem> = (1..=3)
+        .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
+        .collect();
+    let added = tree.write("added.wav", &source.file);
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: rows,
+        start_at: 0,
+        autoplay: false,
+    })?;
+    wait_for(
+        &player,
+        |player| player.queue().len() == 3,
+        "the queue to load",
+    );
+    let seen = player.queued().revision;
+
+    player
+        .request(Command::Insert {
+            items: vec![track(&added, 90)],
+            at: Placement::At(0),
+            play: false,
+        })?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.queue().len() == 4,
+        "the insert to land",
+    );
+
+    let refused = player
+        .request_if_the_queue_is_still(seen, Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE);
+    assert!(
+        matches!(refused, Err(EngineError::QueueChanged { seen: held, .. }) if held == seen),
+        "{refused:?}"
+    );
+    assert_eq!(player.queue().len(), 4, "the stale removal took a row");
+    assert_eq!(player.queue().first().map(|item| item.id.get()), Some(90));
+    assert_eq!(
+        refused.map_err(|error| error.cause()),
+        Err(Cause::QueueMoved)
+    );
+
+    let now = player.queued().revision;
+    player
+        .request_if_the_queue_is_still(now, Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.queue().len() == 3,
+        "the removal to land",
+    );
+    assert_eq!(player.queue().first().map(|item| item.id.get()), Some(1));
+    Ok(())
+}
+
+#[test]
 fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeating() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

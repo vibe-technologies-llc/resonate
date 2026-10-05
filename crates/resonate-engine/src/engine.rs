@@ -1053,10 +1053,18 @@ impl Engine {
     }
 
     fn dispatch(&mut self, request: Request) {
-        let Request { command, reply } = request;
+        let Request {
+            command,
+            reply,
+            queue_seen,
+        } = request;
         let kind = command.kind();
         let begun = self.openings_begun;
-        let outcome = self.apply(command);
+        let now = self.queue.revision();
+        let outcome = match queue_seen {
+            Some(seen) if seen != now => Err(Error::QueueChanged { seen, now }),
+            _ => self.apply(command),
+        };
         let outcome = self.carried_on_past_a_stranded_row(outcome);
 
         if outcome.is_ok() && self.opening.is_some() && self.openings_begun != begun {

@@ -692,7 +692,10 @@ impl RootView {
                                                 let extending = event.modifiers().shift;
                                                 this.reach_at(Shift::Queue, index, extending, cx);
                                                 if !extending {
-                                                    this.send(Command::JumpTo(index), cx);
+                                                    this.send_by_position(
+                                                        Command::JumpTo(index),
+                                                        cx,
+                                                    );
                                                 }
                                             },
                                         ));
@@ -713,7 +716,10 @@ impl RootView {
                                                     menu::PLAY,
                                                     "enter",
                                                     move |this, _, cx| {
-                                                        this.send(Command::JumpTo(index), cx);
+                                                        this.send_by_position(
+                                                            Command::JumpTo(index),
+                                                            cx,
+                                                        );
                                                     },
                                                 )
                                                 .holds(move || Held::of(Arc::clone(&put)))
@@ -1010,7 +1016,7 @@ impl RootView {
         let Some(rows) = self.took_out.take_again(&queued) else {
             return false;
         };
-        self.send(Command::Remove(rows), cx);
+        self.send_by_position(Command::Remove(rows), cx);
         true
     }
 

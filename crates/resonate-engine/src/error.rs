@@ -32,6 +32,9 @@ pub enum Error {
     #[error("{named} rows are not a reordering of the {len} the queue holds")]
     NotAnOrder { named: usize, len: usize },
 
+    #[error("the queue was at revision {now} when the edit was made against revision {seen}")]
+    QueueChanged { seen: u64, now: u64 },
+
     #[error("the queue is empty")]
     QueueEmpty,
 
@@ -92,7 +95,9 @@ impl Error {
             Self::Decode { source, .. } => cause_of_a_read(source),
             Self::Convert { .. } | Self::Renegotiation { .. } => Cause::DeviceRefused,
             Self::Sink(sink) => cause_at_the_sink(sink),
-            Self::NoSuchRow { .. } | Self::NotAnOrder { .. } => Cause::QueueMoved,
+            Self::NoSuchRow { .. } | Self::NotAnOrder { .. } | Self::QueueChanged { .. } => {
+                Cause::QueueMoved
+            }
             Self::QueueEmpty | Self::InvalidTransition { .. } => Cause::NothingPlaying,
             Self::SeekOutOfRange { .. } => Cause::CannotSeek,
             Self::CommandPending { .. } | Self::EngineStopped => Cause::PlayerStopped,
@@ -107,6 +112,7 @@ impl Error {
             | Self::Sink(_)
             | Self::NoSuchRow { .. }
             | Self::NotAnOrder { .. }
+            | Self::QueueChanged { .. }
             | Self::QueueEmpty
             | Self::InvalidTransition { .. }
             | Self::SeekOutOfRange { .. }
@@ -129,6 +135,7 @@ impl Error {
             Self::Sink(_)
             | Self::NoSuchRow { .. }
             | Self::NotAnOrder { .. }
+            | Self::QueueChanged { .. }
             | Self::QueueEmpty
             | Self::InvalidTransition { .. }
             | Self::CommandPending { .. }

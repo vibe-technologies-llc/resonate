@@ -519,6 +519,15 @@ impl PlayerModel {
         }
     }
 
+    pub fn send_by_position(&self, command: Command) {
+        if let Err(error) = self
+            .player
+            .send_if_the_queue_is_still(self.queued.revision, command)
+        {
+            tracing::error!(?error, "the engine refused a transport command");
+        }
+    }
+
     fn title_of(&self, track: TrackId) -> Option<String> {
         let queue = self.player.queue();
         let item = self

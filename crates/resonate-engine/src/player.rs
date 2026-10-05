@@ -112,6 +112,20 @@ impl Player {
         self.post(Request::told(command))
     }
 
+    pub fn send_if_the_queue_is_still(&self, revision: u64, command: Command) -> Result<()> {
+        self.post(Request::told(command).if_the_queue_is_still(revision))
+    }
+
+    pub fn request_if_the_queue_is_still(
+        &self,
+        revision: u64,
+        command: Command,
+    ) -> Result<Outcome> {
+        let (request, outcome) = Request::asked(command);
+        self.post(request.if_the_queue_is_still(revision))?;
+        Ok(outcome)
+    }
+
     pub fn request(&self, command: Command) -> Result<Outcome> {
         let (request, outcome) = Request::asked(command);
         self.post(request)?;

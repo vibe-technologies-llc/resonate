@@ -1173,6 +1173,10 @@ impl RootView {
         self.player.read(cx).send(command);
     }
 
+    pub(crate) fn send_by_position(&self, command: Command, cx: &mut Context<Self>) {
+        self.player.read(cx).send_by_position(command);
+    }
+
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {
         toast::tell(notice, cx);
     }
@@ -1869,7 +1873,7 @@ impl RootView {
     ) {
         match shift {
             Shift::Listing(_) => {}
-            Shift::Queue => self.send(Command::Move { rows, to }, cx),
+            Shift::Queue => self.send_by_position(Command::Move { rows, to }, cx),
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 library.move_in_playlist(playlist, rows, to, cx);
             }),
@@ -2112,7 +2116,7 @@ impl RootView {
         let row = reach.rows().first();
 
         match shift {
-            Shift::Queue => self.send(Command::JumpTo(row), cx),
+            Shift::Queue => self.send_by_position(Command::JumpTo(row), cx),
             Shift::Playlist(playlist) => {
                 let entries = self.library.read(cx).entries().to_vec();
                 self.play_playlist(playlist, &entries, row, true, cx);
@@ -2187,7 +2191,7 @@ impl RootView {
             Shift::Queue => {
                 let queued = self.player.read(cx).queue();
                 let kept = self.took_out.keeping(&queued, rows);
-                self.send(Command::Remove(rows), cx);
+                self.send_by_position(Command::Remove(rows), cx);
                 if let Some(kept) = kept {
                     toast::tell(took_out(kept), cx);
                 }

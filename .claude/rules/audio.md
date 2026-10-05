@@ -547,7 +547,16 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
 
 - **A queue position is an index into the play order, not the load order.** `PlayerState::queue_position`,
   `Command::JumpTo`, `Command::Insert` and `Command::Remove`'s `Span` all mean the rows a queue pane
-  draws, so they stay right under shuffle. `Queue::position` is the load-order index, published as
+  draws, so they stay right under shuffle. **An edit that names rows by position can say which queue it
+  meant**: `Player::send_if_the_queue_is_still` and `request_if_the_queue_is_still` carry the
+  `Queued::revision` the gesture was made against (`Request::queue_seen`), and `dispatch` answers
+  `Error::QueueChanged` (`Cause::QueueMoved`, the toast *The queue changed before that could happen*)
+  instead of applying it where the revision has since moved, so another client's insert or removal
+  between the draw and the click moves or removes nothing
+  (`an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_nothing`). The window's
+  `PlayerModel::send_by_position` is the revision it last polled, and sends the queue's `Remove`, `Move`
+  and `JumpTo`; a put back (`Insert`) and the bus and MCP, whose clients name a row by its id, are not
+  guarded. `Queue::position` is the load-order index, published as
   `PlayerState::loaded_position` for the reader drawing the order the queue was *loaded* in. A file no
   scan has seen takes its `TrackId` from `unclaimed_id`, counting down from `u64::MAX` past the ids the
   queue holds (`Unclaimed::beside` is that walk taken once for a whole run). **A file the catalog holds

@@ -18,8 +18,6 @@ else is open to be done.
   whenever its mount point's parent holds anything else
 - Nothing compares the graph's live rate, read every cycle, with the stream's, so a stream another
   client holds at a second rate is converted by the graph while the chip still says bit-perfect
-- Queue edits from the window name rows by position, so an edit another client makes between the
-  gesture and the click moves or removes the wrong rows; `Queued::revision` exists to guard on
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
 - A rebind refused with `Disconnected` before the engine has noticed the graph is gone (no

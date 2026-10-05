@@ -257,6 +257,7 @@ impl Command {
 pub(crate) struct Request {
     pub command: Command,
     pub reply: Reply,
+    pub queue_seen: Option<u64>,
 }
 
 pub(crate) enum Reply {
@@ -270,7 +271,13 @@ impl Request {
         Self {
             command,
             reply: Reply::Unwaited,
+            queue_seen: None,
         }
+    }
+
+    pub(crate) const fn if_the_queue_is_still(mut self, revision: u64) -> Self {
+        self.queue_seen = Some(revision);
+        self
     }
 
     pub(crate) fn asked(command: Command) -> (Self, Outcome) {
@@ -281,6 +288,7 @@ impl Request {
             Self {
                 command,
                 reply: Reply::Answered(sender),
+                queue_seen: None,
             },
             Outcome { kind, reply },
         )
@@ -294,6 +302,7 @@ impl Request {
             Self {
                 command,
                 reply: Reply::Landed(sender),
+                queue_seen: None,
             },
             Landing { kind, landed },
         )
