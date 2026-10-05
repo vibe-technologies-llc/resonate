@@ -270,6 +270,8 @@ const MIGRATIONS: &[&str] = &[
      BEGIN UPDATE settle_owed SET owed = 1; END;",
     "UPDATE settle_owed SET owed = 1;",
     "UPDATE tracks SET probe_again = 1 WHERE codec IN (2, 6, 7) AND root_id IS NOT NULL;",
+    "ALTER TABLE artists ADD COLUMN tagged_sort TEXT;
+     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1107,6 +1109,50 @@ mod tests {
     }
 
     #[test]
+    fn a_catalog_carried_forward_reads_every_scanned_file_again_for_the_names_it_sorts_by() {
+        let connection = opened();
+        let sorting = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("tagged_sort TEXT"))
+            .expect("the step that keeps a file's sort name");
+        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO artists (id, key, name) VALUES (1, 'the beatles', 'The Beatles');
+                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'scanned.flac', NULL, 'Scanned', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the rows are stored");
+
+        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64)> = connection
+            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        let sorted: Option<String> = connection
+            .query_row("SELECT tagged_sort FROM artists WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .expect("the artist reads back");
+        assert_eq!(
+            marked,
+            [
+                ("delivered.flac".to_owned(), 0),
+                ("scanned.flac".to_owned(), 1)
+            ]
+        );
+        assert_eq!(sorted, None);
+    }
+
+    #[test]
     fn a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for() {
         let connection = opened();
         let marking = MIGRATIONS
@@ -1126,7 +1172,7 @@ mod tests {
             )
             .expect("the tracks are stored");
 
-        lay_out(&connection).expect("the catalog migrates");
+        lay_out_through(&connection, V1, &MIGRATIONS[..=marking]).expect("the catalog migrates");
 
         let marked: Vec<(String, i64)> = connection
             .prepare("SELECT path, probe_again FROM tracks ORDER BY path")

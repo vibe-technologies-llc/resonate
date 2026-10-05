@@ -146,6 +146,7 @@ struct KnownArtist {
     id: i64,
     identified: bool,
     marks: usize,
+    sorted: bool,
 }
 
 struct Held {
@@ -174,16 +175,30 @@ impl Held {
 struct Billing<'a> {
     name: &'a str,
     mbid: Option<&'a str>,
+    sort: Option<&'a str>,
 }
 
 impl<'a> Billing<'a> {
-    fn of(name: &'a str, mbid: Option<&'a str>) -> Self {
+    fn of(name: &'a str, mbid: Option<&'a str>, sort: Option<&'a str>) -> Self {
         match credits::lead_of_a_list(name) {
             Some(lead) => Self {
                 name: lead,
                 mbid: None,
+                sort: None,
             },
-            None => Self { name, mbid },
+            None => Self {
+                name,
+                mbid,
+                sort: named(sort),
+            },
+        }
+    }
+
+    const fn named(name: &'a str, mbid: Option<&'a str>) -> Self {
+        Self {
+            name,
+            mbid,
+            sort: None,
         }
     }
 }
@@ -346,7 +361,8 @@ pub(crate) fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> R
                                         artists.favourite, o.favourite),
              portrait_format = CASE WHEN artists.portrait IS NULL
                                     THEN o.portrait_format ELSE artists.portrait_format END,
-             portrait        = coalesce(artists.portrait, o.portrait)
+             portrait        = coalesce(artists.portrait, o.portrait),
+             tagged_sort     = coalesce(artists.tagged_sort, o.tagged_sort)
           FROM (SELECT * FROM artists WHERE id = ?1) AS o
          WHERE artists.id = ?2",
         params![gone, keeps],
@@ -842,14 +858,20 @@ pub fn isrc_in(text: Option<&str>) -> Option<Isrc> {
 }
 
 fn attribution(tags: &TagSet) -> (Option<Billing<'_>>, Option<Billing<'_>>) {
-    let album_artist = tags
-        .album_artist
-        .as_deref()
-        .map(|name| Billing::of(name, tags.musicbrainz_album_artist_id.as_deref()));
-    let artist = tags
-        .artist
-        .as_deref()
-        .map(|name| Billing::of(name, tags.musicbrainz_artist_id.as_deref()));
+    let album_artist = tags.album_artist.as_deref().map(|name| {
+        Billing::of(
+            name,
+            tags.musicbrainz_album_artist_id.as_deref(),
+            tags.album_artist_sort.as_deref(),
+        )
+    });
+    let artist = tags.artist.as_deref().map(|name| {
+        Billing::of(
+            name,
+            tags.musicbrainz_artist_id.as_deref(),
+            tags.artist_sort.as_deref(),
+        )
+    });
 
     if tags.compilation {
         return (None, artist.or(album_artist));
@@ -1231,6 +1253,12 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
             respell_artist(tx, known.id, billed.name)?;
             known.marks = marks;
         }
+        if !known.sorted
+            && let Some(sort) = billed.sort
+        {
+            note_the_tagged_sort(tx, known.id, sort)?;
+            known.sorted = true;
+        }
         return Ok(known.id);
     }
 
@@ -1245,22 +1273,32 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
             {
                 fill_artist_mbid(tx, held.id, mbid)?;
             }
+            if let Some(sort) = billed.sort {
+                note_the_tagged_sort(tx, held.id, sort)?;
+            }
             KnownArtist {
                 id: held.id,
                 identified: held.identified || mbid.is_some(),
                 marks: marks.max(held_marks),
+                sorted: billed.sort.is_some(),
             }
         }
         None => queried(
             tx,
-            "INSERT INTO artists (key, name, mbid) VALUES (?1, ?2, ?3)
+            "INSERT INTO artists (key, name, mbid, tagged_sort) VALUES (?1, ?2, ?3, ?4)
                  RETURNING id, mbid IS NOT NULL",
-            params![key, billed.name, mbid.as_ref().map(Mbid::as_str)],
+            params![
+                key,
+                billed.name,
+                mbid.as_ref().map(Mbid::as_str),
+                billed.sort
+            ],
             |row| {
                 Ok(KnownArtist {
                     id: row.get(0)?,
                     identified: row.get(1)?,
                     marks,
+                    sorted: billed.sort.is_some(),
                 })
             },
         )
@@ -1272,7 +1310,7 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
 }
 
 pub(crate) fn artist_named_in(tx: &Transaction<'_>, name: &str, mbid: Option<&str>) -> Result<i64> {
-    artist(tx, &mut Cache::default(), Billing { name, mbid })
+    artist(tx, &mut Cache::default(), Billing::named(name, mbid))
 }
 
 fn held_artist(tx: &Transaction<'_>, key: &str) -> Result<Option<Held>> {
@@ -1311,6 +1349,16 @@ fn respell_artist(tx: &Transaction<'_>, artist: i64, name: &str) -> Result<()> {
         tx,
         "UPDATE artists SET name = ?1 WHERE id = ?2",
         params![name, artist],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+fn note_the_tagged_sort(tx: &Transaction<'_>, artist: i64, sort: &str) -> Result<()> {
+    cached(
+        tx,
+        "UPDATE artists SET tagged_sort = ?1 WHERE id = ?2 AND tagged_sort IS NOT ?1",
+        params![sort, artist],
     )
     .map(drop)
     .map_err(|source| Error::store(StoreOp::Update, source))
@@ -2258,8 +2306,7 @@ mod tests {
             let tx = connection.transaction().expect("a transaction");
             let mut cache = Cache::default();
             for name in names {
-                artist(&tx, &mut cache, Billing { name, mbid: None })
-                    .expect("the artist is stored");
+                artist(&tx, &mut cache, Billing::named(name, None)).expect("the artist is stored");
             }
             tx.commit().expect("the transaction commits");
         }

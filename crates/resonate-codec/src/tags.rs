@@ -187,6 +187,8 @@ pub struct TagSet {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
+    pub artist_sort: Option<String>,
+    pub album_artist_sort: Option<String>,
     pub track_number: Option<u32>,
     pub track_total: Option<u32>,
     pub disc_number: Option<u32>,
@@ -613,6 +615,8 @@ impl Builder {
             T::Artist(value) => self.listed(Listed::Artist, value),
             T::Album(value) => given(&mut self.tags.album, value),
             T::AlbumArtist(value) => self.listed(Listed::AlbumArtist, value),
+            T::SortArtist(value) => given(&mut self.tags.artist_sort, value),
+            T::SortAlbumArtist(value) => given(&mut self.tags.album_artist_sort, value),
             T::Genre(value) => self.listed(Listed::Genre, value),
             T::Grouping(value) => given(&mut self.tags.grouping, value),
             T::CollectionTitle(value) => given(&mut self.tags.collection, value),
@@ -969,6 +973,8 @@ fn vorbis_comment(name: &str, value: &RawValue) -> Option<StandardTag> {
         "ARTIST" => StandardTag::Artist(text()),
         "ALBUM" => StandardTag::Album(text()),
         "ALBUMARTIST" | "ALBUM_ARTIST" | "ALBUM ARTIST" => StandardTag::AlbumArtist(text()),
+        "ARTISTSORT" => StandardTag::SortArtist(text()),
+        "ALBUMARTISTSORT" => StandardTag::SortAlbumArtist(text()),
         "GENRE" => StandardTag::Genre(text()),
         "GROUPING" | "CONTENTGROUP" => StandardTag::Grouping(text()),
         "LABEL" | "ORGANIZATION" | "PUBLISHER" => StandardTag::Label(text()),
@@ -1637,6 +1643,44 @@ mod tests {
         assert_eq!(set.album_artist.as_deref(), Some("Pink Floyd"));
         assert_eq!(set.title.as_deref(), Some("Echoes"));
         assert_eq!(set.artist, None);
+    }
+
+    #[test]
+    fn the_names_an_artist_is_sorted_under_are_read_however_the_tag_spells_them() {
+        let mapped_by_the_container = absorb(&[
+            mapped(
+                "TSOP",
+                "Beatles, The",
+                StandardTag::SortArtist(text("Beatles, The")),
+            ),
+            mapped(
+                "TSO2",
+                "Various",
+                StandardTag::SortAlbumArtist(text("Various")),
+            ),
+        ]);
+        let named_as_vorbis_comments = absorb(&[
+            keyed("ALBUMARTIST", "The Beatles"),
+            keyed("ARTISTSORT", "Beatles, The"),
+            keyed("ALBUMARTISTSORT", "  Beatles, The  "),
+        ]);
+
+        assert_eq!(
+            mapped_by_the_container.artist_sort.as_deref(),
+            Some("Beatles, The")
+        );
+        assert_eq!(
+            mapped_by_the_container.album_artist_sort.as_deref(),
+            Some("Various")
+        );
+        assert_eq!(
+            named_as_vorbis_comments.artist_sort.as_deref(),
+            Some("Beatles, The")
+        );
+        assert_eq!(
+            named_as_vorbis_comments.album_artist_sort.as_deref(),
+            Some("Beatles, The")
+        );
     }
 
     #[test]

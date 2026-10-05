@@ -24,21 +24,22 @@ use resonate_core::{
     StreamSpec, TrackId, WantId,
 };
 use resonate_library::{
-    Aged, Album, AlbumLink, AlbumNames, AlbumQuery, Artist, ArtistMatch, ArtistProfile,
-    ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec,
-    CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
-    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
-    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link, LinkNames, Linked,
-    ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid, Medium, Missing,
-    MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing, PlaylistFormat,
-    PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, RetagOptions,
-    RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Aged, Album, AlbumLink, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistMatch, ArtistOrder,
+    ArtistProfile, ArtistQuery, ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed,
+    Certainty, Codec, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction,
+    Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags,
+    Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept,
+    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, Kept, Layout, Library, LifeSpan, Link,
+    LinkNames, Linked, ListeningService, LookupOp, Love, LovesTold, LyricText, LyricsAsked, Mbid,
+    Medium, Missing, MissingTrack, OrganiseOptions, OrganiseSummary, Picturing, Playing,
+    PlaylistFormat, PlaylistOrder, PollOptions, PollProgress, Popularity, Pruned, RETRY_WAITS,
+    Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler,
+    Search, Service, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
+    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, UnheldRelease, Unwritten, Vault, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Extension, Identity, Obtained, Provider, Providers, Result as ProvidedResult,
@@ -52,6 +53,8 @@ const FRONT_COVER: u8 = 3;
 const TITLE: &[u8; 4] = b"TIT2";
 const ARTIST: &[u8; 4] = b"TPE1";
 const ALBUM_ARTIST: &[u8; 4] = b"TPE2";
+const ARTIST_SORT: &[u8; 4] = b"TSOP";
+const ALBUM_ARTIST_SORT: &[u8; 4] = b"TSO2";
 const ALBUM: &[u8; 4] = b"TALB";
 const TRACK: &[u8; 4] = b"TRCK";
 const YEAR: &[u8; 4] = b"TDRC";
@@ -766,6 +769,82 @@ fn tracks_group_into_one_album_under_their_album_artist() -> Result<()> {
     let listed = library.artists(&ArtistQuery::default())?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed.first().map(|entry| entry.id), Some(artist.id));
+    Ok(())
+}
+
+#[test]
+fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
+    let tree = Tree::new();
+    tree.write(
+        "beatles.wav",
+        &Wav::new()
+            .text(TITLE, "Help!")
+            .text(ARTIST, "The Beatles")
+            .text(ARTIST_SORT, "Beatles, The")
+            .text(ALBUM, "Help!")
+            .build(),
+    );
+    tree.write(
+        "cure.wav",
+        &Wav::new()
+            .text(TITLE, "Lovesong")
+            .text(ARTIST, "The Cure")
+            .text(ALBUM_ARTIST, "The Cure")
+            .text(ALBUM_ARTIST_SORT, "Cure, The")
+            .text(ALBUM, "Disintegration")
+            .build(),
+    );
+    for (file, artist) in [
+        ("abba.wav", "ABBA"),
+        ("blur.wav", "Blur"),
+        ("doves.wav", "Doves"),
+    ] {
+        tree.write(
+            file,
+            &Wav::new()
+                .text(TITLE, "Song")
+                .text(ARTIST, artist)
+                .text(ALBUM, artist)
+                .build(),
+        );
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let named = |reading| -> Result<Vec<String>> {
+        Ok(library
+            .artists(&ArtistQuery {
+                sort: ArtistOrder::Name,
+                reading,
+                ..ArtistQuery::default()
+            })?
+            .into_iter()
+            .map(|artist| artist.name)
+            .collect())
+    };
+    assert_eq!(
+        named(Direction::Ascending)?,
+        ["ABBA", "The Beatles", "Blur", "The Cure", "Doves"]
+    );
+    assert_eq!(
+        named(Direction::Descending)?,
+        ["Doves", "The Cure", "Blur", "The Beatles", "ABBA"]
+    );
+
+    let by_owner: Vec<String> = library
+        .albums(&AlbumQuery {
+            sort: AlbumOrder::Artist,
+            reading: Direction::Ascending,
+            ..AlbumQuery::default()
+        })?
+        .into_iter()
+        .map(|album| album.title)
+        .collect();
+    assert_eq!(
+        by_owner,
+        ["ABBA", "Help!", "Blur", "Disintegration", "Doves"]
+    );
     Ok(())
 }
 

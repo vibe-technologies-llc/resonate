@@ -77,6 +77,8 @@ pub enum TagField {
     ReplayGainTrackPeak,
     ReplayGainAlbumGain,
     ReplayGainAlbumPeak,
+    ArtistSort,
+    AlbumArtistSort,
 }
 
 const COMPILED: &str = "1";
@@ -85,7 +87,7 @@ const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
 
 impl TagField {
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 38] = [
         Self::Title,
         Self::Artist,
         Self::Album,
@@ -122,6 +124,8 @@ impl TagField {
         Self::ReplayGainTrackPeak,
         Self::ReplayGainAlbumGain,
         Self::ReplayGainAlbumPeak,
+        Self::ArtistSort,
+        Self::AlbumArtistSort,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -162,6 +166,8 @@ impl TagField {
             Self::ReplayGainTrackPeak => "replaygain track peak",
             Self::ReplayGainAlbumGain => "replaygain album gain",
             Self::ReplayGainAlbumPeak => "replaygain album peak",
+            Self::ArtistSort => "artist sort",
+            Self::AlbumArtistSort => "album artist sort",
         }
     }
 
@@ -207,6 +213,8 @@ impl TagField {
             Self::ReplayGainTrackPeak => tags.replay_gain.track_peak.map(spelled_peak),
             Self::ReplayGainAlbumGain => tags.replay_gain.album_gain.map(spelled_gain),
             Self::ReplayGainAlbumPeak => tags.replay_gain.album_peak.map(spelled_peak),
+            Self::ArtistSort => tags.artist_sort.clone(),
+            Self::AlbumArtistSort => tags.album_artist_sort.clone(),
         }
     }
 
@@ -263,6 +271,8 @@ impl TagField {
             Self::ReplayGainTrackPeak => ItemKey::ReplayGainTrackPeak,
             Self::ReplayGainAlbumGain => ItemKey::ReplayGainAlbumGain,
             Self::ReplayGainAlbumPeak => ItemKey::ReplayGainAlbumPeak,
+            Self::ArtistSort => ItemKey::TrackArtistSortOrder,
+            Self::AlbumArtistSort => ItemKey::AlbumArtistSortOrder,
         }
     }
 }
@@ -1549,6 +1559,8 @@ mod tests {
             edited(TagField::ReplayGainTrackPeak, "0.988547"),
             edited(TagField::ReplayGainAlbumGain, "-7.25 dB"),
             edited(TagField::ReplayGainAlbumPeak, "0.999969"),
+            edited(TagField::ArtistSort, "Floyd, Pink"),
+            edited(TagField::AlbumArtistSort, "Pink Floyd"),
         ]
     }
 

@@ -261,7 +261,15 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
 - **The albums and artists panes have orders too, deliberately with no index behind them.**
   `AlbumOrder` is relevance, title, artist, year, track count, when a track of it was last added and
   favourited; `ArtistOrder` is relevance, name, album count, track count and favourited;
-  `album_order_by` and `artist_order_by` are `order_by`'s counterparts. Neither is held to the index
+  `album_order_by` and `artist_order_by` are `order_by`'s counterparts. **An artist is filed under the
+  name its files sort it by**, else the name MusicBrainz sorts it by, else its own: `filed_as!` is
+  `coalesce(tagged_sort, sort_name, name)`, what the artists orders and the albums' artist order
+  (`album_owner_filed_as!`) tie on, so *The Beatles* files under *B*
+  (`an_artist_is_listed_under_the_name_its_files_sort_it_by`). `artists.tagged_sort` is the scan's: a
+  billing's `ARTISTSORT` or `ALBUMARTISTSORT` (`TSOP`, `TSO2`, `soar`, `soaa`), taken once a pass per
+  artist and never cleared by a file naming none, another file perhaps still naming it; a billing read
+  as the lead of a list takes none, the sort having been the list's. The step adding it marks every
+  scanned row `probe_again`, the sort never having been read. Neither is held to the index
   guard: those tables hold thousands of rows where `tracks` holds hundreds of thousands, so a temp
   B-tree over one is cheaper than an index — and `SCHEMA_FINGERPRINT` covers the index list, so adding
   one is a `MIGRATIONS` step and a rebuild in every catalog. There is no `resonate albums` or `resonate
@@ -1596,9 +1604,9 @@ two DSD containers, which lofty cannot write, are passed over. `Library::retag` 
 `resonate tag`, a preview until `--apply`, as `organise` is; the settings pane's *Tagging* group
 under Library is the window's way in, with the same preview-then-arm shape *Organising* has.
 
-**Every field the `TagSet` names a writer can reach is a `TagField`**, thirty-six of them: the names,
+**Every field the `TagSet` names a writer can reach is a `TagField`**, thirty-eight of them: the names,
 numbers, date, label and identifiers, and genre, the seven credits, comment, BPM, compilation,
-grouping, copyright and the four ReplayGain values. `TagField::read` spells each as it is written, so
+grouping, copyright, the four ReplayGain values and the two artist sort names. `TagField::read` spells each as it is written, so
 a write is weighed against the file in the same text: a compilation is `1`, a gain
 `spelled_gain`'s `+x.xx dB` and a peak `spelled_peak`'s six places. `TagField::key_in` is the lofty
 key a field takes in a tag kind — BPM is `Bpm` in a Vorbis comment, `IntegerBpm` in ID3 and MP4 —
@@ -1622,6 +1630,12 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   attribution. An identifier is never a guess: `tracks.mbid`, `release_track_mbid`, `artist_mbid`,
   `isrc`, `albums.mbid`, `release_group` and what the tags declared about the pressing are offered
   whatever answered, each being the file's own or a strict match's.
+- **A sort name is the lookup's, and only where the file names none.** `ArtistSort` is offered from the
+  track's artist's `sort_name` where that artist answered and is the whole of `tracks.artist`, and
+  `AlbumArtistSort` from the album artist's beside the album artist; `KEPT_AS_THE_FILE_SPELLS_IT`
+  drops either where the file already carries one, the tagger's choice outranking the reference's as it
+  does in the order
+  (`a_sort_name_a_lookup_gave_is_written_only_where_the_file_names_none`).
 - **What is written is the difference, so a file already saying it is left alone.** `wanted` reads
   the file's own `TagSet` through the build's `TagSource` and keeps only the fields whose value
   differs, so a run over an already-written library costs one probe a file and no writes, and

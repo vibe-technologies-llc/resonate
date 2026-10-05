@@ -286,6 +286,7 @@ pub(crate) struct TrackToTag {
     pub answered: bool,
     pub title: String,
     pub artist: Option<String>,
+    pub artist_sort: Option<String>,
     pub artist_mbid: Option<String>,
     pub mbid: Option<String>,
     pub release_track_mbid: Option<String>,
@@ -296,6 +297,7 @@ pub(crate) struct TrackToTag {
     pub album: Option<String>,
     pub album_artist_answered: bool,
     pub album_artist: Option<String>,
+    pub album_artist_sort: Option<String>,
     pub album_artist_mbid: Option<String>,
     pub album_mbid: Option<String>,
     pub release_group: Option<String>,
@@ -453,9 +455,14 @@ fn bettered(held: &CoverArt, sleeved: Option<&CoverArt>) -> bool {
     sleeved.is_some_and(|sleeved| store::betters(sleeved, held))
 }
 
+const KEPT_AS_THE_FILE_SPELLS_IT: [TagField; 2] = [TagField::ArtistSort, TagField::AlbumArtistSort];
+
 fn wanted(row: &TrackToTag, held: &TagSet) -> Vec<TagEdit> {
     offered(row)
         .into_iter()
+        .filter(|(field, _)| {
+            !KEPT_AS_THE_FILE_SPELLS_IT.contains(field) || field.read(held).is_none()
+        })
         .filter(|(field, value)| field.read(held).as_deref() != Some(value.as_str()))
         .map(|(field, value)| TagEdit { field, value })
         .collect()
@@ -484,6 +491,11 @@ fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
         TagField::MusicBrainzArtistId,
         row.artist_mbid.as_deref(),
     );
+    offer(
+        &mut offered,
+        TagField::ArtistSort,
+        row.artist_sort.as_deref(),
+    );
     counted(&mut offered, TagField::TrackNumber, row.track_number);
     counted(&mut offered, TagField::DiscNumber, row.disc_number);
 
@@ -503,6 +515,11 @@ fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
             &mut offered,
             TagField::MusicBrainzAlbumArtistId,
             row.album_artist_mbid.as_deref(),
+        );
+        offer(
+            &mut offered,
+            TagField::AlbumArtistSort,
+            row.album_artist_sort.as_deref(),
         );
     }
 
@@ -1165,6 +1182,7 @@ mod tests {
             answered: true,
             title: "Echoes".to_owned(),
             artist: Some("Pink Floyd".to_owned()),
+            artist_sort: None,
             artist_mbid: Some("83d91898-7763-47d7-b03b-b92132375c47".to_owned()),
             mbid: Some("b1a9c0de-1111-4222-8333-444455556666".to_owned()),
             release_track_mbid: None,
@@ -1175,6 +1193,7 @@ mod tests {
             album: Some("Meddle".to_owned()),
             album_artist_answered: true,
             album_artist: Some("Pink Floyd".to_owned()),
+            album_artist_sort: None,
             album_artist_mbid: None,
             album_mbid: Some("1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f".to_owned()),
             release_group: None,
@@ -1212,6 +1231,42 @@ mod tests {
         };
 
         assert_eq!(wanted(&row, &held), Vec::new());
+    }
+
+    #[test]
+    fn a_sort_name_a_lookup_gave_is_written_only_where_the_file_names_none() {
+        let row = TrackToTag {
+            artist: Some("The Beatles".to_owned()),
+            artist_sort: Some("Beatles, The".to_owned()),
+            album_artist: Some("The Beatles".to_owned()),
+            album_artist_sort: Some("Beatles, The".to_owned()),
+            ..row()
+        };
+        let unsorted = TagSet::default();
+        let sorted_by_its_tagger = TagSet {
+            artist_sort: Some("Beatles".to_owned()),
+            album_artist_sort: Some("Beatles".to_owned()),
+            ..TagSet::default()
+        };
+
+        let written = fields(&wanted(&row, &unsorted));
+        let kept = fields(&wanted(&row, &sorted_by_its_tagger));
+
+        assert!(written.contains(&TagField::ArtistSort), "{written:?}");
+        assert!(written.contains(&TagField::AlbumArtistSort), "{written:?}");
+        assert!(!kept.contains(&TagField::ArtistSort), "{kept:?}");
+        assert!(!kept.contains(&TagField::AlbumArtistSort), "{kept:?}");
+    }
+
+    #[test]
+    fn an_album_artists_sort_name_waits_for_the_artist_to_be_answered() {
+        let row = TrackToTag {
+            album_artist_answered: false,
+            album_artist_sort: Some("Floyd, Pink".to_owned()),
+            ..row()
+        };
+
+        assert!(!fields(&wanted(&row, &TagSet::default())).contains(&TagField::AlbumArtistSort));
     }
 
     #[test]

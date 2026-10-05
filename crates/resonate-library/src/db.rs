@@ -134,6 +134,30 @@ macro_rules! album_owner {
     };
 }
 
+macro_rules! filed_as {
+    ($artist:literal) => {
+        concat!(
+            "coalesce(",
+            $artist,
+            ".tagged_sort, ",
+            $artist,
+            ".sort_name, ",
+            $artist,
+            ".name) COLLATE NOCASE"
+        )
+    };
+}
+
+macro_rules! album_owner_filed_as {
+    () => {
+        concat!(
+            "(SELECT ",
+            filed_as!("r"),
+            " FROM artists r WHERE r.id = a.artist_id)"
+        )
+    };
+}
+
 macro_rules! album_tracks {
     () => {
         "(SELECT count(*) FROM tracks t WHERE t.album_id = a.id AND t.alternative_of IS NULL AND t.hidden = 0)"
@@ -290,11 +314,15 @@ const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, t
             a.answered IS NOT NULL, a.release_title,
             artists.answered IS NOT NULL, artists.name, artists.mbid,
             a.mbid, a.release_group, a.date, a.label, a.catalog_number, a.barcode,
-            tracks.vault_key IS NOT NULL, tracks.favourite IS NOT NULL, tracks.plays
+            tracks.vault_key IS NOT NULL, tracks.favourite IS NOT NULL, tracks.plays,
+            CASE WHEN performer.answered IS NOT NULL AND performer.name = tracks.artist
+                 THEN performer.sort_name END,
+            artists.sort_name
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN albums a ON a.id = tracks.album_id
-       LEFT JOIN artists ON artists.id = a.artist_id";
+       LEFT JOIN artists ON artists.id = a.artist_id
+       LEFT JOIN artists performer ON performer.id = tracks.artist_id";
 
 const RELEASE_DISC_TRACKS: &str = "SELECT album_id, disc, count(*) FROM release_tracks
       GROUP BY album_id, disc";
@@ -5354,6 +5382,8 @@ struct RawToTag {
     vaulted: bool,
     favourite: bool,
     plays: i64,
+    artist_sort: Option<String>,
+    album_artist_sort: Option<String>,
 }
 
 impl RawToTag {
@@ -5387,6 +5417,8 @@ impl RawToTag {
             vaulted: row.get(25)?,
             favourite: row.get(26)?,
             plays: row.get(27)?,
+            artist_sort: row.get(28)?,
+            album_artist_sort: row.get(29)?,
         })
     }
 
@@ -5405,6 +5437,7 @@ impl RawToTag {
             answered: self.answered,
             title: self.title,
             artist: self.artist,
+            artist_sort: self.artist_sort,
             artist_mbid: self.artist_mbid,
             mbid: self.mbid,
             release_track_mbid: self.release_track_mbid,
@@ -5415,6 +5448,7 @@ impl RawToTag {
             album: self.release_title,
             album_artist_answered: self.album_artist_answered,
             album_artist: self.album_artist,
+            album_artist_sort: self.album_artist_sort,
             album_artist_mbid: self.album_artist_mbid,
             album_mbid: self.album_mbid,
             release_group: self.release_group,
@@ -5689,15 +5723,15 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
         },
         AlbumOrder::Artist => Reading {
             up: concat!(
-                album_owner!(),
-                " COLLATE NOCASE, a.year, ",
+                album_owner_filed_as!(),
+                ", a.year, ",
                 album_title!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
-                album_owner!(),
-                " COLLATE NOCASE DESC, a.year DESC, ",
+                album_owner_filed_as!(),
+                " DESC, a.year DESC, ",
                 album_title!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
@@ -5771,44 +5805,44 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
 const fn artist_order_by(sort: ArtistOrder, reading: Direction, ranked: bool) -> &'static str {
     let order = match sort {
         ArtistOrder::Relevance if ranked => Reading {
-            up: concat!("matched.score, r.name COLLATE NOCASE", artist_ids_rising!()),
+            up: concat!("matched.score, ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
-                "matched.score DESC, r.name COLLATE NOCASE DESC",
+                "matched.score DESC, ",
+                filed_as!("r"),
+                " DESC",
                 artist_ids_falling!()
             ),
         },
         ArtistOrder::Relevance | ArtistOrder::Name => Reading {
-            up: concat!("r.name COLLATE NOCASE", artist_ids_rising!()),
-            down: concat!("r.name COLLATE NOCASE DESC", artist_ids_falling!()),
+            up: concat!(filed_as!("r"), artist_ids_rising!()),
+            down: concat!(filed_as!("r"), " DESC", artist_ids_falling!()),
         },
         ArtistOrder::Albums => Reading {
-            up: concat!(
-                artist_albums!(),
-                ", r.name COLLATE NOCASE",
-                artist_ids_rising!()
-            ),
+            up: concat!(artist_albums!(), ", ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
                 artist_albums!(),
-                " DESC, r.name COLLATE NOCASE DESC",
+                " DESC, ",
+                filed_as!("r"),
+                " DESC",
                 artist_ids_falling!()
             ),
         },
         ArtistOrder::Tracks => Reading {
-            up: concat!(
-                artist_tracks!(),
-                ", r.name COLLATE NOCASE",
-                artist_ids_rising!()
-            ),
+            up: concat!(artist_tracks!(), ", ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
                 artist_tracks!(),
-                " DESC, r.name COLLATE NOCASE DESC",
+                " DESC, ",
+                filed_as!("r"),
+                " DESC",
                 artist_ids_falling!()
             ),
         },
         ArtistOrder::Favourited => Reading {
-            up: concat!("r.favourite, r.name COLLATE NOCASE", artist_ids_rising!()),
+            up: concat!("r.favourite, ", filed_as!("r"), artist_ids_rising!()),
             down: concat!(
-                "r.favourite DESC, r.name COLLATE NOCASE DESC",
+                "r.favourite DESC, ",
+                filed_as!("r"),
+                " DESC",
                 artist_ids_falling!()
             ),
         },
