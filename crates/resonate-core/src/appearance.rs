@@ -202,6 +202,28 @@ impl fmt::Display for TextSize {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ArtistsDrawn {
+    #[default]
+    Grid,
+    List,
+}
+
+impl ArtistsDrawn {
+    pub const ALL: [Self; 2] = [Self::Grid, Self::List];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Grid => "grid",
+            Self::List => "list",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|drawn| drawn.as_str() == text)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ScrollbarMode {
     #[default]
     Shown,

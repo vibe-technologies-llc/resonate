@@ -2542,6 +2542,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             tabs: config.tabs(),
             remember_tab: config.remembers_tab(),
             last_tab: config.remembered_tab(),
+            artists_drawn: config.artists_drawn(),
             remember_window_size: config.remembers_window_size(),
             window_size: config.window_size(),
             remember_settings_category: config.remembers_settings_category(),

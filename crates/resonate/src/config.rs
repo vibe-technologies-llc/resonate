@@ -15,7 +15,8 @@ use clap::ValueEnum as _;
 #[cfg(any(feature = "ui", test))]
 use resonate_core::Appearance;
 use resonate_core::{
-    Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme,
+    Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode, Restoration,
@@ -153,6 +154,7 @@ pub struct Config {
     pub tab_counts: Option<bool>,
     pub remember_tab: Option<bool>,
     pub last_tab: Option<String>,
+    pub artists_drawn: Option<ArtistsDrawn>,
     pub remember_window_size: Option<bool>,
     pub window_size: Option<(u32, u32)>,
     pub remember_settings_category: Option<bool>,
@@ -247,6 +249,7 @@ impl fmt::Debug for Config {
             tab_counts,
             remember_tab,
             last_tab,
+            artists_drawn,
             remember_window_size,
             window_size,
             remember_settings_category,
@@ -327,6 +330,7 @@ impl fmt::Debug for Config {
             .field("tab_counts", tab_counts)
             .field("remember_tab", remember_tab)
             .field("last_tab", last_tab)
+            .field("artists_drawn", artists_drawn)
             .field("remember_window_size", remember_window_size)
             .field("window_size", window_size)
             .field("remember_settings_category", remember_settings_category)
@@ -490,6 +494,11 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn scrollbars(&self) -> ScrollbarMode {
         self.scrollbars.unwrap_or_default()
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn artists_drawn(&self) -> ArtistsDrawn {
+        self.artists_drawn.unwrap_or_default()
     }
 
     #[cfg(feature = "ui")]
@@ -756,6 +765,9 @@ impl Config {
             ConfigKey::TabCounts => config.tab_counts = Some(at.boolean(value)?),
             ConfigKey::RememberTab => config.remember_tab = Some(at.boolean(value)?),
             ConfigKey::LastTab => config.last_tab = Some(at.one_of(value, tab)?.to_owned()),
+            ConfigKey::ArtistsDrawn => {
+                config.artists_drawn = Some(at.one_of(value, ArtistsDrawn::parse)?);
+            }
             ConfigKey::RememberWindowSize => {
                 config.remember_window_size = Some(at.boolean(value)?);
             }
@@ -1668,6 +1680,17 @@ mod tests {
     }
 
     #[cfg(feature = "ui")]
+    #[test]
+    #[cfg(feature = "ui")]
+    fn the_artists_are_drawn_as_a_grid_unless_the_file_says_a_list() {
+        let drawn = |text: &str| read(text).expect("a layout is valid").artists_drawn();
+
+        assert_eq!(drawn(""), ArtistsDrawn::Grid);
+        assert_eq!(drawn("artists-drawn = \"list\""), ArtistsDrawn::List);
+        assert_eq!(drawn("artists-drawn = \"grid\""), ArtistsDrawn::Grid);
+        assert!(read("artists-drawn = \"mosaic\"").is_err());
+    }
+
     #[test]
     fn scrollbars_are_drawn_until_the_file_names_another_mode() {
         let mode = |text: &str| read(text).expect("a mode is valid").scrollbars();

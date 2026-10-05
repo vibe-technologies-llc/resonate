@@ -304,6 +304,7 @@ impl Driven {
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,
                 last_tab: None,
+                artists_drawn: resonate_core::ArtistsDrawn::default(),
                 remember_window_size: false,
                 window_size: None,
                 remember_settings_category: false,

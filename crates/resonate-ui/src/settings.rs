@@ -13,7 +13,8 @@ use crossbeam_channel::Sender;
 use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
-    Accent, AppId, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, TextSize, Theme,
+    Trim, Volume,
 };
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -192,6 +193,7 @@ pub enum SettingKey {
     TabCounts,
     RememberTab,
     LastTab,
+    ArtistsDrawn,
     RememberWindowSize,
     WindowSize,
     RememberSettingsCategory,
@@ -216,7 +218,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 75] = [
+    pub const ALL: [Self; 76] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -271,6 +273,7 @@ impl SettingKey {
         Self::TabCounts,
         Self::RememberTab,
         Self::LastTab,
+        Self::ArtistsDrawn,
         Self::RememberWindowSize,
         Self::WindowSize,
         Self::RememberSettingsCategory,
@@ -354,6 +357,7 @@ pub enum Setting {
     TabCounts(bool),
     RememberTab(bool),
     LastTab(crate::Pane),
+    ArtistsDrawn(ArtistsDrawn),
     RememberWindowSize(bool),
     WindowSize(WindowSize),
     RememberSettingsCategory(bool),
@@ -434,6 +438,7 @@ impl Setting {
             Self::TabCounts(_) => SettingKey::TabCounts,
             Self::RememberTab(_) => SettingKey::RememberTab,
             Self::LastTab(_) => SettingKey::LastTab,
+            Self::ArtistsDrawn(_) => SettingKey::ArtistsDrawn,
             Self::RememberWindowSize(_) => SettingKey::RememberWindowSize,
             Self::WindowSize(_) => SettingKey::WindowSize,
             Self::RememberSettingsCategory(_) => SettingKey::RememberSettingsCategory,
@@ -630,6 +635,7 @@ pub struct Stored {
     pub tabs: Tabs,
     pub remember_tab: bool,
     pub last_tab: Option<crate::Pane>,
+    pub artists_drawn: ArtistsDrawn,
     pub remember_window_size: bool,
     pub window_size: Option<WindowSize>,
     pub remember_settings_category: bool,

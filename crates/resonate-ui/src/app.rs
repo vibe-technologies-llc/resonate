@@ -13,7 +13,9 @@ use gpui::{
     App, AppContext as _, Application, Bounds, Context, Global, KeyBinding, Task, TitlebarOptions,
     WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
-use resonate_core::{Appearance, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId};
+use resonate_core::{
+    Appearance, ArtistsDrawn, FrameSpan, MediaLocation, Presence, ScrollbarMode, TrackId,
+};
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, OutputSettings,
     PlaybackState, Player, PlayerState, QueueItem, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
@@ -173,6 +175,7 @@ pub struct ResonateApp {
     pub tabs: Tabs,
     pub remember_tab: bool,
     pub last_tab: Option<crate::Pane>,
+    pub artists_drawn: ArtistsDrawn,
     pub remember_window_size: bool,
     pub window_size: Option<WindowSize>,
     pub remember_settings_category: bool,
@@ -913,6 +916,7 @@ pub fn run(
             tabs: stored.tabs,
             remember_tab: stored.remember_tab,
             last_tab: stored.last_tab,
+            artists_drawn: stored.artists_drawn,
             remember_window_size: stored.remember_window_size,
             window_size: stored.window_size,
             remember_settings_category: stored.remember_settings_category,

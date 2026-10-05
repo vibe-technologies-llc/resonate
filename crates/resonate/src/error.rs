@@ -61,6 +61,7 @@ pub enum ConfigKey {
     TabCounts,
     RememberTab,
     LastTab,
+    ArtistsDrawn,
     RememberWindowSize,
     WindowSize,
     RememberSettingsCategory,
@@ -105,7 +106,7 @@ impl fmt::Display for ArtistName {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 77] = [
+    pub const ALL: [Self; 78] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -157,6 +158,7 @@ impl ConfigKey {
         Self::TabCounts,
         Self::RememberTab,
         Self::LastTab,
+        Self::ArtistsDrawn,
         Self::RememberWindowSize,
         Self::WindowSize,
         Self::RememberSettingsCategory,
@@ -238,6 +240,7 @@ impl ConfigKey {
             Self::TabCounts => "tab-counts",
             Self::RememberTab => "remember-tab",
             Self::LastTab => "last-tab",
+            Self::ArtistsDrawn => "artists-drawn",
             Self::RememberWindowSize => "remember-window-size",
             Self::WindowSize => "window-size",
             Self::RememberSettingsCategory => "remember-settings-category",

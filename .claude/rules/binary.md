@@ -160,6 +160,8 @@ password, key and the `contact` (`no_key_holding_a_secret_or_the_contact_is_prin
   `Config::tabs` fold their switches; close is never a window button; a tab that is off is left
   out of the sidebar and the pane keys, `RootView::set_pane` lands on the tracks, and the artist
   page's *not held* button is not drawn.
+- `artists-drawn` is a `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`, written
+  by the artists pane's *List* / *Grid* choice.
 - `scrollbars` is a `resonate_core::ScrollbarMode`; a file from when it was a switch still reads
   (`true` as `shown`, `false` as `hidden`).
 - `remember-tab`, `remember-window-size` and `remember-settings-category` each guard a saved value

@@ -10,7 +10,7 @@ use gpui::{
     MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, anchored, deferred, div,
     hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
-use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, TrackId};
+use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, AlbumNotHeld, Artist, ArtistDetail, ArtistTotals, Column, Cut, Favoured, Found, Genre,
@@ -1318,10 +1318,9 @@ impl RootView {
     fn artists_drawn_as(&self, drawn: ArtistsDrawn, cx: &mut Context<Self>) -> Div {
         let choice = |as_: ArtistsDrawn, label: &'static str, cx: &mut Context<Self>| {
             kit::segment(("artists-drawn", as_ as usize), label, drawn == as_)
-                .names(as_.saying())
+                .names(saying(as_))
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.artists_drawn = as_;
-                    cx.notify();
+                    this.draw_the_artists_as(as_, cx);
                 }))
         };
 
@@ -2539,19 +2538,10 @@ impl RootView {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum ArtistsDrawn {
-    #[default]
-    List,
-    Grid,
-}
-
-impl ArtistsDrawn {
-    const fn saying(self) -> &'static str {
-        match self {
-            Self::List => "Draw the artists as a list, a small portrait beside each name",
-            Self::Grid => "Draw the artists as a grid of large portraits, the way albums are",
-        }
+const fn saying(drawn: ArtistsDrawn) -> &'static str {
+    match drawn {
+        ArtistsDrawn::List => "Draw the artists as a list, a small portrait beside each name",
+        ArtistsDrawn::Grid => "Draw the artists as a grid of large portraits, the way albums are",
     }
 }
 

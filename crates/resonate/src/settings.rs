@@ -231,6 +231,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
         Setting::RememberTab(remember) => (ConfigKey::RememberTab, Some((*remember).into())),
         Setting::LastTab(tab) => (ConfigKey::LastTab, Some(tab.as_str().into())),
+        Setting::ArtistsDrawn(drawn) => (ConfigKey::ArtistsDrawn, Some(drawn.as_str().into())),
         Setting::RememberWindowSize(remember) => {
             (ConfigKey::RememberWindowSize, Some((*remember).into()))
         }
@@ -374,6 +375,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::TabCounts => ConfigKey::TabCounts,
         SettingKey::RememberTab => ConfigKey::RememberTab,
         SettingKey::LastTab => ConfigKey::LastTab,
+        SettingKey::ArtistsDrawn => ConfigKey::ArtistsDrawn,
         SettingKey::RememberWindowSize => ConfigKey::RememberWindowSize,
         SettingKey::WindowSize => ConfigKey::WindowSize,
         SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,

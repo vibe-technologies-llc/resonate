@@ -1544,8 +1544,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   last, so the art fills the whole side. On a card the bottom edge stays square, meeting the text under
   it; an empty tile is its accent, solid.
 - **The playlists index is a grid of covers or a list, and the heading chooses.** `PlaylistsDrawn` is
-  `Grid` (default) or `List`, a `kit::segmented` beside the sort icon kept for the run as `ArtistsDrawn`
-  is. The grid is the albums pane's shape — the same measured `grid_width`, `grid_columns` and
+  `Grid` (default) or `List`, a `kit::segmented` beside the sort icon kept for the run. The grid is the albums pane's shape — the same measured `grid_width`, `grid_columns` and
   `grid_row` — with a card per playlist: the mosaic at `theme::grid_cover()`, the name, lit in the
   accent under the pointer or while it is the playlist in play and led by a search mark where it fills
   itself, and under it the count and when last played, or its length where never. The pin stands in the
@@ -1801,14 +1800,15 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   and the record card draw one pressable name per service, lit under the pointer as an `opens` is,
   reading *Open on …* and handing that release's or artist's exact URL to `cx.open_url`, the desktop's
   browser. It stops its press and ignores a right one, like every heading link.
-- **The artists pane is a list or a grid, and the heading chooses.** `ArtistsDrawn` is `List` — the rows
-  it always was, a small portrait beside each name — or `Grid`, the albums pane's shape with portraits
+- **The artists pane is a grid or a list, and the heading chooses.** `resonate_core::ArtistsDrawn` is
+  `Grid` (the default) or `List` — the rows it always was, a small portrait beside each name; `Grid` is the albums pane's shape with portraits
   in place of sleeves: `artist_grid` measures the same `grid_width`, reads `grid_columns` and lays out
   rows of `artist_cell`s at `theme::grid_cover()`, each a round `portrait_frame` read at
   `Portrayed::InAGrid` — or `kit::avatar_at` at that size, the initial scaled with it, where no portrait
   is held — over the name and its counts, favoured, pressed and menued as a row is. The choice is a
-  `kit::segmented` of *List* and *Grid* beside the sort icon, living for the run like the listings'
-  orders. The reach keys serve both: in the grid a page is whole rows of cells, `show_row` scrolls the
+  `kit::segmented` of *List* and *Grid* beside the sort icon, and it is kept:
+  `RootView::draw_the_artists_as` writes `Setting::ArtistsDrawn` (the `artists-drawn` key) and
+  `ResonateApp::artists_drawn`, which the next run opens on. The reach keys serve both: in the grid a page is whole rows of cells, `show_row` scrolls the
   grid row holding the artist and a reached cell wears the album's `reached_ring`.
 - **An artist's page is its albums or its tracks, one at a time, chosen from two tabs.** It stacked a
   horizontally scrolling strip of small covers over the whole track listing — three scrolling regions,

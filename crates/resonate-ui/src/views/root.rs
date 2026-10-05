@@ -16,7 +16,9 @@ use gpui::{
     ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle, Window,
     canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
-use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume};
+use resonate_core::{
+    AlbumId, ArtistsDrawn, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
+};
 use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlayerState, QueueItem, RepeatMode, stamp_of,
 };
@@ -48,7 +50,7 @@ use crate::{
     theme,
     toast::{self, Toaster},
     views::{
-        browser::{self, ArtistShows, ArtistsDrawn, OpenedRecord},
+        browser::{self, ArtistShows, OpenedRecord},
         chrome,
         dropping::{Incoming, TakingIn},
         field::{Caught, Field, Submitted},
@@ -1030,7 +1032,7 @@ impl RootView {
             following_a_link: Task::ready(()),
             search_scroll: ScrollHandle::default(),
             found_rows: UniformListScrollHandle::default(),
-            artists_drawn: ArtistsDrawn::default(),
+            artists_drawn: cx.global::<ResonateApp>().artists_drawn,
             missing_shows: MissingShows::default(),
             playlists_drawn: PlaylistsDrawn::default(),
             landing_on: None,
@@ -1190,6 +1192,16 @@ impl RootView {
     pub(crate) fn play_shuffled(&mut self, tracks: &[Track], cx: &mut Context<Self>) {
         self.play(tracks, somewhere_in(tracks.len()), cx);
         self.send(Command::SetShuffle(true), cx);
+    }
+
+    pub(crate) fn draw_the_artists_as(&mut self, drawn: ArtistsDrawn, cx: &mut Context<Self>) {
+        if self.artists_drawn == drawn {
+            return;
+        }
+        self.artists_drawn = drawn;
+        cx.update_global::<ResonateApp, _>(|global, _| global.artists_drawn = drawn);
+        self.store(&Setting::ArtistsDrawn(drawn), cx);
+        cx.notify();
     }
 
     pub(crate) fn store(&mut self, setting: &Setting, cx: &mut Context<Self>) {
