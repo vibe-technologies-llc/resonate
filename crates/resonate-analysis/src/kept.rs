@@ -31,6 +31,8 @@ const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
+const NO_FILE_STANDS: u64 = u64::MAX;
+
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
 pub struct KeptAnalyses {
@@ -84,8 +86,13 @@ impl KeptAnalyses {
 
     fn path_of(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<PathBuf> {
         let file = location.as_path()?;
-        let held = fs::metadata(file).ok()?;
-        let modified = held.modified().ok()?;
+        let (length, modified) = match fs::metadata(file) {
+            Ok(held) => (held.len(), nanos_since_the_epoch(held.modified().ok()?)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                (NO_FILE_STANDS, NO_FILE_STANDS.into())
+            }
+            Err(_) => return None,
+        };
         let mut hash = FNV_OFFSET_BASIS;
         let mut take = |bytes: &[u8]| {
             for byte in bytes {
@@ -101,8 +108,8 @@ impl KeptAnalyses {
                 .map_or(u64::MAX, |frames| frames.get())
                 .to_le_bytes(),
         );
-        take(&held.len().to_le_bytes());
-        take(&nanos_since_the_epoch(modified).to_le_bytes());
+        take(&length.to_le_bytes());
+        take(&modified.to_le_bytes());
         Some(self.dir.join(format!("{hash:016x}.{KEPT_AS}")))
     }
 
@@ -614,6 +621,29 @@ mod tests {
 
         fs::write(&file, b"other audio").expect("a changed file");
         assert_eq!(kept.recalled(&location, None), None);
+    }
+
+    #[test]
+    fn an_analysis_of_a_file_that_is_gone_is_kept_under_the_path_alone() {
+        let folder = Folder::new();
+        let location = MediaLocation::local(folder.0.join("vaulted.wav"));
+        let kept = KeptAnalyses::at(folder.0.join("kept"));
+
+        assert_eq!(kept.recalled(&location, None), None);
+        kept.keep(&location, None, &analysed());
+
+        assert_eq!(kept.recalled(&location, None), Some(analysed()));
+        assert_eq!(
+            kept.recalled(&MediaLocation::local(folder.0.join("another.wav")), None),
+            None
+        );
+
+        fs::write(folder.0.join("vaulted.wav"), b"audio").expect("a file arrives at the path");
+        assert_eq!(
+            kept.recalled(&location, None),
+            None,
+            "a file at the path read the analysis of the one that was gone"
+        );
     }
 
     #[test]

@@ -111,8 +111,6 @@ else is open to be done.
   every page, quadratic in its length; design it with the `End` item under Keyboard
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is
   open, and each type-ahead key folds every row's name on the UI thread
-- The Analysis pane decodes a vaulted track whose file has gone on every visit, since a kept
-  analysis is keyed on the file's size and time
 - Dragging files from a file manager stats every path on entering and on dropping
 - Every lookup pass re-pairs each album short of a track in a write transaction of its own, and the
   identify update it runs per matched row counts as a catalog write though nothing moved

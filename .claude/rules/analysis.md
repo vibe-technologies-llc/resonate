@@ -66,7 +66,9 @@ analysed out of its object); the library reaches `study` for the enrichment.
 **An analysis is kept against the file it was taken of, and a changed file forgets it.**
 `KeptAnalyses` is a folder of one file per analysis (`$XDG_CACHE_HOME/resonate/analyses`, given to
 the window's `Player` through `Player::keeping_analyses`), named by an FNV-1a of path, span, size and
-modification time. `Player::analyse` asks it before decoding and keeps what it decoded. A file
+modification time — or, where the file is gone and only a vault object serves the row, of path and span
+alone (`NO_FILE_STANDS`), so a vaulted track's analysis is not decoded again on every visit and a file
+arriving at the path takes another name. `Player::analyse` asks it before decoding and keeps what it decoded. A file
 stamped under another `JUDGED_UNDER` reads as nothing; the judgement is not written, `read` runs
 `judged` over the kept spectrum and levels. The reader trusts none of its own shape: an envelope
 with no lanes, more than `ENVELOPE_LANES`, or columns of no frames reads as nothing. A file that
