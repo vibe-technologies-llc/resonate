@@ -161,8 +161,11 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   nothing about the picture.
 - **What the engine's catalog holds follows the file.** A failed read is `Look::Failed`, claimed again
   after `READ_AGAIN_AFTER`; `Nothing` is a read that found nothing and stands. Each entry keeps the
-  file's size and mtime (`Stamp`), weighed at most every `LOOKED_AT_THE_FILE_EVERY`: a changed file is
-  forgotten and read afresh.
+  file's size and mtime (`Stamp`), taken by the reader thread *before* it reads, and weighed at most every
+  `LOOKED_AT_THE_FILE_EVERY`: a row due a look is queued by the lookup (`Held::to_look`, sent after the
+  lock is let go, `Wanted::Look`) and the reader thread stats it and forgets a changed file, bumping the
+  revision so a pane asks again. Nothing stats a file under the lock or on the caller's thread, so a
+  stalled mount stalls the reader alone and the window's redraw and the bus go on with what was held.
 - **A picture is weighed before it is copied.** `MAX_COVER_BYTES` is checked against `data.len()` before
   the `to_vec`, and an oversized visual is declined rather than failing the read: `choose` prefers a
   front cover then a picture typed `Other` or untyped. An icon, leaflet, back cover, disc or portrait is

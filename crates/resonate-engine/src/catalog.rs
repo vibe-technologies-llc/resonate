@@ -27,6 +27,8 @@ const ROWS_ASKED: usize = 256;
 
 const PICTURES_ASKED: usize = 32;
 
+const LOOKS_ASKED: usize = 64;
+
 const READ_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
 const LOOKED_AT_THE_FILE_EVERY: Duration = Duration::from_secs(5);
@@ -98,6 +100,7 @@ impl Row {
 enum Wanted {
     Tags(Row),
     Art(MediaLocation),
+    Look(MediaLocation),
 }
 
 enum Sent {
@@ -128,6 +131,7 @@ pub enum ArtRead {
 struct Asking {
     tags: Sender<Row>,
     art: Sender<MediaLocation>,
+    look: Sender<MediaLocation>,
 }
 
 impl Asking {
@@ -135,6 +139,7 @@ impl Asking {
         match wanted {
             Wanted::Tags(row) => sent(self.tags.try_send(row)),
             Wanted::Art(location) => sent(self.art.try_send(location)),
+            Wanted::Look(location) => sent(self.look.try_send(location)),
         }
     }
 }
@@ -150,6 +155,7 @@ fn sent<T>(asked: Result<(), TrySendError<T>>) -> Sent {
 struct Asked {
     tags: Receiver<Row>,
     art: Receiver<MediaLocation>,
+    look: Receiver<MediaLocation>,
 }
 
 impl Asked {
@@ -161,6 +167,7 @@ impl Asked {
         select! {
             recv(self.tags) -> row => row.ok().map(Wanted::Tags),
             recv(self.art) -> location => location.ok().map(Wanted::Art),
+            recv(self.look) -> location => location.ok().map(Wanted::Look),
         }
     }
 }
@@ -242,6 +249,7 @@ struct Held {
     pictured: usize,
     rows: usize,
     clock: u64,
+    to_look: Vec<MediaLocation>,
 }
 
 impl Held {
@@ -318,10 +326,8 @@ impl Held {
     }
 
     fn looked_at(&mut self, location: &MediaLocation) -> Option<&mut Entry> {
-        if self.file_moved_under(location) {
-            tracing::debug!(%location, "a queued item changed on disc; it is read again");
-            self.forget(location);
-            return None;
+        if self.is_due_a_look(location) && self.to_look.len() < LOOKS_ASKED {
+            self.to_look.push(location.clone());
         }
         if !self.made_current(location) {
             return None;
@@ -329,7 +335,7 @@ impl Held {
         self.entries.get_mut(location)
     }
 
-    fn file_moved_under(&mut self, location: &MediaLocation) -> bool {
+    fn is_due_a_look(&mut self, location: &MediaLocation) -> bool {
         let Some(entry) = self.entries.get_mut(location) else {
             return false;
         };
@@ -337,8 +343,28 @@ impl Held {
             return false;
         }
         entry.stamped_at = Instant::now();
-        let now = Stamp::of(location);
-        now != entry.stamp
+        true
+    }
+
+    fn looked(&mut self, location: &MediaLocation, now: Option<Stamp>) -> bool {
+        let moved = self
+            .entries
+            .get(location)
+            .is_some_and(|entry| !entry.is_pending() && entry.stamp != now);
+        if moved {
+            tracing::debug!(%location, "a queued item changed on disc; it is read again");
+            self.forget(location);
+        }
+        moved
+    }
+
+    fn stamp(&mut self, location: &MediaLocation, before: Option<Stamp>, over: bool) {
+        let Some(entry) = self.entries.get_mut(location) else {
+            return;
+        };
+        if over || entry.stamp.is_none() {
+            entry.stamp = before.or(entry.stamp);
+        }
     }
 
     fn made_current(&mut self, location: &MediaLocation) -> bool {
@@ -377,7 +403,7 @@ impl Held {
                 cuts: Vec::new(),
                 art: Look::Unasked,
                 used: now,
-                stamp: Stamp::of(location),
+                stamp: None,
                 stamped_at: Instant::now(),
             },
         );
@@ -503,9 +529,41 @@ impl Shelf {
         self.landing();
     }
 
+    fn keep_tags_stamped(&self, row: &Row, look: Look<MediaInfo>, before: Option<Stamp>) {
+        let mut held = self.held.lock();
+        held.keep_tags(row, look);
+        held.stamp(&row.location, before, true);
+        drop(held);
+        self.landing();
+    }
+
     fn keep_art(&self, location: &MediaLocation, look: Look<CoverArt>) {
         self.held.lock().keep_art(location, look);
         self.landing();
+    }
+
+    fn keep_art_stamped(
+        &self,
+        location: &MediaLocation,
+        look: Look<CoverArt>,
+        before: Option<Stamp>,
+    ) {
+        let mut held = self.held.lock();
+        held.keep_art(location, look);
+        held.stamp(location, before, false);
+        drop(held);
+        self.landing();
+    }
+
+    fn take_looks(&self) -> Vec<MediaLocation> {
+        std::mem::take(&mut self.held.lock().to_look)
+    }
+
+    fn looked(&self, location: &MediaLocation, now: Option<Stamp>) {
+        let moved = self.held.lock().looked(location, now);
+        if moved {
+            self.landing();
+        }
     }
 
     fn art_is_pending(&self, location: &MediaLocation) -> bool {
@@ -556,9 +614,11 @@ impl Catalog {
         let shelf = Arc::new(Shelf::default());
         let (tags, tags_asked) = bounded(ROWS_ASKED);
         let (art, art_asked) = bounded(PICTURES_ASKED);
+        let (look, look_asked) = bounded(LOOKS_ASKED);
         let asked = Asked {
             tags: tags_asked,
             art: art_asked,
+            look: look_asked,
         };
         let reader = thread::Builder::new()
             .name("resonate-tags".to_owned())
@@ -570,7 +630,7 @@ impl Catalog {
         match reader {
             Ok(reader) => Self {
                 shelf,
-                wanted: Some(Asking { tags, art }),
+                wanted: Some(Asking { tags, art, look }),
                 reader: Some(reader),
             },
             Err(error) => {
@@ -590,7 +650,9 @@ impl Catalog {
         span: Option<FrameSpan>,
     ) -> Option<Arc<MediaInfo>> {
         let row = Row::new(location, span);
-        match self.shelf.claim_tags(&row) {
+        let claimed = self.shelf.claim_tags(&row);
+        self.ask_for_the_looks();
+        match claimed {
             Claim::Answered(answer) => answer,
             Claim::Ours => {
                 self.ask_for_tags(row);
@@ -600,11 +662,15 @@ impl Catalog {
     }
 
     pub(crate) fn tags_read(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TagsRead {
-        self.shelf.tags_read(&Row::new(location, span))
+        let read = self.shelf.tags_read(&Row::new(location, span));
+        self.ask_for_the_looks();
+        read
     }
 
     pub(crate) fn art(&self, location: &MediaLocation) -> Option<Arc<CoverArt>> {
-        match self.shelf.claim_art(location) {
+        let claimed = self.shelf.claim_art(location);
+        self.ask_for_the_looks();
+        match claimed {
             Claim::Answered(answer) => answer,
             Claim::Ours => {
                 self.ask_for_art(location);
@@ -649,6 +715,12 @@ impl Catalog {
         self.shelf.revision.load(Ordering::Acquire)
     }
 
+    fn ask_for_the_looks(&self) {
+        for location in self.shelf.take_looks() {
+            self.send(Wanted::Look(location));
+        }
+    }
+
     fn ask_for_tags(&self, row: Row) {
         match self.send(Wanted::Tags(row.clone())) {
             Sent::Waiting => {}
@@ -684,7 +756,9 @@ impl Drop for Catalog {
 fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
     while let Some(wanted) = asked.next() {
         match wanted {
+            Wanted::Look(location) => shelf.looked(&location, Stamp::of(&location)),
             Wanted::Tags(row) => {
+                let before = Stamp::of(&row.location);
                 let read = match row.span {
                     Some(span) => probe_span(sources, &row.location, span),
                     None => whole(shelf, sources, &row.location),
@@ -697,7 +771,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                         Look::Failed(Instant::now())
                     }
                 };
-                shelf.keep_tags(&row, look);
+                shelf.keep_tags_stamped(&row, look, before);
             }
             Wanted::Art(location) => {
                 if !shelf.art_is_pending(&location) {
@@ -707,6 +781,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                     shelf.keep_art(&location, Look::Found(Arc::new(spare)));
                     continue;
                 }
+                let before = Stamp::of(&location);
                 let look = match probe_cover_art(sources, &location) {
                     Ok(Some(art)) => Look::Found(Arc::new(art)),
                     Ok(None) => Look::Nothing,
@@ -715,7 +790,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                         Look::Failed(Instant::now())
                     }
                 };
-                shelf.keep_art(&location, look);
+                shelf.keep_art_stamped(&location, look, before);
             }
         }
     }
@@ -1051,7 +1126,17 @@ mod tests {
         if let Some(entry) = catalog.shelf.held.lock().entries.get_mut(&file.location()) {
             entry.stamped_at = a_while_ago(LOOKED_AT_THE_FILE_EVERY * 2);
         }
-        let again = catalog.media_within(&file.location(), None, PATIENCE);
+        let deadline = Instant::now() + PATIENCE;
+        let again = loop {
+            let asked = catalog.media_within(&file.location(), None, PATIENCE);
+            let retagged = asked
+                .as_ref()
+                .is_some_and(|info| info.tags.title.as_deref() != Some("Echoes"));
+            if retagged || Instant::now() >= deadline {
+                break asked;
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
 
         assert_eq!(first.tags.title.as_deref(), Some("Echoes"));
         assert_eq!(
