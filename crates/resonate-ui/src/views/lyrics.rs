@@ -95,7 +95,6 @@ struct Line {
     index: usize,
     text: SharedString,
     voice: Voice,
-    show_voice: bool,
     two_voices: bool,
     at: Option<Duration>,
     standing: f32,
@@ -303,11 +302,6 @@ impl RootView {
                         index,
                         text: text[index].clone(),
                         voice: voices[index],
-                        show_voice: has_two_voices
-                            && !text[index].is_empty()
-                            && (index == 0
-                                || text[index - 1].is_empty()
-                                || voices[index - 1] != voices[index]),
                         two_voices: has_two_voices,
                         at: synced
                             .then(|| moments.get(index).copied().flatten())
@@ -471,16 +465,6 @@ impl RootView {
             .py(measures.padding)
             .rounded_xl()
             .opacity(line.standing)
-            .when(line.show_voice, |line| {
-                line.child(
-                    div()
-                        .text_size(measures.label_words)
-                        .line_height(measures.label)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::muted()))
-                        .child(if second { "VOICE 2" } else { "VOICE 1" }),
-                )
-            })
             .child(
                 div()
                     .w(inside * share)

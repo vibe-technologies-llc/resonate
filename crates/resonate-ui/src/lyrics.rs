@@ -76,8 +76,6 @@ const ADRIFT: f32 = 0.45;
 
 const LEADING: f32 = 1.28;
 
-const LABEL_LEADING: f32 = 1.5;
-
 const LINE_PADDING: f32 = 8.0;
 
 const LINE_SPACING: f32 = 4.0;
@@ -416,7 +414,6 @@ pub struct Measures {
     pub words: Pixels,
     pub leading: Pixels,
     pub label_words: Pixels,
-    pub label: Pixels,
     pub padding: Pixels,
     pub spacing: Pixels,
     pub breath: Pixels,
@@ -443,7 +440,6 @@ impl Measures {
             words,
             leading: scale.snapped(words * LEADING),
             label_words,
-            label: scale.snapped(label_words * LABEL_LEADING),
             padding: scale.snapped(growth.grown(LINE_PADDING)),
             spacing: scale.snapped(growth.grown(LINE_SPACING)),
             breath: scale.snapped(growth.grown(theme::lyric_breath())),
@@ -1623,7 +1619,6 @@ mod tests {
                     measures.words,
                     measures.leading,
                     measures.label_words,
-                    measures.label,
                     measures.padding,
                     measures.spacing,
                     measures.breath,

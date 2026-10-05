@@ -1186,8 +1186,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   sheet closes again over one `TURN` once `HANDS_OFF` (6 s) is out. An unsynced set has no lit line, so
   every line stands at `ADRIFT` and no chip is offered.
 - **Two voiced lines have separate reading edges.** A set with a second voice places voice one on the
-  leading side and voice two on the trailing side, with a small voice label when the singer changes. Text
-  and alignment both identify the voice; the second also takes the accent when lit. Each voice's active
+  leading side and voice two on the trailing side, and the side alone says which voice sings: no label
+  names it. Alignment identifies the voice; the second also takes the accent when lit. Each voice's active
   line brightens on the existing turn, even where both sing together. A one-voice set keeps its
   centred column and former width.
 - **The falloff counts written lines, not rows.** `drawn` records each line's ordinal among the
@@ -1230,7 +1230,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   about ten rows down) and takes the tighter of the two ratios, held between 1 and `GROWS_AT_MOST` (2.5),
   so a wide but short pane does not grow type it then has no rows for, and a pane at or under the
   resting size draws as it always did. Every length of the sheet is `Measures::at(scale, growth)`: the
-  type and the voice label, the leading, padding, spacing, a breath's room, a pause, the plain margin,
+  type and the end mark's label, the leading, padding, spacing, a breath's room, a pause, the plain margin,
   the column and its gutters, the line's side padding, the dots, the end mark, the dissolving edges and
   how far a set rises — the Text size setting's scale times the growth, so the setting still means what
   it says on a 4K pane. The growth changes only when the pane does, so it is the layout's, not motion's:
@@ -1249,7 +1249,7 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   sum tick a pixel back and forth though both moved one way: 322 such reversals over a minute of a test
   sheet, which read as the lines vibrating
   (`every_line_is_drawn_on_whole_pixels_and_never_steps_back_through_a_glide`). `Measures` holds every
-  vertical length of a row — the type, the words' leading, a voice label's, the padding, the spacing, a
+  vertical length of a row — the type, the words' leading, the padding, the spacing, a
   breath's room, a pause, the end mark's padding — snapped the same way at every growth, and the head is `edge()` snapped, so every row starts and ends
   on a whole device pixel. taffy rounds a size by where it sits (`round(top + height) − round(top)`), so
   a 62.08 px row came out 62 or 63 as rows above it changed, the read line moving a pixel with no line
