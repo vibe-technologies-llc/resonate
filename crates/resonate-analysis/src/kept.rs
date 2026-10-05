@@ -89,7 +89,7 @@ impl KeptAnalyses {
         let (length, modified) = match fs::metadata(file) {
             Ok(held) => (held.len(), nanos_since_the_epoch(held.modified().ok()?)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                (NO_FILE_STANDS, NO_FILE_STANDS.into())
+                (NO_FILE_STANDS, NO_FILE_STANDS)
             }
             Err(_) => return None,
         };
