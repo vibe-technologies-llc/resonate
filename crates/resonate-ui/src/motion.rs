@@ -22,10 +22,6 @@ const STARRED_FROM: f32 = 0.6;
 
 const FADED_FROM: f32 = 0.4;
 
-const LEAVING_GONE_BY: f32 = 0.4;
-
-const ARRIVING_FROM: f32 = 0.3;
-
 pub(crate) fn settling(share: f32) -> f32 {
     1.0 - (1.0 - share).powi(3)
 }
@@ -72,11 +68,11 @@ pub(crate) fn blended(from: u32, to: u32, share: f32) -> u32 {
 }
 
 pub(crate) fn leaving_opacity(share: f32) -> f32 {
-    1.0 - smooth((share / LEAVING_GONE_BY).min(1.0))
+    1.0 - smooth(share)
 }
 
 pub(crate) fn arriving_opacity(share: f32) -> f32 {
-    smooth(((share - ARRIVING_FROM) / (1.0 - ARRIVING_FROM)).clamp(0.0, 1.0))
+    smooth(share)
 }
 
 pub(crate) fn lifted_in<E: IntoElement + Styled + 'static>(
@@ -455,12 +451,15 @@ mod tests {
     }
 
     #[test]
-    fn the_leaving_song_is_gone_before_the_arriving_one_is_whole() {
+    fn the_leaving_song_goes_at_the_pace_the_arriving_one_comes() {
+        for step in 0..=20 {
+            let share = step as f32 / 20.0;
+
+            assert!((leaving_opacity(share) + arriving_opacity(share) - 1.0).abs() < 1e-6);
+        }
+
         assert!((leaving_opacity(0.0) - 1.0).abs() < 1e-6);
-        assert!(leaving_opacity(LEAVING_GONE_BY).abs() < 1e-6);
-        assert!(arriving_opacity(ARRIVING_FROM).abs() < 1e-6);
         assert!((arriving_opacity(1.0) - 1.0).abs() < 1e-6);
-        assert!(leaving_opacity(0.5) + arriving_opacity(0.5) < 1.0);
     }
 
     #[test]

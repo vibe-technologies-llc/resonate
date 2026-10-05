@@ -15,7 +15,7 @@ outside it, the lyrics' glide and the toast being the two older motions that kee
   whose state changes, `HANDS_OVER` (280 ms) for the song change. `HINT_ARRIVES_OVER` (100 ms) is a
   hover hint's, a hint being asked for by resting the pointer and so already a wait.
 - **Curves.** `settling` (a cubic ease-out) carries most of the movement in the first third, which
-  is what reads as snappy; `smooth` (smoothstep) is the cover crossfade's, where neither end may
+  is what reads as snappy; `smooth` (smoothstep) is the song handover's, where neither end may
   jump; `overshooting` is the favourite star's, the one motion allowed past its end.
 - **`lifted_in`** fades an in-flow element from nothing and rises it `LIFT` (4 px) through
   `relative().top`, which moves what is painted without moving the layout, so an `anchored` menu
@@ -71,10 +71,14 @@ A skip hands the panel over rather than redrawing it. `Handover` keeps what is s
 leaving, with a serial bumped on each change for the animation keys, and drops the leaving once
 `HANDS_OVER` is out (`a_skip_keeps_the_last_song_beneath_until_the_handover_is_out`).
 
+- **One pace for both.** The words and the cover run the same `HANDS_OVER` on the same curve:
+  `arriving_opacity` is `smooth`, `leaving_opacity` its mirror, so what leaves goes exactly as fast
+  as what arrives comes (`the_leaving_song_goes_at_the_pace_the_arriving_one_comes`). The text once
+  ran a staggered pair of its own, gone by 40 % and back from 30 %, and beside a cover easing over
+  the whole span the two read as two changes rather than one.
 - **The words** are keyed by title, artist and album. The leaving song is drawn beneath at the same
-  place under an id of its own and fades out by `LEAVING_GONE_BY` (40 %); the arriving song is drawn
-  on top, keeps the presses, and fades in from `ARRIVING_FROM` (30 %), so the two are never both
-  legible at once. Nothing slides.
+  place under an id of its own and fades out; the arriving song is drawn on top, keeps the presses,
+  and fades in. Nothing slides.
 - **The cover** is keyed by what it pictures. The leaving face stays opaque beneath and the arriving
   one — art or the disc — fades in over it, which is a true crossfade because a cover is opaque.
 - **The signal path is held between songs.** The engine publishes no current track while the next

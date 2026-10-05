@@ -854,10 +854,11 @@ impl RootView {
                 .when_some(leaving, |frame, left| {
                     frame.child(face(left).absolute().top_0().left_0())
                 })
-                .child(face(drawn.clone()).with_animation(
-                    ElementId::NamedInteger("now-playing-cover".into(), serial),
-                    Animation::new(HANDS_OVER).with_easing(motion::smooth),
-                    move |arriving, share| arriving.opacity(if handing { share } else { 1.0 }),
+                .child(handed_over(
+                    face(drawn.clone()),
+                    ("now-playing-cover", serial),
+                    handing,
+                    motion::arriving_opacity,
                 ))
         };
         let Some((_, magnified)) = drawn.clone() else {
