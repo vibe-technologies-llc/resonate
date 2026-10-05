@@ -966,6 +966,10 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   subject's keys are read** (subject 0, `CORE_ID`): the `default` metadata also carries per-node keys
   (WirePlumber's `target.object`), cleared with a key of nothing when the node leaves, and reading that
   as every key cleared wiped the default sink and rebound the engine to the first sink.
+  **A metadata object leaving the registry is the same clear**: `Metadatas` keeps each proxy with the
+  `HeldIn` it was bound for, and `global_remove` drops the proxy and reads a key of nothing for that
+  object, so a WirePlumber restart leaves no value standing from an object that is gone
+  (`a_metadata_object_that_leaves_takes_the_values_it_held_with_it`).
 - **The chosen sink is named, not numbered.** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, which `select_sink` matches on every stream open, since a PipeWire id is assigned per
   object and a replugged device gets a new one. `OutputStatus::sink` stays a `SinkId`, reporting what

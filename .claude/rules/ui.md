@@ -1664,8 +1664,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   store failed, so a file deleted mid-scan leaves the list the moment the scan ends rather than after
   another quiet period and whole-root scan. It replaced waiting for the root to be quiet then rescanning
   it whole for every deletion, so deleting files one after another kept pushing the scan back and a
-  large root took its whole walk to drop one row. A watch that cannot be made — inotify out of watches —
-  is a warning, and that root waits for a scan by hand.
+  large root took its whole walk to drop one row. **A steady writer cannot defer the scan for ever**:
+  `settled` also hands a root out once its first change has waited `DEFERRED_AT_MOST` (five
+  minutes) however lately the last was heard
+  (`a_folder_that_never_goes_quiet_is_handed_out_once_it_has_been_deferred_long_enough`). A watch that
+  cannot be made — inotify out of watches — is a warning; one that cannot cover a root (`RootsWatch::
+  leaves_a_root_uncovered`) is laid again every `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER` (five minutes),
+  and a root it never covers waits for a scan by hand.
 - **What changed while the window was closed is caught up the moment it opens, and a missing root is
   watched once it appears.** A watch hears only what happens while it stands, so a file added between
   runs waited for a scan by hand. The first look that has read the roots runs one incremental scan of

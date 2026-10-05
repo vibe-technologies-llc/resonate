@@ -81,6 +81,7 @@ const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
 const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
+const UNCOVERED_ROOTS_TRIED_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
 const INBOX_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
 const INBOX_QUIET_FOR: Duration = Duration::from_secs(2);
 const GONE_QUIET_FOR: Duration = Duration::from_millis(250);
@@ -5186,6 +5187,7 @@ fn read_in(imported: Imported) -> String {
 #[derive(Default)]
 struct Watching {
     watch: Option<RootsWatch>,
+    laid_at: Option<Instant>,
     tried: Option<Vec<PathBuf>>,
     there: Option<bool>,
     gone: Vec<PathBuf>,
@@ -5205,7 +5207,14 @@ impl Watching {
         let (present, absent): (Vec<PathBuf>, Vec<PathBuf>) =
             roots.into_iter().partition(|root| root.is_dir());
         self.there = Some(!present.is_empty());
-        if self.tried.as_deref() == Some(present.as_slice()) {
+        let to_cover_again = self
+            .watch
+            .as_ref()
+            .is_some_and(RootsWatch::leaves_a_root_uncovered)
+            && self
+                .laid_at
+                .is_some_and(|at| at.elapsed() >= UNCOVERED_ROOTS_TRIED_AGAIN_AFTER);
+        if self.tried.as_deref() == Some(present.as_slice()) && !to_cover_again {
             return self;
         }
         let Some(laid) = RootsWatch::over(&present) else {
@@ -5222,6 +5231,7 @@ impl Watching {
             None => laid,
         });
         self.tried = Some(present);
+        self.laid_at = Some(Instant::now());
         self
     }
 

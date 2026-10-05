@@ -53,7 +53,7 @@ use crate::{
 type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
 type Nodes = Rc<RefCell<BTreeMap<u32, (Node, NodeListener)>>>;
 type Devices = Rc<RefCell<BTreeMap<u32, (Device, DeviceListener)>>>;
-type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener)>>>;
+type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener, HeldIn)>>>;
 type ActiveStream = (StreamRc, StreamListener<Box<dyn AudioSource>>);
 type HeardStream = (StreamRc, StreamListener<Box<dyn AudioSink>>);
 
@@ -1167,7 +1167,7 @@ fn watch_the_registry(
                         .register();
                     metadatas
                         .borrow_mut()
-                        .insert(global.id, (metadata, listener));
+                        .insert(global.id, (metadata, listener, held));
                 }
                 _ => {}
             }
@@ -1176,8 +1176,15 @@ fn watch_the_registry(
             let shared = Arc::clone(shared);
             let nodes = Rc::clone(nodes);
             let devices = Rc::clone(devices);
+            let metadatas = Rc::clone(metadatas);
             let announce = announce.clone();
             move |id| {
+                let gone = metadatas.borrow_mut().remove(&id);
+                if let Some((_, _, held)) = gone
+                    && shared.lock().heard(held, CORE_ID, None, None) == DefaultSink::Moved
+                {
+                    let _ = announce.try_send(SinkChange::DefaultChanged);
+                }
                 let mut state = shared.lock();
                 state.driven.remove(&id);
                 state.microphones.remove(&id);
@@ -1643,6 +1650,31 @@ mod tests {
             volume: Gain::new(volume).ok(),
             ..headphones(Plugged::Yes)
         }
+    }
+
+    #[test]
+    fn a_metadata_object_that_leaves_takes_the_values_it_held_with_it() {
+        let mut graph = Discovered::default();
+        graph.heard(
+            HeldIn::Defaults,
+            CORE_ID,
+            Some(DEFAULT_SINK),
+            Some(r#"{ "name": "alsa_output.usb" }"#),
+        );
+        graph.heard(HeldIn::Settings, CORE_ID, Some(CLOCK_RATE), Some("44100"));
+        assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.usb"));
+        assert!(graph.clock_rate.is_some());
+
+        let moved = graph.heard(HeldIn::Defaults, CORE_ID, None, None);
+
+        assert_eq!(moved, DefaultSink::Moved);
+        assert_eq!(graph.default_sink, None);
+        assert!(
+            graph.clock_rate.is_some(),
+            "the settings object's values were cleared with the defaults'"
+        );
+        graph.heard(HeldIn::Settings, CORE_ID, None, None);
+        assert_eq!(graph.clock_rate, None);
     }
 
     #[test]

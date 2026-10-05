@@ -11,8 +11,6 @@ else is open to be done.
 - Closing the window or pressing `ctrl-q` during a tag write, an organise, a vault import or a
   dropped file's copy neither cancels the pass nor waits for it, and a tag is written in place, so a
   kill mid-write can leave a damaged file
-- A steady writer under a root defers its rescan indefinitely, and a root the watch could not cover
-  (the inotify limit reached) is never tried again
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned that is mounted anywhere but `/run/media`, `/media` and `/mnt`
   whenever its mount point's parent holds anything else
@@ -25,8 +23,6 @@ else is open to be done.
   loss waits for the graph
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
-- When WirePlumber restarts, the metadata objects that left keep their proxies and their values
-  stand stale until new ones overwrite them
 
 ## Playback and output
 - The PipeWire stream open waits on the engine thread up to five seconds, and a bind with an empty or

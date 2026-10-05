@@ -13,10 +13,13 @@ use parking_lot::Mutex;
 
 use crate::scan;
 
+const DEFERRED_AT_MOST: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Default)]
 struct Moved {
     roots: BTreeSet<PathBuf>,
     last: Option<Instant>,
+    since: Option<Instant>,
     gone: BTreeMap<PathBuf, Instant>,
 }
 
@@ -24,6 +27,10 @@ impl Moved {
     fn carry(&mut self, left: Self) {
         self.roots.extend(left.roots);
         self.last = self.last.max(left.last);
+        self.since = match (self.since, left.since) {
+            (Some(held), Some(carried)) => Some(held.min(carried)),
+            (held, carried) => held.or(carried),
+        };
         for (path, heard) in left.gone {
             let at = self.gone.entry(path).or_insert(heard);
             *at = (*at).max(heard);
@@ -40,6 +47,7 @@ enum Heard {
 pub struct RootsWatch {
     moved: Arc<Mutex<Moved>>,
     _watcher: RecommendedWatcher,
+    uncovered: Vec<PathBuf>,
 }
 
 impl RootsWatch {
@@ -60,8 +68,10 @@ impl RootsWatch {
             }
         };
 
+        let mut uncovered = Vec::new();
         for root in roots {
             if let Err(error) = watcher.watch(root, RecursiveMode::Recursive) {
+                uncovered.push(root.clone());
                 tracing::warn!(
                     %error,
                     root = %root.display(),
@@ -73,13 +83,19 @@ impl RootsWatch {
         Some(Self {
             moved,
             _watcher: watcher,
+            uncovered,
         })
+    }
+
+    pub fn leaves_a_root_uncovered(&self) -> bool {
+        !self.uncovered.is_empty()
     }
 
     pub fn taking_over(self, previous: Self) -> Self {
         let Self {
             moved: left,
             _watcher: stopped,
+            ..
         } = previous;
         drop(stopped);
         let left = std::mem::take(&mut *left.lock());
@@ -88,12 +104,19 @@ impl RootsWatch {
     }
 
     pub fn settled(&self, quiet: Duration) -> Vec<PathBuf> {
+        self.settled_or_deferred_too_long(quiet, DEFERRED_AT_MOST)
+    }
+
+    fn settled_or_deferred_too_long(&self, quiet: Duration, at_most: Duration) -> Vec<PathBuf> {
         let mut moved = self.moved.lock();
         let still = moved.last.is_some_and(|last| last.elapsed() >= quiet);
-        if !still {
+        let deferred_long =
+            moved.last.is_some() && moved.since.is_some_and(|since| since.elapsed() >= at_most);
+        if !still && !deferred_long {
             return Vec::new();
         }
         moved.last = None;
+        moved.since = None;
         std::mem::take(&mut moved.roots).into_iter().collect()
     }
 
@@ -119,7 +142,9 @@ fn heard_under(roots: &[PathBuf], event: &Event, into: &Mutex<Moved>) {
     if event.need_rescan() {
         let mut moved = into.lock();
         moved.roots.extend(roots.iter().cloned());
-        moved.last = Some(Instant::now());
+        let now = Instant::now();
+        moved.last = Some(now);
+        moved.since.get_or_insert(now);
         return;
     }
 
@@ -150,6 +175,7 @@ fn heard_under(roots: &[PathBuf], event: &Event, into: &Mutex<Moved>) {
                 .filter(|root| under.iter().any(|path| path.starts_with(root)));
             moved.roots.extend(touched.cloned());
             moved.last = Some(now);
+            moved.since.get_or_insert(now);
         }
         Heard::Unread => {}
     }
@@ -240,6 +266,51 @@ mod tests {
             thread::sleep(LOOKED_EVERY);
         }
         Vec::new()
+    }
+
+    #[test]
+    fn a_folder_that_never_goes_quiet_is_handed_out_once_it_has_been_deferred_long_enough() {
+        let scratch = Scratch::new("steady");
+        let file = scratch.path.join("album/log.flac");
+        let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+        let never_quiet = Duration::from_secs(3_600);
+
+        fs::write(&file, b"fLaC").expect("a file");
+        let started = Instant::now();
+        while watch.moved.lock().roots.is_empty() {
+            assert!(
+                started.elapsed() < HEARD_WITHIN,
+                "the write was never heard"
+            );
+            thread::sleep(LOOKED_EVERY);
+        }
+
+        assert!(
+            watch
+                .settled_or_deferred_too_long(never_quiet, never_quiet)
+                .is_empty()
+        );
+        assert_eq!(
+            watch.settled_or_deferred_too_long(never_quiet, Duration::ZERO),
+            vec![scratch.path.clone()]
+        );
+        assert!(
+            watch
+                .settled_or_deferred_too_long(never_quiet, Duration::ZERO)
+                .is_empty(),
+            "a change was handed out twice"
+        );
+    }
+
+    #[test]
+    fn a_root_the_watch_could_lay_leaves_none_uncovered_and_one_it_could_not_is_said() {
+        let scratch = Scratch::new("covered");
+        let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+        assert!(!watch.leaves_a_root_uncovered());
+
+        let missing = scratch.path.join("not-there");
+        let watch = RootsWatch::over(&[scratch.path.clone(), missing]).expect("a watch");
+        assert!(watch.leaves_a_root_uncovered());
     }
 
     #[test]
