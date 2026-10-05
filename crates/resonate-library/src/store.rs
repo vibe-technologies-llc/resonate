@@ -208,6 +208,7 @@ pub struct Cache {
     artists: HashMap<String, KnownArtist>,
     albums: HashMap<String, Grouped>,
     covered: AHashSet<i64>,
+    sorted_albums: AHashSet<i64>,
 }
 
 pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
@@ -1433,6 +1434,12 @@ fn album(
         }
     };
 
+    if let Some(sort) = named(record.tags.album_sort.as_deref())
+        && cache.sorted_albums.insert(id)
+    {
+        note_the_album_tagged_sort(tx, id, sort)?;
+    }
+
     if extract_cover_art && !cache.covered.contains(&id) && cover(tx, id, record)? {
         cache.covered.insert(id);
     }
@@ -1486,6 +1493,16 @@ pub(crate) fn re_key_album(tx: &Transaction<'_>, was: &str, now: &str) -> Result
         tx,
         "UPDATE album_keys SET key = ?2 WHERE key = ?1",
         params![was, now],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+fn note_the_album_tagged_sort(tx: &Transaction<'_>, album: i64, sort: &str) -> Result<()> {
+    cached(
+        tx,
+        "UPDATE albums SET tagged_sort = ?1 WHERE id = ?2 AND tagged_sort IS NOT ?1",
+        params![sort, album],
     )
     .map(drop)
     .map_err(|source| Error::store(StoreOp::Update, source))

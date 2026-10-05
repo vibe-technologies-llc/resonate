@@ -79,6 +79,8 @@ pub enum TagField {
     ReplayGainAlbumPeak,
     ArtistSort,
     AlbumArtistSort,
+    TitleSort,
+    AlbumSort,
 }
 
 const COMPILED: &str = "1";
@@ -87,7 +89,7 @@ const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
 
 impl TagField {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 40] = [
         Self::Title,
         Self::Artist,
         Self::Album,
@@ -126,6 +128,8 @@ impl TagField {
         Self::ReplayGainAlbumPeak,
         Self::ArtistSort,
         Self::AlbumArtistSort,
+        Self::TitleSort,
+        Self::AlbumSort,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -168,6 +172,8 @@ impl TagField {
             Self::ReplayGainAlbumPeak => "replaygain album peak",
             Self::ArtistSort => "artist sort",
             Self::AlbumArtistSort => "album artist sort",
+            Self::TitleSort => "title sort",
+            Self::AlbumSort => "album sort",
         }
     }
 
@@ -215,6 +221,8 @@ impl TagField {
             Self::ReplayGainAlbumPeak => tags.replay_gain.album_peak.map(spelled_peak),
             Self::ArtistSort => tags.artist_sort.clone(),
             Self::AlbumArtistSort => tags.album_artist_sort.clone(),
+            Self::TitleSort => tags.title_sort.clone(),
+            Self::AlbumSort => tags.album_sort.clone(),
         }
     }
 
@@ -273,6 +281,8 @@ impl TagField {
             Self::ReplayGainAlbumPeak => ItemKey::ReplayGainAlbumPeak,
             Self::ArtistSort => ItemKey::TrackArtistSortOrder,
             Self::AlbumArtistSort => ItemKey::AlbumArtistSortOrder,
+            Self::TitleSort => ItemKey::TrackTitleSortOrder,
+            Self::AlbumSort => ItemKey::AlbumTitleSortOrder,
         }
     }
 }
@@ -1561,6 +1571,8 @@ mod tests {
             edited(TagField::ReplayGainAlbumPeak, "0.999969"),
             edited(TagField::ArtistSort, "Floyd, Pink"),
             edited(TagField::AlbumArtistSort, "Pink Floyd"),
+            edited(TagField::TitleSort, "Echoes"),
+            edited(TagField::AlbumSort, "Meddle"),
         ]
     }
 

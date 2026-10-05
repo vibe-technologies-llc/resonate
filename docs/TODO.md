@@ -37,9 +37,8 @@ else is open to be done.
   reader, and families 2 and 3 would also need projection decoding
 
 ## Tagging
-- A file's `TITLESORT` and `ALBUMSORT` (`TSOT`, `TSOA`, `sonm`, `soal`) are never read, and the tracks
-  pane's artist order reads the billed name, so only the artists pane and the albums' artist order file
-  by a sort name
+- The tracks pane's title and artist orders read the billed name, so a file's `TITLESORT` and artist
+  sort name file only the artists and albums panes; they are held to indexes on `title` and `artist`
 - On a filesystem that cannot clone a file (ext4) a tag write that grows past the tag's room, and
   every write to a tag at the end of a file (WAVE, AIFF, WavPack, Monkey's Audio) or an Ogg, still
   copies the whole file, and one with a second name twice

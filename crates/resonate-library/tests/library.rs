@@ -56,6 +56,7 @@ const ALBUM_ARTIST: &[u8; 4] = b"TPE2";
 const ARTIST_SORT: &[u8; 4] = b"TSOP";
 const ALBUM_ARTIST_SORT: &[u8; 4] = b"TSO2";
 const ALBUM: &[u8; 4] = b"TALB";
+const ALBUM_SORT: &[u8; 4] = b"TSOA";
 const TRACK: &[u8; 4] = b"TRCK";
 const YEAR: &[u8; 4] = b"TDRC";
 const GENRE: &[u8; 4] = b"TCON";
@@ -844,6 +845,55 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
     assert_eq!(
         by_owner,
         ["ABBA", "Help!", "Blur", "Disintegration", "Doves"]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
+    let tree = Tree::new();
+    for (file, title, sort) in [
+        ("black.wav", "The Black Album", Some("Black Album, The")),
+        (
+            "black-again.wav",
+            "The Black Album",
+            Some("Black Album, The"),
+        ),
+        ("abbey.wav", "Abbey Road", None),
+        ("revolver.wav", "Revolver", None),
+    ] {
+        let wav = Wav::new()
+            .text(TITLE, "Song")
+            .text(ARTIST, "The Beatles")
+            .text(ALBUM, title);
+        let wav = match sort {
+            Some(sort) => wav.text(ALBUM_SORT, sort),
+            None => wav,
+        };
+        tree.write(file, &wav.build());
+    }
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let titled = |reading| -> Result<Vec<String>> {
+        Ok(library
+            .albums(&AlbumQuery {
+                sort: AlbumOrder::Title,
+                reading,
+                ..AlbumQuery::default()
+            })?
+            .into_iter()
+            .map(|album| album.title)
+            .collect())
+    };
+    assert_eq!(
+        titled(Direction::Ascending)?,
+        ["Abbey Road", "The Black Album", "Revolver"]
+    );
+    assert_eq!(
+        titled(Direction::Descending)?,
+        ["Revolver", "The Black Album", "Abbey Road"]
     );
     Ok(())
 }

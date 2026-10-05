@@ -272,6 +272,8 @@ const MIGRATIONS: &[&str] = &[
     "UPDATE tracks SET probe_again = 1 WHERE codec IN (2, 6, 7) AND root_id IS NOT NULL;",
     "ALTER TABLE artists ADD COLUMN tagged_sort TEXT;
      UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
+    "ALTER TABLE albums ADD COLUMN tagged_sort TEXT;
+     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
@@ -1150,6 +1152,42 @@ mod tests {
             ]
         );
         assert_eq!(sorted, None);
+    }
+
+    #[test]
+    fn a_catalog_carried_forward_reads_every_scanned_file_with_an_album_again_for_the_title_it_sorts_by()
+     {
+        let connection = opened();
+        let sorting = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("albums ADD COLUMN tagged_sort"))
+            .expect("the step that keeps a file's album sort name");
+        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
+            .expect("the previous schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO roots (id, path) VALUES (1, '/music');
+                 INSERT INTO albums (id, title) VALUES (1, 'Album');
+                 INSERT INTO tracks (root_id, path, span_frames, title, album_id, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'albumed.flac', NULL, 'Albumed', 1, 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (1, 'loose.flac', NULL, 'Loose', NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("the rows are stored");
+
+        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
+
+        let marked: Vec<(String, i64)> = connection
+            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .expect("the tracks read back");
+        assert_eq!(
+            marked,
+            [("albumed.flac".to_owned(), 1), ("loose.flac".to_owned(), 0)]
+        );
     }
 
     #[test]

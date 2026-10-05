@@ -528,7 +528,8 @@ pub(crate) fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> 
              cover_path    = CASE WHEN {uncovered} THEN o.cover_path ELSE albums.cover_path END,
              favourite     = coalesce(min(albums.favourite, o.favourite), albums.favourite, o.favourite),
              year          = coalesce(albums.year, o.year),
-             tagged_tracks = coalesce(albums.tagged_tracks, o.tagged_tracks)
+             tagged_tracks = coalesce(albums.tagged_tracks, o.tagged_tracks),
+             tagged_sort   = coalesce(albums.tagged_sort, o.tagged_sort)
           FROM (SELECT * FROM albums WHERE id = ?2) AS o
          WHERE albums.id = ?1",
             uncovered = UNCOVERED,

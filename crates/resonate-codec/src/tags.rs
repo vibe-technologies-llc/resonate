@@ -189,6 +189,8 @@ pub struct TagSet {
     pub album_artist: Option<String>,
     pub artist_sort: Option<String>,
     pub album_artist_sort: Option<String>,
+    pub title_sort: Option<String>,
+    pub album_sort: Option<String>,
     pub track_number: Option<u32>,
     pub track_total: Option<u32>,
     pub disc_number: Option<u32>,
@@ -617,6 +619,8 @@ impl Builder {
             T::AlbumArtist(value) => self.listed(Listed::AlbumArtist, value),
             T::SortArtist(value) => given(&mut self.tags.artist_sort, value),
             T::SortAlbumArtist(value) => given(&mut self.tags.album_artist_sort, value),
+            T::SortTrackTitle(value) => given(&mut self.tags.title_sort, value),
+            T::SortAlbum(value) => given(&mut self.tags.album_sort, value),
             T::Genre(value) => self.listed(Listed::Genre, value),
             T::Grouping(value) => given(&mut self.tags.grouping, value),
             T::CollectionTitle(value) => given(&mut self.tags.collection, value),
@@ -975,6 +979,8 @@ fn vorbis_comment(name: &str, value: &RawValue) -> Option<StandardTag> {
         "ALBUMARTIST" | "ALBUM_ARTIST" | "ALBUM ARTIST" => StandardTag::AlbumArtist(text()),
         "ARTISTSORT" => StandardTag::SortArtist(text()),
         "ALBUMARTISTSORT" => StandardTag::SortAlbumArtist(text()),
+        "TITLESORT" => StandardTag::SortTrackTitle(text()),
+        "ALBUMSORT" => StandardTag::SortAlbum(text()),
         "GENRE" => StandardTag::Genre(text()),
         "GROUPING" | "CONTENTGROUP" => StandardTag::Grouping(text()),
         "LABEL" | "ORGANIZATION" | "PUBLISHER" => StandardTag::Label(text()),
@@ -1680,6 +1686,44 @@ mod tests {
         assert_eq!(
             named_as_vorbis_comments.album_artist_sort.as_deref(),
             Some("Beatles, The")
+        );
+    }
+
+    #[test]
+    fn the_names_a_title_and_an_album_are_sorted_under_are_read_however_the_tag_spells_them() {
+        let mapped_by_the_container = absorb(&[
+            mapped(
+                "TSOT",
+                "Hey Jude",
+                StandardTag::SortTrackTitle(text("Hey Jude")),
+            ),
+            mapped(
+                "TSOA",
+                "White Album",
+                StandardTag::SortAlbum(text("White Album")),
+            ),
+        ]);
+        let named_as_vorbis_comments = absorb(&[
+            keyed("ALBUM", "The White Album"),
+            keyed("TITLESORT", "  Hey Jude  "),
+            keyed("ALBUMSORT", "White Album, The"),
+        ]);
+
+        assert_eq!(
+            mapped_by_the_container.title_sort.as_deref(),
+            Some("Hey Jude")
+        );
+        assert_eq!(
+            mapped_by_the_container.album_sort.as_deref(),
+            Some("White Album")
+        );
+        assert_eq!(
+            named_as_vorbis_comments.title_sort.as_deref(),
+            Some("Hey Jude")
+        );
+        assert_eq!(
+            named_as_vorbis_comments.album_sort.as_deref(),
+            Some("White Album, The")
         );
     }
 

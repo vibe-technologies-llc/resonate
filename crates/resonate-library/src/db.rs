@@ -128,6 +128,12 @@ macro_rules! album_title {
     };
 }
 
+macro_rules! album_filed_as {
+    () => {
+        "coalesce(a.tagged_sort, a.release_title, a.title)"
+    };
+}
+
 macro_rules! album_owner {
     () => {
         "(SELECT r.name FROM artists r WHERE r.id = a.artist_id)"
@@ -5706,33 +5712,37 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
         AlbumOrder::Relevance if ranked => Reading {
             up: concat!(
                 "matched.score, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 "matched.score DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
         },
         AlbumOrder::Relevance | AlbumOrder::Title => Reading {
-            up: concat!(album_title!(), " COLLATE NOCASE", album_ids_rising!()),
-            down: concat!(album_title!(), " COLLATE NOCASE DESC", album_ids_falling!()),
+            up: concat!(album_filed_as!(), " COLLATE NOCASE", album_ids_rising!()),
+            down: concat!(
+                album_filed_as!(),
+                " COLLATE NOCASE DESC",
+                album_ids_falling!()
+            ),
         },
         AlbumOrder::Artist => Reading {
             up: concat!(
                 album_owner_filed_as!(),
                 ", a.year, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 album_owner_filed_as!(),
                 " DESC, a.year DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
@@ -5740,13 +5750,13 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
         AlbumOrder::Year => Reading {
             up: concat!(
                 "a.year IS NULL, a.year, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 "a.year IS NULL DESC, a.year DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
@@ -5755,14 +5765,14 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
             up: concat!(
                 album_tracks!(),
                 ", ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 album_tracks!(),
                 " DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
@@ -5771,14 +5781,14 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
             up: concat!(
                 album_added!(),
                 ", ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 album_added!(),
                 " DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
@@ -5786,13 +5796,13 @@ const fn album_order_by(sort: AlbumOrder, reading: Direction, ranked: bool) -> &
         AlbumOrder::Favourited => Reading {
             up: concat!(
                 "a.favourite, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE",
                 album_ids_rising!()
             ),
             down: concat!(
                 "a.favourite DESC, ",
-                album_title!(),
+                album_filed_as!(),
                 " COLLATE NOCASE DESC",
                 album_ids_falling!()
             ),
