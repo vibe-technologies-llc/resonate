@@ -480,7 +480,23 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   would put a `SINK_TIMEOUT` before each against a daemon that stopped answering. `note_sink_changes`
   is read before the bind as well as on the tick; the standing reasons to ask the graph again are a
   stale flag, an empty list and a change stream gone, and where the ask fails with a list still
-  published the bind takes it.
+  published the bind takes it. **A stale list is not asked about in line where the survey will
+  answer for it** (`the_survey_will_answer_for_what_is_published`: a survey thread, a change stream, a
+  list held, no row waiting for a device and the graph not lost): the bind takes what is published and
+  the survey's answer moves the stream through `follow_the_sink_it_would_choose`. A row waiting for a
+  device or the graph still asks in line, the list it would bind from being the one known wrong.
+- **Every stream is opened off the engine thread.** `Backend::opener` hands out an `Opener` (for
+  PipeWire the cloneable `Survey`, whose `open` waits up to `STREAM_OPENED_WITHIN` for the loop), and
+  `Streaming` is a `resonate-stream-open` worker taking one `Asked` at a time. `promote` hands it the
+  request and the ring's consumer and the transport stays `Loading`, every command answered meanwhile;
+  `land_the_stream` takes the answer on a later pass, `Heard` waking on it. Each `Output` is numbered
+  (`Output::made`, from `outputs_made`), so a stream landing for an output since retired or rebound is
+  closed (`close_unwanted`) rather than taken, and a failure for one is only logged. **One open is in
+  flight at a time, and none is asked while one is:** a stray's `Close` must reach the loop before the
+  next `Open`, `Close` acting on whichever stream the client holds. `wait_for_the_graph` does not let go
+  while an open is in flight, so an open refused `Disconnected` is read as the graph's. Where no worker
+  could start the open runs in line as before. A test reading `opens` waits for it rather than for the
+  state the bind published, which comes first.
 - **The engine decides which device the stream is on, and follows the default itself.** A playback
   stream carries `node.dont-move`, so WirePlumber never relinks it (its `follow-default-target` moved the
   stream while `OutputStatus::sink` named the old device). Every sink-list refresh ends in

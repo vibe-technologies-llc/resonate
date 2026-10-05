@@ -18,8 +18,8 @@ use gpui::{
 };
 use resonate_core::{Appearance, Frames, Gain, MediaLocation, Resumable, Resumption, TrackId};
 use resonate_engine::{
-    AudioSource, Backend, Command, EngineConfig, Player, SinkChange, SinkError, SinkId, SinkInfo,
-    SinkResult, SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, Command, EngineConfig, Opener, Player, SinkChange, SinkError, SinkId,
+    SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, Reference, ScanOptions};
@@ -137,6 +137,12 @@ impl Surveyor for NoSinks {
     }
 }
 
+impl Opener for NoSinks {
+    fn open(&self, _: &StreamRequest, _: Box<dyn AudioSource>) -> SinkResult<SinkStream> {
+        Err(SinkError::NoSink)
+    }
+}
+
 impl Backend for Unplugged {
     fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         self.changes.clone()
@@ -146,8 +152,8 @@ impl Backend for Unplugged {
         Arc::new(NoSinks)
     }
 
-    fn open(&self, _: &StreamRequest, _: Box<dyn AudioSource>) -> SinkResult<SinkStream> {
-        Err(SinkError::NoSink)
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(NoSinks)
     }
 
     fn set_device_volume(&self, _: SinkId, _: Gain) -> SinkResult<()> {

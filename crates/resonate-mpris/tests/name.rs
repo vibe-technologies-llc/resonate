@@ -7,7 +7,7 @@ use std::{
 use crossbeam_channel::{Receiver, unbounded};
 use resonate_core::Gain;
 use resonate_engine::{
-    AudioSource, Backend, EngineConfig, Player, SinkChange, SinkError, SinkId, SinkInfo,
+    AudioSource, Backend, EngineConfig, Opener, Player, SinkChange, SinkError, SinkId, SinkInfo,
     SinkResult, SinkStream, StreamRequest, Surveyor,
 };
 use resonate_mpris::{Host, Mpris};
@@ -35,6 +35,16 @@ impl NoSinks {
     }
 }
 
+impl Opener for Nothing {
+    fn open(
+        &self,
+        _request: &StreamRequest,
+        _source: Box<dyn AudioSource>,
+    ) -> SinkResult<SinkStream> {
+        Err(SinkError::NoSink)
+    }
+}
+
 impl Backend for NoSinks {
     fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         self.changes.clone()
@@ -44,12 +54,8 @@ impl Backend for NoSinks {
         Arc::new(Nothing)
     }
 
-    fn open(
-        &self,
-        _request: &StreamRequest,
-        _source: Box<dyn AudioSource>,
-    ) -> SinkResult<SinkStream> {
-        Err(SinkError::NoSink)
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(Nothing)
     }
 
     fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {

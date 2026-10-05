@@ -59,6 +59,7 @@ type HeardStream = (StreamRc, StreamListener<Box<dyn AudioSink>>);
 
 const CORE_ID: u32 = 0;
 const RECONNECT_EVERY: Duration = Duration::from_secs(1);
+const STREAM_OPENED_WITHIN: Duration = Duration::from_secs(5);
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(2);
 const DAEMON_ANSWERS_WITHIN: Duration = Duration::from_secs(8);
 const METADATA_NAME: &str = "metadata.name";
@@ -387,6 +388,61 @@ impl Survey {
         done.recv_timeout(timeout).map_err(|_| self.unanswered())
     }
 
+    fn node_name(&self, node: SinkId) -> Result<NodeName> {
+        self.shared
+            .lock()
+            .sinks
+            .get(&node.get())
+            .map(|record| NodeName::new(record.name.clone()))
+            .ok_or(Error::SinkGone { node })
+    }
+
+    pub fn open(
+        &self,
+        request: &StreamRequest,
+        source: Box<dyn AudioSource>,
+    ) -> Result<SinkStream> {
+        let target = request
+            .target
+            .map(|node| self.node_name(node))
+            .transpose()?;
+        let (events, incoming) = bounded(256);
+        let clock = Arc::new(StreamClock::default());
+        let (reply, outcome) = bounded(1);
+
+        self.commands
+            .send(Request::Open(Box::new(OpenRequest {
+                request: request.clone(),
+                target,
+                source,
+                slots: StreamSlots {
+                    clock: Arc::clone(&clock),
+                    events,
+                },
+                reply,
+            })))
+            .map_err(|_| Error::LoopStopped)?;
+
+        outcome
+            .recv_timeout(STREAM_OPENED_WITHIN)
+            .map_err(|_| Error::LoopStopped)??;
+
+        let control = self.commands.clone();
+        Ok(SinkStream::new(
+            incoming,
+            clock,
+            Box::new(move |command| {
+                control
+                    .send(match command {
+                        StreamCommand::SetActive(active) => Request::SetActive(active),
+                        StreamCommand::Drain => Request::Drain,
+                        StreamCommand::Close => Request::Close,
+                    })
+                    .map_err(|_| Error::LoopStopped)
+            }),
+        ))
+    }
+
     fn unanswered(&self) -> Error {
         if self.connected.load(Ordering::Acquire) {
             Error::LoopStopped
@@ -521,61 +577,12 @@ impl PipeWire {
             .map_err(|_| Error::LoopStopped)
     }
 
-    fn node_name(&self, node: SinkId) -> Result<NodeName> {
-        self.survey
-            .shared
-            .lock()
-            .sinks
-            .get(&node.get())
-            .map(|record| NodeName::new(record.name.clone()))
-            .ok_or(Error::SinkGone { node })
-    }
-
     pub fn open(
         &self,
         request: &StreamRequest,
         source: Box<dyn AudioSource>,
     ) -> Result<SinkStream> {
-        let target = request
-            .target
-            .map(|node| self.node_name(node))
-            .transpose()?;
-        let (events, incoming) = bounded(256);
-        let clock = Arc::new(StreamClock::default());
-        let (reply, outcome) = bounded(1);
-
-        self.survey
-            .commands
-            .send(Request::Open(Box::new(OpenRequest {
-                request: request.clone(),
-                target,
-                source,
-                slots: StreamSlots {
-                    clock: Arc::clone(&clock),
-                    events,
-                },
-                reply,
-            })))
-            .map_err(|_| Error::LoopStopped)?;
-
-        outcome
-            .recv_timeout(Duration::from_secs(5))
-            .map_err(|_| Error::LoopStopped)??;
-
-        let control = self.survey.commands.clone();
-        Ok(SinkStream::new(
-            incoming,
-            clock,
-            Box::new(move |command| {
-                control
-                    .send(match command {
-                        StreamCommand::SetActive(active) => Request::SetActive(active),
-                        StreamCommand::Drain => Request::Drain,
-                        StreamCommand::Close => Request::Close,
-                    })
-                    .map_err(|_| Error::LoopStopped)
-            }),
-        ))
+        self.survey.open(request, source)
     }
 
     pub fn shutdown(mut self) -> Result<()> {

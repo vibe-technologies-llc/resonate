@@ -20,7 +20,7 @@ use resonate_core::{
     SourceId, TrackId, Volume,
 };
 use resonate_engine::{
-    AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Placement,
+    AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Opener, Placement,
     PlaybackState, Player, QueueItem, Reading, RepeatMode, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkResult, SinkStream, Sources, Span, StreamClock, StreamCommand, StreamRequest,
     Surveyor, Until, Words,
@@ -244,15 +244,9 @@ impl Surveyor for Standing {
     }
 }
 
-impl Backend for RealtimeSink {
-    fn subscribe_sinks(&self) -> Receiver<SinkChange> {
-        self.changes.clone()
-    }
+struct Pulled(Arc<Mutex<Vec<Pulling>>>);
 
-    fn surveyor(&self) -> Arc<dyn Surveyor> {
-        Arc::new(Standing(self.sinks.clone()))
-    }
-
+impl Opener for Pulled {
     fn open(
         &self,
         request: &StreamRequest,
@@ -265,7 +259,7 @@ impl Backend for RealtimeSink {
 
         let active = Arc::new(AtomicBool::new(false));
         let closed = Arc::new(AtomicBool::new(false));
-        self.open.lock().push(Pulling {
+        self.0.lock().push(Pulling {
             active: Arc::clone(&active),
             closed: Arc::clone(&closed),
         });
@@ -302,6 +296,20 @@ impl Backend for RealtimeSink {
                 Ok(())
             }),
         ))
+    }
+}
+
+impl Backend for RealtimeSink {
+    fn subscribe_sinks(&self) -> Receiver<SinkChange> {
+        self.changes.clone()
+    }
+
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Standing(self.sinks.clone()))
+    }
+
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(Pulled(Arc::clone(&self.open)))
     }
 
     fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {

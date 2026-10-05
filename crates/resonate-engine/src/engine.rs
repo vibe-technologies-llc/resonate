@@ -24,14 +24,15 @@ use smallvec::SmallVec;
 use crate::{
     Backend, Command, CommandKind, EngineConfig, Error, Event, OutputMode, OutputPlan,
     OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, RepeatMode,
-    ReplayGainMode, Reply, Request, Result, Seeks, SkipUnderRepeat, Sleeping, StreamDigest, Tapped,
-    Tapping, TrackState, TransportState,
-    backend::Surveyor,
+    ReplayGainMode, Reply, Request, Result, Seeks, SinkResult, SkipUnderRepeat, Sleeping,
+    StreamDigest, Tapped, Tapping, TrackState, TransportState,
+    backend::{Opener, Surveyor},
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
     queue::{self, Queue, QueueItem, Queued, Removal},
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
+    streaming::{Asked, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
 };
 
@@ -324,6 +325,7 @@ struct Output {
     monitor: RingMonitor,
     consumer: Option<RingConsumer>,
     stream: Option<SinkStream>,
+    made: u64,
     tapping: Option<Tapping>,
     capacity: usize,
     status: OutputStatus,
@@ -431,6 +433,7 @@ impl Output {
             monitor,
             consumer: Some(consumer),
             stream: None,
+            made: 0,
             tapping,
             capacity: capacity.get() as usize,
             draining: None,
@@ -630,6 +633,9 @@ pub struct Engine {
     backend: Box<dyn Backend>,
     surveyor: Arc<dyn Surveyor>,
     surveying: Option<Surveying>,
+    opener: Arc<dyn Opener>,
+    streaming: Option<Streaming>,
+    outputs_made: u64,
     commands: Receiver<Request>,
     events: Sender<Event>,
     published: Published,
@@ -688,6 +694,7 @@ struct Heard {
     events: Option<Receiver<StreamEvent>>,
     opened: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
     decoded: Option<Receiver<Returned>>,
+    streamed: Option<Receiver<Streamed>>,
 }
 
 impl Heard {
@@ -709,6 +716,9 @@ impl Heard {
         if let Some(decoded) = self.decoded.as_ref() {
             select.recv(decoded);
         }
+        if let Some(streamed) = self.streamed.as_ref() {
+            select.recv(streamed);
+        }
 
         select
     }
@@ -729,6 +739,10 @@ impl Heard {
                     .track
                     .as_ref()
                     .and_then(|track| track.decoding.awaited()),
+            )
+            && is_one_channel(
+                self.streamed.as_ref(),
+                engine.streaming.as_ref().map(Streaming::answers),
             )
     }
 }
@@ -757,6 +771,8 @@ impl Engine {
             .unwrap_or_default()
             .into();
         let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
+        let opener = backend.opener();
+        let streaming = Streaming::start(Arc::clone(&opener));
         *published.settings.write() = Arc::new(OutputSettings::of(&config));
 
         Self {
@@ -765,6 +781,9 @@ impl Engine {
             backend,
             surveyor,
             surveying,
+            opener,
+            streaming,
+            outputs_made: 0,
             commands,
             events,
             published,
@@ -846,6 +865,9 @@ impl Engine {
             output.close();
         }
         self.close_what_was_retiring();
+        if let Some(streaming) = self.streaming.as_mut() {
+            streaming.stop();
+        }
         if let Some(surveying) = self.surveying.as_mut() {
             surveying.stop();
         }
@@ -868,6 +890,10 @@ impl Engine {
                 .as_ref()
                 .and_then(|track| track.decoding.awaited())
                 .cloned(),
+            streamed: self
+                .streaming
+                .as_ref()
+                .map(|streaming| streaming.answers().clone()),
         }
     }
 
@@ -993,6 +1019,7 @@ impl Engine {
             || self.graph_lost.is_some()
             || self.stale_sinks
             || self.opening.is_some()
+            || self.is_opening_a_stream()
         {
             return false;
         }
@@ -2014,7 +2041,11 @@ impl Engine {
             self.take_the_devices_volume(&sink);
         }
         let status = output.status;
-        self.output = Some(output);
+        self.outputs_made = self.outputs_made.wrapping_add(1);
+        self.output = Some(Output {
+            made: self.outputs_made,
+            ..output
+        });
         self.transport = TransportState::Loading;
         self.emit(Event::OutputChanged(status));
         Ok(())
@@ -2321,7 +2352,7 @@ impl Engine {
 
     fn select_sink(&mut self) -> Result<SinkInfo> {
         self.note_sink_changes();
-        if self.sinks_are_stale() {
+        if self.sinks_are_stale() && !self.the_survey_will_answer_for_what_is_published() {
             self.stale_sinks = false;
             match self.surveyor.enumerate_sinks(SINK_TIMEOUT) {
                 Ok(found) => *self.published.sinks.write() = found.into(),
@@ -2335,6 +2366,14 @@ impl Engine {
         chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
             .cloned()
             .ok_or(Error::Sink(resonate_pipewire::Error::NoSink))
+    }
+
+    fn the_survey_will_answer_for_what_is_published(&self) -> bool {
+        self.surveying.is_some()
+            && self.changes.is_some()
+            && !self.waiting_for_a_device
+            && self.graph_lost.is_none()
+            && !self.published.sinks.read().is_empty()
     }
 
     fn sinks_are_stale(&self) -> bool {
@@ -2481,7 +2520,17 @@ impl Engine {
         }
     }
 
+    fn is_opening_a_stream(&self) -> bool {
+        self.streaming.as_ref().is_some_and(Streaming::is_in_flight)
+    }
+
     fn promote(&mut self) {
+        if let Some((made, opened)) = self.streaming.as_mut().and_then(Streaming::answered) {
+            self.land_the_stream(made, opened);
+        }
+        if self.is_opening_a_stream() {
+            return;
+        }
         let Some(output) = self.output.as_ref() else {
             return;
         };
@@ -2503,6 +2552,7 @@ impl Engine {
             no_convert: output.plan.mode != OutputMode::Converted,
             realtime: true,
         };
+        let made = output.made;
 
         let Some(consumer) = self
             .output
@@ -2515,30 +2565,65 @@ impl Engine {
             self.wake_the_link();
         }
 
-        match self.backend.open(&request, Box::new(consumer)) {
-            Ok(stream) => {
-                let active = match stream.set_active(self.playing) {
-                    Ok(()) => self.playing,
-                    Err(error) => {
-                        tracing::warn!(%error, "the stream would not take its initial active state");
-                        false
-                    }
-                };
-                if let Some(output) = self.output.as_mut() {
-                    output.stream = Some(stream);
-                    output.active = active;
-                }
-                self.transport = if self.playing {
-                    TransportState::Playing
-                } else {
-                    TransportState::Paused
-                };
+        let asked = Asked {
+            made,
+            request,
+            source: Box::new(consumer),
+        };
+        let refused = match self.streaming.as_mut() {
+            Some(streaming) => streaming.ask(asked).err(),
+            None => Some(asked),
+        };
+        if let Some(Asked {
+            made,
+            request,
+            source,
+        }) = refused
+        {
+            let opened = self.opener.open(&request, source);
+            self.land_the_stream(made, opened);
+        }
+    }
+
+    fn land_the_stream(&mut self, made: u64, opened: SinkResult<SinkStream>) {
+        let waited_on = self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.made == made && output.stream.is_none());
+        let stream = match (opened, waited_on) {
+            (Ok(stream), true) => stream,
+            (Ok(stream), false) => {
+                tracing::debug!("a stream opened for an output that has since gone is closed");
+                close_unwanted(stream);
+                return;
             }
-            Err(error) => {
+            (Err(error), true) => {
                 self.output = None;
                 self.fail(error.into());
+                return;
             }
+            (Err(error), false) => {
+                tracing::debug!(%error, "a stream for an output that has since gone did not open");
+                return;
+            }
+        };
+
+        let active = match stream.set_active(self.playing) {
+            Ok(()) => self.playing,
+            Err(error) => {
+                tracing::warn!(%error, "the stream would not take its initial active state");
+                false
+            }
+        };
+        if let Some(output) = self.output.as_mut() {
+            output.stream = Some(stream);
+            output.active = active;
         }
+        self.transport = if self.playing {
+            TransportState::Playing
+        } else {
+            TransportState::Paused
+        };
     }
 
     fn watch_graph(&mut self) {
@@ -2583,7 +2668,7 @@ impl Engine {
     }
 
     fn wait_for_the_graph(&mut self, since: Instant) {
-        if self.opening.is_some() {
+        if self.opening.is_some() || self.is_opening_a_stream() {
             return;
         }
         let Some(at) = self.row_the_graph_let_go() else {
@@ -3212,6 +3297,7 @@ mod tests {
             events: Some(events.clone()),
             opened: None,
             decoded: None,
+            streamed: None,
         };
         let mut parked = heard.registered(&commands);
 
@@ -3248,6 +3334,7 @@ mod tests {
             events: None,
             opened: None,
             decoded: None,
+            streamed: None,
         };
         let mut parked = heard.registered(&commands);
 

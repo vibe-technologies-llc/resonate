@@ -15,6 +15,7 @@ mod ring;
 mod seed;
 mod sleep;
 mod state;
+mod streaming;
 mod surveying;
 mod tap;
 
@@ -49,7 +50,7 @@ pub use resonate_pipewire::{
 };
 
 pub use crate::{
-    backend::{Backend, SinkResult, Surveyor},
+    backend::{Backend, Opener, SinkResult, Surveyor},
     catalog::{ArtRead, TagsRead},
     command::{
         Command, CommandKind, Landing, Outcome, PreviousRestarts, RepeatMode, SkipUnderRepeat,

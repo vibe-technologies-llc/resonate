@@ -13,12 +13,11 @@ else is open to be done.
   taken away from a folder holding anything else; noting a row's volume as it is added would cover it
 
 ## Playback and output
-- The PipeWire stream open waits on the engine thread up to five seconds, and a bind with an empty or
-  stale sink list two more, so a daemon slow to answer still freezes the transport and the window's
-  close
+- A bind with an empty sink list, or one made while a row waits for a device or the graph, still
+  asks the graph on the engine thread for up to two seconds
 - Changing the graph rate mid-track reopens the stream and costs the gap a sink switch does, and so
   does the rate policy, the buffer or DoP wherever the change moves the stream's format or the
-  ring's depth. After the stream-open item
+  ring's depth
 - Moving the volume, muting, or changing ReplayGain or the equaliser is heard up to the buffer's
   depth later, half a second by default, because gain and filters run ahead of a ring kept full
 - `SinkInfo::current_rate` is the graph-wide rate from the settings metadata, so every sink reports
@@ -129,9 +128,6 @@ else is open to be done.
 - `transport.rs`'s `turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame` failed once
   when the whole workspace's tests ran at once and passed alone eight times after; its frame counts
   assume the engine thread keeps pace with the test's pulls
-- `transport.rs`'s `a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup` failed once
-  when the headless workspace's tests ran at once (the last assertion, on the sink of the request) and
-  passed alone five times after
 - No transport test covers a track of unknown length or a reconnect at a track boundary
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream

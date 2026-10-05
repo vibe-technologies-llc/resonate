@@ -13,11 +13,15 @@ pub trait Surveyor: Send + Sync + 'static {
     fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>>;
 }
 
+pub trait Opener: Send + Sync + 'static {
+    fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>)
+    -> SinkResult<SinkStream>;
+}
+
 pub trait Backend: Send + 'static {
     fn subscribe_sinks(&self) -> Receiver<SinkChange>;
     fn surveyor(&self) -> Arc<dyn Surveyor>;
-    fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>)
-    -> SinkResult<SinkStream>;
+    fn opener(&self) -> Arc<dyn Opener>;
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()>;
     fn set_device_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()>;
     fn shutdown(self: Box<Self>) -> SinkResult<()>;
@@ -26,6 +30,16 @@ pub trait Backend: Send + 'static {
 impl Surveyor for Survey {
     fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
         Self::enumerate_sinks(self, timeout)
+    }
+}
+
+impl Opener for Survey {
+    fn open(
+        &self,
+        request: &StreamRequest,
+        source: Box<dyn AudioSource>,
+    ) -> SinkResult<SinkStream> {
+        Self::open(self, request, source)
     }
 }
 
@@ -38,12 +52,8 @@ impl Backend for PipeWire {
         Arc::new(self.survey())
     }
 
-    fn open(
-        &self,
-        request: &StreamRequest,
-        source: Box<dyn AudioSource>,
-    ) -> SinkResult<SinkStream> {
-        Self::open(self, request, source)
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(self.survey())
     }
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {

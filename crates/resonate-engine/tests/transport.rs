@@ -24,12 +24,12 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, Frequency, GraphTime,
-    HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, OutputMode,
-    Placement, PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q, QueueItem,
-    Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange, SinkError,
-    SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId,
-    Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, Surveyor, Tapped,
-    Until, Words, stamp_of,
+    HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName, Opener,
+    OutputMode, Placement, PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q,
+    QueueItem, Reading, RepeatMode, ReplayGainMode, Result, Resumable, Resumption, SinkChange,
+    SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
+    SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
+    Surveyor, Tapped, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -239,15 +239,7 @@ impl Surveyor for Surveyed {
     }
 }
 
-impl Backend for FakeSink {
-    fn subscribe_sinks(&self) -> Receiver<SinkChange> {
-        self.changes.clone()
-    }
-
-    fn surveyor(&self) -> Arc<dyn Surveyor> {
-        Arc::new(Surveyed(Arc::clone(&self.graph)))
-    }
-
+impl Opener for FakeSink {
     fn open(
         &self,
         request: &StreamRequest,
@@ -293,6 +285,20 @@ impl Backend for FakeSink {
                 Ok(())
             }),
         ))
+    }
+}
+
+impl Backend for FakeSink {
+    fn subscribe_sinks(&self) -> Receiver<SinkChange> {
+        self.changes.clone()
+    }
+
+    fn surveyor(&self) -> Arc<dyn Surveyor> {
+        Arc::new(Surveyed(Arc::clone(&self.graph)))
+    }
+
+    fn opener(&self) -> Arc<dyn Opener> {
+        Arc::new(self.clone())
     }
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
@@ -2051,12 +2057,12 @@ fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
                 .state()
                 .output
                 .is_some_and(|output| output.sink == SinkId::new(2))
+                && graph.lock().opens == 2
         },
         "the second sink to take over",
     );
 
     let graph = graph.lock();
-    assert_eq!(graph.opens, 2);
     assert_eq!(graph.closes, 1);
     Ok(())
 }
@@ -3001,6 +3007,7 @@ fn following_the_graph_rate_resamples_where_matching_the_file_would_not() -> Res
                 .state()
                 .output
                 .is_some_and(|output| output.negotiated.rate == SampleRate::HZ_48000)
+                && graph.lock().opens == 2
         },
         "the stream to reopen at the rate the graph is already running",
     );
@@ -3116,9 +3123,10 @@ fn setting_the_buffer_reopens_the_stream_around_the_new_depth() -> Result<()> {
         "the stream to reopen around the deeper buffer",
     );
 
-    assert!(
-        playing(&player),
-        "the deeper buffer left the transport idle"
+    wait_for(
+        &player,
+        playing,
+        "the transport to play on once the deeper stream opened",
     );
     Ok(())
 }
@@ -3279,12 +3287,12 @@ fn next_drains_the_current_track_and_opens_the_following_one() -> Result<()> {
                 .state()
                 .current
                 .is_some_and(|track| track.id.get() == 2)
+                && graph.lock().opens == 2
         },
-        "the second track to take over",
+        "the second track to take over on a stream of its own",
     );
 
     assert_eq!(player.state().queue_position, Some(1));
-    assert_eq!(graph.lock().opens, 2);
     Ok(())
 }
 
@@ -3860,12 +3868,10 @@ fn a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup() -> Resul
                 .state()
                 .output
                 .is_some_and(|output| output.sink == SinkId::new(2))
+                && graph.lock().requests.last().map(|request| request.target)
+                    == Some(Some(SinkId::new(2)))
         },
-        "the named device to take over once it turned up",
-    );
-    assert_eq!(
-        graph.lock().requests.last().map(|request| request.target),
-        Some(Some(SinkId::new(2)))
+        "the named device to take over once it turned up, and the graph to be asked for it",
     );
     Ok(())
 }
