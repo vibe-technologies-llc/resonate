@@ -268,6 +268,7 @@ const MIGRATIONS: &[&str] = &[
      BEGIN UPDATE settle_owed SET owed = 1; END;
      CREATE TRIGGER albums_owe_a_settle_when_gone AFTER DELETE ON albums
      BEGIN UPDATE settle_owed SET owed = 1; END;",
+    "UPDATE settle_owed SET owed = 1;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;

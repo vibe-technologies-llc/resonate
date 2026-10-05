@@ -60,7 +60,9 @@ pub use crate::{
         BitRate, PacketSpan, Percentiles, ProfileBuilder, StreamProfile, StreamReport, Variability,
         WINDOW, probe_stream,
     },
-    tags::{Credits, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged},
+    tags::{
+        Credits, LISTED_APART_BY, RawTag, ReplayGain, TagName, TagSet, TagSource, TagValue, Tagged,
+    },
     timeline::Timeline,
     writing::{FileTags, Popularity, RATED_BY, Rated, TagEdit, TagField, TagSink, Writing},
 };

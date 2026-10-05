@@ -1350,7 +1350,16 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `Library::bill_an_artist` makes a row for each found, which the pass then asks about like any artist it
   brought in. Before, the Witcher 2 score's tracks were split between *Adam Skorupa*, where a recording
   had been identified, and a row for the whole credit, where none had, neither composer's page holding
-  the other half. `a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own`,
+  the other half. **Names a tag lists apart are artists apart, held or not.** The codec joins the values
+  of a multi-valued artist tag with `LISTED_APART_BY` (`; `), which no band is named with, so a credit
+  holding it is split whatever the catalog holds: `each_value_named` makes a row for each value
+  (`artist_named_in`), a value that is itself a collaboration of held artists splitting further, and
+  `Billing::of` bills a listed name to its first value (`lead_of_a_list`), dropping the tag's mbid, a
+  single id the codec kept from several. `hand_each_list_to_its_lead` runs first in every settle and
+  merges an artist row whose name holds `; ` (made by an older build) into its lead through
+  `take_over_artist`; a migration step marks a settle owed so a catalog made before is mended when next
+  opened (`artists_a_tag_lists_apart_are_each_an_artist_though_none_was_held_alone`).
+  `a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_own`,
   `a_name_whose_halves_name_nobody_held_is_one_artist` and
   `a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time` are the claims.
 - **A credit names an artist the catalog may hold, and it is identified rather than asked.**

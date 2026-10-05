@@ -21044,6 +21044,38 @@ fn a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_
 }
 
 #[test]
+fn artists_a_tag_lists_apart_are_each_an_artist_though_none_was_held_alone() -> Result<()> {
+    let (_tree, library) = scanned_credits(&[
+        ("ocean.wav", "Ocean Eyes", "Billie Eilish"),
+        ("lovely.wav", "Lovely", "Billie Eilish; Khalid"),
+        ("trio.wav", "Trio", "Ada; Bea & Cy; Dot"),
+    ])?;
+
+    let names: Vec<String> = library
+        .artists(&ArtistQuery::default())?
+        .into_iter()
+        .map(|artist| artist.name)
+        .collect();
+    assert!(
+        !names.iter().any(|name| name.contains("; ")),
+        "a list of artists was kept as an artist of its own: {names:?}"
+    );
+
+    let billie = artist_named(&library, "Billie Eilish")?;
+    let khalid = artist_named(&library, "Khalid")?;
+    assert_eq!(
+        titles_by(&library, billie.id)?,
+        vec!["Lovely", "Ocean Eyes"]
+    );
+    assert_eq!(titles_by(&library, khalid.id)?, vec!["Lovely"]);
+    for member in ["Ada", "Bea & Cy", "Dot"] {
+        let artist = artist_named(&library, member)?;
+        assert_eq!(titles_by(&library, artist.id)?, vec!["Trio"], "{member}");
+    }
+    Ok(())
+}
+
+#[test]
 fn a_name_whose_halves_name_nobody_held_is_one_artist() -> Result<()> {
     let (_tree, library) = scanned_credits(&[("song.wav", "Song", "Simon & Garfunkel")])?;
 

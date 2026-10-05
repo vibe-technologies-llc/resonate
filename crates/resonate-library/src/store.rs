@@ -176,6 +176,18 @@ struct Billing<'a> {
     mbid: Option<&'a str>,
 }
 
+impl<'a> Billing<'a> {
+    fn of(name: &'a str, mbid: Option<&'a str>) -> Self {
+        match credits::lead_of_a_list(name) {
+            Some(lead) => Self {
+                name: lead,
+                mbid: None,
+            },
+            None => Self { name, mbid },
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Cache {
     artists: HashMap<String, KnownArtist>,
@@ -315,7 +327,7 @@ fn artists_folding_together(connection: &Connection) -> Result<Vec<(String, Vec<
         .collect())
 }
 
-fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
+pub(crate) fn take_over_artist(tx: &Transaction<'_>, gone: i64, keeps: i64) -> Result<()> {
     for statement in [
         "UPDATE tracks SET artist_id = ?2 WHERE artist_id = ?1",
         "UPDATE albums SET artist_id = ?2 WHERE artist_id = ?1",
@@ -830,14 +842,14 @@ pub fn isrc_in(text: Option<&str>) -> Option<Isrc> {
 }
 
 fn attribution(tags: &TagSet) -> (Option<Billing<'_>>, Option<Billing<'_>>) {
-    let album_artist = tags.album_artist.as_deref().map(|name| Billing {
-        name,
-        mbid: tags.musicbrainz_album_artist_id.as_deref(),
-    });
-    let artist = tags.artist.as_deref().map(|name| Billing {
-        name,
-        mbid: tags.musicbrainz_artist_id.as_deref(),
-    });
+    let album_artist = tags
+        .album_artist
+        .as_deref()
+        .map(|name| Billing::of(name, tags.musicbrainz_album_artist_id.as_deref()));
+    let artist = tags
+        .artist
+        .as_deref()
+        .map(|name| Billing::of(name, tags.musicbrainz_artist_id.as_deref()));
 
     if tags.compilation {
         return (None, artist.or(album_artist));

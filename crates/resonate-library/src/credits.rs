@@ -1,8 +1,9 @@
+use resonate_codec::LISTED_APART_BY;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::{
     error::{Error, Result, StoreOp},
-    store::folded_letters,
+    store::{self, folded_letters},
 };
 
 const JOINS: &[&str] = &[
@@ -44,21 +45,84 @@ fn next_join(text: &str) -> Option<(usize, &'static str)> {
         .min_by_key(|(at, join)| (*at, usize::MAX - join.len()))
 }
 
+pub(crate) fn listed(credit: &str) -> Vec<&str> {
+    credit
+        .split(LISTED_APART_BY)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+pub(crate) fn lead_of_a_list(credit: &str) -> Option<&str> {
+    let values = listed(credit);
+    (values.len() > 1).then(|| values[0])
+}
+
 pub(crate) fn credit_the_members(tx: &Transaction<'_>) -> Result<()> {
     tx.execute("DELETE FROM track_credits", [])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    hand_each_list_to_its_lead(tx)?;
 
     for credit in credits_held(tx)? {
-        let members = members_of(&credit);
-        if members.len() < 2 {
-            continue;
-        }
-        let Some(artists) = every_member_held(tx, &credit, &members)? else {
-            continue;
+        let artists = match listed(&credit).as_slice() {
+            [_, _, ..] => each_value_named(tx, &credit)?,
+            _ => {
+                let members = members_of(&credit);
+                if members.len() < 2 {
+                    continue;
+                }
+                let Some(artists) = every_member_held(tx, &credit, &members)? else {
+                    continue;
+                };
+                artists
+            }
         };
-        credit_each(tx, &credit, &artists)?;
+        if artists.len() > 1 {
+            credit_each(tx, &credit, &artists)?;
+        }
     }
     Ok(())
+}
+
+fn hand_each_list_to_its_lead(tx: &Transaction<'_>) -> Result<()> {
+    let lists: Vec<(i64, String)> = tx
+        .prepare("SELECT id, name FROM artists WHERE instr(name, ?1) > 0")
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![LISTED_APART_BY], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    for (list, name) in lists {
+        let Some(lead) = lead_of_a_list(&name) else {
+            continue;
+        };
+        let keeps = store::artist_named_in(tx, lead, None)?;
+        if keeps != list {
+            store::take_over_artist(tx, list, keeps)?;
+        }
+    }
+    Ok(())
+}
+
+fn each_value_named(tx: &Transaction<'_>, credit: &str) -> Result<Vec<i64>> {
+    let mut artists: Vec<i64> = Vec::new();
+    for value in listed(credit) {
+        let members = members_of(value);
+        let named = match every_member_held(tx, value, &members)? {
+            Some(held) if members.len() > 1 => held,
+            _ => vec![store::artist_named_in(tx, value, None)?],
+        };
+        for artist in named {
+            if !artists.contains(&artist) {
+                artists.push(artist);
+            }
+        }
+    }
+    Ok(artists)
 }
 
 fn credits_held(tx: &Transaction<'_>) -> Result<Vec<String>> {
