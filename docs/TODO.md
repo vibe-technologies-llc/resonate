@@ -96,9 +96,6 @@ else is open to be done.
   written from the documentation and `tests/live.rs` has no AcoustID test
 
 ## Performance and scale
-- Every process opening the catalog rebuilds the collaboration credits and sweeps orphans under the
-  write lock, so a read-only `resonate stats` also makes the window reload its vocabulary; the next
-  two items reuse the same sweep
 - A scan that changed nothing still regroups alternatives, gathers loose files and prunes over the
   whole catalog, so one watched file added pays for the library
 - An incremental scan writes every unchanged row only to stamp it seen, and a change under one root

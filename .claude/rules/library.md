@@ -1317,6 +1317,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `refused` and carries on past. **A fingerprint is weighed on its score alone**: `recognised` takes the
   top match at `STRICT_SCORE` and asks nothing of title or artist, the audio being the evidence and a
   file worth fingerprinting exactly one whose name is not.
+- **Opening the catalog settles the credits and sweeps the orphans only if something owes it.**
+  `settle_owed` is one row set by triggers on a track added, renamed or removed, an artist added,
+  renamed or removed and an album removed, and cleared by the end of every `sweep_orphans`; `build`
+  asks `settle_the_credits_if_owed`, so a process that only reads — `resonate stats`, a second window — writes
+  nothing, takes no write lock and does not make the first window reload its vocabulary
+  (`a_catalog_with_nothing_to_settle_is_opened_again_without_a_write`).
 - **A collaboration is listed under every artist it credits, never as an artist of its own.**
   `track_credits` — a migration step — holds each member of a track's credit, and
   `credits::credit_the_members` rebuilds it from `tracks.artist` whenever the orphans are swept, each credit's

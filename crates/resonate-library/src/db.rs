@@ -1228,7 +1228,7 @@ impl Library {
         schema::lay_out(&writer)?;
         store::reconcile_artists(&mut writer)?;
         store::refold_the_index(&mut writer)?;
-        store::settle_the_credits(&mut writer)?;
+        store::settle_the_credits_if_owed(&mut writer)?;
 
         let named = Arc::new(AtomicU64::new(0));
         let written = Arc::new(AtomicU64::new(0));
@@ -7105,6 +7105,45 @@ mod tests {
             first.is_ok() && second.is_ok(),
             "a catalog in memory has no second process"
         );
+    }
+
+    #[test]
+    fn a_catalog_with_nothing_to_settle_is_opened_again_without_a_write() {
+        let scratch = Scratch::new("opened-quietly");
+        let catalog = scratch.path.join("library.db");
+        drop(Library::open(&catalog).expect("a catalog opens on disc"));
+
+        let watching = Connection::open(&catalog).expect("a second connection");
+        let data_version = || -> i64 {
+            watching
+                .query_row("PRAGMA data_version", [], |row| row.get(0))
+                .expect("a data version")
+        };
+        let owed: bool = watching
+            .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+            .expect("the flag is there");
+        assert!(!owed, "the first open left what it settled owed");
+
+        let before = data_version();
+        drop(Library::open(&catalog).expect("a catalog opens again"));
+        assert_eq!(
+            data_version(),
+            before,
+            "opening a catalog nothing had changed wrote to it"
+        );
+
+        watching
+            .execute("INSERT INTO artists (key, name) VALUES ('x', 'X')", [])
+            .expect("an artist is added");
+        let owed: bool = watching
+            .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+            .expect("the flag is there");
+        assert!(owed, "an artist added did not owe a settle");
+        drop(Library::open(&catalog).expect("a catalog opens once more"));
+        let owed: bool = watching
+            .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+            .expect("the flag is there");
+        assert!(!owed, "an open did not settle what was owed");
     }
 
     #[test]

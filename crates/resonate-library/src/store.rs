@@ -1054,7 +1054,14 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
     Ok(removed as u64)
 }
 
-pub fn settle_the_credits(connection: &mut Connection) -> Result<()> {
+pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
+    let owed: bool = connection
+        .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if !owed {
+        return Ok(());
+    }
+
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
@@ -1066,7 +1073,10 @@ pub fn settle_the_credits(connection: &mut Connection) -> Result<()> {
 pub fn sweep_orphans(tx: &Transaction<'_>) -> Result<()> {
     credits::credit_the_members(tx)?;
     tx.execute_batch(ORPHANS)
-        .map_err(|source| Error::store(StoreOp::Delete, source))
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.execute("UPDATE settle_owed SET owed = 0", [])
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 pub fn paths_under(connection: &Connection, root: i64) -> Result<Vec<PathBuf>> {

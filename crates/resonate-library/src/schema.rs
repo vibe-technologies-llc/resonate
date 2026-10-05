@@ -249,6 +249,25 @@ const MIGRATIONS: &[&str] = &[
     "CREATE INDEX tracks_by_credit ON tracks(artist);",
     "CREATE INDEX playlist_entries_by_path ON playlist_entries(path);
      CREATE INDEX resume_rows_by_uri ON resume_rows(uri);",
+    "CREATE TABLE settle_owed (
+         id   INTEGER PRIMARY KEY CHECK (id = 1),
+         owed INTEGER NOT NULL
+     ) STRICT;
+     INSERT INTO settle_owed (id, owed) VALUES (1, 1);
+     CREATE TRIGGER tracks_owe_a_settle_when_added AFTER INSERT ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER tracks_owe_a_settle_when_named AFTER UPDATE OF artist, artist_id, album_id ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER tracks_owe_a_settle_when_gone AFTER DELETE ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER artists_owe_a_settle_when_added AFTER INSERT ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER artists_owe_a_settle_when_named AFTER UPDATE OF name, key ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER artists_owe_a_settle_when_gone AFTER DELETE ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+     CREATE TRIGGER albums_owe_a_settle_when_gone AFTER DELETE ON albums
+     BEGIN UPDATE settle_owed SET owed = 1; END;",
 ];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
