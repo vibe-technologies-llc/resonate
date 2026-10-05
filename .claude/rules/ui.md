@@ -249,11 +249,13 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   Escape clears a live type-ahead after the magnified cover and the notice and before `dismiss_search`:
   those two stand until taken down while this one takes itself down after a second, and somebody
   abandoning a jump has not asked for their search to be cleared.
-- **Typing anywhere still searches, which is why it does not take focus.** `RootView::typed` appends to
-  the field without focusing it, so `space` stays play/pause until a click puts the caret in — except
-  while typing is live: `space` is `PlayPauseUnlessTyping`, which `is_typing` turns into a typed space
-  for `HELD_FOR` after the last letter or while a jump is live, so *pink floyd* is a search and not a
-  pause, and the hardware play key keeps `TogglePlayPause`, which never types. Stop, shuffle and repeat
+- **Typing anywhere searches, and the letter that starts a search puts the caret in the field.**
+  `RootView::typed` hands a letter no jump takes to `type_where_typing_goes`, which focuses the search
+  and appends it, so every later key is the field's own and escape leaves and clears the search as it
+  does a search clicked into; appended unfocused, escape at the window was spent ending the typing and
+  the field kept nothing of its keys. `space` at the window is `PlayPauseUnlessTyping`, which
+  `is_typing` turns into a typed space for `HELD_FOR` after the last letter or while a jump is live, so
+  *pink floyd* typed while a jump runs is a search and not a pause, and the hardware play key keeps `TogglePlayPause`, which never types. Stop, shuffle and repeat
   are `ctrl-s`, `ctrl-h` and `ctrl-r`: as bare `s`, `h` and `r` they fired on every letter of a
   search, typing *Rush* stopping the music
   (`typing_at_the_window_searches_with_every_letter_and_its_spaces_rather_than_steering`). `space` and

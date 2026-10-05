@@ -2914,7 +2914,7 @@ impl RootView {
                 else {
                     return;
                 };
-                self.type_where_typing_goes(typed, cx);
+                self.type_where_typing_goes(typed, window, cx);
             }
         }
         cx.notify();
@@ -2945,10 +2945,12 @@ impl RootView {
         }
     }
 
-    fn type_where_typing_goes(&mut self, typed: &str, cx: &mut Context<Self>) {
+    fn type_where_typing_goes(&mut self, typed: &str, window: &mut Window, cx: &mut Context<Self>) {
         if !self.typed_ahead(typed, cx) {
-            self.search
-                .update(cx, |search, cx| search.append(typed, cx));
+            self.search.update(cx, |search, cx| {
+                search.take_focus(window);
+                search.append(typed, cx);
+            });
         }
         self.last_typed = Some(Instant::now());
     }
@@ -2960,9 +2962,9 @@ impl RootView {
                 .is_some_and(|typed| typed.elapsed() < typing::HELD_FOR)
     }
 
-    fn play_pause_or_type_a_space(&mut self, cx: &mut Context<Self>) {
+    fn play_pause_or_type_a_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_typing() {
-            self.type_where_typing_goes(" ", cx);
+            self.type_where_typing_goes(" ", window, cx);
             cx.notify();
         } else {
             self.send(Command::TogglePlayPause, cx);
@@ -4419,8 +4421,8 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &TogglePlayPause, _, cx| {
                 this.send(Command::TogglePlayPause, cx);
             }))
-            .on_action(cx.listener(|this, _: &PlayPauseUnlessTyping, _, cx| {
-                this.play_pause_or_type_a_space(cx);
+            .on_action(cx.listener(|this, _: &PlayPauseUnlessTyping, window, cx| {
+                this.play_pause_or_type_a_space(window, cx);
             }))
             .on_action(cx.listener(|this, _: &Pause, _, cx| this.send(Command::Pause, cx)))
             .on_action(cx.listener(|this, _: &Stop, _, cx| this.send(Command::Stop, cx)))

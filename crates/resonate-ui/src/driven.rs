@@ -1016,6 +1016,28 @@ mod tests {
             !driven.read(|root, cx| root.player.read(cx).state().shuffle),
             "an h typed into a search shuffled the queue"
         );
+        let search_focused = |driven: &mut Driven| {
+            let root = driven.root.clone();
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).search.read(cx).is_focused(window))
+        };
+        assert!(
+            search_focused(&mut driven),
+            "a search typed at the window left the field without the caret"
+        );
+
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            "",
+            "escape left a search typed at the window standing"
+        );
+        assert!(
+            !search_focused(&mut driven),
+            "escape left the caret in the search"
+        );
     }
 
     #[gpui::test]
