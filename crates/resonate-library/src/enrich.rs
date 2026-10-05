@@ -516,7 +516,7 @@ fn refused(library: &Library, progress: &EnrichProgress, asking: &sung::Asking, 
 
 const PICTURES_ASKED: usize = 64;
 
-const PICTURE_READERS: usize = 2;
+const PICTURE_READERS: usize = 4;
 
 enum Picture {
     Cover {

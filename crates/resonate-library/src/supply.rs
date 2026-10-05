@@ -1,8 +1,9 @@
 use std::{
+    collections::VecDeque,
     ffi::OsStr,
     fs::{self, File},
     io::{self, Read},
-    num::{NonZeroU64, NonZeroUsize},
+    num::NonZeroUsize,
     os::unix::fs::MetadataExt as _,
     path::Path,
     sync::{
@@ -14,7 +15,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
@@ -41,6 +42,7 @@ pub const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
 const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
 const HEEDED_EVERY: Duration = Duration::from_millis(50);
+pub const WANTS_ASKED_AT_ONCE: NonZeroUsize = NonZeroUsize::new(3).unwrap();
 
 impl Want {
     pub fn identity(&self) -> Identity {
@@ -121,12 +123,14 @@ fn status_changed(metadata: &fs::Metadata) -> Option<SystemTime> {
 pub struct PollOptions {
     pub every_want: bool,
     pub answers_within: Duration,
+    pub lanes: NonZeroUsize,
 }
 
 impl PollOptions {
     pub const ASKING_EVERY_WANT: Self = Self {
         every_want: true,
         answers_within: ANSWERS_WITHIN,
+        lanes: WANTS_ASKED_AT_ONCE,
     };
 }
 
@@ -135,6 +139,7 @@ impl Default for PollOptions {
         Self {
             every_want: false,
             answers_within: ANSWERS_WITHIN,
+            lanes: WANTS_ASKED_AT_ONCE,
         }
     }
 }
@@ -150,6 +155,19 @@ pub struct PollStats {
     pub late: u64,
 }
 
+#[derive(Debug)]
+struct Lane {
+    want: WantId,
+    provider: Option<SourceId>,
+    received: u64,
+}
+
+#[derive(Debug, Default)]
+struct Rereading {
+    wanted: bool,
+    closed: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct PollProgress {
     asked: AtomicU64,
@@ -159,13 +177,10 @@ pub struct PollProgress {
     nothing: AtomicU64,
     refused: AtomicU64,
     late: AtomicU64,
-    asking: AtomicU64,
-    asking_provider: Mutex<Option<SourceId>>,
-    received: AtomicU64,
+    lanes: Mutex<Vec<Lane>>,
+    rereading: Mutex<Rereading>,
     cancelled: AtomicBool,
 }
-
-const ASKING_NOTHING: u64 = 0;
 
 impl PollProgress {
     pub fn snapshot(&self) -> PollStats {
@@ -181,30 +196,88 @@ impl PollProgress {
     }
 
     pub fn asking(&self) -> Option<WantId> {
-        NonZeroU64::new(self.asking.load(Ordering::Relaxed)).map(WantId::of)
+        self.lanes.lock().last().map(|lane| lane.want)
+    }
+
+    pub fn asking_all(&self) -> Vec<WantId> {
+        self.lanes.lock().iter().map(|lane| lane.want).collect()
     }
 
     pub fn asking_provider(&self) -> Option<SourceId> {
-        self.asking_provider.lock().clone()
+        self.lanes
+            .lock()
+            .last()
+            .and_then(|lane| lane.provider.clone())
+    }
+
+    pub fn provider_of(&self, want: WantId) -> Option<SourceId> {
+        self.lanes
+            .lock()
+            .iter()
+            .find(|lane| lane.want == want)
+            .and_then(|lane| lane.provider.clone())
     }
 
     pub fn received(&self) -> u64 {
-        self.received.load(Ordering::Relaxed)
+        self.lanes.lock().iter().map(|lane| lane.received).sum()
     }
 
-    fn asks_about(&self, want: Option<WantId>) {
-        self.turns_to(None);
-        self.received.store(0, Ordering::Relaxed);
-        self.asking
-            .store(want.map_or(ASKING_NOTHING, WantId::get), Ordering::Relaxed);
+    pub fn received_for(&self, want: WantId) -> u64 {
+        self.lanes
+            .lock()
+            .iter()
+            .find(|lane| lane.want == want)
+            .map_or(0, |lane| lane.received)
     }
 
-    fn turns_to(&self, provider: Option<&SourceId>) {
-        *self.asking_provider.lock() = provider.cloned();
+    fn asks_about(&self, want: WantId) {
+        self.lanes.lock().push(Lane {
+            want,
+            provider: None,
+            received: 0,
+        });
     }
 
-    fn received_more(&self, bytes: usize) {
-        self.received.fetch_add(bytes as u64, Ordering::Relaxed);
+    fn turns_to(&self, want: WantId, provider: Option<&SourceId>) {
+        if let Some(lane) = self.lanes.lock().iter_mut().find(|lane| lane.want == want) {
+            lane.provider = provider.cloned();
+        }
+    }
+
+    fn received_more(&self, want: WantId, bytes: usize) {
+        if let Some(lane) = self.lanes.lock().iter_mut().find(|lane| lane.want == want) {
+            lane.received += bytes as u64;
+        }
+    }
+
+    fn done_asking_about(&self, want: WantId) {
+        self.lanes.lock().retain(|lane| lane.want != want);
+    }
+
+    pub fn wants_changed(&self) -> bool {
+        let mut rereading = self.rereading.lock();
+        if rereading.closed {
+            return false;
+        }
+        rereading.wanted = true;
+        true
+    }
+
+    fn take_wants_changed(&self) -> bool {
+        std::mem::take(&mut self.rereading.lock().wanted)
+    }
+
+    fn close_unless_wants_changed(&self) -> bool {
+        let mut rereading = self.rereading.lock();
+        if std::mem::take(&mut rereading.wanted) {
+            return false;
+        }
+        rereading.closed = true;
+        true
+    }
+
+    fn is_closed(&self) -> bool {
+        self.rereading.lock().closed
     }
 
     pub fn cancel(&self) {
@@ -225,8 +298,8 @@ impl Cancelling for PollProgress {
 struct Landing<'a> {
     options: PollOptions,
     progress: &'a PollProgress,
-    away: &'a mut Away,
-    filed: &'a mut Vec<Filed>,
+    away: &'a Mutex<Away>,
+    filed: &'a Mutex<Vec<Filed>>,
 }
 
 fn landed(
@@ -238,7 +311,7 @@ fn landed(
     let Landing {
         options,
         progress,
-        ref mut away,
+        away,
         ..
     } = *landing;
     let taken_from = delivered.taken_from();
@@ -249,7 +322,10 @@ fn landed(
     let keeping = match delivered.delivery {
         Delivery::File(path) => {
             if let Ok(metadata) = fs::metadata(&path) {
-                progress.received_more(usize::try_from(metadata.len()).unwrap_or(usize::MAX));
+                progress.received_more(
+                    want.id,
+                    usize::try_from(metadata.len()).unwrap_or(usize::MAX),
+                );
             }
             vault.keep(&Taking {
                 sources: &Sources::local(),
@@ -262,7 +338,7 @@ fn landed(
         Delivery::Stream {
             extension, reader, ..
         } => {
-            let mut pumped = match Pumped::from(reader, progress, options.answers_within) {
+            let mut pumped = match Pumped::from(reader, progress, want.id, options.answers_within) {
                 Ok(pumped) => pumped,
                 Err(source) => return Err(Error::ThreadSpawn { source }),
             };
@@ -270,7 +346,7 @@ fn landed(
             if pumped.stalled {
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
-                away.note(&delivered.provider);
+                away.lock().note(&delivered.provider);
                 return Ok(None);
             }
             keeping
@@ -314,6 +390,7 @@ fn landed(
 type Chunk = io::Result<Vec<u8>>;
 
 struct Pumped<'a> {
+    want: WantId,
     chunks: Receiver<Chunk>,
     held: Vec<u8>,
     read: usize,
@@ -327,6 +404,7 @@ impl<'a> Pumped<'a> {
     fn from(
         mut reader: Box<dyn Read + Send>,
         progress: &'a PollProgress,
+        want: WantId,
         stalls_after: Duration,
     ) -> io::Result<Self> {
         let (sender, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
@@ -335,6 +413,7 @@ impl<'a> Pumped<'a> {
             .spawn(move || pump(&mut *reader, &sender))?;
 
         Ok(Self {
+            want,
             chunks,
             held: Vec::new(),
             read: 0,
@@ -384,7 +463,7 @@ impl Read for Pumped<'_> {
                 return Ok(0);
             }
             self.held = self.next_chunk()?;
-            self.progress.received_more(self.held.len());
+            self.progress.received_more(self.want, self.held.len());
             self.read = 0;
             self.ended = self.held.is_empty();
         }
@@ -394,12 +473,13 @@ impl Read for Pumped<'_> {
 struct Counted<'a, R> {
     reader: R,
     progress: &'a PollProgress,
+    want: WantId,
 }
 
 impl<R: Read> Read for Counted<'_, R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.reader.read(into)?;
-        self.progress.received_more(read);
+        self.progress.received_more(self.want, read);
         Ok(read)
     }
 }
@@ -482,6 +562,7 @@ fn filed_in_the_music_folder(
                     &mut Counted {
                         reader: file,
                         progress,
+                        want: want.id,
                     },
                     &extension,
                 ),
@@ -491,13 +572,14 @@ fn filed_in_the_music_folder(
         Delivery::Stream {
             extension, reader, ..
         } => {
-            let mut pumped = Pumped::from(reader, progress, landing.options.answers_within)
-                .map_err(|source| Error::ThreadSpawn { source })?;
+            let mut pumped =
+                Pumped::from(reader, progress, want.id, landing.options.answers_within)
+                    .map_err(|source| Error::ThreadSpawn { source })?;
             let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
             if pumped.stalled {
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
-                landing.away.note(&delivered.provider);
+                landing.away.lock().note(&delivered.provider);
                 return Ok(None);
             }
             outcome
@@ -508,7 +590,7 @@ fn filed_in_the_music_folder(
         Ok(landed) => {
             progress.kept.fetch_add(1, Ordering::Relaxed);
             let at = MediaLocation::local(&landed.path);
-            landing.filed.push(landed);
+            landing.filed.lock().push(landed);
             Ok(Some(at))
         }
         _ if progress.is_cancelled() => Ok(None),
@@ -561,78 +643,184 @@ fn scanned_and_paired(library: &Library, filed: &[Filed]) -> Result<()> {
     Ok(())
 }
 
-fn run(
-    library: &Library,
-    providers: &Providers,
-    options: PollOptions,
-    progress: &PollProgress,
-) -> Result<PollSummary> {
-    scanned_and_paired(library, &[])?;
-    let now = SystemTime::now();
-    let wants = library.wants()?;
-    let forgotten = library.forgotten_deliveries()?;
-    let mut away = Away::default();
-    let mut filed = Vec::new();
+type Forgotten = AHashMap<WantId, Vec<ForgottenDelivery>>;
 
-    for want in wants.iter().filter(|want| due(want, options, now)) {
-        if progress.is_cancelled() {
-            break;
+struct Queue {
+    pending: VecDeque<Want>,
+    claimed: AHashSet<WantId>,
+    forgotten: Arc<Forgotten>,
+    read: bool,
+    busy: usize,
+}
+
+enum Claim {
+    Want(Box<Want>, Arc<Forgotten>),
+    Idle,
+    Done,
+}
+
+struct Lanes<'a> {
+    library: &'a Library,
+    providers: &'a Providers,
+    options: PollOptions,
+    progress: &'a PollProgress,
+    queue: Mutex<Queue>,
+    away: Mutex<Away>,
+    filed: Mutex<Vec<Filed>>,
+    failure: Mutex<Option<Error>>,
+    first_answered: AtomicBool,
+}
+
+enum Flow {
+    Onward,
+    Stop,
+}
+
+impl Lanes<'_> {
+    fn refill(&self, queue: &mut Queue) -> Result<()> {
+        let now = SystemTime::now();
+        queue.forgotten = Arc::new(self.library.forgotten_deliveries()?);
+        queue.read = true;
+        queue.pending = self
+            .library
+            .wants()?
+            .into_iter()
+            .filter(|want| !queue.claimed.contains(&want.id) && due(want, self.options, now))
+            .collect();
+        Ok(())
+    }
+
+    fn claim(&self) -> Result<Claim> {
+        let mut queue = self.queue.lock();
+        if self.progress.take_wants_changed() || !queue.read {
+            self.refill(&mut queue)?;
         }
+        loop {
+            if let Some(want) = queue.pending.pop_front() {
+                if queue.claimed.insert(want.id) {
+                    queue.busy += 1;
+                    return Ok(Claim::Want(Box::new(want), Arc::clone(&queue.forgotten)));
+                }
+                continue;
+            }
+            if queue.busy > 0 {
+                return Ok(Claim::Idle);
+            }
+            if self.progress.close_unless_wants_changed() {
+                return Ok(Claim::Done);
+            }
+            self.refill(&mut queue)?;
+        }
+    }
+
+    fn released(&self) {
+        self.queue.lock().busy -= 1;
+    }
+
+    fn fail(&self, error: Error) {
+        let mut failure = self.failure.lock();
+        if failure.is_none() {
+            *failure = Some(error);
+        }
+    }
+
+    fn has_failed(&self) -> bool {
+        self.failure.lock().is_some()
+    }
+
+    fn lane(&self, leads: bool) {
+        loop {
+            if self.progress.is_cancelled() || self.has_failed() || self.progress.is_closed() {
+                return;
+            }
+            if !leads && !self.first_answered.load(Ordering::Acquire) {
+                thread::sleep(HEEDED_EVERY);
+                continue;
+            }
+            match self.claim() {
+                Ok(Claim::Want(want, forgotten)) => {
+                    let flow = self.ask_and_land(&want, &forgotten);
+                    self.progress.done_asking_about(want.id);
+                    self.released();
+                    match flow {
+                        Ok(Flow::Onward) => {}
+                        Ok(Flow::Stop) => return,
+                        Err(error) => {
+                            self.fail(error);
+                            return;
+                        }
+                    }
+                }
+                Ok(Claim::Idle) => thread::sleep(HEEDED_EVERY),
+                Ok(Claim::Done) => return,
+                Err(error) => {
+                    self.fail(error);
+                    return;
+                }
+            }
+        }
+    }
+
+    fn ask_and_land(&self, want: &Want, forgotten: &Forgotten) -> Result<Flow> {
+        let progress = self.progress;
         progress.asked.fetch_add(1, Ordering::Relaxed);
-        progress.asks_about(Some(want.id));
+        progress.asks_about(want.id);
         let cancelled = || progress.is_cancelled();
-        let turning_to = |provider: &SourceId| progress.turns_to(Some(provider));
+        let turning_to = |provider: &SourceId| progress.turns_to(want.id, Some(provider));
         let forgotten_for_it = forgotten.get(&want.id).map_or(&[][..], Vec::as_slice);
         let declined = |delivered: &Delivered| {
             forgotten_for_it
                 .iter()
                 .any(|forgotten| forgotten.declines(delivered))
         };
-        let answer = providers.first(
+        let mut away = self.away.lock().clone();
+        let answer = self.providers.first(
             &want.identity(),
             &Asking {
-                within: options.answers_within,
+                within: self.options.answers_within,
                 cancelled: &cancelled,
                 turning_to: &turning_to,
                 declined: &declined,
             },
             &mut away,
         );
+        self.away.lock().join(&away);
+        self.first_answered.store(true, Ordering::Release);
         progress
             .refused
             .fetch_add(answer.refused, Ordering::Relaxed);
         progress.late.fetch_add(answer.late, Ordering::Relaxed);
         if answer.delivered.is_none() {
-            progress.turns_to(None);
+            progress.turns_to(want.id, None);
         }
         if answer.cancelled {
-            break;
+            return Ok(Flow::Stop);
         }
         match answer.delivered {
             Some(delivered) => {
                 progress.offered.fetch_add(1, Ordering::Relaxed);
                 let noted = landed(
-                    library,
+                    self.library,
                     want,
                     delivered,
                     &mut Landing {
-                        options,
+                        options: self.options,
                         progress,
-                        away: &mut away,
-                        filed: &mut filed,
+                        away: &self.away,
+                        filed: &self.filed,
                     },
                 )?;
                 let cancelled = progress.is_cancelled();
                 if noted.is_some() || !cancelled {
-                    tried(library, want.id, noted.as_ref())?;
+                    tried(self.library, want.id, noted.as_ref())?;
                 }
                 if cancelled {
-                    break;
+                    return Ok(Flow::Stop);
                 }
             }
             None if answer.heard_from_every_provider() => {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);
-                tried(library, want.id, None)?;
+                tried(self.library, want.id, None)?;
             }
             None => tracing::debug!(
                 want = %want.id,
@@ -643,10 +831,57 @@ fn run(
                 "not every provider answered, so the want stays due"
             ),
         }
+        Ok(Flow::Onward)
     }
-    progress.asks_about(None);
+}
 
-    scanned_and_paired(library, &filed)?;
+fn run(
+    library: &Library,
+    providers: &Providers,
+    options: PollOptions,
+    progress: &PollProgress,
+) -> Result<PollSummary> {
+    scanned_and_paired(library, &[])?;
+    let lanes = Lanes {
+        library,
+        providers,
+        options,
+        progress,
+        queue: Mutex::new(Queue {
+            pending: VecDeque::new(),
+            claimed: AHashSet::new(),
+            forgotten: Arc::new(Forgotten::new()),
+            read: false,
+            busy: 0,
+        }),
+        away: Mutex::new(Away::default()),
+        filed: Mutex::new(Vec::new()),
+        failure: Mutex::new(None),
+        first_answered: AtomicBool::new(false),
+    };
+
+    thread::scope(|scope| {
+        let started: Vec<_> = (1..options.lanes.get())
+            .filter_map(|nth| {
+                thread::Builder::new()
+                    .name(format!("resonate-poll-{nth}"))
+                    .spawn_scoped(scope, || lanes.lane(false))
+                    .map_err(|error| {
+                        tracing::warn!(%error, "a poll lane did not start");
+                    })
+                    .ok()
+            })
+            .collect();
+        lanes.lane(true);
+        for lane in started {
+            let _ = lane.join();
+        }
+    });
+
+    if let Some(error) = lanes.failure.into_inner() {
+        return Err(error);
+    }
+    scanned_and_paired(library, &lanes.filed.into_inner())?;
 
     Ok(PollSummary {
         stats: progress.snapshot(),

@@ -44,6 +44,14 @@ counted `refused`, the want stays unstamped and due, and the provider is still a
 
 A provider does none of this, so none of it is written twice.
 
+- **Wants are asked side by side, `PollOptions::lanes` (three) at a time.** The first want is asked
+  alone, so a provider that is away or refuses a login is met once and noted in the shared `Away`
+  before the other lanes begin; each lane then claims the next due want, ask and landing together.
+  Idle lanes wait for the pool to drain. A want marked while a poll runs is picked up by that poll:
+  `PollProgress::wants_changed` makes the next claim read the wants again (newest first) and answers
+  false once the poll has closed, which the window reads as *owe a poll*. `PollProgress` keeps a lane
+  per want being asked (`asking_all`, `provider_of`, `received_for`), so each download row says its own
+  provider and bytes.
 - **Due wants, in registration order, the first delivery winning.** `wants.misses` counts the tries
   in a row that every provider answered with nothing. `Want::due_at` is at once where never tried,
   `RETRY_WAITS` after the last try for the miss it is on, `POLL_AGAIN_AFTER` after an offer the

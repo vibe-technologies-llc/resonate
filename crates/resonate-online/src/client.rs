@@ -101,6 +101,7 @@ const CONNECT_WITHIN: Duration = Duration::from_secs(10);
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 const MUSICBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
 const OTHERS_INTERVAL: Duration = Duration::from_millis(250);
+const COVER_ARCHIVE_INTERVAL: Duration = Duration::from_millis(100);
 const ACOUSTID_INTERVAL: Duration = Duration::from_millis(334);
 const SHAZAM_INTERVAL: Duration = Duration::from_secs(3);
 const AUDD_INTERVAL: Duration = Duration::from_secs(1);
@@ -261,6 +262,7 @@ impl Host {
             Self::Shazam => SHAZAM_INTERVAL,
             Self::ListenBrainz => LISTENBRAINZ_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
+            Self::CoverArtArchive => COVER_ARCHIVE_INTERVAL,
             Self::AppleArtwork
             | Self::AppleMusic
             | Self::Deezer
@@ -270,7 +272,6 @@ impl Host {
             | Self::SoundCloud
             | Self::SoundCloudPictures
             | Self::SongLink
-            | Self::CoverArtArchive
             | Self::Commons
             | Self::Wikidata
             | Self::Lrclib

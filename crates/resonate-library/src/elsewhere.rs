@@ -20,6 +20,19 @@ pub struct Sung {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Covering {
+    pub album: AlbumId,
+    pub release: Mbid,
+    pub group: Option<Mbid>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Uncovered<T> {
+    pub wanted: T,
+    pub covering: Option<Covering>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Found {
     pub recording: Mbid,
     pub title: String,

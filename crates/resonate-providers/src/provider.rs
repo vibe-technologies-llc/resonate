@@ -70,7 +70,7 @@ impl Answer {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Away {
     providers: Vec<SourceId>,
 }
@@ -85,6 +85,14 @@ impl Away {
 
     pub fn holds(&self, provider: &SourceId) -> bool {
         self.providers.contains(provider)
+    }
+
+    pub fn join(&mut self, other: &Self) {
+        for provider in &other.providers {
+            if !self.holds(provider) {
+                self.providers.push(provider.clone());
+            }
+        }
     }
 }
 

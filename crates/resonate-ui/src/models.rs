@@ -11,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, bounded};
-use gpui::{App, Context, Image, Pixels, RenderImage, Task, px};
+use gpui::{App, AsyncApp, Context, Image, Pixels, RenderImage, Task, WeakEntity, px};
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
     TrackId, WantId,
@@ -19,18 +19,19 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail, ArtistOrder, ArtistQuery,
-    ArtistTotals, CatalogStamp, CoverArt, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing,
-    Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
-    GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
-    ImportSummary, Imported, Issued, Kept, Layout, Library, Listen, LookupOp, Mbid, Meant,
-    Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
-    OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
-    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
-    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering, weighed_for,
+    ArtistTotals, CatalogStamp, CoverArt, Covering, Cut, Day, Deleted, DeliveryFolder, Direction,
+    Drawing, Edit, EnrichOptions, EnrichProgress, EnrichSummary, Favoured, FileTags,
+    Fingerprinters, Found, GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions,
+    ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept, Layout, Library, Listen,
+    LookupOp, Mbid, Meant, Measured, Missing, MissingTrack, MostListened, NamedPlaylist,
+    OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Playing, Playlist,
+    PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster,
+    Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail,
+    ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
+    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
+    SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery,
+    Undoable, UnheldRelease, Window, Wording, folded_letters, songs_asked, still_answering,
+    weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -68,7 +69,7 @@ const PORTRAITS_HELD: NonZeroUsize = held(256);
 const DECODES_AT_ONCE: usize = 4;
 const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
-const FETCHES_AT_ONCE: usize = 2;
+const FETCHES_AT_ONCE: usize = 6;
 
 const SCAN_POLL: Duration = Duration::from_millis(100);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
@@ -662,6 +663,7 @@ pub struct LibraryModel {
     search: Search,
     instead: Option<String>,
     work: Work,
+    polling_every_provider: bool,
     organised: Option<(Pass, OrganiseSummary)>,
     relocated: Vec<(MediaLocation, MediaLocation)>,
     walks_back: bool,
@@ -866,6 +868,7 @@ impl LibraryModel {
             search: Search::default(),
             instead: None,
             work: Work::Nothing,
+            polling_every_provider: false,
             organised: None,
             relocated: Vec::new(),
             walks_back,
@@ -1383,16 +1386,22 @@ impl LibraryModel {
 
         let wanting = cx.spawn(async move |this, cx| {
             let asked = found.clone();
+            let covered_by = Arc::clone(&library);
+            let covering_with = Arc::clone(&reference);
             let wanted = cx
                 .background_executor()
-                .spawn(async move { library.want_found(reference.as_ref(), &asked) })
+                .spawn(async move { library.want_found_uncovered(reference.as_ref(), &asked) })
                 .await;
+            let covering = wanted
+                .as_ref()
+                .ok()
+                .and_then(|wanted| wanted.covering.clone());
 
             let landed = this.update(cx, |this, cx| {
                 if let Some(finished) = this.wanting.remove(&found.recording) {
                     finished.detach();
                 }
-                match wanted {
+                match wanted.map(|wanted| wanted.wanted) {
                     Ok(want) => {
                         let fetched_by = this.fetched_by(cx);
                         this.downloads.wanted(&found.recording, want, fetched_by);
@@ -1407,7 +1416,12 @@ impl LibraryModel {
                 }
                 this.read(Wanted::Everything, cx);
             });
-            let _ = landed;
+            if landed.is_err() {
+                return;
+            }
+            if let Some(covering) = covering {
+                cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
+            }
         });
         self.wanting.insert(recording, wanting);
     }
@@ -1424,16 +1438,22 @@ impl LibraryModel {
         let held_under = group.clone();
 
         let wanting = cx.spawn(async move |this, cx| {
+            let covered_by = Arc::clone(&library);
+            let covering_with = Arc::clone(&reference);
             let wanted = cx
                 .background_executor()
-                .spawn(async move { library.want_album(reference.as_ref(), &asked) })
+                .spawn(async move { library.want_album_uncovered(reference.as_ref(), &asked) })
                 .await;
+            let covering = wanted
+                .as_ref()
+                .ok()
+                .and_then(|wanted| wanted.covering.clone());
 
             let landed = this.update(cx, |this, cx| {
                 if let Some(finished) = this.albums_wanted.remove(&group) {
                     finished.detach();
                 }
-                match wanted {
+                match wanted.map(|wanted| wanted.wanted) {
                     Ok(wanted) => {
                         let fetched_by = this.fetched_by(cx);
                         let now = SystemTime::now();
@@ -1460,7 +1480,12 @@ impl LibraryModel {
                 }
                 this.read(Wanted::Everything, cx);
             });
-            let _ = landed;
+            if landed.is_err() {
+                return;
+            }
+            if let Some(covering) = covering {
+                cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
+            }
         });
         self.albums_wanted.insert(held_under, wanting);
         cx.notify();
@@ -1524,14 +1549,15 @@ impl LibraryModel {
     }
 
     pub fn fetching(&self, download: &Download) -> Fetching {
-        download.fetching_while(self.polling())
+        download.fetching_while(&self.polling())
     }
 
-    pub(crate) fn fetched(&self) -> Option<Fetched> {
+    pub(crate) fn fetched(&self, download: &Download) -> Option<Fetched> {
         let progress = self.work.polling()?;
+        let want = download.want()?;
         Some(Fetched {
-            provider: progress.asking_provider()?,
-            received: progress.received(),
+            provider: progress.provider_of(want)?,
+            received: progress.received_for(want),
         })
     }
 
@@ -1565,8 +1591,9 @@ impl LibraryModel {
         let Some(want) = self.downloads.of(recording).and_then(Download::want) else {
             return;
         };
-        if self.asking_for() == Some(want) {
+        if self.asking_for().contains(&want) {
             self.stop_poll(cx);
+            self.fetch_what_was_wanted(PollOptions::default(), cx);
         }
         self.downloads.dismiss(recording);
         self.unwant(want, cx);
@@ -1596,8 +1623,10 @@ impl LibraryModel {
         cx.notify();
     }
 
-    fn asking_for(&self) -> Option<WantId> {
-        self.work.polling().and_then(|progress| progress.asking())
+    fn asking_for(&self) -> Vec<WantId> {
+        self.work
+            .polling()
+            .map_or_else(Vec::new, |progress| progress.asking_all())
     }
 
     pub const fn opened_suggestion(&self) -> Option<&Previewed> {
@@ -1712,7 +1741,7 @@ impl LibraryModel {
         let want = self.wanted(release_track)?;
         let fetching = self.standings.get(&want)?.fetching();
 
-        Some(fetching.while_polling(Some(want), self.polling()))
+        Some(fetching.while_polling(Some(want), &self.polling()))
     }
 
     pub fn missing_track_rows(&self) -> Arc<[MissingRow]> {
@@ -4315,6 +4344,16 @@ impl LibraryModel {
         options: PollOptions,
         cx: &mut Context<Self>,
     ) -> bool {
+        if prompted == Prompted::OnItsOwn
+            && !options.every_want
+            && self.polling_every_provider
+            && self
+                .work
+                .polling()
+                .is_some_and(|progress| progress.wants_changed())
+        {
+            return true;
+        }
         if self.work.is_busy() {
             if prompted == Prompted::ByHand {
                 toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
@@ -4342,6 +4381,7 @@ impl LibraryModel {
         };
 
         self.work = Work::Polling(Arc::clone(handle.progress()));
+        self.polling_every_provider = asking == Asking::EveryProvider;
         cx.notify();
 
         self._poll = cx.spawn(async move |this, cx| {
@@ -4664,6 +4704,19 @@ fn done_again_as(done_again: &Undoable) -> String {
             format!("Put {name} back in the order that edit left")
         }
     }
+}
+
+async fn cover_what_was_wanted(
+    this: &WeakEntity<LibraryModel>,
+    cx: &mut AsyncApp,
+    library: Arc<Library>,
+    reference: Arc<dyn Reference>,
+    covering: Covering,
+) {
+    cx.background_executor()
+        .spawn(async move { library.cover_what_was_wanted(reference.as_ref(), &covering) })
+        .await;
+    let _ = this.update(cx, |this, cx| this.read(Wanted::Everything, cx));
 }
 
 fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notice> {

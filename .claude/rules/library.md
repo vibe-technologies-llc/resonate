@@ -942,7 +942,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   recordings, groups and profiles and faulting on the call it is told to — where the rules below are
   proved; the online crate proves its mapping over captured fixtures and reaches the services only
   under `RESONATE_ONLINE_TESTS`.
-- **A picture is fetched beside the pass, never in it.** `Pictures` is two threads (`PICTURE_READERS`)
+- **A picture is fetched beside the pass, never in it.** `Pictures` is four threads (`PICTURE_READERS`)
   named `resonate-pictures-<n>` reading a bounded channel of `Picture`s — a cover, a release group's
   cover or a portrait — and `Pass::want` is the whole of how one is asked for; `Pictures::rest` drops
   the sender and joins them before the summary is taken, so the stats say what landed. The archive and
@@ -2389,8 +2389,9 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   provider is asked for and a delivery lands on. Its wanted artist is the track credit where present,
   otherwise the landed release artist, so providers and the player retain the artist even when
   MusicBrainz has no track-level credit. When the landed release advertises front art or belongs to a
-  release group and the album has no picture, `want_found` asks `Reference::cover` and saves the answer
-  on the album; failure to fetch or store art does not cancel the want. A release the reference lacks is
+  release group and the album has no picture, `want_found_uncovered` answers a `Covering` and the caller
+  asks `cover_what_was_wanted` after the want is out (`want_found` does both), so a poll starts before the
+  sleeve arrives; the answer is saved on the album; failure to fetch or store art does not cancel the want. A release the reference lacks is
   `Error::UnknownRelease`, a recording with no release `Error::Unreleased`, and a release not carrying
   the recording `Error::NotOnTheRelease`. `store::ORPHANS` spares a trackless album only where it was
   found elsewhere and still wanted, so a scan keeps it while the want stands and removes it once it

@@ -29,17 +29,17 @@ use crate::{
     Aged, Album, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
     ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals, Asked,
     Billed, Cancelling, Certainty, Clause, Codec, Column, Compare, Condition, Counted, CoverArt,
-    Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured, Fingerprinters,
-    Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat,
-    ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex,
-    KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
+    Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported, Favoured,
+    Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings,
+    ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover,
+    KeptIndex, KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
     MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
     Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
     Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease,
     Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
     RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
-    Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
+    Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word,
     deleted::{self, Deleted, Removal},
     elsewhere, enrich, enriched,
@@ -3244,6 +3244,18 @@ impl Library {
     }
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {
+        let Uncovered { wanted, covering } = self.want_found_uncovered(reference, found)?;
+        if let Some(covering) = covering {
+            self.cover_what_was_wanted(reference, &covering);
+        }
+        Ok(wanted)
+    }
+
+    pub fn want_found_uncovered(
+        &self,
+        reference: &dyn Reference,
+        found: &Found,
+    ) -> Result<Uncovered<WantId>> {
         let release = match &found.release {
             Some(release) => release.id.clone(),
             None => reference
@@ -3256,12 +3268,15 @@ impl Library {
                 })?,
         };
 
-        let wanted =
+        let Uncovered { wanted, covering } =
             self.want_from_release(reference, &release, std::slice::from_ref(&found.recording))?;
         wanted
             .into_iter()
             .next()
-            .map(|(_, want)| want)
+            .map(|(_, want)| Uncovered {
+                wanted: want,
+                covering,
+            })
             .ok_or_else(|| Error::NotOnTheRelease {
                 recording: found.recording.clone(),
                 release,
@@ -3273,6 +3288,18 @@ impl Library {
         reference: &dyn Reference,
         group: &Mbid,
     ) -> Result<Vec<(Found, WantId)>> {
+        let Uncovered { wanted, covering } = self.want_album_uncovered(reference, group)?;
+        if let Some(covering) = covering {
+            self.cover_what_was_wanted(reference, &covering);
+        }
+        Ok(wanted)
+    }
+
+    pub fn want_album_uncovered(
+        &self,
+        reference: &dyn Reference,
+        group: &Mbid,
+    ) -> Result<Uncovered<Vec<(Found, WantId)>>> {
         let mut songs = self.songs_of_group(group)?;
         if songs.is_empty() {
             self.learn_the_songs_of(reference, group)?;
@@ -3289,17 +3316,38 @@ impl Library {
         };
         let recordings: Vec<Mbid> = songs.iter().map(|song| song.recording.clone()).collect();
 
-        let wanted: AHashMap<Mbid, WantId> = self
-            .want_from_release(reference, &release, &recordings)?
-            .into_iter()
-            .collect();
-        Ok(songs
-            .into_iter()
-            .filter_map(|song| {
-                let want = *wanted.get(&song.recording)?;
-                Some((song, want))
-            })
-            .collect())
+        let Uncovered { wanted, covering } =
+            self.want_from_release(reference, &release, &recordings)?;
+        let wanted: AHashMap<Mbid, WantId> = wanted.into_iter().collect();
+        Ok(Uncovered {
+            wanted: songs
+                .into_iter()
+                .filter_map(|song| {
+                    let want = *wanted.get(&song.recording)?;
+                    Some((song, want))
+                })
+                .collect(),
+            covering,
+        })
+    }
+
+    pub fn cover_what_was_wanted(&self, reference: &dyn Reference, covering: &Covering) {
+        let Covering {
+            album,
+            release,
+            group,
+        } = covering;
+        match reference.cover(release, group.as_ref()) {
+            Ok(Some(art)) => {
+                if let Err(error) = self.land_archive_cover(*album, &art) {
+                    tracing::warn!(%error, %album, "a cover for a found song was dropped");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, %album, "a cover for a found song did not arrive");
+            }
+        }
     }
 
     fn want_from_release(
@@ -3307,7 +3355,7 @@ impl Library {
         reference: &dyn Reference,
         release: &Mbid,
         recordings: &[Mbid],
-    ) -> Result<Vec<(Mbid, WantId)>> {
+    ) -> Result<Uncovered<Vec<(Mbid, WantId)>>> {
         let landed = reference
             .release(release)?
             .ok_or_else(|| Error::UnknownRelease {
@@ -3336,21 +3384,15 @@ impl Library {
             Ok((wanted, album))
         })?;
 
-        if (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none() {
-            match reference.cover(&landed.id, landed.group.as_ref()) {
-                Ok(Some(art)) => {
-                    if let Err(error) = self.land_archive_cover(album, &art) {
-                        tracing::warn!(%error, %album, "a cover for a found song was dropped");
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    tracing::warn!(%error, %album, "a cover for a found song did not arrive");
-                }
-            }
-        }
+        let wants_a_cover =
+            (landed.has_front_cover || landed.group.is_some()) && self.cover_art(album)?.is_none();
+        let covering = wants_a_cover.then(|| Covering {
+            album,
+            release: landed.id.clone(),
+            group: landed.group.clone(),
+        });
 
-        Ok(wanted)
+        Ok(Uncovered { wanted, covering })
     }
 
     pub(crate) fn learn_the_songs_of(

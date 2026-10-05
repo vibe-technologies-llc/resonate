@@ -10,7 +10,7 @@ use std::{
     slice,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     thread,
@@ -22250,6 +22250,167 @@ fn a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want() -> Result<()>
         "a refused login was tried for every want"
     );
     assert!(library.wants()?.iter().all(|want| want.tried.is_none()));
+    Ok(())
+}
+
+struct Slow {
+    source: SourceId,
+    in_flight: AtomicUsize,
+    most_at_once: AtomicUsize,
+    held_for: Duration,
+}
+
+impl Slow {
+    fn new(held_for: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            source: SourceId::new("slow").expect("a nameable source"),
+            in_flight: AtomicUsize::new(0),
+            most_at_once: AtomicUsize::new(0),
+            held_for,
+        })
+    }
+
+    fn most_at_once(&self) -> usize {
+        self.most_at_once.load(Ordering::SeqCst)
+    }
+}
+
+impl Provider for Slow {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
+        let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+        self.most_at_once.fetch_max(now, Ordering::SeqCst);
+        thread::sleep(self.held_for);
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        Ok(Obtained::Nothing)
+    }
+}
+
+#[test]
+fn wants_are_asked_about_side_by_side_once_the_first_has_been_answered() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_every_missing_row(&library)?;
+    let wanted = library.wants()?.len();
+    assert!(wanted > 2);
+    let slow = Slow::new(Duration::from_millis(150));
+    let providers = Arc::new(Providers::none().and(Arc::clone(&slow) as Arc<dyn Provider>));
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(summary.stats.asked, wanted as u64);
+    assert_eq!(summary.stats.nothing, wanted as u64);
+    assert!(
+        slow.most_at_once() > 1,
+        "the wants were asked about one after another"
+    );
+    assert!(slow.most_at_once() <= PollOptions::default().lanes.get());
+    Ok(())
+}
+
+#[test]
+fn a_poll_with_one_lane_asks_about_one_want_at_a_time() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_every_missing_row(&library)?;
+    let slow = Slow::new(Duration::from_millis(20));
+    let providers = Arc::new(Providers::none().and(Arc::clone(&slow) as Arc<dyn Provider>));
+
+    library
+        .poll(
+            providers,
+            PollOptions {
+                lanes: NonZeroUsize::MIN,
+                ..PollOptions::default()
+            },
+        )?
+        .join()?;
+
+    assert_eq!(slow.most_at_once(), 1);
+    Ok(())
+}
+
+struct WantsOneMore {
+    source: SourceId,
+    library: Arc<Library>,
+    progress: Mutex<Option<Arc<PollProgress>>>,
+    pressed: AtomicBool,
+    asked: Mutex<Vec<String>>,
+}
+
+impl Provider for WantsOneMore {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn obtain(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+        self.asked.lock().push(identity.title.clone());
+        if !self.pressed.swap(true, Ordering::SeqCst) {
+            let album = only_album(&self.library).expect("one album");
+            let late = self
+                .library
+                .release_tracks(album.id)
+                .expect("the release rows")
+                .into_iter()
+                .find(|row| row.title == "Seamus")
+                .expect("a row nobody wanted yet");
+            self.library.want(late.id).expect("a want");
+            let progress = self.progress.lock().clone();
+            let progress = progress.expect("the poll's progress");
+            assert!(progress.wants_changed(), "the poll had already closed");
+        }
+        thread::sleep(Duration::from_millis(30));
+        Ok(Obtained::Nothing)
+    }
+}
+
+#[test]
+fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let library = Arc::new(library);
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, "San Tropez", Vec::new()));
+    rows.push(release_row(5, "Seamus", Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    let first = library
+        .release_tracks(album.id)?
+        .into_iter()
+        .find(|row| row.title == "San Tropez")
+        .expect("a row to want first");
+    library.want(first.id)?;
+
+    let provider = Arc::new(WantsOneMore {
+        source: SourceId::new("shop").expect("a nameable source"),
+        library: Arc::clone(&library),
+        progress: Mutex::new(None),
+        pressed: AtomicBool::new(false),
+        asked: Mutex::new(Vec::new()),
+    });
+    let handle = library.poll(
+        Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
+        PollOptions::default(),
+    )?;
+    *provider.progress.lock() = Some(Arc::clone(handle.progress()));
+    let summary = handle.join()?;
+
+    assert_eq!(summary.stats.asked, 2);
+    assert_eq!(*provider.asked.lock(), ["San Tropez", "Seamus"]);
+    Ok(())
+}
+
+#[test]
+fn a_poll_that_has_finished_is_not_nudged() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    wanted_san_tropez(&library)?;
+    let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
+
+    let handle = library.poll(quiet.registered(), PollOptions::default())?;
+    let progress = Arc::clone(handle.progress());
+    handle.join()?;
+
+    assert!(!progress.wants_changed());
     Ok(())
 }
 

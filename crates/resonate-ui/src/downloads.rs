@@ -53,8 +53,8 @@ impl Fetching {
         )
     }
 
-    pub(crate) fn while_polling(self, want: Option<WantId>, polling: Polling) -> Self {
-        let asked = want.is_some() && polling.asking == want;
+    pub(crate) fn while_polling(self, want: Option<WantId>, polling: &Polling) -> Self {
+        let asked = want.is_some_and(|want| polling.asking.contains(&want));
         match self {
             Self::Queued if asked => Self::Downloading { attempt: 1 },
             Self::Retrying { tries, .. } if asked => Self::Downloading {
@@ -174,9 +174,9 @@ fn finished(fetching: &[Fetching]) -> SharedString {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Polling {
-    pub asking: Option<WantId>,
+    pub asking: Vec<WantId>,
     pub unheard: bool,
     pub now: SystemTime,
 }
@@ -257,7 +257,7 @@ impl Download {
         self.want
     }
 
-    pub(crate) fn fetching_while(&self, polling: Polling) -> Fetching {
+    pub(crate) fn fetching_while(&self, polling: &Polling) -> Fetching {
         self.fetching.while_polling(self.want, polling)
     }
 }
@@ -452,7 +452,7 @@ mod tests {
 
     fn polling(asking: Option<WantId>, unheard: bool, now: SystemTime) -> Polling {
         Polling {
-            asking,
+            asking: asking.into_iter().collect(),
             unheard,
             now,
         }
@@ -462,7 +462,7 @@ mod tests {
         downloads
             .all()
             .iter()
-            .map(|download| download.fetching_while(polling(asking, false, SystemTime::now())))
+            .map(|download| download.fetching_while(&polling(asking, false, SystemTime::now())))
             .collect()
     }
 
@@ -547,23 +547,23 @@ mod tests {
         };
 
         assert_eq!(
-            due.while_polling(Some(want(1)), polling(None, true, later)),
+            due.while_polling(Some(want(1)), &polling(None, true, later)),
             Fetching::Unreached { attempt: 2 }
         );
         assert_eq!(
-            Fetching::Queued.while_polling(Some(want(1)), polling(None, true, now)),
+            Fetching::Queued.while_polling(Some(want(1)), &polling(None, true, now)),
             Fetching::Unreached { attempt: 1 }
         );
         assert_eq!(
-            waiting.while_polling(Some(want(1)), polling(None, true, now)),
+            waiting.while_polling(Some(want(1)), &polling(None, true, now)),
             waiting
         );
         assert_eq!(
-            due.while_polling(Some(want(1)), polling(None, false, later)),
+            due.while_polling(Some(want(1)), &polling(None, false, later)),
             due
         );
         assert_eq!(
-            due.while_polling(Some(want(1)), polling(Some(want(1)), true, later)),
+            due.while_polling(Some(want(1)), &polling(Some(want(1)), true, later)),
             Fetching::Downloading { attempt: 2 }
         );
         assert!(Fetching::Unreached { attempt: 2 }.is_underway());

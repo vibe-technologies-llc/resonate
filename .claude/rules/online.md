@@ -72,8 +72,7 @@ every counted play, and only under a token.
   (`a_cap_bounds_the_body_as_it_is_decoded_rather_than_as_it_arrived`). `Client::json` answers
   `Error::Unreadable` for a body that is not the expected document, the reason a debug record.
 - **Nothing is asked over plain HTTP.** The agent is `https_only`, so a redirect to a plain address
-  is `Unreachable`, and `coverart::encrypted` upgrades the `http://` URLs the archive's index names
-  (the same paths answer over HTTPS). Only the tests' loopback servers are plain (`Carried::Plain`,
+  is `Unreachable`. Only the tests' loopback servers are plain (`Carried::Plain`,
   compiled for them alone).
 - **A `ureq::Error` is classified once, into four shapes.** `Error::from_ureq`: a status is
   `Refused`; `Io`, a timeout, an unknown host and every connect, proxy and TLS failure are
@@ -138,12 +137,13 @@ the loose `dismax` shape; the `a_*_query_names_only_what_was_asked` tests pin ea
 
 ## Covers and portraits
 
-**The archive is asked for its index, and the front read at the size the window draws.**
-`coverart::cover` reads the release's index and, where that names no front, the release group's
-(`group_cover` is the group half alone); `IndexDoc::front_url` prefers the `500` thumbnail, then
-`large`, then the full image, so a scan fetches a screen's worth of pixels, not the print master.
-Bytes are sniffed through `ImageFormat::sniff`: no picture is `Error::Unreadable`, not a `CoverArt`
-the window would fail to decode.
+**The archive is asked for the front at the size the window draws, in one request.**
+`coverart::cover` asks `/release/<mbid>/front-500` and, where that answers nothing, the release group's
+`/release-group/<mbid>/front-500`; the archive redirects to the image, so there is no index to read
+first. A release with no 500 thumbnail yet is a miss until the next ask. Bytes are sniffed through
+`ImageFormat::sniff`: no picture is `Error::Unreadable`, not a `CoverArt` the window would fail to
+decode. The archive is paced at `COVER_ARCHIVE_INTERVAL` (100 ms), the window fetches six found-song
+covers at once and the lookup reads pictures on four threads.
 
 `Reference::portrait` takes `&[Link]`, so the library's retry can hand it what the catalog holds. It walks until one answers: every `image` relation (Commons), Wikidata,
 Wikipedia, Apple Music, Spotify, Deezer, then SoundCloud. Every image relation is tried, since the
