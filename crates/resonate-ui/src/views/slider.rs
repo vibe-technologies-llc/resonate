@@ -2,11 +2,11 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, Bounds, Context, Div, Length, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, canvas, div, prelude::*, px, relative, rgb,
+    MouseUpEvent, Pixels, Point, SharedString, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::TrackId;
 
-use crate::{RootView, theme};
+use crate::{RootView, theme, views::kit};
 
 const RAIL_GROUP: &str = "rail";
 
@@ -34,6 +34,12 @@ impl Handle {
     const fn fills_its_row(self) -> bool {
         matches!(self, Self::Seek)
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Pointed {
+    pub(crate) fraction: f32,
+    pub(crate) reading: SharedString,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -158,7 +164,27 @@ impl RootView {
             )
     }
 
-    pub(crate) fn rail(&self, handle: Handle, filled: f32, cx: &mut Context<Self>) -> AnyElement {
+    fn pointed_along(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let fraction = self.seek_rail.fraction_at(at);
+        if self.seek_pointed != fraction {
+            self.seek_pointed = fraction;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn pointer_left_the_seek_rail(&mut self, cx: &mut Context<Self>) {
+        if self.seek_pointed.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn rail(
+        &self,
+        handle: Handle,
+        filled: f32,
+        pointed: Option<Pointed>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let painted = self.rail_of(handle).painted.clone();
         let held = self.grabbed_fraction(handle).is_some();
 
@@ -175,6 +201,16 @@ impl RootView {
             .h(theme::width(theme::RAIL_HEIGHT))
             .px(theme::width(theme::RAIL_THUMB / 2.0))
             .cursor_pointer()
+            .when(handle == Handle::Seek, |rail| {
+                rail.on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                    this.pointed_along(event.position, cx);
+                }))
+                .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                    if !hovered {
+                        this.pointer_left_the_seek_rail(cx);
+                    }
+                }))
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -199,6 +235,7 @@ impl RootView {
                             .when(held, |filled| filled.bg(rgb(theme::accent()))),
                     )
                     .child(thumb(filled, held))
+                    .children(pointed.map(|pointed| bubble(&pointed)))
                     .child(canvas(
                         move |bounds, _, _| painted.set(bounds),
                         |_, _, _, _| {},
@@ -206,6 +243,28 @@ impl RootView {
             )
             .into_any_element()
     }
+}
+
+fn bubble(pointed: &Pointed) -> Div {
+    div()
+        .absolute()
+        .left(relative(pointed.fraction))
+        .ml(theme::width(-theme::RAIL_BUBBLE_WIDTH / 2.0))
+        .bottom(theme::width(theme::RAIL_TRACK + theme::RAIL_BUBBLE_GAP))
+        .w(theme::width(theme::RAIL_BUBBLE_WIDTH))
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .flex_none()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .bg(rgb(theme::raised()))
+                .border_1()
+                .border_color(rgb(theme::outline()))
+                .child(kit::figure(pointed.reading.clone()).text_color(rgb(theme::text()))),
+        )
 }
 
 fn thumb(filled: f32, held: bool) -> Div {

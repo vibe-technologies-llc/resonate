@@ -520,6 +520,7 @@ pub struct RootView {
     pub(crate) artist_records_scroll: ScrollHandle,
     behind_queue: Pane,
     pub(crate) seek_rail: Rail,
+    pub(crate) seek_pointed: Option<f32>,
     pub(crate) volume_rail: Rail,
     pub(crate) grabbed: Option<Grab>,
     pub(crate) curve_plotted: Rc<Cell<Plotted>>,
@@ -970,6 +971,7 @@ impl RootView {
             artist_records_scroll: ScrollHandle::new(),
             behind_queue: Pane::default(),
             seek_rail: Rail::default(),
+            seek_pointed: None,
             volume_rail: Rail::default(),
             grabbed: None,
             curve_plotted: Rc::default(),
@@ -2627,6 +2629,7 @@ impl RootView {
         self.pointer_inside = inside;
         if !inside {
             self.lyrics.update(cx, |model, _| model.open_out(false));
+            self.seek_pointed = None;
         }
         cx.notify();
     }

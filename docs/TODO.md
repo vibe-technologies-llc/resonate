@@ -213,7 +213,6 @@ else is open to be done.
 ## Later: The window
 - A track or album cannot be dragged from a listing into the queue or a playlist; only files from a
   file manager are taken. After the queue-position defect, a drop being a positional insert
-- The seek bar shows no time under the pointer
 - Favourites cannot be sorted, by the date marked or otherwise, though the timestamp is stored
 - The `vault` key has no field, so a vault is opened only by `--vault` or by editing `config.toml`
 

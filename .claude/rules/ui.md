@@ -1053,7 +1053,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   86 px, the cover took all of the panel, and title, artist and album drew nothing. It holds the step and play buttons
   over the seek rail with the elapsed and total clocks at its ends, a press on the total turning it
   to the time left (`-3:12`, `RootView::showing_time_left`, not kept between runs); the rail fills its row
-  (`Handle::fills_its_row`). Both sides carry `overflow_hidden`, a badge or notice wider than its half
+  (`Handle::fills_its_row`). **The seek rail names the time under the pointer** in a bubble above the
+  track (`slider::Pointed`, `RootView::seek_pointed`): the rail's own `on_mouse_move` writes the fraction
+  and `on_hover(false)` and a pointer leaving the window clear it, and a held thumb names its own
+  fraction instead. It is drawn, not a `hint::Names` tooltip, because a tooltip is built once where
+  it is raised and this follows the pointer; nothing is drawn where the track's length is unknown. Both sides carry `overflow_hidden`, a badge or notice wider than its half
   otherwise painting over the controls. **What does not fit is left out whole, never clipped.**
   `views/gives_way.rs` is the arithmetic, over the theme's measures with no gpui: the status cluster is
   measured into `RootView::status_room` a frame behind, as `playing_room` is, and `status_kept` drops

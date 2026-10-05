@@ -34,7 +34,7 @@ use crate::{
         listing::Pictured,
         menu::{self, Called, Menu},
         root::Magnified,
-        slider::Handle,
+        slider::{Handle, Pointed},
     },
 };
 
@@ -1126,7 +1126,9 @@ impl RootView {
                         this.toggle_mute(cx);
                     })),
             )
-            .when(rail, |bar| bar.child(self.rail(Handle::Volume, level, cx)))
+            .when(rail, |bar| {
+                bar.child(self.rail(Handle::Volume, level, None, cx))
+            })
             .when(reading, |bar| {
                 bar.child(
                     kit::readout(if muted {
@@ -1138,6 +1140,19 @@ impl RootView {
                     .text_right(),
                 )
             })
+    }
+
+    fn pointed_on_the_seek_rail(
+        &self,
+        duration: Option<Frames>,
+        rate: SampleRate,
+    ) -> Option<Pointed> {
+        let duration = duration?;
+        let fraction = self.grabbed_fraction(Handle::Seek).or(self.seek_pointed)?;
+        Some(Pointed {
+            fraction,
+            reading: format::clock(along(duration, fraction), rate).into(),
+        })
     }
 
     fn seek_bar(
@@ -1166,7 +1181,12 @@ impl RootView {
             .items_center()
             .gap_3()
             .child(clock(elapsed).text_right())
-            .child(self.rail(Handle::Seek, format::progress(position, duration), cx))
+            .child(self.rail(
+                Handle::Seek,
+                format::progress(position, duration),
+                self.pointed_on_the_seek_rail(duration, rate),
+                cx,
+            ))
             .child(
                 clock(far_end)
                     .id("seek-far-end")
