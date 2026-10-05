@@ -245,8 +245,6 @@ else is open to be done.
   file manager are taken. After the queue-position defect, a drop being a positional insert
 - The seek bar shows no time under the pointer
 - Favourites cannot be sorted, by the date marked or otherwise, though the timestamp is stored
-- The by-line counts a character its face cannot draw (CJK, emoji) as no width, so the album clips
-  with no ellipsis
 - The `vault` key has no field, so a vault is opened only by `--vault` or by editing `config.toml`
 
 ## Later: Scrobbling

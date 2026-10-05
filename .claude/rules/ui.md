@@ -1088,7 +1088,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   (gpui's `LineWrapper::truncate_line`), so the element draws the shortened string at its width. The
   title is cut at the width `RootView::playing_room` measured a frame behind, less the star; the album
   at the room `by_line` is handed less what artist and separator take (`kit::width_of` summing the
-  font's advances), and a by-line with no room left draws the artist alone. The inspector measures its
+  font's advances, a character the face has no glyph for — CJK, emoji — counted as one em, which is what the
+  fallback face draws it at, rather than as nothing), and a by-line with no room left draws the artist alone. The inspector measures its
   heading into `inspected_room` likewise. The album used to be `flex_1` under `ends_in_an_ellipsis`, and
   gpui 0.2.2 paints a clamped line's underline to the whole unwrapped run — a one-line clamp recording
   no wrap boundary to end it at — so hovering an album longer than its slot underlined the rest of the

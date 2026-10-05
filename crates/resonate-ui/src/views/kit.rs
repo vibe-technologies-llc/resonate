@@ -150,8 +150,12 @@ pub(crate) fn width_of(text: &str, font: &Font, size: Pixels, cx: &App) -> Pixel
     let system = cx.text_system();
     let id = system.resolve_font(font);
     text.chars()
-        .filter_map(|ch| system.advance(id, size, ch).ok())
-        .fold(px(0.0), |width, advance| width + advance.width)
+        .map(|ch| {
+            system
+                .advance(id, size, ch)
+                .map_or(size, |advance| advance.width)
+        })
+        .fold(px(0.0), |width, advance| width + advance)
 }
 
 pub(crate) fn button(
