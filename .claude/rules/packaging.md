@@ -22,6 +22,8 @@ The desktop entry and the metainfo's `<provides>` are held to the binary's `MIME
   from Fedora 44. `%check` tests the headless workspace; `rpm-release.yml` keeps the binary and
   source RPMs as a downloadable workflow artifact once build and tests pass, and attaches them to
   the release on a release run, so a listener can install a build before a release is published.
+  The archive command trusts `GITHUB_WORKSPACE` for that invocation alone, because the Fedora
+  container can see a checkout owned by the runner's user and refuse it as dubious ownership.
   Cargo fetches crates while building: a source RPM recipe, not an offline distribution build.
 - **The Flatpak builds the checkout it sits in** (a `dir` source, no release tarball, so the
   metainfo names no `<release>`) with the Freedesktop 25.08 SDK and `rust-stable`, shares the

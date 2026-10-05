@@ -33,7 +33,7 @@ jobs:
             test "$RELEASE_TAG" = "$version" || test "$RELEASE_TAG" = "v$version"
           fi
           mkdir -p "$HOME/rpmbuild/SOURCES"
-          git archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$HOME/rpmbuild/SOURCES/resonate-$version.tar.gz"
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$HOME/rpmbuild/SOURCES/resonate-$version.tar.gz"
       - name: Build the RPM
         run: rpmbuild -ba packaging/resonate.spec
       - name: Collect the RPMs
