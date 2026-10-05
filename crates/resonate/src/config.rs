@@ -1692,10 +1692,11 @@ mod tests {
     }
 
     #[test]
-    fn scrollbars_are_drawn_until_the_file_names_another_mode() {
+    fn scrollbars_hide_until_scrolled_unless_the_file_names_another_mode() {
         let mode = |text: &str| read(text).expect("a mode is valid").scrollbars();
 
-        assert_eq!(mode(""), ScrollbarMode::Shown);
+        assert_eq!(mode(""), ScrollbarMode::AutoHidden);
+        assert_eq!(mode("scrollbars = \"shown\""), ScrollbarMode::Shown);
         assert_eq!(
             mode("scrollbars = \"auto-hide\""),
             ScrollbarMode::AutoHidden

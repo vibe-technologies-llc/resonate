@@ -2304,7 +2304,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   player tells the session — worn through `RootView::show_window_buttons` onto the global rather than
   `theme`, a button being no colour or measure. *The volume wheel* is the fourth, one switch worn onto
   `ResonateApp::scroll_volume` and written as `scroll-volume`; *Scrollbars* the fifth, Always, While
-  scrolling and Never worn onto `ResonateApp::scrollbars` and written as `scrollbars`; *Sidebar tabs* the
+  scrolling and Never worn onto `ResonateApp::scrollbars` and written as `scrollbars`, While scrolling
+  (`ScrollbarMode::AutoHidden`) being the default; *Sidebar tabs* the
   sixth, three switches worn onto `ResonateApp::tabs` through `RootView::show_tabs` and written as
   `suggestions-tab`, `missing-tab` and `tab-counts`, the last taking the figure off every sidebar tab.
   `Pane::is_shown` is what a tab being off means: the sidebar and `stepped_pane` pass the pane over and

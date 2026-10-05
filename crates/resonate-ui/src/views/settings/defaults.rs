@@ -23,7 +23,7 @@ pub(crate) const SCROLL_VOLUME: bool = true;
 pub(crate) const MOUSE_NAVIGATION: bool = true;
 
 pub(crate) const FILE_DROPPED: bool = true;
-pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::Shown;
+pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
 pub(crate) const REMEMBER_TAB: bool = true;
 pub(crate) const REMEMBER_WINDOW_SIZE: bool = true;
