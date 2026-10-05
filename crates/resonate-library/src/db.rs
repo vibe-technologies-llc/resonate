@@ -4242,6 +4242,17 @@ impl Library {
             .write(|transaction| enriched::rematch_release_tracks(transaction, album))
     }
 
+    pub fn rematch_each(&self, albums: &[AlbumId]) -> Result<u32> {
+        if albums.is_empty() {
+            return Ok(0);
+        }
+        self.inner.write(|transaction| {
+            albums.iter().try_fold(0, |matched, album| {
+                enriched::rematch_release_tracks(transaction, *album).map(|more| matched + more)
+            })
+        })
+    }
+
     pub fn land_archive_cover(&self, album: AlbumId, art: &CoverArt) -> Result<bool> {
         let Some(vault) = self.inner.vault.clone() else {
             return self

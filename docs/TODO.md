@@ -78,8 +78,6 @@ else is open to be done.
 - Each queue edit and each catalog revision re-reads every queued track while the queue pane is
   open, and each type-ahead key folds every row's name on the UI thread
 - Dragging files from a file manager stats every path on entering and on dropping
-- Every lookup pass re-pairs each album short of a track in a write transaction of its own, and the
-  identify update it runs per matched row counts as a catalog write though nothing moved
 - Planning a tag run parses every file with lofty twice, the generic tag and the format's own for
   the play count, neither reading covers or audio properties now
 - A picture's identity is taken from the length and first 256 bytes of each embedded cover, which

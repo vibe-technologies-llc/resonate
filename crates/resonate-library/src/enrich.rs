@@ -1398,6 +1398,8 @@ fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
     None
 }
 
+const ALBUMS_REMATCHED_PER_TRANSACTION: usize = 64;
+
 struct Pass<'a> {
     library: &'a Library,
     reference: &'a dyn Reference,
@@ -1420,8 +1422,12 @@ impl Pass<'_> {
             due.truncate(at_most.get());
         }
 
-        for album in &rematch_only {
-            self.rematch(album.id)?;
+        let rematching: Vec<AlbumId> = rematch_only.iter().map(|album| album.id).collect();
+        for batch in rematching.chunks(ALBUMS_REMATCHED_PER_TRANSACTION) {
+            let matched = self.library.rematch_each(batch)?;
+            self.progress
+                .matched
+                .fetch_add(u64::from(matched), Ordering::Relaxed);
         }
 
         let mut tracks = self.library.tracks_to_ask(WAITS, options.refresh)?;

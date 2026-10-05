@@ -1231,11 +1231,15 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `tracks.mbid`, `release_track_mbid` and `isrc` by `coalesce` from the release row, so a file tagged
   with no identifier learns its seat's (`a_paired_track_receives_the_identifiers_its_release_row_holds`)
   — a fill, not a correction: a code the file carries stands, and a rescan overwrites the three only
-  where the file names one. `AlbumToAsk::rematch_only` makes an album holding release rows rematch
+  where the file names one. The fill is guarded on a column it would change, so a pairing run again
+  writes no `tracks` row and counts no catalog write
+  (`matching_an_album_again_writes_no_track_whose_identifiers_it_already_holds`). `AlbumToAsk::rematch_only` makes an album holding release rows rematch
   whether or not it is due, so a rescan adding a file pairs it without asking the network — but only
   where a pairing could change anything: `albums_to_ask` offers such an album only where
   `HOLDS_AN_UNPAIRED_ROW` or `HOLDS_AN_UNPAIRED_TRACK`, an album fully paired having nothing for the four
-  passes to find at the cost of a read and a write transaction each pass.
+  passes to find at the cost of a read and a write transaction each pass. A pass rematches those albums
+  `ALBUMS_REMATCHED_PER_TRANSACTION` (64) at a time through `Library::rematch_each`, one write
+  transaction a batch rather than one an album; an album a lookup just landed still rematches on its own.
 - **An album is not the only thing a file belongs to, so a track is asked about in its own right.** A
   file carrying no `ALBUM` tag has `album_id = NULL`, under no album the pass could reach, and was
   enriched by nothing — a whole shape of library, the singles and loose rips a tagger never filed.

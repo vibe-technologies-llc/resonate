@@ -727,7 +727,10 @@ pub(crate) fn rematch_release_tracks(tx: &Transaction<'_>, album: AlbumId) -> Re
             "UPDATE tracks SET mbid = coalesce(mbid, ?1),
                                release_track_mbid = coalesce(release_track_mbid, ?2),
                                isrc = coalesce(isrc, ?3)
-              WHERE id = ?4",
+              WHERE id = ?4
+                AND ((mbid IS NULL AND ?1 IS NOT NULL)
+                  OR (release_track_mbid IS NULL AND ?2 IS NOT NULL)
+                  OR (isrc IS NULL AND ?3 IS NOT NULL))",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let mut moved = 0;
@@ -2314,6 +2317,48 @@ mod tests {
                 (4, None),
             ]
         );
+    }
+
+    #[test]
+    fn matching_an_album_again_writes_no_track_whose_identifiers_it_already_holds() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root is stored");
+        let tx = connection.transaction().expect("a transaction");
+        let mut cache = Cache::default();
+        store::apply(
+            &tx,
+            &mut cache,
+            &scanned("One of These Days", Some(1), None),
+            0,
+            false,
+        )
+        .expect("the track is stored");
+        let grouped: i64 = tx
+            .query_row("SELECT id FROM albums", [], |row| row.get(0))
+            .expect("one album was grouped");
+        let album = AlbumId::new(grouped as u64).expect("a non-zero id");
+        land_release(
+            &tx,
+            album,
+            &meddle(vec![row(1, "One of These Days", Some(RECORDING))]),
+            UNIX_EPOCH,
+        )
+        .expect("the release lands");
+
+        rematch_release_tracks(&tx, album).expect("the rows are matched");
+        let identified: Option<String> = tx
+            .query_row("SELECT mbid FROM tracks", [], |row| row.get(0))
+            .expect("the track reads back");
+        let changes = tx.total_changes();
+        let moved = rematch_release_tracks(&tx, album).expect("the rows are matched again");
+
+        assert_eq!(identified.as_deref(), Some(RECORDING));
+        assert_eq!(moved, 0);
+        assert_eq!(tx.total_changes(), changes);
     }
 
     #[test]
