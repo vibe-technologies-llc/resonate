@@ -2313,7 +2313,10 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   hiding the pane in front moves off it at once.
 - **gpui scrolls a region and draws no bar for it, so `views/scrollbar.rs` does.** `Scrollbars::of` reads
   the setting once where a pane is built, and `vertical`, `horizontal` and `around` answer a bar over the
-  region's edge — or an empty absolute div under `Hidden`, so a pane is built one way either way. A bar
+  region's edge — or an empty absolute div under `Hidden`, so a pane is built one way either way. A
+  `horizontal` bar is inset `SHELF_INSET` from each side, the padding every shelf strip (the search's
+  and the artist page's) lays its cards in by, so the thumb runs under the cards rather than past
+  them to the strip's edges. A bar
   reads the region's own `ScrollHandle` — a `uniform_list`'s base handle — and paints the thumb in a
   `canvas`, the offset moving between renders and only paint seeing where it is now. **Nothing a bar
   knows survives a render**: a `Cell` made in the builder is new each frame, so a hover `on_hover` wrote

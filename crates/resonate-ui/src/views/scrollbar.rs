@@ -13,6 +13,7 @@ use resonate_core::ScrollbarMode;
 
 use crate::{app::ResonateApp, theme};
 
+pub(crate) const SHELF_INSET: f32 = 24.0;
 const TRACK_BREADTH: f32 = 12.0;
 const THUMB_BREADTH: f32 = 6.0;
 const SHORTEST_THUMB: f32 = 48.0;
@@ -174,6 +175,8 @@ impl Scrollbars {
             handle.into(),
             self.when_drawn(),
         )
+        .left(px(SHELF_INSET))
+        .right(px(SHELF_INSET))
     }
 
     pub(crate) fn around(

@@ -37,7 +37,7 @@ use crate::{
         pointed::{self, LitUnderThePointer},
         reorder::{self, Listed, Shift},
         root::{Deleting, Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
-        scrollbar::Scrollbars,
+        scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
         transport::COVER_HINT,
     },
@@ -3401,7 +3401,7 @@ fn shelf(
         .flex_none()
         .items_start()
         .gap_4()
-        .px_6()
+        .px(px(SHELF_INSET))
         .pb_3()
         .overflow_x_scroll()
         .track_scroll(&scroll)

@@ -19,7 +19,7 @@ use crate::{
         pointed::LitUnderThePointer,
         reorder::{self, Listed, Shift},
         root::{Pane, RootView, empty},
-        scrollbar::Scrollbars,
+        scrollbar::{SHELF_INSET, Scrollbars},
     },
 };
 
@@ -707,7 +707,7 @@ impl RootView {
                     .flex()
                     .items_start()
                     .gap_4()
-                    .px_6()
+                    .px(px(SHELF_INSET))
                     .pb_3()
                     .overflow_x_scroll()
                     .track_scroll(&scroll)
