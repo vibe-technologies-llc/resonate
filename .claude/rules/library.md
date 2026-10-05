@@ -465,7 +465,7 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   directory's parent's `st_dev` and notes a directory whose own differs — the root included, weighed
   against its parent — as a volume; a followed link into another filesystem is one too.
   `volumes::settle` writes them to `volumes` after the prune and drops a row for one no longer
-  mounted that no track sits under. A noted volume whose device is its parent's — the empty mount
+  mounted that no track and no playlist row sits under. A noted volume whose device is its parent's — the empty mount
   point — or whose directory has gone stamps every row `Known::at_or_under` names as `Outcome::Kept`
   and is not walked, and `tidy_the_roots_beside` and `forget_the_gone` skip a path on one
   (`a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone`,
@@ -473,10 +473,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   out of an unmounted volume, so no pairing is lost. **A volume retired for good is the listener's to
   say.** `Library::retire` takes a folder at or inside a root — a volume's mount point or any folder —
   and forgets every row at or under it whose file is not there, an unmounted volume's included, then
-  drops each `volumes` row at or under it that no longer holds a row (`volumes::retire_at_or_under`);
-  `forget_the_gone` is the same walk (`forget_at_or_under`) with the unmounted volumes guarded. A file
-  that *is* there keeps its row, the next scan finding it again anyway, so retiring a mounted drive
-  forgets nothing. It takes the `Walk` guard, as `forget_the_gone` does
+  drops each `volumes` row at or under it that no longer holds a track, its playlist rows then left
+  to a tidy (`volumes::retire_at_or_under`); `forget_the_gone` is the same walk
+  (`forget_at_or_under`) with the unmounted volumes guarded. A file that *is* there keeps its row, the
+  next scan finding it again anyway, so retiring a mounted drive forgets nothing. It takes the `Walk` guard, as `forget_the_gone` does
   (`a_volume_retired_for_good_forgets_its_rows_and_is_no_longer_remembered`,
   `a_folder_whose_files_are_still_there_is_not_retired`).
 - **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned over
@@ -2951,10 +2951,16 @@ cancelled. It touches no catalog, so it takes no `Walk` guard; the window has a 
   `/` and swap aside), and either the file's own folder stands — the file is gone from a folder that is
   there, though the folder be emptied — or, its folder gone too, the nearest folder above that stands
   holds something: an unmounted mount point reads as an empty folder or none, so a stick's album
-  folders are kept whether the catalog ever noted its volume or not. What is still dropped is a drive
-  never noted, mounted by hand where no table lists it, whose songs sat at its root or whose mount point
-  was taken away from a folder holding anything else
-  (`a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
+  folders are kept whether the catalog ever noted its volume or not. **A row notes its volume as it is
+  added**: `start`, `add` and `import` find, before their transaction, the mount point above each
+  row's folder — the highest folder sharing the nearest standing one's `st_dev`, `/` never one
+  (`volumes::under`, one walk per folder) — and `volumes::note` writes them beside the rows, so a drive
+  mounted by hand where no table lists it is out of reach once unplugged though no scan ever walked it
+  and its songs sat at its root. A row added while its drive is already gone notes nothing, and rows
+  added before this build were noted by nothing
+  (`a_folder_is_on_the_volume_whose_mount_point_is_the_highest_folder_sharing_its_device`,
+  `a_volume_holding_only_a_listed_row_stays_noted_through_a_scan_and_its_row_through_a_tidy`,
+  `a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_not`,
   `a_prune_keeps_the_rows_under_a_root_that_is_not_there`,
   `a_mount_point_the_filesystem_table_lists_and_nothing_is_mounted_at_is_out_of_reach`).
 - **A cue row leaves as its file and the times VLC reads, and comes back as the cut.** M3U, PLS and

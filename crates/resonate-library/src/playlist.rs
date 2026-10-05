@@ -257,11 +257,11 @@ pub fn create(inner: &Inner, name: &str) -> Result<PlaylistId> {
 
 pub fn start(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<PlaylistId> {
     let name = wanted_name(name)?;
-    let wanted = local_rows(cuts)?;
+    let wanted = Adding::of(cuts)?;
 
     let id = undo::started(inner, Edit::Started, &name, |transaction| {
         let id = created(transaction, &name)?;
-        append(transaction, id, &wanted)?;
+        wanted.appended(transaction, id)?;
         Ok((id, id))
     })?;
 
@@ -709,13 +709,13 @@ pub fn add(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
 }
 
 fn add_as(inner: &Inner, id: PlaylistId, edit: Edit, cuts: &[Cut]) -> Result<usize> {
-    let wanted = local_rows(cuts)?;
+    let wanted = Adding::of(cuts)?;
     let added = undo::edited(inner, id, edit, Reach::Appended, |transaction| {
         only_a_list(transaction, id)?;
-        if wanted.is_empty() {
+        if wanted.rows.is_empty() {
             return Ok(Change::Nothing(0));
         }
-        Ok(Change::Made(append(transaction, id, &wanted)?))
+        Ok(Change::Made(wanted.appended(transaction, id)?))
     })?;
 
     if added > 0 {
@@ -735,12 +735,26 @@ fn append(transaction: &Transaction<'_>, id: PlaylistId, wanted: &[Row]) -> Resu
     Ok(wanted.len())
 }
 
-fn local_rows(cuts: &[Cut]) -> Result<Vec<Row>> {
-    let mut wanted = Vec::with_capacity(cuts.len());
-    for cut in cuts {
-        wanted.push(Row::of(cut)?);
+struct Adding {
+    rows: Vec<Row>,
+    volumes: Vec<PathBuf>,
+}
+
+impl Adding {
+    fn of(cuts: &[Cut]) -> Result<Self> {
+        let mut rows = Vec::with_capacity(cuts.len());
+        for cut in cuts {
+            rows.push(Row::of(cut)?);
+        }
+        let volumes = volumes::under(rows.iter().map(|row| Path::new(&row.path)));
+
+        Ok(Self { rows, volumes })
     }
-    Ok(wanted)
+
+    fn appended(&self, transaction: &Transaction<'_>, id: PlaylistId) -> Result<usize> {
+        volumes::note(transaction, &self.volumes)?;
+        append(transaction, id, &self.rows)
+    }
 }
 
 pub fn copy(
@@ -1359,11 +1373,11 @@ pub fn export(inner: &Inner, id: PlaylistId, path: &Path) -> Result<Exported> {
 
 fn started_from(inner: &Inner, wanted: &str, fresh: &[Cut]) -> Result<(PlaylistId, String, usize)> {
     let name = wanted_name(wanted)?;
-    let wanted_rows = local_rows(fresh)?;
+    let wanted_rows = Adding::of(fresh)?;
 
     let (id, added) = undo::started(inner, Edit::Imported, &name, |transaction| {
         let id = created(transaction, &name)?;
-        let added = append(transaction, id, &wanted_rows)?;
+        let added = wanted_rows.appended(transaction, id)?;
         Ok((id, (id, added)))
     })?;
 

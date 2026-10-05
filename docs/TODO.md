@@ -7,11 +7,6 @@ Everything under a `Later:` heading is a nice-to-have no listener is waiting on.
 or a format) and sits at the end of its category; it is not worked until that moves. Everything
 else is open to be done.
 
-## Defects
-- A tidy drops the rows of an unplugged drive never scanned, mounted by hand where no table lists it
-  and outside `/run/media`, `/media` and `/mnt`, whose songs sat at its root or whose mount point was
-  taken away from a folder holding anything else; noting a row's volume as it is added would cover it
-
 ## Playback and output
 - A bind with an empty sink list, or one made while a row waits for a device or the graph, still
   asks the graph on the engine thread for up to two seconds

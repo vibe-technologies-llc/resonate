@@ -277,6 +277,31 @@ fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_n
 }
 
 #[test]
+fn a_volume_holding_only_a_listed_row_stays_noted_through_a_scan_and_its_row_through_a_tidy()
+-> Result<()> {
+    let tree = Tree::new();
+    let home = tree.path().join("home");
+    let drive = home.join("drive");
+    tree.write("home/stays.wav", &wav(4_410));
+    let on_the_drive = tree.write("home/drive/one.wav", &wav(4_410));
+    let database = tree.path().join("library.db");
+
+    let library = Library::open(&database)?;
+    let id = library.start_playlist("Evening", &[whole(&on_the_drive)])?;
+    rusqlite::Connection::open(&database)
+        .and_then(|catalog| {
+            catalog.execute("INSERT INTO volumes (path) VALUES (?1)", [drive.to_str()])
+        })
+        .expect("the catalog takes a volume");
+    fs::remove_dir_all(&drive).expect("the fixture drive can be taken away");
+    scan(&library, &home, false)?;
+
+    assert_eq!(library.tidy_playlist(id)?, 0);
+    assert_eq!(paths(&library, id)?, vec![on_the_drive]);
+    Ok(())
+}
+
+#[test]
 fn a_prune_keeps_the_rows_under_a_root_that_is_not_there() -> Result<()> {
     let tree = Tree::new();
     let root = tree.path().join("root");

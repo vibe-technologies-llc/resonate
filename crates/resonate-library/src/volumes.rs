@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use rusqlite::{Connection, Transaction, params};
 
 use crate::{Error, Result, StoreOp, scan::walked_from, store};
@@ -125,18 +125,60 @@ pub fn is_on_an_absent_one(path: &Path, absent: &[PathBuf]) -> bool {
     absent.iter().any(|volume| path.starts_with(volume))
 }
 
-pub fn settle(tx: &Transaction<'_>, walked: &[PathBuf], mounted: &[PathBuf]) -> Result<()> {
-    for volume in mounted {
-        tx.execute(
+pub fn under<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Vec<PathBuf> {
+    let mut by_folder = AHashMap::new();
+    let mut found = AHashSet::new();
+
+    for path in paths {
+        let Some(folder) = path.parent() else {
+            continue;
+        };
+        let point = by_folder
+            .entry(folder.to_path_buf())
+            .or_insert_with(|| mount_point_above(folder, device));
+        if let Some(point) = point {
+            found.insert(point.clone());
+        }
+    }
+    found.into_iter().collect()
+}
+
+fn mount_point_above(folder: &Path, device: impl Fn(&Path) -> Option<u64>) -> Option<PathBuf> {
+    let (mut point, inner) = folder
+        .ancestors()
+        .find_map(|standing| device(standing).map(|inner| (standing, inner)))?;
+
+    loop {
+        let parent = point.parent()?;
+        if device(parent)? != inner {
+            return Some(point.to_path_buf());
+        }
+        point = parent;
+    }
+}
+
+pub fn note(tx: &Transaction<'_>, volumes: &[PathBuf]) -> Result<()> {
+    for volume in volumes {
+        store::cached(
+            tx,
             "INSERT OR IGNORE INTO volumes (path) VALUES (?1)",
             params![store::path_text(volume)?],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
+    Ok(())
+}
+
+pub fn settle(tx: &Transaction<'_>, walked: &[PathBuf], mounted: &[PathBuf]) -> Result<()> {
+    note(tx, mounted)?;
 
     for volume in held(tx)? {
         let unwalked = !walked.iter().any(|root| volume.starts_with(root));
-        if unwalked || mounted.contains(&volume) || holds_a_row(tx, &volume)? {
+        if unwalked
+            || mounted.contains(&volume)
+            || holds_a_track(tx, &volume)?
+            || holds_a_listed_row(tx, &volume)?
+        {
             continue;
         }
         forget(tx, &volume)?;
@@ -144,20 +186,32 @@ pub fn settle(tx: &Transaction<'_>, walked: &[PathBuf], mounted: &[PathBuf]) -> 
     Ok(())
 }
 
-fn holds_a_row(connection: &Connection, volume: &Path) -> Result<bool> {
+fn holds_a_track(connection: &Connection, volume: &Path) -> Result<bool> {
+    holds_in(
+        connection,
+        volume,
+        "SELECT EXISTS (SELECT 1 FROM tracks WHERE path >= ?1 AND path < ?2)",
+    )
+}
+
+fn holds_a_listed_row(connection: &Connection, volume: &Path) -> Result<bool> {
+    holds_in(
+        connection,
+        volume,
+        "SELECT EXISTS (SELECT 1 FROM playlist_entries WHERE path >= ?1 AND path < ?2)",
+    )
+}
+
+fn holds_in(connection: &Connection, volume: &Path, question: &str) -> Result<bool> {
     let (from, past) = walked_from(store::path_text(volume)?);
     connection
-        .query_row(
-            "SELECT EXISTS (SELECT 1 FROM tracks WHERE path >= ?1 AND path < ?2)",
-            params![from, past],
-            |row| row.get(0),
-        )
+        .query_row(question, params![from, past], |row| row.get(0))
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub fn retire_at_or_under(tx: &Transaction<'_>, folder: &Path) -> Result<()> {
     for volume in held(tx)? {
-        if !volume.starts_with(folder) || holds_a_row(tx, &volume)? {
+        if !volume.starts_with(folder) || holds_a_track(tx, &volume)? {
             continue;
         }
         forget(tx, &volume)?;
@@ -203,6 +257,26 @@ mod tests {
         ));
 
         fs::remove_dir_all(&base).expect("the temporary folder goes");
+    }
+
+    #[test]
+    fn a_folder_is_on_the_volume_whose_mount_point_is_the_highest_folder_sharing_its_device() {
+        let device = |path: &Path| match path.to_str()? {
+            "/" | "/home" | "/home/me" => Some(1),
+            "/data" | "/data/Album" => Some(2),
+            _ => None,
+        };
+
+        assert_eq!(
+            mount_point_above(Path::new("/data/Album/Disc 1"), device),
+            Some(PathBuf::from("/data"))
+        );
+        assert_eq!(
+            mount_point_above(Path::new("/data"), device),
+            Some(PathBuf::from("/data"))
+        );
+        assert_eq!(mount_point_above(Path::new("/home/me"), device), None);
+        assert_eq!(mount_point_above(Path::new("/"), device), None);
     }
 
     #[test]
