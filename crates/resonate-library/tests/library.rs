@@ -9096,6 +9096,60 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
 }
 
 #[test]
+fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let album = only_album(&library)?;
+    library.land_release(
+        album.id,
+        &orbits(
+            vec![
+                release_row(1, "One of These Days", Vec::new()),
+                release_row(2, "San Tropez", Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    let missing = library
+        .release_tracks(album.id)?
+        .into_iter()
+        .find(|row| row.title == "San Tropez")
+        .expect("the release holds the row");
+    library.want(missing.id)?;
+
+    library.land_release(
+        album.id,
+        &orbits(
+            vec![
+                release_row(1, "One of These Days", Vec::new()),
+                release_row(2, "San Tropez!", Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    assert_eq!(
+        library.wants()?.len(),
+        1,
+        "a want for the song at a seat was lost to a title written with a mark"
+    );
+
+    library.land_release(
+        album.id,
+        &orbits(
+            vec![
+                release_row(1, "One of These Days", Vec::new()),
+                release_row(2, "Seamus", Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    assert!(
+        library.wants()?.is_empty(),
+        "a want for one song was carried onto another that took its seat"
+    );
+    Ok(())
+}
+
+#[test]
 fn forgetting_a_root_takes_the_release_rows_under_its_albums_with_it() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;

@@ -1192,8 +1192,10 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `release_track_links`; the wants under the album are read first through `wants_under` and put back
   once the rows exist again, so a want survives a refresh that changed row ids. `Carried` is what a
   want is put back *by*, most exact first: `Carried::Track` the release track's own mbid, `Recording`
-  the recording's, `Seat` the `(disc, position)` it sat at — a re-edited release moving a track to
-  another seat, where the seat alone would carry the want to whatever sits there now. `want_again` lands
+  the recording's, `Seat` the `(disc, position)` it sat at **where the title's words, `words_of`, still agree** — a
+  re-edited release moving a track to another seat, where the seat alone would carry the want to whatever
+  sits there now, and a song that took the seat of another carrying nothing
+  (`a_want_follows_its_seat_only_to_the_song_it_was_for`). `want_again` lands
   the exact ones first and the insert is `ON CONFLICT DO NOTHING`, so two wants landing on one row leave
   it to the better-carried, and a want whose track the release no longer holds is dropped as always.
   `rematch_release_tracks` then pairs release rows with catalog rows in five passes, each taking only

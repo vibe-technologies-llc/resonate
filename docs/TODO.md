@@ -164,13 +164,13 @@ else is open to be done.
   microphone
 
 ## Later: Sources and providers
-- A want is carried onto whatever song sits at its disc and position after the release is chosen
-  again or reordered
 - Forgetting a delivered row remembers only the delivery its object was first noted from, so a
   second provider that delivered the same audio is fetched from again
-- Subsonic matches a recording id or ISRC but not the release-track id the inbox accepts
 - **Blocked on the services:** The Bandcamp and Discogs links an `Identity` carries are read by
   nothing; no provider asks either
+- **Blocked on the servers:** Subsonic matches a recording id or ISRC but not the release-track id the
+  inbox accepts, the API's `musicBrainzId` naming the recording and nothing in a song naming the
+  release track
 
 ## Later: The vault
 - A kept WAVE object reopened by path for a backward seek uses its old frame index against a renewal

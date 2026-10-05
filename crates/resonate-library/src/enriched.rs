@@ -95,6 +95,7 @@ struct HeldWant {
     recording: Option<String>,
     disc: i64,
     position: i64,
+    title_words: String,
     wanted: i64,
     tried: Option<i64>,
     offered: Option<String>,
@@ -544,7 +545,7 @@ pub(crate) fn gather(tx: &Transaction<'_>, into: i64, other: i64) -> Result<()> 
 fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
     let mut statement = tx
         .prepare(
-            "SELECT rt.track_mbid, rt.recording_mbid, rt.disc, rt.position,
+            "SELECT rt.track_mbid, rt.recording_mbid, rt.disc, rt.position, words_of(rt.title),
                     w.wanted, w.tried, w.offered, w.misses, w.id
                FROM wants w JOIN release_tracks rt ON rt.id = w.release_track_id
               WHERE rt.album_id = ?1",
@@ -564,13 +565,14 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
                 recording: row.get(1)?,
                 disc: row.get(2)?,
                 position: row.get(3)?,
-                wanted: row.get(4)?,
-                tried: row.get(5)?,
-                offered: row.get(6)?,
-                misses: row.get(7)?,
+                title_words: row.get(4)?,
+                wanted: row.get(5)?,
+                tried: row.get(6)?,
+                offered: row.get(7)?,
+                misses: row.get(8)?,
                 forgotten: Vec::new(),
             };
-            Ok((row.get::<_, i64>(8)?, want))
+            Ok((row.get::<_, i64>(9)?, want))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
@@ -641,10 +643,18 @@ fn row_again(tx: &Transaction<'_>, album: i64, want: &HeldWant) -> Result<Option
                          ELSE 2 END
                FROM release_tracks
               WHERE album_id = ?1
-                AND (track_mbid = ?2 OR recording_mbid = ?3 OR (disc = ?4 AND position = ?5))
+                AND (track_mbid = ?2 OR recording_mbid = ?3
+                     OR (disc = ?4 AND position = ?5 AND words_of(title) = ?6))
               ORDER BY 2
               LIMIT 1",
-            params![album, want.track, want.recording, want.disc, want.position],
+            params![
+                album,
+                want.track,
+                want.recording,
+                want.disc,
+                want.position,
+                want.title_words
+            ],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
@@ -1951,6 +1961,7 @@ mod tests {
     #[test]
     fn an_album_that_answers_nothing_waits_twice_as_long_before_it_is_asked_again() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -1990,6 +2001,7 @@ mod tests {
     #[test]
     fn an_album_the_reference_refused_is_asked_again_without_the_wait_a_miss_earns() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2032,6 +2044,7 @@ mod tests {
     #[test]
     fn a_service_that_refuses_a_row_for_ever_is_asked_about_it_less_and_less_often() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2075,6 +2088,7 @@ mod tests {
     #[test]
     fn an_album_landed_as_its_group_alone_is_asked_again_for_a_pressing() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2126,6 +2140,7 @@ mod tests {
     #[test]
     fn a_release_that_lands_puts_the_wait_back_to_where_it_started() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2170,6 +2185,7 @@ mod tests {
     #[test]
     fn a_stale_answer_asked_again_in_vain_waits_its_turn_like_any_other_ask() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2209,6 +2225,7 @@ mod tests {
     #[test]
     fn an_answer_whose_companion_ask_was_refused_is_asked_again_once_it_has_waited() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2243,6 +2260,7 @@ mod tests {
     #[test]
     fn a_recording_id_matches_a_row_before_its_position_or_its_title_can_mislead() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
@@ -2300,6 +2318,7 @@ mod tests {
     #[test]
     fn a_release_track_id_is_weighed_against_the_column_that_holds_one_and_not_the_recordings() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
