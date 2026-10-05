@@ -8,10 +8,11 @@ use gpui::{
     BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla, point, prelude::*,
     px, relative, rgb, rgba,
 };
+use parking_lot::Mutex;
 use resonate_core::names_audio;
 use resonate_library::{
-    Dropped, Layout, Looks, TakeInOptions, TakeInProgress, TakeInSummary, TakenPassing, take_in,
-    weigh,
+    Dropped, Layout, Looks, TakeInHandle, TakeInOptions, TakeInProgress, TakeInSummary,
+    TakenPassing, take_in, weigh,
 };
 
 use crate::{
@@ -70,6 +71,37 @@ impl Incoming {
             paths: paths.to_vec(),
             weighed: weigh(paths),
         }
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct Copying(Arc<Mutex<Option<TakeInHandle>>>);
+
+enum Copy {
+    Running,
+    Finished(TakeInHandle),
+    WoundDown,
+}
+
+impl Copying {
+    fn hold(&self, handle: TakeInHandle) {
+        *self.0.lock() = Some(handle);
+    }
+
+    fn looked_at(&self) -> Copy {
+        let mut held = self.0.lock();
+        match held.as_ref().map(TakeInHandle::is_finished) {
+            None => Copy::WoundDown,
+            Some(false) => Copy::Running,
+            Some(true) => held.take().map_or(Copy::WoundDown, Copy::Finished),
+        }
+    }
+
+    pub(crate) fn wind_down(&self, patience: Duration) -> bool {
+        let Some(handle) = self.0.lock().take() else {
+            return true;
+        };
+        handle.wound_down(patience).is_some()
     }
 }
 
@@ -279,14 +311,21 @@ impl RootView {
             into: into.clone(),
         });
         cx.notify();
+        let copying = cx.global::<ResonateApp>().copying.clone();
+        copying.hold(handle);
 
         self._taking_in = cx.spawn(async move |this, cx| {
-            while !handle.is_finished() {
+            let handle = loop {
                 cx.background_executor().timer(COPY_LOOKED_AT_EVERY).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
                     return;
                 }
-            }
+                match copying.looked_at() {
+                    Copy::Running => {}
+                    Copy::Finished(handle) => break handle,
+                    Copy::WoundDown => return,
+                }
+            };
 
             let finished = this.update(cx, |this, cx| {
                 this.taking_in = None;

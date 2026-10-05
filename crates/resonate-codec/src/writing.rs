@@ -31,6 +31,7 @@ use rustix::fs::XattrFlags;
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
     counted::{Counted, counts},
+    journal::mend_what_a_dead_writer_left,
     overlay::{Landing, Overlay},
     padded::Head,
     probe_pictured,
@@ -877,6 +878,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         source,
     };
     sweep_what_a_dead_writer_staged(path);
+    mend_what_a_dead_writer_left(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
         Ok(None) => {}
@@ -963,7 +965,7 @@ fn landed_in_place(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -
         }
     }
 
-    Ok(match overlay.land().map_err(unread)? {
+    Ok(match overlay.land(path).map_err(unread)? {
         Landing::InPlace | Landing::Unchanged => true,
         Landing::TooWide => false,
     })

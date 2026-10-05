@@ -2215,7 +2215,11 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   until it lands, `told_of` toasts what it did, and where anything was copied the root reaching the
   folder (or the folder, added as one) is scanned through `add_roots` — with `file-dropped` on, the
   landed songs handed to `file_once_scanned` first, filed once that scan lands (`library.md`'s *Taking
-  files in*). gpui gives a test no way to
+  files in*). The handle lives in `ResonateApp::copying`, a `Copying` slot the progress task takes it
+  from once it has finished, so when the event loop ends `run` winds it down
+  (`PassHandle::wound_down`, cancelled and waited on up to `WIND_DOWN_WITHIN`) before the library's own
+  pass; a file being copied lands as `.<name>.<pid>.resonate-part` and is renamed into place whole, so a
+  copy that outlasts the wait leaves at worst that staged part. gpui gives a test no way to
   build an `ExternalPaths`, so `driven.rs` calls `dragged_over` and `dropped` on the `RootView`
   rather than simulating the platform's drag.
 - **Discord is two Desktop groups, and they write a global before a file.** *Discord* is the switch and

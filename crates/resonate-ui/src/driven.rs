@@ -33,6 +33,7 @@ use crate::{
     drawing::Drawer,
     settings::{Registering, Supplying},
     theme,
+    views::dropping::Copying,
 };
 
 pub(crate) const WIDE: f32 = 1_400.0;
@@ -310,6 +311,7 @@ impl Driven {
                 },
                 listens: nobody_listening(),
                 first_read: None,
+                copying: Copying::default(),
             });
             cx.bind_keys(app::bindings());
         });

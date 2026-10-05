@@ -8,9 +8,6 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Defects
-- A dropped file's copy is neither cancelled nor waited for when the window closes, and a tag is
-  written in place where the tag's room holds it, so a kill (rather than a close) mid-write can leave
-  a damaged file
 - A tidy keeps the rows of a deleted file until its emptied folder goes, and drops the rows of an
   unplugged drive never scanned that is mounted anywhere but `/run/media`, `/media` and `/mnt`
   whenever its mount point's parent holds anything else

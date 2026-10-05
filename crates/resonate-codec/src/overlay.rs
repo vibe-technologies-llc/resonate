@@ -3,9 +3,12 @@ use std::{
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
     os::unix::fs::FileExt as _,
+    path::Path,
 };
 
 use lofty::io::{Length, Truncate};
+
+use crate::journal::{Change, Undo};
 
 const PAGE_BYTES: u64 = 4096;
 pub(crate) const MOST_BYTES_WRITTEN_IN_PLACE: u64 = 32 << 20;
@@ -48,7 +51,7 @@ impl<'f> Overlay<'f> {
         self.outgrown
     }
 
-    pub(crate) fn land(&self) -> io::Result<Landing> {
+    pub(crate) fn land(&self, track: &Path) -> io::Result<Landing> {
         if self.outgrown || self.length != self.stood {
             return Ok(Landing::TooWide);
         }
@@ -61,17 +64,35 @@ impl<'f> Overlay<'f> {
                 .unwrap_or(PAGE_BYTES as usize);
             self.base.read_exact_at(&mut held[..within], start)?;
             if held[..within] != bytes[..within] {
-                changed.push((start, &bytes[..within]));
+                changed.push(Change {
+                    start,
+                    before: held[..within].to_vec(),
+                    after: &bytes[..within],
+                });
             }
         }
         if changed.is_empty() {
             return Ok(Landing::Unchanged);
         }
 
-        for (start, bytes) in changed {
-            self.base.write_all_at(bytes, start)?;
+        let undo = Undo::kept_beside(track, self.stood, &changed)
+            .inspect_err(|error| {
+                tracing::debug!(%error, path = %track.display(), "no undo could be kept beside the track, so its tag lands in place without one");
+            })
+            .ok();
+        let landed = changed
+            .iter()
+            .try_for_each(|change| self.base.write_all_at(change.after, change.start))
+            .and_then(|()| self.base.sync_data());
+        match (landed, undo) {
+            (Ok(()), Some(undo)) => undo.done(),
+            (Ok(()), None) => {}
+            (Err(error), Some(undo)) => {
+                undo.roll_back(self.base, &changed);
+                return Err(error);
+            }
+            (Err(error), None) => return Err(error),
         }
-        self.base.sync_data()?;
         Ok(Landing::InPlace)
     }
 
@@ -243,7 +264,10 @@ mod tests {
             "a write reached the file before it landed"
         );
 
-        assert_eq!(overlay.land().expect("a landing"), Landing::InPlace);
+        assert_eq!(
+            overlay.land(&scratch.0).expect("a landing"),
+            Landing::InPlace
+        );
         assert_eq!(fs::read(&scratch.0).expect("the file"), wanted);
     }
 
@@ -257,7 +281,10 @@ mod tests {
         overlay.seek(SeekFrom::Start(10)).expect("a seek");
         overlay.write_all(&whole[10..20]).expect("a write");
 
-        assert_eq!(overlay.land().expect("a landing"), Landing::Unchanged);
+        assert_eq!(
+            overlay.land(&scratch.0).expect("a landing"),
+            Landing::Unchanged
+        );
     }
 
     #[test]
@@ -270,11 +297,17 @@ mod tests {
         overlay.seek(SeekFrom::End(0)).expect("a seek");
         overlay.write_all(b"tail").expect("a write");
         assert_eq!(overlay.len().expect("a length"), whole.len() as u64 + 4);
-        assert_eq!(overlay.land().expect("a landing"), Landing::TooWide);
+        assert_eq!(
+            overlay.land(&scratch.0).expect("a landing"),
+            Landing::TooWide
+        );
 
         let mut shrunk = Overlay::over(&file).expect("an overlay");
         shrunk.truncate(100).expect("a truncation");
-        assert_eq!(shrunk.land().expect("a landing"), Landing::TooWide);
+        assert_eq!(
+            shrunk.land(&scratch.0).expect("a landing"),
+            Landing::TooWide
+        );
         assert_eq!(fs::read(&scratch.0).expect("the file"), whole);
     }
 
@@ -306,6 +339,9 @@ mod tests {
 
         assert!(refused.is_err());
         assert!(overlay.outgrown());
-        assert_eq!(overlay.land().expect("a landing"), Landing::TooWide);
+        assert_eq!(
+            overlay.land(&scratch.0).expect("a landing"),
+            Landing::TooWide
+        );
     }
 }

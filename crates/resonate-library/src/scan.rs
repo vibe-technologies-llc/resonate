@@ -18,8 +18,9 @@ use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use resonate_analysis::Watch;
 use resonate_codec::{
-    Codec, CueFile, CueNaming, CueSheet, MediaInfo, Scanned, Sources, TagSet, probe_scanned,
-    read_cue, the_best_a_cue_names, the_folder_a_cue_names, the_one_a_cue_names,
+    Codec, CueFile, CueNaming, CueSheet, MediaInfo, Scanned, Sources, TagSet,
+    mend_a_cut_short_write, names_a_cut_short_write, probe_scanned, read_cue, the_best_a_cue_names,
+    the_folder_a_cue_names, the_one_a_cue_names,
 };
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::params;
@@ -779,6 +780,18 @@ fn kept_the_vanished_volumes(walking: &Walking<'_>) -> bool {
         })
 }
 
+fn mend_what_dead_writers_left(entries: &[fs::DirEntry]) {
+    for entry in entries {
+        let path = entry.path();
+        if !names_a_cut_short_write(&path) {
+            continue;
+        }
+        if let Err(error) = mend_a_cut_short_write(&path) {
+            tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended");
+        }
+    }
+}
+
 fn walk(
     walking: &Walking<'_>,
     visited: &mut AHashSet<PathBuf>,
@@ -832,6 +845,8 @@ fn walk(
                 continue;
             }
         };
+
+        mend_what_dead_writers_left(&entries);
 
         for entry in entries {
             if progress.is_cancelled() {

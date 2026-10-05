@@ -1,4 +1,9 @@
-use std::{any::Any, sync::Arc, thread::JoinHandle};
+use std::{
+    any::Any,
+    sync::Arc,
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
 
 use crate::{
     EnrichProgress, EnrichSummary, Error, ImportProgress, ImportSummary, OrganiseProgress,
@@ -20,6 +25,8 @@ pub enum PassKind {
 pub trait Cancelling: Send + Sync {
     fn cancel(&self);
 }
+
+const WOUND_DOWN_LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
 
 pub struct PassHandle<Progress, Summary> {
     pass: PassKind,
@@ -56,6 +63,18 @@ impl<Progress: Cancelling, Summary> PassHandle<Progress, Summary> {
         self.thread.is_finished()
     }
 
+    pub fn wound_down(self, patience: Duration) -> Option<Result<Summary>> {
+        self.cancel();
+        let deadline = Instant::now() + patience;
+        while !self.is_finished() {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            thread::sleep(WOUND_DOWN_LOOKED_AT_EVERY);
+        }
+        Some(self.join())
+    }
+
     pub fn join(self) -> Result<Summary> {
         let pass = self.pass;
         self.thread.join().unwrap_or_else(|panicked| {
@@ -87,9 +106,49 @@ pub type TakeInHandle = PassHandle<TakeInProgress, TakeInSummary>;
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
+    use std::{
+        sync::atomic::{AtomicBool, Ordering},
+        thread,
+    };
 
     use super::*;
+
+    #[derive(Default)]
+    struct Stoppable(AtomicBool);
+
+    impl Cancelling for Stoppable {
+        fn cancel(&self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn winding_a_pass_down_cancels_it_and_waits_only_as_long_as_it_was_told() {
+        let stoppable = Arc::new(Stoppable::default());
+        let heard = Arc::clone(&stoppable);
+        let thread = thread::spawn(move || {
+            while !heard.0.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Ok(7_u8)
+        });
+        let handle = PassHandle::of(PassKind::TakeIn, stoppable, thread);
+        assert_eq!(
+            handle
+                .wound_down(Duration::from_secs(20))
+                .map(|summary| summary.ok()),
+            Some(Some(7))
+        );
+
+        let deaf = thread::spawn(|| {
+            thread::sleep(Duration::from_secs(2));
+            Ok(())
+        });
+        let handle = PassHandle::of(PassKind::TakeIn, Arc::new(Stoppable::default()), deaf);
+        let began = Instant::now();
+        assert!(handle.wound_down(Duration::from_millis(20)).is_none());
+        assert!(began.elapsed() < Duration::from_secs(1));
+    }
 
     #[test]
     fn what_a_pass_said_as_it_fell_over_is_read_whichever_way_it_was_raised() {

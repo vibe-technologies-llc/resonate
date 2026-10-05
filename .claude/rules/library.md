@@ -1706,8 +1706,18 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   memory, and `Overlay::land` writes back only the pages that differ, then `sync_data`s — and only
   where the file keeps its length and under `MOST_BYTES_WRITTEN_IN_PLACE` (32 MiB) was touched, so
   audio that would move, or a tag at the end that would grow, is never rewritten where it stands and
-  goes through a whole staged copy instead, the promise above kept. The window this opens is a crash
-  during a write of a few pages of tag, never of audio. lofty 0.25 keeps a FLAC's padding block as it
+  goes through a whole staged copy instead, the promise above kept. **A page landed in place can be
+  taken back:** before the first page is written, `Undo::kept_beside` writes and syncs a journal
+  beside the track (`.<name>.<pid>-<n>.resonate-undo`: the track's name and length, each changed
+  page's bytes before and after, an FNV-1a check over the lot), and removes it once the pages are
+  synced; a write failing part way rolls back at once. A journal a dead writer left is mended by the
+  next write to that track (`mend_what_a_dead_writer_left`) and by the scan, which looks for one in
+  each folder before it reads a file there (`mend_a_cut_short_write`): a file whose bytes are, byte
+  for byte, the journal's before or after is rolled back to before unless it is all after (the write
+  finished, the journal outlived it); one whose length or bytes moved otherwise is another program's
+  and left alone, and a journal failing its check was cut short before any page moved and is only
+  removed (`a_write_cut_short_between_its_pages_is_rolled_back_whole`). Where no journal can be made
+  beside the track (a folder nothing may be created in), the pages land without one. lofty 0.25 keeps a FLAC's padding block as it
   was and pads an ID3v2 tag with a fresh 1 KiB, so neither would ever keep its length: for those two,
   `Head` has lofty write into an in-memory copy of the tag's head (and 64 KiB past it, so the kind
   still probes), and `Head::absorbed` fits the result back into the head's old length — the FLAC's

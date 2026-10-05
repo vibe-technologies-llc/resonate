@@ -39,7 +39,7 @@ use crate::{
         WindowSize,
     },
     theme, toast,
-    views::field,
+    views::{dropping::Copying, field},
 };
 
 const APP_ID: &str = "resonate";
@@ -183,6 +183,7 @@ pub struct ResonateApp {
     pub sourcing: Sourcing,
     pub listens: Listens,
     pub(crate) first_read: Option<FirstRead>,
+    pub(crate) copying: Copying,
 }
 
 impl Global for ResonateApp {}
@@ -869,6 +870,8 @@ pub fn run(
 ) -> Result<()> {
     let first_read = FirstRead::start(&library);
     let winding_down = Arc::clone(&library);
+    let copying = Copying::default();
+    let copying_when_closed = copying.clone();
     theme::wear(appearance);
     stored.launcher.show(AppIcon::of(appearance));
 
@@ -920,6 +923,7 @@ pub fn run(
             sourcing: lookups.sourcing.clone(),
             listens: lookups.listens.clone(),
             first_read,
+            copying,
         });
         cx.bind_keys(bindings());
         cx.activate(true);
@@ -962,6 +966,9 @@ pub fn run(
         }
     });
 
+    if !copying_when_closed.wind_down(WIND_DOWN_WITHIN) {
+        tracing::warn!("a copy of dropped songs was still running when the window left");
+    }
     if !winding_down.wind_down(WIND_DOWN_WITHIN) {
         tracing::warn!("a library pass was still running when the window left");
     }
