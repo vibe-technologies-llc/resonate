@@ -1179,6 +1179,45 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn an_album_opened_and_then_forgotten_is_left_rather_than_headed_by_its_number(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .album_id
+            .expect("an album the tags named");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.opened(crate::Selection::Album(album), cx);
+            });
+        });
+        driven.settle();
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            crate::Selection::Album(album)
+        );
+
+        let roots = library.roots().expect("the roots read");
+        for held in roots {
+            library.remove_root(&held).expect("the root is forgotten");
+        }
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.library.update(cx, |model, cx| model.reload(cx))
+            });
+        });
+        driven.until(|root, cx| root.library.read(cx).selection() == crate::Selection::Everything);
+    }
+
     struct Measuring {
         source: resonate_core::SourceId,
     }

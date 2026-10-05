@@ -92,6 +92,10 @@ const UNMUTE_HINT: &str = concat!(
     )
 );
 
+const SHOW_TIME_LEFT_HINT: &str = keyed!("Show the time left", "click");
+
+const SHOW_LENGTH_HINT: &str = keyed!("Show the length", "click");
+
 const VOLUME_A_NOTCH: f32 = 0.05;
 
 const PIXELS_A_NOTCH: f32 = 24.0;
@@ -945,7 +949,17 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let elapsed = format::clock(position, rate);
-        let left = duration.map(|duration| format::clock(duration, rate));
+        let showing_left = self.showing_time_left && duration.is_some();
+        let far_end = match duration {
+            Some(duration) if showing_left => {
+                format!(
+                    "-{}",
+                    format::clock(duration.saturating_sub(position), rate)
+                )
+            }
+            Some(duration) => format::clock(duration, rate),
+            None => "–:––".to_owned(),
+        };
 
         div()
             .flex()
@@ -954,7 +968,23 @@ impl RootView {
             .gap_3()
             .child(clock(elapsed).text_right())
             .child(self.rail(Handle::Seek, format::progress(position, duration), cx))
-            .child(clock(left.unwrap_or_else(|| "–:––".to_owned())))
+            .child(
+                clock(far_end)
+                    .id("seek-far-end")
+                    .when(duration.is_some(), |end| {
+                        end.cursor_pointer()
+                            .names(if showing_left {
+                                SHOW_LENGTH_HINT
+                            } else {
+                                SHOW_TIME_LEFT_HINT
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.showing_time_left = !this.showing_time_left;
+                                cx.notify();
+                            }))
+                    }),
+            )
     }
 
     fn step(
@@ -1152,7 +1182,7 @@ fn lit(glyph: Icon, colour: u32, active: bool) -> Svg {
 fn clock(reading: String) -> Div {
     kit::figure(reading)
         .flex_none()
-        .w(px(theme::clock_width()))
+        .min_w(px(theme::clock_width()))
         .text_color(rgb(theme::muted()))
 }
 

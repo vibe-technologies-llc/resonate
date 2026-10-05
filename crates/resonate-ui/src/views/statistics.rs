@@ -452,6 +452,7 @@ fn tiles(counts: Statistics) -> Div {
         .child(tile("PLAYS", counts.plays.to_string()))
         .child(tile("TIME LISTENED", format::heard_for(counts.listened)))
         .child(tile("TRACKS HEARD", counts.tracks.to_string()))
+        .child(tile("ALBUMS HEARD", counts.albums.to_string()))
         .child(tile("ARTISTS HEARD", counts.artists.to_string()))
 }
 

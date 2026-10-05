@@ -758,20 +758,23 @@ impl RootView {
         self.took_out.offered(queue).is_some()
     }
 
-    fn queue_length(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
+    fn queue_length(&mut self, cx: &mut Context<Self>) -> Option<(Duration, usize)> {
         let measured = QueueLength {
             queue: self.player.read(cx).queued().revision,
             library: self.library.read(cx).revision(),
             total: Duration::ZERO,
+            unmeasured: 0,
         };
         if let Some(held) = self.queue_length.held
             && held.measures(measured)
         {
-            return Some(held.total);
+            return Some((held.total, held.unmeasured));
         }
 
         self.measure_the_queue(measured, cx);
-        self.queue_length.held.map(|held| held.total)
+        self.queue_length
+            .held
+            .map(|held| (held.total, held.unmeasured))
     }
 
     fn measure_the_queue(&mut self, measured: QueueLength, cx: &mut Context<Self>) {
@@ -787,22 +790,29 @@ impl RootView {
         let library = self.library.read(cx).catalog();
 
         self.queue_length.reading = Some(cx.spawn(async move |this, cx| {
-            let total: Duration = cx
+            let (total, unmeasured) = cx
                 .background_executor()
                 .spawn(async move {
-                    queued_rows(&library, &queued.rows)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|track| {
+                    let rows = queued_rows(&library, &queued.rows);
+                    let lengths: Vec<Option<Duration>> = rows
+                        .iter()
+                        .map(|track| {
+                            let track = track.as_ref()?;
                             track
                                 .duration
                                 .map(|frames| frames.to_duration(track.spec.rate))
                         })
-                        .sum()
+                        .collect();
+                    let unmeasured = lengths.iter().filter(|length| length.is_none()).count();
+                    (lengths.into_iter().flatten().sum::<Duration>(), unmeasured)
                 })
                 .await;
             let landed = this.update(cx, |this, cx| {
-                this.queue_length.held = Some(QueueLength { total, ..measured });
+                this.queue_length.held = Some(QueueLength {
+                    total,
+                    unmeasured,
+                    ..measured
+                });
                 cx.notify();
             });
             let _ = landed;
@@ -814,8 +824,12 @@ impl RootView {
         let total = self.queue_length(cx);
         let mut under: format::Parts<String> =
             smallvec![format::counted(queue.len(), "track", "tracks")];
-        if let Some(total) = total.filter(|total| !total.is_zero()) {
-            under.push(format::spanned(total));
+        if let Some((total, unmeasured)) = total.filter(|(total, _)| !total.is_zero()) {
+            under.push(if unmeasured > 0 {
+                format!("at least {}", format::spanned(total))
+            } else {
+                format::spanned(total)
+            });
         }
         if let Some(position) = position {
             under.push(format!("on row {}", position + 1));
@@ -1556,6 +1570,7 @@ pub(crate) struct QueueLength {
     queue: u64,
     library: u64,
     total: Duration,
+    unmeasured: usize,
 }
 
 impl QueueLength {

@@ -146,6 +146,7 @@ struct Browsed {
     artist_albums: Vec<Album>,
     artist_totals: ArtistTotals,
     album: Option<Album>,
+    gone: Option<Selection>,
 }
 
 struct Paged {
@@ -3514,7 +3515,11 @@ impl LibraryModel {
         match loaded {
             Ok(loaded) => {
                 let shelved = loaded.shelves.is_some();
+                let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
                 self.take(loaded);
+                if gone == Some(self.selection) {
+                    self.select(Selection::Everything, cx);
+                }
                 self.take_down_what_moved();
                 self.warm_the_covers(cx);
                 if shelved {
@@ -5530,6 +5535,16 @@ fn browsed(
         && paged.artists.is_empty()
         && paged.tracks.is_empty()
         && sung.is_none();
+    let held_album = match album {
+        Some(album) => library.album(album)?,
+        None => None,
+    };
+    let held_artist = match artist {
+        Some(artist) => library.artist_detail(artist)?,
+        None => None,
+    };
+    let held_album_is_gone = album.is_some() && held_album.is_none();
+    let held_artist_is_gone = artist.is_some() && held_artist.is_none();
 
     Ok(Browsed {
         instead: match text.filter(|_| matched_nothing) {
@@ -5573,10 +5588,7 @@ fn browsed(
             Some(album) => library.release_of(album)?,
             None => None,
         },
-        artist: match artist {
-            Some(artist) => library.artist_detail(artist)?,
-            None => None,
-        },
+        artist: held_artist,
         artist_albums: match artist {
             Some(artist) => library.albums(&AlbumQuery {
                 artist: Some(artist),
@@ -5592,9 +5604,11 @@ fn browsed(
             Some(artist) => library.artist_totals(artist)?,
             None => ArtistTotals::default(),
         },
-        album: match album {
-            Some(album) => library.album(album)?,
-            None => None,
+        album: held_album,
+        gone: match (album, artist) {
+            (Some(album), _) if held_album_is_gone => Some(Selection::Album(album)),
+            (None, Some(artist)) if held_artist_is_gone => Some(Selection::Artist(artist)),
+            _ => None,
         },
     })
 }

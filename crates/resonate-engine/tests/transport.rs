@@ -1353,7 +1353,11 @@ fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
         |player, _| player.state().seeks != repeated,
         "the only row of a repeating queue to start over as a seek",
     );
-    assert!(plays(&player, 1), "{}", transport(&player));
+    wait_for(
+        &player,
+        |player| plays(player, 1),
+        "the only row to be the one playing again",
+    );
     Ok(())
 }
 
@@ -2624,6 +2628,58 @@ fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
             .any(|event| matches!(event, Event::Failed { .. })),
         "the moved row failed"
     );
+    Ok(())
+}
+
+#[test]
+fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeating() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let rows: Vec<QueueItem> = (1..=3)
+        .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
+        .collect();
+
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: rows,
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the first row to play");
+    player
+        .request(Command::SetRepeat(RepeatMode::Track))?
+        .wait_for(PATIENCE)?;
+
+    player
+        .request(Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 2),
+        "the row that slid into place to play",
+    );
+    assert_eq!(player.queue().len(), 2);
+    assert_eq!(player.state().repeat, RepeatMode::Track);
+    assert_eq!(player.state().queue_position, Some(0));
+
+    player
+        .request(Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| playing(player) && plays(player, 3),
+        "the last row to take over",
+    );
+
+    player
+        .request(Command::Remove(Span::one(0)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.queue().is_empty() && player.state().current.is_none(),
+        "an emptied queue to leave nothing playing",
+    );
+    assert_ne!(player.state().playback, PlaybackState::Playing);
     Ok(())
 }
 

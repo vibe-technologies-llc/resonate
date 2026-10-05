@@ -1048,7 +1048,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   them. The centre is a column with a basis of `theme::transport_centre()` shrinking to
   `CENTRE_AT_LEAST` (260) — it gives way first: holding its 460 at the 720 px window it left each side
   86 px, the cover took all of the panel, and title, artist and album drew nothing. It holds the step and play buttons
-  over the seek rail with the elapsed and total clocks at its ends; the rail fills its row
+  over the seek rail with the elapsed and total clocks at its ends, a press on the total turning it
+  to the time left (`-3:12`, `RootView::showing_time_left`, not kept between runs); the rail fills its row
   (`Handle::fills_its_row`). Both sides carry `overflow_hidden`, a badge or notice wider than its half
   otherwise painting over the controls. **What does not fit is left out whole, never clipped.**
   `views/gives_way.rs` is the arithmetic, over the theme's measures with no gpui: the status cluster is
@@ -1068,7 +1069,9 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   the line the inspector's three stages expand on, and a press on it opens that pane, the short reading
   and the long one not being two unrelated places. Title, artist and album are three elements, not one
   truncated line: each opens the page behind it through `RootView::opens`, the title and album scoping
-  the tracks pane to `Selection::Album` and the artist to `Selection::Artist`. Which is pressable is
+  the tracks pane to `Selection::Album` and the artist to `Selection::Artist`. A scope whose album or
+  artist the catalog no longer holds (`Browsed::gone`) is left for `Selection::Everything` when the
+  reading lands, rather than heading an empty list by its number. Which is pressable is
   what is *known*: the album id rides on the panel's resolved `Cover` and the artist id on
   `Track::artist_id`, so an unscanned row draws all three as plain text, the names off the file's tags
   with nothing behind them. `RootView::by_line` is the artist, separator and album as one method, taking
@@ -2441,7 +2444,8 @@ hands `run` inside `Lookups`, so it never names the online crate either.
   search or page leaving the playing album out does not blank the playback bar, the magnifier's caption
   or the queue's album order. **What the queue pane weighs every row for is read off the render
   thread.** `queue_heading`'s total is measured once per queue and library revision, in the background
-  through `queued_rows` (`QueueMeasure`), the heading keeping the last total until the new one lands;
+  through `queued_rows` (`QueueMeasure`), the heading keeping the last total until the new one lands, and reading *at least* it where a row has no
+  scanned length (`QueueLength::unmeasured`);
   and a sort chip keys every row in the background too — `ordered_rows` reads the tracks in one pass
   and their album titles in another (`Library::album_titles`) — sending the order only if the queue is
   still the revision it keyed. Both read on the UI thread once, one row at a time past `NAMES_HELD`'s

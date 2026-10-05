@@ -22,6 +22,9 @@ else is open to be done.
   gesture and the click moves or removes the wrong rows; `Queued::revision` exists to guard on
 - On a case-insensitive volume a name differing from the layout only in case is offered as a move
   and refused on apply as colliding with itself, every run
+- A rebind refused with `Disconnected` before the engine has noticed the graph is gone (no
+  `graph_lost` yet) is billed to the row, `Failed` then `QueueFinished`, where a row changed after the
+  loss waits for the graph
 - A daemon connection that hangs without closing is never taken as lost, so the client stays
   disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
@@ -153,8 +156,7 @@ else is open to be done.
 - `resonate-mpris`'s `bus.rs` tests fail now and then, a different `set_position_*` each time, when
   the whole workspace's tests run at once, and pass alone; the fixed 300 ms wait in `set_position_*`,
   the 500 ms `SETTLE` and the `RealtimeSink` thread paced by `thread::sleep` are the candidates
-- No transport test covers a failed rebind, a track of unknown length, removing the playing row under
-  repeat, or a reconnect at a track boundary
+- No transport test covers a track of unknown length or a reconnect at a track boundary
 - Every test against a real PipeWire daemon opens stereo F32 at 48 kHz: the S16 and S32 words,
   packed and padded S24, 5.1 and 7.1 maps, `NO_CONVERT` and a sink leaving under an open stream
   are never run
@@ -259,11 +261,8 @@ else is open to be done.
 ## Later: The window
 - A track or album cannot be dragged from a listing into the queue or a playlist; only files from a
   file manager are taken. After the queue-position defect, a drop being a positional insert
-- A scoped album or artist whose rows vanish leaves *album 17* heading an empty list
-- The queue's total length leaves out rows the catalog has not scanned, with no hint it is partial
-- The seek bar shows only the total length, with no remaining time and no time under the pointer
+- The seek bar shows no time under the pointer
 - Favourites cannot be sorted, by the date marked or otherwise, though the timestamp is stored
-- The statistics count the albums heard and never draw the count
 - The by-line counts a character its face cannot draw (CJK, emoji) as no width, so the album clips
   with no ellipsis
 - The `vault` key has no field, so a vault is opened only by `--vault` or by editing `config.toml`
