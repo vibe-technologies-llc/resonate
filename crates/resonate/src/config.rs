@@ -1695,6 +1695,7 @@ mod tests {
         assert!(read("artists-drawn = \"mosaic\"").is_err());
     }
 
+    #[cfg(feature = "ui")]
     #[test]
     fn scrollbars_hide_until_scrolled_unless_the_file_names_another_mode() {
         let mode = |text: &str| read(text).expect("a mode is valid").scrollbars();

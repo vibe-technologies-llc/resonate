@@ -158,8 +158,9 @@ Invariants the layering protects; the rules files have the rest of each:
 to `master` and every pull request through clippy, the headless and whole-workspace builds and
 tests, the DSP bench, the layering refusals and the fuzz build, in `archlinux` containers.
 `RUSTFLAGS` is emptied over `target-cpu=native` there. `rpm-release.yml` builds the Fedora source
-RPM when a release is published. A runnable command added above goes into the workflow too, and a
-crate added to the layering refusals into its `refuse` lines.
+RPM when a release is published or the workflow is run manually against a selected branch; both
+RPMs are kept as a downloadable workflow artifact. A runnable command added above goes into the
+workflow too, and a crate added to the layering refusals into its `refuse` lines.
 
 **The hand-rolled parsers are fuzzed from outside the workspace.** `fuzz/`'s `[workspace]` table
 detaches it, so the workspace lints do not reach libfuzzer's macros. Nine targets (`probe`, `boxes`,

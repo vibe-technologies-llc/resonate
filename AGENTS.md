@@ -66,7 +66,8 @@ code has its reason stated there, and "simplifying" it away reintroduces the bug
 
 Run these before committing; `.github/workflows/ci.yml` runs them, bar the formatter, on every push
 to `master` and every pull request, beside the layering refusals.
-`.github/workflows/rpm-release.yml` builds the Fedora RPM when a release is published.
+`.github/workflows/rpm-release.yml` builds the Fedora RPM when a release is published or the
+workflow is run manually, and keeps the binary and source RPMs as a downloadable artifact.
 
 ```
 cargo clippy --workspace --all-targets -- -D warnings

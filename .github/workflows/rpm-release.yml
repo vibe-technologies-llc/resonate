@@ -3,6 +3,7 @@ name: Fedora RPM release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,19 +22,31 @@ jobs:
           freetype-devel vulkan-headers vulkan-loader-devel
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
       - name: Create the source archive
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)
           test -n "$version"
-          test "$RELEASE_TAG" = "$version" || test "$RELEASE_TAG" = "v$version"
+          if [ -n "$RELEASE_TAG" ]; then
+            test "$RELEASE_TAG" = "$version" || test "$RELEASE_TAG" = "v$version"
+          fi
           mkdir -p "$HOME/rpmbuild/SOURCES"
           git archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$HOME/rpmbuild/SOURCES/resonate-$version.tar.gz"
       - name: Build the RPM
         run: rpmbuild -ba packaging/resonate.spec
+      - name: Collect the RPMs
+        run: |
+          mkdir -p rpm-artifacts
+          cp "$HOME"/rpmbuild/RPMS/x86_64/*.rpm "$HOME"/rpmbuild/SRPMS/*.src.rpm rpm-artifacts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-fedora-44-rpm
+          path: rpm-artifacts/*.rpm
+          if-no-files-found: error
       - name: Attach the RPMs to the release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}

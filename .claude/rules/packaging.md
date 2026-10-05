@@ -18,8 +18,10 @@ The desktop entry and the metainfo's `<provides>` are held to the binary's `MIME
   it. The spec appends `target-cpu=x86-64` on x86_64 and `generic` on aarch64, and the Flatpak
   manifest sets the same pair, so a release runs on older machines of the architecture.
 - **The spec builds `--locked` from a source archive of the published release tag**, whose version
-  must match the spec, with development headers from Fedora 44. `%check` tests the headless
-  workspace and `rpm-release.yml` uploads the binary and source RPMs once build and tests pass.
+  must match the spec, or the branch selected for a manual workflow run, with development headers
+  from Fedora 44. `%check` tests the headless workspace; `rpm-release.yml` keeps the binary and
+  source RPMs as a downloadable workflow artifact once build and tests pass, and attaches them to
+  the release on a release run, so a listener can install a build before a release is published.
   Cargo fetches crates while building: a source RPM recipe, not an offline distribution build.
 - **The Flatpak builds the checkout it sits in** (a `dir` source, no release tarball, so the
   metainfo names no `<release>`) with the Freedesktop 25.08 SDK and `rust-stable`, shares the
