@@ -3,7 +3,7 @@ use std::{
     ffi::{OsStr, OsString},
     fmt,
     fs::{self, File, Metadata, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufReader, Read, Seek, SeekFrom, Write},
     os::unix::{
         ffi::OsStrExt as _,
         fs::{self as unix_fs, MetadataExt as _},
@@ -572,20 +572,27 @@ impl FileTags {
 
     fn rating_of(&self, location: &MediaLocation) -> Result<Rated> {
         let path = self.writable(location)?;
-        let tagged = opened_for_its_tags(path, location)?;
-        let kind = tagged.primary_tag_type();
+        let probed = guessed_for_its_tags(path, location)?;
+        let file_type = probed.file_type().ok_or_else(|| Error::Unwritable {
+            location: location.clone(),
+        })?;
+        let kind = file_type.primary_tag_type();
         if !rates(kind) {
             return Ok(Rated::Unrateable);
         }
-        let counted = if counts(kind) {
-            Counted::read(path, tagged.file_type()).map_err(|source| Error::TagsUnread {
-                location: location.clone(),
-                source,
-            })?
-        } else {
-            None
+        let unread = |source| Error::TagsUnread {
+            location: location.clone(),
+            source,
         };
-        let ours = tagged.primary_tag().and_then(|tag| {
+        let (counted, primary) = if counts(kind) {
+            let counted = Counted::read(path, file_type).map_err(unread)?;
+            let primary = counted.as_ref().map(Counted::tag);
+            (counted, primary)
+        } else {
+            let tagged = probed.read().map_err(unread)?;
+            (None, tagged.primary_tag().cloned())
+        };
+        let ours = primary.and_then(|tag| {
             tag.get_strings(ItemKey::Popularimeter)
                 .filter_map(Popularimeter::read)
                 .find(|popularimeter| popularimeter.is_ours(kind))
@@ -1219,8 +1226,8 @@ fn opened(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFi
     opened_as(path, location, ParseOptions::new())
 }
 
-fn opened_for_its_tags(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
-    opened_as(
+fn guessed_for_its_tags(path: &Path, location: &MediaLocation) -> Result<Probe<BufReader<File>>> {
+    guessed_as(
         path,
         location,
         ParseOptions::new()
@@ -1234,6 +1241,19 @@ fn opened_as(
     location: &MediaLocation,
     options: ParseOptions,
 ) -> Result<lofty::file::TaggedFile> {
+    guessed_as(path, location, options)?
+        .read()
+        .map_err(|source| Error::TagsUnread {
+            location: location.clone(),
+            source,
+        })
+}
+
+fn guessed_as(
+    path: &Path,
+    location: &MediaLocation,
+    options: ParseOptions,
+) -> Result<Probe<BufReader<File>>> {
     let opened = Probe::open(path)
         .map(|probe| probe.options(options))
         .map_err(|source| Error::TagsUnread {
@@ -1251,10 +1271,7 @@ fn opened_as(
         });
     }
 
-    probed.read().map_err(|source| Error::TagsUnread {
-        location: location.clone(),
-        source,
-    })
+    Ok(probed)
 }
 
 #[cfg(test)]

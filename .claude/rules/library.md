@@ -1690,8 +1690,11 @@ append-only once shipped: the undo record keeps fields by `TagField::as_str`.
   lofty's generic `Tag` drops a name with no `ItemKey`, so `counted.rs` converts the generic tag into
   the format's own — `VorbisComments`, `ApeTag`, `Ilst` or `Id3v2Tag`, the conversion lofty's save
   makes — sets the count there, saves that, and reads the count back off the same concrete tag. What
-  the file holds is read through `TagSink::rated` — lofty twice (`opened_for_its_tags`, `Counted::read`),
-  neither parsing the audio properties or the covers, where a write opens the file whole because it saves what it
+  the file holds is read through `TagSink::rated` — lofty once, the file type guessed first
+  (`guessed_for_its_tags`) and its primary tag type taken from the type alone: a format keeping a count is
+  parsed by its own reader (`Counted::read`) and the generic tag the ratings are read from is that tag
+  converted back (`Counted::tag`), any other parsed generically; neither parses the audio properties or
+  the covers, where a write opens the file whole because it saves what it
   read — not the `TagSet`, symphonia reading `POPM` and
   ignoring a Vorbis rating: `Rated::Unrated` and `Rated::Favourite` each carry the count the tag keeps
   — an MP3 written before counts were, whose only count is our `POPM`'s, reads that — and

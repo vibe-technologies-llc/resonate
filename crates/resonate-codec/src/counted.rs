@@ -49,6 +49,15 @@ impl Counted {
         }
     }
 
+    pub(crate) fn tag(&self) -> Tag {
+        match self {
+            Self::Commented(comments) => comments.clone().into(),
+            Self::Ape(tag) => tag.clone().into(),
+            Self::Atoms(atoms) => atoms.clone().into(),
+            Self::Framed(frames) => frames.clone().into(),
+        }
+    }
+
     pub(crate) fn read(path: &Path, kind: FileType) -> Result<Option<Self>, FileParseError> {
         let mut file = File::open(path)?;
         let options = ParseOptions::new()
