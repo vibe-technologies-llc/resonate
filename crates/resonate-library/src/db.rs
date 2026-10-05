@@ -33,11 +33,11 @@ use crate::{
     Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat,
     ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex,
     KeptLyrics, LifeSpan, Link, Listen, LovesTold, LyricText, Mbid, Measured, Missing,
-    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, Playing,
-    Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted, Pruned,
-    REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease, Reference,
-    Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions, RowOrder,
-    SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
+    MissingTrack, MostListened, Move, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
+    Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease,
+    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
+    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
     Track, TrackQuery, TrackToAsk, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word,
@@ -595,14 +595,26 @@ fn landed_before_it(object: &Path, moment: SystemTime) -> bool {
         .is_ok_and(|landed| landed < moment)
 }
 
-fn walk_lock_beside(catalog: &Path) -> PathBuf {
-    let mut named = catalog.as_os_str().to_owned();
-    named.push(WALK_LOCK_SUFFIX);
-    PathBuf::from(named)
+fn locked_across_processes(catalog: &Path) -> Result<File> {
+    lock_beside(catalog, WALK_LOCK_SUFFIX, || Error::AlreadyWalking)
 }
 
-fn locked_across_processes(catalog: &Path) -> Result<File> {
-    let path = walk_lock_beside(catalog);
+pub(crate) struct Asking {
+    _across_processes: Option<File>,
+}
+
+fn asking_across_processes(catalog: &Path, pass: PassKind) -> Result<File> {
+    let suffix = match pass {
+        PassKind::Enrich => ".enrich",
+        _ => ".poll",
+    };
+    lock_beside(catalog, suffix, || Error::AlreadyAsking { pass })
+}
+
+fn lock_beside(catalog: &Path, suffix: &str, held: impl FnOnce() -> Error) -> Result<File> {
+    let mut named = catalog.as_os_str().to_owned();
+    named.push(suffix);
+    let path = PathBuf::from(named);
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -614,7 +626,7 @@ fn locked_across_processes(catalog: &Path) -> Result<File> {
         })?;
     match lock.try_lock() {
         Ok(()) => Ok(lock),
-        Err(TryLockError::WouldBlock) => Err(Error::AlreadyWalking),
+        Err(TryLockError::WouldBlock) => Err(held()),
         Err(TryLockError::Error(source)) => Err(Error::Io { path, source }),
     }
 }
@@ -2101,6 +2113,14 @@ impl Library {
 
     pub fn set_playing_playlist(&self, playing: Option<Playing>) {
         self.inner.set_playing(playing);
+    }
+
+    pub(crate) fn asking_alone(&self, pass: PassKind) -> Result<Asking> {
+        let _across_processes = match &self.inner.source {
+            Source::File(catalog) => Some(asking_across_processes(catalog, pass)?),
+            Source::Memory => None,
+        };
+        Ok(Asking { _across_processes })
     }
 
     pub fn enrich(
@@ -7042,6 +7062,49 @@ mod tests {
             .expect("the tree is walkable once the scan has gone")
             .join()
             .expect("the organise finished");
+    }
+
+    #[test]
+    fn a_lookup_or_a_poll_in_one_process_refuses_the_same_in_another_on_the_same_catalog() {
+        let scratch = Scratch::new("asked-across-processes");
+        let catalog = scratch.path.join("library.db");
+        let here = Library::open(&catalog).expect("a catalog opens on disc");
+        let elsewhere = Library::open(&catalog).expect("a catalog opens twice on disc");
+
+        let looking = here
+            .asking_alone(PassKind::Enrich)
+            .expect("nothing else is looking things up");
+        let polling = here
+            .asking_alone(PassKind::Poll)
+            .expect("a poll is not a lookup");
+        assert!(matches!(
+            elsewhere.asking_alone(PassKind::Enrich),
+            Err(Error::AlreadyAsking {
+                pass: PassKind::Enrich
+            })
+        ));
+        assert!(matches!(
+            elsewhere.asking_alone(PassKind::Poll),
+            Err(Error::AlreadyAsking {
+                pass: PassKind::Poll
+            })
+        ));
+
+        drop(looking);
+        elsewhere
+            .asking_alone(PassKind::Enrich)
+            .expect("a lookup may start once the other process let it go");
+        drop(polling);
+
+        let memory = Library::open_in_memory().expect("a catalog opens in memory");
+        let (first, second) = (
+            memory.asking_alone(PassKind::Enrich),
+            memory.asking_alone(PassKind::Enrich),
+        );
+        assert!(
+            first.is_ok() && second.is_ok(),
+            "a catalog in memory has no second process"
+        );
     }
 
     #[test]

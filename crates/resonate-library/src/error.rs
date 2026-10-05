@@ -174,6 +174,9 @@ pub enum Error {
     #[error("a pass is already walking the tree, and only one may walk it at a time")]
     AlreadyWalking,
 
+    #[error("another process is already running a {pass:?}, and only one may ask at a time")]
+    AlreadyAsking { pass: PassKind },
+
     #[error("reading tags from {path} failed", path = path.display())]
     Tags {
         path: PathBuf,

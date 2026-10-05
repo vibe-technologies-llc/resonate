@@ -27,8 +27,6 @@ else is open to be done.
   disconnected
 - When WirePlumber restarts, the metadata objects that left keep their proxies and their values
   stand stale until new ones overwrite them
-- Two lookups or polls in two processes ask the same rows at once, doubling the rate on MusicBrainz
-  and the providers
 
 ## Playback and output
 - The PipeWire stream open waits on the engine thread up to five seconds, and a bind with an empty or

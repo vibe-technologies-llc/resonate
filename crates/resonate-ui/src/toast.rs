@@ -217,6 +217,7 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
         Library::LayoutSyntax { .. } => "a brace in the layout isn't closed or doubled",
         Library::LayoutEscapes { .. } => "the layout reaches outside the folder it files under",
         Library::AlreadyWalking => "another library task is still running",
+        Library::AlreadyAsking { .. } => "another Resonate is already asking the same services",
         Library::Unreachable { .. } => "the service couldn't be reached",
         Library::Refused { .. } => "the service turned the request down",
         Library::Io { .. } | Library::Move { .. } => "a file couldn't be read or written",

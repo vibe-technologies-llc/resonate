@@ -282,10 +282,14 @@ pub(crate) fn start(
 ) -> Result<EnrichHandle> {
     let progress = Arc::new(EnrichProgress::default());
     let owned = Arc::clone(&progress);
+    let asking = library.asking_alone(PassKind::Enrich)?;
 
     let thread = thread::Builder::new()
         .name("resonate-enrich".to_owned())
-        .spawn(move || run(&library, &reference, &fingerprinters, &options, &progress))
+        .spawn(move || {
+            let _asking = asking;
+            run(&library, &reference, &fingerprinters, &options, &progress)
+        })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
     Ok(PassHandle::of(PassKind::Enrich, owned, thread))

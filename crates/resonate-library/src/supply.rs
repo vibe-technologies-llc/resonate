@@ -435,10 +435,14 @@ pub(crate) fn start(
 ) -> Result<PollHandle> {
     let progress = Arc::new(PollProgress::default());
     let owned = Arc::clone(&progress);
+    let asking = library.asking_alone(PassKind::Poll)?;
 
     let thread = thread::Builder::new()
         .name("resonate-poll".to_owned())
-        .spawn(move || run(&library, &providers, options, &progress))
+        .spawn(move || {
+            let _asking = asking;
+            run(&library, &providers, options, &progress)
+        })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
     Ok(PassHandle::of(PassKind::Poll, owned, thread))

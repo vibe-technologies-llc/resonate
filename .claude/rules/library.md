@@ -372,6 +372,12 @@ A non-filesystem source brings its own catalog, and a queue row from one is read
   `Error::AlreadyWalking`. The lock file stays where it is: removing it would race a process that has
   opened it and not yet locked it. An in-memory catalog has no file and no second process, so takes
   the flag alone (`a_walk_in_one_process_refuses_a_walk_in_another_on_the_same_catalog`).
+  **A lookup and a poll are alone the same way, each with a lock of its own** (`<catalog>.enrich`,
+  `<catalog>.poll`, `Library::asking_alone`), held by the pass thread and refused as
+  `Error::AlreadyAsking`, so two processes never ask MusicBrainz or a provider about the same rows at
+  once and double the rate the clients pace themselves to
+  (`a_lookup_or_a_poll_in_one_process_refuses_the_same_in_another_on_the_same_catalog`). They need not
+  hold the walk guard, neither walking the tree.
 - **An album grouped by its folder is re-keyed to the folder it moved into, in place on its row.** Only
   the third tier embeds a path, so only it can be left naming a vanished folder; one file of such an
   album re-probed later would be keyed onto the new folder, insert a second `albums` row and take its
