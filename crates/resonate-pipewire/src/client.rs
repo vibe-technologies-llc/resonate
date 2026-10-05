@@ -8,10 +8,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, Sender, bounded};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use libspa::{
     param::{
         ParamInfoFlags, ParamType,
@@ -59,6 +59,8 @@ type HeardStream = (StreamRc, StreamListener<Box<dyn AudioSink>>);
 
 const CORE_ID: u32 = 0;
 const RECONNECT_EVERY: Duration = Duration::from_secs(1);
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(2);
+const DAEMON_ANSWERS_WITHIN: Duration = Duration::from_secs(8);
 const METADATA_NAME: &str = "metadata.name";
 const ALLOWED_RATES: &str = "clock.allowed-rates";
 const CLOCK_RATE: &str = "clock.rate";
@@ -98,6 +100,7 @@ enum Request {
     Turn { sink: SinkId, setting: RouteSetting },
     Drain,
     Close,
+    Heartbeat,
     Lost,
     Reconnect,
     Shutdown,
@@ -652,6 +655,7 @@ fn run(
     let active: Rc<RefCell<Option<ActiveStream>>> = Rc::new(RefCell::new(None));
     let heard: Rc<RefCell<Option<HeardStream>>> = Rc::new(RefCell::new(None));
     let sequence = Rc::new(RefCell::new(0_i32));
+    let beat: Rc<RefCell<Option<Beat>>> = Rc::new(RefCell::new(None));
     let receiver = requests.attach(mainloop.loop_(), {
         let mainloop = mainloop.downgrade();
         let graph = Rc::clone(&graph);
@@ -659,6 +663,7 @@ fn run(
         let sequence = Rc::clone(&sequence);
         let active = Rc::clone(&active);
         let heard = Rc::clone(&heard);
+        let beat = Rc::clone(&beat);
         let connected = Arc::clone(connected);
         move |request| match request {
             Request::Sync(reply) => {
@@ -741,18 +746,40 @@ fn run(
                 }
                 active.borrow_mut().take();
             }
-            Request::Lost => {
-                let Some(gone) = graph.borrow_mut().take() else {
+            Request::Heartbeat => {
+                let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
+                    beat.borrow_mut().take();
                     return;
                 };
-                tracing::warn!("the PipeWire daemon went away; reconnecting when it is back");
-                connected.store(false, Ordering::Release);
-                active.borrow_mut().take();
-                heard.borrow_mut().take();
-                pending.borrow_mut().clear();
-                drop(gone);
-                reaching.forget_the_graph();
-                reaching.ask_again_later();
+                let mut beating = beat.borrow_mut();
+                match beating.as_ref().map(Beat::heard) {
+                    Some(Heard::Waiting) => return,
+                    Some(Heard::Never) => {
+                        beating.take();
+                        tracing::warn!(
+                            within = ?DAEMON_ANSWERS_WITHIN,
+                            "the PipeWire daemon stopped answering without closing the connection"
+                        );
+                        drop(beating);
+                        lose_the_graph(&graph, &connected, &active, &heard, &reaching);
+                        return;
+                    }
+                    Some(Heard::Answered) | None => {}
+                }
+                let (reply, answer) = bounded(1);
+                let mut sequence = sequence.borrow_mut();
+                *sequence = sequence.wrapping_add(1);
+                if let Ok(seq) = core.sync(*sequence) {
+                    pending.borrow_mut().push((seq.seq(), reply));
+                    *beating = Some(Beat {
+                        sent: Instant::now(),
+                        answer,
+                    });
+                }
+            }
+            Request::Lost => {
+                beat.borrow_mut().take();
+                lose_the_graph(&graph, &connected, &active, &heard, &reaching);
             }
             Request::Reconnect => {
                 if graph.borrow().is_some() {
@@ -780,6 +807,19 @@ fn run(
         }
     });
 
+    let heartbeat = mainloop.loop_().add_timer({
+        let commands = commands.clone();
+        move |_| {
+            let _ = commands.send(Request::Heartbeat);
+        }
+    });
+    if let Err(error) = heartbeat
+        .update_timer(Some(HEARTBEAT_EVERY), Some(HEARTBEAT_EVERY))
+        .into_result()
+    {
+        tracing::warn!(%error, "no timer could be set to hear whether the PipeWire daemon still answers");
+    }
+
     let _ = ready.send(Ok(()));
     mainloop.run();
 
@@ -788,6 +828,49 @@ fn run(
     heard.borrow_mut().take();
     graph.borrow_mut().take();
     connected.store(false, Ordering::Release);
+}
+
+fn lose_the_graph(
+    graph: &RefCell<Option<Graph>>,
+    connected: &AtomicBool,
+    active: &RefCell<Option<ActiveStream>>,
+    heard: &RefCell<Option<HeardStream>>,
+    reaching: &Reaching,
+) {
+    let Some(gone) = graph.borrow_mut().take() else {
+        return;
+    };
+    tracing::warn!("the PipeWire daemon went away; reconnecting when it is back");
+    connected.store(false, Ordering::Release);
+    active.borrow_mut().take();
+    heard.borrow_mut().take();
+    reaching.pending.borrow_mut().clear();
+    drop(gone);
+    reaching.forget_the_graph();
+    reaching.ask_again_later();
+}
+
+struct Beat {
+    sent: Instant,
+    answer: Receiver<()>,
+}
+
+enum Heard {
+    Answered,
+    Waiting,
+    Never,
+}
+
+impl Beat {
+    fn heard(&self) -> Heard {
+        match self.answer.try_recv() {
+            Ok(()) | Err(TryRecvError::Disconnected) => Heard::Answered,
+            Err(TryRecvError::Empty) if self.sent.elapsed() < DAEMON_ANSWERS_WITHIN => {
+                Heard::Waiting
+            }
+            Err(TryRecvError::Empty) => Heard::Never,
+        }
+    }
 }
 
 struct Graph {

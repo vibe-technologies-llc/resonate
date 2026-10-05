@@ -15,6 +15,7 @@ const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SINK: &str = "resonate-hosted-sink";
 const SOCKET: &str = "pipewire-0";
 const PATIENCE: Duration = Duration::from_secs(10);
+const HUNG_PATIENCE: Duration = Duration::from_secs(20);
 const ASKED_WITHIN: Duration = Duration::from_millis(500);
 const POLL_EVERY: Duration = Duration::from_millis(50);
 
@@ -98,6 +99,17 @@ impl Hosted {
         })
     }
 
+    fn signalled(&self, signal: &str) {
+        let sent = Command::new("kill")
+            .args([signal, &self.daemon.id().to_string()])
+            .status()
+            .expect("kill runs");
+        assert!(
+            sent.success(),
+            "the hosted daemon could not be sent {signal}"
+        );
+    }
+
     fn kill(mut self) -> PathBuf {
         let _ = self.daemon.kill();
         let _ = self.daemon.wait();
@@ -119,7 +131,11 @@ fn the_hosted_sink(pipewire: &PipeWire) -> Option<SinkInfo> {
 }
 
 fn told_it_is_disconnected(pipewire: &PipeWire) -> bool {
-    let deadline = Instant::now() + PATIENCE;
+    told_it_is_disconnected_within(pipewire, PATIENCE)
+}
+
+fn told_it_is_disconnected_within(pipewire: &PipeWire, patience: Duration) -> bool {
+    let deadline = Instant::now() + patience;
     while Instant::now() < deadline {
         if matches!(
             pipewire.enumerate_sinks(ASKED_WITHIN),
@@ -191,6 +207,33 @@ fn a_daemon_restarting_under_the_client(folder: &Path) {
     );
 }
 
+fn a_daemon_hanging_under_the_client(folder: &Path) {
+    let Some(hosted) = Hosted::start(folder) else {
+        eprintln!("skipped: no pipewire binary to host a daemon with");
+        return;
+    };
+
+    let pipewire = PipeWire::start("resonate-reconnect-test").expect("the hosted daemon answers");
+    the_hosted_sink(&pipewire).expect("the hosted daemon's sink is found");
+
+    hosted.signalled("-STOP");
+    let taken_as_lost = told_it_is_disconnected_within(&pipewire, HUNG_PATIENCE);
+    hosted.signalled("-CONT");
+    let found_again = the_hosted_sink(&pipewire);
+
+    let _ = pipewire.shutdown();
+    hosted.kill();
+
+    assert!(
+        taken_as_lost,
+        "a daemon that stopped answering was never taken as gone"
+    );
+    assert!(
+        found_again.is_some(),
+        "the sink was never found once the daemon answered again"
+    );
+}
+
 fn a_daemon_coming_after_the_client(folder: &Path) {
     let pipewire = PipeWire::start("resonate-reconnect-test")
         .expect("the client starts with no daemon to reach");
@@ -226,6 +269,15 @@ fn a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it() {
         "a_client_whose_daemon_restarts_finds_the_graph_again_and_opens_on_it",
         "r",
         a_daemon_restarting_under_the_client,
+    );
+}
+
+#[test]
+fn a_client_whose_daemon_stops_answering_takes_it_as_gone_and_finds_it_again() {
+    hosted_as(
+        "a_client_whose_daemon_stops_answering_takes_it_as_gone_and_finds_it_again",
+        "h",
+        a_daemon_hanging_under_the_client,
     );
 }
 

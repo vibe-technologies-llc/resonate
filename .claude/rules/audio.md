@@ -958,7 +958,13 @@ Invariants from the file to the sink. `realtime.md` covers the callback contract
   cannot be torn down inside its own callback). `Lost` drops the streams and the graph, answers every
   pending `Sync` by dropping it, empties `Discovered` and announces each known sink removed, and a thread
   sends `Request::Reconnect` a second later, again until a core connects, **the first connect being one
-  more of these tries**. While there is none, a `Sync`, an open and a capture answer
+  more of these tries**. **A daemon that stops answering without closing is lost too:** a loop timer
+  sends `Request::Heartbeat` every `HEARTBEAT_EVERY`, which sends the core a `sync` and keeps it as a
+  `Beat`; a beat still unanswered after `DAEMON_ANSWERS_WITHIN` goes through `lose_the_graph`, the
+  same path a broken pipe takes, and the reconnect thread tries again until the daemon answers
+  (`a_client_whose_daemon_stops_answering_takes_it_as_gone_and_finds_it_again`, which `SIGSTOP`s its
+  hosted daemon). **Nothing inside the request callback sends on the request channel:** pipewire-rs
+  runs the callback under the channel's own lock, so a send from there never returns. While there is none, a `Sync`, an open and a capture answer
   `Error::Disconnected` at once rather than timing out as `LoopStopped` (`PipeWire::unanswered`).
   `tests/reconnect.rs` reruns its binary under `PIPEWIRE_RUNTIME_DIR` with a `pipewire` of its own.
   **A recording carries on across the restart:** `resonate-listen`'s `Capture` reads its disconnected

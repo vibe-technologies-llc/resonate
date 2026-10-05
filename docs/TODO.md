@@ -8,8 +8,6 @@ or a format) and sits at the end of its category; it is not worked until that mo
 else is open to be done.
 
 ## Defects
-- A daemon connection that hangs without closing is never taken as lost, so the client stays
-  disconnected
 - A tidy drops the rows of an unplugged drive never scanned, mounted by hand where no table lists it
   and outside `/run/media`, `/media` and `/mnt`, whose songs sat at its root or whose mount point was
   taken away from a folder holding anything else; noting a row's volume as it is added would cover it
